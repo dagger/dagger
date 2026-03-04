@@ -31,7 +31,6 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -89,7 +88,8 @@ type Server struct {
 
 	worker                *buildkit.Worker
 	workerCache           bkcache.SnapshotManager
-	workerDefaultGCPolicy *bkclient.PruneInfo
+	workerGCPolicies      []dagql.CachePrunePolicy
+	workerDefaultGCPolicy *dagql.CachePrunePolicy
 
 	bkSessionManager *bksession.Manager
 
@@ -137,9 +137,8 @@ type Server struct {
 	//
 	// gc related
 	//
-	throttledGC                  func()
-	throttledReleaseUnreferenced func()
-	gcmu                         sync.Mutex
+	throttledGC func()
+	gcmu        sync.Mutex
 
 	//
 	// dagql cache
@@ -398,11 +397,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		nil, // no idmapping
 	)
 
+	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
 	workerOpt := buildkit.WorkerOpt{
 		ID:               rand.Text(),
 		Labels:           baseLabels,
 		Platforms:        srv.enabledPlatforms,
-		GCPolicy:         getGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir),
+		GCPolicy:         buildkitPruneInfosFromDagqlPolicies(workerGCPolicies),
 		NetworkProviders: srv.networkProviders,
 		Snapshotter:      workerSnapshotter,
 		ContentStore:     srv.contentStore,
@@ -427,7 +427,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create snapshot manager: %w", err)
 	}
 
-	srv.workerDefaultGCPolicy = getDefaultGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
+	srv.workerGCPolicies = cloneDagqlCachePrunePolicies(workerGCPolicies)
+	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
 
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
@@ -487,13 +488,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	//
 
 	srv.throttledGC = throttle.After(time.Minute, srv.gc)
-	// use longer interval for releaseUnreferencedCache deleting links quickly is less important
-	/* TODO: equivalent of this but for dagql, just keeping as reminder for later cherry-pick of dagql-native pruning work
-	srv.throttledReleaseUnreferenced = throttle.After(5*time.Minute, func() { srv.SolverCache.ReleaseUnreferenced(context.Background()) })
 	defer func() {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
-	*/
 
 	//
 	// setup dagql caching

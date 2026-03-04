@@ -953,6 +953,19 @@ func (container *Container) WithExec(
 	}
 	metaOutput.LazyInit = gateRun
 	container.Meta = metaOutput
+	container.MetaResult = nil
+	if container.OpID != nil {
+		metaResultID := container.OpID.Append(metaOutput.Type(), "__daggerMetaOutput")
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get dagql server for meta output result: %w", err)
+		}
+		metaOutputResult, err := dagql.NewObjectResultForID(metaOutput, srv, metaResultID)
+		if err != nil {
+			return fmt.Errorf("failed to build meta output result: %w", err)
+		}
+		container.MetaResult = &metaOutputResult
+	}
 
 	rootOutputBinding := func(ref bkcache.ImmutableRef) {
 		rootfsOutput.setSnapshot(ref)

@@ -27,7 +27,7 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Engine]{
 		dagql.Func("localCache", s.localCache).
-			Doc("The local (on-disk) cache for the Dagger engine"),
+			Doc("The local engine cache state tracked by dagql"),
 	}.Install(srv)
 
 	dagql.Fields[*core.EngineCache]{
@@ -72,7 +72,7 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 	if err := query.RequireMainClient(ctx); err != nil {
 		return nil, err
 	}
-	policy := query.Clone().EngineLocalCachePolicy()
+	policy := query.EngineLocalCachePolicy()
 	if policy == nil {
 		return &core.EngineCache{}, nil
 	}

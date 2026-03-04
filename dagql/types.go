@@ -152,6 +152,16 @@ type OnReleaser interface {
 	OnRelease(context.Context) error
 }
 
+// HasAdditionalOutputResults is implemented by resolver-returned values that
+// produce additional result handles which should be attached to cache when the
+// main resolver result is attached.
+//
+// This must return already-constructed result handles only. It must not perform
+// evaluation/materialization work.
+type HasAdditionalOutputResults interface {
+	AdditionalOutputResults() []AnyResult
+}
+
 // ScalarType represents a GraphQL Scalar type.
 type ScalarType interface {
 	Type

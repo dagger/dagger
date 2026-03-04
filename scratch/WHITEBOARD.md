@@ -23,6 +23,8 @@
    * Follow-up: revisit whether lazy-init/parent snapshot modeling can eliminate this explicit parent threading while preserving correctness for service-backed files.
 * Assess whether we dropped any git lazyness (especially tree) and whether we should restore it
 * Assess whether we really want persistent cache for every schema json file, that's probably a lot of files that are actually kinda sizable!
+* Find a way to enable pruning of filesync mirror snapshots
+   * Pretty sure filesync mirrors are currently not accounted for by dagql prune/usage accounting.
 * !!! Check if we are losing a lot of parallelism in places, especially seems potentially apparent in the dockerBuild of e.g. TestLoadHostContainerd, which looks hella linear and maybe slower than it used to be
    * Probably time now or in near future to do eager parallel loading of IDs in DAG during ID load and such
 
@@ -391,7 +393,33 @@
   * [x] threshold behavior (`maxUsedSpace`/`targetSpace`)
   * [x] in-use entries never pruned
   * [x] deterministic selection order
-* [ ] REVIEW CHECKPOINT 3: review prune semantics and invariants before server API switch.
+* [x] Add explicit support for resolver-produced additional output results so detached results do not leak past resolver completion.
+  * [x] Introduce a dagql interface for values that return additional resolver outputs that must be attached to cache once the main result is attached.
+    * [x] Proposed shape: `AdditionalOutputResults() []AnyResult` (name can adjust, behavior should not).
+    * [x] Additional outputs must be pure handles only; this method must never evaluate or materialize lazy values.
+  * [x] Wire `GetOrInitCall` completion path to attach additional outputs immediately after main result indexing/attachment (same request lifecycle, not deferred/post-call).
+    * [x] Do this after `initCompletedResult` has attached/indexed the parent result.
+    * [x] For each additional output:
+      * [x] Attach/reacquire via normal call-cache path using its existing ID (no synthetic IDs), so detached outputs become attached and cached outputs are ref-acquired consistently.
+      * [x] Preserve laziness; attachment should not force output evaluation.
+  * [x] Record explicit dependency edges from parent result -> attached additional outputs.
+    * [x] This is required so persisted parent liveness retains output snapshots transitively.
+    * [x] Do not rely only on term-input dependency indexing (that models child -> parent but not parent -> produced outputs).
+  * [x] Ensure this flow works for `Container.withExec` outputs specifically:
+    * [x] rootfs output directory result
+    * [x] writable mount output directory/file results
+    * [x] meta output directory result
+  * [x] Keep hard-cutover behavior:
+    * [x] no use of `PostCall` for this lifecycle step
+    * [x] no fallback to container-intrinsic size accounting
+    * [x] size accounting remains on snapshot-bearing types (Directory/File/CacheVolume)
+  * [x] Add focused dagql tests for the new attachment semantics:
+    * [x] detached additional outputs become attached after parent attach
+    * [x] attached additional outputs remain lazy until evaluated
+    * [x] parent result retains attached output deps in persisted-liveness traversal
+    * [x] accounting/prune sees output-backed size through attached outputs (without container size hooks)
+  * [x] Add integration assertions around `core/integration/localcache_test.go` scenarios that previously under-counted bytes.
+* [x] REVIEW CHECKPOINT 3: review prune semantics and invariants before server API switch.
 
 ##### Phase 4: Server integration and entrypoint cutover
 
@@ -403,7 +431,7 @@
   * [x] `imageutil.CancelCacheLeases()` path
   * [x] `SolverCache.ReleaseUnreferenced(...)` post-prune path
 * [x] Keep return type `EngineCacheEntrySet` populated from dagql prune results.
-* [ ] REVIEW CHECKPOINT 4: verify server-level behavior (automatic gc + manual prune) before API cleanup.
+* [x] REVIEW CHECKPOINT 4: verify server-level behavior (automatic gc + manual prune) before API cleanup.
 
 ##### Phase 5: API cleanup and compatibility polish
 
@@ -419,7 +447,7 @@
   * [x] only adjust test mechanics where needed for dagql-prune cutover
   * [x] end state for this phase: `core/integration/localcache_test.go` passing
 * [x] Add/adjust tests for `core/schema/engine.go` paths (`localCache`, `entrySet`, `prune`).
-* [ ] REVIEW CHECKPOINT 5: ensure interface coherence and no lingering buildkit-prune assumptions.
+* [x] REVIEW CHECKPOINT 5: ensure interface coherence and no lingering buildkit-prune assumptions.
 
 ##### Phase 6: Follow-up tasks (non-blocking for first cut)
 

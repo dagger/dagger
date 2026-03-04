@@ -120,11 +120,28 @@ func cacheTestMutableSizedIntResult(
 	})
 }
 
+type cacheTestAdditionalOutputsInt struct {
+	Int
+	outputs []AnyResult
+}
+
+func (v cacheTestAdditionalOutputsInt) AdditionalOutputResults() []AnyResult {
+	return v.outputs
+}
+
 func cacheTestUnwrapInt(t *testing.T, res AnyResult) int {
 	t.Helper()
 	v, ok := UnwrapAs[Int](res)
 	assert.Assert(t, ok, "expected Int result, got %T", res)
 	return int(v)
+}
+
+func cacheTestSharedResultEntryID(res AnyResult) string {
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return ""
+	}
+	return fmt.Sprintf("dagql.result.%d", shared.id)
 }
 
 func cacheTestIDHasExtraDigest(id *call.ID, dig digest.Digest, label string) bool {
@@ -3022,6 +3039,361 @@ func TestCacheUsageEntriesMutableUsageRemeasuresAfterSizeChange(t *testing.T) {
 	assert.Equal(t, 1, len(entries2))
 	assert.Equal(t, int64(200), entries2[0].SizeBytes)
 	assert.Equal(t, int32(2), sizeCalls.Load())
+}
+
+func TestCachePruneKeepDuration(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	oldKey := cacheTestID("prune-keep-duration-old")
+	oldRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            oldKey,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(oldKey, 1, 50, "snapshot://prune-keep-duration-old", nil), nil
+	})
+	assert.NilError(t, err)
+
+	newKey := cacheTestID("prune-keep-duration-new")
+	newRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            newKey,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(newKey, 2, 50, "snapshot://prune-keep-duration-new", nil), nil
+	})
+	assert.NilError(t, err)
+
+	assert.NilError(t, oldRes.Release(ctx))
+	assert.NilError(t, newRes.Release(ctx))
+	_ = c.UsageEntries()
+
+	oldEntryID := cacheTestSharedResultEntryID(oldRes)
+	newEntryID := cacheTestSharedResultEntryID(newRes)
+	requireOld := oldRes.cacheSharedResult()
+	requireNew := newRes.cacheSharedResult()
+	assert.Assert(t, requireOld != nil)
+	assert.Assert(t, requireNew != nil)
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	requireOld.lastUsedAtUnixNano = now.Add(-2 * time.Hour).UnixNano()
+	requireOld.createdAtUnixNano = requireOld.lastUsedAtUnixNano
+	requireNew.lastUsedAtUnixNano = now.UnixNano()
+	requireNew.createdAtUnixNano = requireNew.lastUsedAtUnixNano
+	c.egraphMu.Unlock()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{
+		All:          true,
+		KeepDuration: time.Hour,
+	}})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, oldEntryID, report.Entries[0].ID)
+
+	c.egraphMu.RLock()
+	_, oldStillPresent := c.resultsByID[requireOld.id]
+	_, newStillPresent := c.resultsByID[requireNew.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !oldStillPresent)
+	assert.Assert(t, newStillPresent)
+	assert.Assert(t, newEntryID != "")
+}
+
+func TestCachePruneThresholdTargetSpace(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	keys := []*call.ID{
+		cacheTestID("prune-threshold-1"),
+		cacheTestID("prune-threshold-2"),
+		cacheTestID("prune-threshold-3"),
+	}
+	results := make([]AnyResult, 0, len(keys))
+	for i, key := range keys {
+		keyCopy := key
+		valueCopy := i + 1
+		identityCopy := fmt.Sprintf("snapshot://prune-threshold-%d", i+1)
+		res, getErr := c.GetOrInitCall(ctx, CacheKey{
+			ID:            keyCopy,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestSizedIntResult(keyCopy, valueCopy, 100, identityCopy, nil), nil
+		})
+		assert.NilError(t, getErr)
+		results = append(results, res)
+	}
+	for _, res := range results {
+		assert.NilError(t, res.Release(ctx))
+	}
+	_ = c.UsageEntries()
+
+	now := time.Now()
+	c.egraphMu.Lock()
+	for i, res := range results {
+		shared := res.cacheSharedResult()
+		assert.Assert(t, shared != nil)
+		ts := now.Add(time.Duration(-3+i) * time.Hour).UnixNano()
+		shared.lastUsedAtUnixNano = ts
+		shared.createdAtUnixNano = ts
+	}
+	c.egraphMu.Unlock()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{
+		All:          true,
+		MaxUsedSpace: 250,
+		TargetSpace:  100,
+	}})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, len(report.Entries))
+	assert.Equal(t, int64(200), report.ReclaimedBytes)
+	assert.Equal(t, cacheTestSharedResultEntryID(results[0]), report.Entries[0].ID)
+	assert.Equal(t, cacheTestSharedResultEntryID(results[1]), report.Entries[1].ID)
+}
+
+func TestCachePruneThresholdNotTriggeredDoesNotForceAllPrune(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestID("prune-threshold-not-triggered")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(key, 1, 100, "snapshot://prune-threshold-not-triggered", nil), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, res.Release(ctx))
+	_ = c.UsageEntries()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{
+		All:           true,
+		MaxUsedSpace:  1024,
+		ReservedSpace: 0,
+		MinFreeSpace:  0,
+		TargetSpace:   1024,
+	}})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, len(report.Entries))
+	assert.Equal(t, int64(0), report.ReclaimedBytes)
+
+	c.egraphMu.RLock()
+	_, stillPresent := c.resultsByID[res.cacheSharedResult().id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, stillPresent)
+}
+
+func TestCachePruneReservedSpacePrecedenceOverMaxUsed(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	keyA := cacheTestID("prune-reserved-a")
+	keyB := cacheTestID("prune-reserved-b")
+
+	resA, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyA,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(keyA, 1, 100, "snapshot://prune-reserved-a", nil), nil
+	})
+	assert.NilError(t, err)
+	resB, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyB,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(keyB, 2, 100, "snapshot://prune-reserved-b", nil), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+	_ = c.UsageEntries()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{
+		All:           true,
+		MaxUsedSpace:  50,
+		ReservedSpace: 120,
+		TargetSpace:   50,
+	}})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, int64(100), report.ReclaimedBytes)
+}
+
+func TestCachePruneInUseEntriesAreNeverPruned(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	inUseKey := cacheTestID("prune-in-use")
+	inUseRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            inUseKey,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(inUseKey, 1, 60, "snapshot://prune-in-use", nil), nil
+	})
+	assert.NilError(t, err)
+
+	prunableKey := cacheTestID("prune-prunable")
+	prunableRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            prunableKey,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(prunableKey, 2, 60, "snapshot://prune-prunable", nil), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, prunableRes.Release(ctx))
+	_ = c.UsageEntries()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, cacheTestSharedResultEntryID(prunableRes), report.Entries[0].ID)
+
+	assert.NilError(t, inUseRes.Release(ctx))
+}
+
+func TestCachePruneDeterministicSelectionOrder(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	keys := []*call.ID{
+		cacheTestID("prune-order-a"),
+		cacheTestID("prune-order-b"),
+		cacheTestID("prune-order-c"),
+	}
+	results := make([]AnyResult, 0, len(keys))
+	for i, key := range keys {
+		keyCopy := key
+		valueCopy := i + 1
+		identityCopy := fmt.Sprintf("snapshot://prune-order-%d", i+1)
+		res, getErr := c.GetOrInitCall(ctx, CacheKey{
+			ID:            keyCopy,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestSizedIntResult(keyCopy, valueCopy, 10, identityCopy, nil), nil
+		})
+		assert.NilError(t, getErr)
+		results = append(results, res)
+	}
+	for _, res := range results {
+		assert.NilError(t, res.Release(ctx))
+	}
+	_ = c.UsageEntries()
+
+	now := time.Now().Add(-2 * time.Hour).UnixNano()
+	c.egraphMu.Lock()
+	for _, res := range results {
+		shared := res.cacheSharedResult()
+		assert.Assert(t, shared != nil)
+		shared.lastUsedAtUnixNano = now
+		shared.createdAtUnixNano = now
+	}
+	c.egraphMu.Unlock()
+
+	report1, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 3, len(report1.Entries))
+
+	gotOrder := []string{
+		report1.Entries[0].ID,
+		report1.Entries[1].ID,
+		report1.Entries[2].ID,
+	}
+	wantOrder := []string{
+		cacheTestSharedResultEntryID(results[0]),
+		cacheTestSharedResultEntryID(results[1]),
+		cacheTestSharedResultEntryID(results[2]),
+	}
+	assert.DeepEqual(t, gotOrder, wantOrder)
+}
+
+func TestCacheAttachAdditionalOutputResults(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	parentID := cacheTestID("parent-with-additional-output")
+	childID := cacheTestID("child-additional-output")
+	childPostCallCount := &atomic.Int32{}
+
+	parentRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            parentID,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		child := cacheTestSizedIntResult(
+			childID,
+			2,
+			128,
+			"snapshot://cache-additional-output",
+			nil,
+		).WithPostCall(func(context.Context) error {
+			childPostCallCount.Add(1)
+			return nil
+		})
+		return newDetachedResult(parentID, cacheTestAdditionalOutputsInt{
+			Int:     NewInt(1),
+			outputs: []AnyResult{child},
+		}), nil
+	})
+	assert.NilError(t, err)
+	parentShared := parentRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+	assert.Assert(t, parentShared.cache == c)
+
+	childInitCalls := 0
+	childRes, err := c.GetOrInitCall(ctx, CacheKey{ID: childID}, func(context.Context) (AnyResult, error) {
+		childInitCalls++
+		return cacheTestIntResult(childID, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, int32(0), childPostCallCount.Load())
+	assert.Equal(t, 0, childInitCalls)
+	assert.Assert(t, childRes.HitCache())
+	childVal, ok := UnwrapAs[cacheTestSizedInt](childRes)
+	assert.Assert(t, ok)
+	assert.Equal(t, int64(2), int64(childVal.Int))
+	assert.NilError(t, childRes.PostCall(ctx))
+	assert.Equal(t, int32(1), childPostCallCount.Load())
+
+	childShared := childRes.cacheSharedResult()
+	assert.Assert(t, childShared != nil)
+	assert.Assert(t, childShared.cache == c)
+
+	c.egraphMu.RLock()
+	cachedParent := c.resultsByID[parentShared.id]
+	cachedChild := c.resultsByID[childShared.id]
+	parentDependsOnChild := false
+	childRetained := false
+	if cachedParent != nil {
+		_, parentDependsOnChild = cachedParent.deps[childShared.id]
+	}
+	if cachedChild != nil {
+		childRetained = cachedChild.depOfPersistedResult
+	}
+	c.egraphMu.RUnlock()
+
+	assert.Assert(t, cachedParent != nil)
+	assert.Assert(t, cachedChild != nil)
+	assert.Assert(t, parentDependsOnChild)
+	assert.Assert(t, childRetained)
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {

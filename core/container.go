@@ -77,6 +77,9 @@ type Container struct {
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *Directory
+	// MetaResult is the object result handle for Meta when available. This is
+	// used to expose meta as an attached output of operations like withExec.
+	MetaResult *dagql.ObjectResult[*Directory]
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -164,6 +167,7 @@ func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
+var _ dagql.HasAdditionalOutputResults = (*Container)(nil)
 
 func (container *Container) Evaluate(ctx context.Context) error {
 	if container == nil {
@@ -190,6 +194,34 @@ func (container *Container) Sync(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (container *Container) AdditionalOutputResults() []dagql.AnyResult {
+	if container == nil {
+		return nil
+	}
+
+	outputs := make([]dagql.AnyResult, 0, 2+len(container.Mounts))
+	if container.FS != nil {
+		outputs = append(outputs, *container.FS)
+	}
+	if container.MetaResult != nil {
+		outputs = append(outputs, *container.MetaResult)
+	}
+
+	for _, mnt := range container.Mounts {
+		if mnt.Readonly {
+			continue
+		}
+		switch {
+		case mnt.DirectorySource != nil:
+			outputs = append(outputs, *mnt.DirectorySource)
+		case mnt.FileSource != nil:
+			outputs = append(outputs, *mnt.FileSource)
+		}
+	}
+
+	return outputs
 }
 
 func (container *Container) OnRelease(ctx context.Context) error {

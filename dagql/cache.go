@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -48,6 +49,14 @@ type Cache interface {
 	// Returns a deterministic snapshot of cache usage entries used for pruning
 	// policy/accounting.
 	UsageEntries() []CacheUsageEntry
+
+	// Returns a deterministic snapshot of cache usage entries with size
+	// measurement for all cache entries (not only prune candidates). This is
+	// intended for global cache reporting and policy threshold evaluation.
+	UsageEntriesAll(context.Context) []CacheUsageEntry
+
+	// Applies ordered prune policies and returns the set of pruned entries.
+	Prune(context.Context, []CachePrunePolicy) (CachePruneReport, error)
 
 	// Run a blocking loop that periodically garbage collects expired entries from the cache db.
 	GCLoop(context.Context)
@@ -100,6 +109,26 @@ type CacheUsageEntry struct {
 	CreatedTimeUnixNano       int64
 	MostRecentUseTimeUnixNano int64
 	ActivelyUsed              bool
+}
+
+type CachePrunePolicy struct {
+	All           bool
+	Filters       []string
+	KeepDuration  time.Duration
+	ReservedSpace int64
+	MaxUsedSpace  int64
+	MinFreeSpace  int64
+	TargetSpace   int64
+
+	// CurrentFreeSpace is optional free-disk bytes at prune start used to
+	// evaluate MinFreeSpace. When unset, MinFreeSpace behaves as if free space
+	// were zero.
+	CurrentFreeSpace int64
+}
+
+type CachePruneReport struct {
+	Entries        []CacheUsageEntry
+	ReclaimedBytes int64
 }
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
@@ -249,6 +278,10 @@ type sharedResult struct {
 	// deps tracks direct result dependencies used for transitive dependency
 	// liveness propagation in persistence experiments.
 	deps map[sharedResultID]struct{}
+	// heldAdditionalOutputs are attached output results whose refs are held
+	// while this result has active refs. They are released when this result's
+	// refcount drains to zero.
+	heldAdditionalOutputs []AnyResult
 
 	// Output digests learned from the materialized result ID.
 	outputDigest       digest.Digest
@@ -305,8 +338,11 @@ func (res *sharedResult) release(ctx context.Context) error {
 	}
 
 	var onRelease OnReleaseFunc
+	var heldAdditionalOutputs []AnyResult
 	if atomic.AddInt64(&res.refCount, -1) == 0 {
 		res.cache.egraphMu.Lock()
+		heldAdditionalOutputs = res.heldAdditionalOutputs
+		res.heldAdditionalOutputs = nil
 		if !res.depOfPersistedResult {
 			// Non-retained entries keep current behavior: once refs drain, drop the
 			// result from the in-memory e-graph and release associated resources.
@@ -316,10 +352,17 @@ func (res *sharedResult) release(ctx context.Context) error {
 		res.cache.egraphMu.Unlock()
 	}
 
-	if onRelease != nil {
-		return onRelease(ctx)
+	var rerr error
+	for _, output := range heldAdditionalOutputs {
+		if output == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, output.Release(ctx))
 	}
-	return nil
+	if onRelease != nil {
+		rerr = errors.Join(rerr, onRelease(ctx))
+	}
+	return rerr
 }
 
 type Result[T Typed] struct {
@@ -638,6 +681,14 @@ func (c *cache) UsageEntries() []CacheUsageEntry {
 	return c.usageEntriesLocked()
 }
 
+func (c *cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+
+	c.measureAllResultSizesLocked(ctx)
+	return c.usageEntriesLocked()
+}
+
 func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 	// Snapshot-identity dedupe accounting: a single physical snapshot can be
 	// referenced by multiple logical results. We deterministically assign bytes
@@ -753,6 +804,72 @@ func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
 			continue
 		}
 		// Deterministic owner tie-break for this snapshot identity.
+		slices.Sort(candidateIDs)
+		ownerID := candidateIDs[0]
+		ownerRes := c.resultsByID[ownerID]
+		if ownerRes == nil {
+			continue
+		}
+
+		sizeBytes, ok, err := cacheUsageSizeBytes(ctx, ownerRes)
+		if err != nil {
+			slog.Warn("failed to determine cache usage size",
+				"resultID", ownerID,
+				"usageIdentity", usageIdentity,
+				"err", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if sizeBytes < 0 {
+			sizeBytes = 0
+		}
+
+		for _, candidateID := range candidateIDs {
+			candidateRes := c.resultsByID[candidateID]
+			if candidateRes == nil {
+				continue
+			}
+			candidateRes.usageIdentity = usageIdentity
+			candidateRes.sizeEstimateBytes = sizeBytes
+		}
+	}
+}
+
+func (c *cache) measureAllResultSizesLocked(ctx context.Context) {
+	candidatesByIdentity := make(map[string][]sharedResultID)
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		if res.sizeEstimateBytes != sharedResultSizeUnknown && !cacheUsageSizeMayChange(res) {
+			continue
+		}
+
+		usageIdentity, ok := cacheUsageIdentity(res)
+		if !ok || usageIdentity == "" {
+			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
+		}
+		res.usageIdentity = usageIdentity
+		candidatesByIdentity[usageIdentity] = append(candidatesByIdentity[usageIdentity], resID)
+	}
+
+	if len(candidatesByIdentity) == 0 {
+		return
+	}
+
+	usageIdentities := make([]string, 0, len(candidatesByIdentity))
+	for usageIdentity := range candidatesByIdentity {
+		usageIdentities = append(usageIdentities, usageIdentity)
+	}
+	slices.Sort(usageIdentities)
+
+	for _, usageIdentity := range usageIdentities {
+		candidateIDs := candidatesByIdentity[usageIdentity]
+		if len(candidateIDs) == 0 {
+			continue
+		}
 		slices.Sort(candidateIDs)
 		ownerID := candidateIDs[0]
 		ownerRes := c.resultsByID[ownerID]
@@ -1022,7 +1139,7 @@ func (c *cache) wait(
 	return retObjRes, nil
 }
 
-func (c *cache) initCompletedResult(_ context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
+func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
@@ -1132,6 +1249,104 @@ func (c *cache) initCompletedResult(_ context.Context, oc *ongoingCall, requestI
 		c.markResultAsDepOfPersistedLocked(oc.res)
 	}
 	c.egraphMu.Unlock()
+
+	if err := c.attachAdditionalOutputResults(ctx, oc.res, oc.val); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *cache) attachAdditionalOutputResults(ctx context.Context, parent *sharedResult, val AnyResult) error {
+	if parent == nil || val == nil {
+		return nil
+	}
+
+	withOutputs, ok := UnwrapAs[HasAdditionalOutputResults](val)
+	if !ok {
+		return nil
+	}
+	outputs := withOutputs.AdditionalOutputResults()
+	if len(outputs) == 0 {
+		return nil
+	}
+
+	attachedOutputIDs := make([]sharedResultID, 0, len(outputs))
+	attachedOutputRefs := make([]AnyResult, 0, len(outputs))
+	seen := make(map[sharedResultID]struct{}, len(outputs))
+	seenCallDigests := make(map[string]struct{}, len(outputs))
+	addOutputID := func(outputID sharedResultID) {
+		if outputID == 0 {
+			return
+		}
+		if _, ok := seen[outputID]; ok {
+			return
+		}
+		seen[outputID] = struct{}{}
+		attachedOutputIDs = append(attachedOutputIDs, outputID)
+	}
+
+	for _, output := range outputs {
+		if output == nil || output.ID() == nil {
+			continue
+		}
+		callDigest := output.ID().Digest().String()
+		if _, ok := seenCallDigests[callDigest]; ok {
+			continue
+		}
+		seenCallDigests[callDigest] = struct{}{}
+
+		attachedOutput, err := c.GetOrInitCall(ctx, CacheKey{
+			ID: output.ID(),
+		}, ValueFunc(output))
+		if err != nil {
+			return fmt.Errorf("attach additional output result %q: %w", output.ID().Digest(), err)
+		}
+		attachedOutputRes := attachedOutput.cacheSharedResult()
+		if attachedOutputRes == nil || attachedOutputRes.cache != c || attachedOutputRes.id == 0 {
+			return fmt.Errorf("attach additional output result %q: unexpected detached result", output.ID().Digest())
+		}
+
+		attachedOutputRefs = append(attachedOutputRefs, attachedOutput)
+		addOutputID(attachedOutputRes.id)
+	}
+
+	if parent.id == 0 || len(attachedOutputIDs) == 0 {
+		for _, output := range attachedOutputRefs {
+			if output == nil {
+				continue
+			}
+			if err := output.Release(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+
+	parentRes := c.resultsByID[parent.id]
+	if parentRes == nil {
+		return nil
+	}
+	if parentRes.deps == nil {
+		parentRes.deps = make(map[sharedResultID]struct{})
+	}
+
+	for _, outputID := range attachedOutputIDs {
+		if outputID == parentRes.id {
+			continue
+		}
+		parentRes.deps[outputID] = struct{}{}
+		if parentRes.depOfPersistedResult {
+			if outputRes := c.resultsByID[outputID]; outputRes != nil {
+				c.markResultAsDepOfPersistedLocked(outputRes)
+			}
+		}
+	}
+	parentRes.heldAdditionalOutputs = append(parentRes.heldAdditionalOutputs, attachedOutputRefs...)
+
 	return nil
 }
 
