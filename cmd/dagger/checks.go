@@ -82,34 +82,39 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
-func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
-	ctx, span := Tracer().Start(ctx, "fetch check information")
+// loadGroupListDetails fetches name+description for every item in a group
+// using a single batch GraphQL query, with tracing suppressed to avoid
+// per-item span noise in list mode.
+func loadGroupListDetails(
+	ctx context.Context,
+	dag *dagger.Client,
+	spanName string,
+	getID func(context.Context) (any, error),
+	query string,
+	opName string,
+) ([]groupListItem, error) {
+	ctx, span := Tracer().Start(ctx, spanName)
 	defer span.End()
 
-	// Intentionally execute the list query subtree without tracing to avoid
-	// per-check name/description span noise in "dagger check -l".
 	noTraceCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
 
-	id, err := checkgroup.ID(noTraceCtx)
+	id, err := getID(noTraceCtx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
 	var res struct {
-		CheckGroup struct {
-			List []struct {
-				Name        string
-				Description string
-			}
+		Group struct {
+			List []groupListItem
 		}
 	}
 
 	err = dag.Do(noTraceCtx, &dagger.Request{
-		Query:  loadChecksQuery,
-		OpName: "CheckGroupListDetails",
+		Query:  query,
+		OpName: opName,
 		Variables: map[string]any{
-			"checkGroup": id,
+			"id": id,
 		},
 	}, &dagger.Response{
 		Data: &res,
@@ -119,13 +124,28 @@ func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dag
 		return nil, err
 	}
 
-	info := &CheckGroupInfo{Checks: make([]*CheckInfo, 0, len(res.CheckGroup.List))}
-	for _, check := range res.CheckGroup.List {
-		checkInfo := &CheckInfo{
-			Name:        cliName(check.Name),
-			Description: check.Description,
-		}
-		info.Checks = append(info.Checks, checkInfo)
+	return res.Group.List, nil
+}
+
+type groupListItem struct {
+	Name        string
+	Description string
+}
+
+func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
+	items, err := loadGroupListDetails(ctx, dag, "fetch check information",
+		func(ctx context.Context) (any, error) { return checkgroup.ID(ctx) },
+		loadChecksQuery, "CheckGroupListDetails",
+	)
+	if err != nil {
+		return nil, err
+	}
+	info := &CheckGroupInfo{Checks: make([]*CheckInfo, 0, len(items))}
+	for _, item := range items {
+		info.Checks = append(info.Checks, &CheckInfo{
+			Name:        cliName(item.Name),
+			Description: item.Description,
+		})
 	}
 	return info, nil
 }

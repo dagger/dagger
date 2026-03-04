@@ -1,5 +1,5 @@
-query CheckGroupListDetails($checkGroup: CheckGroupID!) {
-  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
+query CheckGroupListDetails($id: CheckGroupID!) {
+  group: loadCheckGroupFromID(id: $id) {
     list {
       name
       description
