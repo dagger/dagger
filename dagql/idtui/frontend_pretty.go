@@ -1211,7 +1211,7 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	logsLines := fe.renderLogsLines(progPrefix)
 	formLines := fe.renderFormLines()
 
-	chromeHeight := 2 + 1 // keymap (blank + bar) rendered as sibling, +1 gap after progress
+	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}

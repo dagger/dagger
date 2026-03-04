@@ -61,7 +61,7 @@ func (kb *KeymapBar) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		return tuist.RenderResult{}
 	}
 	return tuist.RenderResult{
-		Lines: []string{"", view}, // blank line before keymap
+		Lines: []string{view},
 	}
 }
 
