@@ -8,10 +8,15 @@ import (
 
 func initModuleParams(a []string) client.Params {
 	return client.Params{
-		ExecCmd:      a,
-		Function:     functionName(a),
-		EagerRuntime: eagerRuntime,
+		ExecCmd:              a,
+		Function:             functionName(a),
+		EagerRuntime:         eagerRuntime,
+		SkipWorkspaceModules: shouldSkipWorkspaceModules(false),
 	}
+}
+
+func shouldSkipWorkspaceModules(disableModuleLoad bool) bool {
+	return disableModuleLoad || moduleNoURL
 }
 
 func functionName(args []string) string {

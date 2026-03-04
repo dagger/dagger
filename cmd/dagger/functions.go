@@ -172,7 +172,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
-				return withEngine(c.Context(), initModuleParams(a), func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				params := initModuleParams(a)
+				params.SkipWorkspaceModules = shouldSkipWorkspaceModules(fc.DisableModuleLoad)
+
+				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
