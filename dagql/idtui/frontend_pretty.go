@@ -755,36 +755,26 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 			return fe.err
 
 		case req := <-fe.backgroundReq:
-			// Suspend TUI for background command
-			fe.tui.Stop()
+			req.done <- fe.tui.Exec(func(in io.Reader, out io.Writer, errOut io.Writer) error {
+				req.cmd.SetStdin(in)
+				req.cmd.SetStdout(out)
+				req.cmd.SetStderr(errOut)
 
-			req.cmd.SetStdin(os.Stdin)
-			req.cmd.SetStdout(os.Stdout)
-			req.cmd.SetStderr(os.Stderr)
-
-			var err error
-			if req.raw {
-				if stdin, ok := fe.stdin.(*os.File); ok {
-					oldState, rawErr := term.MakeRaw(int(stdin.Fd()))
-					if rawErr != nil {
-						err = rawErr
-					} else {
-						err = req.cmd.Run()
-						if oldState != nil {
-							term.Restore(int(stdin.Fd()), oldState)
+				if req.raw {
+					if stdin, ok := fe.stdin.(*os.File); ok {
+						oldState, rawErr := term.MakeRaw(int(stdin.Fd()))
+						if rawErr != nil {
+							return rawErr
 						}
+						defer func() {
+							if oldState != nil {
+								term.Restore(int(stdin.Fd()), oldState)
+							}
+						}()
 					}
-				} else {
-					err = req.cmd.Run()
 				}
-			} else {
-				err = req.cmd.Run()
-			}
-
-			req.done <- err
-
-			// Restart TUI
-			fe.startTUI()
+				return req.cmd.Run()
+			})
 		}
 	}
 }
