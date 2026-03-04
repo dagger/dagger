@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1921,7 +1920,11 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
+	src := args.Source
+	if src.ID() == nil {
+		src = args.Directory
+	}
+	dir, err := src.Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
