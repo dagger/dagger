@@ -133,9 +133,9 @@ type frontendPretty struct {
 	writer       io.Writer
 
 	// notification bubbles (single overlay with a Container of bubbles)
-	notifications          map[string]*NotificationBubble // keyed by section title
-	notificationContainer  *tuist.Container
-	notificationOverlay    *tuist.OverlayHandle
+	notifications         map[string]*NotificationBubble // keyed by section title
+	notificationContainer *tuist.Container
+	notificationOverlay   *tuist.OverlayHandle
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
@@ -453,14 +453,14 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
-		tui:        tuist.New(tuist.NewProcessTerminal()),
-		window:     windowSize{Width: -1, Height: -1}, // be clear that it's not set
-		spinner:    NewRave(),
-		profile:    profile,
+		tui:           tuist.New(tuist.NewProcessTerminal()),
+		window:        windowSize{Width: -1, Height: -1}, // be clear that it's not set
+		spinner:       NewRave(),
+		profile:       profile,
 		browserBuf:    new(strings.Builder),
 		notifications: make(map[string]*NotificationBubble),
-		writer:     w,
-		shownErrs:  map[dagui.SpanID]bool{},
+		writer:        w,
+		shownErrs:     map[dagui.SpanID]bool{},
 	}
 }
 
@@ -502,8 +502,6 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 		fe.Compo.Update()
 	})
 }
-
-
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.tui.Dispatch(func() {
@@ -1194,7 +1192,7 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	chromeHeight += fe.formHeight()     // formWrap is a sibling, not rendered here
 
 	// Render progress rows via tree-based components
-	progressLines := fe.renderProgressLines(r, ctx, chromeHeight, progPrefix)
+	progressLines := fe.renderProgressLines(r, ctx, chromeHeight)
 	if len(progressLines) > 0 {
 		lines = append(lines, progressLines...)
 		lines = append(lines, "") // gap line after progress
@@ -1269,8 +1267,6 @@ func (fe *frontendPretty) formHeight() int {
 	}
 	return strings.Count(view, "\n") + 1
 }
-
-
 
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
@@ -1465,7 +1461,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 // renderProgressLines renders progress using the tree-based SpanTreeView
 // components and returns the output as lines. Truncates below the focused
 // item so it stays onscreen.
-func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderContext, chromeHeight int, prefix string) []string {
+func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderContext, chromeHeight int) []string {
 	if fe.rowsView == nil {
 		return nil
 	}
@@ -1534,18 +1530,15 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderConte
 	return allLines[:end]
 }
 
-
-
-
 // totalLineCount returns the total number of rendered lines for a SpanTreeView,
 // including self content, gap lines, and all children.
-func (st *SpanTreeView) totalLineCount() int {
-	n := st.selfLineCount
-	if len(st.childGapCounts) != len(st.children) || len(st.childLineCounts) != len(st.children) {
+func (s *SpanTreeView) totalLineCount() int {
+	n := s.selfLineCount
+	if len(s.childGapCounts) != len(s.children) || len(s.childLineCounts) != len(s.children) {
 		return n
 	}
-	for i := range st.children {
-		n += st.childGapCounts[i] + st.childLineCounts[i]
+	for i := range s.children {
+		n += s.childGapCounts[i] + s.childLineCounts[i]
 	}
 	return n
 }
@@ -1574,7 +1567,7 @@ func (fe *frontendPretty) findFocusInSubtree(st *SpanTreeView, offset int) int {
 
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
 // using the tree prefix instead of calling fancyIndent.
-func (fe *frontendPretty) renderTreeGap(r *renderer, row *dagui.TraceRow, gapPrefix string) []string {
+func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	if fe.shell != nil {
 		if row.Depth == 0 && row.Previous != nil {
 			return []string{""}
@@ -2223,8 +2216,6 @@ func (fe *frontendPretty) goErrorOrigin() {
 	}
 	fe.recalculateViewLocked()
 }
-
-
 
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.window = msg
@@ -2894,18 +2885,6 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	return true
 }
 
-func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
-	if fe.logs == nil {
-		return true
-	}
-	if _, ok := fe.logs.Logs[id]; !ok && !waitForLogs {
-		return true
-	}
-	return fe.logs.SawEOF[id]
-}
-
-
-
 // ---------- pretty logs (unchanged) -----------------------------------------
 
 type prettyLogs struct {
@@ -3161,5 +3140,3 @@ var (
 	ANSIBrightCyan    = lipgloss.Color("14")
 	ANSIBrightWhite   = lipgloss.Color("15")
 )
-
-type eofMsg struct{}
