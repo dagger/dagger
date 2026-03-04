@@ -653,14 +653,23 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	}
 }
 
+// blankLine is a trivial component that renders a single empty line.
+type blankLine struct{ tuist.Compo }
+
+func (blankLine) Render(tuist.RenderContext) tuist.RenderResult {
+	return tuist.RenderResult{Lines: []string{""}}
+}
+
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
 	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
+	formSpacer := &blankLine{}
 	fe.formWrap.OnQuit(func() {
 		result(fe.formModel)
 		fe.tui.RemoveChild(fe.formWrap)
+		fe.tui.RemoveChild(formSpacer)
 		fe.formWrap = nil
 		fe.formModel = nil
 		fe.tui.SetFocus(fe)
@@ -669,6 +678,7 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
+	fe.tui.AddChild(formSpacer)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.formWrap)
 }
@@ -1269,7 +1279,7 @@ func (fe *frontendPretty) formHeight() int {
 	if view == "" {
 		return 0
 	}
-	return strings.Count(view, "\n") + 1
+	return strings.Count(view, "\n") + 2 // +1 for the view line, +1 for the spacer
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
