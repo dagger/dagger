@@ -59,7 +59,19 @@ These update frequently enough (every frame for logs, every focus
 change for keymap) that caching gains are minimal. The line-returning
 helpers already eliminate string building overhead.
 
-## 5. Convert render functions to line-oriented output
+## 5. Add synchronization to shellCallHandler.runner
+
+The `sh/interp.Runner` is accessed from both the UI thread
+(`AutoComplete` reads `h.runner.Vars`) and background goroutines
+(`runShellAsync` runs `h.runner.Run`, `h.llm`, etc.). This causes
+`concurrent map writes` panics.
+
+**Plan:**
+- Add a `sync.Mutex` to `shellCallHandler` protecting `runner` access
+- Lock around `runner.Run`, `runner.Reset`, `runner.Vars` reads
+- Or serialize all runner access on the UI thread (may block too long)
+
+## 6. Convert render functions to line-oriented output
 
 **Why last:** Biggest refactor, touches every render function, benefits
 most from stable component boundaries established above.
