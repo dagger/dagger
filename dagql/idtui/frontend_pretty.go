@@ -206,7 +206,8 @@ type SpanTreeView struct {
 	// the parent bar for last children), this always shows the parent bar.
 	childrenGapPrefix string
 
-	// focused is set by the SetFocused callback.
+	// focused tracks whether this span is the currently focused span.
+	// Synced by syncSpanTreeState from fe.FocusedSpan.
 	focused bool
 
 	// Render metadata — set during Render() for focus-line lookup.
@@ -216,16 +217,7 @@ type SpanTreeView struct {
 	childLineCounts []int // total line count from each child's RenderChild
 }
 
-var (
-	_ tuist.Component = (*SpanTreeView)(nil)
-	_ tuist.Focusable = (*SpanTreeView)(nil)
-)
-
-// SetFocused implements tuist.Focusable. Called by tuist when focus changes.
-func (s *SpanTreeView) SetFocused(_ tuist.EventContext, focused bool) {
-	s.focused = focused
-	s.Update()
-}
+var _ tuist.Component = (*SpanTreeView)(nil)
 
 // SpinnerView is a self-ticking spinner component. It starts a tick goroutine
 // on mount (via OnMount/ctx.Done()) and stops when dismounted. Only mounted
