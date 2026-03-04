@@ -17,7 +17,7 @@ func TestWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
 }
 
-const dangSDK = "github.com/vito/dang/dagger-sdk@8966295a629141c5b9e905ece9cf0cdafa20520e"
+const dangSDK = "github.com/vito/dang/dagger-sdk@da6ed3337a2a18b0c9a371813ef62b880e1c6f5d"
 
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
