@@ -137,14 +137,19 @@ type ShellHandler interface {
 	// IsComplete determines if the current input is a complete command
 	IsComplete(entireInput [][]rune, line int, col int) bool
 
-	// Prompt generates the shell prompt string
-	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, tea.Cmd)
+	// Prompt generates the shell prompt string.
+	// Returns the prompt and an optional async init function. The caller
+	// runs the init function in a goroutine if non-nil.
+	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, func())
 
 	// Keys returns the keys that will be displayed when the input is focused
 	KeyBindings(out TermOutput) []key.Binding
 
-	// ReactToInput allows reacting to live input before it's submitted
-	ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, edit *editline.Model) tea.Cmd
+	// ReactToInput allows reacting to live input before it's submitted.
+	// Returns nil if the key was not handled. If handled, returns a
+	// function that performs any async work (may be nil if no async work
+	// is needed). The caller runs the async function in a goroutine.
+	ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, edit *editline.Model) func()
 
 	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
 	editline.HistoryEncoder
