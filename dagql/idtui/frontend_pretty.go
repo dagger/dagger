@@ -1207,86 +1207,67 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight}
 	fe.setWindowSizeLocked(fe.window)
 
-	// Build the main view into a fresh string builder
-	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, false)
+
+	lines := ctx.Recycle
 
 	// Zoom header
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		fe.renderStep(out, r, &dagui.TraceRow{
+		zoomBuf := new(strings.Builder)
+		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
+		fe.renderStep(zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
 		}, "")
+		lines = appendView(lines, zoomBuf.String())
 		progPrefix = "  "
 	}
 
-	// Pre-render chrome below progress to measure its height.
-	var logsView string
-	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 && !fe.hasShownRootError() {
-		logs.SetHeight(fe.window.Height / 3)
-		logs.SetPrefix(progPrefix)
-		logsView = logs.View()
-	}
-	var editlineStr string
-	if fe.editline != nil {
-		editlineStr = fe.editlineView()
-	}
-	var formStr string
-	if fe.form != nil {
-		formStr = fe.formView()
-	}
-	keymapStr := fe.keymapView()
+	// Pre-render chrome below progress to measure its height for truncation.
+	logsLines := fe.renderLogsLines(progPrefix)
+	editlineLines := fe.renderEditlineLines()
+	formLines := fe.renderFormLines()
+	keymapLines := fe.renderKeymapLines()
 
-	// Compute how many lines the chrome below progress will consume.
-	chromeHeight := lipgloss.Height(keymapStr) + 1 // +1 for gap line after progress
-	if logsView != "" {
-		chromeHeight += lipgloss.Height(logsView) + 1 // +1 for trailing newline
+	chromeHeight := len(keymapLines) + 1 // +1 for gap line after progress
+	if len(logsLines) > 0 {
+		chromeHeight += len(logsLines) + 1
 	}
-	if editlineStr != "" {
-		chromeHeight += lipgloss.Height(editlineStr)
-	}
-	if formStr != "" {
-		chromeHeight += lipgloss.Height(formStr)
-	}
+	chromeHeight += len(editlineLines)
+	chromeHeight += len(formLines)
 
 	// Render progress rows via tree-based components
-	if fe.renderProgressTree(out, r, ctx, chromeHeight, progPrefix) {
-		fmt.Fprintln(out)
+	progressLines := fe.renderProgressLines(r, ctx, chromeHeight, progPrefix)
+	if len(progressLines) > 0 {
+		lines = append(lines, progressLines...)
+		lines = append(lines, "") // gap line after progress
 	}
 
-	// Append pre-rendered chrome
-	if logsView != "" {
-		fmt.Fprint(out, logsView)
-		fmt.Fprintln(out)
+	// Append chrome
+	if len(logsLines) > 0 {
+		lines = append(lines, logsLines...)
+		lines = append(lines, "") // trailing gap
 	}
+	lines = append(lines, editlineLines...)
+	lines = append(lines, formLines...)
+	// Ensure there's a blank line before keymap if needed
+	if len(lines) > 0 && lines[len(lines)-1] != "" && len(keymapLines) > 0 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, keymapLines...)
 
-	mainView := buf.String()
-
-	if editlineStr != "" {
-		mainView += editlineStr
-	}
-	if formStr != "" {
-		mainView += formStr
-	}
-	if !strings.HasSuffix(mainView, "\n") {
-		mainView += "\n"
-	}
-	mainView += keymapStr
-
-	// Sidebar
+	// Sidebar compositing
 	sidebarContent := fe.viewSidebar()
 	if sidebarContent != "" {
+		mainView := strings.Join(lines, "\n")
 		mainView = fe.renderWithSidebar(mainView, sidebarContent)
+		lines = strings.Split(mainView, "\n")
 	}
 
-	// Split into lines for tuist, truncating each to the terminal width
-	// so that no line wraps to multiple physical rows. Without this,
-	// tuist's diff renderer (which counts logical lines) miscounts
-	// cursor positions and corrupts the display.
-	lines := strings.Split(strings.TrimSuffix(mainView, "\n"), "\n")
+	// Truncate each line to terminal width so no line wraps to multiple
+	// physical rows. Without this, tuist's diff renderer miscounts
+	// cursor positions.
 	if fe.window.Width > 0 {
 		w := uint(fe.window.Width)
 		for i, line := range lines {
@@ -1294,6 +1275,50 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		}
 	}
 	return tuist.RenderResult{Lines: lines}
+}
+
+// appendView splits a string view into lines and appends them.
+func appendView(lines []string, view string) []string {
+	if view == "" {
+		return lines
+	}
+	return append(lines, strings.Split(strings.TrimSuffix(view, "\n"), "\n")...)
+}
+
+// renderLogsLines returns the zoomed span's log output as lines.
+func (fe *frontendPretty) renderLogsLines(prefix string) []string {
+	logs := fe.logs.Logs[fe.ZoomedSpan]
+	if logs == nil || logs.UsedHeight() == 0 || fe.hasShownRootError() {
+		return nil
+	}
+	logs.SetHeight(fe.window.Height / 3)
+	logs.SetPrefix(prefix)
+	view := logs.View()
+	if view == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+}
+
+// renderEditlineLines returns the editline view as lines.
+func (fe *frontendPretty) renderEditlineLines() []string {
+	if fe.editline == nil {
+		return nil
+	}
+	return appendView(nil, fe.editlineView())
+}
+
+// renderFormLines returns the form view as lines.
+func (fe *frontendPretty) renderFormLines() []string {
+	if fe.form == nil {
+		return nil
+	}
+	return appendView(nil, fe.formView())
+}
+
+// renderKeymapLines returns the keymap view as lines.
+func (fe *frontendPretty) renderKeymapLines() []string {
+	return appendView(nil, fe.keymapView())
 }
 
 func (fe *frontendPretty) keymapView() string {
@@ -1482,22 +1507,12 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	st.children = newChildren
 }
 
-// renderProgressTree renders progress using the tree-based SpanTreeView components.
-// Each top-level TraceTree is rendered via RenderChild, with children rendered
-// recursively by the SpanTreeView itself.
-func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tuist.RenderContext, chromeHeight int, prefix string) (rendered bool) {
+// renderProgressLines renders progress using the tree-based SpanTreeView
+// components and returns the output as lines. Truncates below the focused
+// item so it stays onscreen.
+func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderContext, chromeHeight int, prefix string) []string {
 	if fe.rowsView == nil {
-		return
-	}
-
-	if fe.finalRender {
-		// Final render uses direct rendering (no component caching)
-		for _, row := range fe.rows.Order {
-			if fe.renderRow(out, r, row, "") {
-				rendered = true
-			}
-		}
-		return
+		return nil
 	}
 
 	// topTrees was synced by syncSpanTreeState() in recalculateViewLocked().
@@ -1527,9 +1542,8 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 		allLines = append(allLines, result.Lines...)
 	}
 
-	totalLines := len(allLines)
-	if totalLines == 0 {
-		return
+	if len(allLines) == 0 {
+		return nil
 	}
 
 	// Find the focused line by walking the tree structure.
@@ -1552,7 +1566,7 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
-	end := totalLines
+	end := len(allLines)
 	if focusLine >= 0 {
 		// Allow some context below focus (half the viewport), but cap
 		// the total so focus doesn't get pushed above the viewport.
@@ -1562,10 +1576,7 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 		}
 	}
 
-	for _, line := range allLines[:end] {
-		fmt.Fprintln(out, line)
-	}
-	return end > 0
+	return allLines[:end]
 }
 
 

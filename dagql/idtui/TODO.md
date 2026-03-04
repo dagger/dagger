@@ -39,21 +39,22 @@ overhead. Eliminating it would require either rewriting
 `renderErrorCause` to not use `fancyIndent`, or threading depth-based
 indentation through a different mechanism — not worth the churn.
 
-## 4. Break frontendPretty.Render() into composed components
+## 4. Break frontendPretty.Render() into composed components — IN PROGRESS
 
-**Why fourth:** Largest change, but benefits from the above cleanups.
+**Phase 1 (done):** Restructured `Render()` to work with `[]string`
+lines throughout instead of building one giant string and splitting.
+- `renderProgressTree` → `renderProgressLines` (returns `[]string`)
+- Extracted `renderLogsLines`, `renderEditlineLines`, `renderFormLines`,
+  `renderKeymapLines` as line-returning helpers
+- `Render()` assembles lines via `append`, no string builder
+- Sidebar compositing still uses string join/split (lipgloss requires it)
 
-The top-level `Render()` builds progress + logs + editline + keymap +
-sidebar into one string, then splits into lines. These should be
-separate tuist components composed via layout.
-
-**Plan:**
-- Extract `KeymapView` component (static between keypresses)
-- Extract `LogsView` component (wraps the Vterm)
-- Extract `SidebarView` component
-- Use tuist `Container` or a vertical layout to compose them
-- `frontendPretty.Render()` becomes pure composition via `RenderChild`
-- Eliminates the string→split→lines pattern at the top level
+**Phase 2 (future):** Extract these helpers into proper tuist components
+with their own `Compo` for caching:
+- `KeymapView` — only re-renders on keypress/focus change
+- `LogsView` — wraps the Vterm, re-renders on new log data
+- `SidebarView` — use tuist overlay instead of lipgloss JoinHorizontal
+- Zoom header could be its own component
 
 ## 5. Convert render functions to line-oriented output
 
