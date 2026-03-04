@@ -215,6 +215,12 @@ type cacheUsageSizer interface {
 	CacheUsageSize(context.Context) (sizeBytes int64, ok bool, err error)
 }
 
+type hasCacheUsageIdentity interface {
+	// CacheUsageIdentity returns a stable identity for deduplicating physical
+	// storage accounting across multiple cache results that share one snapshot.
+	CacheUsageIdentity() (identity string, ok bool)
+}
+
 // sharedResult holds cache-entry state and immutable payload shared by per-call Result values.
 type sharedResult struct {
 	cache *cache
@@ -250,6 +256,7 @@ type sharedResult struct {
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
 	sizeEstimateBytes  int64
+	usageIdentity      string
 	description        string
 	recordType         string
 
@@ -401,6 +408,7 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 			createdAtUnixNano:  r.shared.createdAtUnixNano,
 			lastUsedAtUnixNano: r.shared.lastUsedAtUnixNano,
 			sizeEstimateBytes:  r.shared.sizeEstimateBytes,
+			usageIdentity:      r.shared.usageIdentity,
 			description:        r.shared.description,
 			recordType:         r.shared.recordType,
 		}
@@ -614,13 +622,28 @@ func (c *cache) EntryStats() CacheEntryStats {
 }
 
 func (c *cache) UsageEntries() []CacheUsageEntry {
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
 
+	c.measurePruneCandidateSizesLocked(context.Background())
 	return c.usageEntriesLocked()
 }
 
 func (c *cache) usageEntriesLocked() []CacheUsageEntry {
+	ownerByUsageIdentity := make(map[string]sharedResultID, len(c.resultsByID))
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		if res.usageIdentity == "" || res.sizeEstimateBytes == sharedResultSizeUnknown {
+			continue
+		}
+		curOwner := ownerByUsageIdentity[res.usageIdentity]
+		if curOwner == 0 || resID < curOwner {
+			ownerByUsageIdentity[res.usageIdentity] = resID
+		}
+	}
+
 	entries := make([]CacheUsageEntry, 0, len(c.resultsByID))
 	for resID, res := range c.resultsByID {
 		if res == nil {
@@ -646,6 +669,9 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 		if sizeBytes < 0 {
 			sizeBytes = 0
 		}
+		if res.usageIdentity != "" && ownerByUsageIdentity[res.usageIdentity] != resID {
+			sizeBytes = 0
+		}
 		entries = append(entries, CacheUsageEntry{
 			ID:                        fmt.Sprintf("dagql.result.%d", resID),
 			Description:               description,
@@ -668,6 +694,115 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 		}
 	})
 	return entries
+}
+
+func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
+	activeDependencyClosure := c.activeDependencyClosureLocked()
+	candidatesByIdentity := make(map[string][]sharedResultID)
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		if !res.depOfPersistedResult {
+			continue
+		}
+		if atomic.LoadInt64(&res.refCount) > 0 {
+			continue
+		}
+		if _, blocked := activeDependencyClosure[resID]; blocked {
+			continue
+		}
+		if res.sizeEstimateBytes != sharedResultSizeUnknown {
+			continue
+		}
+
+		usageIdentity, ok := cacheUsageIdentity(res)
+		if !ok || usageIdentity == "" {
+			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
+		}
+		res.usageIdentity = usageIdentity
+		candidatesByIdentity[usageIdentity] = append(candidatesByIdentity[usageIdentity], resID)
+	}
+
+	if len(candidatesByIdentity) == 0 {
+		return
+	}
+
+	usageIdentities := make([]string, 0, len(candidatesByIdentity))
+	for usageIdentity := range candidatesByIdentity {
+		usageIdentities = append(usageIdentities, usageIdentity)
+	}
+	slices.Sort(usageIdentities)
+
+	for _, usageIdentity := range usageIdentities {
+		candidateIDs := candidatesByIdentity[usageIdentity]
+		if len(candidateIDs) == 0 {
+			continue
+		}
+		slices.Sort(candidateIDs)
+		ownerID := candidateIDs[0]
+		ownerRes := c.resultsByID[ownerID]
+		if ownerRes == nil {
+			continue
+		}
+
+		sizeBytes, ok, err := cacheUsageSizeBytes(ctx, ownerRes)
+		if err != nil {
+			slog.Warn("failed to determine cache usage size",
+				"resultID", ownerID,
+				"usageIdentity", usageIdentity,
+				"err", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if sizeBytes < 0 {
+			sizeBytes = 0
+		}
+
+		for _, candidateID := range candidateIDs {
+			candidateRes := c.resultsByID[candidateID]
+			if candidateRes == nil {
+				continue
+			}
+			candidateRes.usageIdentity = usageIdentity
+			candidateRes.sizeEstimateBytes = sizeBytes
+		}
+	}
+}
+
+func (c *cache) activeDependencyClosureLocked() map[sharedResultID]struct{} {
+	closure := make(map[sharedResultID]struct{})
+	stack := make([]sharedResultID, 0, len(c.resultsByID))
+
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		if atomic.LoadInt64(&res.refCount) > 0 {
+			stack = append(stack, resID)
+		}
+	}
+
+	for len(stack) > 0 {
+		n := len(stack) - 1
+		curID := stack[n]
+		stack = stack[:n]
+		if _, seen := closure[curID]; seen {
+			continue
+		}
+		closure[curID] = struct{}{}
+		cur := c.resultsByID[curID]
+		if cur == nil {
+			continue
+		}
+		for depID := range cur.deps {
+			stack = append(stack, depID)
+		}
+	}
+
+	return closure
 }
 
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
@@ -873,7 +1008,7 @@ func (c *cache) wait(
 	return retObjRes, nil
 }
 
-func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
+func (c *cache) initCompletedResult(_ context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
@@ -932,14 +1067,9 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 	if oc.res.description == "" {
 		oc.res.description = requestIDForIndex.Digest().String()
 	}
-	if oc.res.sizeEstimateBytes == sharedResultSizeUnknown {
-		sizeBytes, ok, sizeErr := cacheUsageSizeBytes(ctx, oc.res)
-		if sizeErr != nil {
-			slog.Warn("failed to determine cache usage size",
-				"result", requestIDForIndex.Digest().String(),
-				"err", sizeErr)
-		} else if ok {
-			oc.res.sizeEstimateBytes = sizeBytes
+	if oc.res.usageIdentity == "" {
+		if usageIdentity, ok := cacheUsageIdentity(oc.res); ok {
+			oc.res.usageIdentity = usageIdentity
 		}
 	}
 
@@ -1022,4 +1152,15 @@ func cacheUsageSizeBytes(ctx context.Context, res *sharedResult) (int64, bool, e
 		return 0, false, nil
 	}
 	return sizer.CacheUsageSize(ctx)
+}
+
+func cacheUsageIdentity(res *sharedResult) (string, bool) {
+	if res == nil || !res.hasValue || res.self == nil {
+		return "", false
+	}
+	identityer, ok := any(res.self).(hasCacheUsageIdentity)
+	if !ok {
+		return "", false
+	}
+	return identityer.CacheUsageIdentity()
 }

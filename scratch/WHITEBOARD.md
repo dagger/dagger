@@ -674,17 +674,17 @@
 
 ### Phase 1: Prune-candidate gated measurement + mandatory dedupe
 
-* [ ] Define prune-relevant candidate set in dagql cache state.
-  * [ ] Candidate must be retained (`depOfPersistedResult` true).
-  * [ ] Candidate must not be actively used (`refCount == 0`).
-  * [ ] Candidate must not be transitively depended on by any actively used retained result.
-* [ ] Add transitive active-dependency closure helper under `egraphMu` to compute exclusion set.
-* [ ] Compute real size only for candidates with unknown/stale size.
-* [ ] Implement dedupe by snapshot record identity as part of first pass.
-  * [ ] For each usage-accounting pass, aggregate bytes by snapshot record ID instead of summing per-result blindly.
-  * [ ] If multiple results point at same snapshot record, count it once.
-  * [ ] Ensure deterministic tie-break/ownership when mapping deduped bytes back to entries.
-* [ ] Ensure `UsageEntries` and prune accounting use the deduped numbers.
+* [x] Define prune-relevant candidate set in dagql cache state.
+  * [x] Candidate must be retained (`depOfPersistedResult` true).
+  * [x] Candidate must not be actively used (`refCount == 0`).
+  * [x] Candidate must not be transitively depended on by any actively used retained result.
+* [x] Add transitive active-dependency closure helper under `egraphMu` to compute exclusion set.
+* [x] Compute real size only for candidates with unknown/stale size.
+* [x] Implement dedupe by snapshot record identity as part of first pass.
+  * [x] For each usage-accounting pass, aggregate bytes by snapshot record ID instead of summing per-result blindly.
+  * [x] If multiple results point at same snapshot record, count it once.
+  * [x] Ensure deterministic tie-break/ownership when mapping deduped bytes back to entries.
+* [x] Ensure `UsageEntries` and prune accounting use the deduped numbers.
 
 ### Phase 2: Mutable cache-volume correctness
 
@@ -720,3 +720,5 @@
   * [ ] per-entry logical view
   * [ ] global deduped physical view
   * (not required for first pass, but may help explain accounting to users)
+* [ ] Consider measuring all snapshot sizes (including non-prunable) to support accurate engine total disk-usage visibility.
+  * Verify first whether this is actually needed and desired as a product/system goal before implementing.

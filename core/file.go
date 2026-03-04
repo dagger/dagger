@@ -103,29 +103,22 @@ func (file *File) setSnapshot(ref bkcache.ImmutableRef) {
 	file.Snapshot = ref
 }
 
-func (file *File) snapshotForUsage() bkcache.ImmutableRef {
-	if file == nil {
-		return nil
-	}
-	if file.Snapshot != nil {
-		return file.Snapshot
-	}
-	if file.Parent.Self() != nil {
-		return file.Parent.Self().snapshotForUsage()
-	}
-	return nil
-}
-
 func (file *File) CacheUsageSize(ctx context.Context) (int64, bool, error) {
-	snapshot := file.snapshotForUsage()
-	if snapshot == nil {
+	if file == nil || file.Snapshot == nil {
 		return 0, false, nil
 	}
-	size, err := snapshot.Size(ctx)
+	size, err := file.Snapshot.Size(ctx)
 	if err != nil {
 		return 0, false, err
 	}
 	return size, true, nil
+}
+
+func (file *File) CacheUsageIdentity() (string, bool) {
+	if file == nil || file.Snapshot == nil {
+		return "", false
+	}
+	return file.Snapshot.ID(), true
 }
 
 func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {

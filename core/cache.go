@@ -98,6 +98,14 @@ func (cache *CacheVolume) CacheUsageSize(ctx context.Context) (int64, bool, erro
 	return size, true, nil
 }
 
+func (cache *CacheVolume) CacheUsageIdentity() (string, bool) {
+	snapshot := cache.getSnapshot()
+	if snapshot == nil {
+		return "", false
+	}
+	return snapshot.ID(), true
+}
+
 func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if cache.getSnapshot() != nil {
 		return nil

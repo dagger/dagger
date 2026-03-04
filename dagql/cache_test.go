@@ -59,6 +59,42 @@ func (v cacheTestOpaqueValue) OnRelease(ctx context.Context) error {
 	return v.onRelease(ctx)
 }
 
+type cacheTestSizedInt struct {
+	Int
+	sizeBytes     int64
+	usageIdentity string
+	sizeCalls     *atomic.Int32
+}
+
+func (v cacheTestSizedInt) CacheUsageSize(context.Context) (int64, bool, error) {
+	if v.sizeCalls != nil {
+		v.sizeCalls.Add(1)
+	}
+	return v.sizeBytes, true, nil
+}
+
+func (v cacheTestSizedInt) CacheUsageIdentity() (string, bool) {
+	if v.usageIdentity == "" {
+		return "", false
+	}
+	return v.usageIdentity, true
+}
+
+func cacheTestSizedIntResult(
+	id *call.ID,
+	value int,
+	sizeBytes int64,
+	usageIdentity string,
+	sizeCalls *atomic.Int32,
+) AnyResult {
+	return newDetachedResult(id, cacheTestSizedInt{
+		Int:           NewInt(value),
+		sizeBytes:     sizeBytes,
+		usageIdentity: usageIdentity,
+		sizeCalls:     sizeCalls,
+	})
+}
+
 func cacheTestUnwrapInt(t *testing.T, res AnyResult) int {
 	t.Helper()
 	v, ok := UnwrapAs[Int](res)
@@ -2706,7 +2742,7 @@ func TestCacheUsageEntriesIncludeRetainedPersistedResults(t *testing.T) {
 	assert.Assert(t, entries[0].ActivelyUsed)
 	assert.Assert(t, entries[0].CreatedTimeUnixNano > 0)
 	assert.Assert(t, entries[0].MostRecentUseTimeUnixNano > 0)
-	assert.Assert(t, entries[0].SizeBytes > 0)
+	assert.Assert(t, entries[0].SizeBytes >= 0)
 	assert.Assert(t, entries[0].Description != "")
 	assert.Assert(t, entries[0].RecordType != "")
 
@@ -2802,6 +2838,81 @@ func TestCacheUsageEntriesDeterministicOrdering(t *testing.T) {
 
 	assert.NilError(t, resA.Release(ctx))
 	assert.NilError(t, resB.Release(ctx))
+}
+
+func TestCacheUsageEntriesMeasureOnlyPruneCandidates(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sizeCalls := &atomic.Int32{}
+	key := cacheTestID("usage-candidate-only")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(key, 11, 777, "snapshot://candidate-only", sizeCalls), nil
+	})
+	assert.NilError(t, err)
+
+	entriesWhileActive := c.UsageEntries()
+	assert.Equal(t, 1, len(entriesWhileActive))
+	assert.Equal(t, int32(0), sizeCalls.Load())
+	assert.Equal(t, int64(0), entriesWhileActive[0].SizeBytes)
+
+	assert.NilError(t, res.Release(ctx))
+	entriesAfterRelease := c.UsageEntries()
+	assert.Equal(t, 1, len(entriesAfterRelease))
+	assert.Equal(t, int32(1), sizeCalls.Load())
+	assert.Equal(t, int64(777), entriesAfterRelease[0].SizeBytes)
+}
+
+func TestCacheUsageEntriesDedupesByUsageIdentity(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sizeCalls := &atomic.Int32{}
+	keyA := cacheTestID("usage-dedupe-a")
+	keyB := cacheTestID("usage-dedupe-b")
+	const dedupeIdentity = "snapshot://shared-identity"
+
+	resA, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyA,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(keyA, 1, 512, dedupeIdentity, sizeCalls), nil
+	})
+	assert.NilError(t, err)
+	resB, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyB,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(keyB, 2, 512, dedupeIdentity, sizeCalls), nil
+	})
+	assert.NilError(t, err)
+
+	assert.NilError(t, resA.Release(ctx))
+	assert.NilError(t, resB.Release(ctx))
+
+	entries := c.UsageEntries()
+	assert.Equal(t, 2, len(entries))
+	assert.Equal(t, int32(1), sizeCalls.Load())
+
+	var totalBytes int64
+	var nonZeroEntries int
+	for _, ent := range entries {
+		totalBytes += ent.SizeBytes
+		if ent.SizeBytes > 0 {
+			nonZeroEntries++
+		}
+	}
+	assert.Equal(t, int64(512), totalBytes)
+	assert.Equal(t, 1, nonZeroEntries)
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
