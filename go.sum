@@ -9,6 +9,8 @@ cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdB
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
 codeberg.org/vito/tuist v0.0.0-20260304024346-644f55d176aa h1:+uy9TIbB4B/ThCKhg/j50N7LHmWJQvUuJuXSTfRyig0=
 codeberg.org/vito/tuist v0.0.0-20260304024346-644f55d176aa/go.mod h1:rUVavdvuBRlxvWnuGNHDzk9hrCW/9GvTL6cn1IycwIM=
+codeberg.org/vito/tuist v0.0.0-20260304030535-360c566d700c h1:A43+d7LkTNG22DAVL39T95dTJawy7nKMFOYQEOjANQs=
+codeberg.org/vito/tuist v0.0.0-20260304030535-360c566d700c/go.mod h1:rUVavdvuBRlxvWnuGNHDzk9hrCW/9GvTL6cn1IycwIM=
 cyphar.com/go-pathrs v0.2.1 h1:9nx1vOgwVvX1mNBWDu93+vaceedpbsDqo+XuBGL40b8=
 cyphar.com/go-pathrs v0.2.1/go.mod h1:y8f1EMG7r+hCuFf/rXsKqMJrJAUoADZGNh5/vZPKcGc=
 dario.cat/mergo v1.0.1 h1:Ra4+bf83h2ztPIQYNP99R6m+Y7KfnARDfID+a+vLl4s=
