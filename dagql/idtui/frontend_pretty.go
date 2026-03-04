@@ -26,7 +26,6 @@ import (
 	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
-	"github.com/vito/bubbline/editline"
 	"github.com/vito/bubbline/history"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -58,7 +57,7 @@ type windowSize struct {
 
 // backgroundRequest communicates Background calls to the main run loop.
 type backgroundRequest struct {
-	cmd  tea.ExecCommand
+	cmd  ExecCommand
 	raw  bool
 	done chan error
 }
@@ -94,8 +93,12 @@ type frontendPretty struct {
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
 	promptErr       error
-	editline        *editline.Model
+	textInput       *tuist.TextInput
+	completionMenu  *tuist.CompletionMenu
 	editlineFocused bool
+	inputHistory    []string
+	historyIndex    int // -1 = not browsing history
+	historySaved    string // saved input when browsing history
 	autoModeSwitch  bool
 	shellRunning    bool
 	shellLock       sync.Mutex
@@ -529,10 +532,8 @@ func (fe *frontendPretty) repositionNotifications() {
 var sidebarBG lipgloss.TerminalColor
 
 func init() {
-	// delegate notification background to editline background
-	focusedStyle, _ := editline.DefaultStyles()
-	editlineStyle := focusedStyle.Editor.CursorLine
-	sidebarBG = editlineStyle.GetBackground()
+	// Use a subtle background for notification bubbles
+	sidebarBG = lipgloss.Color("236")
 }
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
@@ -548,24 +549,26 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.shellCtx = ctx
 	fe.promptFg = termenv.ANSIGreen
 
-	fe.initEditline()
+	fe.initTextInput()
 
 	// restore history
-	fe.editline.MaxHistorySize = 1000
-	if history, err := history.LoadHistory(historyFile); err == nil {
-		fe.editline.SetHistory(history)
+	if hist, err := history.LoadHistory(historyFile); err == nil {
+		// Decode history entries through the handler
+		for _, entry := range hist {
+			fe.inputHistory = append(fe.inputHistory, handler.DecodeHistory(entry))
+		}
 	}
-	fe.editline.HistoryEncoder = handler
+	fe.historyIndex = -1
 
 	// wire up auto completion
-	fe.editline.AutoComplete = handler.AutoComplete
-
-	// if input ends with a pipe, then it's not complete
-	fe.editline.CheckInputComplete = handler.IsComplete
+	fe.completionMenu = tuist.NewCompletionMenu(fe.textInput, func(input string, cursorPos int) tuist.CompletionResult {
+		return handler.AutoComplete(input, cursorPos)
+	})
 
 	// put the bowtie on
 	fe.syncPrompt()
-	fe.execTeaCmd(fe.editline.Focus())
+	fe.tui.SetFocus(fe.textInput)
+	fe.editlineFocused = true
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -626,11 +629,16 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = fe.runWithTUI(ctx, run)
 	}
 
-	if fe.editline != nil && fe.shell != nil {
+	if fe.textInput != nil && fe.shell != nil {
 		if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
 			slog.Error("failed to create history directory", "err", err)
 		}
-		if err := history.SaveHistory(fe.editline.GetHistory(), historyFile); err != nil {
+		// Encode history entries through the handler
+		var encoded []string
+		for _, entry := range fe.inputHistory {
+			encoded = append(encoded, fe.shell.EncodeHistory(entry))
+		}
+		if err := history.SaveHistory(encoded, historyFile); err != nil {
 			slog.Error("failed to save history", "err", err)
 		}
 	}
@@ -1064,7 +1072,7 @@ func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
 	return nil
 }
 
-func (fe *frontendPretty) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 	errs := make(chan error, 1)
 	fe.backgroundReq <- backgroundRequest{
 		cmd:  cmd,
@@ -1278,12 +1286,15 @@ func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	return strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 }
 
-// renderEditlineLines returns the editline view as lines.
+// renderEditlineLines returns the text input view as lines.
 func (fe *frontendPretty) renderEditlineLines() []string {
-	if fe.editline == nil {
+	if fe.textInput == nil {
 		return nil
 	}
-	return appendView(nil, fe.editlineView())
+	// Render the text input via RenderChild for caching
+	ctx := tuist.RenderContext{Width: fe.contentWidth, ScreenHeight: fe.window.Height}
+	result := fe.RenderChild(fe.textInput, ctx)
+	return result.Lines
 }
 
 // renderFormLines returns the form view as lines.
@@ -1667,7 +1678,7 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 
 	switch keyStr {
 	case "ctrl+d":
-		if fe.editline.Value() == "" {
+		if fe.textInput.Value() == "" {
 			fe.quitAction(ErrShellExited)
 			return
 		}
@@ -1675,7 +1686,7 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 		if fe.shellInterrupt != nil {
 			fe.shellInterrupt(errors.New("interrupted"))
 		}
-		fe.editline.Reset()
+		fe.textInput.SetValue("")
 		fe.syncPrompt()
 		return
 	case "ctrl+l":
@@ -1698,24 +1709,27 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 		fe.recalculateViewLocked()
 		fe.syncPrompt()
 		return
+	case "up":
+		// History navigation
+		if fe.historyUp() {
+			return
+		}
+	case "down":
+		// History navigation
+		if fe.historyDown() {
+			return
+		}
 	default:
 		if fe.shell != nil {
-			msg := uvKeyToTeaKeyMsg(ev)
-			if work := fe.shell.ReactToInput(fe.shellCtx, msg, true, fe.editline); work != nil {
+			if work := fe.shell.ReactToInput(fe.shellCtx, ev, fe.textInput.Value(), true); work != nil {
 				fe.runShellAsync(work)
 				return
 			}
 		}
 	}
 
-	// Forward to editline
-	msg := uvKeyToTeaKeyMsg(ev)
-	el, cmd := fe.editline.Update(msg)
-	fe.editline = el.(*editline.Model)
-	fe.execTeaCmd(cmd)
-
-	// Check for input completion (editline sends InputCompleteMsg via its Cmd)
-	// We handle it explicitly here since we can't route internal messages.
+	// Forward to TextInput — it handles its own key events
+	fe.textInput.HandleKeyPress(tuist.EventContext{}, ev)
 	fe.syncPrompt()
 }
 
@@ -1827,8 +1841,11 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	default:
 		if fe.shell != nil {
-			msg := uvKeyToTeaKeyMsg(ev)
-			if work := fe.shell.ReactToInput(fe.shellCtx, msg, false, fe.editline); work != nil {
+			inputVal := ""
+			if fe.textInput != nil {
+				inputVal = fe.textInput.Value()
+			}
+			if work := fe.shell.ReactToInput(fe.shellCtx, ev, inputVal, false); work != nil {
 				fe.runShellAsync(work)
 				return
 			}
@@ -1859,13 +1876,17 @@ func (fe *frontendPretty) handleInputComplete() {
 	// reset prompt error state
 	fe.promptErr = nil
 
-	value := fe.editline.Value()
-	fe.editline.AddHistoryEntry(value)
+	value := fe.textInput.Value()
+	// Add to history
+	if value != "" {
+		fe.inputHistory = append(fe.inputHistory, value)
+	}
+	fe.historyIndex = -1
 	fe.promptFg = termenv.ANSIYellow
 	fe.syncPrompt()
 
 	// reset now that we've accepted input
-	fe.editline.Reset()
+	fe.textInput.SetValue("")
 	if fe.shell != nil {
 		ctx, cancel := context.WithCancelCause(fe.shellCtx)
 		fe.shellInterrupt = cancel
@@ -1933,8 +1954,6 @@ func (fe *frontendPretty) handleTeaMsg(msg tea.Msg) {
 		for _, cmd := range msg {
 			fe.execTeaCmd(cmd)
 		}
-	case editline.InputCompleteMsg:
-		fe.handleInputComplete()
 	case promptDone:
 		fe.form = nil
 	default:
@@ -1944,12 +1963,6 @@ func (fe *frontendPretty) handleTeaMsg(msg tea.Msg) {
 			if f, ok := form.(*huh.Form); ok {
 				fe.form = f
 			}
-			fe.execTeaCmd(cmd)
-		}
-		// Forward to editline if active
-		if fe.editline != nil {
-			el, cmd := fe.editline.Update(msg)
-			fe.editline = el.(*editline.Model)
 			fe.execTeaCmd(cmd)
 		}
 	}
@@ -2083,8 +2096,7 @@ var ctrlShiftKeys = map[tea.KeyType]tea.KeyType{
 // uvKeyString converts a uv.Key to the same string format as tea.KeyMsg.String()
 // for compatibility with key.Binding comparison and pressedKey tracking.
 func uvKeyString(k uv.Key) string {
-	msg := uvKeyToTeaKeyMsg(uv.KeyPressEvent(k))
-	return msg.String()
+	return k.String()
 }
 
 // ---------- mode switching --------------------------------------------------
@@ -2092,15 +2104,16 @@ func uvKeyString(k uv.Key) string {
 func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
-	fe.editline.Blur()
+	// Focus moves away from textInput to the tree/frontend
+	fe.tui.SetFocus(fe)
 }
 
 func (fe *frontendPretty) enterInsertMode(auto bool) {
 	fe.autoModeSwitch = auto
-	if fe.editline != nil {
+	if fe.textInput != nil {
 		fe.editlineFocused = true
 		fe.syncPrompt()
-		fe.execTeaCmd(fe.editline.Focus())
+		fe.tui.SetFocus(fe.textInput)
 	}
 }
 
@@ -2189,26 +2202,57 @@ func loadIDFromSpan(span *dagui.Span) (string, error) {
 	return id, nil
 }
 
-func (fe *frontendPretty) initEditline() {
-	// create the editline
-	fe.editline = editline.New(fe.contentWidth, fe.window.Height)
-	fe.editline.HideKeyMap = true
+// historyUp navigates to the previous history entry. Returns true if handled.
+func (fe *frontendPretty) historyUp() bool {
+	if len(fe.inputHistory) == 0 {
+		return false
+	}
+	if fe.historyIndex == -1 {
+		// Start browsing: save current input
+		fe.historySaved = fe.textInput.Value()
+		fe.historyIndex = len(fe.inputHistory) - 1
+	} else if fe.historyIndex > 0 {
+		fe.historyIndex--
+	} else {
+		return true // at oldest entry
+	}
+	fe.textInput.SetValue(fe.inputHistory[fe.historyIndex])
+	return true
+}
+
+// historyDown navigates to the next history entry. Returns true if handled.
+func (fe *frontendPretty) historyDown() bool {
+	if fe.historyIndex == -1 {
+		return false // not browsing history
+	}
+	if fe.historyIndex < len(fe.inputHistory)-1 {
+		fe.historyIndex++
+		fe.textInput.SetValue(fe.inputHistory[fe.historyIndex])
+	} else {
+		// Restore saved input
+		fe.historyIndex = -1
+		fe.textInput.SetValue(fe.historySaved)
+	}
+	return true
+}
+
+func (fe *frontendPretty) initTextInput() {
+	fe.textInput = tuist.NewTextInput("")
+	fe.textInput.OnSubmit = func(ctx tuist.EventContext, value string) bool {
+		fe.handleInputComplete()
+		return true // clear input
+	}
 	fe.editlineFocused = true
-	// HACK: for some reason editline's first paint is broken (only shows
-	// first 2 chars of prompt, doesn't show cursor). Sending it a message
-	// - any message - fixes it.
-	fe.editline.Update(nil)
 }
 
 // syncPrompt refreshes the editline prompt string from the shell handler.
+// syncPrompt refreshes the text input prompt from the shell handler.
 // Pure — no side effects, no goroutines.
 func (fe *frontendPretty) syncPrompt() {
-	if fe.shell != nil && fe.editline != nil {
+	if fe.shell != nil && fe.textInput != nil {
 		promptOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		fe.editline.Prompt = fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
-	}
-	if fe.editline != nil {
-		fe.editline.UpdatePrompt()
+		fe.textInput.Prompt = fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
+		fe.textInput.Update()
 	}
 }
 
@@ -2377,9 +2421,8 @@ func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.window = msg
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
-	if fe.editline != nil {
-		fe.editline.SetSize(fe.contentWidth, msg.Height)
-		fe.editline.Update(nil) // bleh
+	if fe.textInput != nil {
+		fe.textInput.Update()
 	}
 }
 
@@ -3067,14 +3110,7 @@ func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
 	return fe.logs.SawEOF[id]
 }
 
-func (fe *frontendPretty) editlineView() string {
-	view := fe.editline.View()
-	if fe.promptErr != nil {
-		errOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		view = errOut.String("ERROR: "+fe.promptErr.Error()).Foreground(termenv.ANSIBrightRed).String() + "\n" + view
-	}
-	return view
-}
+
 
 func (fe *frontendPretty) formView() string {
 	return fe.form.View() + "\n\n"
