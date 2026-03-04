@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -475,10 +476,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return res, err
 	}
-	src := args.Source
-	if src.ID() == nil {
-		src = args.Directory
-	}
+	src := cmp.Or(args.Source, args.Directory)
 	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner)
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)

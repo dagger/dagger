@@ -189,7 +189,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			TypeDef:   iface.typeDef,
 			IfaceType: iface,
 		},
-		Directives: []*ast.Directive{iface.typeDef.SourceMap.Value.TypeDirective()},
+		SourceMap: iface.typeDef.SourceMap.Value.TypeDirective(),
 	})
 
 	dag.InstallObject(class, iface.typeDef.SourceMap.Value.TypeDirective())

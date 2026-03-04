@@ -232,8 +232,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	}
 
 	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
-		Typed:      obj,
-		Directives: []*ast.Directive{obj.TypeDef.SourceMap.Value.TypeDirective()},
+		Typed:     obj,
+		SourceMap: obj.TypeDef.SourceMap.Value.TypeDirective(),
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module

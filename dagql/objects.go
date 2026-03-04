@@ -29,7 +29,9 @@ type Class[T Typed] struct {
 
 	invalidateSchemaCache func()
 
-	directives []*ast.Directive
+	// The inner type sourceMap directive so additional type
+	// registered by the engine can store also store its origin.
+	sourceMap *ast.Directive
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -44,8 +46,9 @@ type ClassOpts[T Typed] struct {
 	// to use a dynamic Typed value.
 	Typed T
 
-	// Directives associated with that class.
-	Directives []*ast.Directive
+	// The inner type sourceMap directive so additional type
+	// registered by the engine can store also store its origin.
+	SourceMap *ast.Directive
 }
 
 // NewClass returns a new empty class for a given type.
@@ -61,16 +64,16 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 			opts.Typed = o.Typed
 		}
 
-		if o.Directives != nil {
-			opts.Directives = o.Directives
+		if o.SourceMap != nil {
+			opts.SourceMap = o.SourceMap
 		}
 	}
 
 	class := Class[T]{
-		inner:      opts.Typed,
-		fields:     map[string][]*Field[T]{},
-		fieldsL:    new(sync.Mutex),
-		directives: opts.Directives,
+		inner:     opts.Typed,
+		fields:    map[string][]*Field[T]{},
+		fieldsL:   new(sync.Mutex),
+		sourceMap: opts.SourceMap,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -99,7 +102,7 @@ func (class Class[T]) Typed() Typed {
 
 func (class Class[T]) IDType() (IDType, bool) {
 	if class.idable {
-		return ID[T]{inner: class.inner, directives: class.directives}, true
+		return ID[T]{inner: class.inner, sourceMap: class.sourceMap}, true
 	} else {
 		return nil, false
 	}
