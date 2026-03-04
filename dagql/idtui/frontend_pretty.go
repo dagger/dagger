@@ -1547,6 +1547,9 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderConte
 // including self content, gap lines, and all children.
 func (st *SpanTreeView) totalLineCount() int {
 	n := st.selfLineCount
+	if len(st.childGapCounts) != len(st.children) || len(st.childLineCounts) != len(st.children) {
+		return n
+	}
 	for i := range st.children {
 		n += st.childGapCounts[i] + st.childLineCounts[i]
 	}
@@ -1560,6 +1563,11 @@ func (fe *frontendPretty) findFocusInSubtree(st *SpanTreeView, offset int) int {
 		return offset
 	}
 	offset += st.selfLineCount
+	// Guard: metadata slices may not be populated yet if this tree
+	// hasn't been rendered in the current frame.
+	if len(st.childGapCounts) != len(st.children) || len(st.childLineCounts) != len(st.children) {
+		return -1
+	}
 	for i, child := range st.children {
 		offset += st.childGapCounts[i]
 		if line := fe.findFocusInSubtree(child, offset); line >= 0 {
