@@ -436,12 +436,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
-func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, tea.Cmd) {
+func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
 	sb := new(strings.Builder)
 
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 
-	var init tea.Cmd
+	var init func()
 
 	// Use LLM prompt if LLM session is active and in prompt mode
 	switch h.mode {
@@ -466,9 +466,8 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		} else {
 			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
-			init = func() tea.Msg {
+			init = func() {
 				h.llm(ctx) // initialize LLM
-				return idtui.UpdatePromptMsg{}
 			}
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
@@ -577,58 +576,54 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 	}
 }
 
-func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) tea.Cmd {
+func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) func() {
 	switch msg.String() {
 	case ">":
 		if editline.AtStart() {
 			h.mode = modePrompt
-			return func() tea.Msg {
+			return func() {
 				h.llm(ctx) // initialize LLM
-				return idtui.UpdatePromptMsg{}
 			}
 		}
 	case "!":
 		if editline.AtStart() {
 			h.mode = modeShell
-			return func() tea.Msg {
-				return idtui.UpdatePromptMsg{}
-			}
+			return noop // handled, no async work
 		}
 	case "ctrl+x":
 		if h.llmSession != nil {
 			h.llmSession.ToggleAutocompact()
+			return noop
 		}
 	case "ctrl+s":
 		if h.llmSession != nil {
-			return func() tea.Msg {
+			return func() {
 				if err := h.llmSession.SyncToLocal(ctx); err != nil {
 					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
-					// Show error in sidebar
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
-				return idtui.UpdatePromptMsg{}
 			}
 		}
 	case "ctrl+u":
 		if h.llmSession != nil {
-			return func() tea.Msg {
+			return func() {
 				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
 					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
-					// Show error in sidebar
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
 						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
-				return idtui.UpdatePromptMsg{}
 			}
 		}
 	}
 	return nil
 }
+
+func noop() {}
 
 func (h *shellCallHandler) EncodeHistory(entry string) string {
 	switch h.mode {
