@@ -638,18 +638,12 @@ func (h *shellCallHandler) EncodeHistory(entry string) string {
 func (h *shellCallHandler) DecodeHistory(entry string) string {
 	if len(entry) > 0 {
 		switch entry[0] {
-		case '*':
-			// Legacy format in history
-			h.mode = modePrompt
-			return entry[1:]
-		case '>':
-			h.mode = modePrompt
+		case '*', '>':
+			// Legacy format / prompt mode prefix
 			return entry[1:]
 		case '!':
-			h.mode = modeShell
+			// Shell mode prefix
 			return entry[1:]
-		default:
-			h.mode = modeUnset
 		}
 	}
 	return entry

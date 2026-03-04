@@ -8,6 +8,7 @@ require (
 )
 
 replace (
+	codeberg.org/vito/tuist => /home/vito/src/tuist
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
 )
@@ -325,7 +326,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
 	github.com/seccomp/libseccomp-golang v0.10.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.6.0 // indirect
@@ -345,6 +345,7 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
+	github.com/vito/tuist v0.0.0-20260305182649-e6d49d27039b // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect

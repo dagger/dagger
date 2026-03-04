@@ -553,7 +553,6 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 
 	// restore history
 	if hist, err := history.LoadHistory(historyFile); err == nil {
-		// Decode history entries through the handler
 		for _, entry := range hist {
 			fe.inputHistory = append(fe.inputHistory, handler.DecodeHistory(entry))
 		}
@@ -564,6 +563,13 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.completionMenu = tuist.NewCompletionMenu(fe.textInput, func(input string, cursorPos int) tuist.CompletionResult {
 		return handler.AutoComplete(input, cursorPos)
 	})
+
+	// Intercept special keys before TextInput processes them.
+	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
+
+	// Add the text input to the TUI container as a sibling of fe.
+	// Cursor propagation works through tuist's container rendering.
+	fe.tui.AddChild(fe.textInput)
 
 	// put the bowtie on
 	fe.syncPrompt()
@@ -1220,7 +1226,6 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 
 	// Pre-render chrome below progress to measure its height for truncation.
 	logsLines := fe.renderLogsLines(progPrefix)
-	editlineLines := fe.renderEditlineLines()
 	formLines := fe.renderFormLines()
 	keymapLines := fe.renderKeymapLines()
 
@@ -1228,7 +1233,7 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
-	chromeHeight += len(editlineLines)
+	chromeHeight += fe.editlineHeight() // textInput is a sibling, not rendered here
 	chromeHeight += len(formLines)
 
 	// Render progress rows via tree-based components
@@ -1243,7 +1248,8 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		lines = append(lines, logsLines...)
 		lines = append(lines, "") // trailing gap
 	}
-	lines = append(lines, editlineLines...)
+	// NOTE: textInput is rendered as a sibling in the TUI container,
+	// not here. Its cursor propagates through tuist automatically.
 	lines = append(lines, formLines...)
 	// Ensure there's a blank line before keymap if needed
 	if len(lines) > 0 && lines[len(lines)-1] != "" && len(keymapLines) > 0 {
@@ -1286,15 +1292,16 @@ func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	return strings.Split(strings.TrimSuffix(view, "\n"), "\n")
 }
 
-// renderEditlineLines returns the text input view as lines.
-func (fe *frontendPretty) renderEditlineLines() []string {
+// editlineHeight returns the estimated line count of the text input
+// for chrome-height budgeting. The actual rendering is handled by tuist's
+// container (textInput is a sibling, not rendered here).
+func (fe *frontendPretty) editlineHeight() int {
 	if fe.textInput == nil {
-		return nil
+		return 0
 	}
-	// Render the text input via RenderChild for caching
-	ctx := tuist.RenderContext{Width: fe.contentWidth, ScreenHeight: fe.window.Height}
-	result := fe.RenderChild(fe.textInput, ctx)
-	return result.Lines
+	// Count newlines in current value + 1 for the input line itself
+	val := fe.textInput.Value()
+	return strings.Count(val, "\n") + 1
 }
 
 // renderFormLines returns the form view as lines.
@@ -1641,13 +1648,13 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // ---------- tuist.Interactive -----------------------------------------------
 
 // HandleKeyPress implements tuist.Interactive. It dispatches key events to the
-// appropriate handler based on the current mode (form, editline, or nav).
+// appropriate handler based on the current mode (form or nav).
+// When the TextInput is focused, keys go directly to it via tuist's
+// focus routing, with interceptEditlineKey handling special keys first.
 func (fe *frontendPretty) HandleKeyPress(_ tuist.EventContext, ev uv.KeyPressEvent) bool {
 	switch {
 	case fe.form != nil:
 		fe.handleFormKey(ev)
-	case fe.editlineFocused:
-		fe.handleEditlineKeyUV(ev)
 	default:
 		fe.handleNavKeyUV(ev)
 	}
@@ -1669,8 +1676,9 @@ func (fe *frontendPretty) handleFormKey(ev uv.KeyPressEvent) {
 	fe.execTeaCmd(cmd)
 }
 
-// handleEditlineKeyUV handles key events when the editline is focused.
-func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
+// interceptEditlineKey is the TextInput's KeyInterceptor. It handles
+// special keys before TextInput processes them. Returns true if consumed.
+func (fe *frontendPretty) interceptEditlineKey(_ tuist.EventContext, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
 	keyStr := uvKeyString(k)
 	fe.pressedKey = keyStr
@@ -1680,57 +1688,54 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 	case "ctrl+d":
 		if fe.textInput.Value() == "" {
 			fe.quitAction(ErrShellExited)
-			return
+			return true
 		}
+		return false // let TextInput handle ctrl+d (delete char) when input non-empty
 	case "ctrl+c":
 		if fe.shellInterrupt != nil {
 			fe.shellInterrupt(errors.New("interrupted"))
 		}
 		fe.textInput.SetValue("")
 		fe.syncPrompt()
-		return
+		return true
 	case "ctrl+l":
 		fe.tui.RequestRender(true)
 		fe.syncPrompt()
-		return
+		return true
 	case "esc":
 		fe.enterNavMode(false)
 		fe.syncPrompt()
-		return
+		return true
 	case "alt++", "alt+=":
 		fe.Verbosity++
 		fe.renderVersion++
 		fe.recalculateViewLocked()
 		fe.syncPrompt()
-		return
+		return true
 	case "alt+-":
 		fe.Verbosity--
 		fe.renderVersion++
 		fe.recalculateViewLocked()
 		fe.syncPrompt()
-		return
+		return true
 	case "up":
-		// History navigation
 		if fe.historyUp() {
-			return
+			return true
 		}
 	case "down":
-		// History navigation
 		if fe.historyDown() {
-			return
+			return true
 		}
 	default:
 		if fe.shell != nil {
 			if work := fe.shell.ReactToInput(fe.shellCtx, ev, fe.textInput.Value(), true); work != nil {
 				fe.runShellAsync(work)
-				return
+				return true
 			}
 		}
 	}
 
-	// Forward to TextInput — it handles its own key events
-	fe.textInput.HandleKeyPress(tuist.EventContext{}, ev)
-	fe.syncPrompt()
+	return false // let TextInput handle it
 }
 
 // handleNavKeyUV handles key events in navigation mode.
@@ -2239,6 +2244,13 @@ func (fe *frontendPretty) historyDown() bool {
 func (fe *frontendPretty) initTextInput() {
 	fe.textInput = tuist.NewTextInput("")
 	fe.textInput.OnSubmit = func(ctx tuist.EventContext, value string) bool {
+		// Check if the shell considers this a complete command.
+		// If not, insert a newline for multiline editing.
+		if fe.shell != nil && !fe.shell.IsComplete(value) {
+			// Insert a newline at cursor for multiline editing.
+			fe.textInput.InsertRune('\n')
+			return false // don't clear
+		}
 		fe.handleInputComplete()
 		return true // clear input
 	}
