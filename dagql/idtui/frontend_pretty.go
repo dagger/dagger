@@ -1405,7 +1405,10 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	tree := fe.rowsView.BySpan[st.spanID]
 	if row == nil || tree == nil || !row.Expanded {
 		// Collapsed: clear children so they get dismounted on next render
-		st.children = nil
+		if len(st.children) > 0 {
+			st.children = nil
+			st.Update()
+		}
 		return
 	}
 
@@ -1465,7 +1468,21 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 			delete(st.childMap, id)
 		}
 	}
+
+	// Detect children changes (added, removed, or reordered).
+	childrenChanged := len(newChildren) != len(st.children)
+	if !childrenChanged {
+		for i := range newChildren {
+			if newChildren[i] != st.children[i] {
+				childrenChanged = true
+				break
+			}
+		}
+	}
 	st.children = newChildren
+	if childrenChanged {
+		st.Update()
+	}
 }
 
 // renderProgressLines renders progress using the tree-based SpanTreeView
