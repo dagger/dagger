@@ -3007,7 +3007,7 @@ func (tp renamedType) TypeName() string {
 	return tp.Name
 }
 
-func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
+func (hook *testInstallHook) InstallObject(class dagql.ObjectType, _ ...*ast.Directive) {
 	if strings.HasSuffix(class.TypeName(), "Other") {
 		return
 	}
