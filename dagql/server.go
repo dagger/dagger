@@ -331,22 +331,6 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationFieldDefinition,
 		},
 	},
-	{
-		Name:        "origin",
-		Description: FormatDescription(`Indicates the origin of the typedef`),
-		Args: NewInputSpecs(
-			InputSpec{
-				Name: "module",
-				Type: String(""),
-			},
-		),
-		Locations: []DirectiveLocation{
-			DirectiveLocationObject,
-			DirectiveLocationInterface,
-			DirectiveLocationEnum,
-			DirectiveLocationScalar,
-		},
-	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
