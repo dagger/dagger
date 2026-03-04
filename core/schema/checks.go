@@ -65,8 +65,10 @@ func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args stru
 	return parent.List(), nil
 }
 
-func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.CheckGroup, error) {
-	return parent.Run(ctx)
+func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct {
+	FailFast dagql.Optional[dagql.Boolean]
+}) (*core.CheckGroup, error) {
+	return parent.Run(ctx, args.FailFast.GetOr(false).Bool())
 }
 
 func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.File, error) {
