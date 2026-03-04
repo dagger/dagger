@@ -564,7 +564,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.editline.CheckInputComplete = handler.IsComplete
 
 	// put the bowtie on
-	fe.updatePrompt()
+	fe.syncPrompt()
 	fe.execTeaCmd(fe.editline.Focus())
 }
 
@@ -1676,27 +1676,27 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 			fe.shellInterrupt(errors.New("interrupted"))
 		}
 		fe.editline.Reset()
-		fe.updatePrompt()
+		fe.syncPrompt()
 		return
 	case "ctrl+l":
 		fe.tui.RequestRender(true)
-		fe.updatePrompt()
+		fe.syncPrompt()
 		return
 	case "esc":
 		fe.enterNavMode(false)
-		fe.updatePrompt()
+		fe.syncPrompt()
 		return
 	case "alt++", "alt+=":
 		fe.Verbosity++
 		fe.renderVersion++
 		fe.recalculateViewLocked()
-		fe.updatePrompt()
+		fe.syncPrompt()
 		return
 	case "alt+-":
 		fe.Verbosity--
 		fe.renderVersion++
 		fe.recalculateViewLocked()
-		fe.updatePrompt()
+		fe.syncPrompt()
 		return
 	default:
 		if fe.shell != nil {
@@ -1716,7 +1716,7 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 
 	// Check for input completion (editline sends InputCompleteMsg via its Cmd)
 	// We handle it explicitly here since we can't route internal messages.
-	fe.updatePrompt()
+	fe.syncPrompt()
 }
 
 // handleNavKeyUV handles key events in navigation mode.
@@ -1862,7 +1862,7 @@ func (fe *frontendPretty) handleInputComplete() {
 	value := fe.editline.Value()
 	fe.editline.AddHistoryEntry(value)
 	fe.promptFg = termenv.ANSIYellow
-	fe.updatePrompt()
+	fe.syncPrompt()
 
 	// reset now that we've accepted input
 	fe.editline.Reset()
@@ -1898,7 +1898,7 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	if fe.autoModeSwitch {
 		fe.enterInsertMode(true)
 	}
-	fe.updatePrompt()
+	fe.syncPrompt()
 	fe.shellRunning = false
 }
 
@@ -2099,7 +2099,7 @@ func (fe *frontendPretty) enterInsertMode(auto bool) {
 	fe.autoModeSwitch = auto
 	if fe.editline != nil {
 		fe.editlineFocused = true
-		fe.updatePrompt()
+		fe.syncPrompt()
 		fe.execTeaCmd(fe.editline.Focus())
 	}
 }
@@ -2200,20 +2200,12 @@ func (fe *frontendPretty) initEditline() {
 	fe.editline.Update(nil)
 }
 
-func (fe *frontendPretty) updatePrompt() {
+// syncPrompt refreshes the editline prompt string from the shell handler.
+// Pure — no side effects, no goroutines.
+func (fe *frontendPretty) syncPrompt() {
 	if fe.shell != nil && fe.editline != nil {
 		promptOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		prompt, init := fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
-		fe.editline.Prompt = prompt
-		if init != nil {
-			go func() {
-				init()
-				fe.tui.Dispatch(func() {
-					fe.updatePrompt()
-					fe.Compo.Update()
-				})
-			}()
-		}
+		fe.editline.Prompt = fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
 	}
 	if fe.editline != nil {
 		fe.editline.UpdatePrompt()
@@ -2221,13 +2213,13 @@ func (fe *frontendPretty) updatePrompt() {
 }
 
 // runShellAsync runs a shell handler function in a background goroutine,
-// then dispatches a prompt update + re-render back to the UI thread.
+// then dispatches a prompt refresh + re-render back to the UI thread.
 func (fe *frontendPretty) runShellAsync(work func()) {
-	fe.updatePrompt()
+	fe.syncPrompt()
 	go func() {
 		work()
 		fe.tui.Dispatch(func() {
-			fe.updatePrompt()
+			fe.syncPrompt()
 			fe.Compo.Update()
 		})
 	}()
