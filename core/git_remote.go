@@ -283,7 +283,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
+func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
 	g, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
 	return repo.initRemote(ctx, g, func(remote string) error {
 		git, cleanup, err := repo.setup(ctx)
@@ -338,7 +338,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 			}
 		}
 
-		err = repo.fetch(ctx, git, depth, fetchRefs)
+		err = repo.fetch(ctx, git, depth, includeTags, fetchRefs)
 		if err != nil {
 			return err
 		}
@@ -351,39 +351,83 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 	})
 }
 
-func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) error {
+func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
 	}
+
+	if len(refs) == 0 && !includeTags {
+		// Nothing requested: avoid an implicit broad fetch from origin.
+		return nil
+	}
+
+	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
+	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	gitDir, err := git.GitDir(ctx)
 	if err != nil {
 		return err
 	}
 
-	var refSpecs []string
-	for _, ref := range refs {
-		// fetch by sha, since we've already done tag resolution
-		// TODO: may need fallback if git remote doesn't support fetching by commit
-		refSpecs = append(refSpecs, ref.SHA)
+	shaRefSpecs := make([]string, len(refs))
+	for i, ref := range refs {
+		// Default hot path: fetch exact objects by SHA; ref names are already resolved via ls-remote.
+		shaRefSpecs[i] = ref.SHA
 	}
 
-	args := []string{
-		"fetch",
-		"--tags",
-		"--update-head-ok",
-		"--force",
-	}
-	if depth <= 0 {
-		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-			args = append(args, "--unshallow")
+	runFetch := func(refSpecs []string) error {
+		args := []string{
+			"fetch",
+			"--no-tags",
+			"--update-head-ok",
+			"--force",
 		}
-	} else {
-		args = append(args, "--depth="+fmt.Sprint(depth))
+		if depth <= 0 {
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				args = append(args, "--unshallow")
+			}
+		} else {
+			args = append(args, "--depth="+fmt.Sprint(depth))
+		}
+		args = append(args, "origin")
+		args = append(args, refSpecs...)
+
+		if _, err := git.Run(ctx, args...); err != nil {
+			if errors.Is(err, gitutil.ErrShallowNotSupported) {
+				// fallback to full fetch
+				args = slices.DeleteFunc(args, func(s string) bool {
+					return strings.HasPrefix(s, "--depth")
+				})
+				_, err = git.Run(ctx, args...)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	args = append(args, "origin")
-	args = append(args, refSpecs...)
+
+	runFetchTags := func() error {
+		// Keep the hot path tag-free and only hydrate local tag refs when explicitly requested.
+		return runFetch([]string{"refs/tags/*:refs/tags/*"})
+	}
+
+	verifyFetchedSHAs := func(expectedRefs []*RemoteGitRef) error {
+		for _, ref := range expectedRefs {
+			if ref == nil || ref.SHA == "" {
+				continue
+			}
+			res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}")
+			if err != nil {
+				return fmt.Errorf("failed to verify fetched sha %s: %w", ref.SHA, err)
+			}
+			if strings.TrimSpace(string(res)) != ref.SHA {
+				return fmt.Errorf("named-ref retry did not materialize expected sha %s for %q", ref.SHA, ref.Name)
+			}
+		}
+		return nil
+	}
 
 	svcs, err := query.Services(ctx)
 	if err != nil {
@@ -395,21 +439,51 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 	defer detach()
 
-	if _, err := git.Run(ctx, args...); err != nil {
-		if errors.Is(err, gitutil.ErrShallowNotSupported) {
-			// fallback to full fetch
-			args = slices.DeleteFunc(args, func(s string) bool {
-				return strings.HasPrefix(s, "--depth")
-			})
-			_, err = git.Run(ctx, args...)
-		}
-
+	if len(shaRefSpecs) > 0 {
+		err = runFetch(shaRefSpecs)
 		if err != nil {
-			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
+				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+			}
+
+			namedSpecs := namedFetchRefSpecs(refs)
+			if len(namedSpecs) == 0 {
+				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+			}
+
+			logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+			if retryErr := runFetch(namedSpecs); retryErr != nil {
+				return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
+			}
+			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
+				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
+			}
+			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+		}
+	}
+
+	if includeTags {
+		if tagErr := runFetchTags(); tagErr != nil {
+			return fmt.Errorf("failed to hydrate tags for remote %s: %w", repo.URL.Remote(), tagErr)
 		}
 	}
 
 	return nil
+}
+
+// namedFetchRefSpecs builds the bounded fallback refspec set used when SHA fetch is unsupported.
+// Destinations are deterministic scratch refs (`refs/dagger.fetch/...`) so retries don't mutate local branch/tag refs.
+func namedFetchRefSpecs(refs []*RemoteGitRef) []string {
+	refSpecs := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref == nil || ref.Name == "" || gitutil.IsCommitSHA(ref.Name) {
+			continue
+		}
+		// Deterministic scratch destination keeps retries isolated from local branch/tag namespaces.
+		stableName := hashutil.HashStrings(ref.Name, ref.SHA).Encoded()
+		refSpecs = append(refSpecs, ref.Name+":refs/dagger.fetch/"+stableName)
+	}
+	return refSpecs
 }
 
 func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Group, fn func(string) error) (retErr error) {
@@ -501,7 +575,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	return fn(dir)
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
 	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
 
 	query, err := CurrentQuery(ctx)
@@ -538,7 +612,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if !ok {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
-	err = ref.mount(ctx, depth, func(git *gitutil.GitCLI) error {
+	err = ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
 		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git dir: %w", err)
@@ -592,8 +666,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return checkout, nil
 }
 
-func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
+func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
+	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 
 func DNSConfig(ctx context.Context) (*oci.DNSConfig, error) {
