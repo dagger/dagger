@@ -29,7 +29,7 @@ type Class[T Typed] struct {
 
 	invalidateSchemaCache func()
 
-	origin string
+	directives []*ast.Directive
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -44,8 +44,8 @@ type ClassOpts[T Typed] struct {
 	// to use a dynamic Typed value.
 	Typed T
 
-	// The module this class is originating from.
-	Origin string
+	// Directives associated with that class.
+	Directives []*ast.Directive
 }
 
 // NewClass returns a new empty class for a given type.
@@ -61,16 +61,16 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 			opts.Typed = o.Typed
 		}
 
-		if o.Origin != "" {
-			opts.Origin = o.Origin
+		if o.Directives != nil {
+			opts.Directives = o.Directives
 		}
 	}
 
 	class := Class[T]{
-		inner:   opts.Typed,
-		fields:  map[string][]*Field[T]{},
-		fieldsL: new(sync.Mutex),
-		origin:  opts.Origin,
+		inner:      opts.Typed,
+		fields:     map[string][]*Field[T]{},
+		fieldsL:    new(sync.Mutex),
+		directives: opts.Directives,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -97,13 +97,9 @@ func (class Class[T]) Typed() Typed {
 	return class.inner
 }
 
-func (class Class[T]) Origin() string {
-	return class.origin
-}
-
 func (class Class[T]) IDType() (IDType, bool) {
 	if class.idable {
-		return ID[T]{inner: class.inner, origin: class.origin}, true
+		return ID[T]{inner: class.inner, directives: class.directives}, true
 	} else {
 		return nil, false
 	}

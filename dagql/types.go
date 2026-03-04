@@ -53,8 +53,6 @@ type ObjectType interface {
 	Extend(spec FieldSpec, fun FieldFunc)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
-	// The module name that object is originating from.
-	Origin() string
 }
 
 type IDType interface {
@@ -718,9 +716,9 @@ func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
 
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
-	id     *call.ID
-	inner  T
-	origin string
+	id         *call.ID
+	inner      T
+	directives []*ast.Directive
 }
 
 func NewID[T Typed](id *call.ID) ID[T] {
@@ -778,11 +776,8 @@ func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
 			i.TypeName(),
 			i.inner.Type().Name(),
 		),
-		BuiltIn: true,
-	}
-
-	if i.origin != "" {
-		typeDef.Directives = append(typeDef.Directives, sourceMap(i.origin))
+		BuiltIn:    true,
+		Directives: i.directives,
 	}
 
 	return typeDef
