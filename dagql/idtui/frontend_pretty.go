@@ -367,7 +367,12 @@ func (s *SpanTreeView) computeChildPrefix(out TermOutput, hasNext bool) treePref
 	color := restrainedStatusColor(span)
 
 	var connector, bar string
-	if hasNext && !span.Reveal && len(span.RevealedSpans.Order) == 0 {
+	if len(span.RevealedSpans.Order) > 0 || span.Reveal {
+		// Revealed spans are visually indented beneath their parent,
+		// not connected with tree lines.
+		connector = "  "
+		bar = "  "
+	} else if hasNext {
 		connector = out.String(VertRightBar + HorizHalfLeftBar).Foreground(color).Faint().String()
 		bar = out.String(VertBar + " ").Foreground(color).Faint().String()
 	} else {
