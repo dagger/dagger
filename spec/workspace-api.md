@@ -17,7 +17,7 @@ This spec describes the desired behavior of the Workspace API.
   - `clientId: String!`
   - `directory(path: String!, include: [String!] = [], exclude: [String!] = [], gitignore: Boolean = false): Directory!`
   - `file(path: String!): File!`
-  - `findUp(name: String!, from: String = "."): String`
+  - `findUp(name: String!, from: String!): String`
 
 ## Semantics
 
@@ -35,11 +35,13 @@ This spec describes the desired behavior of the Workspace API.
 - Paths:
   - No filesystem sandbox layer is applied.
   - Paths resolve directly in the workspace's underlying context (host filesystem for local workspaces, repository tree for remote git workspaces).
+  - All workspace path arguments (`directory.path`, `file.path`, `findUp.from`) must be absolute.
+  - Relative path arguments are rejected.
   - By default, path resolution outside the workspace git repository fails.
 - `findUp`:
   - Searches upward from `from`.
   - Stops at workspace repository root.
-  - Returns root-relative path or `null`.
+  - Returns an absolute path or `null`.
 
 ## Workspace Function Arguments
 

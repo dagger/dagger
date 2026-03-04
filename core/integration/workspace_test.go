@@ -76,7 +76,7 @@ type Greeter {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -116,37 +116,37 @@ type Finder {
 `))
 
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
+		require.Equal(t, "/work/a/b/other.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
+		require.Equal(t, "/work/a/target.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "root.txt", strings.TrimSpace(out))
+		require.Equal(t, "/work/root.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/somedir", strings.TrimSpace(out))
+		require.Equal(t, "/work/a/somedir", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find non-existent file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
@@ -225,7 +225,7 @@ type Greeter {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -254,7 +254,7 @@ type Lister {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -285,7 +285,7 @@ type Filtered {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*.log"])
+    self.source = source.directory("/work", exclude: ["*.log"])
     self
   }
 
@@ -316,7 +316,7 @@ type Cachechk {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -354,7 +354,7 @@ type Reader {
   pub content: String!
 
   new(ws: Workspace!) {
-    self.content = ws.file("data.txt").contents
+    self.content = ws.file("/work/data.txt").contents
     self
   }
 
@@ -382,7 +382,7 @@ type Subdir {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory("sub")
+    self.source = source.directory("/work/sub")
     self
   }
 
@@ -409,7 +409,7 @@ func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx
 	base := workspaceBase(t, c).
 		WithNewFile("legit.txt", "legit")
 
-	t.Run("directory traversal with ..", func(ctx context.Context, t *testctx.T) {
+	t.Run("relative directory path is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.With(initDangModule("escape-dir", `
 type EscapeDir {
   pub source: Directory!
@@ -426,10 +426,10 @@ type EscapeDir {
 		`))
 		_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "outside workspace repository root")
+		requireErrOut(t, err, "must be absolute")
 	})
 
-	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
+	t.Run("relative file path is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.With(initDangModule("escape-file", `
 type EscapeFile {
   pub content: String!
@@ -446,7 +446,27 @@ type EscapeFile {
 		`))
 		_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "outside workspace repository root")
+		requireErrOut(t, err, "must be absolute")
+	})
+
+	t.Run("relative findUp from path is rejected", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("escape-findup", `
+type EscapeFindup {
+  pub result: String!
+
+  new(source: Workspace!) {
+    self.result = source.findUp(name: "legit.txt", from: "sub") ?? ""
+    self
+  }
+
+  pub read: String! {
+    result
+  }
+}
+		`))
+		_, err := ctr.With(daggerCall("escape-findup", "read")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "must be absolute")
 	})
 
 	t.Run("absolute path outside repo is rejected", func(ctx context.Context, t *testctx.T) {
@@ -507,7 +527,7 @@ type Magic {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -550,7 +570,7 @@ type GiRoot {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".", gitignore: true)
+    self.source = source.directory("/work", gitignore: true)
     self
   }
 
@@ -574,7 +594,7 @@ type GiSub {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory("src", gitignore: true)
+    self.source = source.directory("/work/src", gitignore: true)
     self
   }
 
@@ -596,7 +616,7 @@ type GiOff {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -648,7 +668,7 @@ type Cacheme {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*", "!included-file"])
+    self.source = source.directory("/work", exclude: ["*", "!included-file"])
     self
   }
 
@@ -712,7 +732,7 @@ type Cacheme {
   pub source: File!
 
   new(source: Workspace!) {
-    self.source = source.file("included-file")
+    self.source = source.file("/work/included-file")
     self
   }
 
@@ -776,7 +796,7 @@ type Cacheme {
   pub source: String!
 
   new(source: Workspace!) {
-    self.source = source.file("included-file").contents
+    self.source = source.file("/work/included-file").contents
     self
   }
 

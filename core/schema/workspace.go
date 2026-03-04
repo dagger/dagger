@@ -33,28 +33,28 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
 			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
-				`Relative paths are resolved from workspace root. Absolute paths are used as-is.`,
+				`Path must be absolute in host/repo context.`,
 				`By default, paths outside the workspace repository root are rejected.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the directory to retrieve, relative to workspace root or absolute in host/repo context.`),
+				dagql.Arg("path").Doc(`Absolute location of the directory to retrieve in host/repo context.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
-				`Relative paths are resolved from workspace root. Absolute paths are used as-is.`,
+				`Path must be absolute in host/repo context.`,
 				`By default, paths outside the workspace repository root are rejected.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to workspace root or absolute in host/repo context.`),
+				dagql.Arg("path").Doc(`Absolute location of the file to retrieve in host/repo context.`),
 			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
-				`Returns the path relative to the workspace root if found, or null if not found.`,
+				`Returns the absolute path if found, or null if not found.`,
 				`The search stops at the workspace repository root and will not traverse above it.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
-				dagql.Arg("from").Doc(`Path to start the search from, relative to workspace root or absolute in host/repo context.`),
+				dagql.Arg("from").Doc(`Absolute path to start the search from in host/repo context.`),
 			),
 	}.Install(srv)
 }
@@ -132,12 +132,17 @@ func normalizeWorkspacePath(p string) string {
 	return p
 }
 
-func resolveWorkspacePath(userPath, workspaceRoot string) string {
+func isAbsoluteWorkspacePath(p string) bool {
+	p = normalizeWorkspacePath(p)
+	return pathutil.GetDrive(p) != "" || strings.HasPrefix(p, "/")
+}
+
+func requireAbsoluteWorkspacePath(name, userPath string) (string, error) {
 	clean := normalizeWorkspacePath(userPath)
-	if drive := pathutil.GetDrive(clean); drive != "" || strings.HasPrefix(clean, "/") {
-		return clean
+	if !isAbsoluteWorkspacePath(clean) {
+		return "", fmt.Errorf("%s %q must be absolute", name, userPath)
 	}
-	return normalizeWorkspacePath(path.Join(normalizeWorkspacePath(workspaceRoot), clean))
+	return clean, nil
 }
 
 func isPathWithinPrefix(targetPath, prefix string) bool {
@@ -192,7 +197,10 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	absPath := resolveWorkspacePath(args.Path, ws.Root)
+	absPath, err := requireAbsoluteWorkspacePath("path", args.Path)
+	if err != nil {
+		return inst, err
+	}
 	if err := s.enforceRepoBoundary(ws, absPath); err != nil {
 		return inst, err
 	}
@@ -257,7 +265,10 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	absPath := resolveWorkspacePath(args.Path, ws.Root)
+	absPath, err := requireAbsoluteWorkspacePath("path", args.Path)
+	if err != nil {
+		return inst, err
+	}
 	if err := s.enforceRepoBoundary(ws, absPath); err != nil {
 		return inst, err
 	}
@@ -287,7 +298,7 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 
 type workspaceFindUpArgs struct {
 	Name string
-	From string `default:"."`
+	From string
 }
 
 func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
@@ -312,17 +323,18 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 		return none, fmt.Errorf("buildkit: %w", err)
 	}
 
-	// Resolve start path from workspace root for relative paths.
-	absStart := resolveWorkspacePath(args.From, ws.Root)
+	absStart, err := requireAbsoluteWorkspacePath("from", args.From)
+	if err != nil {
+		return none, err
+	}
 	if err := s.enforceRepoBoundary(ws, absStart); err != nil {
 		return none, err
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	cleanWorkspaceRoot := path.Clean(ws.Root)
 	cleanRepoRoot := path.Clean(ws.RepoRoot)
 	if cleanRepoRoot == "" {
-		cleanRepoRoot = cleanWorkspaceRoot
+		cleanRepoRoot = path.Clean(ws.Root)
 	}
 
 	// Walk up from absStart, stopping at repository root.
@@ -331,12 +343,7 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 		candidate := path.Join(curDir, args.Name)
 		_, _, err := statFS.Stat(ctx, candidate)
 		if err == nil {
-			// Found it — return path relative to workspace root
-			relPath, err := pathutil.LexicalRelativePath(cleanWorkspaceRoot, candidate)
-			if err != nil {
-				return none, fmt.Errorf("compute relative path: %w", err)
-			}
-			return dagql.NonNull(dagql.NewString(relPath)), nil
+			return dagql.NonNull(dagql.NewString(normalizeWorkspacePath(candidate))), nil
 		}
 
 		// Stop at repository root.
