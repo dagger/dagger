@@ -121,16 +121,16 @@ type frontendPretty struct {
 	profile      termenv.Profile
 	window       windowSize // terminal dimensions
 	contentWidth int
-	sidebarWidth int
 	browserBuf   *strings.Builder      // logs if browser fails
 	finalRender  bool                  // whether we're doing the final render
 	shownErrs    map[dagui.SpanID]bool // which errors we've rendered
 	stdin        io.Reader             // used by backgroundMsg for running terminal
 	writer       io.Writer
 
-	// content to show in the sidebar
-	sidebar    []SidebarSection
-	sidebarBuf *strings.Builder // logs if sidebar fails
+	// notification bubbles (overlay-based, replacing old sidebar)
+	notifications   map[string]*NotificationBubble // keyed by section title
+	overlayHandles  map[string]*tuist.OverlayHandle
+	notificationOrder []string // ordered titles for stacking
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
@@ -445,8 +445,9 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		window:     windowSize{Width: -1, Height: -1}, // be clear that it's not set
 		spinner:    NewRave(),
 		profile:    profile,
-		browserBuf: new(strings.Builder),
-		sidebarBuf: new(strings.Builder),
+		browserBuf:    new(strings.Builder),
+		notifications: make(map[string]*NotificationBubble),
+		overlayHandles: make(map[string]*tuist.OverlayHandle),
 		writer:     w,
 		shownErrs:  map[dagui.SpanID]bool{},
 	}
@@ -454,99 +455,84 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.tui.Dispatch(func() {
-		var updated bool
-		for i, cur := range fe.sidebar {
-			if cur.Title == section.Title {
-				fe.sidebar[i] = section
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			if section.Title == "" {
-				fe.sidebar = append([]SidebarSection{section}, fe.sidebar...)
+		title := section.Title
+
+		if bubble, ok := fe.notifications[title]; ok {
+			// Update existing bubble
+			bubble.section = section
+			bubble.Update()
+		} else {
+			// Create new bubble
+			bubble := newNotificationBubble(fe, section)
+			fe.notifications[title] = bubble
+
+			// Track order: untitled goes first, titled appends
+			if title == "" {
+				fe.notificationOrder = append([]string{""}, fe.notificationOrder...)
 			} else {
-				fe.sidebar = append(fe.sidebar, section)
+				fe.notificationOrder = append(fe.notificationOrder, title)
 			}
+
+			// Show as overlay, anchored to bottom-right, content-relative
+			fe.overlayHandles[title] = fe.tui.ShowOverlay(bubble, &tuist.OverlayOptions{
+				Width:           tuist.SizeAbs(notificationWidth(fe.window.Width)),
+				Anchor:          tuist.AnchorBottomRight,
+				ContentRelative: true,
+				Margin:          tuist.OverlayMargin{Bottom: fe.notificationStackOffset(title), Right: 1},
+			})
 		}
-		fe.renderSidebar()
+
+		// Recompute all overlay positions (stacking)
+		fe.repositionNotifications()
 		fe.Compo.Update()
 	})
 }
 
-func (fe *frontendPretty) viewSidebar() string {
-	fe.renderSidebar()
-	return fe.sidebarBuf.String()
+// notificationStackOffset computes the vertical offset for a notification
+// bubble so they stack upward from the bottom-right.
+func (fe *frontendPretty) notificationStackOffset(targetTitle string) int {
+	offset := 0
+	for _, title := range fe.notificationOrder {
+		if title == targetTitle {
+			return offset
+		}
+		bubble := fe.notifications[title]
+		if bubble != nil {
+			content := bubble.section.Body(notificationWidth(fe.window.Width) - 4)
+			if content != "" {
+				contentLines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+				offset += len(contentLines) + 3 // content + top border + bottom border + gap
+			}
+		}
+	}
+	return offset
+}
+
+// repositionNotifications updates overlay positions for all notification
+// bubbles so they stack correctly.
+func (fe *frontendPretty) repositionNotifications() {
+	w := notificationWidth(fe.window.Width)
+	for _, title := range fe.notificationOrder {
+		handle, ok := fe.overlayHandles[title]
+		if !ok {
+			continue
+		}
+		handle.SetOptions(&tuist.OverlayOptions{
+			Width:           tuist.SizeAbs(w),
+			Anchor:          tuist.AnchorBottomRight,
+			ContentRelative: true,
+			Margin:          tuist.OverlayMargin{Bottom: fe.notificationStackOffset(title), Right: 1},
+		})
+	}
 }
 
 var sidebarBG lipgloss.TerminalColor
 
 func init() {
-	// delegate sidebar background to editline background
+	// delegate notification background to editline background
 	focusedStyle, _ := editline.DefaultStyles()
 	editlineStyle := focusedStyle.Editor.CursorLine
 	sidebarBG = editlineStyle.GetBackground()
-}
-
-func (fe *frontendPretty) renderSidebar() {
-	fe.setWindowSizeLocked(fe.window)
-	if fe.sidebarWidth == 0 {
-		// sidebar not displayed; don't bother
-		return
-	}
-
-	fe.sidebarBuf.Reset()
-
-	for i, section := range fe.sidebar {
-		content := section.Content
-		if section.ContentFunc != nil {
-			content = section.ContentFunc(fe.sidebarWidth)
-		}
-
-		if content == "" {
-			// Section became empty (e.g. changes synced); don't show it
-			continue
-		}
-
-		if i > 0 {
-			fe.sidebarBuf.WriteString("\n")
-			fe.sidebarBuf.WriteString("\n")
-		}
-
-		keymap := new(strings.Builder)
-		sideOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		if section.Title != "" {
-			fe.sidebarBuf.WriteString(sideOut.String(section.Title).
-				Foreground(termenv.ANSIBrightBlack).String())
-		}
-
-		filler := fe.sidebarWidth - len(section.Title)
-		filler -= 6 // 1 border + 2 spaces * 2 sides + 1 space between title and bar
-		if len(section.KeyMap) > 0 {
-			filler -= fe.renderKeymap(keymap,
-				KeymapStyle.Background(sidebarBG),
-				section.KeyMap)
-			filler -= 1 // space between bar and keymap
-		}
-
-		if filler > 0 {
-			horizBar := sideOut.String(strings.Repeat(HorizBar, filler)).String()
-			fe.sidebarBuf.WriteString(
-				lipgloss.NewStyle().
-					Foreground(ANSIBrightBlack).
-					Background(sidebarBG).
-					Render(" " + horizBar + " "),
-			)
-		}
-
-		fe.sidebarBuf.WriteString(keymap.String())
-		fe.sidebarBuf.WriteString("\n\n")
-
-		// reset everything but the background
-		content = strings.ReplaceAll(content, reset, termenv.CSI+"39;22;23;24;25;27;28;29m")
-
-		fe.sidebarBuf.WriteString(strings.TrimRight(content, "\n"))
-	}
 }
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
@@ -1256,14 +1242,6 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		lines = append(lines, "")
 	}
 	lines = append(lines, keymapLines...)
-
-	// Sidebar compositing
-	sidebarContent := fe.viewSidebar()
-	if sidebarContent != "" {
-		mainView := strings.Join(lines, "\n")
-		mainView = fe.renderWithSidebar(mainView, sidebarContent)
-		lines = strings.Split(mainView, "\n")
-	}
 
 	// Truncate each line to terminal width so no line wraps to multiple
 	// physical rows. Without this, tuist's diff renderer miscounts
@@ -2385,23 +2363,11 @@ func (fe *frontendPretty) goErrorOrigin() {
 	fe.recalculateViewLocked()
 }
 
-const (
-	sidebarMinWidth = 30
-	sidebarMaxWidth = 50
-)
+
 
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
 	fe.window = msg
-	if len(fe.sidebar) > 0 {
-		fe.sidebarWidth = max(sidebarMinWidth, min(sidebarMaxWidth, fe.window.Width/3))
-	} else {
-		fe.sidebarWidth = 0
-	}
-	fe.contentWidth = msg.Width - fe.sidebarWidth
-	if fe.contentWidth < 0 {
-		fe.contentWidth = msg.Width
-		fe.sidebarWidth = 0
-	}
+	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
 	if fe.editline != nil {
 		fe.editline.SetSize(fe.contentWidth, msg.Height)
@@ -3104,48 +3070,6 @@ func (fe *frontendPretty) editlineView() string {
 
 func (fe *frontendPretty) formView() string {
 	return fe.form.View() + "\n\n"
-}
-
-func haircut(s string, maxHeight int) (string, int) {
-	s = strings.TrimRight(s, "\n")
-	lines := strings.Split(s, "\n")
-	height := len(lines) + 1
-	if height <= maxHeight {
-		return s, height - 1
-	}
-	remove := height - maxHeight - 1
-	return strings.Join(lines[remove:], "\n"), maxHeight
-}
-
-func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) string {
-	if fe.sidebarWidth == 0 {
-		return mainContent
-	}
-
-	contentView, contentHeight := haircut(mainContent, fe.window.Height)
-
-	styledSidebar := lipgloss.NewStyle().
-		Width(fe.sidebarWidth).
-		MaxHeight(fe.window.Height).
-		Height(contentHeight).
-		Background(sidebarBG).
-		Border(lipgloss.Border{
-			Left: BorderLeft,
-		}, false, false, false, true).
-		BorderForeground(ANSIBrightBlack).
-		Padding(1, 2).
-		Render(sidebarContent)
-
-	styledContent := lipgloss.NewStyle().
-		MaxWidth(fe.contentWidth).
-		MaxHeight(fe.window.Height).
-		Render(contentView)
-
-	return lipgloss.JoinHorizontal(
-		lipgloss.Bottom,
-		styledContent,
-		styledSidebar,
-	)
 }
 
 // ---------- pretty logs (unchanged) -----------------------------------------
