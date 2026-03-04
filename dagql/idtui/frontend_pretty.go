@@ -568,9 +568,12 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Add the text input before the keymapBar in the TUI container.
-	// Order: fe (progress/logs) → textInput → keymapBar
-	fe.tui.RemoveChild(fe.keymapBar)
+	// Build TUI child order: output → prompt → keymap
+	fe.keymapBar = &KeymapBar{
+		Profile:          fe.profile,
+		UsingCloudEngine: fe.UsingCloudEngine,
+		Keys:             fe.keys,
+	}
 	fe.tui.AddChild(fe.textInput)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
@@ -820,14 +823,7 @@ func (fe *frontendPretty) startTUI() {
 			fe.tui.SetDebugWriter(f)
 		}
 	}
-	fe.keymapBar = &KeymapBar{
-		Profile:          fe.profile,
-		UsingCloudEngine: fe.UsingCloudEngine,
-		Keys:             fe.keys,
-	}
-
 	fe.tui.AddChild(fe)
-	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
 	fe.tui.Start()
 }
