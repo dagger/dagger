@@ -576,6 +576,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.syncPrompt()
 	fe.tui.SetFocus(fe.textInput)
 	fe.editlineFocused = true
+	fe.keymapBar.Update()
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -2078,8 +2079,8 @@ func uvKeyString(k uv.Key) string {
 func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
-	// Focus moves away from textInput to the tree/frontend
 	fe.tui.SetFocus(fe)
+	fe.keymapBar.Update()
 }
 
 func (fe *frontendPretty) enterInsertMode(auto bool) {
@@ -2088,6 +2089,7 @@ func (fe *frontendPretty) enterInsertMode(auto bool) {
 		fe.editlineFocused = true
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
+		fe.keymapBar.Update()
 	}
 }
 
