@@ -568,7 +568,6 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
 	// Add the text input to the TUI container as a sibling of fe.
-	// Cursor propagation works through tuist's container rendering.
 	fe.tui.AddChild(fe.textInput)
 	fe.tui.SetShowHardwareCursor(true)
 
@@ -1679,11 +1678,16 @@ func (fe *frontendPretty) handleFormKey(ev uv.KeyPressEvent) {
 
 // interceptEditlineKey is the TextInput's KeyInterceptor. It handles
 // special keys before TextInput processes them. Returns true if consumed.
-func (fe *frontendPretty) interceptEditlineKey(_ tuist.EventContext, ev uv.KeyPressEvent) bool {
+func (fe *frontendPretty) interceptEditlineKey(ctx tuist.EventContext, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
 	keyStr := uvKeyString(k)
 	fe.pressedKey = keyStr
 	fe.pressedKeyAt = time.Now()
+
+	// Let the completion menu handle keys when visible (up/down/esc/tab).
+	if fe.completionMenu != nil && fe.completionMenu.HandleKeyPress(ctx, ev) {
+		return true
+	}
 
 	switch keyStr {
 	case "ctrl+d":
