@@ -231,10 +231,17 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 
-	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
-		Typed:     obj,
-		SourceMap: obj.TypeDef.SourceMap.Value.TypeDirective(),
-	})
+	classOpts := dagql.ClassOpts[*ModuleObject]{
+		Typed: obj,
+	}
+
+	installDirectives := []*ast.Directive{}
+	if obj.TypeDef.SourceMap.Valid {
+		classOpts.SourceMap = obj.TypeDef.SourceMap.Value.TypeDirective()
+		installDirectives = append(installDirectives, obj.TypeDef.SourceMap.Value.TypeDirective())
+	}
+
+	class := dagql.NewClass(dag, classOpts)
 	objDef := obj.TypeDef
 	mod := obj.Module
 	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
@@ -251,7 +258,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	fields = append(fields, funs...)
 
 	class.Install(fields...)
-	dag.InstallObject(class, obj.TypeDef.SourceMap.Value.TypeDirective())
+	dag.InstallObject(class, installDirectives...)
 
 	return nil
 }
