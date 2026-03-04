@@ -61,10 +61,21 @@ func AroundFunc(
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		// should never happen, just getting it out of the way
+		slog.Error("no current query for telemetry", "id", id.DisplaySelf())
+		return ctx, dagql.NoopDone
+	}
+
+	if boundary, ok := extractUserBoundary(ctx, q, id); ok {
+		attrs = append(attrs, attribute.String(telemetry.UserBoundaryAttr, boundary))
+	}
+
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
-	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
+	if id.Call().Module != nil {
 		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
 
 		if callerRef != nil && calleeRef != nil {
@@ -386,6 +397,25 @@ func isMeta(id *call.ID) bool {
 	default:
 		return false
 	}
+}
+
+// extractUserBoundary returns true if telemetry beneath this call comes from user
+// code, i.e. produced from a container exec's native OTel integration, or from
+// a module function call.
+func extractUserBoundary(ctx context.Context, q *Query, id *call.ID) (string, bool) {
+	if id.Call().Module != nil {
+		return id.Call().Module.Ref, true
+	}
+	if id.Receiver() != nil &&
+		id.Receiver().Type().NamedType() == "Container" &&
+		id.Field() == "withExec" {
+		if fc, err := q.CurrentModule(ctx); err == nil {
+			// allow withExec calls to inherit the caller's boundary
+			return fc.GetSource().AsString(), true
+		}
+		return "<native>", true
+	}
+	return "", false
 }
 
 func isDagOp(id *call.ID) bool {
