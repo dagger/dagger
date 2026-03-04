@@ -23,7 +23,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
 			Args(
 				dagql.Arg("skipMigrationCheck").Doc("If true, skip legacy dagger.json migration checks."),
-				dagql.Arg("allowOutsideRepo").Doc("Optional absolute path prefixes allowed outside the workspace repository root."),
 			),
 	}.Install(srv)
 
@@ -62,7 +61,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 
 type workspaceArgs struct {
 	SkipMigrationCheck bool `default:"false"`
-	AllowOutsideRepo   []string
 }
 
 func (s *workspaceSchema) currentWorkspace(
@@ -94,11 +92,6 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 	repoRoot = normalizeWorkspacePath(repoRoot)
 
-	allowedOutsideRepo := make([]string, 0, len(args.AllowOutsideRepo))
-	for _, p := range args.AllowOutsideRepo {
-		allowedOutsideRepo = append(allowedOutsideRepo, resolveWorkspacePath(p, cwd))
-	}
-
 	// Capture the current client ID so that when this workspace is passed to
 	// a module function, the directory/file resolvers can route host filesystem
 	// operations through the correct (original) client session.
@@ -108,10 +101,9 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	result := &core.Workspace{
-		Root:               repoRoot,
-		RepoRoot:           repoRoot,
-		AllowedOutsideRepo: allowedOutsideRepo,
-		ClientID:           clientMetadata.ClientID,
+		Root:     repoRoot,
+		RepoRoot: repoRoot,
+		ClientID: clientMetadata.ClientID,
 	}
 
 	return result, nil
@@ -178,11 +170,6 @@ func (s *workspaceSchema) enforceRepoBoundary(ws *core.Workspace, absPath string
 
 	if isPathWithinPrefix(absPath, repoRoot) {
 		return nil
-	}
-	for _, allowedPrefix := range ws.AllowedOutsideRepo {
-		if isPathWithinPrefix(absPath, allowedPrefix) {
-			return nil
-		}
 	}
 
 	return fmt.Errorf("path %q is outside workspace repository root %q", absPath, repoRoot)

@@ -10,10 +10,6 @@ type Workspace struct {
 	// workspace. Paths outside this root are rejected by default.
 	RepoRoot string
 
-	// AllowedOutsideRepo is an optional list of additional absolute path
-	// prefixes that are allowed even when outside RepoRoot.
-	AllowedOutsideRepo []string
-
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
 	// when the workspace is passed to a module function.
@@ -33,8 +29,5 @@ func (*Workspace) TypeDescription() string {
 
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
-	if ws.AllowedOutsideRepo != nil {
-		cp.AllowedOutsideRepo = append([]string(nil), ws.AllowedOutsideRepo...)
-	}
 	return &cp
 }

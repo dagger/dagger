@@ -36,7 +36,6 @@ This spec describes the desired behavior of the Workspace API.
   - No filesystem sandbox layer is applied.
   - Paths resolve directly in the workspace's underlying context (host filesystem for local workspaces, repository tree for remote git workspaces).
   - By default, path resolution outside the workspace git repository fails.
-  - Explicit exceptions may be configured to permit out-of-repository access when required.
 - `findUp`:
   - Searches upward from `from`.
   - Stops at workspace repository root.
