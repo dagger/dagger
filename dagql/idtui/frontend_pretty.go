@@ -200,6 +200,12 @@ type SpanTreeView struct {
 	// spinner is non-nil when the span is running; self-ticking.
 	spinner *SpinnerView
 
+	// childrenGapPrefix is the prefix for gap lines between this node's
+	// children. It shows all ancestor bars + this node's own bar column.
+	// Computed by syncTreeNode. Unlike a child's prefix.cont (which omits
+	// the parent bar for last children), this always shows the parent bar.
+	childrenGapPrefix string
+
 	// focused is set by the SetFocused callback.
 	focused bool
 }
@@ -289,10 +295,12 @@ func (s *SpanTreeView) Render(ctx tuist.RenderContext) tuist.RenderResult {
 
 	// Render children (already synced by syncSpanTreeState).
 	for _, child := range s.children {
-		// Gap line between children
+		// Gap line between children — uses parent's gap prefix (which always
+		// shows the parent bar), not the child's prefix.cont (which omits
+		// the parent bar for the last child).
 		childRow := s.fe.rows.BySpan[child.spanID]
 		if childRow != nil {
-			for _, gap := range s.fe.renderTreeGap(r, childRow, child.prefix) {
+			for _, gap := range s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix) {
 				lines = append(lines, gap)
 			}
 		}
@@ -1408,13 +1416,24 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 		childTrees = tree.Children
 	}
 
+	// Compute the gap prefix for lines between this node's children.
+	// This is the ancestor bars + this node's own bar column (always
+	// shown, since we're between children that both exist).
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	span := row.Span
+	color := restrainedStatusColor(span)
+	if !span.Reveal && len(span.RevealedSpans.Order) == 0 {
+		st.childrenGapPrefix = st.prefix.forChildren + out.String(VertBar+" ").Foreground(color).Faint().String()
+	} else {
+		st.childrenGapPrefix = st.prefix.forChildren + "  "
+	}
+
 	// Reconcile child SpanTreeViews
 	if st.childMap == nil {
 		st.childMap = make(map[dagui.SpanID]*SpanTreeView)
 	}
 	newChildren := make([]*SpanTreeView, 0, len(childTrees))
 	seen := make(map[dagui.SpanID]bool, len(childTrees))
-	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	for i, childTree := range childTrees {
 		id := childTree.Span.ID
 		seen[id] = true
@@ -1473,11 +1492,12 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 		}
 		result := fe.RenderChild(treeView, childCtx)
 
-		// Gap between top-level trees
+		// Gap between top-level trees — use the top-level prefix (zoom
+		// indentation) since there's no parent node with a bar column.
 		if i > 0 && len(result.Lines) > 0 {
 			row := fe.rows.BySpan[treeView.spanID]
 			if row != nil {
-				for _, gap := range fe.renderTreeGap(r, row, treeView.prefix) {
+				for _, gap := range fe.renderTreeGap(r, row, treeView.prefix.cont) {
 					allLines = append(allLines, gap)
 				}
 			}
@@ -1544,7 +1564,7 @@ func (fe *frontendPretty) findFocusLineInTree(allLines []string) int {
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering.
 // This replaces renderRowGap for tree-based rendering, using the tree prefix
 // instead of calling fancyIndent.
-func (fe *frontendPretty) renderTreeGap(r *renderer, row *dagui.TraceRow, prefix treePrefix) []string {
+func (fe *frontendPretty) renderTreeGap(r *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	if fe.shell != nil {
 		if row.Depth == 0 && row.Previous != nil {
 			return []string{""}
@@ -1561,8 +1581,7 @@ func (fe *frontendPretty) renderTreeGap(r *renderer, row *dagui.TraceRow, prefix
 			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
 			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
 			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
-		// Use the continuation prefix for the gap line
-		return []string{prefix.cont}
+		return []string{gapPrefix}
 	}
 	return nil
 }
