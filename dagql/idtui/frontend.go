@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"codeberg.org/vito/tuist"
 	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dustin/go-humanize"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
-	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -54,6 +54,15 @@ func FromCmdContext(ctx context.Context) (*cmdContext, bool) {
 	return nil, false
 }
 
+// ExecCommand is a command that can be executed in a blocking fashion,
+// taking over the terminal. Replaces tea.ExecCommand.
+type ExecCommand interface {
+	Run() error
+	SetStdin(io.Reader)
+	SetStdout(io.Writer)
+	SetStderr(io.Writer)
+}
+
 var SkipLoggedOutTraceMsgEnvs = []string{
 	"DAGGER_NO_NAG",
 
@@ -78,7 +87,7 @@ type Frontend interface {
 	// point of the command. Its output will be displayed at the end, and its
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID dagui.SpanID)
-	Background(cmd tea.ExecCommand, raw bool) error
+	Background(cmd ExecCommand, raw bool) error
 	// RevealAllSpans tells the frontend to show all spans, not just
 	// the spans beneath the primary span.
 	RevealAllSpans()
@@ -141,32 +150,40 @@ func (sec SidebarSection) Body(width int) string {
 	return ""
 }
 
-// ShellHandler defines the interface for handling shell interactions
+// ShellHandler defines the interface for handling shell interactions.
+// All methods are called on the UI goroutine unless noted otherwise.
 type ShellHandler interface {
-	// Handle processes shell input
+	// Handle processes submitted shell input.
 	Handle(ctx context.Context, input string) error
 
-	// AutoComplete provides shell auto-completion functionality
-	AutoComplete(entireInput [][]rune, line, col int) (string, editline.Completions)
+	// AutoComplete provides completions for the current input.
+	// Uses tuist's completion types directly.
+	AutoComplete(input string, cursorPos int) tuist.CompletionResult
 
-	// IsComplete determines if the current input is a complete command
-	IsComplete(entireInput [][]rune, line int, col int) bool
+	// IsComplete determines if the current input is a complete command.
+	// Used to decide whether Enter submits or inserts a newline.
+	IsComplete(input string) bool
 
 	// Prompt generates the shell prompt string based on current state.
 	// Must be pure — no side effects or async work.
 	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) string
 
-	// Keys returns the keys that will be displayed when the input is focused
+	// KeyBindings returns the keys displayed in the keymap when editing.
 	KeyBindings(out TermOutput) []key.Binding
 
 	// ReactToInput allows reacting to live input before it's submitted.
 	// Returns nil if the key was not handled. If handled, returns a
 	// function that performs any async work (may be nil if no async work
 	// is needed). The caller runs the async function in a goroutine.
-	ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, edit *editline.Model) func()
+	//
+	// inputValue is the current text in the input field. editing is true
+	// when the input field is focused (editing mode vs navigation mode).
+	ReactToInput(ctx context.Context, ev uv.KeyPressEvent, inputValue string, editing bool) func()
 
-	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
-	editline.HistoryEncoder
+	// EncodeHistory encodes a history entry for persistence.
+	EncodeHistory(entry string) string
+	// DecodeHistory decodes a persisted history entry.
+	DecodeHistory(entry string) string
 }
 
 type Dump struct {

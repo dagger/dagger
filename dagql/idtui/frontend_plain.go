@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -245,7 +244,7 @@ func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendPlain) Background(cmd ExecCommand, raw bool) error {
 	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
