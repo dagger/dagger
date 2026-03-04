@@ -156,8 +156,10 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithExec([]string{"bun", "install"}).
 		WithExec([]string{"bun", "run", "build"}).
 		WithWorkdir("/src").
-		WithExec([]string{"npm", "pkg", "set", `'dependencies[@dagger.io/telemetry]=./telemetry'`}).
-		WithExec([]string{"bun", "install"}).
+		// avoid conflicts with the yarn.lock that has the remote package installed
+		WithExec([]string{"bun", "remove", "@dagger.io/telemetry"}).
+		WithExec([]string{"npm", "pkg", "set", `dependencies[@dagger.io/telemetry]=./telemetry`}).
+		WithExec([]string{"bun", "install", "--omit=peer"}).
 		// Create introspector binary
 		WithExec([]string{"bun", "build", "src/module/entrypoint/introspection_entrypoint.ts", "--compile", "--outfile", "/bin/ts-introspector"}).
 		// Build the SDK bundled that contains the whole static library + default client
