@@ -696,10 +696,10 @@
 
 ### Phase 3: Integration and polish
 
-* [ ] Remove `estimateSharedResultSizeBytes` placeholder function and dead comments.
-* [ ] Add explicit comments near size-gating logic describing why we only size prune-relevant candidates.
-* [ ] Add explicit comments near dedupe logic documenting snapshot-record-level accounting choice.
-* [ ] Keep behavior deterministic across runs (entry ordering + dedupe ownership stable).
+* [x] Remove `estimateSharedResultSizeBytes` placeholder function and dead comments.
+* [x] Add explicit comments near size-gating logic describing why we only size prune-relevant candidates.
+* [x] Add explicit comments near dedupe logic documenting snapshot-record-level accounting choice.
+* [x] Keep behavior deterministic across runs (entry ordering + dedupe ownership stable).
 
 ## Validation plan
 

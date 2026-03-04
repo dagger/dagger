@@ -72,6 +72,7 @@ type ImmutableRef interface {
 type MutableRef interface {
 	Ref
 	Commit(context.Context) (ImmutableRef, error)
+	InvalidateSize(context.Context) error
 }
 
 type Mountable interface {
@@ -650,6 +651,20 @@ func (sr *mutableRef) DescHandler(dgst digest.Digest) *DescHandler {
 
 func (sr *mutableRef) Size(ctx context.Context) (int64, error) {
 	return sr.cacheRecord.size(ctx)
+}
+
+func (sr *mutableRef) InvalidateSize(_ context.Context) error {
+	sr.cm.mu.Lock()
+	defer sr.cm.mu.Unlock()
+
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+
+	if sr.getSize() == sizeUnknown {
+		return nil
+	}
+	sr.queueSize(sizeUnknown)
+	return sr.commitMetadata()
 }
 
 func (sr *immutableRef) clone() *immutableRef {

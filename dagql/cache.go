@@ -221,6 +221,12 @@ type hasCacheUsageIdentity interface {
 	CacheUsageIdentity() (identity string, ok bool)
 }
 
+type cacheUsageMayChange interface {
+	// CacheUsageMayChange reports whether usage size can change over time for the
+	// same usage identity (for example mutable cache volume snapshots).
+	CacheUsageMayChange() bool
+}
+
 // sharedResult holds cache-entry state and immutable payload shared by per-call Result values.
 type sharedResult struct {
 	cache *cache
@@ -625,11 +631,17 @@ func (c *cache) UsageEntries() []CacheUsageEntry {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 
+	// Intentionally size only prune-relevant candidates. This avoids forcing
+	// expensive snapshot size calls for active/non-prunable results while still
+	// providing accurate byte accounting for prune policy decisions.
 	c.measurePruneCandidateSizesLocked(context.Background())
 	return c.usageEntriesLocked()
 }
 
 func (c *cache) usageEntriesLocked() []CacheUsageEntry {
+	// Snapshot-identity dedupe accounting: a single physical snapshot can be
+	// referenced by multiple logical results. We deterministically assign bytes
+	// to one owner (smallest sharedResultID) and report zero for siblings.
 	ownerByUsageIdentity := make(map[string]sharedResultID, len(c.resultsByID))
 	for resID, res := range c.resultsByID {
 		if res == nil {
@@ -703,6 +715,7 @@ func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
 		if res == nil {
 			continue
 		}
+		// Gate size work to prune-relevant candidates only.
 		if !res.depOfPersistedResult {
 			continue
 		}
@@ -712,7 +725,7 @@ func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
 		if _, blocked := activeDependencyClosure[resID]; blocked {
 			continue
 		}
-		if res.sizeEstimateBytes != sharedResultSizeUnknown {
+		if res.sizeEstimateBytes != sharedResultSizeUnknown && !cacheUsageSizeMayChange(res) {
 			continue
 		}
 
@@ -739,6 +752,7 @@ func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
 		if len(candidateIDs) == 0 {
 			continue
 		}
+		// Deterministic owner tie-break for this snapshot identity.
 		slices.Sort(candidateIDs)
 		ownerID := candidateIDs[0]
 		ownerRes := c.resultsByID[ownerID]
@@ -1163,4 +1177,15 @@ func cacheUsageIdentity(res *sharedResult) (string, bool) {
 		return "", false
 	}
 	return identityer.CacheUsageIdentity()
+}
+
+func cacheUsageSizeMayChange(res *sharedResult) bool {
+	if res == nil || !res.hasValue || res.self == nil {
+		return false
+	}
+	mutableSizer, ok := any(res.self).(cacheUsageMayChange)
+	if !ok {
+		return false
+	}
+	return mutableSizer.CacheUsageMayChange()
 }

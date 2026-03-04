@@ -62,13 +62,18 @@ func (v cacheTestOpaqueValue) OnRelease(ctx context.Context) error {
 type cacheTestSizedInt struct {
 	Int
 	sizeBytes     int64
+	sizeSource    *atomic.Int64
 	usageIdentity string
 	sizeCalls     *atomic.Int32
+	sizeMayChange bool
 }
 
 func (v cacheTestSizedInt) CacheUsageSize(context.Context) (int64, bool, error) {
 	if v.sizeCalls != nil {
 		v.sizeCalls.Add(1)
+	}
+	if v.sizeSource != nil {
+		return v.sizeSource.Load(), true, nil
 	}
 	return v.sizeBytes, true, nil
 }
@@ -78,6 +83,10 @@ func (v cacheTestSizedInt) CacheUsageIdentity() (string, bool) {
 		return "", false
 	}
 	return v.usageIdentity, true
+}
+
+func (v cacheTestSizedInt) CacheUsageMayChange() bool {
+	return v.sizeMayChange
 }
 
 func cacheTestSizedIntResult(
@@ -92,6 +101,22 @@ func cacheTestSizedIntResult(
 		sizeBytes:     sizeBytes,
 		usageIdentity: usageIdentity,
 		sizeCalls:     sizeCalls,
+	})
+}
+
+func cacheTestMutableSizedIntResult(
+	id *call.ID,
+	value int,
+	sizeSource *atomic.Int64,
+	usageIdentity string,
+	sizeCalls *atomic.Int32,
+) AnyResult {
+	return newDetachedResult(id, cacheTestSizedInt{
+		Int:           NewInt(value),
+		sizeSource:    sizeSource,
+		usageIdentity: usageIdentity,
+		sizeCalls:     sizeCalls,
+		sizeMayChange: true,
 	})
 }
 
@@ -2913,6 +2938,90 @@ func TestCacheUsageEntriesDedupesByUsageIdentity(t *testing.T) {
 	}
 	assert.Equal(t, int64(512), totalBytes)
 	assert.Equal(t, 1, nonZeroEntries)
+}
+
+func TestCacheUsageEntriesDedupesByUsageIdentityDeterministicOwner(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sizeCalls := &atomic.Int32{}
+	keyFirst := cacheTestID("usage-dedupe-owner-first")
+	keySecond := cacheTestID("usage-dedupe-owner-second")
+	const dedupeIdentity = "snapshot://shared-identity-owner"
+
+	// Intentionally initialize first/second in this order so sharedResult IDs are
+	// deterministic and owner tie-break can be asserted directly.
+	firstRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keyFirst,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(keyFirst, 1, 333, dedupeIdentity, sizeCalls), nil
+	})
+	assert.NilError(t, err)
+	secondRes, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            keySecond,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(keySecond, 2, 333, dedupeIdentity, sizeCalls), nil
+	})
+	assert.NilError(t, err)
+
+	assert.NilError(t, firstRes.Release(ctx))
+	assert.NilError(t, secondRes.Release(ctx))
+
+	entries1 := c.UsageEntries()
+	entries2 := c.UsageEntries()
+	assert.DeepEqual(t, entries1, entries2)
+	assert.Equal(t, int32(1), sizeCalls.Load())
+	assert.Equal(t, 2, len(entries1))
+
+	// Entries are sorted by ID; owner is deterministic smallest sharedResultID.
+	assert.Equal(t, "dagql.result.1", entries1[0].ID)
+	assert.Equal(t, int64(333), entries1[0].SizeBytes)
+	assert.Equal(t, "dagql.result.2", entries1[1].ID)
+	assert.Equal(t, int64(0), entries1[1].SizeBytes)
+}
+
+func TestCacheUsageEntriesMutableUsageRemeasuresAfterSizeChange(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	sizeCalls := &atomic.Int32{}
+	sizeSource := &atomic.Int64{}
+	sizeSource.Store(100)
+
+	key := cacheTestID("usage-mutable-refresh")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestMutableSizedIntResult(
+			key,
+			1,
+			sizeSource,
+			"snapshot://mutable-refresh",
+			sizeCalls,
+		), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, res.Release(ctx))
+
+	entries1 := c.UsageEntries()
+	assert.Equal(t, 1, len(entries1))
+	assert.Equal(t, int64(100), entries1[0].SizeBytes)
+	assert.Equal(t, int32(1), sizeCalls.Load())
+
+	sizeSource.Store(200)
+	entries2 := c.UsageEntries()
+	assert.Equal(t, 1, len(entries2))
+	assert.Equal(t, int64(200), entries2[0].SizeBytes)
+	assert.Equal(t, int32(2), sizeCalls.Load())
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {

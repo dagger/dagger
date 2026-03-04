@@ -1523,11 +1523,28 @@ func (container *Container) WithExec(
 		}
 		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
 
+		var invalidateErr error
+		for i, ctrMount := range inputMounts {
+			if ctrMount.Readonly || ctrMount.CacheSource == nil || ctrMount.CacheSource.Volume.Self() == nil {
+				continue
+			}
+			if err := ctrMount.CacheSource.Volume.Self().invalidateSnapshotSize(ctx); err != nil {
+				invalidateErr = errors.Join(invalidateErr, fmt.Errorf("invalidate cache mount %d size: %w", i, err))
+			}
+		}
+
 		if execErr != nil {
 			slog.Warn("process did not complete successfully",
 				"process", strings.Join(metaSpec.Args, " "),
 				"error", execErr)
+			if invalidateErr != nil {
+				return errors.Join(execErr, invalidateErr)
+			}
 			return execErr
+		}
+
+		if invalidateErr != nil {
+			return invalidateErr
 		}
 
 		if err := applyOutputs(); err != nil {

@@ -106,6 +106,18 @@ func (cache *CacheVolume) CacheUsageIdentity() (string, bool) {
 	return snapshot.ID(), true
 }
 
+func (cache *CacheVolume) CacheUsageMayChange() bool {
+	return true
+}
+
+func (cache *CacheVolume) invalidateSnapshotSize(ctx context.Context) error {
+	snapshot := cache.getSnapshot()
+	if snapshot == nil {
+		return nil
+	}
+	return snapshot.InvalidateSize(ctx)
+}
+
 func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if cache.getSnapshot() != nil {
 		return nil
