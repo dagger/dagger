@@ -436,14 +436,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
-func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
+func (h *shellCallHandler) Prompt(_ context.Context, out idtui.TermOutput, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 
-	var init func()
-
-	// Use LLM prompt if LLM session is active and in prompt mode
 	switch h.mode {
 	case modeShell:
 		if def, _ := h.GetModuleDef(nil); def != nil {
@@ -454,7 +451,6 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	case modePrompt:
-		// initialize LLM session if not already initialized
 		llm, err := h.llmMaybe()
 		if err != nil {
 			sb.WriteString(out.String("error").Bold().Foreground(termenv.ANSIRed).String())
@@ -466,15 +462,12 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		} else {
 			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
-			init = func() {
-				h.llm(ctx) // initialize LLM
-			}
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	}
 
-	return sb.String(), init
+	return sb.String()
 }
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
