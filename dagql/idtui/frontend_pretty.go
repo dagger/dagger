@@ -2206,7 +2206,13 @@ func (fe *frontendPretty) updatePrompt() {
 		prompt, init := fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
 		fe.editline.Prompt = prompt
 		if init != nil {
-			fe.runShellAsync(init)
+			go func() {
+				init()
+				fe.tui.Dispatch(func() {
+					fe.updatePrompt()
+					fe.Compo.Update()
+				})
+			}()
 		}
 	}
 	if fe.editline != nil {
