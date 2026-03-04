@@ -41,6 +41,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 
 	"codeberg.org/vito/tuist"
+	"codeberg.org/vito/tuist/teav1"
 )
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
@@ -140,7 +141,8 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	form *huh.Form
+	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
+	formModel *huh.Form   // direct reference for KeyBinds()
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -689,16 +691,23 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 }
 
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
-	form.SubmitCmd = func() tea.Msg {
-		result(form)
-		return promptDone{}
-	}
-	form.CancelCmd = func() tea.Msg {
-		result(form)
-		return promptDone{}
-	}
-	fe.form = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
-	fe.execTeaCmd(fe.form.Init())
+	form.SubmitCmd = tea.Quit
+	form.CancelCmd = tea.Quit
+	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+	fe.formWrap = teav1.New(fe.formModel)
+	fe.formWrap.OnQuit(func() {
+		result(fe.formModel)
+		fe.tui.RemoveChild(fe.formWrap)
+		fe.formWrap = nil
+		fe.formModel = nil
+		fe.tui.SetFocus(fe)
+		fe.Compo.Update()
+	})
+	// Insert before keymapBar
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(fe.formWrap)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.tui.SetFocus(fe.formWrap)
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -1107,8 +1116,8 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 }
 
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
-	if fe.form != nil {
-		return fe.form.KeyBinds()
+	if fe.formModel != nil {
+		return fe.formModel.KeyBinds()
 	}
 
 	if fe.editlineFocused {
@@ -1211,14 +1220,13 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 
 	// Pre-render chrome below progress to measure its height for truncation.
 	logsLines := fe.renderLogsLines(progPrefix)
-	formLines := fe.renderFormLines()
 
 	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
 	chromeHeight += fe.editlineHeight() // textInput is a sibling, not rendered here
-	chromeHeight += len(formLines)
+	chromeHeight += fe.formHeight()     // formWrap is a sibling, not rendered here
 
 	// Render progress rows via tree-based components
 	progressLines := fe.renderProgressLines(r, ctx, chromeHeight, progPrefix)
@@ -1232,9 +1240,8 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		lines = append(lines, logsLines...)
 		lines = append(lines, "") // trailing gap
 	}
-	// NOTE: textInput is rendered as a sibling in the TUI container,
-	// not here. Its cursor propagates through tuist automatically.
-	lines = append(lines, formLines...)
+	// NOTE: textInput and formWrap are rendered as siblings in the TUI
+	// container, not here. Their cursors propagate through tuist automatically.
 	// NOTE: keymapBar is rendered as a sibling in the TUI container.
 
 	// Truncate each line to terminal width so no line wraps to multiple
@@ -1284,12 +1291,18 @@ func (fe *frontendPretty) editlineHeight() int {
 	return strings.Count(val, "\n") + 1
 }
 
-// renderFormLines returns the form view as lines.
-func (fe *frontendPretty) renderFormLines() []string {
-	if fe.form == nil {
-		return nil
+// formHeight returns the estimated line count of the form wrap
+// for chrome-height budgeting. The actual rendering is handled by tuist
+// (formWrap is a sibling component).
+func (fe *frontendPretty) formHeight() int {
+	if fe.formModel == nil {
+		return 0
 	}
-	return appendView(nil, fe.formView())
+	view := fe.formModel.View()
+	if view == "" {
+		return 0
+	}
+	return strings.Count(view, "\n") + 1
 }
 
 
@@ -1386,7 +1399,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	}
 
 	// Sync focus
-	isFocused := st.spanID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
+	isFocused := st.spanID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 	if st.focused != isFocused {
 		st.focused = isFocused
 		changed = true
@@ -1637,32 +1650,16 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // ---------- tuist.Interactive -----------------------------------------------
 
 // HandleKeyPress implements tuist.Interactive. It dispatches key events to the
-// appropriate handler based on the current mode (form or nav).
-// When the TextInput is focused, keys go directly to it via tuist's
-// focus routing, with interceptEditlineKey handling special keys first.
+// nav handler. When the TextInput or formWrap is focused, keys go directly to
+// them via tuist's focus routing.
 func (fe *frontendPretty) HandleKeyPress(_ tuist.EventContext, ev uv.KeyPressEvent) bool {
-	switch {
-	case fe.form != nil:
-		fe.handleFormKey(ev)
-	default:
-		fe.handleNavKeyUV(ev)
-	}
+	fe.handleNavKeyUV(ev)
 
 	// Schedule a re-render after the keypress highlight fades
 	fe.scheduleKeypressClear()
 
 	fe.Compo.Update()
 	return true
-}
-
-// handleFormKey forwards a key event to the active huh.Form.
-func (fe *frontendPretty) handleFormKey(ev uv.KeyPressEvent) {
-	msg := uvKeyToTeaKeyMsg(ev)
-	form, cmd := fe.form.Update(msg)
-	if f, ok := form.(*huh.Form); ok {
-		fe.form = f
-	}
-	fe.execTeaCmd(cmd)
 }
 
 // interceptEditlineKey is the TextInput's KeyInterceptor. It handles
@@ -1920,176 +1917,6 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	}
 	fe.syncPrompt()
 	fe.shellRunning = false
-}
-
-// ---------- tea.Cmd executor ------------------------------------------------
-
-// execTeaCmd runs a bubbletea Cmd asynchronously and feeds the resulting
-// message back through the TUI's dispatch loop. This bridges the bubbletea
-// command model used by editline, huh.Form, and ShellHandler with the
-// tuist dispatch model.
-func (fe *frontendPretty) execTeaCmd(cmd tea.Cmd) {
-	if cmd == nil {
-		return
-	}
-	go func() {
-		msg := cmd()
-		if msg == nil {
-			return
-		}
-		fe.tui.Dispatch(func() {
-			fe.handleTeaMsg(msg)
-			fe.Compo.Update()
-		})
-	}()
-}
-
-// handleTeaMsg routes a bubbletea message to the appropriate handler.
-func (fe *frontendPretty) handleTeaMsg(msg tea.Msg) {
-	switch msg := msg.(type) {
-	case tea.QuitMsg:
-		fe.doQuit()
-	case tea.BatchMsg:
-		for _, cmd := range msg {
-			fe.execTeaCmd(cmd)
-		}
-	case promptDone:
-		fe.form = nil
-	default:
-		// Forward to form if active
-		if fe.form != nil {
-			form, cmd := fe.form.Update(msg)
-			if f, ok := form.(*huh.Form); ok {
-				fe.form = f
-			}
-			fe.execTeaCmd(cmd)
-		}
-	}
-}
-
-// ---------- UV key conversion -----------------------------------------------
-
-// uvKeyToTeaKeyMsg converts an ultraviolet KeyPressEvent to a bubbletea v1
-// KeyMsg for forwarding to embedded bubbletea components (editline, huh.Form).
-func uvKeyToTeaKeyMsg(ev uv.KeyPressEvent) tea.KeyMsg {
-	k := uv.Key(ev)
-	alt := k.Mod.Contains(uv.ModAlt)
-	ctrl := k.Mod.Contains(uv.ModCtrl)
-	shift := k.Mod.Contains(uv.ModShift)
-
-	// Printable text (no ctrl modifier).
-	if k.Text != "" && !ctrl {
-		return tea.KeyMsg{
-			Type:  tea.KeyRunes,
-			Runes: []rune(k.Text),
-			Alt:   alt,
-		}
-	}
-
-	// Map special keys.
-	keyType, ok := uvToV1Key[k.Code]
-	if ok {
-		if shifted, ok := shiftedKey(keyType, ctrl, shift); ok {
-			return tea.KeyMsg{Type: shifted, Alt: alt}
-		}
-		return tea.KeyMsg{Type: keyType, Alt: alt}
-	}
-
-	// Ctrl+letter: bubbletea v1 maps ctrl+a to KeyCtrlA (0x01), etc.
-	if ctrl && k.Code >= 'a' && k.Code <= 'z' {
-		return tea.KeyMsg{Type: tea.KeyType(k.Code - 'a' + 1), Alt: alt}
-	}
-
-	// Printable rune fallback.
-	if k.Code >= 0x20 {
-		return tea.KeyMsg{
-			Type:  tea.KeyRunes,
-			Runes: []rune{k.Code},
-			Alt:   alt,
-		}
-	}
-
-	return tea.KeyMsg{Type: tea.KeyRunes}
-}
-
-var uvToV1Key = map[rune]tea.KeyType{
-	uv.KeyUp:        tea.KeyUp,
-	uv.KeyDown:      tea.KeyDown,
-	uv.KeyLeft:      tea.KeyLeft,
-	uv.KeyRight:     tea.KeyRight,
-	uv.KeyHome:      tea.KeyHome,
-	uv.KeyEnd:       tea.KeyEnd,
-	uv.KeyPgUp:      tea.KeyPgUp,
-	uv.KeyPgDown:    tea.KeyPgDown,
-	uv.KeyDelete:    tea.KeyDelete,
-	uv.KeyInsert:    tea.KeyInsert,
-	uv.KeyTab:       tea.KeyTab,
-	uv.KeyBackspace: tea.KeyBackspace,
-	uv.KeyEnter:     tea.KeyEnter,
-	uv.KeyEscape:    tea.KeyEscape,
-	uv.KeySpace:     tea.KeySpace,
-	uv.KeyF1:        tea.KeyF1,
-	uv.KeyF2:        tea.KeyF2,
-	uv.KeyF3:        tea.KeyF3,
-	uv.KeyF4:        tea.KeyF4,
-	uv.KeyF5:        tea.KeyF5,
-	uv.KeyF6:        tea.KeyF6,
-	uv.KeyF7:        tea.KeyF7,
-	uv.KeyF8:        tea.KeyF8,
-	uv.KeyF9:        tea.KeyF9,
-	uv.KeyF10:       tea.KeyF10,
-	uv.KeyF11:       tea.KeyF11,
-	uv.KeyF12:       tea.KeyF12,
-}
-
-// shiftedKey returns the ctrl/shift variant of a base key type, if one exists
-// in bubbletea v1's key model.
-func shiftedKey(base tea.KeyType, ctrl, shift bool) (tea.KeyType, bool) {
-	switch {
-	case ctrl && shift:
-		if k, ok := ctrlShiftKeys[base]; ok {
-			return k, true
-		}
-	case ctrl:
-		if k, ok := ctrlKeys[base]; ok {
-			return k, true
-		}
-	case shift:
-		if k, ok := shiftKeys[base]; ok {
-			return k, true
-		}
-	}
-	return 0, false
-}
-
-var ctrlKeys = map[tea.KeyType]tea.KeyType{
-	tea.KeyUp:     tea.KeyCtrlUp,
-	tea.KeyDown:   tea.KeyCtrlDown,
-	tea.KeyLeft:   tea.KeyCtrlLeft,
-	tea.KeyRight:  tea.KeyCtrlRight,
-	tea.KeyHome:   tea.KeyCtrlHome,
-	tea.KeyEnd:    tea.KeyCtrlEnd,
-	tea.KeyPgUp:   tea.KeyCtrlPgUp,
-	tea.KeyPgDown: tea.KeyCtrlPgDown,
-}
-
-var shiftKeys = map[tea.KeyType]tea.KeyType{
-	tea.KeyUp:    tea.KeyShiftUp,
-	tea.KeyDown:  tea.KeyShiftDown,
-	tea.KeyLeft:  tea.KeyShiftLeft,
-	tea.KeyRight: tea.KeyShiftRight,
-	tea.KeyHome:  tea.KeyShiftHome,
-	tea.KeyEnd:   tea.KeyShiftEnd,
-	tea.KeyTab:   tea.KeyShiftTab,
-}
-
-var ctrlShiftKeys = map[tea.KeyType]tea.KeyType{
-	tea.KeyUp:    tea.KeyCtrlShiftUp,
-	tea.KeyDown:  tea.KeyCtrlShiftDown,
-	tea.KeyLeft:  tea.KeyCtrlShiftLeft,
-	tea.KeyRight: tea.KeyCtrlShiftRight,
-	tea.KeyHome:  tea.KeyCtrlShiftHome,
-	tea.KeyEnd:   tea.KeyCtrlShiftEnd,
 }
 
 // uvKeyString converts a uv.Key to the same string format as tea.KeyMsg.String()
@@ -2797,7 +2624,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 	span := row.Span
 	chained := row.Chained
 	depth := row.Depth
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
 	if !abridged && row.Span.LLMRole == "" {
 		fe.renderStatusIcon(out, row)
@@ -2880,7 +2707,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 
 func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) error {
 	span := row.Span
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
@@ -3130,10 +2957,6 @@ func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
 
 
 
-func (fe *frontendPretty) formView() string {
-	return fe.form.View() + "\n\n"
-}
-
 // ---------- pretty logs (unchanged) -----------------------------------------
 
 type prettyLogs struct {
@@ -3299,33 +3122,12 @@ func findTTYs() (in io.Reader, out io.Writer) {
 	return
 }
 
-type wrapCommand struct {
-	tea.ExecCommand
-	before func() error
-	after  func() error
-}
-
-var _ tea.ExecCommand = (*wrapCommand)(nil)
-
-func (ts *wrapCommand) Run() error {
-	if err := ts.before(); err != nil {
-		return err
-	}
-	err := ts.ExecCommand.Run()
-	if err2 := ts.after(); err == nil {
-		err = err2
-	}
-	return err
-}
-
 // TermOutput is an interface that captures the methods we need from termenv.Output
 type TermOutput interface {
 	io.Writer
 	String(...string) termenv.Style
 	ColorProfile() termenv.Profile
 }
-
-type promptDone struct{}
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
 	done := make(chan struct{})
