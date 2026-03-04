@@ -137,10 +137,9 @@ type ShellHandler interface {
 	// IsComplete determines if the current input is a complete command
 	IsComplete(entireInput [][]rune, line int, col int) bool
 
-	// Prompt generates the shell prompt string.
-	// Returns the prompt and an optional async init function. The caller
-	// runs the init function in a goroutine if non-nil.
-	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, func())
+	// Prompt generates the shell prompt string based on current state.
+	// Must be pure — no side effects or async work.
+	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) string
 
 	// Keys returns the keys that will be displayed when the input is focused
 	KeyBindings(out TermOutput) []key.Binding
