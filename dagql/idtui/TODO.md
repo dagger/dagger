@@ -39,7 +39,7 @@ overhead. Eliminating it would require either rewriting
 `renderErrorCause` to not use `fancyIndent`, or threading depth-based
 indentation through a different mechanism — not worth the churn.
 
-## 4. Break frontendPretty.Render() into composed components — IN PROGRESS
+## 4. Break frontendPretty.Render() into composed components — DONE
 
 **Phase 1 (done):** Restructured `Render()` to work with `[]string`
 lines throughout instead of building one giant string and splitting.
@@ -47,14 +47,17 @@ lines throughout instead of building one giant string and splitting.
 - Extracted `renderLogsLines`, `renderEditlineLines`, `renderFormLines`,
   `renderKeymapLines` as line-returning helpers
 - `Render()` assembles lines via `append`, no string builder
-- Sidebar compositing still uses string join/split (lipgloss requires it)
 
-**Phase 2 (future):** Extract these helpers into proper tuist components
-with their own `Compo` for caching:
-- `KeymapView` — only re-renders on keypress/focus change
-- `LogsView` — wraps the Vterm, re-renders on new log data
-- `SidebarView` — use tuist overlay instead of lipgloss JoinHorizontal
-- Zoom header could be its own component
+**Phase 2 (done):** Sidebar → notification bubble overlays.
+- Each `SidebarSection` becomes a `NotificationBubble` component
+- Rendered as tuist overlays, anchored bottom-right, stacked upward
+- Bordered boxes with title in top border: `╭─ Title ──╮`
+- No more sidebar width stealing or lipgloss JoinHorizontal
+
+**Deferred:** Extracting keymap/logs/editline into separate components.
+These update frequently enough (every frame for logs, every focus
+change for keymap) that caching gains are minimal. The line-returning
+helpers already eliminate string building overhead.
 
 ## 5. Convert render functions to line-oriented output
 
