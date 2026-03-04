@@ -75,6 +75,19 @@ func (s *ServedMods) Mods() []Mod {
 	return mods
 }
 
+// PrimaryMods returns only the modules that were directly loaded (not
+// dependency-only modules). These are the modules whose constructors
+// appear on the Query root.
+func (s *ServedMods) PrimaryMods() []Mod {
+	var mods []Mod
+	for _, e := range s.entries {
+		if !e.skipConstructor {
+			mods = append(mods, e.mod)
+		}
+	}
+	return mods
+}
+
 // ModDeps returns a ModDeps containing all served modules. This is useful
 // for callers that need the dependency-graph API (TypeDefs, ModTypeFor, etc.)
 // where constructor policy is irrelevant.

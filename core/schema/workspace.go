@@ -1050,7 +1050,7 @@ func (s *workspaceSchema) checks(
 	}
 
 	var allChecks []*core.Check
-	for _, mod := range served.Mods() {
+	for _, mod := range served.PrimaryMods() {
 		userMod, ok := mod.(*core.Module)
 		if !ok {
 			continue
@@ -1100,7 +1100,7 @@ func (s *workspaceSchema) generators(
 	}
 
 	var allGenerators []*core.Generator
-	for _, mod := range served.Mods() {
+	for _, mod := range served.PrimaryMods() {
 		userMod, ok := mod.(*core.Module)
 		if !ok {
 			continue

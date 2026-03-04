@@ -110,7 +110,23 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	if name == "" {
 		name = mod.NameField
 	}
-	return mod.ObjectByName(name)
+	return mod.ObjectByOriginalName(name)
+}
+
+// ObjectByOriginalName finds an object by comparing against its OriginalName
+// (as registered by the SDK), rather than the potentially-namespaced Name.
+// This is needed because namespaceObject rewrites obj.Name to match the
+// module's final name, but obj.OriginalName always reflects the SDK name.
+func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid {
+			obj := objDef.AsObject.Value
+			if gqlObjectName(obj.OriginalName) == gqlObjectName(name) {
+				return obj, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
