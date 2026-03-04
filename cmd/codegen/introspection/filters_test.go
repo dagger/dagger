@@ -45,7 +45,6 @@ func TestKeepDepAndTest(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.JSONEq(t, string(expectedJSON), string(resultJSON))
-
 }
 
 func TestExcludeDepAndTest(t *testing.T) {
