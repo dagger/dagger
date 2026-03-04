@@ -1,6 +1,6 @@
 module toolchains/installers
 
-go 1.25.3
+go 1.25.6
 
 replace github.com/dagger/dagger => ../..
 
