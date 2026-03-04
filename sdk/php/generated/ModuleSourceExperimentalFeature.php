@@ -15,4 +15,7 @@ enum ModuleSourceExperimentalFeature: string
 {
     /** Self calls */
     case SELF_CALLS = 'SELF_CALLS';
+
+    /** Portable API */
+    case PORTABLE_API = 'PORTABLE_API';
 }

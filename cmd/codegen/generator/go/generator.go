@@ -133,3 +133,11 @@ func renderFile(
 	}
 	return formatted, nil
 }
+
+func internalDir(isPortableDaggerAPI bool) string {
+	if isPortableDaggerAPI {
+		return "internal/dagger"
+	} else {
+		return "internal"
+	}
+}
