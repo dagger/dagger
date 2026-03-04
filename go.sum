@@ -11,6 +11,8 @@ codeberg.org/vito/tuist v0.0.0-20260304185905-ed74d94fd064 h1:sQwjPRFhGBXBXg95lK
 codeberg.org/vito/tuist v0.0.0-20260304185905-ed74d94fd064/go.mod h1:rUVavdvuBRlxvWnuGNHDzk9hrCW/9GvTL6cn1IycwIM=
 codeberg.org/vito/tuist v0.0.0-20260304195522-58791e8a3c75 h1:sORV6y+ifNgb5D3yQk+zsFO9lFPZgqPCfs2kdZ7ccs4=
 codeberg.org/vito/tuist v0.0.0-20260304195522-58791e8a3c75/go.mod h1:rUVavdvuBRlxvWnuGNHDzk9hrCW/9GvTL6cn1IycwIM=
+codeberg.org/vito/tuist v0.0.0-20260304195922-e412c8a89b65 h1:1Fz7hyBCQTk9XT6vAOPTuQ2ikgZSY0AJmZMHINFMRis=
+codeberg.org/vito/tuist v0.0.0-20260304195922-e412c8a89b65/go.mod h1:rUVavdvuBRlxvWnuGNHDzk9hrCW/9GvTL6cn1IycwIM=
 codeberg.org/vito/tuist/teav1 v0.0.0-20260304174700-ffcccc854ad5 h1:qm/y++ONHYg7qLTcQoOnvurkrkSp2JZj/0BTGZ+Kk7g=
 codeberg.org/vito/tuist/teav1 v0.0.0-20260304174700-ffcccc854ad5/go.mod h1:vjTHa8ftDCwau0wOCsLmljfZG1UKprNPcJs6GXxNfVc=
 cyphar.com/go-pathrs v0.2.1 h1:9nx1vOgwVvX1mNBWDu93+vaceedpbsDqo+XuBGL40b8=
