@@ -33,7 +33,6 @@ type ModDeps struct {
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
 	lazilyLoadedSchema                  *dagql.Server
 	lazilyLoadedSchemaJSONFile          dagql.Result[*File]
-	lazilyLoadedSchemaScrubbed          bool // tracks whether the cached schema has module hidden types scrubbed
 	lazilyLoadedSchemaForClient         *dagql.Server
 	lazilyLoadedSchemaJSONFileForClient dagql.Result[*File]
 	loadSchemaErr                       error
