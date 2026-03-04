@@ -107,9 +107,10 @@ func (n *NotificationBubble) buildTopBorder(profile termenv.Profile, borderFg te
 	keymapWidth := 0
 	if len(n.section.KeyMap) > 0 {
 		kb := new(strings.Builder)
-		keymapWidth = n.fe.renderKeymap(kb,
+		keymapWidth = RenderKeymap(kb,
 			KeymapStyle.Background(sidebarBG),
-			n.section.KeyMap)
+			n.section.KeyMap,
+			n.fe.pressedKey, n.fe.pressedKeyAt)
 		keymapStr = " " + kb.String() + " "
 		keymapWidth += 2 // spaces around keymap
 	}
