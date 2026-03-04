@@ -1484,7 +1484,7 @@ func canonicalModuleReference(src *core.ModuleSource) string {
 // to access the client's filesystem for workspace detection.
 func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error {
 	if !client.pendingWorkspaceLoad {
-		return nil
+		return srv.inheritWorkspaceBinding(ctx, client)
 	}
 
 	client.workspaceMu.Lock()
@@ -1513,6 +1513,41 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 
 	client.workspaceLoaded = true
 	return client.workspaceErr
+}
+
+// inheritWorkspaceBinding copies the nearest available parent workspace binding
+// onto the current client. This keeps nested clients aligned with their parent
+// workspace for currentWorkspace() and lockfile resolution.
+func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error {
+	client.workspaceMu.Lock()
+	if client.workspace != nil {
+		client.workspaceMu.Unlock()
+		return nil
+	}
+	client.workspaceMu.Unlock()
+
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
+			return err
+		}
+
+		parent.workspaceMu.Lock()
+		parentWorkspace := parent.workspace
+		parent.workspaceMu.Unlock()
+		if parentWorkspace == nil {
+			continue
+		}
+
+		client.workspaceMu.Lock()
+		if client.workspace == nil {
+			client.workspace = parentWorkspace
+		}
+		client.workspaceMu.Unlock()
+		return nil
+	}
+
+	return nil
 }
 
 // loadWorkspaceFromHost detects and loads the workspace from the client's host filesystem.

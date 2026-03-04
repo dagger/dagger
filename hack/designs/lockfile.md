@@ -296,9 +296,9 @@ Dependency order:
 
 - [ ] **#11: Bind lockfile behavior to workspace binding for all clients**
   Per [Workspace Binding and Access Control](./workspace-binding-and-access-control.md):
-  - inherit workspace binding by default for nested clients
-  - support explicit workspace rebind on connect (`workspaceRef`, name TBD)
-  - ensure lookup lock state always comes from the same bound workspace as `currentWorkspace`
+  - [x] inherit workspace binding by default for nested clients
+  - [ ] support explicit workspace rebind on connect (`workspaceRef`, name TBD)
+  - [ ] ensure lookup lock state always comes from the same bound workspace as `currentWorkspace`
 
 - [ ] **#12: Align spawned-client policy with workspace access model**
   Locking is engine-internal and not grant-gated:

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -149,4 +150,49 @@ func TestIsSameModuleReference(t *testing.T) {
 		b := local("/root/src/dagger/.dagger/modules/dagger-dev", ".", ".")
 		require.True(t, isSameModuleReference(a, b))
 	})
+}
+
+func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		Path:     ".",
+		ClientID: "parent-client",
+	}
+
+	parent := &daggerClient{
+		workspace: bound,
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{parent},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Same(t, bound, child.workspace)
+}
+
+func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	existing := &core.Workspace{
+		Path:     ".",
+		ClientID: "child-client",
+	}
+	parentBound := &core.Workspace{
+		Path:     ".",
+		ClientID: "parent-client",
+	}
+
+	parent := &daggerClient{
+		workspace: parentBound,
+	}
+	child := &daggerClient{
+		workspace: existing,
+		parents:   []*daggerClient{parent},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Same(t, existing, child.workspace)
 }
