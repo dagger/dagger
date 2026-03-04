@@ -5,6 +5,7 @@
 Builds on:
 - [Part 1: Workspaces and Modules](https://gist.github.com/shykes/e4778dc5ec17c9a8bbd3120f5c21ce73)
 - [Part 2: Workspace API](https://gist.github.com/shykes/86c05de3921675944087cb0849e1a3be)
+- [Workspace Binding and Access Control](./workspace-binding-and-access-control.md)
 
 ## Scope and Workspace Relationship
 
@@ -260,139 +261,62 @@ Notes:
 
 ## Tasks
 
-### Dependency graph
+### Completed baseline
+
+- [x] Lock schema + parse/serialize wrappers (`util/lockfile`, `core/workspace/lock.go`)
+- [x] Workspace module lock read path in engine loading (`modules.resolve`)
+- [x] Workspace lock write paths (`install`, `configWrite` prune, `update`, `migrate`)
+- [x] Compat-mode legacy `pin` passthrough for migrated loading paths
+- [x] Initial workspace lock tests and integration coverage
+
+### Current task list (v1 closure)
+
+Dependency order:
 
 ```text
-#1 Lock file types + parse/serialize helpers
- |
- v
-#2 Engine read path (Detect -> pendingModule.Pin+Policy -> loadModule refPin)
- |
- +-----------------------+
- |                       |
- v                       v
-#3 Workspace install    #5 Compat mode legacy-pin passthrough
-   write/prune lock        (`dagger.json` `pin` field)
- |
- v
-#4 Workspace configWrite
-   stale-lock pruning
- |
- v
-#6 Workspace update command/API
- |
- v
-#7 Migration writes lock entries
- |
- v
-#8 Integration tests
+#9 Core lookup coverage
+ -> #10 Uniform lock-mode semantics
+ -> #11 All-client workspace/lock binding
+ -> #12 Spawned-client grant policy alignment
+ -> #13 Conformance + race coverage
 ```
 
-### Task list
-
-- [x] **#1: Add lock schema in `core/workspace`**  
-  Port/adapt `util/lockfile` from PR #11156 and add workspace helper wrappers for `"modules.resolve"`.
-
-#### #1 Detailed Checklist (file-level)
-
-1. Add generic tuple lockfile package.
-   File: `util/lockfile/lockfile.go`
-   Scope: port deterministic tuple format from PR #11156, but expose byte-oriented APIs for workspace integration.
-   API:
-   - `func Parse(data []byte) (*Lockfile, error)`
-   - `func (l *Lockfile) Marshal() ([]byte, error)`
-   - `func (l *Lockfile) Get(namespace, operation string, inputs []any) (any, bool)`
-   - `func (l *Lockfile) Set(namespace, operation string, inputs []any, result any) error`
-   - `func (l *Lockfile) Delete(namespace, operation string, inputs []any) bool`
-   Behavior:
-   - Require version header `[["version","1"]]` on non-empty files.
-   - Preserve unknown entries (do not drop tuples outside workspace usage).
-   - Stable output ordering by `(namespace, operation, inputs-json)`.
-   - Reject object/map/dict lock key inputs; key material must be positional ordered values only.
-   - Support structured result envelope `{value, policy}`.
-
-2. Add generic lockfile tests.
-   File: `util/lockfile/lockfile_test.go`
-   Cases:
-   - parse/marshal round-trip.
-   - deterministic ordering.
-   - duplicate-key overwrite semantics.
-   - malformed and empty-file handling.
-
-3. Add workspace-specific wrappers for module resolutions.
-   File: `core/workspace/lock.go`
-   API:
-   - `func ParseLock(data []byte) (*Lock, error)`
-   - `func NewLock() *Lock`
-   - `func (l *Lock) Marshal() ([]byte, error)`
-   - `func (l *Lock) GetModuleResolve(source string) (pin string, policy LockPolicy, ok bool)`
-   - `func (l *Lock) SetModuleResolve(source, pin string, policy LockPolicy) error`
-   - `func (l *Lock) DeleteModuleResolve(source string) bool`
-   - `func (l *Lock) PruneModuleResolveEntries(validSources map[string]struct{}) int`
-   Representation:
-   - maps to tuple key `("", "modules.resolve", [source])`.
-
-4. Add workspace lock wrapper tests.
-   File: `core/workspace/lock_test.go`
-   Cases:
-   - source -> pin+policy lookup/set/delete.
-   - policy validation (`pin`/`float` only).
-   - prune behavior against `config.toml` source set.
-   - unknown tuple preservation (`""/"git.*` operations, module namespaces, etc.).
-   - marshal determinism.
-
-5. Add workspace constants.
-   Files: `core/workspace/detect.go` (constants block) and `core/workspace/lock.go`
-   Constants:
-   - `LockFileName = "lock"`
-   - `PolicyPin = "pin"` and `PolicyFloat = "float"`
-   - tuple constants for `"modules"` / `"resolve"` to avoid string duplication.
-
-6. Keep task #1 isolated.
-   Do not wire engine loading or CLI mutation in this step.
-   Deliverable for #1 is parse/serialize + workspace wrappers + unit tests only.
-
-- [x] **#2: Thread lock policy into module loading (`engine/server/session.go`)**  
-  Extend `pendingModule` with `Pin` and `Policy`, lookup lock tuple by source during workspace gathering, pass `refPin` in `loadModule`, and gate behavior by lock mode.
-
-- [x] **#3: Update `workspace.install` lock write path (`core/schema/workspace.go`)**  
-  Persist git lookup results via `"modules.resolve"` lock entries with `policy`; optional orphan pruning.
-
-- [x] **#4: Prune stale lock entries on config mutation (`core/schema/workspace.go`)**  
-  Run optional orphan pruning after `configWrite`.
-
-- [x] **#5: Preserve legacy `pin` fields in compat mode (`core/workspace/legacy.go`, `engine/server/session.go`)**  
-  Use parsed legacy `Pin` when loading toolchains/blueprints from `dagger.json`.
-
-- [x] **#6: Add workspace update API + CLI (`core/schema/workspace.go`, `cmd/dagger/workspace.go`)**  
-  Implement `workspace.update` and wire top-level `dagger update` for workspace lock updates.
-
-- [x] **#7: Migration lock output (`core/workspace/migrate.go`)**  
-  Emit lock entries when legacy `pin` fields exist.
-
-- [x] **#8: Tests (`core/integration/workspace_test.go` + unit tests)**  
-  Cover lock read/write, `pin|float` policy semantics, lock mode behavior (`strict|auto|update`), stale entry pruning, update flow, compat pin behavior, and remote read behavior.
-
-- [ ] **#9: Restore core lookup lock hooks (`core/schema/git.go`, `core/schema/http.go`, `core/schema/container.go`, `core/schema/lockfile.go`)**  
-  Add lock get/set integration for `git.resolve|head|ref|refs|symrefs|isPublic`, `http.get`, and `container.from`.
-  Progress:
+- [ ] **#9: Complete core lookup lock coverage**
   - [x] shared schema lock helpers (`core/schema/lockfile.go`)
-  - [ ] `git.resolve|head|ref|refs|symrefs|isPublic`
-  - [ ] `http.get`
-  - [x] `container.from`
+  - [ ] `git.resolve|head|ref|refs|symrefs|isPublic` lock hooks
+  - [ ] `http.get` lock hook
+  - [ ] `container.from` hook parity with final mode semantics
 
-- [ ] **#10: Apply lock mode enforcement across non-workspace lookup paths**  
-  Make `strict|auto|update` behavior consistent for core lookup operations, not just workspace module loading.
-  Progress:
-  - [x] CLI global `--lock` flag wired and threaded to session params
-  - [ ] enforce mode semantics in `git` lookup hooks
-  - [ ] enforce mode semantics in `http` lookup hooks
-  - [ ] enforce mode semantics in `container` lookup hooks
+- [ ] **#10: Enforce uniform lock-mode semantics for all lookup hooks**
+  Apply the same matrix used by this design across `git`, `http`, and `container`:
+  - `strict`: require existing lock entry, use locked value, never mutate
+  - `auto + pin`: require existing entry, use locked value, never mutate
+  - `auto + float`: resolve live and write/update lock entry
+  - `update`: resolve live and write/update lock entry
 
-### Phase 2+ tasks (after v1 modules.resolve)
+- [ ] **#11: Bind lockfile behavior to workspace binding for all clients**
+  Per [Workspace Binding and Access Control](./workspace-binding-and-access-control.md):
+  - inherit workspace binding by default for nested clients
+  - support explicit workspace rebind on connect (`workspaceRef`, name TBD)
+  - ensure lookup lock state always comes from the same bound workspace as `currentWorkspace`
 
-- [ ] Add full `--offline` behavior with dedicated design and implementation.
-- [ ] Design and implement extension model for user-defined lookup functions.
+- [ ] **#12: Align spawned-client policy with workspace access model**
+  Locking is engine-internal and not grant-gated:
+  - grants are assigned by spawning APIs (`module runtime`, `withExec`, `asService`), not by child connect metadata
+  - ambient workspace restrictions MUST NOT disable internal lookup lock behavior
+  - explicit `Workspace` argument delegation remains valid independent of ambient grants
+
+- [ ] **#13: Conformance and regression coverage for desired state**
+  Add coverage for:
+  - lock mode matrix (`strict|auto|update`) across `modules`, `git`, `http`, `container`
+  - nested client classes (main client, direct module runtime, dependency runtime, `withExec`, `asService`)
+  - workspace inheritance vs explicit rebind behavior
+  - concurrent lock writes (no dropped updates / deterministic output)
+
+### Phase 2+ tasks
+
+- [ ] Full `--offline` behavior with dedicated design and implementation.
+- [ ] Extension model for user-defined lookup functions.
 
 ## Open questions
 
