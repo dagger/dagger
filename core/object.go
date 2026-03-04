@@ -217,9 +217,8 @@ func (obj *ModuleObject) TypeDescription() string {
 
 func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
-		Kind:       ast.Object,
-		Name:       obj.Type().Name(),
-		Directives: []*ast.Directive{dagql.Origin(obj.Module.OriginalName)},
+		Kind: ast.Object,
+		Name: obj.Type().Name(),
 	}
 	if obj.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.TypeDirective())
@@ -252,7 +251,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	fields = append(fields, funs...)
 
 	class.Install(fields...)
-	dag.InstallObject(class)
+	dag.InstallObject(class, obj.TypeDef.SourceMap.Value.TypeDirective())
 
 	return nil
 }
@@ -269,7 +268,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Module:           obj.Module.IDModule(),
 			GetCacheConfig:   mod.CacheConfigForCall,
 			DeprecatedReason: objDef.Deprecated,
-			Directives:       []*ast.Directive{dagql.Origin(obj.Module.OriginalName)},
 		}
 
 		if objDef.SourceMap.Valid {

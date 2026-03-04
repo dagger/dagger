@@ -357,7 +357,7 @@ func (s *Server) Root() AnyObjectResult {
 
 // InstallObject installs the given Object type into the schema, or returns the
 // previously installed type if it was already present
-func (s *Server) InstallObject(class ObjectType) ObjectType {
+func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) ObjectType {
 	s.installLock.Lock()
 
 	if class, ok := s.objects[class.TypeName()]; ok {
@@ -382,10 +382,7 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 				},
 			),
 			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-		}
-
-		if class.Origin() != "" {
-			spec.Directives = append(spec.Directives, Origin(class.Origin()))
+			Directives: directives,
 		}
 
 		s.Root().ObjectType().Extend(

@@ -192,7 +192,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		Origin: iface.mod.OriginalName,
 	})
 
-	dag.InstallObject(class)
+	dag.InstallObject(class, iface.typeDef.SourceMap.Value.TypeDirective())
 
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
@@ -227,7 +227,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Type:             fnTypeDef.ReturnType.ToTyped(),
 			Module:           iface.mod.IDModule(),
 			DeprecatedReason: fnTypeDef.Deprecated,
-			Directives:       []*ast.Directive{dagql.Origin(iface.mod.OriginalName)},
 		}
 		if fnTypeDef.SourceMap.Valid {
 			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.Value.TypeDirective())
@@ -360,7 +359,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	}
 
 	class.Install(fields...)
-	dag.InstallObject(class)
+	dag.InstallObject(class, ifaceTypeDef.SourceMap.Value.TypeDirective())
 
 	idScalar := DynamicID{
 		typeName: iface.typeDef.Name,
@@ -479,9 +478,8 @@ func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 
 func (iface *InterfaceAnnotatedValue) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
-		Kind:       ast.Object,
-		Name:       iface.Type().Name(),
-		Directives: []*ast.Directive{dagql.Origin(iface.IfaceType.mod.OriginalName)},
+		Kind: ast.Object,
+		Name: iface.Type().Name(),
 	}
 	if iface.TypeDef.SourceMap.Valid {
 		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.Value.TypeDirective())

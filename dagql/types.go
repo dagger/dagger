@@ -782,7 +782,7 @@ func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
 	}
 
 	if i.origin != "" {
-		typeDef.Directives = append(typeDef.Directives, Origin(i.origin))
+		typeDef.Directives = append(typeDef.Directives, sourceMap(i.origin))
 	}
 
 	return typeDef
