@@ -8,9 +8,11 @@ import {
 
 import { isDeno } from "../utils.js"
 
-const createFetchWithTimeout =
-  (timeout: number) =>
-  async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+const createFetchWithTimeout = (timeout: number): typeof fetch => {
+  const fetchWithTimeout = async (
+    input: URL | RequestInfo,
+    init?: RequestInit,
+  ): Promise<Response> => {
     if (init?.signal) {
       throw new Error(
         "Internal error: could not create fetch client with timeout",
@@ -28,8 +30,8 @@ const createFetchWithTimeout =
       // rather rely on its native fetch implementation
       // See: https://github.com/dagger/dagger/issues/10546
       if (isDeno()) {
-        return await fetch(input as RequestInfo, {
-          ...(init as RequestInit),
+        return await fetch(input, {
+          ...init,
           signal: controller.signal,
         })
       }
@@ -42,6 +44,10 @@ const createFetchWithTimeout =
       clearTimeout(timerId)
     }
   }
+
+  // Preserve fetch static members (e.g. preconnect in newer @types/node).
+  return Object.assign(fetchWithTimeout, fetch)
+}
 
 /**
  * Customer setter to inject trace parent into the request headers
