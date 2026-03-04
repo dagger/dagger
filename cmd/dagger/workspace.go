@@ -97,10 +97,6 @@ var moduleInstallCmd = &cobra.Command{
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		if remoteWorkdir != "" {
-			return fmt.Errorf("cannot install with a remote workdir")
-		}
-
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
@@ -140,10 +136,6 @@ var migrateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if migrateList {
 			return migrateListModules(cmd)
-		}
-
-		if remoteWorkdir != "" {
-			return fmt.Errorf("workspace on git remote cannot be modified")
 		}
 
 		cwd, err := os.Getwd()
@@ -282,10 +274,6 @@ var updateCmd = &cobra.Command{
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if remoteWorkdir != "" {
-			return fmt.Errorf("workspace on git remote cannot be modified")
-		}
-
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,

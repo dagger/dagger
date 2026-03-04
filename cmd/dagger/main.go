@@ -54,8 +54,7 @@ var (
 		Title: "Execution Commands",
 	}
 
-	workdir       string
-	remoteWorkdir string
+	workdir string
 
 	silent                   bool
 	verbose                  int
@@ -226,27 +225,14 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		// Try to use workdir as a local path. If it's not a valid local
-		// directory (e.g. a git ref like github.com/foo/bar@v1.0), treat
-		// it as a remote workdir and pass it to the engine.
-		origWorkdir := workdir
 		normalized, err := NormalizeWorkdir(workdir)
-		if err == nil {
-			if err := os.Chdir(normalized); err == nil {
-				workdir = normalized
-			} else {
-				// Not a local directory — treat as remote ref
-				remoteWorkdir = origWorkdir
-				workdir, _ = NormalizeWorkdir("")
-			}
-		} else {
-			// Can't normalize (not a path) — treat as remote ref
-			remoteWorkdir = origWorkdir
-			workdir, err = NormalizeWorkdir("")
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			return err
 		}
+		if err := os.Chdir(normalized); err != nil {
+			return fmt.Errorf("change workdir: %w", err)
+		}
+		workdir = normalized
 
 		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
@@ -344,7 +330,7 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVarP(&workdir, "workdir", "C", ".", "Set the working directory (local path or git ref)")
+	flags.StringVarP(&workdir, "workdir", "C", ".", "Set the working directory")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")

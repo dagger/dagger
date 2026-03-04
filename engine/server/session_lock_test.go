@@ -196,3 +196,52 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
 	require.Same(t, existing, child.workspace)
 }
+
+func TestWorkspaceBindingMode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("declared workspace takes precedence", func(t *testing.T) {
+		t.Parallel()
+
+		client := &daggerClient{
+			pendingWorkspaceLoad: false,
+			clientMetadata: &engine.ClientMetadata{
+				Workspace: stringPtr("github.com/dagger/dagger@main"),
+			},
+		}
+
+		mode, workspaceRef := workspaceBindingMode(client)
+		require.Equal(t, workspaceBindingDeclared, mode)
+		require.Equal(t, "github.com/dagger/dagger@main", workspaceRef)
+	})
+
+	t.Run("non-module defaults to host detection", func(t *testing.T) {
+		t.Parallel()
+
+		client := &daggerClient{
+			pendingWorkspaceLoad: true,
+			clientMetadata:       &engine.ClientMetadata{},
+		}
+
+		mode, workspaceRef := workspaceBindingMode(client)
+		require.Equal(t, workspaceBindingDetectHost, mode)
+		require.Equal(t, "", workspaceRef)
+	})
+
+	t.Run("module defaults to inheritance", func(t *testing.T) {
+		t.Parallel()
+
+		client := &daggerClient{
+			pendingWorkspaceLoad: false,
+			clientMetadata:       &engine.ClientMetadata{},
+		}
+
+		mode, workspaceRef := workspaceBindingMode(client)
+		require.Equal(t, workspaceBindingInherit, mode)
+		require.Equal(t, "", workspaceRef)
+	})
+}
+
+func stringPtr(v string) *string {
+	return &v
+}

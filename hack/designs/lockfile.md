@@ -247,7 +247,6 @@ Notes:
 ### Remote workspace behavior
 
 - Remote workspace (`-C <git-ref>`) reads and applies lock entries.
-- Mutating commands remain disallowed for remote workdirs.
 
 ## Error Model
 
@@ -296,8 +295,8 @@ Dependency order:
 
 - [ ] **#11: Bind lockfile behavior to workspace binding for all clients**
   Per [Workspace Binding and Access Control](./workspace-binding-and-access-control.md):
-  - [x] inherit workspace binding by default for nested clients
-  - [ ] support explicit workspace rebind on connect (`workspaceRef`, name TBD)
+  - [x] inherit workspace binding by default for module clients
+  - [x] support explicit workspace rebind on connect (`workspace`)
   - [ ] ensure lookup lock state always comes from the same bound workspace as `currentWorkspace`
 
 - [ ] **#12: Align spawned-client policy with workspace access model**

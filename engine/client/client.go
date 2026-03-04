@@ -131,10 +131,8 @@ type Params struct {
 	// Valid values: "strict", "auto", "update".
 	LockMode string
 
-	// RemoteWorkdir is a git ref string (e.g. "github.com/foo/bar@v1.0")
-	// for loading a workspace from a remote git repository instead of the
-	// client's local filesystem.
-	RemoteWorkdir string
+	// Workspace explicitly declares workspace binding for this client.
+	Workspace *string
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
@@ -1418,8 +1416,8 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	if c.LockMode != "" {
 		md.LockMode = c.LockMode
 	}
-	if c.RemoteWorkdir != "" {
-		md.RemoteWorkdir = c.RemoteWorkdir
+	if c.Workspace != nil {
+		md.Workspace = c.Workspace
 	}
 
 	return md

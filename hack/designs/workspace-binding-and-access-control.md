@@ -18,6 +18,11 @@ A client has:
 
 Workspace binding and lockfile are always coupled: a client's `currentWorkspace` and lookup lock state (`.dagger/lock`) come from the same bound workspace.
 
+Default binding is intentionally asymmetric:
+
+1. Module clients inherit workspace binding.
+2. Non-module clients bind a fresh workspace from their own `.`.
+
 Lockfile behavior is engine-internal and is **not** governed by workspace grants.
 
 Grants in this document apply to **ambient workspace access** only (auto-injected workspace and `dag.CurrentWorkspace()` style access). Explicitly passed `Workspace` arguments are treated as deliberate delegation from the caller.
@@ -39,8 +44,13 @@ Grants in this document apply to **ambient workspace access** only (auto-injecte
              |                                |
              v                                v
  +---------------------------+     +---------------------------+
- | bind(C) = bind(parent)    |     | bind(C) = declared bind   |
+ | module client?            |     | bind(C) = declared bind   |
  +---------------------------+     +---------------------------+
+      | yes         | no
+      v             v
+ +----------------+  +---------------------------+
+ | bind(C)=parent |  | bind(C)=detect from "."   |
+ +----------------+  +---------------------------+
              |                                |
              +---------------+----------------+
                              |
@@ -73,12 +83,14 @@ allow  deny                          |               read/write bound lockfile
 | Bound lockfile | The `.dagger/lock` associated with the currently bound workspace. |
 | Ambient workspace | Workspace resolved from the client's own binding (for example `currentWorkspace` and ambient injection). |
 | Explicit workspace argument | A `Workspace` value passed by a caller as a normal function argument. |
+| Module client | A client executing module runtime/module function context (for example, module runtime or dependency module runtime). |
 
 ## Problem
 
 1. Workspace behavior for nested clients is not formally specified.
 2. "Current workspace" and lockfile scope can diverge in practice, causing confusing lookup behavior.
-3. Access control for workspace API use by nested/dependency module clients is implicit and inconsistent.
+3. Non-module nested clients (for example, nested CLI in a playground) can accidentally inherit a parent workspace that does not match their own filesystem.
+4. Access control for workspace API use by nested/dependency module clients is implicit and inconsistent.
 
 ## Goals
 
@@ -97,17 +109,22 @@ allow  deny                          |               read/write bound lockfile
 
 ### 1. Workspace Binding
 
-Default rule:
+Connect parameter:
 
-- A client inherits its parent client's workspace binding.
+- `workspace` (optional string): explicitly declare workspace binding for the connecting client.
+- Unset means "use default binding rules"; it is semantically different from a set value.
 
-Override rule:
+Binding rules:
 
-- A client may explicitly declare a new workspace binding at connect time.
+1. If `workspace` is set: bind to that declared workspace.
+2. Else if the client is a module client: inherit nearest ancestor workspace binding.
+3. Else: bind from workspace detection in the connecting client's own `.`.
 
-Root rule:
+Notes:
 
-- A top-level client (no parent) binds from its own declared workspace, or (if none declared) from workspace detection in its own working directory.
+- Top-level clients are non-module clients, so rule 3 applies when `workspace` is unset.
+- Nested non-module clients also use rule 3 by default.
+- Engine infers local-vs-remote workspace resolution from `workspace` when set.
 
 ### 2. Binding/Lock Coupling
 
@@ -147,7 +164,9 @@ Lockfile read/write for lookup resolution (`modules.resolve`, `container.from`, 
 
 ### Baseline
 
-All nested clients inherit workspace binding unless they explicitly declare a new one.
+Only module clients inherit workspace binding by default.
+
+Nested non-module clients bind from their own `.` by default.
 
 ### Module Clients
 
@@ -166,9 +185,11 @@ Explicit delegation exception:
 
 ### Nested `withExec` / `asService` Clients
 
-Nested non-module clients also inherit binding by default.
+Nested non-module clients do not inherit binding by default.
 
-If they need a different workspace (for example, a local workspace inside a playground/container filesystem), they must explicitly declare a new binding when connecting.
+They bind from their own `.` (for example, a nested CLI started inside a playground/container filesystem sees that filesystem as its default workspace).
+
+If they need a non-default workspace, they must explicitly set `workspace` when connecting.
 
 Recommended V1 default grant policy:
 
@@ -188,8 +209,8 @@ Recommended V1 default grant policy:
 - Lookup locking still uses the bound lockfile internally.
 
 3. User opens terminal inside playground and runs another Dagger client:
-- If nested client does not declare a new workspace, it inherits parent binding.
-- If nested client declares a workspace in its own filesystem/CWD, it rebinds; both current workspace and lockfile switch to that new binding.
+- If nested client does not set `workspace`, it binds from its own `.` inside playground/container.
+- If nested client sets `workspace`, it binds to that declared workspace; both current workspace and lockfile switch to that new binding.
 
 ## API/Engine Implications
 
@@ -197,7 +218,7 @@ Recommended V1 default grant policy:
 
 This design adds exactly one new optional connect parameter:
 
-1. `workspaceRef` (name to bikeshed): explicitly declare a new workspace binding for the connecting client. If unset, binding is inherited.
+1. `workspace`: explicitly declare a workspace binding for the connecting client. If unset, default binding rules apply.
 
 All other client connect parameters remain defined elsewhere and are unchanged by this design.
 

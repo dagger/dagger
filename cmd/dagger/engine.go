@@ -112,7 +112,6 @@ func withEngine(
 		}
 
 		params.AllowedLLMModules = allowedLLMModules
-		params.RemoteWorkdir = remoteWorkdir
 
 		params.CloudURLCallback = Frontend.SetCloudURL
 

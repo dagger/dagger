@@ -180,8 +180,10 @@ type daggerClient struct {
 	// isn't available during initialization (the session attachables request
 	// is blocked on the same locks that initializeDaggerClient holds).
 
-	// Whether this client should attempt workspace detection and module loading.
-	// Set to true for main clients (not nested module function calls).
+	// Whether this client should detect its own workspace and auto-load
+	// workspace modules from that workspace.
+	// True for non-module clients (main client and nested non-module clients);
+	// false for module clients (they inherit workspace binding and skip auto-load).
 	pendingWorkspaceLoad bool
 	workspaceMu          sync.Mutex
 	workspaceLoaded      bool
@@ -695,7 +697,7 @@ func (srv *Server) initializeDaggerClient(
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
-	// Mark main clients for deferred workspace + extra module loading.
+	// Mark non-module clients for deferred workspace + extra module loading.
 	// Actual loading happens in serveQuery once the buildkit session is available.
 	if opts.EncodedModuleID == "" {
 		client.pendingWorkspaceLoad = true
@@ -932,6 +934,12 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.LockMode == "" && opts.LockMode != "" {
 			client.clientMetadata.LockMode = opts.LockMode
 		}
+		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
+			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
+				ref := workspaceRef
+				client.clientMetadata.Workspace = &ref
+			}
+		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
@@ -1011,6 +1019,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	var skipWorkspaceModules bool
 	var lockMode string
 	var eagerRuntime bool
+	var workspaceRef *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
@@ -1018,6 +1027,10 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		skipWorkspaceModules = md.SkipWorkspaceModules
 		lockMode = md.LockMode
 		eagerRuntime = md.EagerRuntime
+		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
+			ref := declaredWorkspace
+			workspaceRef = &ref
+		}
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -1035,6 +1048,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			SkipWorkspaceModules: skipWorkspaceModules,
 			LockMode:             lockMode,
 			EagerRuntime:         eagerRuntime,
+			Workspace:            workspaceRef,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -1483,7 +1497,8 @@ func canonicalModuleReference(src *core.ModuleSource) string {
 // (not initializeDaggerClient) because it requires the client's buildkit session
 // to access the client's filesystem for workspace detection.
 func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error {
-	if !client.pendingWorkspaceLoad {
+	mode, workspaceRef := workspaceBindingMode(client)
+	if mode == workspaceBindingInherit {
 		return srv.inheritWorkspaceBinding(ctx, client)
 	}
 
@@ -1501,11 +1516,13 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 	}
 
 	var err error
-	clientMD := client.clientMetadata
-	if clientMD != nil && clientMD.RemoteWorkdir != "" {
-		err = srv.loadWorkspaceFromRemote(ctx, client, clientMD.RemoteWorkdir)
-	} else {
+	switch mode {
+	case workspaceBindingDeclared:
+		err = srv.loadWorkspaceFromDeclaredRef(ctx, client, workspaceRef)
+	case workspaceBindingDetectHost:
 		err = srv.loadWorkspaceFromHost(ctx, client)
+	default:
+		err = fmt.Errorf("unsupported workspace binding mode %q", mode)
 	}
 	if err != nil {
 		client.workspaceErr = err
@@ -1513,6 +1530,38 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 
 	client.workspaceLoaded = true
 	return client.workspaceErr
+}
+
+type workspaceBindingModeType string
+
+const (
+	workspaceBindingDeclared   workspaceBindingModeType = "declared"
+	workspaceBindingDetectHost workspaceBindingModeType = "detect_host"
+	workspaceBindingInherit    workspaceBindingModeType = "inherit"
+)
+
+// workspaceBindingMode resolves binding behavior for the current client:
+// explicit workspace declaration, own host detection, or parent inheritance.
+func workspaceBindingMode(client *daggerClient) (workspaceBindingModeType, string) {
+	if workspaceRef, ok := workspaceRefFromClientMetadata(client.clientMetadata); ok {
+		return workspaceBindingDeclared, workspaceRef
+	}
+	if client.pendingWorkspaceLoad {
+		return workspaceBindingDetectHost, ""
+	}
+	return workspaceBindingInherit, ""
+}
+
+// workspaceRefFromClientMetadata returns the explicitly declared workspace
+// binding, if present.
+func workspaceRefFromClientMetadata(clientMD *engine.ClientMetadata) (string, bool) {
+	if clientMD == nil {
+		return "", false
+	}
+	if clientMD.Workspace != nil {
+		return *clientMD.Workspace, true
+	}
+	return "", false
 }
 
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
@@ -1552,7 +1601,11 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 
 // loadWorkspaceFromHost detects and loads the workspace from the client's host filesystem.
 func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClient) error {
-	cwd, err := client.bkClient.AbsPath(ctx, ".")
+	return srv.loadWorkspaceFromHostPath(ctx, client, ".")
+}
+
+func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error {
+	cwd, err := client.bkClient.AbsPath(ctx, hostPath)
 	if err != nil {
 		return fmt.Errorf("workspace detection: %w", err)
 	}
@@ -1568,6 +1621,31 @@ func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClie
 		resolveLocalRef,
 		true, // isLocal
 	)
+}
+
+func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
+	// Resolve as local path first (relative to the connecting client's cwd).
+	// If not found, fall back to parsing as a git workspace ref.
+	localPath, err := client.bkClient.AbsPath(ctx, workspaceRef)
+	if err == nil {
+		localStat, statErr := client.bkClient.StatCallerHostPath(ctx, localPath, true)
+		switch {
+		case statErr == nil:
+			if !localStat.IsDir() {
+				return fmt.Errorf("workspace %q: local path is not a directory", workspaceRef)
+			}
+			return srv.loadWorkspaceFromHostPath(ctx, client, localPath)
+		case !isWorkspaceNotFound(statErr):
+			return fmt.Errorf("workspace %q: checking local path: %w", workspaceRef, statErr)
+		}
+	}
+
+	if remoteErr := srv.loadWorkspaceFromRemote(ctx, client, workspaceRef); remoteErr == nil {
+		return nil
+	} else if err == nil {
+		return fmt.Errorf("workspace %q did not resolve as local path or git ref: %w", workspaceRef, remoteErr)
+	}
+	return fmt.Errorf("workspace %q: resolving local path: %w", workspaceRef, err)
 }
 
 // loadWorkspaceFromRemote clones a git repo and detects/loads the workspace from it.
@@ -1692,7 +1770,7 @@ func loadWorkspaceLock(
 	lockPath := filepath.Join(ws.Root, ws.Path, workspace.WorkspaceDirName, workspace.LockFileName)
 	data, err := readFile(ctx, lockPath)
 	if err != nil {
-		if isWorkspaceLockNotFound(err) {
+		if isWorkspaceNotFound(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("reading workspace lock %s: %w", lockPath, err)
@@ -1705,7 +1783,7 @@ func loadWorkspaceLock(
 	return lock, nil
 }
 
-func isWorkspaceLockNotFound(err error) bool {
+func isWorkspaceNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
 }
 
@@ -1769,7 +1847,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) error {
 	clientMD := client.clientMetadata
-	skipModules := clientMD != nil && clientMD.SkipWorkspaceModules
+	skipModules := !client.pendingWorkspaceLoad || (clientMD != nil && clientMD.SkipWorkspaceModules)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
 	ws, err := workspace.Detect(ctx, statFS, readFile, cwd)

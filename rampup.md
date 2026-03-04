@@ -54,7 +54,7 @@ Paths in `source` are relative to `.dagger/` directory.
   - `ensureWorkspaceLoaded()` — orchestrates detection + module loading
   - `loadWorkspaceModule()` / `loadExtraModule()` — loads modules via dagql pipeline
   - `applyWorkspaceConfigDefaults()` — maps `config.*` entries to constructor arg defaults
-- `engine/opts.go` — `ClientMetadata` with `ExtraModules`, `SkipWorkspaceModules`, `RemoteWorkdir`
+- `engine/opts.go` — `ClientMetadata` with `ExtraModules`, `SkipWorkspaceModules`, `Workspace`
 
 ### Workspace API (Part 2)
 - `core/workspace.go` — `Workspace` struct (Root, ConfigPath, HasConfig, ClientID)
@@ -63,7 +63,7 @@ Paths in `source` are relative to `.dagger/` directory.
 - `core/module.go` (~line 713) — enforces "cannot be stored as field" constraint
 
 ### CLI
-- `cmd/dagger/main.go` — `--workdir`/`-C` flag, remote workdir detection
+- `cmd/dagger/main.go` — `--workdir`/`-C` flag, local working-directory handling
 - `cmd/dagger/workspace.go` — `dagger workspace info`, `dagger install`
 - `cmd/dagger/module.go` — `dagger module init`
 
@@ -74,7 +74,7 @@ Paths in `source` are relative to `.dagger/` directory.
 - Module loading from config at connect time
 - Auto-aliases (`alias = true`), constructor arg defaults (`config.*`)
 - `dagger install`, `dagger module init`, `dagger workspace info`
-- `-C`/`--workdir` with remote git refs
+- `-C`/`--workdir` local path behavior
 - `dagger migrate` for legacy `dagger.json` projects
 - `dagger config` for reading/writing config values
 

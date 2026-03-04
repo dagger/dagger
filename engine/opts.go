@@ -123,11 +123,9 @@ type ClientMetadata struct {
 	// Valid values: "strict", "auto", "update".
 	LockMode string `json:"lock_mode,omitempty"`
 
-	// RemoteWorkdir is a git ref for loading a workspace from a remote
-	// repository (e.g. "github.com/foo/bar@v1.0"). When set, the engine
-	// clones this repo and performs workspace detection within it instead
-	// of using the client's local filesystem.
-	RemoteWorkdir string `json:"remote_workdir,omitempty"`
+	// Workspace explicitly declares the workspace binding for this client.
+	// When unset, the engine applies default workspace binding behavior.
+	Workspace *string `json:"workspace,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}
