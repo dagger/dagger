@@ -17,7 +17,7 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"

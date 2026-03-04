@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/opencontainers/go-digest"
 )
 

@@ -59,7 +59,7 @@ func BuiltInContainer(ctx context.Context, platform Platform, blobDigest string)
 		return nil, err
 	}
 
-	bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+	bkSessionGroup := NewSessionGroup(bk.ID())
 	ref, err := src.Snapshot(ctx, bkSessionGroup)
 	if err != nil {
 		return nil, err

@@ -35,7 +35,7 @@ func (srv *Server) EngineLocalCachePolicy() *bkclient.PruneInfo {
 
 // Return all the cache entries in the local cache. No support for filtering yet.
 func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
-	du, err := srv.baseWorker.DiskUsage(ctx, bkclient.DiskUsageInfo{})
+	du, err := srv.worker.DiskUsage(ctx, bkclient.DiskUsageInfo{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get disk usage from worker: %w", err)
 	}
@@ -87,14 +87,14 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 
 	dstat, _ := disk.GetDiskStat(srv.rootDir)
 	prunePolicies, err := resolveEngineLocalCachePrunePolicies(
-		dagqlCachePrunePoliciesFromBuildkit(srv.baseWorker.GCPolicy()),
+		dagqlCachePrunePoliciesFromBuildkit(srv.worker.GCPolicy()),
 		opts,
 		dstat,
 	)
 	if err != nil {
 		return nil, err
 	}
-	err = srv.baseWorker.Prune(ctx, ch, buildkitPruneInfosFromDagqlPolicies(prunePolicies)...)
+	err = srv.worker.Prune(ctx, ch, buildkitPruneInfosFromDagqlPolicies(prunePolicies)...)
 	if err != nil {
 		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
 	}
@@ -105,6 +105,7 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 		return &core.EngineCacheEntrySet{}, nil
 	}
 
+	/* TODO: rm after converting to dagql-native pruning
 	if e, ok := srv.SolverCache.(interface {
 		ReleaseUnreferenced(context.Context) error
 	}); ok {
@@ -112,6 +113,7 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 			bklog.G(ctx).Errorf("failed to release cache metadata: %+v", err)
 		}
 	}
+	*/
 
 	set := &core.EngineCacheEntrySet{}
 	for _, r := range pruned {
@@ -282,8 +284,8 @@ func (srv *Server) gc() {
 
 	eg.Go(func() error {
 		defer close(ch)
-		if policy := srv.baseWorker.GCPolicy(); len(policy) > 0 {
-			return srv.baseWorker.Prune(ctx, ch, policy...)
+		if policy := srv.worker.GCPolicy(); len(policy) > 0 {
+			return srv.worker.Prune(ctx, ch, policy...)
 		}
 		return nil
 	})

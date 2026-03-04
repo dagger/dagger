@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/containerd/platforms"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
+	imageexporter "github.com/dagger/dagger/engine/buildkit/exporter/containerimage"
+	"github.com/dagger/dagger/engine/buildkit/exporter/containerimage/exptypes"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/util/containerutil"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -41,8 +41,13 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 
-	// TODO: lift this to dagger
-	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	exporter, err := imageexporter.New(imageexporter.Opt{
+		SessionManager: c.SessionManager,
+		ImageWriter:    c.Worker.imageWriter,
+		Images:         c.Worker.ImageStore,
+		RegistryHosts:  c.Worker.RegistryHosts,
+		LeaseManager:   c.Worker.LeaseManager(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +141,7 @@ func (c *Client) ExportContainerImage(
 
 	exporter, err := ociexporter.New(ociexporter.Opt{
 		SessionManager: c.SessionManager,
-		ImageWriter:    c.Worker.ImageWriter,
+		ImageWriter:    c.Worker.imageWriter,
 		Variant:        variant,
 		LeaseManager:   c.Worker.LeaseManager(),
 	})
@@ -219,7 +224,7 @@ func (c *Client) ContainerImageToTarball(
 
 	exporter, err := ociexporter.New(ociexporter.Opt{
 		SessionManager: c.SessionManager,
-		ImageWriter:    c.Worker.ImageWriter,
+		ImageWriter:    c.Worker.imageWriter,
 		Variant:        variant,
 		LeaseManager:   c.Worker.LeaseManager(),
 	})

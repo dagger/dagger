@@ -16,7 +16,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -109,7 +109,7 @@ func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, EngineCacheP
 	return nil, nil
 }
 func (ms *mockServer) EngineLocalCachePolicy() *bkclient.PruneInfo { return nil }
-func (ms *mockServer) BuildkitCache() bkcache.Manager              { return nil }
+func (ms *mockServer) BuildkitCache() bkcache.SnapshotManager      { return nil }
 func (ms *mockServer) BuildkitSession() *bksession.Manager         { return nil }
 func (ms *mockServer) Locker() *locker.Locker                      { return nil }
 func (ms *mockServer) SecretSalt() []byte                          { return nil }

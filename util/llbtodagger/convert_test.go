@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -86,7 +85,11 @@ func TestDefinitionToIDBuildUnsupported(t *testing.T) {
 func TestDefinitionToIDBlobUnsupported(t *testing.T) {
 	t.Parallel()
 
-	st := blob.LLB(digest.FromString("blob-data"))
+	st := llb.NewState(llb.NewSource(
+		"blob://"+digest.FromString("blob-data").String(),
+		nil,
+		llb.Constraints{},
+	).Output())
 	def, err := st.Marshal(context.Background())
 	require.NoError(t, err)
 

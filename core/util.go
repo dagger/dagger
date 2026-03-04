@@ -15,7 +15,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -554,4 +554,9 @@ func pathResolverForMount(
 	default:
 		return nil, nil
 	}
+}
+
+// NewSessionGroup creates a session group from a client ID.
+func NewSessionGroup(clientID string) bksession.Group {
+	return bksession.NewGroup(clientID)
 }

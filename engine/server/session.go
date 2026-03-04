@@ -16,13 +16,9 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bkfrontend "github.com/dagger/dagger/internal/buildkit/frontend"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -50,7 +46,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache/cachemanager"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -147,9 +142,6 @@ type daggerClient struct {
 	// buildkit job-related state/config
 	buildkitSession *bksession.Session
 	getClientCaller func(string) (bksession.Caller, error)
-	job             *bksolver.Job
-	llbSolver       *llbsolver.Solver
-	llbBridge       bkfrontend.FrontendLLBBridge
 	dialer          *net.Dialer
 	bkClient        *buildkit.Client
 
@@ -269,7 +261,7 @@ func (srv *Server) initializeDaggerSession(
 				engine.Version,
 				runtime.GOOS,
 				runtime.GOARCH,
-				srv.SolverCache.ID() != cachemanager.LocalCacheID,
+				false,
 			),
 	})
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
@@ -334,14 +326,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	for _, client := range sess.clients {
 		releaseGroup.Go(func() error {
 			var errs error
-			client.job.Discard()
-			client.job.CloseProgress()
-
-			if client.llbSolver != nil {
-				errs = errors.Join(errs, client.llbSolver.Close())
-				client.llbSolver = nil
-			}
-
 			if client.buildkitSession != nil {
 				errs = errors.Join(errs, client.buildkitSession.Close())
 				client.buildkitSession = nil
@@ -462,23 +446,6 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
-	wc, err := buildkit.AsWorkerController(srv.worker)
-	if err != nil {
-		return err
-	}
-	client.llbSolver, err = llbsolver.New(llbsolver.Opt{
-		WorkerController: wc,
-		Frontends:        srv.frontends,
-		CacheManager:     srv.SolverCache,
-		SessionManager:   srv.bkSessionManager,
-		CacheResolvers:   srv.cacheImporters,
-		Entitlements:     buildkit.ToEntitlementStrings(srv.entitlements),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create llbsolver: %w", err)
-	}
-	failureCleanups.Add("close llb solver", client.llbSolver.Close)
-
 	var callerG singleflight.Group[string, bksession.Caller]
 	client.getClientCaller = func(id string) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -489,24 +456,12 @@ func (srv *Server) initializeDaggerClient(
 		return caller, err
 	}
 
+	var err error
 	client.buildkitSession, err = srv.newBuildkitSession(ctx, client)
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit session: %w", err)
 	}
 	failureCleanups.Add("close buildkit session", client.buildkitSession.Close)
-
-	client.job, err = srv.solver.NewJob(client.buildkitSession.ID())
-	if err != nil {
-		return fmt.Errorf("failed to create buildkit job: %w", err)
-	}
-	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", cleanups.Infallible(client.job.CloseProgress))
-
-	client.job.SessionID = client.buildkitSession.ID()
-	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
-
-	br := client.llbSolver.Bridge(client.job)
-	client.llbBridge = br
 
 	client.dialer = &net.Dialer{
 		Resolver: &net.Resolver{
@@ -532,22 +487,6 @@ func (srv *Server) initializeDaggerClient(
 		},
 	}
 
-	// write progress for extra debugging if configured
-	bkLogsW := srv.buildkitLogSink
-	if bkLogsW != nil {
-		prefix := fmt.Sprintf("[buildkit] [client=%s] ", client.clientID)
-		bkLogsW = prefixw.New(bkLogsW, prefix)
-		statusCh := make(chan *bkclient.SolveStatus, 8)
-		pw, err := progressui.NewDisplay(bkLogsW, progressui.PlainMode)
-		if err != nil {
-			return fmt.Errorf("failed to create progress writer: %w", err)
-		}
-		// ensure these logs keep getting printed until the session goes away, not just until this request finishes
-		logCtx := client.daggerSession.withShutdownCancel(context.WithoutCancel(ctx))
-		go client.job.Status(logCtx, statusCh)
-		go pw.UpdateFrom(logCtx, statusCh)
-	}
-
 	var parentBuildkitClient *buildkit.Client
 	numParents := len(client.parents)
 	if numParents > 0 {
@@ -558,7 +497,6 @@ func (srv *Server) initializeDaggerClient(
 		Worker:              srv.worker,
 		SessionManager:      srv.bkSessionManager,
 		BkSession:           client.buildkitSession,
-		LLBBridge:           client.llbBridge,
 		Dialer:              client.dialer,
 		GetClientCaller:     client.getClientCaller,
 		GetMainClientCaller: client.getMainClientCaller,

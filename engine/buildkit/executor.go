@@ -24,13 +24,11 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkresourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	randid "github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
@@ -110,51 +108,6 @@ type ExecutionMetadata struct {
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
-}
-
-const executionMetadataKey = "dagger.executionMetadata"
-
-func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, error) {
-	if vtx == nil {
-		return nil, false, nil
-	}
-	return ExecutionMetadataFromDescription(vtx.Options().Description)
-}
-
-func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadata, bool, error) {
-	if desc == nil {
-		return nil, false, nil
-	}
-
-	bs, ok := desc[executionMetadataKey]
-	if !ok {
-		return nil, false, nil
-	}
-
-	md := ExecutionMetadata{}
-	if err := json.Unmarshal([]byte(bs), &md); err != nil {
-		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
-	}
-	return &md, true, nil
-}
-
-func AddExecutionMetadataToDescription(desc map[string]string, md *ExecutionMetadata) error {
-	bs, err := json.Marshal(md)
-	if err != nil {
-		return fmt.Errorf("failed to marshal execution metadata: %w", err)
-	}
-	desc[executionMetadataKey] = string(bs)
-	return nil
-}
-
-func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
-	bs, err := json.Marshal(md)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal execution metadata: %w", err)
-	}
-	return llb.WithDescription(map[string]string{
-		executionMetadataKey: string(bs),
-	}), nil
 }
 
 func (w *Worker) Run(

@@ -19,7 +19,7 @@ import (
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
 	"golang.org/x/sync/errgroup"
 
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -328,7 +328,7 @@ func prepareMounts(
 	rootOutput func(bkcache.ImmutableRef),
 	metaOutput func(bkcache.ImmutableRef),
 	mountOutputs []func(bkcache.ImmutableRef),
-	cache bkcache.Manager,
+	cache bkcache.SnapshotManager,
 	session *bksession.Manager,
 	g bksession.Group,
 	cwd string,
@@ -632,7 +632,7 @@ func (mountable *sessionMountable) Mount(ctx context.Context, readonly bool) (sn
 	return mountable.mountable.Mount(ctx, readonly, mountable.group)
 }
 
-func execTmpFSMountable(cache bkcache.Manager, opt *pb.TmpfsOpt) bkcache.Mountable {
+func execTmpFSMountable(cache bkcache.SnapshotManager, opt *pb.TmpfsOpt) bkcache.Mountable {
 	return &execTmpFS{
 		idmap: cache.IdentityMapping(),
 		opt:   opt,
@@ -677,7 +677,7 @@ func (tmpfs *execTmpFSMount) IdentityMapping() *idtools.IdentityMapping {
 	return tmpfs.idmap
 }
 
-func prepareExecSecretMount(ctx context.Context, cache bkcache.Manager, session *bksession.Manager, secretOpt *pb.SecretOpt, g bksession.Group) (bkcache.Mountable, error) {
+func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, session *bksession.Manager, secretOpt *pb.SecretOpt, g bksession.Group) (bkcache.Mountable, error) {
 	if secretOpt == nil {
 		return nil, fmt.Errorf("invalid secret mount options")
 	}
@@ -810,7 +810,7 @@ func (secret *execSecretMountInstance) IdentityMapping() *idtools.IdentityMappin
 	return secret.idmap
 }
 
-func prepareExecSSHMount(ctx context.Context, cache bkcache.Manager, session *bksession.Manager, sshOpt *pb.SSHOpt, g bksession.Group) (bkcache.Mountable, error) {
+func prepareExecSSHMount(ctx context.Context, cache bkcache.SnapshotManager, session *bksession.Manager, sshOpt *pb.SSHOpt, g bksession.Group) (bkcache.Mountable, error) {
 	if sshOpt == nil {
 		return nil, fmt.Errorf("invalid ssh mount options")
 	}
@@ -1041,7 +1041,7 @@ func (container *Container) WithExec(
 		if err != nil {
 			return fmt.Errorf("failed to get buildkit client: %w", err)
 		}
-		bkSessionGroup := buildkit.NewSessionGroup(bkClient.ID())
+		bkSessionGroup := NewSessionGroup(bkClient.ID())
 		opWorker := bkClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
 		if opWorker == nil {
@@ -1097,7 +1097,7 @@ func (container *Container) WithExec(
 
 		makeMutable := func(dest string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 			desc := fmt.Sprintf("mount %s from exec %s", dest, strings.Join(metaSpec.Args, " "))
-			return cache.New(ctx, ref, bkSessionGroup, bkcache.WithDescription(desc))
+			return cache.New(ctx, ref, nil, bkcache.WithDescription(desc))
 		}
 		materializeState := func(state *execMountState) error {
 			var mountable bkcache.Mountable
@@ -1516,13 +1516,12 @@ func (container *Container) WithExec(
 		defer detach()
 
 		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
-		exec := execWorker.Executor()
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
 			// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 		}
-		_, execErr := exec.Run(ctx, "", rootMount, execMounts, procInfo, nil)
+		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
 
 		if execErr != nil {
 			slog.Warn("process did not complete successfully",

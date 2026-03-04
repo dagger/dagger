@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/sysx"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -486,7 +486,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, "", fmt.Errorf("failed to search content hash: %w", err)
 	}
 	for _, si := range sis {
-		finalRef, err := cacheManager.Get(ctx, si.ID(), nil)
+		finalRef, err := cacheManager.Get(ctx, si.ID())
 		if err == nil {
 			bklog.G(ctx).Debugf("reusing copy ref %s", si.ID())
 			return finalRef, dgst, nil

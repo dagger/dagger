@@ -19,7 +19,7 @@ import (
 	"time"
 
 	ctdmount "github.com/containerd/containerd/v2/core/mount"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -31,7 +31,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
@@ -284,8 +283,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 }
 
 func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
-	g, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
-	return repo.initRemote(ctx, g, func(remote string) error {
+	return repo.initRemote(ctx, nil, func(remote string) error {
 		git, cleanup, err := repo.setup(ctx)
 		if err != nil {
 			return err
@@ -592,7 +590,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, fmt.Errorf("failed to search metadata for %s: %w", cacheKey, err)
 	}
 	if len(sis) > 0 {
-		res, err := cache.Get(ctx, sis[0].ID(), nil)
+		res, err := cache.Get(ctx, sis[0].ID())
 		if err != nil {
 			return nil, err
 		}

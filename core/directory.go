@@ -18,8 +18,8 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -852,7 +852,7 @@ func (dir *Directory) WithDirectory(
 			mergeRefs = append(mergeRefs, rebasedDirRef)
 		}
 
-		ref, err := cache.Merge(ctx, mergeRefs, nil)
+		ref, err := cache.Merge(ctx, mergeRefs)
 		if err != nil {
 			return fmt.Errorf("failed to merge directories: %w", err)
 		}
@@ -1526,7 +1526,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (LazyInitFunc,
 			// lower is nil, so the diff is just the upper ref
 			ref = otherDirRef
 		} else {
-			ref, err = cache.Diff(ctx, thisDirRef, otherDirRef, nil)
+			ref, err = cache.Diff(ctx, thisDirRef, otherDirRef)
 			if err != nil {
 				return fmt.Errorf("failed to diff directories: %w", err)
 			}

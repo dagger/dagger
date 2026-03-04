@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
@@ -18,13 +19,14 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	leasesproxy "github.com/containerd/containerd/v2/core/leases/proxy"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
-	bkfrontend "github.com/dagger/dagger/internal/buildkit/frontend"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -59,7 +61,6 @@ type Opts struct {
 	Worker              *Worker
 	SessionManager      *bksession.Manager
 	BkSession           *bksession.Session
-	LLBBridge           bkfrontend.FrontendLLBBridge
 	Dialer              *net.Dialer
 	GetClientCaller     func(string) (bksession.Caller, error)
 	GetMainClientCaller func() (bksession.Caller, error)
@@ -156,19 +157,37 @@ func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourcer
 	defer cancel(errors.New("resolve image config done"))
 	ctx = withOutgoingContext(ctx)
 
-	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
-	return imr.ResolveImageConfig(ctx, ref, opt)
-}
-
-func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.SourceOp, opt sourceresolver.Opt) (*sourceresolver.MetaResponse, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	parsed, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
-		return nil, err
+		return "", "", nil, fmt.Errorf("could not parse reference %q: %w", ref, err)
 	}
-	defer cancel(errors.New("resolve source metadata done"))
-	ctx = withOutgoingContext(ctx)
+	ref = parsed.String()
 
-	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
+	op := &pb.SourceOp{
+		Identifier: "docker-image://" + ref,
+	}
+	if ociOpt := opt.OCILayoutOpt; ociOpt != nil {
+		op.Identifier = "oci-layout://" + ref
+		op.Attrs = map[string]string{}
+		if ociOpt.Store.SessionID != "" {
+			op.Attrs[pb.AttrOCILayoutSessionID] = ociOpt.Store.SessionID
+		}
+		if ociOpt.Store.StoreID != "" {
+			op.Attrs[pb.AttrOCILayoutStoreID] = ociOpt.Store.StoreID
+		}
+	}
+
+	res, err := c.Worker.ResolveSourceMetadata(ctx, op, opt, c.SessionManager, bksession.NewGroup(c.ID()))
+	if err != nil {
+		return "", "", nil, fmt.Errorf("failed to resolve source metadata for %s: %w", ref, err)
+	}
+	if res.Image == nil {
+		return "", "", nil, &imageutil.ResolveToNonImageError{Ref: ref, Updated: res.Op.Identifier}
+	}
+
+	resolvedRef := strings.TrimPrefix(res.Op.Identifier, "docker-image://")
+	resolvedRef = strings.TrimPrefix(resolvedRef, "oci-layout://")
+	return resolvedRef, res.Image.Digest, res.Image.Config, nil
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {

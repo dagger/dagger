@@ -9,8 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dagger/dagger/engine/buildkit"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -142,15 +141,10 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		}
 	}
 
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	session := buildkit.NewSessionGroup(bk.ID())
 	newRef, err := query.BuildkitCache().New(
 		ctx,
 		sourceRef,
-		session,
+		nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeCacheMount),
 		bkcache.WithDescription(fmt.Sprintf("cache volume %q", cache.Key)),
 		bkcache.CachePolicyRetain,

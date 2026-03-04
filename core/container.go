@@ -23,10 +23,10 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/containersource"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	"github.com/dagger/dagger/engine/buildkit/exporter/containerimage/exptypes"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
-	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/dockerfile2llb"
 	dockerfileparser "github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/parser"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerui"
@@ -436,7 +436,7 @@ func (container *Container) FromCanonicalRef(
 			return err
 		}
 
-		bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+		bkSessionGroup := NewSessionGroup(bk.ID())
 		ref, err := src.Snapshot(ctx, bkSessionGroup)
 		if err != nil {
 			return err
@@ -2071,7 +2071,7 @@ func (container *Container) FromInternal(
 		return nil, fmt.Errorf("updated rootfs: %w", err)
 	}
 	rootfsDir.LazyInit = func(ctx context.Context) error {
-		bkSessionGroup := buildkit.NewSessionGroup(bk.ID())
+		bkSessionGroup := NewSessionGroup(bk.ID())
 		ref, err := src.Snapshot(ctx, bkSessionGroup)
 		if err != nil {
 			return err

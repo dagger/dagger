@@ -11,7 +11,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/gitutil"
 )

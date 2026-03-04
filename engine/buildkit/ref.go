@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	cacheutil "github.com/dagger/dagger/internal/buildkit/cache/util"
+	snapshotutil "github.com/dagger/dagger/engine/snapshots/util"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 )
@@ -35,16 +35,16 @@ const (
 
 func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
-	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
+	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
 		// TODO: would be better to verify this is a "not exists" error, return err if not
 		bklog.G(ctx).Debugf("ReadSnapshotPath: failed to stat file: %v", err)
 		return nil, nil
 	}
 
-	req := cacheutil.ReadRequest{
+	req := snapshotutil.ReadRequest{
 		Filename: filePath,
-		Range: &cacheutil.FileRange{
+		Range: &snapshotutil.FileRange{
 			Length: int(stat.Size_),
 		},
 	}
@@ -53,7 +53,7 @@ func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable
 		req.Range.Offset = int(stat.Size_) - limit
 		req.Range.Length = limit
 	}
-	contents, err := cacheutil.ReadFile(ctx, mntable, req)
+	contents, err := snapshotutil.ReadFile(ctx, mntable, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
 	}

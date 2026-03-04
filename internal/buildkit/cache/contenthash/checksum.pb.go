@@ -205,13 +205,13 @@ func (m *CacheRecords) GetPaths() []*CacheRecordWithPath {
 }
 
 func init() {
-	proto.RegisterEnum("contenthash.CacheRecordType", CacheRecordType_name, CacheRecordType_value)
-	proto.RegisterType((*CacheRecord)(nil), "contenthash.CacheRecord")
-	proto.RegisterType((*CacheRecordWithPath)(nil), "contenthash.CacheRecordWithPath")
-	proto.RegisterType((*CacheRecords)(nil), "contenthash.CacheRecords")
+	proto.RegisterEnum("internal.buildkit.contenthash.CacheRecordType", CacheRecordType_name, CacheRecordType_value)
+	proto.RegisterType((*CacheRecord)(nil), "internal.buildkit.contenthash.CacheRecord")
+	proto.RegisterType((*CacheRecordWithPath)(nil), "internal.buildkit.contenthash.CacheRecordWithPath")
+	proto.RegisterType((*CacheRecords)(nil), "internal.buildkit.contenthash.CacheRecords")
 }
 
-func init() { proto.RegisterFile("checksum.proto", fileDescriptor_843938c28b799986) }
+func init() { proto.RegisterFile("internal_buildkit_checksum.proto", fileDescriptor_843938c28b799986) }
 
 var fileDescriptor_843938c28b799986 = []byte{
 	// 426 bytes of a gzipped FileDescriptorProto

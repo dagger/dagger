@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"resenje.org/singleflight"

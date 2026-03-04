@@ -18,7 +18,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -499,11 +499,10 @@ func (svc *Service) startContainer(
 	meta.Env = append(meta.Env, secretEnv...)
 
 	worker := bk.Worker.ExecWorker(svc.Creator, *execMD)
-	exec := worker.Executor()
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err := exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
+		_, err := worker.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
 			Meta:   *meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriters,
@@ -522,7 +521,7 @@ func (svc *Service) startContainer(
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(exec, svcID, ctr, svc.Creator)
+		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, svc.Creator)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
@@ -624,7 +623,7 @@ func (svc *Service) startContainer(
 			stderrWriter = sio.Stderr
 			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
 		}
-		err = exec.Exec(ctx, svcID, executor.ProcessInfo{
+		err = worker.Exec(ctx, svcID, executor.ProcessInfo{
 			Meta:   meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,

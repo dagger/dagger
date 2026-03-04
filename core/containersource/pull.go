@@ -14,7 +14,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/dagger/dagger/internal/buildkit/cache"
+	cache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/session"
@@ -168,7 +168,7 @@ func (p *puller) Snapshot(ctx context.Context, g session.Group) (ir cache.Immuta
 			cache.WithImageRef(p.manifest.Ref),
 		}
 		if g != nil {
-			opts = append(opts, cache.Unlazy(g))
+			opts = append(opts, g)
 		}
 		current, err = p.CacheAccessor.GetByBlob(ctx, layerDesc, parent, opts...)
 		if parent != nil {

@@ -19,8 +19,8 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"

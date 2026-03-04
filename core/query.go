@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/containerd/containerd/v2/core/content"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
@@ -126,7 +126,7 @@ type Server interface {
 	EngineLocalCachePolicy() *bkclient.PruneInfo
 
 	// Gets the buildkit cache manager
-	BuildkitCache() bkcache.Manager
+	BuildkitCache() bkcache.SnapshotManager
 
 	// Gets the buildkit session manager
 	BuildkitSession() *bksession.Manager

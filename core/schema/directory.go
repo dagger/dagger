@@ -11,13 +11,12 @@ import (
 	"path"
 	"strings"
 
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -381,7 +380,7 @@ func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectR
 		return res, err
 	}
 
-	immutable, err := parent.Self().BuildkitCache().Get(ctx, args.Ref, nil)
+	immutable, err := parent.Self().BuildkitCache().Get(ctx, args.Ref)
 	if err != nil {
 		return res, fmt.Errorf("get immutable ref %q: %w", args.Ref, err)
 	}
@@ -416,15 +415,7 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	// TODO: could have a truly engine-wide shared "scratch" ref to save a little work. For now, as long as everyone uses this API they will
 	// share this ref
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		bk, err := parent.Self().Buildkit(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("get buildkit client for scratch directory session group: %w", err)
-		}
-		bkSessionGroup = buildkit.NewSessionGroup(bk.ID())
-	}
-	scratchRef, err := parent.Self().BuildkitCache().New(ctx, nil, bkSessionGroup,
+	scratchRef, err := parent.Self().BuildkitCache().New(ctx, nil, nil,
 		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("scratch"),
@@ -1406,6 +1397,7 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {
 	return core.NewEmptyChangeset(ctx)
 }
+
 type dirDockerBuildArgs struct {
 	Platform   dagql.Optional[core.Platform]
 	Dockerfile string                             `default:"Dockerfile"`
