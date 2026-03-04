@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/vito/tuist"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
 )
 
 // KeymapStyle is the default style for keymap text.
