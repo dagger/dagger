@@ -570,6 +570,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Add the text input to the TUI container as a sibling of fe.
 	// Cursor propagation works through tuist's container rendering.
 	fe.tui.AddChild(fe.textInput)
+	fe.tui.SetShowHardwareCursor(true)
 
 	// put the bowtie on
 	fe.syncPrompt()
