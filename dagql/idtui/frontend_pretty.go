@@ -208,6 +208,12 @@ type SpanTreeView struct {
 
 	// focused is set by the SetFocused callback.
 	focused bool
+
+	// Render metadata — set during Render() for focus-line lookup.
+	// These are output-derived values, not input state that drives rendering.
+	selfLineCount   int   // lines from self content (before children)
+	childGapCounts  []int // gap line count before each child
+	childLineCounts []int // total line count from each child's RenderChild
 }
 
 var (
@@ -292,31 +298,46 @@ func (s *SpanTreeView) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	if text != "" {
 		lines = append(lines, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
 	}
+	s.selfLineCount = len(lines)
 
 	// Render children (already synced by syncSpanTreeState).
+	s.childGapCounts = s.childGapCounts[:0]
+	s.childLineCounts = s.childLineCounts[:0]
 	for _, child := range s.children {
 		// Gap line between children — uses parent's gap prefix (which always
 		// shows the parent bar), not the child's prefix.cont (which omits
 		// the parent bar for the last child).
+		var gapCount int
 		childRow := s.fe.rows.BySpan[child.spanID]
 		if childRow != nil {
-			for _, gap := range s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix) {
-				lines = append(lines, gap)
-			}
+			gaps := s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix)
+			gapCount = len(gaps)
+			lines = append(lines, gaps...)
 		}
 
 		childCtx := ctx
 		childCtx.Width = ctx.Width - child.prefix.contWidth
 		result := s.RenderChild(child, childCtx)
 		lines = append(lines, result.Lines...)
+
+		s.childGapCounts = append(s.childGapCounts, gapCount)
+		s.childLineCounts = append(s.childLineCounts, len(result.Lines))
 	}
 
 	return tuist.RenderResult{Lines: lines}
 }
 
 // indentFunc returns a fancyIndent override that uses the pre-computed prefix.
-func (s *SpanTreeView) indentFunc(out TermOutput) func(TermOutput, *dagui.TraceRow, bool, bool) {
-	return func(o TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) {
+// It only applies to the SpanTreeView's own span; other rows (e.g., synthetic
+// rows from renderErrorCause) return false to fall through to the original
+// fancyIndent which walks the row's parent chain.
+func (s *SpanTreeView) indentFunc(out TermOutput) func(TermOutput, *dagui.TraceRow, bool, bool) bool {
+	return func(o TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) bool {
+		// Only use tree prefix for our own span. Other rows (synthetic
+		// rootCauseRows, etc.) need the original parent-chain walk.
+		if row.Span.ID != s.spanID {
+			return false
+		}
 		if selfHoriz {
 			fmt.Fprint(o, s.prefix.step)
 		} else if selfBar {
@@ -334,6 +355,7 @@ func (s *SpanTreeView) indentFunc(out TermOutput) func(TermOutput, *dagui.TraceR
 		} else {
 			fmt.Fprint(o, s.prefix.cont)
 		}
+		return true
 	}
 }
 
@@ -797,6 +819,11 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 func (fe *frontendPretty) startTUI() {
 	terminal := tuist.NewProcessTerminal()
 	fe.tui = tuist.New(terminal)
+	if p := os.Getenv("TUIST_LOG"); p != "" {
+		if f, err := os.Create(p); err == nil {
+			fe.tui.SetDebugWriter(f)
+		}
+	}
 	fe.tui.AddChild(fe)
 	fe.tui.SetFocus(fe)
 	fe.tui.Start()
@@ -1234,7 +1261,7 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	}
 
 	// Render progress rows via tree-based components
-	if fe.renderProgressTree(out, r, ctx, fe.window.Height, chromeHeight, progPrefix) {
+	if fe.renderProgressTree(out, r, ctx, chromeHeight, progPrefix) {
 		fmt.Fprintln(out)
 	}
 
@@ -1466,7 +1493,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 // renderProgressTree renders progress using the tree-based SpanTreeView components.
 // Each top-level TraceTree is rendered via RenderChild, with children rendered
 // recursively by the SpanTreeView itself.
-func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tuist.RenderContext, screenHeight, chromeHeight int, prefix string) (rendered bool) {
+func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tuist.RenderContext, chromeHeight int, prefix string) (rendered bool) {
 	if fe.rowsView == nil {
 		return
 	}
@@ -1483,8 +1510,11 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 
 	// topTrees was synced by syncSpanTreeState() in recalculateViewLocked().
 
-	// Render all top-level trees via RenderChild
+	// Render all top-level trees via RenderChild, assembling into allLines.
+	// We render everything (for caching), then truncate below the focused
+	// item so it stays onscreen. Content above scrolls into scrollback.
 	var allLines []string
+	topGapCounts := make([]int, len(fe.topTrees))
 	for i, treeView := range fe.topTrees {
 		childCtx := tuist.RenderContext{
 			Width:        fe.contentWidth,
@@ -1492,14 +1522,13 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 		}
 		result := fe.RenderChild(treeView, childCtx)
 
-		// Gap between top-level trees — use the top-level prefix (zoom
-		// indentation) since there's no parent node with a bar column.
+		// Gap between top-level trees
 		if i > 0 && len(result.Lines) > 0 {
 			row := fe.rows.BySpan[treeView.spanID]
 			if row != nil {
-				for _, gap := range fe.renderTreeGap(r, row, treeView.prefix.cont) {
-					allLines = append(allLines, gap)
-				}
+				gaps := fe.renderTreeGap(r, row, treeView.prefix.cont)
+				topGapCounts[i] = len(gaps)
+				allLines = append(allLines, gaps...)
 			}
 		}
 
@@ -1511,55 +1540,71 @@ func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tu
 		return
 	}
 
-	// If everything fits on screen, render it all.
-	if totalLines+chromeHeight <= screenHeight {
-		for _, line := range allLines {
-			fmt.Fprintln(out, line)
+	// Find the focused line by walking the tree structure.
+	focusLine := -1
+	if fe.FocusedSpan.IsValid() {
+		offset := 0
+		for i, tree := range fe.topTrees {
+			offset += topGapCounts[i]
+			if line := fe.findFocusInSubtree(tree, offset); line >= 0 {
+				focusLine = line
+				break
+			}
+			offset += tree.totalLineCount()
 		}
-		return true
 	}
 
-	// Content exceeds the screen. Figure out which line corresponds to the
-	// focused row so we can render up to and past it.
-	focusLine := fe.findFocusLineInTree(allLines)
-	if focusLine < 0 {
-		focusLine = totalLines - 1
+	// Truncate content below focus so the focused item stays onscreen.
+	// Everything above renders into terminal scrollback naturally.
+	viewportHeight := ctx.ScreenHeight - chromeHeight
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+	end := totalLines
+	if focusLine >= 0 {
+		// Allow some context below focus (half the viewport), but cap
+		// the total so focus doesn't get pushed above the viewport.
+		afterBudget := viewportHeight / 2
+		if focusLine+afterBudget < end {
+			end = focusLine + afterBudget
+		}
 	}
 
-	// Budget: render rows up to focus, then fill "after" within 50% of remaining.
-	afterBudget := (screenHeight - chromeHeight) / 2
-	if afterBudget < 0 {
-		afterBudget = 0
-	}
-	limit := focusLine + 1 + afterBudget
-	if limit > totalLines {
-		limit = totalLines
-	}
-	for _, line := range allLines[:limit] {
+	for _, line := range allLines[:end] {
 		fmt.Fprintln(out, line)
 	}
-	return true
-}
-
-// findFocusLineInTree finds the approximate line index of the focused span
-// within the rendered tree output. Uses a simple heuristic: estimate the
-// focused row's position as a proportion of total rows.
-func (fe *frontendPretty) findFocusLineInTree(allLines []string) int {
-	if !fe.FocusedSpan.IsValid() || len(fe.rows.Order) == 0 || len(allLines) == 0 {
-		return -1
-	}
-
-	focusIdx := fe.focusedIdx
-	if focusIdx < 0 || focusIdx >= len(fe.rows.Order) {
-		return len(allLines) - 1
-	}
-
-	// Estimate: proportional position within the line output
-	proportion := float64(focusIdx) / float64(len(fe.rows.Order))
-	return int(proportion * float64(len(allLines)))
+	return end > 0
 }
 
 
+
+
+// totalLineCount returns the total number of rendered lines for a SpanTreeView,
+// including self content, gap lines, and all children.
+func (st *SpanTreeView) totalLineCount() int {
+	n := st.selfLineCount
+	for i := range st.children {
+		n += st.childGapCounts[i] + st.childLineCounts[i]
+	}
+	return n
+}
+
+// findFocusInSubtree recursively searches for the focused span in the tree,
+// returning its line offset relative to the given base offset, or -1 if not found.
+func (fe *frontendPretty) findFocusInSubtree(st *SpanTreeView, offset int) int {
+	if st.spanID == fe.FocusedSpan {
+		return offset
+	}
+	offset += st.selfLineCount
+	for i, child := range st.children {
+		offset += st.childGapCounts[i]
+		if line := fe.findFocusInSubtree(child, offset); line >= 0 {
+			return line
+		}
+		offset += st.childLineCounts[i]
+	}
+	return -1
+}
 
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering.
 // This replaces renderRowGap for tree-based rendering, using the tree prefix
