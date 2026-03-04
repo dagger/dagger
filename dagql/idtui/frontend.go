@@ -202,11 +202,12 @@ type renderer struct {
 	rendering     map[string]bool
 	final         bool
 
-	// indentFunc, when set, overrides fancyIndent. This is used by the
-	// tree-based renderer (SpanTreeView) which pre-computes indentation
-	// from its position in the component tree rather than walking up
-	// the TraceRow parent chain.
-	indentFunc func(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool)
+	// indentFunc, when set, may override fancyIndent. Returns true if it
+	// handled the indent, false to fall through to the default parent-chain
+	// walk. This is used by the tree-based renderer (SpanTreeView) which
+	// pre-computes indentation for its own span but falls through for
+	// synthetic rows (e.g., error cause rendering).
+	indentFunc func(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) bool
 }
 
 func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final bool) *renderer {
@@ -240,8 +241,7 @@ func (r *renderer) indent(out TermOutput, depth int) {
 }
 
 func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) {
-	if r.indentFunc != nil {
-		r.indentFunc(out, row, selfBar, selfHoriz)
+	if r.indentFunc != nil && r.indentFunc(out, row, selfBar, selfHoriz) {
 		return
 	}
 
