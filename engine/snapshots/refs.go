@@ -49,6 +49,7 @@ type Ref interface {
 	Mountable
 	RefMetadata
 	Release(context.Context) error
+	Size(context.Context) (int64, error)
 	IdentityMapping() *idtools.IdentityMapping
 	DescHandler(digest.Digest) *DescHandler
 }
@@ -615,6 +616,10 @@ func (sr *immutableRef) DescHandler(dgst digest.Digest) *DescHandler {
 	return sr.descHandlers[dgst]
 }
 
+func (sr *immutableRef) Size(ctx context.Context) (int64, error) {
+	return sr.cacheRecord.size(ctx)
+}
+
 type mutableRef struct {
 	*cacheRecord
 	triggerLastUsed bool
@@ -641,6 +646,10 @@ func (sr *mutableRef) traceLogFields() logrus.Fields {
 
 func (sr *mutableRef) DescHandler(dgst digest.Digest) *DescHandler {
 	return sr.descHandlers[dgst]
+}
+
+func (sr *mutableRef) Size(ctx context.Context) (int64, error) {
+	return sr.cacheRecord.size(ctx)
 }
 
 func (sr *immutableRef) clone() *immutableRef {

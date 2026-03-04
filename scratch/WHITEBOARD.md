@@ -629,3 +629,94 @@
 * Image export remote descriptor construction:
   * Bias toward moving to exporter-side construction if practical during cleanup.
   * If unexpected complexity shows up, it is acceptable to leave it in `engine/snapshots` for now.
+
+# Size Accounting
+
+## Goals
+
+* Replace placeholder `estimateSharedResultSizeBytes` with real snapshot-backed size accounting.
+* Compute size only when it is useful for pruning decisions (avoid eager/always-on cost).
+* Include cache-volume snapshots (mutable refs) in accounting.
+* Prevent overestimation by deduplicating shared snapshots by snapshot record identity as part of first pass.
+* Keep implementation cohesive with current dagql e-graph retention/liveness model.
+
+## Design constraints
+
+* No fallback to synthetic constant estimates once real sizing is available.
+* Do not force expensive lazy evaluation purely for metrics.
+  * If a result does not currently expose a concrete snapshot without additional compute, leave size unknown until it does.
+* Dedupe by underlying snapshot record identity is mandatory in initial implementation.
+  * This is required to avoid counting same bytes multiple times when multiple retained results reference the same snapshot.
+* Mutable cache volume sizes must be represented and refreshed when they can change.
+* First cut should prioritize correctness and determinism over micro-optimizations.
+
+## Notes
+
+* Current `dagql` usage entries are fed by `sharedResult.sizeEstimateBytes`, which is currently set from a placeholder.
+* Real size implementation already exists in snapshot manager (`cacheRecord.size`) and persists in-memory metadata size.
+* Persisted/retained graph behavior currently uses `depOfPersistedResult` + transitive `deps`.
+* Prune-relevant candidates are retained results that are not actively used and not required by active retained roots.
+* Cache-volume snapshots are created eagerly in `query.cacheVolume` and mounted into `withExec` as mutable refs; they must be included in size accounting.
+
+## Plan
+
+### Phase 0: Plumbing and interfaces
+
+* [x] Add a small snapshot size access seam in `engine/snapshots` so callers can request real size from refs.
+  * [x] Expose a method callable on immutable and mutable refs that returns the underlying `cacheRecord.size(ctx)`.
+  * [x] Preserve existing internal metadata update behavior (`queueSize` / commit).
+* [x] Add a dagql-side size provider hook for cached payloads.
+  * [x] Introduce an internal interface implemented by cacheable core objects that can report snapshot-backed usage size.
+  * [x] Implement it for `Directory`, `File`, and `CacheVolume`.
+  * [x] `Container` remains aggregate-only (it should not pretend to own a single snapshot size).
+* [x] Replace placeholder callsite in `dagql/cache.go` with provider-based sizing path.
+  * [x] Keep unknown as explicit state until first real measurement.
+
+### Phase 1: Prune-candidate gated measurement + mandatory dedupe
+
+* [ ] Define prune-relevant candidate set in dagql cache state.
+  * [ ] Candidate must be retained (`depOfPersistedResult` true).
+  * [ ] Candidate must not be actively used (`refCount == 0`).
+  * [ ] Candidate must not be transitively depended on by any actively used retained result.
+* [ ] Add transitive active-dependency closure helper under `egraphMu` to compute exclusion set.
+* [ ] Compute real size only for candidates with unknown/stale size.
+* [ ] Implement dedupe by snapshot record identity as part of first pass.
+  * [ ] For each usage-accounting pass, aggregate bytes by snapshot record ID instead of summing per-result blindly.
+  * [ ] If multiple results point at same snapshot record, count it once.
+  * [ ] Ensure deterministic tie-break/ownership when mapping deduped bytes back to entries.
+* [ ] Ensure `UsageEntries` and prune accounting use the deduped numbers.
+
+### Phase 2: Mutable cache-volume correctness
+
+* [ ] Ensure mutable cache-volume refs refresh/invalidate size when writes can change content.
+  * [ ] Invalidate cached size on write paths where mutable content changes are committed/applied.
+  * [ ] Recompute lazily on next prune-candidate measurement.
+* [ ] Confirm cache-volume entries participate in dedupe with other snapshot-backed entries.
+* [ ] Confirm repeated runs do not leak stale size metadata for frequently-mutated cache volumes.
+
+### Phase 3: Integration and polish
+
+* [ ] Remove `estimateSharedResultSizeBytes` placeholder function and dead comments.
+* [ ] Add explicit comments near size-gating logic describing why we only size prune-relevant candidates.
+* [ ] Add explicit comments near dedupe logic documenting snapshot-record-level accounting choice.
+* [ ] Keep behavior deterministic across runs (entry ordering + dedupe ownership stable).
+
+## Validation plan
+
+* [ ] Unit tests in `dagql/cache_test.go`:
+  * [ ] retained entry size is populated from real sizing path (not constant placeholder).
+  * [ ] non-candidate retained entries do not trigger size calculation.
+  * [ ] dedupe test: two retained results sharing one snapshot record report one logical byte budget in prune accounting.
+  * [ ] mutable cache-volume mutation test: size refreshes after content change.
+* [ ] Integration smoke:
+  * [ ] `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestLocalCache|TestContainer/TestWithMountedCache|TestContainer/TestLoadSaveNone' --count=1`
+* [ ] Re-run key cache persistence tests to ensure no regressions from size-path changes.
+
+## Open questions
+
+* [ ] Best ownership model for mapping deduped snapshot bytes onto per-entry display fields when many entries share one snapshot.
+  * Keep deterministic and simple in first pass; revisit UX refinements later.
+* [ ] Whether to split usage view into:
+  * [ ] per-entry logical view
+  * [ ] global deduped physical view
+  * (not required for first pass, but may help explain accounting to users)

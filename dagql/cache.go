@@ -207,6 +207,14 @@ type OnReleaseFunc = func(context.Context) error
 
 type sharedResultID uint64
 
+const sharedResultSizeUnknown int64 = -1
+
+type cacheUsageSizer interface {
+	// CacheUsageSize returns the concrete size of the cached payload when known.
+	// ok=false means "size is currently unknown/not available".
+	CacheUsageSize(context.Context) (sizeBytes int64, ok bool, err error)
+}
+
 // sharedResult holds cache-entry state and immutable payload shared by per-call Result values.
 type sharedResult struct {
 	cache *cache
@@ -238,7 +246,7 @@ type sharedResult struct {
 	// 0 means "never expires".
 	expiresAtUnix int64
 
-	// Prune-accounting metadata. Size is currently a temporary approximation.
+	// Prune-accounting metadata. Size is unknown until explicitly measured.
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
 	sizeEstimateBytes  int64
@@ -814,7 +822,7 @@ func (c *cache) wait(
 	}
 
 	oc.initCompletedResultOnce.Do(func() {
-		oc.initCompletedResultErr = c.initCompletedResult(oc, requestID, sessionID)
+		oc.initCompletedResultErr = c.initCompletedResult(ctx, oc, requestID, sessionID)
 	})
 	if oc.initCompletedResultErr != nil {
 		return nil, oc.initCompletedResultErr
@@ -865,7 +873,7 @@ func (c *cache) wait(
 	return retObjRes, nil
 }
 
-func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, sessionID string) error {
+func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
@@ -877,7 +885,8 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{
-		cache: c,
+		cache:             c,
+		sizeEstimateBytes: sharedResultSizeUnknown,
 	}
 	if oc.val != nil {
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.cache != nil {
@@ -923,10 +932,15 @@ func (c *cache) initCompletedResult(oc *ongoingCall, requestID *call.ID, session
 	if oc.res.description == "" {
 		oc.res.description = requestIDForIndex.Digest().String()
 	}
-	estimatedSize := estimateSharedResultSizeBytes(requestIDForIndex, oc.res)
-	if estimatedSize > oc.res.sizeEstimateBytes {
-		// TODO: replace this approximation with concrete snapshot/object accounting.
-		oc.res.sizeEstimateBytes = estimatedSize
+	if oc.res.sizeEstimateBytes == sharedResultSizeUnknown {
+		sizeBytes, ok, sizeErr := cacheUsageSizeBytes(ctx, oc.res)
+		if sizeErr != nil {
+			slog.Warn("failed to determine cache usage size",
+				"result", requestIDForIndex.Digest().String(),
+				"err", sizeErr)
+		} else if ok {
+			oc.res.sizeEstimateBytes = sizeBytes
+		}
 	}
 
 	// TTL merge policy for shared results:
@@ -999,7 +1013,13 @@ func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix i
 	}
 }
 
-// placeholder
-func estimateSharedResultSizeBytes(requestID *call.ID, res *sharedResult) int64 {
-	return 100
+func cacheUsageSizeBytes(ctx context.Context, res *sharedResult) (int64, bool, error) {
+	if res == nil || !res.hasValue || res.self == nil {
+		return 0, false, nil
+	}
+	sizer, ok := any(res.self).(cacheUsageSizer)
+	if !ok {
+		return 0, false, nil
+	}
+	return sizer.CacheUsageSize(ctx)
 }

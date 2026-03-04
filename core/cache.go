@@ -86,6 +86,18 @@ func (cache *CacheVolume) getSnapshotSelector() string {
 	return cache.selector
 }
 
+func (cache *CacheVolume) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+	snapshot := cache.getSnapshot()
+	if snapshot == nil {
+		return 0, false, nil
+	}
+	size, err := snapshot.Size(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	return size, true, nil
+}
+
 func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if cache.getSnapshot() != nil {
 		return nil

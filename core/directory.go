@@ -117,6 +117,31 @@ func (dir *Directory) setSnapshot(ref bkcache.ImmutableRef) {
 	dir.Snapshot = ref
 }
 
+func (dir *Directory) snapshotForUsage() bkcache.ImmutableRef {
+	if dir == nil {
+		return nil
+	}
+	if dir.Snapshot != nil {
+		return dir.Snapshot
+	}
+	if dir.Parent.Self() != nil {
+		return dir.Parent.Self().snapshotForUsage()
+	}
+	return nil
+}
+
+func (dir *Directory) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+	snapshot := dir.snapshotForUsage()
+	if snapshot == nil {
+		return 0, false, nil
+	}
+	size, err := snapshot.Size(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	return size, true, nil
+}
+
 func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
 	if dir.Parent.Self() != nil {
 		return dir.Parent.Self().getSnapshot(ctx)
