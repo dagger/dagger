@@ -84,7 +84,7 @@ func (s *Server) WithCache(c *SessionCache) *Server {
 }
 
 type InstallHook interface {
-	InstallObject(ObjectType)
+	InstallObject(ObjectType, ...*ast.Directive)
 	// FIXME: add support for other install functions
 }
 
@@ -391,7 +391,7 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.installLock.Unlock()
 
 	for _, hook := range s.installHooks {
-		hook.InstallObject(class)
+		hook.InstallObject(class, directives...)
 	}
 
 	return class

@@ -341,7 +341,7 @@ var TypesHiddenFromEnvExtensions = []dagql.Typed{
 	&TypeDef{},
 }
 
-func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
+func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.Directive) error {
 	envType, ok := s.Server.ObjectType(new(Env).Type().Name())
 	if !ok {
 		return fmt.Errorf("failed to lookup environment type")
@@ -361,6 +361,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Name:        "with" + typeName + "Input",
 			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typeName),
 			Type:        envType.Typed(),
+			Directives:  directives,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
 					Name:        "name",
@@ -398,6 +399,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Name:        "with" + typeName + "Output",
 			Description: fmt.Sprintf("Declare a desired %s output to be assigned in the environment", typeName),
 			Type:        envType.Typed(),
+			Directives:  directives,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
 					Name:        "name",
@@ -428,6 +430,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Type:        targetType.Typed(),
 			Args:        dagql.InputSpecs{},
 			DoNotCache:  "Bindings are mutable",
+			Directives:  directives,
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			binding := self.(dagql.ObjectResult[*Binding]).Self()
@@ -453,7 +456,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 	return nil
 }
 
-func (s EnvHook) InstallObject(targetType dagql.ObjectType) {
+func (s EnvHook) InstallObject(targetType dagql.ObjectType, directives ...*ast.Directive) {
 	typename := targetType.TypeName()
 	if strings.HasPrefix(typename, "_") {
 		return
