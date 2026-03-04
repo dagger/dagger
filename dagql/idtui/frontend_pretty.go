@@ -141,10 +141,11 @@ type frontendPretty struct {
 	// track whether we've already spawned the run function
 	spawned bool
 
-	// per-span components for incremental rendering
-	spanRows      map[dagui.SpanID]*SpanRowView
-	renderCtx     tuist.RenderContext // stored during Render for RenderChild
-	renderVersion uint64              // bumped on global render config changes (verbosity, zoom)
+	// per-span tree components for incremental rendering
+	spanTrees           map[dagui.SpanID]*SpanTreeView
+	topTrees            []*SpanTreeView // top-level tree views, ordered
+	renderVersion       uint64          // bumped on global render config changes (verbosity, zoom)
+	lastRenderedVersion uint64          // renderVersion at last Render, for detecting changes
 }
 
 // Verify interface compliance at compile time.
@@ -154,27 +155,62 @@ var (
 	_ tuist.Mounter     = (*frontendPretty)(nil)
 )
 
-// SpanRowView is a tuist component that renders a single trace row.
-// Each span gets its own SpanRowView so that tuist's render cache
-// (Compo.generation) can skip re-rendering rows whose data hasn't changed.
-// Dirty propagation flows through the tree: exporters call sr.Update()
-// which propagates up via Compo to trigger a re-render.
-type SpanRowView struct {
+// treePrefix holds pre-computed prefix strings for a SpanTreeView.
+// These are set by the parent SpanTreeView when rendering its children.
+// By computing prefixes top-down through the tree, we avoid the stale-prefix
+// problem that occurred when each row walked up the TraceRow parent chain
+// independently.
+type treePrefix struct {
+	// step is the prefix for the step title line (ancestor bars + connector).
+	// e.g., "│ ├╴" for a non-last child at depth 2.
+	step string
+	// cont is the prefix for continuation lines (ancestor bars + bar/space).
+	// e.g., "│ │ " for a non-last child at depth 2.
+	cont string
+	// forChildren is the accumulated ancestor bars to pass to this node's
+	// children. Equal to cont (the parent's column continues for children).
+	forChildren string
+	// contWidth is the visual width of cont (for available width calculation).
+	contWidth int
+}
+
+// SpanTreeView is a tuist component that renders a TraceTree node and its
+// children recursively. This is the tree-based replacement for SpanRowView.
+//
+// The parent SpanTreeView computes and sets the prefix strings for each
+// child before calling RenderChild. When a parent's status changes, it
+// re-renders, recomputing child prefixes — so prefixes are always fresh.
+//
+// Children that haven't changed return cached results from RenderChild.
+// The parent just concatenates cached child lines, which is O(pointers).
+type SpanTreeView struct {
 	tuist.Compo
-	fe      *frontendPretty
-	spanID  dagui.SpanID
-	prefix  string       // render prefix (e.g. zoom indentation)
-	spinner *SpinnerView // non-nil when span is running; self-ticking
-	focused bool         // set by SetFocused callback
+	fe     *frontendPretty
+	spanID dagui.SpanID
+
+	// prefix holds the pre-computed indentation from ancestors.
+	// Set by the parent before RenderChild is called.
+	prefix treePrefix
+
+	// children are the expanded child SpanTreeViews, ordered.
+	children []*SpanTreeView
+	// childMap indexes children by span ID for reuse across renders.
+	childMap map[dagui.SpanID]*SpanTreeView
+
+	// spinner is non-nil when the span is running; self-ticking.
+	spinner *SpinnerView
+
+	// focused is set by the SetFocused callback.
+	focused bool
 }
 
 var (
-	_ tuist.Component = (*SpanRowView)(nil)
-	_ tuist.Focusable = (*SpanRowView)(nil)
+	_ tuist.Component = (*SpanTreeView)(nil)
+	_ tuist.Focusable = (*SpanTreeView)(nil)
 )
 
 // SetFocused implements tuist.Focusable. Called by tuist when focus changes.
-func (s *SpanRowView) SetFocused(_ tuist.EventContext, focused bool) {
+func (s *SpanTreeView) SetFocused(_ tuist.EventContext, focused bool) {
 	s.focused = focused
 	s.Update()
 }
@@ -221,9 +257,10 @@ func (s *SpinnerView) ViewFancy() string {
 	return s.rave.ViewFancy(s.now)
 }
 
-// Render produces the lines for this span row (step + logs + errors + debug).
-// Gap lines between rows are NOT included here; the parent handles those.
-func (s *SpanRowView) Render(ctx tuist.RenderContext) tuist.RenderResult {
+// Render produces the lines for this span tree node and its children.
+// This method is stateless — all component state (prefix, children,
+// focus, spinner) is synced by syncSpanTreeState() before Render runs.
+func (s *SpanTreeView) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	row := s.fe.rows.BySpan[s.spanID]
 	if row == nil {
 		return tuist.RenderResult{Lines: ctx.Recycle}
@@ -239,50 +276,119 @@ func (s *SpanRowView) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	out := NewOutput(buf, termenv.WithProfile(s.fe.profile))
 	r := newRenderer(s.fe.db, s.fe.contentWidth/2, s.fe.FrontendOpts, false)
 
-	s.fe.renderRowContent(out, r, row, s.prefix)
+	// Override fancyIndent with our pre-computed prefix.
+	r.indentFunc = s.indentFunc(out)
+
+	s.fe.renderRowContent(out, r, row, "")
 
 	text := buf.String()
-	if text == "" {
-		return tuist.RenderResult{Lines: ctx.Recycle}
+	lines := ctx.Recycle
+	if text != "" {
+		lines = append(lines, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
 	}
-	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+
+	// Render children (already synced by syncSpanTreeState).
+	for _, child := range s.children {
+		// Gap line between children
+		childRow := s.fe.rows.BySpan[child.spanID]
+		if childRow != nil {
+			for _, gap := range s.fe.renderTreeGap(r, childRow, child.prefix) {
+				lines = append(lines, gap)
+			}
+		}
+
+		childCtx := ctx
+		childCtx.Width = ctx.Width - child.prefix.contWidth
+		result := s.RenderChild(child, childCtx)
+		lines = append(lines, result.Lines...)
+	}
+
 	return tuist.RenderResult{Lines: lines}
 }
 
-// getOrCreateSpanRow returns the SpanRowView for the given span ID,
-// creating one if it doesn't exist.
-func (fe *frontendPretty) getOrCreateSpanRow(spanID dagui.SpanID) *SpanRowView {
-	if fe.spanRows == nil {
-		fe.spanRows = make(map[dagui.SpanID]*SpanRowView)
+// indentFunc returns a fancyIndent override that uses the pre-computed prefix.
+func (s *SpanTreeView) indentFunc(out TermOutput) func(TermOutput, *dagui.TraceRow, bool, bool) {
+	return func(o TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) {
+		if selfHoriz {
+			fmt.Fprint(o, s.prefix.step)
+		} else if selfBar {
+			fmt.Fprint(o, s.prefix.cont)
+			// Also render self bar (for multi-line call args)
+			span := row.Span
+			color := restrainedStatusColor(span)
+			var symbol string
+			if row.ShowingChildren && !row.Span.Reveal {
+				symbol = VertBar
+			} else {
+				symbol = " "
+			}
+			fmt.Fprint(o, out.String(symbol+" ").Foreground(color).Faint())
+		} else {
+			fmt.Fprint(o, s.prefix.cont)
+		}
 	}
-	sr, ok := fe.spanRows[spanID]
+}
+
+// computeChildPrefix computes the prefix for a child at the given position.
+func (s *SpanTreeView) computeChildPrefix(out TermOutput, hasNext bool) treePrefix {
+	row := s.fe.rows.BySpan[s.spanID]
+	if row == nil {
+		return treePrefix{}
+	}
+	span := row.Span
+	color := restrainedStatusColor(span)
+
+	var connector, bar string
+	if hasNext && !span.Reveal && len(span.RevealedSpans.Order) == 0 {
+		connector = out.String(VertRightBar + HorizHalfLeftBar).Foreground(color).Faint().String()
+		bar = out.String(VertBar + " ").Foreground(color).Faint().String()
+	} else {
+		connector = out.String(CornerBottomLeft + HorizHalfLeftBar).Foreground(color).Faint().String()
+		bar = "  "
+	}
+
+	return treePrefix{
+		step:        s.prefix.forChildren + connector,
+		cont:        s.prefix.forChildren + bar,
+		forChildren: s.prefix.forChildren + bar,
+		contWidth:   s.prefix.contWidth + 2,
+	}
+}
+
+// getOrCreateSpanTree returns the SpanTreeView for the given span ID,
+// creating one if it doesn't exist.
+func (fe *frontendPretty) getOrCreateSpanTree(spanID dagui.SpanID) *SpanTreeView {
+	if fe.spanTrees == nil {
+		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+	}
+	st, ok := fe.spanTrees[spanID]
 	if !ok {
-		sr = &SpanRowView{
+		st = &SpanTreeView{
 			fe:     fe,
 			spanID: spanID,
 		}
-		fe.spanRows[spanID] = sr
+		fe.spanTrees[spanID] = st
 	}
 	// Sync spinner: mount when running, dismount when done
-	fe.syncSpinner(sr)
-	return sr
+	fe.syncSpinnerTree(st)
+	return st
 }
 
-// syncSpinner sets or clears the spinner on a SpanRowView based on
+// syncSpinnerTree sets or clears the spinner on a SpanTreeView based on
 // whether the span is currently running. The spinner's lifecycle is
-// managed by RenderChild in SpanRowView.Render — tuist auto-mounts it
+// managed by RenderChild in SpanTreeView.Render — tuist auto-mounts it
 // (firing OnMount to start the tick goroutine) and auto-dismounts it
-// when the SpanRowView stops rendering it.
-func (fe *frontendPretty) syncSpinner(sr *SpanRowView) {
-	row := fe.rows.BySpan[sr.spanID]
+// when the SpanTreeView stops rendering it.
+func (fe *frontendPretty) syncSpinnerTree(st *SpanTreeView) {
+	row := fe.rows.BySpan[st.spanID]
 	running := row != nil && row.Span.IsRunningOrEffectsRunning()
-	if running && sr.spinner == nil {
-		sr.spinner = &SpinnerView{
+	if running && st.spinner == nil {
+		st.spinner = &SpinnerView{
 			rave: fe.spinner,
 			now:  time.Now(),
 		}
-	} else if !running && sr.spinner != nil {
-		sr.spinner = nil
+	} else if !running && st.spinner != nil {
+		st.spinner = nil
 	}
 }
 
@@ -787,7 +893,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		fe.renderProgress(out, r, fe.window.Height, 0, "")
+		fe.renderProgressFinal(out, r)
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
@@ -835,7 +941,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	fe.tui.Dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
-			if sr, ok := fe.spanRows[id]; ok {
+			if sr, ok := fe.spanTrees[id]; ok {
 				sr.Update()
 			}
 		}
@@ -868,7 +974,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		for _, log := range logsCopy {
 			if log.SpanID().IsValid() {
 				spanID := dagui.SpanID{SpanID: log.SpanID()}
-				if sr, ok := fe.spanRows[spanID]; ok {
+				if sr, ok := fe.spanTrees[spanID]; ok {
 					sr.Update()
 				}
 				// Also mark roll-up parent spans dirty
@@ -879,7 +985,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 							break
 						}
 						if span.RollUpLogs {
-							if sr, ok := fe.spanRows[id]; ok {
+							if sr, ok := fe.spanTrees[id]; ok {
 								sr.Update()
 							}
 							break
@@ -1074,9 +1180,6 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight}
 	fe.setWindowSizeLocked(fe.window)
 
-	// Store render context for RenderChild calls in renderedRowLines
-	fe.renderCtx = ctx
-
 	// Build the main view into a fresh string builder
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
@@ -1122,8 +1225,8 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 		chromeHeight += lipgloss.Height(formStr)
 	}
 
-	// Render progress rows, budget-aware of chrome below
-	if fe.renderProgress(out, r, fe.window.Height, chromeHeight, progPrefix) {
+	// Render progress rows via tree-based components
+	if fe.renderProgressTree(out, r, ctx, fe.window.Height, chromeHeight, progPrefix) {
 		fmt.Fprintln(out)
 	}
 
@@ -1201,40 +1304,157 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		// lost focus somehow
 		fe.autoFocus = true
 		fe.recalculateViewLocked()
+		return
 	}
+
+	// Sync the SpanTreeView component tree with the current rowsView.
+	// This is where ALL component state mutations happen — prefix,
+	// children, focus, spinners. Render() is then a pure read.
+	fe.syncSpanTreeState()
 }
 
-func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
-	// Render gap lines (cheap, depends on adjacent rows — not cached)
-	gapLines := fe.renderRowGap(r, row, prefix)
-
-	// Render row content via cached SpanRowView component.
-	// Dirty propagation is handled by Update() calls from exporters/dispatch.
-	spanRow := fe.getOrCreateSpanRow(row.Span.ID)
-	childCtx := tuist.RenderContext{
-		Width:        fe.contentWidth,
-		ScreenHeight: fe.renderCtx.ScreenHeight,
+// syncSpanTreeState synchronizes the SpanTreeView component tree with
+// the current rowsView and rows. Called from recalculateViewLocked()
+// (i.e., from event handlers and Dispatch callbacks, never from Render).
+//
+// It walks the TraceTree top-down, creating/reusing SpanTreeViews,
+// computing prefixes, and calling Update() on components whose
+// visible state changed.
+func (fe *frontendPretty) syncSpanTreeState() {
+	if fe.spanTrees == nil {
+		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
 	}
-	result := fe.RenderChild(spanRow, childCtx)
 
-	if len(gapLines) == 0 {
-		return result.Lines
+	// When global config changes (verbosity, zoom, etc.), mark all
+	// existing trees dirty so they re-render with the new settings.
+	if fe.renderVersion != fe.lastRenderedVersion {
+		fe.lastRenderedVersion = fe.renderVersion
+		for _, st := range fe.spanTrees {
+			st.Update()
+		}
 	}
-	lines := make([]string, 0, len(gapLines)+len(result.Lines))
-	lines = append(lines, gapLines...)
-	lines = append(lines, result.Lines...)
-	return lines
+
+	// Determine the zoom prefix for top-level trees.
+	var zoomPrefix string
+	if fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		zoomPrefix = "  "
+	}
+
+	body := fe.rowsView.Body
+	newTops := make([]*SpanTreeView, 0, len(body))
+	for _, tree := range body {
+		st := fe.getOrCreateSpanTree(tree.Span.ID)
+
+		// Top-level prefix (zoom indentation if applicable)
+		var newPrefix treePrefix
+		if zoomPrefix != "" {
+			newPrefix = treePrefix{
+				step:        zoomPrefix,
+				cont:        zoomPrefix,
+				forChildren: zoomPrefix,
+				contWidth:   lipgloss.Width(zoomPrefix),
+			}
+		}
+		fe.syncTreeNode(st, newPrefix)
+		newTops = append(newTops, st)
+	}
+	fe.topTrees = newTops
 }
 
-func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, screenHeight, chromeHeight int, prefix string) (rendered bool) {
+// syncTreeNode recursively syncs a SpanTreeView and its children with
+// the current trace data. Updates prefix, focus, spinner, and children.
+// Calls Update() on any SpanTreeView whose visible state changed.
+func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
+	changed := false
+
+	// Sync prefix
+	if st.prefix != newPrefix {
+		st.prefix = newPrefix
+		changed = true
+	}
+
+	// Sync focus
+	isFocused := st.spanID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
+	if st.focused != isFocused {
+		st.focused = isFocused
+		changed = true
+	}
+
+	// Sync spinner
+	fe.syncSpinnerTree(st)
+
+	if changed {
+		st.Update()
+	}
+
+	// Sync children for expanded nodes
+	row := fe.rows.BySpan[st.spanID]
+	tree := fe.rowsView.BySpan[st.spanID]
+	if row == nil || tree == nil || !row.Expanded {
+		// Collapsed: clear children so they get dismounted on next render
+		st.children = nil
+		return
+	}
+
+	// Determine visible children
+	var childTrees []*dagui.TraceTree
+	if tree.ShouldShowRevealedSpans(fe.FrontendOpts) {
+		for _, revealedSpan := range tree.Span.RevealedSpans.Order {
+			if revealedTree, ok := fe.rowsView.BySpan[revealedSpan.ID]; ok {
+				childTrees = append(childTrees, revealedTree)
+			}
+		}
+	} else {
+		childTrees = tree.Children
+	}
+
+	// Reconcile child SpanTreeViews
+	if st.childMap == nil {
+		st.childMap = make(map[dagui.SpanID]*SpanTreeView)
+	}
+	newChildren := make([]*SpanTreeView, 0, len(childTrees))
+	seen := make(map[dagui.SpanID]bool, len(childTrees))
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	for i, childTree := range childTrees {
+		id := childTree.Span.ID
+		seen[id] = true
+		child, ok := st.childMap[id]
+		if !ok {
+			child = &SpanTreeView{
+				fe:     fe,
+				spanID: id,
+			}
+			st.childMap[id] = child
+			fe.spanTrees[id] = child
+		}
+
+		// Compute child prefix
+		hasNext := i < len(childTrees)-1
+		childPrefix := st.computeChildPrefix(out, hasNext)
+
+		// Recurse
+		fe.syncTreeNode(child, childPrefix)
+		newChildren = append(newChildren, child)
+	}
+	for id := range st.childMap {
+		if !seen[id] {
+			delete(st.childMap, id)
+		}
+	}
+	st.children = newChildren
+}
+
+// renderProgressTree renders progress using the tree-based SpanTreeView components.
+// Each top-level TraceTree is rendered via RenderChild, with children rendered
+// recursively by the SpanTreeView itself.
+func (fe *frontendPretty) renderProgressTree(out TermOutput, r *renderer, ctx tuist.RenderContext, screenHeight, chromeHeight int, prefix string) (rendered bool) {
 	if fe.rowsView == nil {
 		return
 	}
 
-	rows := fe.rows
-
 	if fe.finalRender {
-		for _, row := range rows.Order {
+		// Final render uses direct rendering (no component caching)
+		for _, row := range fe.rows.Order {
 			if fe.renderRow(out, r, row, "") {
 				rendered = true
 			}
@@ -1242,69 +1462,109 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, screenHeig
 		return
 	}
 
-	// Pre-render every row so we have line counts.
-	allLines := make([][]string, len(rows.Order))
-	totalLines := 0
-	for i, row := range rows.Order {
-		allLines[i] = fe.renderedRowLines(r, row, prefix)
-		totalLines += len(allLines[i])
+	// topTrees was synced by syncSpanTreeState() in recalculateViewLocked().
+
+	// Render all top-level trees via RenderChild
+	var allLines []string
+	for i, treeView := range fe.topTrees {
+		childCtx := tuist.RenderContext{
+			Width:        fe.contentWidth,
+			ScreenHeight: ctx.ScreenHeight,
+		}
+		result := fe.RenderChild(treeView, childCtx)
+
+		// Gap between top-level trees
+		if i > 0 && len(result.Lines) > 0 {
+			row := fe.rows.BySpan[treeView.spanID]
+			if row != nil {
+				for _, gap := range fe.renderTreeGap(r, row, treeView.prefix) {
+					allLines = append(allLines, gap)
+				}
+			}
+		}
+
+		allLines = append(allLines, result.Lines...)
+	}
+
+	totalLines := len(allLines)
+	if totalLines == 0 {
+		return
 	}
 
 	// If everything fits on screen, render it all.
 	if totalLines+chromeHeight <= screenHeight {
-		for _, lines := range allLines {
-			if len(lines) > 0 {
-				rendered = true
-			}
-			for _, line := range lines {
-				fmt.Fprintln(out, line)
-			}
+		for _, line := range allLines {
+			fmt.Fprintln(out, line)
 		}
-		return
+		return true
 	}
 
-	// Content exceeds the screen. Render rows up to and including
-	// focus, then fill "after" rows within ~50% of the remaining
-	// screen budget. Rows above focus scroll into terminal scrollback
-	// naturally.
-	focusIdx := fe.focusedIdx
-	if focusIdx < 0 || focusIdx >= len(rows.Order) {
-		focusIdx = len(rows.Order) - 1
+	// Content exceeds the screen. Figure out which line corresponds to the
+	// focused row so we can render up to and past it.
+	focusLine := fe.findFocusLineInTree(allLines)
+	if focusLine < 0 {
+		focusLine = totalLines - 1
 	}
-	focusedHeight := len(allLines[focusIdx])
-	afterBudget := (screenHeight - chromeHeight - focusedHeight) / 2
+
+	// Budget: render rows up to focus, then fill "after" within 50% of remaining.
+	afterBudget := (screenHeight - chromeHeight) / 2
 	if afterBudget < 0 {
 		afterBudget = 0
 	}
+	limit := focusLine + 1 + afterBudget
+	if limit > totalLines {
+		limit = totalLines
+	}
+	for _, line := range allLines[:limit] {
+		fmt.Fprintln(out, line)
+	}
+	return true
+}
 
-	// Fill "after" rows within the budget.
-	afterCount := 0
-	afterUsed := 0
-	for i := focusIdx + 1; i < len(rows.Order); i++ {
-		n := len(allLines[i])
-		if afterUsed+n > afterBudget {
-			break
-		}
-		afterUsed += n
-		afterCount++
+// findFocusLineInTree finds the approximate line index of the focused span
+// within the rendered tree output. Uses a simple heuristic: estimate the
+// focused row's position as a proportion of total rows.
+func (fe *frontendPretty) findFocusLineInTree(allLines []string) int {
+	if !fe.FocusedSpan.IsValid() || len(fe.rows.Order) == 0 || len(allLines) == 0 {
+		return -1
 	}
 
-	// Render: all rows before focus (scrollback), focused row, and
-	// the after rows that fit.
-	limit := focusIdx + 1 + afterCount
-	if limit > len(rows.Order) {
-		limit = len(rows.Order)
-	}
-	for _, lines := range allLines[:limit] {
-		if len(lines) > 0 {
-			rendered = true
-		}
-		for _, line := range lines {
-			fmt.Fprintln(out, line)
-		}
+	focusIdx := fe.focusedIdx
+	if focusIdx < 0 || focusIdx >= len(fe.rows.Order) {
+		return len(allLines) - 1
 	}
 
-	return
+	// Estimate: proportional position within the line output
+	proportion := float64(focusIdx) / float64(len(fe.rows.Order))
+	return int(proportion * float64(len(allLines)))
+}
+
+
+
+// renderTreeGap renders the gap line(s) that precede a row in tree rendering.
+// This replaces renderRowGap for tree-based rendering, using the tree prefix
+// instead of calling fancyIndent.
+func (fe *frontendPretty) renderTreeGap(r *renderer, row *dagui.TraceRow, prefix treePrefix) []string {
+	if fe.shell != nil {
+		if row.Depth == 0 && row.Previous != nil {
+			return []string{""}
+		}
+		return nil
+	}
+	if row.PreviousVisual != nil &&
+		row.PreviousVisual.Depth >= row.Depth &&
+		!row.Chained &&
+		(row.PreviousVisual.Depth > row.Depth ||
+			row.Span.Call() != nil ||
+			row.Span.CheckName != "" ||
+			row.Span.GeneratorName != "" ||
+			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
+			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
+			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
+		// Use the continuation prefix for the gap line
+		return []string{prefix.cont}
+	}
+	return nil
 }
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
@@ -1313,10 +1573,12 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	}
 	fe.FocusedSpan = row.Span.ID
 	fe.focusedIdx = row.Index
-	// Set focus on the SpanRowView so Focusable callbacks fire
-	if sr, ok := fe.spanRows[row.Span.ID]; ok && fe.tui != nil {
+	// Set tuist-level focus for keyboard event bubbling
+	if sr, ok := fe.spanTrees[row.Span.ID]; ok && fe.tui != nil {
 		fe.tui.SetFocus(sr)
 	}
+	// syncSpanTreeState (called by recalculate) will sync .focused on
+	// all nodes and call Update() on the ones that changed.
 	fe.recalculateViewLocked()
 }
 
@@ -2088,9 +2350,20 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 	fe.recalculateViewLocked()
 }
 
+// renderProgressFinal renders all rows using direct rendering (no component
+// caching). Used by FinalRender after the TUI has stopped.
+func (fe *frontendPretty) renderProgressFinal(out TermOutput, r *renderer) {
+	if fe.rowsView == nil {
+		return
+	}
+	for _, row := range fe.rows.Order {
+		fe.renderRow(out, r, row, "")
+	}
+}
+
 // renderRowGap renders the gap line(s) that precede a row, based on the
 // relationship with the previous visual row. Returns the gap lines (if any).
-// This is intentionally NOT part of SpanRowView so that gap changes don't
+// This is intentionally NOT part of SpanTreeView so that gap changes don't
 // require re-rendering the row's content.
 func (fe *frontendPretty) renderRowGap(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	if fe.shell != nil {
@@ -2136,7 +2409,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 }
 
 // renderRowContent renders the actual content of a row (step + logs + errors
-// + debug) without gap lines. This is what SpanRowView.Render() calls.
+// + debug) without gap lines. This is what SpanTreeView.Render() calls.
 func (fe *frontendPretty) renderRowContent(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
@@ -2633,10 +2906,10 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
 		// Look up the per-span spinner for animation
-		if sr, ok := fe.spanRows[span.ID]; ok && sr.spinner != nil {
+		if sr, ok := fe.spanTrees[span.ID]; ok && sr.spinner != nil {
 			return sr.spinner.ViewFancy(), true
 		}
-		// Fallback for effect spans or spans without a SpanRowView
+		// Fallback for effect spans or spans without a SpanTreeView
 		return fe.spinner.ViewFancy(time.Now()), true
 	} else if span.IsCached() {
 		return IconCached, false
