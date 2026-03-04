@@ -3,9 +3,9 @@ package idtui
 import (
 	"strings"
 
-	"codeberg.org/vito/tuist"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
 )
 
 // NotificationBubble renders a bordered notification box with a title

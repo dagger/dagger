@@ -40,8 +40,8 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 
-	"codeberg.org/vito/tuist"
-	"codeberg.org/vito/tuist/teav1"
+	"github.com/vito/tuist"
+	"github.com/vito/tuist/teav1"
 )
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"codeberg.org/vito/tuist"
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -21,6 +20,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
