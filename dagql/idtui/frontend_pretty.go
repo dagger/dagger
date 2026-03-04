@@ -95,6 +95,7 @@ type frontendPretty struct {
 	promptErr       error
 	textInput       *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
+	keymapBar       *KeymapBar
 	editlineFocused bool
 	inputHistory    []string
 	historyIndex    int // -1 = not browsing history
@@ -567,8 +568,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Add the text input to the TUI container as a sibling of fe.
+	// Add the text input before the keymapBar in the TUI container.
+	// Order: fe (progress/logs) → textInput → keymapBar
+	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
 
 	// put the bowtie on
@@ -816,7 +820,14 @@ func (fe *frontendPretty) startTUI() {
 			fe.tui.SetDebugWriter(f)
 		}
 	}
+	fe.keymapBar = &KeymapBar{
+		Profile:          fe.profile,
+		UsingCloudEngine: fe.UsingCloudEngine,
+		Keys:             fe.keys,
+	}
+
 	fe.tui.AddChild(fe)
+	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
 	fe.tui.Start()
 }
@@ -831,13 +842,28 @@ func (fe *frontendPretty) OnMount(ctx tuist.EventContext) {
 	}
 }
 
+// recordKeyPress updates the pressed-key state on both the frontend and the
+// keymapBar component, then schedules a clear after the highlight fades.
+func (fe *frontendPretty) recordKeyPress(keyStr string) {
+	fe.pressedKey = keyStr
+	fe.pressedKeyAt = time.Now()
+	if fe.keymapBar != nil {
+		fe.keymapBar.PressedKey = keyStr
+		fe.keymapBar.PressedKeyAt = fe.pressedKeyAt
+		fe.keymapBar.Update()
+	}
+	fe.scheduleKeypressClear()
+}
+
 // scheduleKeypressClear starts a one-shot timer that re-renders the keymap
 // after the keypress highlight fades. Replaces the old polling frameLoop.
 func (fe *frontendPretty) scheduleKeypressClear() {
 	go func() {
 		time.Sleep(keypressDuration + 50*time.Millisecond)
 		fe.tui.Dispatch(func() {
-			fe.Compo.Update()
+			if fe.keymapBar != nil {
+				fe.keymapBar.Update()
+			}
 		})
 	}()
 }
@@ -1088,39 +1114,6 @@ func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
 	return <-errs
 }
 
-var KeymapStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
-
-const keypressDuration = 500 * time.Millisecond
-
-func (fe *frontendPretty) renderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding) int {
-	w := new(strings.Builder)
-	var showedKey bool
-	for _, key := range keys {
-		mainKey := key.Keys()[0]
-		var pressed bool
-		if time.Since(fe.pressedKeyAt) < keypressDuration {
-			pressed = slices.Contains(key.Keys(), fe.pressedKey)
-		}
-		if !key.Enabled() && !pressed {
-			continue
-		}
-		keyStyle := style
-		if pressed {
-			keyStyle = keyStyle.Foreground(nil)
-		}
-		if showedKey {
-			fmt.Fprint(w, style.Render(" "+DotTiny+" "))
-		}
-		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
-		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
-		showedKey = true
-	}
-	res := w.String()
-	fmt.Fprint(out, res)
-	return lipgloss.Width(res)
-}
-
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	if fe.form != nil {
 		return fe.form.KeyBinds()
@@ -1227,9 +1220,8 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	// Pre-render chrome below progress to measure its height for truncation.
 	logsLines := fe.renderLogsLines(progPrefix)
 	formLines := fe.renderFormLines()
-	keymapLines := fe.renderKeymapLines()
 
-	chromeHeight := len(keymapLines) + 1 // +1 for gap line after progress
+	chromeHeight := 2 + 1 // keymap (blank + bar) rendered as sibling, +1 gap after progress
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
@@ -1251,11 +1243,7 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	// NOTE: textInput is rendered as a sibling in the TUI container,
 	// not here. Its cursor propagates through tuist automatically.
 	lines = append(lines, formLines...)
-	// Ensure there's a blank line before keymap if needed
-	if len(lines) > 0 && lines[len(lines)-1] != "" && len(keymapLines) > 0 {
-		lines = append(lines, "")
-	}
-	lines = append(lines, keymapLines...)
+	// NOTE: keymapBar is rendered as a sibling in the TUI container.
 
 	// Truncate each line to terminal width so no line wraps to multiple
 	// physical rows. Without this, tuist's diff renderer miscounts
@@ -1312,23 +1300,7 @@ func (fe *frontendPretty) renderFormLines() []string {
 	return appendView(nil, fe.formView())
 }
 
-// renderKeymapLines returns the keymap view as lines.
-func (fe *frontendPretty) renderKeymapLines() []string {
-	return appendView(nil, fe.keymapView())
-}
 
-func (fe *frontendPretty) keymapView() string {
-	outBuf := new(strings.Builder)
-	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
-	if fe.UsingCloudEngine {
-		fmt.Fprint(out, lipgloss.NewStyle().
-			Foreground(lipgloss.ANSIColor(termenv.ANSIBrightMagenta)).
-			Render(CloudIcon+" cloud"))
-		fmt.Fprint(out, KeymapStyle.Render(" "+VertBoldDash3+" "))
-	}
-	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
-	return outBuf.String()
-}
 
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
@@ -1681,8 +1653,7 @@ func (fe *frontendPretty) handleFormKey(ev uv.KeyPressEvent) {
 func (fe *frontendPretty) interceptEditlineKey(ctx tuist.EventContext, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
 	keyStr := uvKeyString(k)
-	fe.pressedKey = keyStr
-	fe.pressedKeyAt = time.Now()
+	fe.recordKeyPress(keyStr)
 
 	// Let the completion menu handle keys when visible (up/down/esc/tab).
 	if fe.completionMenu != nil && fe.completionMenu.HandleKeyPress(ctx, ev) {
@@ -1750,8 +1721,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	k := uv.Key(ev)
 	keyStr := uvKeyString(k)
 	lastKey := fe.pressedKey
-	fe.pressedKey = keyStr
-	fe.pressedKeyAt = time.Now()
+	fe.recordKeyPress(keyStr)
 
 	switch keyStr {
 	case "q", "ctrl+c":
@@ -1787,8 +1757,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	case "end", "G", " ":
 		fe.goEnd()
-		fe.pressedKey = "end"
-		fe.pressedKeyAt = time.Now()
+		fe.recordKeyPress("end")
 		return
 	case "r":
 		fe.goErrorOrigin()
@@ -1867,8 +1836,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		switch keyStr { //nolint:gocritic
 		case "g":
 			fe.goStart()
-			fe.pressedKey = "home"
-			fe.pressedKeyAt = time.Now()
+			fe.recordKeyPress("home")
 			return
 		}
 	}
