@@ -201,6 +201,12 @@ type renderer struct {
 	maxLiteralLen int
 	rendering     map[string]bool
 	final         bool
+
+	// indentFunc, when set, overrides fancyIndent. This is used by the
+	// tree-based renderer (SpanTreeView) which pre-computes indentation
+	// from its position in the component tree rather than walking up
+	// the TraceRow parent chain.
+	indentFunc func(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool)
 }
 
 func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final bool) *renderer {
@@ -234,6 +240,11 @@ func (r *renderer) indent(out TermOutput, depth int) {
 }
 
 func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, selfHoriz bool) {
+	if r.indentFunc != nil {
+		r.indentFunc(out, row, selfBar, selfHoriz)
+		return
+	}
+
 	// like indent, but render tree-style prefixes with status-colored symbols
 	// ◐ for running, ● for completed/successful, ◯ for pending/failed
 	// ├─ for intermediate children, └─ for last child
