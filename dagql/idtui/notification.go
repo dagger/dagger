@@ -49,9 +49,6 @@ func (n *NotificationBubble) Render(ctx tuist.RenderContext) tuist.RenderResult 
 		return tuist.RenderResult{}
 	}
 
-	// Reset escape: replace full reset with one that preserves background
-	content = strings.ReplaceAll(content, reset, termenv.CSI+"39;22;23;24;25;27;28;29m")
-
 	contentLines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 
 	// Build the box
@@ -65,7 +62,6 @@ func (n *NotificationBubble) Render(ctx tuist.RenderContext) tuist.RenderResult 
 	leftBorder := out.String(VertBar).Foreground(borderFg).String()
 	rightBorder := out.String(VertBar).Foreground(borderFg).String()
 	bgStyle := lipgloss.NewStyle().
-		Background(sidebarBG).
 		Width(innerWidth)
 	for _, line := range contentLines {
 		// Apply background to the full inner width
@@ -108,7 +104,7 @@ func (n *NotificationBubble) buildTopBorder(profile termenv.Profile, borderFg te
 	if len(n.section.KeyMap) > 0 {
 		kb := new(strings.Builder)
 		keymapWidth = RenderKeymap(kb,
-			KeymapStyle.Background(sidebarBG),
+			KeymapStyle,
 			n.section.KeyMap,
 			n.fe.pressedKey, n.fe.pressedKeyAt)
 		keymapStr = " " + kb.String() + " "

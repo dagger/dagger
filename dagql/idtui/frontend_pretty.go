@@ -132,10 +132,10 @@ type frontendPretty struct {
 	stdin        io.Reader             // used by backgroundMsg for running terminal
 	writer       io.Writer
 
-	// notification bubbles (overlay-based, replacing old sidebar)
-	notifications   map[string]*NotificationBubble // keyed by section title
-	overlayHandles  map[string]*tuist.OverlayHandle
-	notificationOrder []string // ordered titles for stacking
+	// notification bubbles (single overlay with a Container of bubbles)
+	notifications          map[string]*NotificationBubble // keyed by section title
+	notificationContainer  *tuist.Container
+	notificationOverlay    *tuist.OverlayHandle
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
@@ -454,7 +454,6 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		profile:    profile,
 		browserBuf:    new(strings.Builder),
 		notifications: make(map[string]*NotificationBubble),
-		overlayHandles: make(map[string]*tuist.OverlayHandle),
 		writer:     w,
 		shownErrs:  map[dagui.SpanID]bool{},
 	}
@@ -473,72 +472,33 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 			bubble := newNotificationBubble(fe, section)
 			fe.notifications[title] = bubble
 
-			// Track order: untitled goes first, titled appends
-			if title == "" {
-				fe.notificationOrder = append([]string{""}, fe.notificationOrder...)
-			} else {
-				fe.notificationOrder = append(fe.notificationOrder, title)
+			// Lazily create the container and overlay on first notification
+			if fe.notificationContainer == nil {
+				fe.notificationContainer = &tuist.Container{}
+				fe.notificationOverlay = fe.tui.ShowOverlay(fe.notificationContainer, &tuist.OverlayOptions{
+					Width:  tuist.SizeAbs(notificationWidth(fe.window.Width)),
+					Anchor: tuist.AnchorTopRight,
+					Margin: tuist.OverlayMargin{Right: 1},
+				})
 			}
 
-			// Show as overlay, anchored to bottom-right, content-relative
-			fe.overlayHandles[title] = fe.tui.ShowOverlay(bubble, &tuist.OverlayOptions{
-				Width:           tuist.SizeAbs(notificationWidth(fe.window.Width)),
-				Anchor:          tuist.AnchorBottomRight,
-				ContentRelative: true,
-				Margin:          tuist.OverlayMargin{Bottom: fe.notificationStackOffset(title), Right: 1},
-			})
+			// Untitled goes first, titled appends
+			if title == "" {
+				fe.notificationContainer.Children = append(
+					[]tuist.Component{bubble},
+					fe.notificationContainer.Children...,
+				)
+				fe.notificationContainer.Update()
+			} else {
+				fe.notificationContainer.AddChild(bubble)
+			}
 		}
 
-		// Recompute all overlay positions (stacking)
-		fe.repositionNotifications()
 		fe.Compo.Update()
 	})
 }
 
-// notificationStackOffset computes the vertical offset for a notification
-// bubble so they stack upward from the bottom-right.
-func (fe *frontendPretty) notificationStackOffset(targetTitle string) int {
-	offset := 0
-	for _, title := range fe.notificationOrder {
-		if title == targetTitle {
-			return offset
-		}
-		bubble := fe.notifications[title]
-		if bubble != nil {
-			content := bubble.section.Body(notificationWidth(fe.window.Width) - 4)
-			if content != "" {
-				contentLines := strings.Split(strings.TrimRight(content, "\n"), "\n")
-				offset += len(contentLines) + 3 // content + top border + bottom border + gap
-			}
-		}
-	}
-	return offset
-}
 
-// repositionNotifications updates overlay positions for all notification
-// bubbles so they stack correctly.
-func (fe *frontendPretty) repositionNotifications() {
-	w := notificationWidth(fe.window.Width)
-	for _, title := range fe.notificationOrder {
-		handle, ok := fe.overlayHandles[title]
-		if !ok {
-			continue
-		}
-		handle.SetOptions(&tuist.OverlayOptions{
-			Width:           tuist.SizeAbs(w),
-			Anchor:          tuist.AnchorBottomRight,
-			ContentRelative: true,
-			Margin:          tuist.OverlayMargin{Bottom: fe.notificationStackOffset(title), Right: 1},
-		})
-	}
-}
-
-var sidebarBG lipgloss.TerminalColor
-
-func init() {
-	// Use a subtle background for notification bubbles
-	sidebarBG = lipgloss.Color("236")
-}
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.tui.Dispatch(func() {
