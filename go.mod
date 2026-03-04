@@ -13,7 +13,7 @@ replace (
 )
 
 require (
-	codeberg.org/vito/tuist v0.0.0-20260304030535-360c566d700c
+	codeberg.org/vito/tuist v0.0.0-20260304182746-b59138121362
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
