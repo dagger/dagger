@@ -883,6 +883,10 @@ func (fe *frontendPretty) handleEOF() {
 }
 
 func (fe *frontendPretty) doQuit() {
+	// Remove the keymap bar so it doesn't appear in the final frame.
+	if fe.keymapBar != nil {
+		fe.tui.RemoveChild(fe.keymapBar)
+	}
 	select {
 	case <-fe.quit:
 		// already closed
