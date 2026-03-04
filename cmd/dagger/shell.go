@@ -9,9 +9,10 @@ import (
 	"strings"
 	"sync"
 
+	"codeberg.org/vito/tuist"
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -20,8 +21,6 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"github.com/vito/bubbline/computil"
-	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -476,33 +475,40 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	return err
 }
 
-func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
+func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.CompletionResult {
 	if h.mode == modePrompt {
-		word, wstart, wend := computil.FindWord(entireInput, line, col)
+		// Find the word at the cursor for variable completion
+		before := input[:cursorPos]
+		wordStart := strings.LastIndexAny(before, " \t\n") + 1
+		word := before[wordStart:]
 		if after, ok := strings.CutPrefix(word, "$"); ok {
-			prefix := after
 			vars := h.runner.Vars
-			var completions []string
+			var items []tuist.Completion
 			for k := range vars {
-				if strings.HasPrefix(k, prefix) {
-					completions = append(completions, "$"+k)
+				if strings.HasPrefix(k, after) {
+					items = append(items, tuist.Completion{
+						Label:  "$" + k,
+						Detail: "variable",
+					})
 				}
 			}
-			return "", editline.SimpleWordsCompletion(completions, "variable", col, wstart, wend)
+			return tuist.CompletionResult{
+				Items:       items,
+				ReplaceFrom: wordStart,
+			}
 		}
-		return "", nil
+		return tuist.CompletionResult{}
 	}
 
-	return (&shellAutoComplete{h}).Do(entireInput, line, col)
+	return (&shellAutoComplete{h}).Complete(input, cursorPos)
 }
 
-func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
+func (h *shellCallHandler) IsComplete(input string) bool {
 	if h.mode == modePrompt {
 		return true // LLM prompt mode always considers input complete
 	}
 
 	// Regular shell mode
-	input, _ := computil.Flatten(entireInput, line, col)
 	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
 	if err != nil {
 		if syntax.IsIncomplete(err) {
@@ -569,26 +575,27 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 	}
 }
 
-func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) func() {
-	switch msg.String() {
-	case ">":
-		if editline.AtStart() {
+func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent, inputValue string, editing bool) func() {
+	key := uv.Key(ev)
+	switch {
+	case key.MatchString(">"):
+		if inputValue == "" {
 			h.mode = modePrompt
 			return func() {
 				h.llm(ctx) // initialize LLM
 			}
 		}
-	case "!":
-		if editline.AtStart() {
+	case key.MatchString("!"):
+		if inputValue == "" {
 			h.mode = modeShell
 			return noop // handled, no async work
 		}
-	case "ctrl+x":
+	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
 			h.llmSession.ToggleAutocompact()
 			return noop
 		}
-	case "ctrl+s":
+	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {
 			return func() {
 				if err := h.llmSession.SyncToLocal(ctx); err != nil {
@@ -600,7 +607,7 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, edi
 				}
 			}
 		}
-	case "ctrl+u":
+	case key.MatchString("ctrl+u"):
 		if h.llmSession != nil {
 			return func() {
 				if err := h.llmSession.SyncFromLocal(ctx); err != nil {

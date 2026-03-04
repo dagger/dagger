@@ -6,7 +6,6 @@ package idtui
 import (
 	"context"
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/util/cleanups"
@@ -26,7 +25,7 @@ var _ Frontend = &FrontendMock{}
 //
 //		// make and configure a mocked Frontend
 //		mockedFrontend := &FrontendMock{
-//			BackgroundFunc: func(cmd tea.ExecCommand, raw bool) error {
+//			BackgroundFunc: func(cmd ExecCommand, raw bool) error {
 //				panic("mock out the Background method")
 //			},
 //			HandleFormFunc: func(ctx context.Context, form *huh.Form) error {
@@ -79,7 +78,7 @@ var _ Frontend = &FrontendMock{}
 //	}
 type FrontendMock struct {
 	// BackgroundFunc mocks the Background method.
-	BackgroundFunc func(cmd tea.ExecCommand, raw bool) error
+	BackgroundFunc func(cmd ExecCommand, raw bool) error
 
 	// HandleFormFunc mocks the HandleForm method.
 	HandleFormFunc func(ctx context.Context, form *huh.Form) error
@@ -128,7 +127,7 @@ type FrontendMock struct {
 		// Background holds details about calls to the Background method.
 		Background []struct {
 			// Cmd is the cmd argument value.
-			Cmd tea.ExecCommand
+			Cmd ExecCommand
 			// Raw is the raw argument value.
 			Raw bool
 		}
@@ -231,12 +230,12 @@ type FrontendMock struct {
 }
 
 // Background calls BackgroundFunc.
-func (mock *FrontendMock) Background(cmd tea.ExecCommand, raw bool) error {
+func (mock *FrontendMock) Background(cmd ExecCommand, raw bool) error {
 	if mock.BackgroundFunc == nil {
 		panic("FrontendMock.BackgroundFunc: method is nil but Frontend.Background was just called")
 	}
 	callInfo := struct {
-		Cmd tea.ExecCommand
+		Cmd ExecCommand
 		Raw bool
 	}{
 		Cmd: cmd,
@@ -253,11 +252,11 @@ func (mock *FrontendMock) Background(cmd tea.ExecCommand, raw bool) error {
 //
 //	len(mockedFrontend.BackgroundCalls())
 func (mock *FrontendMock) BackgroundCalls() []struct {
-	Cmd tea.ExecCommand
+	Cmd ExecCommand
 	Raw bool
 } {
 	var calls []struct {
-		Cmd tea.ExecCommand
+		Cmd ExecCommand
 		Raw bool
 	}
 	mock.lockBackground.RLock()

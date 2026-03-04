@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
@@ -95,7 +94,7 @@ func (fe *frontendLogs) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendLogs) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendLogs) Background(cmd ExecCommand, raw bool) error {
 	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
