@@ -1701,10 +1701,8 @@ func (fe *frontendPretty) handleEditlineKeyUV(ev uv.KeyPressEvent) {
 	default:
 		if fe.shell != nil {
 			msg := uvKeyToTeaKeyMsg(ev)
-			cmd := fe.shell.ReactToInput(fe.shellCtx, msg, true, fe.editline)
-			if cmd != nil {
-				fe.execTeaCmd(cmd)
-				fe.updatePrompt()
+			if work := fe.shell.ReactToInput(fe.shellCtx, msg, true, fe.editline); work != nil {
+				fe.runShellAsync(work)
 				return
 			}
 		}
@@ -1830,9 +1828,8 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	default:
 		if fe.shell != nil {
 			msg := uvKeyToTeaKeyMsg(ev)
-			cmd := fe.shell.ReactToInput(fe.shellCtx, msg, false, fe.editline)
-			if cmd != nil {
-				fe.execTeaCmd(cmd)
+			if work := fe.shell.ReactToInput(fe.shellCtx, msg, false, fe.editline); work != nil {
+				fe.runShellAsync(work)
 				return
 			}
 		}
@@ -2203,18 +2200,31 @@ func (fe *frontendPretty) initEditline() {
 	fe.editline.Update(nil)
 }
 
-type UpdatePromptMsg struct{}
-
 func (fe *frontendPretty) updatePrompt() {
 	if fe.shell != nil && fe.editline != nil {
-		var cmd tea.Cmd
 		promptOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		fe.editline.Prompt, cmd = fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
-		fe.execTeaCmd(cmd)
+		prompt, init := fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
+		fe.editline.Prompt = prompt
+		if init != nil {
+			fe.runShellAsync(init)
+		}
 	}
 	if fe.editline != nil {
 		fe.editline.UpdatePrompt()
 	}
+}
+
+// runShellAsync runs a shell handler function in a background goroutine,
+// then dispatches a prompt update + re-render back to the UI thread.
+func (fe *frontendPretty) runShellAsync(work func()) {
+	fe.updatePrompt()
+	go func() {
+		work()
+		fe.tui.Dispatch(func() {
+			fe.updatePrompt()
+			fe.Compo.Update()
+		})
+	}()
 }
 
 func (fe *frontendPretty) quitAction(interruptErr error) {

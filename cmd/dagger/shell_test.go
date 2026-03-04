@@ -78,12 +78,20 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 
 	input := editline.New(0, 0)
 
+	// runReact calls ReactToInput and runs async work synchronously (for testing).
+	runReact := func(msg tea.KeyMsg) {
+		work := handler.ReactToInput(ctx, msg, true, input)
+		if work != nil {
+			work()
+		}
+	}
+
 	// set prompt to our test agent and switch to prompt mode
 	handler.Handle(ctx, "agent=$(agent)")
-	handler.ReactToInput(ctx, tea.KeyMsg{
+	runReact(tea.KeyMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune{'>'},
-	}, true, input)()
+	})
 
 	// make a change
 	handler.Handle(ctx, "Write 'apple' to fruit.txt.")
@@ -93,9 +101,9 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	require.Contains(t, sec.Body(80), "fruit.txt")
 
 	// sync it down
-	handler.ReactToInput(ctx, tea.KeyMsg{
+	runReact(tea.KeyMsg{
 		Type: tea.KeyCtrlS,
-	}, true, input)()
+	})
 	contents, err := os.ReadFile("fruit.txt")
 	require.NoError(t, err)
 	require.Contains(t, string(contents), "apple")
@@ -107,9 +115,9 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.Chtimes("fruit.txt", future, future))
 
 	// sync them up
-	handler.ReactToInput(ctx, tea.KeyMsg{
+	runReact(tea.KeyMsg{
 		Type: tea.KeyCtrlU,
-	}, true, input)()
+	})
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt?")
@@ -126,10 +134,10 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	past := time.Now().Add(-time.Minute)
 	require.NoError(t, os.Chtimes("fruit.txt", past, past))
 
-	// blow away their changes
-	handler.ReactToInput(ctx, tea.KeyMsg{
+	// blow away their changes — upload local changes to agent
+	runReact(tea.KeyMsg{
 		Type: tea.KeyCtrlU,
-	}, true, input)()
+	})
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt now?")
