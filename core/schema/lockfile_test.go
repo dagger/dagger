@@ -61,7 +61,7 @@ func TestResolveLookupFromLock(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, res.Pin)
 		require.Equal(t, workspace.PolicyFloat, res.Policy)
-		require.False(t, res.ShouldWrite)
+		require.True(t, res.ShouldWrite)
 
 		res, err = resolveLookupFromLock(workspace.LockModeUpdate, lock, lockCoreNamespace, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestResolveLookupFromLock(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, res.Pin)
 		require.Equal(t, workspace.PolicyFloat, res.Policy)
-		require.False(t, res.ShouldWrite)
+		require.True(t, res.ShouldWrite)
 
 		res, err = resolveLookupFromLock(workspace.LockModeUpdate, nil, lockCoreNamespace, operation, inputs, workspace.PolicyFloat)
 		require.NoError(t, err)

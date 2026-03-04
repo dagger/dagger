@@ -97,6 +97,8 @@ func resolveLookupFromLock(
 			case workspace.LockModeAuto:
 				if resolution.Policy == workspace.PolicyPin {
 					resolution.Pin = lockResult.Value
+				} else {
+					resolution.ShouldWrite = true
 				}
 				return resolution, nil
 			case workspace.LockModeUpdate:
@@ -115,6 +117,7 @@ func resolveLookupFromLock(
 		if resolution.Policy == workspace.PolicyPin {
 			return resolution, fmt.Errorf("missing lock entry for pinned %s %v", operation, inputs)
 		}
+		resolution.ShouldWrite = true
 		return resolution, nil
 	case workspace.LockModeUpdate:
 		resolution.ShouldWrite = true
