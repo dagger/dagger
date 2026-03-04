@@ -357,7 +357,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		return err
 	}
 
-	if len(refs) == 0 {
+	if len(refs) == 0 && !includeTags {
 		// Nothing requested: avoid an implicit broad fetch from origin.
 		return nil
 	}
@@ -439,25 +439,27 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 	defer detach()
 
-	err = runFetch(shaRefSpecs)
-	if err != nil {
-		if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
-			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
-		}
+	if len(shaRefSpecs) > 0 {
+		err = runFetch(shaRefSpecs)
+		if err != nil {
+			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
+				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+			}
 
-		namedSpecs := namedFetchRefSpecs(refs)
-		if len(namedSpecs) == 0 {
-			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
-		}
+			namedSpecs := namedFetchRefSpecs(refs)
+			if len(namedSpecs) == 0 {
+				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+			}
 
-		logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
-		if retryErr := runFetch(namedSpecs); retryErr != nil {
-			return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
+			logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+			if retryErr := runFetch(namedSpecs); retryErr != nil {
+				return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
+			}
+			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
+				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
+			}
+			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
 		}
-		if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
-			return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
-		}
-		logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
 	}
 
 	if includeTags {
