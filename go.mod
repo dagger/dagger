@@ -8,13 +8,12 @@ require (
 )
 
 replace (
-	codeberg.org/vito/tuist => /home/vito/src/tuist
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
 )
 
 require (
-	codeberg.org/vito/tuist v0.0.0-20260304010918-df8947963e5e
+	codeberg.org/vito/tuist v0.0.0-20260304024346-644f55d176aa
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
@@ -345,7 +344,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	github.com/vito/tuist v0.0.0-20260305182649-e6d49d27039b // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
