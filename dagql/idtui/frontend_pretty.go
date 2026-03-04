@@ -97,9 +97,9 @@ type frontendPretty struct {
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
 	editlineFocused bool
-	inputHistory    []string
-	historyIndex    int // -1 = not browsing history
-	historySaved    string // saved input when browsing history
+	inputHistory    []string // raw encoded history entries (with mode prefix)
+	historyIndex    int      // -1 = not browsing history
+	historySaved    string   // saved input when browsing history
 	autoModeSwitch  bool
 	shellRunning    bool
 	shellLock       sync.Mutex
@@ -552,11 +552,9 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 
 	fe.initTextInput()
 
-	// restore history
+	// restore history — store raw encoded entries to preserve mode prefixes
 	if hist, err := history.LoadHistory(historyFile); err == nil {
-		for _, entry := range hist {
-			fe.inputHistory = append(fe.inputHistory, handler.DecodeHistory(entry))
-		}
+		fe.inputHistory = hist
 	}
 	fe.historyIndex = -1
 
@@ -646,12 +644,8 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
 			slog.Error("failed to create history directory", "err", err)
 		}
-		// Encode history entries through the handler
-		var encoded []string
-		for _, entry := range fe.inputHistory {
-			encoded = append(encoded, fe.shell.EncodeHistory(entry))
-		}
-		if err := history.SaveHistory(encoded, historyFile); err != nil {
+		// Entries are already encoded with mode prefixes
+		if err := history.SaveHistory(fe.inputHistory, historyFile); err != nil {
 			slog.Error("failed to save history", "err", err)
 		}
 	}
@@ -1851,9 +1845,13 @@ func (fe *frontendPretty) handleInputComplete() {
 	fe.promptErr = nil
 
 	value := fe.textInput.Value()
-	// Add to history
+	// Add to history (encoded with mode prefix for round-trip fidelity)
 	if value != "" {
-		fe.inputHistory = append(fe.inputHistory, value)
+		encoded := value
+		if fe.shell != nil {
+			encoded = fe.shell.EncodeHistory(value)
+		}
+		fe.inputHistory = append(fe.inputHistory, encoded)
 	}
 	fe.historyIndex = -1
 	fe.promptFg = termenv.ANSIYellow
@@ -2190,7 +2188,7 @@ func (fe *frontendPretty) historyUp() bool {
 	} else {
 		return true // at oldest entry
 	}
-	fe.textInput.SetValue(fe.inputHistory[fe.historyIndex])
+	fe.setHistoryEntry(fe.historyIndex)
 	return true
 }
 
@@ -2201,13 +2199,24 @@ func (fe *frontendPretty) historyDown() bool {
 	}
 	if fe.historyIndex < len(fe.inputHistory)-1 {
 		fe.historyIndex++
-		fe.textInput.SetValue(fe.inputHistory[fe.historyIndex])
+		fe.setHistoryEntry(fe.historyIndex)
 	} else {
 		// Restore saved input
 		fe.historyIndex = -1
 		fe.textInput.SetValue(fe.historySaved)
 	}
 	return true
+}
+
+// setHistoryEntry decodes the history entry at idx and sets it as the
+// TextInput value. If the shell handler is available, DecodeHistory is
+// used to strip mode prefixes.
+func (fe *frontendPretty) setHistoryEntry(idx int) {
+	entry := fe.inputHistory[idx]
+	if fe.shell != nil {
+		entry = fe.shell.DecodeHistory(entry)
+	}
+	fe.textInput.SetValue(entry)
 }
 
 func (fe *frontendPretty) initTextInput() {
