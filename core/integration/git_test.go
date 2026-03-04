@@ -637,7 +637,7 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 			From("alpine").
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
-			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1}))
+			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1, IncludeTags: true}))
 
 			// check tag existence
 		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
@@ -671,6 +671,19 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 			requireGitTagsExist(ctx, t, git.Head())
 		})
 	}
+
+	t.Run("remote default excludes tags", func(ctx context.Context, t *testctx.T) {
+		// Use .git URL form so this assertion runs against an isolated shared bare remote cache key.
+		ctr := c.Container().
+			From("alpine").
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", c.Git("https://github.com/dagger/dagger.git").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1}))
+
+		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out), "default tree checkout should not populate tag refs in .git")
+	})
 
 	t.Run("remote", func(ctx context.Context, t *testctx.T) {
 		runCheckedTags(t, c.Git("https://github.com/dagger/dagger"))

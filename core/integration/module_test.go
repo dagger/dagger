@@ -8314,7 +8314,7 @@ query { host { directory(path: ".") { asModule {
                     description
                     defaultValue
                 }
-			}
+            }
             fields {
                 name
                 description

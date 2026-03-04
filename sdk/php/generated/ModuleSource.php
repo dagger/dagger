@@ -123,6 +123,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+     */
+    public function generatedContextChangeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextChangeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDirectory(): Directory
