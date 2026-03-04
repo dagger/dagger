@@ -1,6 +1,6 @@
 # Workspace API
 
-This spec describes the current merged behavior of the Workspace API.
+This spec describes the desired behavior of the Workspace API.
 
 ## Scope
 
@@ -13,7 +13,7 @@ This spec describes the current merged behavior of the Workspace API.
   - `currentWorkspace(skipMigrationCheck: Boolean = false): Workspace!` (experimental)
 - `Workspace`:
   - `id: WorkspaceID!`
-  - `root: String!`
+  - `root: String!` (absolute workspace root locator; local absolute path or canonical remote git locator)
   - `clientId: String!`
   - `directory(path: String!, include: [String!] = [], exclude: [String!] = [], gitignore: Boolean = false): Directory!`
   - `file(path: String!): File!`
@@ -21,20 +21,25 @@ This spec describes the current merged behavior of the Workspace API.
 
 ## Semantics
 
-- Workspace detection:
+- Workspace context:
   - Start from session current working directory (`.`).
   - Resolve to absolute path.
   - Walk up to nearest ancestor containing `.git`; if none, use the starting directory.
+  - Workspace context can be local host filesystem or remote git repository context.
 - Workspace identity:
   - `Workspace` stores both `root` and `clientId`.
+  - `Workspace.root` returns the absolute workspace root locator.
+  - Local example: `/Users/idlsoft/myapp/foo/bar/my/workspace`.
+  - Remote git example: `https://github.com/idlsoft/myapp#:foo/bar/my/workspace`.
   - Host filesystem operations are executed under the owning client (`clientId`), including when invoked from module runtime contexts.
 - Paths:
-  - All paths are sandboxed to `root`.
-  - Traversal outside root via `..` is rejected.
-  - Absolute paths are treated as root-relative (not host-root absolute).
+  - No filesystem sandbox layer is applied.
+  - Paths resolve directly in the workspace's underlying context (host filesystem for local workspaces, repository tree for remote git workspaces).
+  - By default, path resolution outside the workspace git repository fails.
+  - Explicit exceptions may be configured to permit out-of-repository access when required.
 - `findUp`:
   - Searches upward from `from`.
-  - Stops at workspace root.
+  - Stops at workspace repository root.
   - Returns root-relative path or `null`.
 
 ## Workspace Function Arguments
@@ -48,7 +53,6 @@ This spec describes the current merged behavior of the Workspace API.
 - Workspace-aware calls are content-addressed with workspace-derived content digests.
 - Unchanged relevant workspace content can hit cache.
 - Changes to relevant referenced content invalidate cache.
-- `skipMigrationCheck` is accepted by `currentWorkspace`; current merged implementation does not apply behavior changes from this flag.
 
 ## Connect Params and Client Metadata
 
@@ -70,7 +74,7 @@ This section documents connect parameters that become engine `ClientMetadata`.
 | `EnableCloudScaleOut` | `EnableCloudScaleOut` |
 
 Notes:
-- There is no `extraModules` field in current merged code; the shipped module-allowlist field is `AllowedLLMModules`.
+- There is no `extraModules` field; the module allowlist field is `AllowedLLMModules`.
 - `workdir` is a connect/provisioning input (`--workdir`) that affects workspace detection start path, but it is not a `ClientMetadata` field.
 
 ### Present in client metadata but derived (not direct connect params)

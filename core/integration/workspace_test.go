@@ -92,7 +92,7 @@ type Greeter {
 }
 
 // TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
-// start path and stops at the workspace root.
+// start path and stops at the repository root.
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -150,6 +150,67 @@ type Finder {
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
+}
+
+// TestWorkspaceRootIsRepoRoot verifies that Workspace.root resolves to the
+// repository root, not the caller's nested working directory.
+func (WorkspaceSuite) TestRootIsRepoRoot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithExec([]string{"mkdir", "-p", "sub/dir"}).
+		With(initDangModule("rooter", `
+type Rooter {
+  pub value: String!
+
+  new(ws: Workspace!) {
+    self.value = ws.root
+    self
+  }
+
+  pub root: String! {
+    value
+  }
+}
+`))
+
+	out, err := base.
+		WithWorkdir("/work/sub/dir").
+		With(daggerCallAt("../..", "rooter", "root")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/work", strings.TrimSpace(out))
+}
+
+// TestWorkspaceNoWorkspaceRootSandbox verifies that absolute paths are
+// resolved directly (not remapped as workspace-root-relative).
+func (WorkspaceSuite) TestNoWorkspaceRootSandbox(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithExec([]string{"mkdir", "-p", "sub/dir"}).
+		WithNewFile("root.txt", "at repo root").
+		With(initDangModule("nonsandbox", `
+type Nonsandbox {
+  pub value: String!
+
+  new(ws: Workspace!) {
+    self.value = ws.file("/work/root.txt").contents
+    self
+  }
+
+  pub read: String! {
+    value
+  }
+}
+`))
+
+	out, err := base.
+		WithWorkdir("/work/sub/dir").
+		With(daggerCallAt("../..", "nonsandbox", "read")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "at repo root", strings.TrimSpace(out))
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace
@@ -340,8 +401,8 @@ type Subdir {
 	require.NotContains(t, entries, "sub/")
 }
 
-// TestWorkspacePathTraversal verifies that a module cannot use Workspace to
-// escape the workspace root and access arbitrary host paths.
+// TestWorkspacePathTraversal verifies that, by default, a module cannot use
+// Workspace to access arbitrary host paths outside the workspace repository.
 func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -362,10 +423,10 @@ type EscapeDir {
     source.entries
   }
 }
-`))
+		`))
 		_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "resolves outside root")
+		requireErrOut(t, err, "outside workspace repository root")
 	})
 
 	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
@@ -382,15 +443,13 @@ type EscapeFile {
     content
   }
 }
-`))
+		`))
 		_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "resolves outside root")
+		requireErrOut(t, err, "outside workspace repository root")
 	})
 
-	t.Run("absolute path treated as relative", func(ctx context.Context, t *testctx.T) {
-		// Absolute paths are relative to workspace root, not the host root.
-		// /sub should resolve to <workspace>/sub, not /sub on the host.
+	t.Run("absolute path outside repo is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
 			WithNewFile("sub/inner.txt", "inner").
 			With(initDangModule("abs-rel", `
@@ -407,7 +466,29 @@ type AbsRel {
   }
 }
 `))
-		out, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
+		_, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "outside workspace repository root")
+	})
+
+	t.Run("absolute path inside repo is allowed", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			WithNewFile("sub/inner.txt", "inner").
+			With(initDangModule("absinrepo", `
+type Absinrepo {
+  pub source: Directory!
+
+  new(source: Workspace!, path: String!) {
+    self.source = source.directory(path)
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("absinrepo", "--path=/work/sub", "ls")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "inner.txt")
 	})
