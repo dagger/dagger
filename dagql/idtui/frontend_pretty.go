@@ -446,6 +446,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
+		tui:        tuist.New(tuist.NewProcessTerminal()),
 		window:     windowSize{Width: -1, Height: -1}, // be clear that it's not set
 		spinner:    NewRave(),
 		profile:    profile,
@@ -807,8 +808,6 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 }
 
 func (fe *frontendPretty) startTUI() {
-	terminal := tuist.NewProcessTerminal()
-	fe.tui = tuist.New(terminal)
 	if p := os.Getenv("TUIST_LOG"); p != "" {
 		if f, err := os.Create(p); err == nil {
 			fe.tui.SetDebugWriter(f)
