@@ -112,18 +112,3 @@ func internal() *ast.Directive {
 		Name: "internal",
 	}
 }
-
-func sourceMap(module string) *ast.Directive {
-	return &ast.Directive{
-		Name: "sourceMap",
-		Arguments: ast.ArgumentList{
-			&ast.Argument{
-				Name: "module",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  module,
-				},
-			},
-		},
-	}
-}
