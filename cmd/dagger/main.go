@@ -330,7 +330,7 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVarP(&workdir, "workdir", "C", ".", "Set the working directory")
+	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
@@ -357,6 +357,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
+		"workdir",
 		"dot-output",
 		"dot-focus-field",
 		"dot-show-internal",
