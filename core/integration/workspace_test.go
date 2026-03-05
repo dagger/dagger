@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -64,6 +66,94 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 			// Init the workspace root module using the blueprint
 			With(daggerExec("init", "--blueprint=./blueprints/"+name))
 	}
+}
+
+func currentWorkspaceID(ctx context.Context, t *testctx.T, c *dagger.Client) string {
+	t.Helper()
+
+	res, err := testutil.QueryWithClient[struct {
+		CurrentWorkspace struct {
+			ID string
+		}
+	}](c, t, `{ currentWorkspace { id } }`, nil)
+	require.NoError(t, err)
+	return res.CurrentWorkspace.ID
+}
+
+func withMountedWorkspaceExec(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	workspaceID string,
+	args []string,
+) (string, string) {
+	t.Helper()
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					WithExec struct {
+						ID     string
+						Stdout string
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Exec($ws: WorkspaceID!, $args: [String!]!) {
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws", source: $ws) {
+					withExec(args: $args) {
+						id
+						stdout
+					}
+				}
+			}
+		}
+	}`, alpineImage), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws":   workspaceID,
+			"args": args,
+		},
+	})
+	require.NoError(t, err)
+	execRes := res.Container.From.WithMountedWorkspace.WithExec
+	return execRes.ID, execRes.Stdout
+}
+
+func loadContainerExec(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	containerID string,
+	args []string,
+) (string, string) {
+	t.Helper()
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			WithExec struct {
+				ID     string
+				Stdout string
+			}
+		} `json:"loadContainerFromID"`
+	}](c, t, `query Exec($id: ContainerID!, $args: [String!]!) {
+		loadContainerFromID(id: $id) {
+			withExec(args: $args) {
+				id
+				stdout
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"id":   containerID,
+			"args": args,
+		},
+	})
+	require.NoError(t, err)
+	execRes := res.Container.WithExec
+	return execRes.ID, execRes.Stdout
 }
 
 // TestWorkspaceBlueprint verifies that a blueprint module accepting a Workspace
@@ -292,6 +382,94 @@ func (WorkspaceSuite) TestWithMountedWorkspaceWritesPersistInLineage(ctx context
 	})
 	require.NoError(t, err)
 	require.Equal(t, "missing", strings.TrimSpace(freshMountRes.Container.From.WithMountedWorkspace.WithExec.Stdout))
+}
+
+func (WorkspaceSuite) TestWithMountedWorkspaceLazyMaterialization(ctx context.Context, t *testctx.T) {
+	t.Run("read does not materialize siblings", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "readme.txt"), []byte("first"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "sibling.txt"), []byte("old"), 0o600))
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		wsID := currentWorkspaceID(ctx, t, c)
+
+		ctrID, _ := withMountedWorkspaceExec(ctx, t, c, wsID, []string{
+			"sh", "-c", "cat /ws/readme.txt >/dev/null",
+		})
+
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "sibling.txt"), []byte("new"), 0o600))
+
+		_, stdout := loadContainerExec(ctx, t, c, ctrID, []string{
+			"cat", "/ws/sibling.txt",
+		})
+		require.Equal(t, "new", strings.TrimSpace(stdout))
+	})
+
+	t.Run("readdir does not materialize descendants", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(wd, "dir", "nested"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "dir", "top.txt"), []byte("top"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "dir", "nested", "deep.txt"), []byte("old-deep"), 0o600))
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		wsID := currentWorkspaceID(ctx, t, c)
+
+		ctrID, _ := withMountedWorkspaceExec(ctx, t, c, wsID, []string{
+			"sh", "-c", "ls -1 /ws/dir >/dev/null",
+		})
+
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "dir", "nested", "deep.txt"), []byte("new-deep"), 0o600))
+
+		_, stdout := loadContainerExec(ctx, t, c, ctrID, []string{
+			"cat", "/ws/dir/nested/deep.txt",
+		})
+		require.Equal(t, "new-deep", strings.TrimSpace(stdout))
+	})
+}
+
+func (WorkspaceSuite) TestWithMountedWorkspaceExecCachePolicy(ctx context.Context, t *testctx.T) {
+	runNoWorkspace := func() string {
+		c := connect(ctx, t)
+		res, err := testutil.QueryWithClient[struct {
+			Container struct {
+				From struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}](c, t, fmt.Sprintf(`{
+			container {
+				from(address: %q) {
+					withExec(args: ["sh", "-c", "cat /proc/sys/kernel/random/uuid"]) {
+						stdout
+					}
+				}
+			}
+		}`, alpineImage), nil)
+		require.NoError(t, err)
+		return strings.TrimSpace(res.Container.From.WithExec.Stdout)
+	}
+
+	runWithWorkspaceMount := func(workdir string) string {
+		c := connect(ctx, t, dagger.WithWorkdir(workdir))
+		wsID := currentWorkspaceID(ctx, t, c)
+		_, stdout := withMountedWorkspaceExec(ctx, t, c, wsID, []string{
+			"sh", "-c", "cat /ws/input.txt >/dev/null; cat /proc/sys/kernel/random/uuid",
+		})
+		return strings.TrimSpace(stdout)
+	}
+
+	cached1 := runNoWorkspace()
+	cached2 := runNoWorkspace()
+	require.Equal(t, cached1, cached2, "expected withExec to stay cached without workspace mounts")
+
+	wd := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("x"), 0o600))
+
+	uncached1 := runWithWorkspaceMount(wd)
+	uncached2 := runWithWorkspaceMount(wd)
+	require.NotEqual(t, uncached1, uncached2, "expected withExec to be cache-per-call with workspace mounts")
 }
 
 func (WorkspaceSuite) TestWorkspaceEntriesAndStatPrimitives(ctx context.Context, t *testctx.T) {

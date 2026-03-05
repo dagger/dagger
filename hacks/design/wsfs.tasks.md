@@ -14,7 +14,7 @@
   - [x] Add `Workspace.entries` (shallow listing) and `Workspace.stat` primitives.
   - [x] Route mounted-workspace `file`/`directory`/`stat`/`exists` lookups through workspace APIs when no upper layer exists.
   - [x] Implement prototype `read`, `readdir`, and `stat` mapping to workspace APIs in WSFS runtime.
-- [ ] Stage 5: Validation and hardening
+- [x] Stage 5: Validation and hardening
   - [x] Add unit tests for workspace mount detection and runtime-hook behavior.
   - [x] Add integration test for workspace mount write persistence in-lineage and no sync-back to fresh mount.
-  - [ ] Add integration tests for laziness and caching behavior.
+  - [x] Add integration tests for laziness and caching behavior.
