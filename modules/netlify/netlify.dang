@@ -5,6 +5,7 @@ type Netlify {
   let token: Secret
   let cliVersion: String!
 
+  # Configure module-level Netlify credentials and CLI version.
   new(
     # Netlify auth token used by CLI calls.
     token: Secret = null,
@@ -21,15 +22,11 @@ type Netlify {
   """
   pub sites(ws: Workspace!): [Site!]! {
     ws
-      .directory(".", include: ["**/netlify.toml"])
+      .directory(ws.root, include: ["**/netlify.toml"])
       .glob("**/netlify.toml")
       .map { configPath =>
-        let path = configPath
-          .trimSuffix("netlify.toml")
-          .trimSuffix("/")
-        let path = if (path == "") { "." } else { path }
         Site(
-          path: path,
+          configPath: configPath,
           token: token,
           cliVersion: cliVersion,
         )
@@ -37,92 +34,84 @@ type Netlify {
   }
 
   """
-  Return one discovered site by its workspace-relative path.
+  Return a site by its workspace path
   """
-  pub site(ws: Workspace!, path: String!): Site! {
-    let match = sites(ws).filter { s => s.path == path }[0]
+  pub site(ws: Workspace!, root: String!): Site! {
+    let match = sites(ws).filter { s => s.path == root }[0]
     if (match != null) {
       match
     } else {
-      raise "netlify site not found: " + path
+      raise "netlify site not found: " + root
     }
   }
-
-  """
-  Link one discovered site path to a Netlify project by writing .netlify/state.json.
-  """
-  pub link(
-    ws: Workspace!,
-    path: String!,
-    siteID: String!,
-  ): Changeset! {
-    site(ws, path).link(ws, siteID)
-  }
-
 }
 
 type Site {
   """
-  Path to the site root, relative to workspace root.
+  Path to the site config file
   """
-  pub path: String!
+  pub configPath: String!
+
+  """
+  Path to the site root directory
+  """
+  pub rootPath: String! {
+    configPath.trimSuffix("netlify.toml").trimSuffix("/")
+  }
 
   let token: Secret
   let cliVersion: String!
-  let workspaceRootPath: String! = "/workspace"
+  let goModCacheKey: String! = "netlify-targets-go-mod-cache"
+  let goBuildCacheKey: String! = "netlify-targets-go-build-cache"
 
-  let siteWorkspacePath: String! {
-    if (path == ".") {
-      workspaceRootPath
-    } else {
-      workspaceRootPath + "/" + path
-    }
+  # Include set required to resolve target config and git context.
+  let targetConfigIncludes: [String!]! {
+    [
+      configPath,
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/refs/**",
+      ".git/packed-refs",
+    ]
   }
 
-  let statePath: String! {
-    if (path == ".") {
-      ".netlify/state.json"
-    } else {
-      path + "/.netlify/state.json"
-    }
-  }
-
-  let configPath: String! {
-    if (path == ".") {
-      "netlify.toml"
-    } else {
-      path + "/netlify.toml"
-    }
-  }
-
-  let siteConfigIncludes: [String!]! {
-    [configPath, statePath]
-  }
-
-  let requireToken: Secret! {
-    if (token == null) {
-      raise "no netlify token configured; pass token to netlify.new(...)"
-    } else {
-      token
-    }
-  }
-
-  let cli: Container! {
-    container
+  """
+  Build a container with Netlify CLI installed and configured, and the site root mounted
+  """
+  pub sandbox: Container! {
+    let workspaceInclude = [
+      rootPath,
+      configPath,
+      "**/.git/HEAD",
+      "**/.git/config",
+      "**/.git/refs/**",
+      "**/.git/packed-refs/**",
+    ]
+    let ctr = container
       .from("node:18")
       .withExec(["npm", "install", "netlify-cli@" + cliVersion, "-g"])
-      .withSecretVariable("NETLIFY_AUTH_TOKEN", requireToken)
+      .withWorkdir("/workspace")
+      .withDirectory(".", ws.directory(ws.root(), include: workspaceInclude)
+      .withWorkdir(rootPath)
+    if (token == null) {
+      ctr
+    }
+    ctr.withSecretVariable("NETLIFY_AUTH_TOKEN", token)
   }
 
-  let withSiteWorkspace(ws: Workspace!): Container! {
-    cli
-      .withDirectory(
-        workspaceRootPath,
-        ws.directory(".", include: siteConfigIncludes),
-      )
-      .withWorkdir(siteWorkspacePath)
+  # Build an optional "<flag> <value>" pair when value is non-empty.
+  let optionalStringFlag(flag: String!, value: String): [String!]! {
+    if (value == null) {
+      []
+    } else if (value == "") {
+      []
+    } else {
+      [flag, value]
+    }
   }
 
+  # Build an optional --site flag pair for Netlify CLI.
   let optionalSiteFlag(site: String): [String!]! {
     if (site == null) {
       []
@@ -133,23 +122,78 @@ type Site {
     }
   }
 
-  """
-  Link this site path to a Netlify project by writing .netlify/state.json.
-  """
-  pub link(ws: Workspace!, siteID: String!): Changeset! {
-    if (siteID == "") {
-      raise "siteID is empty"
+  # Build deploy mode and metadata flags for `netlify deploy`.
+  let deployFlags(
+    message: String,
+    context: String,
+    site: String,
+    prod: Boolean,
+    alias: String,
+  ): [String!]! {
+    let hasAlias = alias != null and alias != ""
+    if (prod == true and hasAlias) {
+      raise "deploy --prod conflicts with --alias; use exactly one mode"
     } else {
-      let before = ws.directory("/", include: siteConfigIncludes)
-      let after = withSiteWorkspace(ws)
-        .withExec(
-          ["netlify", "link", "--id", siteID],
-          expect: ReturnType.SUCCESS,
-        )
-        .directory(workspaceRootPath)
-
-      after.changes(before)
+      let prodFlag = if (prod == true) { ["--prod"] } else { [] }
+      optionalSiteFlag(site) + optionalStringFlag("--message", message) + optionalStringFlag(
+        "--context",
+        context,
+      ) + prodFlag + optionalStringFlag("--alias", alias)
     }
+  }
+
+  # Resolve and evaluate custom [[targets]] from this site's netlify.toml.
+  let targetPlan(ws: Workspace!): JSONValue {
+    let out = container
+      .from("golang:1.23-alpine")
+      .withMountedCache(
+        "/go/pkg/mod",
+        cacheVolume(goModCacheKey),
+      )
+      .withMountedCache(
+        "/root/.cache/go-build",
+        cacheVolume(goBuildCacheKey),
+      )
+      .withDirectory(
+        workspaceRootPath,
+        ws.directory(".", include: targetConfigIncludes),
+      )
+      .withDirectory(
+        "/module-tools",
+        currentModule.source.directory("tools"),
+      )
+      .withWorkdir("/module-tools")
+      .withExec(
+        [
+          "go",
+          "run",
+          "./targets",
+          "--config",
+          workspaceRootPath + "/" + configPath,
+        ],
+        expect: ReturnType.SUCCESS,
+      )
+      .stdout
+
+    Dagger
+      .json
+      .withContents(out :: JSON!)
+  }
+
+  # Materialize one target from a raw JSON payload entry.
+  let targetFromEntry(entry: JSON!): Target! {
+    Target(site: self, entry: entry)
+  }
+
+  # Materialize a list of targets from the specified plan field.
+  let targetsFromPlanField(
+    ws: Workspace!,
+    field: String!,
+  ): [Target!]! {
+    targetPlan(ws)
+      .field([field])
+      .asArray.{contents}
+      .map { entry => targetFromEntry(entry.contents) } ?? []
   }
 
   """
@@ -157,30 +201,29 @@ type Site {
   `context` maps directly to `netlify deploy --context` values such as
   `production`, `deploy-preview`, `branch-deploy`, `dev`, or `branch:<name>`.
   If not set, no `--context` flag is passed and Netlify CLI defaults apply.
+  If `message` is not set, no `--message` flag is passed.
   `site` maps directly to `netlify deploy --site`.
   If `site` is omitted, Netlify CLI resolves it natively from local link state
   (.netlify/state.json) or NETLIFY_SITE_ID in the environment.
+  `prod` maps directly to `netlify deploy --prod`.
+  `alias` maps directly to `netlify deploy --alias` (draft/label deployment).
+  `prod` and `alias` are mutually exclusive.
   """
   pub deploy(
     ws: Workspace!,
     build: Directory!,
-    message: String!,
+    message: String,
     context: String,
     site: String,
+    prod: Boolean,
+    alias: String,
   ): String! {
     let deployCmd = [
       "netlify",
       "deploy",
       "--dir=/build",
-      "--message",
-      message,
       "--json",
-    ] + optionalSiteFlag(site)
-    if (context != null) {
-      if (context != "") {
-        deployCmd = deployCmd + ["--context", context]
-      }
-    }
+    ] + deployFlags(message, context, site, prod, alias)
 
     let out = withSiteWorkspace(ws)
       .withMountedDirectory("/build", build)
@@ -198,5 +241,120 @@ type Site {
     } else {
       raise "deployment response did not include deploy_id"
     }
+  }
+
+  """
+  Return all configured `[[targets]]` for this site.
+  """
+  pub targets(ws: Workspace!): [Target!]! {
+    targetsFromPlanField(ws, "targets")
+  }
+
+  """
+  Return the detected git context used for target matching.
+  """
+  pub targetGitContext(ws: Workspace!): JSON {
+    targetPlan(ws).field(["git"]).contents
+  }
+
+  """
+  Return only the configured targets that match the current git context.
+  """
+  pub matchingTargets(ws: Workspace!): [Target!]! {
+    targetsFromPlanField(ws, "matched")
+  }
+
+  """
+  Deploy this site once for each matching `[[targets]]` rule.
+  Returns deploy IDs in target order.
+  """
+  pub deployTargets(
+    ws: Workspace!,
+    build: Directory!,
+    message: String,
+    context: String,
+  ): [String!]! {
+    let targets = matchingTargets(ws)
+    let deployIDs = targets.map { target =>
+      target.deploy(
+        ws: ws,
+        build: build,
+        message: message,
+        context: context,
+      )
+    }
+    if (deployIDs.length == 0) {
+      raise "no matching [[targets]] in " + configPath
+    } else {
+      deployIDs
+    }
+  }
+}
+
+type Target {
+  # Owning site for this target entry.
+  let site: Site!
+  # Raw resolved target payload from the parser utility.
+  let entry: JSON!
+
+  # Parse the raw payload into a queryable JSON object.
+  let value: JSONValue! {
+    Dagger
+      .json
+      .withContents(entry)
+  }
+
+  """
+  Resolved deploy site, mapped from `deploy.site`.
+  """
+  pub deploySite: String! {
+    value.field(["deploySite"]).asString
+  }
+
+  """
+  Whether this target deploys in production mode (`deploy.prod`).
+  """
+  pub deployProd: Boolean! {
+    value.field(["deployProd"]).asBoolean
+  }
+
+  """
+  Draft deployment alias mapped from `deploy.draft.alias`.
+  """
+  pub deployDraftAlias: String {
+    let aliasRaw = value.field(["deployDraftAlias"]).asString
+    if (aliasRaw == "") {
+      null
+    } else {
+      aliasRaw
+    }
+  }
+
+  """
+  Return the target payload as raw JSON.
+  """
+  pub json: JSON! {
+    entry
+  }
+
+  """
+  Deploy this target using its configured deploy mode.
+  Returns the resulting deploy ID.
+  """
+  pub deploy(
+    ws: Workspace!,
+    build: Directory!,
+    message: String,
+    context: String,
+  ): String! {
+    site.deploy(
+      ws: ws,
+      build: build,
+      message: message,
+      context: context,
+      site: deploySite,
+      prod: deployProd,
+      alias: deployDraftAlias,
+    )
   }
 }
