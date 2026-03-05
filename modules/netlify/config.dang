@@ -1,6 +1,133 @@
 """
 A Netlify site config (netlify.toml)
 """
+type TargetConfig {
+  pub deploySite: String!
+  pub deployProd: Boolean!
+  pub deployDraftAlias: String
+}
+
+"""
+A Netlify config loader and target resolver
+"""
 type Config {
-  pub file: File
+  """
+  Path to this site's netlify.toml, relative to workspace root.
+  """
+  pub path: String!
+
+  let workspaceRootPath: String! = "/workspace"
+  let goModCacheKey: String! = "netlify-targets-go-mod-cache"
+  let goBuildCacheKey: String! = "netlify-targets-go-build-cache"
+
+  # Include set required to resolve targets from netlify.toml.
+  let targetIncludes: [String!]! {
+    [
+      path,
+      ".git",
+      ".git/HEAD",
+      ".git/config",
+      ".git/refs/**",
+      ".git/packed-refs",
+    ]
+  }
+
+  """
+  Resolve targets from netlify.toml, with optional git-context matching.
+  """
+  let resolvedTargets(ws: Workspace!, git: GitContext): JSONValue {
+    let ctr = container
+      .from("golang:1.23-alpine")
+      .withMountedCache(
+        "/go/pkg/mod",
+        cacheVolume(goModCacheKey),
+      )
+      .withMountedCache(
+        "/root/.cache/go-build",
+        cacheVolume(goBuildCacheKey),
+      )
+      .withDirectory(
+        workspaceRootPath,
+        ws.directory(".", include: targetIncludes),
+      )
+      .withDirectory(
+        "/module-tools",
+        currentModule.source.directory("tools"),
+      )
+      .withWorkdir("/module-tools")
+
+    let ctr = if (git != null and git.currentBranch != null and git.currentBranch != "") {
+      ctr.withEnvVariable(
+        "NETLIFY_TARGET_GIT_BRANCH",
+        git.currentBranch ?? "",
+      )
+    } else {
+      ctr
+    }
+    let ctr = if (git != null and git.currentTag != null and git.currentTag != "") {
+      ctr.withEnvVariable(
+        "NETLIFY_TARGET_GIT_TAG",
+        git.currentTag ?? "",
+      )
+    } else {
+      ctr
+    }
+    let ctr = if (git != null and git.allTagsCSV != null and git.allTagsCSV != "") {
+      ctr.withEnvVariable(
+        "NETLIFY_TARGET_GIT_ALL_TAGS",
+        git.allTagsCSV ?? "",
+      )
+    } else {
+      ctr
+    }
+
+    let out = ctr
+      .withExec(
+        [
+          "go",
+          "run",
+          "./targets",
+          "--config",
+          workspaceRootPath + "/" + path,
+        ],
+        expect: ReturnType.SUCCESS,
+      )
+      .stdout
+
+    Dagger
+      .json
+      .withContents(out :: JSON!)
+  }
+
+  """
+  Convert one resolved target JSON entry into typed target config.
+  """
+  pub target(entry: JSON!): TargetConfig! {
+    let value = Dagger
+      .json
+      .withContents(entry)
+    let aliasRaw = value.field(["deployDraftAlias"]).asString
+    let alias = if (aliasRaw == "") { null } else { aliasRaw }
+
+    TargetConfig(
+      deploySite: value.field(["deploySite"]).asString,
+      deployProd: value.field(["deployProd"]).asBoolean,
+      deployDraftAlias: alias,
+    )
+  }
+
+  """
+  Return configured targets. When git is set, return only matching targets.
+  """
+  pub targets(ws: Workspace!, git: GitContext): [TargetConfig!]! {
+    let field = if (git == null) {
+      "targets"
+    } else {
+      "matched"
+    }
+    resolvedTargets(ws, git)
+      .field([field])
+      .asArray.{contents}
+      .map { entry => target(entry.contents) } ?? []
+  }
 }

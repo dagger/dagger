@@ -1,0 +1,8 @@
+type GitContext {
+  pub commit: String
+  pub currentBranch: String
+  pub currentTag: String
+  pub allTagsCSV: String
+  pub latestReleaseTag: String
+  pub latestPreReleaseTag: String
+}

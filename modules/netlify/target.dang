@@ -1,0 +1,77 @@
+"""
+A deploy target resolved from netlify.toml [[targets]]
+"""
+type Target {
+  let site: Site!
+  pub config: TargetConfig!
+
+  # Build an optional "<flag> <value>" pair when value is non-empty.
+  let optionalStringFlag(flag: String!, value: String): [String!]! {
+    if (value == null) {
+      []
+    } else if (value == "") {
+      []
+    } else {
+      [flag, value]
+    }
+  }
+
+  # Build the full `netlify deploy` command for this target.
+  let deployCommand(
+    message: String,
+    context: String,
+  ): [String!]! {
+    let hasAlias = config.deployDraftAlias != null and config.deployDraftAlias != ""
+    if (config.deploySite == "") {
+      raise "deploy.site is empty"
+    } else if (config.deployProd == true and hasAlias) {
+      raise "deploy --prod conflicts with --alias; use exactly one mode"
+    } else {
+      let prodFlag = if (config.deployProd == true) { ["--prod"] } else { [] }
+      [
+        "netlify",
+        "deploy",
+        "--dir=/build",
+        "--json",
+        "--site",
+        config.deploySite,
+      ] + optionalStringFlag(
+        "--message",
+        message,
+      ) + optionalStringFlag(
+        "--context",
+        context,
+      ) + prodFlag + optionalStringFlag("--alias", config.deployDraftAlias)
+    }
+  }
+
+  """
+  Deploy this target and return the deployment ID.
+  """
+  pub deploy(
+    ws: Workspace!,
+    build: Directory!,
+    message: String,
+    context: String,
+  ): String! {
+    let deployCmd = deployCommand(message, context)
+
+    let out = site
+      .sandbox(ws)
+      .withMountedDirectory("/build", build)
+      .withExec(deployCmd)
+      .stdout
+
+    let deployID = Dagger
+      .json
+      .withContents(out :: JSON!)
+      .field(["deploy_id"])
+      .asString
+
+    if (deployID != null) {
+      deployID
+    } else {
+      raise "deployment response did not include deploy_id"
+    }
+  }
+}
