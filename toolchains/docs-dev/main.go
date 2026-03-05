@@ -2,16 +2,10 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 
 	"dagger/docs/internal/dagger"
-
-	"github.com/netlify/open-api/v2/go/models"
 )
 
 func New(
@@ -104,106 +98,6 @@ export const daggerVersion = "%s";
 
 	layer := d.Source.WithNewFile("docs/current_docs/partials/version.js", versionFile)
 	return layer.Changes(d.Source), nil
-}
-
-// Deploys a current build of the docs.
-// +cache="session"
-func (d DocsDev) Deploy(
-	ctx context.Context,
-	message string,
-	netlifyToken *dagger.Secret,
-) (string, error) {
-	out, err := dag.Container().
-		From("node:18").
-		WithExec([]string{"npm", "install", "netlify-cli", "-g"}). // pin!!!!
-		WithEnvVariable("NETLIFY_SITE_ID", "docs-dagger-io").
-		WithSecretVariable("NETLIFY_AUTH_TOKEN", netlifyToken).
-		WithMountedDirectory("/build", d.Site()).
-		WithExec([]string{"netlify", "deploy", "--dir=/build", "--branch=main", "--message", message, "--json"}).
-		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	var dt struct {
-		DeployID string `json:"deploy_id"`
-	}
-	if err := json.Unmarshal([]byte(out), &dt); err != nil {
-		return "", err
-	}
-
-	return dt.DeployID, nil
-}
-
-// Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-// +cache="session"
-func (d DocsDev) Publish(
-	ctx context.Context,
-	netlifyToken *dagger.Secret,
-	// +optional
-	deployment string,
-) error {
-	api := "https://api.netlify.com/api/v1"
-	site := "docs.dagger.io"
-	branch := "main"
-	client := http.Client{}
-
-	token, err := netlifyToken.Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if deployment == "" {
-		// get all the deploys for "main", ordered by most recent
-		url := fmt.Sprintf("%s/sites/%s/deploys?branch=%s", api, site, branch)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Add("Authorization", "Bearer "+token)
-		result, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer result.Body.Close()
-		if result.StatusCode != 200 {
-			return fmt.Errorf("unexpected status code while listing deploys %s %d", url, result.StatusCode)
-		}
-		data, err := io.ReadAll(result.Body)
-		if err != nil {
-			return err
-		}
-		var deploys []models.Deploy
-		err = json.Unmarshal(data, &deploys)
-		if err != nil {
-			return err
-		}
-		if len(deploys) == 0 {
-			return fmt.Errorf("no deploys for %q", site)
-		}
-
-		deployment = deploys[0].ID
-	}
-
-	// publish the most recent deploy
-	// NOTE: this is called "restore", which is mildly confusing, but it's also
-	// exactly what the web ui does :P
-	url := fmt.Sprintf("%s/sites/%s/deploys/%s/restore", api, site, deployment)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Authorization", "Bearer "+token)
-	result, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer result.Body.Close()
-	if result.StatusCode != 200 {
-		return fmt.Errorf("unexpected status code while restoring deploy %s %d", url, result.StatusCode)
-	}
-
-	return nil
 }
 
 func spectaql() *dagger.Directory {
