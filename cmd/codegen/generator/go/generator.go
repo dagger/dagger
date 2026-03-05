@@ -40,6 +40,15 @@ type GoGenerator struct {
 	Config generator.Config
 }
 
+// fullSchemaTemplates is the set of output file paths (without .tmpl suffix)
+// that should be rendered against the full schema rather than the core schema
+// (i.e. the schema with dependency types excluded). These templates need
+// visibility into dep-contributed Query fields (e.g. hello(), loadHelloFromID())
+// so that they can expose those constructors to callers.
+var fullSchemaTemplates = map[string]bool{
+	"dag/dag.gen.go": true,
+}
+
 func generateCode(
 	ctx context.Context,
 	cfg generator.Config,
@@ -64,19 +73,32 @@ func generateCode(
 		coreSchema = schema.Exclude(depNames...)
 	}
 
-	funcs := templates.GoTemplateFuncs(ctx, coreSchema, schemaVersion, cfg, pkg, fset, pass)
-	tmpls := templates.Templates(funcs)
+	// Build two template sets: one bound to the core schema (most files) and
+	// one bound to the full schema (dag/dag.gen.go and other files that need
+	// to expose dep-contributed Query fields).
+	coreFuncs := templates.GoTemplateFuncs(ctx, coreSchema, schemaVersion, cfg, pkg, fset, pass)
+	fullFuncs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg, pkg, fset, pass)
+
+	coreTmpls := templates.Templates(coreFuncs)
+	fullTmpls := templates.Templates(fullFuncs)
 
 	// Sort template keys for deterministic processing
-	keys := make([]string, 0, len(tmpls))
-	for k := range tmpls {
+	keys := make([]string, 0, len(coreTmpls))
+	for k := range coreTmpls {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		tmpl := tmpls[k]
-		dt, err := renderFile(cfg.OutputDir, coreSchema, schemaVersion, pkgInfo, tmpl)
+		// Choose the right template + schema pair for this output file.
+		renderSchema := coreSchema
+		tmpl := coreTmpls[k]
+		if fullSchemaTemplates[k] {
+			renderSchema = schema
+			tmpl = fullTmpls[k]
+		}
+
+		dt, err := renderFile(cfg.OutputDir, renderSchema, schemaVersion, pkgInfo, tmpl)
 		if err != nil {
 			return err
 		}
@@ -129,6 +151,16 @@ func generateDependencyFiles(
 	pass int,
 	depNames []string,
 ) error {
+	// When generating a standalone client, dep files live inside the client
+	// sub-module directory.  We need to resolve imports relative to that
+	// directory so that goimports can find packages like
+	// dagger.io/dagger/querybuilder that are declared in the client's go.mod
+	// (not in the parent module's go.mod).
+	importResolutionDir := cfg.OutputDir
+	if cfg.ClientConfig != nil && cfg.ClientConfig.ClientDir != "" {
+		importResolutionDir = filepath.Join(cfg.OutputDir, cfg.ClientConfig.ClientDir)
+	}
+
 	for _, depName := range depNames {
 		depSchema := schema.Include(depName)
 
@@ -138,7 +170,7 @@ func generateDependencyFiles(
 			return fmt.Errorf("get dependency template: %w", err)
 		}
 
-		dt, err := renderFile(cfg.OutputDir, depSchema, schemaVersion, pkgInfo, tmpl)
+		dt, err := renderFile(importResolutionDir, depSchema, schemaVersion, pkgInfo, tmpl)
 		if err != nil {
 			return fmt.Errorf("render dependency file for %q: %w", depName, err)
 		}
@@ -151,9 +183,11 @@ func generateDependencyFiles(
 		depFileName := strcase.ToKebab(depName) + ".gen.go"
 		depFilePath := filepath.Join(internalDaggerDir, depFileName)
 
-		if err := mfs.MkdirAll(internalDaggerDir, 0o755); err != nil {
-			return err
+		// Special case for client generation, we want to write the file in the specified client directory.
+		if cfg.ClientConfig != nil && cfg.ClientConfig.ClientDir != "" {
+			depFilePath = filepath.Join(cfg.ClientConfig.ClientDir, depFileName)
 		}
+
 		if err := mfs.WriteFile(depFilePath, dt, 0600); err != nil {
 			return fmt.Errorf("write dependency file %q: %w", depFilePath, err)
 		}
