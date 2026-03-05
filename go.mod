@@ -153,6 +153,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
+	github.com/vito/dang v0.0.0-20260305010057-83d35a8ba56e
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.3
@@ -206,6 +207,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.19.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/anchore/go-struct-converter v0.0.0-20221118182256-c68fdcfa2092 // indirect
@@ -293,11 +295,14 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/matryer/moq v0.5.3 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
@@ -318,6 +323,7 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
@@ -338,6 +344,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
