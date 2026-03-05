@@ -1,0 +1,6 @@
+"""
+A Netlify site config (netlify.toml)
+"""
+type Config {
+  pub file: File
+}
