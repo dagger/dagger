@@ -149,6 +149,9 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 
 	cleanup := func() error {
 		var errs error
+		if err := wsfs.stopLiveReadLoop(); err != nil {
+			errs = errors.Join(errs, err)
+		}
 		if err := server.Unmount(); err != nil {
 			errs = errors.Join(errs, err)
 		}
@@ -186,16 +189,130 @@ type wsfsPathFS struct {
 
 	materializeMu sync.Mutex
 	journal       *wsfsWriteJournal
+
+	liveReadMu      sync.Mutex
+	liveReadPaths   map[string]struct{}
+	liveReadCancel  context.CancelFunc
+	liveReadDoneCh  chan struct{}
+	liveReadRunning bool
 }
 
+const wsfsLiveReadRefreshInterval = 250 * time.Millisecond
+
 func newWSFSPathFS(ctx context.Context, upperRoot string, workspace *WorkspaceMountSource) *wsfsPathFS {
-	return &wsfsPathFS{
-		FileSystem: pathfs.NewLoopbackFileSystem(upperRoot),
-		ctx:        ctx,
-		upperRoot:  upperRoot,
-		workspace:  workspace,
-		journal:    newWSFSWriteJournal(),
+	fsys := &wsfsPathFS{
+		FileSystem:    pathfs.NewLoopbackFileSystem(upperRoot),
+		ctx:           ctx,
+		upperRoot:     upperRoot,
+		workspace:     workspace,
+		journal:       newWSFSWriteJournal(),
+		liveReadPaths: map[string]struct{}{},
 	}
+	if workspace != nil && workspace.LiveRead {
+		loopCtx, cancel := context.WithCancel(ctx)
+		doneCh := make(chan struct{})
+		fsys.liveReadCancel = cancel
+		fsys.liveReadDoneCh = doneCh
+		fsys.liveReadRunning = true
+		go fsys.liveReadLoop(loopCtx, doneCh)
+	}
+	return fsys
+}
+
+func (fsys *wsfsPathFS) stopLiveReadLoop() error {
+	fsys.liveReadMu.Lock()
+	if !fsys.liveReadRunning {
+		fsys.liveReadMu.Unlock()
+		return nil
+	}
+
+	cancel := fsys.liveReadCancel
+	doneCh := fsys.liveReadDoneCh
+	fsys.liveReadRunning = false
+	fsys.liveReadCancel = nil
+	fsys.liveReadDoneCh = nil
+	fsys.liveReadMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if doneCh != nil {
+		<-doneCh
+	}
+
+	return nil
+}
+
+func (fsys *wsfsPathFS) liveReadLoop(ctx context.Context, doneCh chan struct{}) {
+	defer close(doneCh)
+
+	ticker := time.NewTicker(wsfsLiveReadRefreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		for _, rel := range fsys.snapshotLiveReadPaths() {
+			if ctx.Err() != nil {
+				return
+			}
+			if fsys.journal.isShadowed(rel) {
+				continue
+			}
+			// Best-effort refresh: keep serving local state even if workspace calls fail.
+			if err := fsys.refreshWorkspaceFile(rel); err != nil && !errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+		}
+	}
+}
+
+func (fsys *wsfsPathFS) trackLiveReadPath(rel string) {
+	if rel == "." || fsys.workspace == nil || !fsys.workspace.LiveRead {
+		return
+	}
+
+	fsys.liveReadMu.Lock()
+	defer fsys.liveReadMu.Unlock()
+	if !fsys.liveReadRunning {
+		return
+	}
+	fsys.liveReadPaths[rel] = struct{}{}
+}
+
+func (fsys *wsfsPathFS) untrackLiveReadPath(rel string, includeChildren bool) {
+	if rel == "." {
+		return
+	}
+
+	fsys.liveReadMu.Lock()
+	defer fsys.liveReadMu.Unlock()
+	if !includeChildren {
+		delete(fsys.liveReadPaths, rel)
+		return
+	}
+
+	for trackedRel := range fsys.liveReadPaths {
+		if wsfsPathHasPrefix(trackedRel, rel) {
+			delete(fsys.liveReadPaths, trackedRel)
+		}
+	}
+}
+
+func (fsys *wsfsPathFS) snapshotLiveReadPaths() []string {
+	fsys.liveReadMu.Lock()
+	defer fsys.liveReadMu.Unlock()
+
+	paths := make([]string, 0, len(fsys.liveReadPaths))
+	for rel := range fsys.liveReadPaths {
+		paths = append(paths, rel)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.Status) {
@@ -360,6 +477,9 @@ func (fsys *wsfsPathFS) Open(name string, flags uint32, c *fuse.Context) (nodefs
 	}
 
 	if f, status := fsys.FileSystem.Open(name, flags, c); status.Ok() {
+		if !writeIntent && fsys.workspace != nil && fsys.workspace.LiveRead {
+			fsys.trackLiveReadPath(rel)
+		}
 		return fsys.wrapTrackedFile(name, flags, f), status
 	} else if status != fuse.ENOENT {
 		return nil, status
@@ -541,18 +661,36 @@ func (fsys *wsfsPathFS) materializeWorkspaceFileMode(name string, refresh bool) 
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-	} else {
-		if err := os.RemoveAll(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
 	}
 
 	stat, err := fsys.workspaceStat(rel)
 	if err != nil {
+		if refresh && errors.Is(err, os.ErrNotExist) {
+			if rmErr := os.RemoveAll(target); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				return rmErr
+			}
+		}
 		return err
 	}
 	if stat.FileType != FileTypeRegular {
+		if refresh {
+			if rmErr := os.RemoveAll(target); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				return rmErr
+			}
+		}
 		return os.ErrNotExist
+	}
+
+	if refresh {
+		if info, statErr := os.Lstat(target); statErr == nil {
+			if !info.Mode().IsRegular() {
+				if rmErr := os.RemoveAll(target); rmErr != nil {
+					return rmErr
+				}
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
 	}
 
 	file, err := workspaceMountFile(fsys.ctx, fsys.workspace, rel)
@@ -605,6 +743,7 @@ func (fsys *wsfsPathFS) markUpsert(name string) {
 		return
 	}
 	fsys.journal.markUpsert(rel)
+	fsys.untrackLiveReadPath(rel, false)
 }
 
 func (fsys *wsfsPathFS) markDelete(name string) {
@@ -613,6 +752,7 @@ func (fsys *wsfsPathFS) markDelete(name string) {
 		return
 	}
 	fsys.journal.markDelete(rel)
+	fsys.untrackLiveReadPath(rel, true)
 }
 
 func (fsys *wsfsPathFS) syncWriteThrough() error {

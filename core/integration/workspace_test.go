@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -560,6 +561,44 @@ func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesSamePathAcrossExe
 			"cat", "/ws/input.txt",
 		})
 		require.Equal(t, "new", strings.TrimSpace(stdout))
+	})
+}
+
+func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesOpenFileInSameExec(ctx context.Context, t *testctx.T) {
+	run := func(ctx context.Context, t *testctx.T, liveRead bool) string {
+		wd := t.TempDir()
+		filePath := filepath.Join(wd, "input.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte("one\n"), 0o600))
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		wsID := currentWorkspaceID(ctx, t, c)
+
+		writeErrCh := make(chan error, 1)
+		go func() {
+			time.Sleep(750 * time.Millisecond)
+			writeErrCh <- os.WriteFile(filePath, []byte("one\ntwo\n"), 0o600)
+		}()
+
+		_, stdout := withMountedWorkspaceExecWithLiveRead(ctx, t, c, wsID, liveRead, []string{
+			"sh",
+			"-ec",
+			`exec 3</ws/input.txt; IFS= read -r first <&3; printf 'first:%s\n' "$first"; sleep 2; IFS= read -r second <&3 || true; printf 'second:%s\n' "$second"`,
+		})
+
+		require.NoError(t, <-writeErrCh)
+		return stdout
+	}
+
+	t.Run("default mode keeps open descriptor stale", func(ctx context.Context, t *testctx.T) {
+		stdout := run(ctx, t, false)
+		require.Contains(t, stdout, "first:one")
+		require.Contains(t, stdout, "second:\n")
+	})
+
+	t.Run("liveRead refreshes open descriptor", func(ctx context.Context, t *testctx.T) {
+		stdout := run(ctx, t, true)
+		require.Contains(t, stdout, "first:one")
+		require.Contains(t, stdout, "second:two")
 	})
 }
 
