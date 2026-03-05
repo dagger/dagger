@@ -1,6 +1,6 @@
 # WSFS: Workspace Filesystem Mounts with Lazy JIT Copy
 
-Status: Prototype v0 implemented (Linux)  
+Status: Prototype implemented (Linux), with opt-in host export and live-read modes  
 Scope: Prototype
 
 ## Problem
@@ -22,9 +22,11 @@ Add a new container mount type for `Workspace`:
 extend type Container {
   withMountedWorkspace(
     path: String!
-    source: Workspace!
+    source: Workspace
     owner: String = ""
     expand: Boolean = false
+    export: Boolean = false
+    liveRead: Boolean = false
   ): Container!
 }
 ```
@@ -33,7 +35,10 @@ extend type Container {
 
 - Reads are fetched lazily from `Workspace` APIs.
 - Writes are allowed and persist across `withExec` calls on the returned container lineage.
-- v0 writes are ephemeral to Dagger state and are not synced back to the host workspace.
+- `source` defaults to `currentWorkspace` when omitted.
+- By default (`export: false`), writes are ephemeral to Dagger state.
+- With `export: true`, changed/deleted paths are synced back to the host workspace when execution finishes.
+- With `liveRead: true`, workspace-backed paths are refreshed aggressively during execution unless shadowed by local writes/deletes.
 - Future modes can opt into explicit commit, write-through sync, and/or live-read behavior.
 
 ## Goals
@@ -45,7 +50,7 @@ extend type Container {
 
 ## Non-Goals (Prototype)
 
-- Write-through sync back to host workspace.
+- Deterministic conflict-free bidirectional sync under concurrent host/container writes.
 - Non-Linux support.
 - Perfect POSIX fidelity for all inode/xattr/device edge cases.
 
@@ -56,7 +61,8 @@ extend type Container {
 3. Re-mounting at the same path replaces prior mount state at that path.
 4. Branching containers keeps branch-local write history.
 5. Workspace host updates are visible unless shadowed by prior writes in that lineage.
-6. v0: no writes are synced back to host workspace.
+6. Host sync-back is explicit: only enabled when `export: true`.
+7. In `liveRead` mode, previously read paths are refreshed in the background on a best-effort interval.
 
 ## Workspace State Model
 
@@ -87,7 +93,8 @@ WSFS uses overlay-like behavior:
 - Deletes/renames represented in upper layer (whiteout/tombstone semantics internal to WSFS).
 
 For service/terminal runs, WSFS uses the same lazy lower-layer reads, but writes are
-ephemeral to the service lifecycle (no snapshot commit into container lineage).
+ephemeral to the service lifecycle (no snapshot commit into container lineage);
+if `export: true`, host sync is still performed on teardown as a best-effort export.
 
 This gives writable behavior without mutating host workspace.
 
@@ -202,7 +209,7 @@ Order of work for highest return:
 - Path resolution remains sandboxed to workspace root.
 - WSFS must reject `..` escapes and normalize paths exactly once.
 - Client ownership model follows existing workspace client binding behavior.
-- v0 introduces no host write capability; future write-through/live-read modes must remain explicit opt-in.
+- Host write-back remains explicit opt-in (`export: true`); default behavior is no host mutation.
 
 ## Implementation Sketch
 
@@ -266,7 +273,7 @@ Do not make bidirectional sync implicit. Use explicit modes:
   - `COMMIT`: record write journal and apply explicitly.
   - `WRITE_THROUGH`: best-effort immediate sync of writes to backing workspace.
 
-Candidate API shape:
+Long-term API shape:
 
 ```graphql
 enum WorkspaceReadConsistency {
@@ -294,6 +301,21 @@ extend type Container {
   ): Container!
 
   commitMountedWorkspace(path: String!): Workspace!
+}
+```
+
+Current prototype API (implemented) is a smaller surface:
+
+```graphql
+extend type Container {
+  withMountedWorkspace(
+    path: String!
+    source: Workspace
+    owner: String = ""
+    expand: Boolean = false
+    export: Boolean = false
+    liveRead: Boolean = false
+  ): Container!
 }
 ```
 
