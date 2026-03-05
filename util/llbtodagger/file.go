@@ -15,7 +15,7 @@ import (
 
 func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 	if op == nil {
-		return nil, unsupported(opDigest(op.OpDAG), "merge", "missing merge op")
+		return nil, unsupported(opDigest(nil), "merge", "missing merge op")
 	}
 	if len(op.OpDAG.Inputs) == 0 {
 		return scratchDirectoryID(), nil
@@ -60,7 +60,7 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 
 func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
 	if op == nil || op.DiffOp == nil {
-		return nil, unsupported(opDigest(op.OpDAG), "diff", "missing diff op")
+		return nil, unsupported(opDigest(nil), "diff", "missing diff op")
 	}
 
 	lowerInputID, err := c.resolveDiffInput(op.OpDAG, op.Lower.Input)
@@ -100,7 +100,7 @@ func (c *converter) resolveDiffInput(dag *buildkit.OpDAG, idx pb.InputIndex) (*c
 
 func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 	if op == nil || op.FileOp == nil {
-		return nil, unsupported(opDigest(op.OpDAG), "file", "missing file op")
+		return nil, unsupported(opDigest(nil), "file", "missing file op")
 	}
 
 	inputIDs := make([]*call.ID, len(op.OpDAG.Inputs))

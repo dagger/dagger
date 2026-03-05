@@ -241,8 +241,7 @@ func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 	return appendCall(dirID, directoryType(), "withFile", argString("path", name), argID("source", fileID)), nil
 }
 
-func (c *converter) convertOCISource(op *buildkit.OCIOp) (*call.ID, error) {
-	_ = op
+func (c *converter) convertOCISource(op *buildkit.OCIOp) (*call.ID, error) { //nolint:unparam
 	return nil, unsupported(opDigest(op.OpDAG), "source(oci-layout)", "oci-layout source is not yet supported")
 }
 

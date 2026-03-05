@@ -17,7 +17,8 @@ func applyDockerImageConfig(id *call.ID, img *dockerspec.DockerOCIImage) (*call.
 	}
 
 	cfg := img.Config
-	if cfg.ArgsEscaped && strings.EqualFold(img.OS, "windows") {
+	if cfg.ArgsEscaped && //nolint:staticcheck
+		strings.EqualFold(img.OS, "windows") {
 		return nil, fmt.Errorf("llbtodagger: unsupported image config argsEscaped on Windows image")
 	}
 

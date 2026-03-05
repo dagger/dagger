@@ -847,7 +847,7 @@ func convertDockerfileToLoadedContainer(
 	contextDir string,
 	dockerfile string,
 	optFns ...func(*dockerfile2llb.ConvertOpt),
-) (*dagger.Container, dagger.ContainerID, string) {
+) (*dagger.Container, dagger.ContainerID, string) { //nolint:unparam
 	t.Helper()
 
 	containerID, encoded := convertDockerfileToContainerIDWithOptions(
@@ -870,7 +870,7 @@ func convertDockerfileToLoadedContainerWithOptions(
 	dockerfile string,
 	idOpts llbtodagger.DefinitionToIDOptions,
 	optFns ...func(*dockerfile2llb.ConvertOpt),
-) (*dagger.Container, dagger.ContainerID, string) {
+) (*dagger.Container, dagger.ContainerID, string) { //nolint:unparam
 	t.Helper()
 
 	containerID, encoded := convertDockerfileToContainerIDWithOptions(ctx, t, c, contextDir, dockerfile, idOpts, optFns...)

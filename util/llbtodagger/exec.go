@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+//nolint:gocyclo
 func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if exec == nil || exec.ExecOp == nil {
 		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec op")

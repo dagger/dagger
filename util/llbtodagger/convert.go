@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 )
 
 // DefinitionToIDOptions controls optional conversion behavior for specific
@@ -381,10 +380,6 @@ func isBlob(dag *buildkit.OpDAG) bool {
 	return ok
 }
 
-func nilBlob() *buildkit.BlobOp {
-	return nil
-}
-
 func nonNullType(name string) *ast.Type { return &ast.Type{NamedType: name, NonNull: true} }
 func containerType() *ast.Type          { return nonNullType("Container") }
 func directoryType() *ast.Type          { return nonNullType("Directory") }
@@ -434,20 +429,4 @@ func sourceIdentifierWithoutScheme(identifier, scheme string) (string, error) {
 		return "", fmt.Errorf("llbtodagger: empty source identifier for scheme %q", scheme)
 	}
 	return value, nil
-}
-
-func isSupportedSourceScheme(identifier string) bool {
-	for _, scheme := range []string{
-		srctypes.DockerImageScheme,
-		srctypes.GitScheme,
-		srctypes.LocalScheme,
-		srctypes.HTTPScheme,
-		srctypes.HTTPSScheme,
-		srctypes.OCIScheme,
-	} {
-		if strings.HasPrefix(identifier, scheme+"://") {
-			return true
-		}
-	}
-	return false
 }
