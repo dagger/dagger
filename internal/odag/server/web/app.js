@@ -398,11 +398,13 @@ function renderEvents() {
     .map((event) => {
       const activeClass = active.has(event.spanID) ? "active" : "";
       const callLabel = event.name || event.callDigest || event.spanID;
+      const parentLabel = event.parentCallName || (event.parentCallSpanID ? shortDigest(event.parentCallSpanID) : "-");
       const detail = `${formatRelTime(event.endUnixNano, state.projection.startUnixNano)} · ${event.statusCode || "STATUS_CODE_UNSET"} · span ${shortDigest(event.spanID)}`;
       return `
       <div class="event-item ${activeClass}">
         <div class="event-grid">
           <span>${escapeHTML(callLabel)}</span>
+          <span>${escapeHTML(parentLabel)}</span>
           <span>${escapeHTML(event.rawKind || "call")}</span>
           <span>${escapeHTML(event.operation || "-")}</span>
           <span>${event.topLevel ? "yes" : "no"}</span>

@@ -274,7 +274,7 @@ body {
 
 .event-header {
   display: grid;
-  grid-template-columns: 3.5fr repeat(6, minmax(0, 1fr));
+  grid-template-columns: 3.5fr repeat(7, minmax(0, 1fr));
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid rgba(90, 116, 146, 0.28);
@@ -307,7 +307,7 @@ body {
 
 .event-grid {
   display: grid;
-  grid-template-columns: 3.5fr repeat(6, minmax(0, 1fr));
+  grid-template-columns: 3.5fr repeat(7, minmax(0, 1fr));
   gap: 8px;
   color: #d5e0ee;
   font-size: 0.78rem;
@@ -445,7 +445,7 @@ body {
 
   .event-header,
   .event-grid {
-    grid-template-columns: 2fr repeat(6, minmax(0, 1fr));
+    grid-template-columns: 2fr repeat(7, minmax(0, 1fr));
   }
 }
 

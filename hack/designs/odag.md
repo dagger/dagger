@@ -528,7 +528,7 @@ Stage 4 implementation note:
   - status/current/last step readouts (no continuous seek bar)
   - dedicated central trace title row between navigator and DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
-  - event stream panel includes all non-internal **dagql function call** events (including hidden inner-function objects) with columns for raw/derived operation and `visible` object status
+  - event stream panel includes all non-internal **dagql function call** events (including hidden inner-function objects) with columns for parent call, raw/derived operation, and `visible` object status
   - inspector panel shows only selected object details; empty when no object is selected
 
 Stage 5 implementation note:
