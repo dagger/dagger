@@ -325,16 +325,6 @@ func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.
 		return nil, fuse.ENOENT
 	}
 
-	if fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(rel) {
-		stat, err := fsys.workspaceStat(rel)
-		if err == nil {
-			return statToFuseAttr(stat), fuse.OK
-		}
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fuse.ENOENT
-		}
-	}
-
 	if attr, status := fsys.FileSystem.GetAttr(name, c); status.Ok() {
 		return attr, status
 	} else if status != fuse.ENOENT {
@@ -359,16 +349,6 @@ func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.S
 
 	if fsys.journal.isDeleted(rel) {
 		return fuse.ENOENT
-	}
-
-	if fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(rel) {
-		_, err := fsys.workspaceStat(rel)
-		if err == nil {
-			return fuse.OK
-		}
-		if errors.Is(err, os.ErrNotExist) {
-			return fuse.ENOENT
-		}
 	}
 
 	if status := fsys.FileSystem.Access(name, mode, c); status.Ok() {
@@ -416,15 +396,6 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 	out := make([]fuse.DirEntry, 0, len(upperEntries)+len(workspaceEntries))
 	seen := make(map[string]struct{}, len(upperEntries)+len(workspaceEntries))
 	for _, entry := range upperEntries {
-		childRel := entry.Name
-		if rel != "." {
-			childRel = path.Join(rel, entry.Name)
-		}
-		if fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(childRel) {
-			if _, err := fsys.workspaceStat(childRel); errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-		}
 		out = append(out, entry)
 		seen[entry.Name] = struct{}{}
 	}
