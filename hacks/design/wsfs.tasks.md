@@ -8,12 +8,12 @@
   - Force `withExec` cache key to `CachePerCall` whenever the container has any workspace mount.
 - [ ] Stage 3: WSFS runtime bootstrap in `withExec`
   - [x] Add explicit WSFS runtime setup/cleanup hook in `withExec`.
-  - [ ] Start/stop WSFS runtime for workspace mounts around container execution.
+  - [x] Start/stop WSFS runtime for workspace mounts around container execution.
   - [x] Persist per-mount writable upper-layer state across container lineage.
 - [ ] Stage 4: Lazy operation mapping
   - [x] Add `Workspace.entries` (shallow listing) and `Workspace.stat` primitives.
   - [x] Route mounted-workspace `file`/`directory`/`stat`/`exists` lookups through workspace APIs when no upper layer exists.
-  - Implement `read`, `readdir`, and `stat` mapping to workspace APIs with shallow directory listing.
+  - [x] Implement prototype `read`, `readdir`, and `stat` mapping to workspace APIs in WSFS runtime.
 - [ ] Stage 5: Validation and hardening
   - [x] Add unit tests for workspace mount detection and runtime-hook behavior.
   - [x] Add integration test for workspace mount write persistence in-lineage and no sync-back to fresh mount.

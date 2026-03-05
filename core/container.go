@@ -3002,6 +3002,37 @@ func workspaceMountStat(
 	return stat, nil
 }
 
+func workspaceMountEntries(
+	ctx context.Context,
+	workspaceMnt *WorkspaceMountSource,
+	relPath string,
+) ([]string, error) {
+	if workspaceMnt == nil {
+		return nil, fmt.Errorf("workspace mount source is nil")
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries dagql.Array[dagql.String]
+	if err := srv.Select(ctx, workspaceMnt.Workspace, &entries, dagql.Selector{
+		Field: "entries",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(relPath)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	res := make([]string, len(entries))
+	for i, ent := range entries {
+		res[i] = string(ent)
+	}
+	return res, nil
+}
+
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
 // The returned ObjectResult uses the ID of the current operation.
 //

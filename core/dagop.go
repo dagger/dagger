@@ -635,7 +635,6 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 		var llb *pb.Definition
 		var res bkcache.ImmutableRef
 		var dgst digest.Digest
-		var mountErr error
 		handleMount(mnt,
 			func(dirMnt *dagql.ObjectResult[*Directory]) {
 				mount.Selector = dirMnt.Self().Dir
@@ -656,18 +655,18 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 			func(wsMnt *WorkspaceMountSource) {
-				wsDir, err := resolveWorkspaceMountDir(ctx, wsMnt)
-				if err != nil {
-					mountErr = err
+				if wsMnt.Upper == nil {
+					// No upper layer yet: start from scratch. WSFS runtime provides
+					// lazy reads from the workspace lower layer at exec-time.
 					return
 				}
 
-				mount.Selector = wsDir.Self().Dir
-				llb = wsDir.Self().LLB
-				res = wsDir.Self().Result
-				dgst = wsDir.ID().Digest()
-				if wsDir.ID().ContentDigest() != "" {
-					dgst = wsDir.ID().ContentDigest()
+				mount.Selector = wsMnt.Upper.Self().Dir
+				llb = wsMnt.Upper.Self().LLB
+				res = wsMnt.Upper.Self().Result
+				dgst = wsMnt.Upper.ID().Digest()
+				if wsMnt.Upper.ID().ContentDigest() != "" {
+					dgst = wsMnt.Upper.ID().ContentDigest()
 				}
 			},
 			func(cache *CacheMountSource) {
@@ -697,9 +696,6 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 		)
-		if mountErr != nil {
-			return mountErr
-		}
 		st, err := defToState(llb)
 		if err != nil {
 			return err

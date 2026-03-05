@@ -29,7 +29,7 @@ func TestSetupWSFSMounts(t *testing.T) {
 	t.Run("no workspace mounts", func(t *testing.T) {
 		ctr := &Container{Mounts: ContainerMounts{{Target: "/src"}}}
 
-		cleanup, err := ctr.setupWSFSMounts(ctx, ContainerMountData{})
+		cleanup, err := ctr.setupWSFSMounts(ctx, ContainerMountData{}, nil)
 		require.NoError(t, err)
 		require.NotNil(t, cleanup)
 		require.NoError(t, cleanup())
@@ -41,7 +41,7 @@ func TestSetupWSFSMounts(t *testing.T) {
 			{Target: "/data", WorkspaceSource: &WorkspaceMountSource{}},
 		}}
 
-		cleanup, err := ctr.setupWSFSMounts(ctx, ContainerMountData{})
+		cleanup, err := ctr.setupWSFSMounts(ctx, ContainerMountData{}, nil)
 		require.NoError(t, err)
 		require.NotNil(t, cleanup)
 		require.NoError(t, cleanup())

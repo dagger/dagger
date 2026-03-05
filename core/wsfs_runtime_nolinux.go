@@ -1,3 +1,5 @@
+//go:build !linux
+
 package core
 
 import (
@@ -6,10 +8,15 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor"
 )
 
-func (container *Container) setupWSFSMounts(
+func setupWSFSMountsImpl(
 	ctx context.Context,
+	container *Container,
 	mounts ContainerMountData,
 	execMounts []executor.Mount,
 ) (func() error, error) {
-	return setupWSFSMountsImpl(ctx, container, mounts, execMounts)
+	_ = ctx
+	_ = container
+	_ = mounts
+	_ = execMounts
+	return func() error { return nil }, nil
 }
