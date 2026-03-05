@@ -358,6 +358,7 @@ Frontend consumes ODAG-domain events/snapshots, not raw OTel.
    - Maintains persistent local trace store and ODAG-derived index.
 2. `odag run <command...>`
    - Convenience wrapper that executes a command (for example `dagger call ...`) with OTEL env vars pointed at `odag serve`.
+   - `--server` defaults to `$ODAG_SERVER` when set, otherwise `http://127.0.0.1:5454`.
    - Collects telemetry into local store without requiring manual OTEL env setup.
    - v1 behavior: requires `odag serve` to already be running; if unavailable, fail with a clear message and suggested command.
    - Wrapper remains passthrough-only (no command output capture/summarization).

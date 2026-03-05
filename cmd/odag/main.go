@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 const (
 	defaultListenAddr = "127.0.0.1:5454"
 	defaultDBPath     = ".odag/odag.db"
+	odagServerEnvVar  = "ODAG_SERVER"
 )
 
 func main() {
@@ -76,7 +78,7 @@ func newServeCmd() *cobra.Command {
 }
 
 func newRunCmd() *cobra.Command {
-	var serverURL string
+	serverURL := defaultRunServerURL()
 
 	cmd := &cobra.Command{
 		Use:   "run <command> [args...]",
@@ -117,8 +119,15 @@ func newRunCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&serverURL, "server", "http://"+defaultListenAddr, "ODAG server base URL")
+	cmd.Flags().StringVar(&serverURL, "server", serverURL, "ODAG server base URL (default: $ODAG_SERVER or http://127.0.0.1:5454)")
 	return cmd
+}
+
+func defaultRunServerURL() string {
+	if fromEnv := strings.TrimSpace(os.Getenv(odagServerEnvVar)); fromEnv != "" {
+		return fromEnv
+	}
+	return "http://" + defaultListenAddr
 }
 
 func newFetchCmd() *cobra.Command {
