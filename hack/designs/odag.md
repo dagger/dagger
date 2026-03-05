@@ -673,6 +673,7 @@ Encoding note:
 
 - [ ] Engine telemetry hard cutover: change `dagger.io/dag.output.state` payload to include per-field `refs` and bump payload version.
 - [ ] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
+- [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
