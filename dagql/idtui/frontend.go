@@ -165,8 +165,10 @@ type ShellHandler interface {
 	IsComplete(input string) bool
 
 	// Prompt generates the shell prompt string based on current state.
-	// Must be pure — no side effects or async work.
-	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) string
+	// Returns the prompt string and an optional async function for
+	// lazy initialization (e.g. LLM setup). The caller runs the async
+	// function in a goroutine and refreshes the prompt when it returns.
+	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, func())
 
 	// KeyBindings returns the keys displayed in the keymap when editing.
 	KeyBindings(out TermOutput) []key.Binding
