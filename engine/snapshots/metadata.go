@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/client"
@@ -101,6 +102,7 @@ func (v *Value) Unmarshal(target interface{}) error {
 }
 
 type metadataStore struct {
+	mu     sync.RWMutex
 	refs   map[string]*cacheMetadata
 	index  map[string]map[string]struct{}
 	closed bool
@@ -114,11 +116,15 @@ func newMetadataStore() *metadataStore {
 }
 
 func (s *metadataStore) get(id string) (*cacheMetadata, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	md, ok := s.refs[id]
 	return md, ok
 }
 
 func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if md, ok := s.refs[id]; ok {
 		return md
 	}
@@ -134,6 +140,8 @@ func (s *metadataStore) getOrCreate(id string) *cacheMetadata {
 }
 
 func (s *metadataStore) clear(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	md, ok := s.refs[id]
 	if !ok {
 		return
@@ -155,6 +163,8 @@ func (s *metadataStore) clear(id string) {
 }
 
 func (s *metadataStore) close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.closed = true
 	s.refs = nil
 	s.index = nil
@@ -179,6 +189,7 @@ func (cm *snapshotManager) Search(ctx context.Context, idx string, prefixOnly bo
 // callers must hold cm.mu lock
 func (cm *snapshotManager) search(_ context.Context, idx string, prefixOnly bool) ([]RefMetadata, error) {
 	ids := map[string]struct{}{}
+	cm.metadataStore.mu.RLock()
 	for indexedVal, set := range cm.metadataStore.index {
 		if prefixOnly {
 			if !strings.HasPrefix(indexedVal, idx) {
@@ -191,6 +202,7 @@ func (cm *snapshotManager) search(_ context.Context, idx string, prefixOnly bool
 			ids[id] = struct{}{}
 		}
 	}
+	cm.metadataStore.mu.RUnlock()
 	orderedIDs := make([]string, 0, len(ids))
 	for id := range ids {
 		orderedIDs = append(orderedIDs, id)
@@ -239,6 +251,9 @@ func (md *cacheMetadata) ID() string {
 }
 
 func (md *cacheMetadata) commitMetadata() error {
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
+
 	if len(md.queue) == 0 {
 		return nil
 	}
@@ -252,6 +267,7 @@ func (md *cacheMetadata) commitMetadata() error {
 	return nil
 }
 
+// callers must hold metadataStore.mu lock
 func (md *cacheMetadata) setValueLocked(key string, v *Value) {
 	oldIdx := md.indexes[key]
 	if oldIdx != "" {
@@ -350,6 +366,8 @@ func (md *cacheMetadata) SetCachePolicyRetain() error {
 }
 
 func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
+	md.store.mu.RLock()
+	defer md.store.mu.RUnlock()
 	dt, ok := md.external[s]
 	if !ok {
 		return nil, errors.New("not found")
@@ -360,6 +378,8 @@ func (md *cacheMetadata) GetExternal(s string) ([]byte, error) {
 }
 
 func (md *cacheMetadata) SetExternal(s string, dt []byte) error {
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
 	cpy := make([]byte, len(dt))
 	copy(cpy, dt)
 	md.external[s] = cpy
@@ -387,6 +407,8 @@ func (md *cacheMetadata) setEqualMutable(s string) error {
 }
 
 func (md *cacheMetadata) clearEqualMutable() error {
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
 	md.queue = append(md.queue, func(md *cacheMetadata) error {
 		md.setValueLocked(keyEqualMutable, nil)
 		return nil
@@ -582,6 +604,9 @@ func (md *cacheMetadata) queueValue(key string, value interface{}, index string)
 		return errors.Wrap(err, "failed to create value")
 	}
 	v.Index = index
+
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
 	md.queue = append(md.queue, func(md *cacheMetadata) error {
 		md.setValueLocked(key, v)
 		return nil
@@ -599,12 +624,24 @@ func (md *cacheMetadata) setValue(key string, value interface{}, index string) e
 		return errors.Wrap(err, "failed to create value")
 	}
 	v.Index = index
+
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
 	md.setValueLocked(key, v)
 	return nil
 }
 
 func (md *cacheMetadata) ClearValueAndIndex(key string, index string) error {
-	currentVal := md.GetString(key)
+	md.store.mu.Lock()
+	defer md.store.mu.Unlock()
+
+	currentVal := ""
+	if v := md.values[key]; v != nil {
+		var str string
+		if err := v.Unmarshal(&str); err == nil {
+			currentVal = str
+		}
+	}
 	md.setValueLocked(key, nil)
 	if currentVal != "" {
 		idx := index + currentVal
@@ -631,6 +668,8 @@ func (md *cacheMetadata) GetString(key string) string {
 }
 
 func (md *cacheMetadata) Get(key string) *Value {
+	md.store.mu.RLock()
+	defer md.store.mu.RUnlock()
 	v := md.values[key]
 	if v == nil {
 		return nil
