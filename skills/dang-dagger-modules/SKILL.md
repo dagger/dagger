@@ -46,8 +46,9 @@ See [references/language.md](references/language.md) for complete syntax, types,
 ### Basic Module Structure
 
 ```dang
-pub description = "My module description"
-
+"""
+My module description
+"""
 type MyModule {
   """
   A public field exposed as a Dagger function.
