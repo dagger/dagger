@@ -1011,6 +1011,18 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 					mnt.FileSource.Self().Result,
 					mnt.FileSource.ID(),
 				)
+			case mnt.WorkspaceSource != nil:
+				if mnt.WorkspaceSource.Upper == nil {
+					// Workspace mount lower is provided lazily by WSFS at runtime.
+					// Before any writes, there is no persistent upper source to load.
+					ref, err = getResult(nil, nil, nil)
+					break
+				}
+				ref, err = getResult(
+					mnt.WorkspaceSource.Upper.Self().LLB,
+					mnt.WorkspaceSource.Upper.Self().Result,
+					mnt.WorkspaceSource.Upper.ID(),
+				)
 			default:
 				err = fmt.Errorf("mount %d has no source", mountIdx)
 			}

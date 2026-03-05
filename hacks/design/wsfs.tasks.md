@@ -19,3 +19,4 @@
   - [x] Add integration test for workspace mount write persistence in-lineage and no sync-back to fresh mount.
   - [x] Add integration tests for laziness and caching behavior.
   - [x] Handle missing `fusermount` by enabling direct FUSE mounts in WSFS runtime.
+  - [x] Fix mount output extraction for workspace mounts with no upper source yet.
