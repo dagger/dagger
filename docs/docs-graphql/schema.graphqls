@@ -368,7 +368,7 @@ type CheckGroup {
   report: File!
 
   """Execute all selected checks"""
-  run: CheckGroup!
+  run(failFast: Boolean): CheckGroup!
 }
 
 """
