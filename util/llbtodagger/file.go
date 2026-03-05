@@ -126,16 +126,16 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 	outputContainers := map[pb.OutputIndex]*call.ID{}
 
 	for i, action := range op.Actions {
-		baseID, err := resolveFileActionInput(op.OpDAG, action.Input, inputIDs, actionOutputs)
+		baseID, err := resolveFileActionInput(action.Input, inputIDs, actionOutputs)
 		if err != nil {
 			return nil, err
 		}
-		baseContainerID, err := resolveFileActionInputContainer(op.OpDAG, action.Input, inputContainerIDs, actionOutputContainers, actionOutputResolved)
+		baseContainerID, err := resolveFileActionInputContainer(action.Input, inputContainerIDs, actionOutputContainers, actionOutputResolved)
 		if err != nil {
 			return nil, err
 		}
 
-		nextID, nextContainerID, err := c.applyFileAction(op.OpDAG, baseID, baseContainerID, action, inputIDs, actionOutputs)
+		nextID, nextContainerID, err := c.applyFileAction(baseID, baseContainerID, action, inputIDs, actionOutputs)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,6 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 }
 
 func resolveFileActionInput(
-	dag *buildkit.OpDAG,
 	idx pb.InputIndex,
 	opInputIDs []*call.ID,
 	actionOutputs []*call.ID,
@@ -188,7 +187,6 @@ func resolveFileActionInput(
 }
 
 func resolveFileActionInputContainer(
-	dag *buildkit.OpDAG,
 	idx pb.InputIndex,
 	opInputContainers []*call.ID,
 	actionOutputContainers []*call.ID,
@@ -214,7 +212,6 @@ func resolveFileActionInputContainer(
 }
 
 func (c *converter) applyFileAction(
-	dag *buildkit.OpDAG,
 	baseID *call.ID,
 	baseContainerID *call.ID,
 	action *pb.FileAction,
@@ -235,7 +232,7 @@ func (c *converter) applyFileAction(
 		nextID, err := applyRm(baseID, x.Rm)
 		return nextID, baseContainerID, err
 	case *pb.FileAction_Copy:
-		srcID, err := resolveFileActionInput(dag, action.SecondaryInput, opInputIDs, actionOutputs)
+		srcID, err := resolveFileActionInput(action.SecondaryInput, opInputIDs, actionOutputs)
 		if err != nil {
 			return nil, nil, err
 		}

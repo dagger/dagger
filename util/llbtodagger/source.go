@@ -139,15 +139,15 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 
 	includePatterns, err := parseJSONPatternList(attrs[pb.AttrIncludePatterns])
 	if err != nil {
-		return nil, fmt.Errorf("invalid include patterns: %v", err)
+		return nil, fmt.Errorf("invalid include patterns: %w", err)
 	}
 	excludePatterns, err := parseJSONPatternList(attrs[pb.AttrExcludePatterns])
 	if err != nil {
-		return nil, fmt.Errorf("invalid exclude patterns: %v", err)
+		return nil, fmt.Errorf("invalid exclude patterns: %w", err)
 	}
 	followPaths, err := parseJSONPatternList(attrs[pb.AttrFollowPaths])
 	if err != nil {
-		return nil, fmt.Errorf("invalid follow paths: %v", err)
+		return nil, fmt.Errorf("invalid follow paths: %w", err)
 	}
 	if differ := attrs[pb.AttrLocalDiffer]; differ != "" && differ != pb.AttrLocalDifferMetadata {
 		return nil, fmt.Errorf("unsupported local differ mode")
@@ -241,7 +241,7 @@ func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 	return appendCall(dirID, directoryType(), "withFile", argString("path", name), argID("source", fileID)), nil
 }
 
-func (c *converter) convertOCISource(op *buildkit.OCIOp) (*call.ID, error) { //nolint:unparam
+func (c *converter) convertOCISource(op *buildkit.OCIOp) (*call.ID, error) {
 	return nil, fmt.Errorf("oci-layout source is not yet supported")
 }
 
