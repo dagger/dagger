@@ -8,6 +8,7 @@ type sdk string
 
 const (
 	sdkGo         sdk = "go"
+	sdkDang       sdk = "dang"
 	sdkPython     sdk = "python"
 	sdkTypescript sdk = "typescript"
 	sdkPHP        sdk = "php"
@@ -19,6 +20,7 @@ const (
 // and keeping that in sync with builtinSDK func
 var validInbuiltSDKs = []sdk{
 	sdkGo,
+	sdkDang,
 	sdkPython,
 	sdkTypescript,
 	sdkPHP,
