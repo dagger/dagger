@@ -265,7 +265,7 @@ func applyMkdir(baseID *call.ID, baseContainerID *call.ID, mkdir *pb.FileActionM
 		return nil, nil, err
 	}
 
-	if owner != "" && isOwnerStringValid(owner) {
+	if owner != "" {
 		if baseContainerID == nil {
 			return nil, nil, fmt.Errorf("named user/group chown requires container context")
 		}
