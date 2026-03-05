@@ -208,3 +208,16 @@ Effect:
 - Two-way sync from WSFS writes back to workspace.
 - Explicit conflict policy between host updates and upper-layer shadowed paths.
 - Richer metadata APIs if needed (`lstat`, xattrs, chmod/chown semantics).
+
+## Deferred Follow-Up: `Container.terminal`
+
+WSFS behavior parity for `Container.terminal` is deferred from the current
+`withExec` implementation track.
+
+Current note:
+
+- `withExec` mounts go through WSFS runtime setup.
+- `terminal` currently executes through the service path and needs explicit WSFS
+  runtime wiring to provide the same lazy workspace semantics.
+
+We will revisit this after `withExec` stabilization and QA.
