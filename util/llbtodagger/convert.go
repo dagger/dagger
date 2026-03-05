@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -149,13 +148,6 @@ func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
 	}
 	c.memo[dag] = id
 	return id, nil
-}
-
-func opDigest(dag *buildkit.OpDAG) digest.Digest {
-	if dag == nil || dag.OpDigest == nil {
-		return ""
-	}
-	return *dag.OpDigest
 }
 
 func appendCall(base *call.ID, ret *ast.Type, field string, args ...*call.Argument) *call.ID {

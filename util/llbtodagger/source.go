@@ -41,7 +41,7 @@ func (c *converter) convertImageSource(op *buildkit.ImageOp) (*call.ID, error) {
 
 	ctrID, err := queryContainerID(op.Platform)
 	if err != nil {
-		return nil, fmt.Errorf("llbtodagger: image source %s: %w", opDigest(op.OpDAG), err)
+		return nil, err
 	}
 
 	return appendCall(ctrID, containerType(), "from", argString("address", ref)), nil

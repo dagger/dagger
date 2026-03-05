@@ -7,7 +7,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 )
 
 //nolint:gocyclo
@@ -90,7 +89,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	addedSecretEnvSet := map[string]struct{}{}
 
 	for _, secretEnv := range exec.Secretenv {
-		secretID, include, err := c.resolveSecretID(opDigest(exec.OpDAG), secretEnv.ID, secretEnv.Optional)
+		secretID, include, err := c.resolveSecretID(secretEnv.ID, secretEnv.Optional)
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +189,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 			if m.SecretOpt == nil {
 				return nil, fmt.Errorf("secret mount is missing secret options")
 			}
-			secretID, include, err := c.resolveSecretID(opDigest(exec.OpDAG), m.SecretOpt.ID, m.SecretOpt.Optional)
+			secretID, include, err := c.resolveSecretID(m.SecretOpt.ID, m.SecretOpt.Optional)
 			if err != nil {
 				return nil, err
 			}
@@ -218,7 +217,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 			if m.SSHOpt.Mode != 0 && m.SSHOpt.Mode != 0o600 {
 				return nil, fmt.Errorf("ssh mount mode %o is not unsupported", m.SSHOpt.Mode)
 			}
-			socketID, include, err := c.resolveSSHSocketID(opDigest(exec.OpDAG), m.SSHOpt.ID, m.SSHOpt.Optional)
+			socketID, include, err := c.resolveSSHSocketID(m.SSHOpt.ID, m.SSHOpt.Optional)
 			if err != nil {
 				return nil, err
 			}
@@ -307,7 +306,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	return appendCall(withExecID, directoryType(), "directory", argString("path", outMount.Dest)), nil
 }
 
-func (c *converter) resolveSecretID(opDgst digest.Digest, llbSecretID string, optional bool) (*call.ID, bool, error) {
+func (c *converter) resolveSecretID(llbSecretID string, optional bool) (*call.ID, bool, error) {
 	if llbSecretID == "" {
 		if optional {
 			return nil, false, nil
@@ -333,7 +332,7 @@ func (c *converter) resolveSecretID(opDgst digest.Digest, llbSecretID string, op
 	return nil, false, fmt.Errorf("secret %q is required but was not provided", llbSecretID)
 }
 
-func (c *converter) resolveSSHSocketID(opDgst digest.Digest, llbSSHID string, optional bool) (*call.ID, bool, error) {
+func (c *converter) resolveSSHSocketID(llbSSHID string, optional bool) (*call.ID, bool, error) {
 	socketID, ok := c.sshSocketIDsByLLBID[llbSSHID]
 	if (!ok || socketID == nil) && llbSSHID != "" {
 		// Dockerfile-based callers with a single ssh socket can provide a
