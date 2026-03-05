@@ -1,7 +1,0 @@
-kind: Breaking
-body: |
-    Improved git remote fetch performance by defaulting to --no-tags while preserving SHA fallback compatibility. This includes a behavior change: `GitRef.tree()` now excludes local `.git` tag refs by default (`includeTags=false`). Callers that need checkout-visible tags must opt in with `GitRef.tree(includeTags: true)`.
-time: 2026-03-03T16:46:00.866154369-08:00
-custom:
-    Author: grouville
-    PR: "11909"
