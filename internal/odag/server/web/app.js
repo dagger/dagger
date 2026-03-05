@@ -278,8 +278,7 @@ function renderGraph() {
       const pos = positions.get(obj.id);
       const isActive = activeObjectIDs.has(obj.id);
       const selected = obj.id === state.selectedObjectID;
-      const latest = obj.stateHistory?.[obj.stateHistory.length - 1];
-      const subtitle = `${obj.alias} · ${shortDigest(latest?.stateDigest || "")}`;
+      const title = obj.alias || obj.typeName;
       const warning = obj.missingState ? `<tspan class="warn-pill">state unavailable</tspan>` : "";
       const classNames = `node-card${isActive ? " active" : ""}${selected ? " active" : ""}`;
       return `
@@ -287,9 +286,8 @@ function renderGraph() {
         <rect class="${classNames}" x="${pos.x}" y="${pos.y}" rx="14" ry="14" width="${cardW}" height="${cardH}" />
         <circle class="node-port" cx="${pos.x}" cy="${pos.y + cardH / 2}" r="6" />
         <circle class="node-port" cx="${pos.x + cardW}" cy="${pos.y + cardH / 2}" r="6" />
-        <text class="node-label" x="${pos.x + 16}" y="${pos.y + 34}">${escapeHTML(obj.typeName)}</text>
-        <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 62}">${escapeHTML(subtitle)}</text>
-        <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 86}">${escapeHTML(
+        <text class="node-label" x="${pos.x + 16}" y="${pos.y + 38}">${escapeHTML(title)}</text>
+        <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 74}">${escapeHTML(
           `${obj.stateHistory.length} mutations`,
         )}${warning}</text>
       </g>`;

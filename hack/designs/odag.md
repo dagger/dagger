@@ -532,6 +532,7 @@ Stage 4 implementation note:
   - history cards use table-like aligned columns (kind/call/parent/visible/time) while keeping card styling
   - dedicated central trace title row above the DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
+  - object cards show ODAG alias (`Type#N`) as primary label; immutable state digest text is hidden from card body
   - trace view drops the inspector pane to maximize graph/history real estate
 
 Stage 5 implementation note:
