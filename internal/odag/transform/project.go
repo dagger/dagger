@@ -42,7 +42,6 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 	objectsByID := make(map[string]*ObjectNode, len(parsedSpans))
 	nextObjectNum := 1
 	typeCounters := map[string]int{}
-	seedStates := make(map[string]struct{})
 	events := make([]MutationEvent, 0, len(parsedSpans))
 	startUnixNano, endUnixNano := parsedSpans[0].span.StartUnixNano, parsedSpans[0].span.EndUnixNano
 
@@ -52,20 +51,6 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		}
 		if sp.span.EndUnixNano > endUnixNano {
 			endUnixNano = sp.span.EndUnixNano
-		}
-
-		if sp.isTopLevel && !sp.isInternal {
-			if sp.receiverStateDigest != "" {
-				seedStates[sp.receiverStateDigest] = struct{}{}
-			}
-			if sp.outputStateDigest != "" {
-				seedStates[sp.outputStateDigest] = struct{}{}
-			}
-			for _, in := range sp.inputs {
-				if in.StateDigest != "" {
-					seedStates[in.StateDigest] = struct{}{}
-				}
-			}
 		}
 
 		event := MutationEvent{
@@ -150,45 +135,76 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		events = append(events, event)
 	}
 
-	if len(seedStates) == 0 {
-		warnings = append(warnings, "no non-internal top-level seed states; falling back to all top-level seeds")
-		for _, sp := range parsedSpans {
-			if !sp.isTopLevel {
-				continue
+	objects := make([]ObjectNode, 0, len(objectsByID))
+	topReferencedObjectIDs := make(map[string]struct{}, len(objectsByID))
+	keptObjectIDs := make(map[string]struct{}, len(objectsByID))
+	markByState := func(stateDigest string, keep bool) {
+		if stateDigest == "" {
+			return
+		}
+		objectID, ok := stateToObject[stateDigest]
+		if !ok || objectID == "" {
+			return
+		}
+		topReferencedObjectIDs[objectID] = struct{}{}
+		if keep {
+			keptObjectIDs[objectID] = struct{}{}
+		}
+	}
+	for _, event := range events {
+		if event.Internal {
+			continue
+		}
+
+		keepTopRefs := event.TopLevel && (event.Kind == "create" || event.Kind == "mutate")
+		if event.TopLevel {
+			if event.ObjectID != "" {
+				topReferencedObjectIDs[event.ObjectID] = struct{}{}
 			}
-			if sp.receiverStateDigest != "" {
-				seedStates[sp.receiverStateDigest] = struct{}{}
+			markByState(event.ReceiverStateDigest, keepTopRefs)
+			for _, in := range event.Inputs {
+				markByState(in.StateDigest, keepTopRefs)
 			}
-			if sp.outputStateDigest != "" {
-				seedStates[sp.outputStateDigest] = struct{}{}
-			}
-			for _, in := range sp.inputs {
-				if in.StateDigest != "" {
-					seedStates[in.StateDigest] = struct{}{}
+		}
+
+		if event.ObjectID == "" {
+			continue
+		}
+		if event.TopLevel {
+			switch event.Kind {
+			case "create", "mutate":
+				keptObjectIDs[event.ObjectID] = struct{}{}
+			case "call":
+				// Keep root-level Query object calls by default; other top-level
+				// call-only objects are often fan-out noise from scalar selection.
+				if strings.HasPrefix(event.Name, "Query.") {
+					keptObjectIDs[event.ObjectID] = struct{}{}
 				}
 			}
+			continue
 		}
+		keptObjectIDs[event.ObjectID] = struct{}{}
 	}
 
-	objects := make([]ObjectNode, 0, len(objectsByID))
-	keptObjectIDs := make(map[string]struct{}, len(objectsByID))
 	for objectID, obj := range objectsByID {
-		for _, state := range obj.StateHistory {
-			if _, ok := seedStates[state.StateDigest]; ok {
-				obj.ReferencedByTop = true
-				break
-			}
-		}
-		if obj.ReferencedByTop {
-			keptObjectIDs[objectID] = struct{}{}
+		if _, ok := topReferencedObjectIDs[objectID]; ok {
+			obj.ReferencedByTop = true
 		}
 	}
 
-	// If there are no top-level seeds (e.g. partial trace), keep all objects so
-	// the projection remains inspectable.
+	// If the default keep rules prune everything (e.g. partial traces), recover
+	// with top-level references first, then all objects.
 	if len(keptObjectIDs) == 0 {
-		for objectID := range objectsByID {
-			keptObjectIDs[objectID] = struct{}{}
+		if len(topReferencedObjectIDs) > 0 {
+			warnings = append(warnings, "default object keep rules yielded no objects; falling back to top-level references")
+			for objectID := range topReferencedObjectIDs {
+				keptObjectIDs[objectID] = struct{}{}
+			}
+		} else {
+			warnings = append(warnings, "no top-level object references found; falling back to all objects")
+			for objectID := range objectsByID {
+				keptObjectIDs[objectID] = struct{}{}
+			}
 		}
 	}
 

@@ -276,6 +276,110 @@ func TestProjectTraceFiltersInternalSeedsAndScalarOutputs(t *testing.T) {
 	}
 }
 
+func TestProjectTraceDropsTopLevelCallOnlyFanoutObjects(t *testing.T) {
+	t.Parallel()
+
+	spans := []store.SpanRecord{
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace3",
+			spanID:       "s1",
+			parentSpanID: "",
+			name:         "Query.moduleSource",
+			start:        1,
+			end:          5,
+			output:       "state-root",
+			call: &callpbv1.Call{
+				Digest: "call-root",
+				Field:  "moduleSource",
+				Type:   &callpbv1.Type{NamedType: "ModuleSource"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace3",
+			spanID:       "s2",
+			parentSpanID: "",
+			name:         "ModuleSource.withName",
+			start:        6,
+			end:          8,
+			output:       "state-noise",
+			internal:     true,
+			call: &callpbv1.Call{
+				Digest:         "call-noise",
+				ReceiverDigest: "state-unrelated",
+				Field:          "withName",
+				Type:           &callpbv1.Type{NamedType: "ModuleSource"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace3",
+			spanID:       "s3",
+			parentSpanID: "",
+			name:         "Module.source",
+			start:        9,
+			end:          12,
+			output:       "state-noise",
+			call: &callpbv1.Call{
+				Digest:         "call-module-source",
+				ReceiverDigest: "state-module",
+				Field:          "source",
+				Type:           &callpbv1.Type{NamedType: "ModuleSource"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace3",
+			spanID:       "s4",
+			parentSpanID: "",
+			name:         "Query.container",
+			start:        13,
+			end:          20,
+			output:       "state-c1",
+			call: &callpbv1.Call{
+				Digest: "call-c1",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace3",
+			spanID:       "s5",
+			parentSpanID: "s4",
+			name:         "Container.withExec",
+			start:        21,
+			end:          30,
+			output:       "state-c2",
+			call: &callpbv1.Call{
+				Digest:         "call-c2",
+				ReceiverDigest: "state-c1",
+				Field:          "withExec",
+				Type:           &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace3", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+
+	if len(proj.Objects) != 2 {
+		t.Fatalf("expected 2 rendered objects after fan-out filtering, got %d", len(proj.Objects))
+	}
+
+	types := map[string]int{}
+	for _, obj := range proj.Objects {
+		types[obj.TypeName]++
+	}
+	if types["Container"] != 1 || types["ModuleSource"] != 1 {
+		t.Fatalf("unexpected object types: %#v", types)
+	}
+
+	for _, event := range proj.Events {
+		if event.Name == "Module.source" && event.ObjectID != "" {
+			t.Fatalf("expected Module.source call-only fan-out object to be pruned from events, got %+v", event)
+		}
+	}
+}
+
 type callSpanInput struct {
 	traceID      string
 	spanID       string

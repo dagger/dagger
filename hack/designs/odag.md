@@ -273,9 +273,11 @@ Process call spans in `(endTime, startTime, spanID)` order:
 
 ### 5) Apply scope filter
 
-1. Keep objects that contain at least one seed state.
-2. Optionally keep immediate neighbor objects if they are required to preserve an edge endpoint in rendered view (toggleable).
-3. Drop all others to reduce visual crowding.
+1. Keep objects referenced by top-level **create/mutate** events, including receiver/input object references for those events.
+2. Keep objects that have non-top-level non-internal activity (so deep mutation chains surfaced by top-level outputs remain visible).
+3. Keep top-level `Query.*` call outputs, but drop other top-level call-only objects by default (these are often fan-out read/accessor noise).
+4. Optionally keep immediate neighbor objects if they are required to preserve an edge endpoint in rendered view (toggleable).
+5. Drop all others to reduce visual crowding.
 
 ### 6) Timeline model
 
@@ -529,6 +531,7 @@ Post-MVP projection refinement:
 - Default rendering now excludes `dagger.io/ui.internal=true` spans/events from seed scope and UI event stream to reduce noise.
 - Object projection ignores scalar outputs (e.g. `String`, `Int`, `Boolean`, `Float`, `JSON`, `Void`) even if older traces contain `dag.output` for them.
 - Mutation collapse now tolerates module-qualified type names (e.g. `ModuleSource` vs `mymod.ModuleSource`) via normalized type matching, reducing false "create" splits in chains.
+- Default keep rules now prune top-level non-`Query.*` call-only objects (common GraphQL selection fan-out), while preserving top-level writes and non-top-level mutation-heavy objects.
 
 ### Phase 0: Spike
 
