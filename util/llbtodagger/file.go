@@ -693,16 +693,16 @@ func ownerRequiresContainerResolution(owner string) bool {
 		return false
 	}
 	user, group, hasGroup := strings.Cut(owner, ":")
-	if ownerComponentRequiresResolution(user) {
+	if isStringWholeNumber(user) {
 		return true
 	}
-	if hasGroup && ownerComponentRequiresResolution(group) {
+	if hasGroup && isStringWholeNumber(group) {
 		return true
 	}
 	return false
 }
 
-func ownerComponentRequiresResolution(component string) bool {
+func isStringWholeNumber(component string) bool {
 	if component == "" {
 		return false
 	}
