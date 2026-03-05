@@ -3,7 +3,7 @@ package clientdb
 import (
 	"log/slog"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"

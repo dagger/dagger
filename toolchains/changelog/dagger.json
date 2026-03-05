@@ -1,7 +1,7 @@
 {
   "name": "changelog",
-  "engineVersion": "v0.20.0",
+  "engineVersion": "v0.20.1",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
+    "source": "github.com/vito/dang/dagger-sdk@2de20f19b971dad3ee6038e6728736ef1f9a056b"
   }
 }

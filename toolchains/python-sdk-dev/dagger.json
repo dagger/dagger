@@ -1,6 +1,6 @@
 {
   "name": "python-sdk-dev",
-  "engineVersion": "v0.20.0",
+  "engineVersion": "v0.20.1",
   "sdk": {
     "source": "go"
   },
@@ -23,7 +23,7 @@
     {
       "name": "pytest",
       "source": "github.com/dagger/pytest@main",
-      "pin": "821da5888b0c2e66d33a7c9b59351f92b53492f9"
+      "pin": "6817c81a88531fa468ee43e559c361c0dc317dd4"
     },
     {
       "name": "wolfi",

@@ -1,6 +1,0 @@
-kind: Added
-body: Added container.WithDockerHealthcheck to support publishing images with a dockerhub healthcheck.
-time: 2026-02-25T12:21:58.783911292-08:00
-custom:
-    Author: alexcb
-    PR: "11911"

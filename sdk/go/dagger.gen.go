@@ -8377,6 +8377,8 @@ type GitRefTreeOpts struct {
 	//
 	// Default: 1
 	Depth int
+	// Set to true to populate tag refs in the local checkout .git.
+	IncludeTags bool
 }
 
 // The filesystem tree at this ref.
@@ -8390,6 +8392,10 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 		// `depth` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Depth) {
 			q = q.Arg("depth", opts[i].Depth)
+		}
+		// `includeTags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeTags) {
+			q = q.Arg("includeTags", opts[i].IncludeTags)
 		}
 	}
 

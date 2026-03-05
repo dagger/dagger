@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -475,8 +475,9 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
-func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
-func (ps clientLogs) Shutdown(context.Context) error       { return nil }
+func (ps clientLogs) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
+func (ps clientLogs) ForceFlush(ctx context.Context) error                   { return nil }
+func (ps clientLogs) Shutdown(context.Context) error                         { return nil }
 
 func insertLogRecordParam(rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
 	traceID := rec.TraceID().String()

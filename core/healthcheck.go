@@ -2,16 +2,20 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"go.opentelemetry.io/otel/trace"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/buildkit/executor"
+	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type portHealthChecker struct {
@@ -21,7 +25,7 @@ type portHealthChecker struct {
 	ports []Port
 }
 
-func newHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port) *portHealthChecker {
+func newPortHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port) *portHealthChecker {
 	return &portHealthChecker{
 		bk:    bk,
 		ns:    ns,
@@ -84,5 +88,130 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 		slog.Info("port is healthy", "endpoint", endpoint)
 	}
 
+	return nil
+}
+
+type dockerHealthcheck struct {
+	args    []string
+	creator trace.SpanContext
+	ctr     *Container
+	exec    executor.Executor
+	svcID   string
+}
+
+func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, creator trace.SpanContext) (*dockerHealthcheck, error) {
+	if ctr == nil || ctr.Config.Healthcheck == nil || len(ctr.Config.Healthcheck.Test) == 0 || ctr.Config.Healthcheck.Test[0] == "NONE" {
+		return nil, fmt.Errorf("container does not have a healthcheck command")
+	}
+
+	var args []string
+	switch ctr.Config.Healthcheck.Test[0] {
+	case "CMD":
+		if len(ctr.Config.Healthcheck.Test) < 2 {
+			return nil, fmt.Errorf("healthcheck command should have at least 2 elements: %v", ctr.Config.Healthcheck.Test)
+		}
+		args = ctr.Config.Healthcheck.Test[1:]
+	case "CMD-SHELL":
+		if len(ctr.Config.Healthcheck.Test) != 2 {
+			return nil, fmt.Errorf("healthcheck shell command should have exactly 2 elements: %v", ctr.Config.Healthcheck.Test)
+		}
+		if len(ctr.Config.Shell) > 0 {
+			args = append([]string{}, ctr.Config.Shell...)
+		} else {
+			args = []string{"/bin/sh", "-c"}
+		}
+		args = append(args, ctr.Config.Healthcheck.Test[1:]...)
+	default:
+		return nil, fmt.Errorf("malformed healthcheck command: %v", ctr.Config.Healthcheck.Test)
+	}
+
+	return &dockerHealthcheck{
+		args:    args,
+		creator: creator,
+		ctr:     ctr,
+		exec:    exec,
+		svcID:   svcID,
+	}, nil
+}
+
+func (chk *dockerHealthcheck) durationBetweenRetries() time.Duration {
+	if chk.ctr.Config.Healthcheck.StartInterval > 0 {
+		return chk.ctr.Config.Healthcheck.StartInterval
+	}
+	if chk.ctr.Config.Healthcheck.Interval > 0 {
+		return chk.ctr.Config.Healthcheck.Interval
+	}
+	return time.Second * 5
+}
+
+func (chk *dockerHealthcheck) Check(ctx context.Context) error {
+	sleepDuration := chk.durationBetweenRetries()
+
+	allowFailuresUntil := time.Now()
+	if chk.ctr.Config.Healthcheck.StartPeriod > 0 {
+		allowFailuresUntil = allowFailuresUntil.Add(chk.ctr.Config.Healthcheck.StartPeriod)
+	}
+
+	numRetries := 3
+	if chk.ctr.Config.Healthcheck.Retries > 0 {
+		numRetries = chk.ctr.Config.Healthcheck.Retries
+	}
+	var numFailures int
+	for {
+		err := chk.check(ctx)
+		if err == nil {
+			return nil
+		}
+		if time.Now().After(allowFailuresUntil) {
+			numFailures++
+		}
+		if numFailures == numRetries {
+			return err
+		}
+		// sleep before retrying
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(sleepDuration):
+			break
+		}
+	}
+}
+
+func (chk *dockerHealthcheck) check(ctx context.Context) error {
+	healthcheckMeta, err := chk.ctr.metaSpec(ctx, ContainerExecOpts{
+		Args: chk.args,
+	})
+	if err != nil {
+		return err
+	}
+
+	stdoutBuf := new(strings.Builder)
+	stderrBuf := new(strings.Builder)
+	// buffer stdout/stderr so we can return a nice error
+	outBufWC := discardOnClose(stdoutBuf)
+	errBufWC := discardOnClose(stderrBuf)
+	// stop buffering service logs once it's started
+	defer outBufWC.Close()
+	defer errBufWC.Close()
+
+	err = chk.exec.Exec(ctx, chk.svcID, executor.ProcessInfo{
+		Meta:   *healthcheckMeta,
+		Stdout: outBufWC,
+		Stderr: errBufWC,
+	})
+	if err != nil {
+		var gwErr *gwpb.ExitError
+		if errors.As(err, &gwErr) {
+			return &buildkit.ExecError{
+				Err:      telemetry.TrackOrigin(gwErr, chk.creator),
+				Cmd:      healthcheckMeta.Args,
+				ExitCode: int(gwErr.ExitCode),
+				Stdout:   stdoutBuf.String(),
+				Stderr:   stderrBuf.String(),
+			}
+		}
+		return err
+	}
 	return nil
 }

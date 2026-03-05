@@ -53,7 +53,7 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     /**
      * The filesystem tree at this ref.
      */
-    public function tree(?bool $discardGitDir = false, ?int $depth = 1): Directory
+    public function tree(?bool $discardGitDir = false, ?int $depth = 1, ?bool $includeTags = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tree');
         if (null !== $discardGitDir) {
@@ -61,6 +61,9 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $depth) {
         $innerQueryBuilder->setArgument('depth', $depth);
+        }
+        if (null !== $includeTags) {
+        $innerQueryBuilder->setArgument('includeTags', $includeTags);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
