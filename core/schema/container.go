@@ -281,7 +281,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				`Workspace mount runtime support is experimental and still in progress.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the mounted workspace (e.g., "/workspace").`),
-				dagql.Arg("source").Doc(`Identifier of the mounted workspace.`),
+				dagql.Arg("source").Doc(`Identifier of the mounted workspace.`,
+					`If omitted, the current workspace is mounted.`),
 				dagql.Arg("owner").Doc(`A user:group requested for the mounted workspace.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
@@ -1624,7 +1625,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 
 type containerWithMountedWorkspaceArgs struct {
 	Path      string
-	Source    core.WorkspaceID
+	Source    dagql.Optional[core.WorkspaceID]
 	Owner     string                  `default:""`
 	WriteSync core.WorkspaceWriteSync `default:"EPHEMERAL"`
 	Expand    bool                    `default:"false"`
@@ -1636,9 +1637,22 @@ func (s *containerSchema) withMountedWorkspace(ctx context.Context, parent *core
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	workspace, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		return nil, err
+	var workspace dagql.ObjectResult[*core.Workspace]
+	if args.Source.Valid {
+		workspace, err = args.Source.Value.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = srv.Select(ctx, srv.Root(), &workspace, dagql.Selector{
+			Field: "currentWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load current workspace: %w", err)
+		}
 	}
 
 	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)

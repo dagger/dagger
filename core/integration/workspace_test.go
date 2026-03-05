@@ -448,6 +448,37 @@ func (WorkspaceSuite) TestWithMountedWorkspaceWriteThroughSync(ctx context.Conte
 	require.Equal(t, "created\n", string(createdBytes))
 }
 
+func (WorkspaceSuite) TestWithMountedWorkspaceDefaultsToCurrentWorkspace(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("default-ws"), 0o600))
+
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`{
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws") {
+					withExec(args: ["cat", "/ws/input.txt"]) {
+						stdout
+					}
+				}
+			}
+		}
+	}`, alpineImage), nil)
+	require.NoError(t, err)
+	require.Equal(t, "default-ws", strings.TrimSpace(res.Container.From.WithMountedWorkspace.WithExec.Stdout))
+}
+
 func (WorkspaceSuite) TestWithMountedWorkspaceLazyMaterialization(ctx context.Context, t *testctx.T) {
 	t.Run("read does not materialize siblings", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
