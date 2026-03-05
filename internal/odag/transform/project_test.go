@@ -675,6 +675,107 @@ func TestProjectTraceRehydratesOutputStateFromDuplicateDigest(t *testing.T) {
 	}
 }
 
+func TestProjectTraceBuildsObjectEdgesFromStateFieldRefs(t *testing.T) {
+	t.Parallel()
+
+	spans := []store.SpanRecord{
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace8",
+			spanID:       "s1",
+			parentSpanID: "",
+			name:         "Query.directory",
+			start:        1,
+			end:          10,
+			output:       "state-dir",
+			outputState: map[string]any{
+				"type": "Directory",
+				"fields": map[string]any{
+					"path": map[string]any{
+						"name":  "path",
+						"type":  "String",
+						"value": "/work",
+					},
+				},
+			},
+			call: &callpbv1.Call{
+				Digest: "call-dir",
+				Field:  "directory",
+				Type:   &callpbv1.Type{NamedType: "Directory"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace8",
+			spanID:       "s2",
+			parentSpanID: "",
+			name:         "Query.container",
+			start:        11,
+			end:          20,
+			output:       "state-ctr",
+			outputState: map[string]any{
+				"type": "Container",
+				"fields": map[string]any{
+					"FS": map[string]any{
+						"name":  "FS",
+						"type":  "Directory!",
+						"value": "state-dir",
+					},
+					"Mounts": map[string]any{
+						"name": "Mounts",
+						"type": "[]Mount",
+						"value": []any{
+							map[string]any{
+								"Source": "state-dir",
+							},
+						},
+					},
+				},
+			},
+			call: &callpbv1.Call{
+				Digest: "call-ctr",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace8", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+
+	if len(proj.Objects) != 2 {
+		t.Fatalf("expected 2 objects, got %d", len(proj.Objects))
+	}
+	if len(proj.Edges) != 2 {
+		t.Fatalf("expected 2 edges, got %#v", proj.Edges)
+	}
+
+	labels := map[string]ObjectEdge{}
+	for _, edge := range proj.Edges {
+		labels[edge.Label] = edge
+		if edge.Kind != "field-ref" {
+			t.Fatalf("unexpected edge kind: %#v", edge)
+		}
+	}
+	fsEdge, ok := labels["FS"]
+	if !ok {
+		t.Fatalf("expected FS edge, got %#v", proj.Edges)
+	}
+	if fsEdge.EvidenceCount != 1 {
+		t.Fatalf("expected FS evidence count=1, got %#v", fsEdge)
+	}
+	mountEdge, ok := labels["Mounts[0].Source"]
+	if !ok {
+		t.Fatalf("expected Mounts[0].Source edge, got %#v", proj.Edges)
+	}
+	if mountEdge.EvidenceCount != 1 {
+		t.Fatalf("expected mount edge evidence count=1, got %#v", mountEdge)
+	}
+	if fsEdge.FromObjectID != mountEdge.FromObjectID || fsEdge.ToObjectID != mountEdge.ToObjectID {
+		t.Fatalf("expected both edges to connect the same objects, got %#v %#v", fsEdge, mountEdge)
+	}
+}
+
 type callSpanInput struct {
 	traceID      string
 	spanID       string

@@ -706,6 +706,10 @@ Post-MVP projection refinement:
 - Default keep rules now prune top-level non-`Query.*` call-only fan-out objects and non-top-level-only objects, while preserving top-level writes and mutation-heavy top-level outputs.
 - Event debug fields now include call-depth and nearest parent DAG call metadata to audit top-level classification directly in UI.
 - Projection now rehydrates `dag.output.state` payloads by immutable output digest when emitters dedupe repeated IDs, avoiding false `state unavailable` flags on duplicate-return spans.
+- Projection now derives object dependency edges (`kind=field-ref`) from emitted output-state field references:
+  - `fromObjectID` = object owning the referencing field
+  - `toObjectID` = object referenced by the field value
+  - edge evidence is aggregated across object-state history (`evidenceCount`)
 
 ### Phase 0: Spike
 

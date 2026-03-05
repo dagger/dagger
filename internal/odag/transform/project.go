@@ -279,13 +279,34 @@ func ProjectTraceWithOptions(traceID string, spans []store.SpanRecord, opts Proj
 		filteredEvents = append(filteredEvents, event)
 	}
 
+	rawEdges := buildObjectEdges(objectsByID, stateToObject)
+	edges := make([]ObjectEdge, 0, len(rawEdges))
+	for _, edge := range rawEdges {
+		if _, ok := keptObjectIDs[edge.FromObjectID]; !ok {
+			continue
+		}
+		if _, ok := keptObjectIDs[edge.ToObjectID]; !ok {
+			continue
+		}
+		edges = append(edges, edge)
+	}
+	slices.SortFunc(edges, func(a, b ObjectEdge) int {
+		if cmp := compareString(a.FromObjectID, b.FromObjectID); cmp != 0 {
+			return cmp
+		}
+		if cmp := compareString(a.ToObjectID, b.ToObjectID); cmp != 0 {
+			return cmp
+		}
+		return compareString(a.Label, b.Label)
+	})
+
 	return &TraceProjection{
 		TraceID:       traceID,
 		StartUnixNano: startUnixNano,
 		EndUnixNano:   endUnixNano,
 		Summary:       summarizeTrace(parsedSpans),
 		Objects:       objects,
-		Edges:         []ObjectEdge{},
+		Edges:         edges,
 		Events:        filteredEvents,
 		Warnings:      warnings,
 	}, nil
@@ -876,4 +897,134 @@ func getStringSlice(m map[string]any, key string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+type stateFieldRef struct {
+	Path        string
+	StateDigest string
+}
+
+func buildObjectEdges(objectsByID map[string]*ObjectNode, stateToObject map[string]string) []ObjectEdge {
+	type edgeAgg struct {
+		edge ObjectEdge
+	}
+	edgesByKey := map[string]*edgeAgg{}
+
+	for fromObjectID, obj := range objectsByID {
+		if obj == nil {
+			continue
+		}
+		for _, st := range obj.StateHistory {
+			refs := collectStateFieldRefs(st.OutputStateJSON)
+			if len(refs) == 0 {
+				continue
+			}
+			seenInState := map[string]struct{}{}
+			for _, ref := range refs {
+				toObjectID, ok := stateToObject[ref.StateDigest]
+				if !ok || toObjectID == "" || toObjectID == fromObjectID {
+					continue
+				}
+				key := fromObjectID + "\x00" + toObjectID + "\x00" + ref.Path
+				if _, seen := seenInState[key]; seen {
+					continue
+				}
+				seenInState[key] = struct{}{}
+				agg, exists := edgesByKey[key]
+				if !exists {
+					agg = &edgeAgg{
+						edge: ObjectEdge{
+							FromObjectID:  fromObjectID,
+							ToObjectID:    toObjectID,
+							Kind:          "field-ref",
+							Label:         ref.Path,
+							EvidenceCount: 0,
+						},
+					}
+					edgesByKey[key] = agg
+				}
+				agg.edge.EvidenceCount++
+			}
+		}
+	}
+
+	out := make([]ObjectEdge, 0, len(edgesByKey))
+	for _, agg := range edgesByKey {
+		if agg.edge.EvidenceCount <= 0 {
+			continue
+		}
+		out = append(out, agg.edge)
+	}
+	return out
+}
+
+func collectStateFieldRefs(state map[string]any) []stateFieldRef {
+	if state == nil {
+		return nil
+	}
+	fieldsRaw, ok := state["fields"]
+	if !ok {
+		return nil
+	}
+	fields, ok := fieldsRaw.(map[string]any)
+	if !ok || len(fields) == 0 {
+		return nil
+	}
+
+	refs := make([]stateFieldRef, 0, len(fields))
+	fieldNames := make([]string, 0, len(fields))
+	for name := range fields {
+		fieldNames = append(fieldNames, name)
+	}
+	slices.Sort(fieldNames)
+
+	for _, fallbackName := range fieldNames {
+		rawField := fields[fallbackName]
+		field, ok := rawField.(map[string]any)
+		if !ok {
+			continue
+		}
+		path := fallbackName
+		if name, ok := field["name"].(string); ok && name != "" {
+			path = name
+		}
+		walkStateValueRefs(field["value"], path, 0, &refs)
+	}
+	return refs
+}
+
+func walkStateValueRefs(v any, path string, depth int, refs *[]stateFieldRef) {
+	const maxDepth = 8
+	if depth > maxDepth {
+		return
+	}
+
+	switch x := v.(type) {
+	case string:
+		if x == "" {
+			return
+		}
+		*refs = append(*refs, stateFieldRef{
+			Path:        path,
+			StateDigest: x,
+		})
+	case []any:
+		for i, item := range x {
+			childPath := path + "[" + strconv.Itoa(i) + "]"
+			walkStateValueRefs(item, childPath, depth+1, refs)
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for key := range x {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			childPath := key
+			if path != "" {
+				childPath = path + "." + key
+			}
+			walkStateValueRefs(x[key], childPath, depth+1, refs)
+		}
+	}
 }
