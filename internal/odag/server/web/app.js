@@ -3,6 +3,7 @@ const state = {
   traceMeta: null,
   projection: null,
   snapshot: null,
+  timelineEvents: [],
   selectedEventIndex: -1,
   selectedObjectID: "",
   filters: {
@@ -88,25 +89,27 @@ function bindEvents() {
 async function loadTrace(traceID) {
   state.selectedTraceID = traceID;
   state.selectedObjectID = "";
+  state.timelineEvents = [];
   document.title = `ODAG ${shortDigest(traceID)}`;
   state.manualRequestInFlight = true;
 
   try {
     const token = ++state.requestToken;
-    const [metaResp, snapResp] = await Promise.all([
+    const [metaResp, renderResp] = await Promise.all([
       fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/meta`).catch(() => null),
-      fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`),
+      fetchRender(traceID),
     ]);
     if (token !== state.requestToken) {
       return;
     }
 
     state.traceMeta = metaResp;
-    state.projection = snapResp.projection || null;
-    state.snapshot = snapResp.snapshot || null;
+    state.timelineEvents = renderResp?.events || [];
+    state.projection = projectionFromRender(renderResp, state.timelineEvents);
+    state.snapshot = snapshotFromRender(renderResp);
 
-    if (state.projection && (state.projection.events || []).length > 0) {
-      state.selectedEventIndex = state.projection.events.length - 1;
+    if ((state.timelineEvents || []).length > 0) {
+      state.selectedEventIndex = state.timelineEvents.length - 1;
     } else {
       state.selectedEventIndex = -1;
     }
@@ -128,13 +131,13 @@ async function selectEvent(eventIndex) {
 
   try {
     const token = ++state.requestToken;
-    const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?t=${unixNano}`);
+    const resp = await fetchRender(state.selectedTraceID, unixNano);
     if (token !== state.requestToken) {
       return;
     }
 
-    state.projection = resp.projection || state.projection;
-    state.snapshot = resp.snapshot || state.snapshot;
+    state.projection = projectionFromRender(resp, state.timelineEvents);
+    state.snapshot = snapshotFromRender(resp);
     state.selectedEventIndex = eventIndex;
 
     renderAll();
@@ -147,6 +150,7 @@ function clearSelection(msg) {
   state.traceMeta = null;
   state.projection = null;
   state.snapshot = null;
+  state.timelineEvents = [];
   state.selectedEventIndex = -1;
   state.selectedObjectID = "";
   els.traceStatus.textContent = "idle";
@@ -196,28 +200,29 @@ async function refreshCurrentTrace() {
   const traceID = state.selectedTraceID;
 
   const token = ++state.requestToken;
-  const [metaResp, latestResp] = await Promise.all([
+  const [metaResp, latestRender] = await Promise.all([
     fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/meta`).catch(() => null),
-    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`),
+    fetchRender(traceID),
   ]);
   if (token !== state.requestToken) {
     return;
   }
 
-  const latestProjection = latestResp.projection || state.projection;
-  const latestSnapshot = latestResp.snapshot || state.snapshot;
   state.traceMeta = metaResp;
-  state.projection = latestProjection;
+  state.timelineEvents = latestRender?.events || [];
+  const latestProjection = projectionFromRender(latestRender, state.timelineEvents);
   if (!latestProjection) {
-    state.snapshot = latestSnapshot;
+    state.projection = null;
+    state.snapshot = null;
     state.selectedEventIndex = -1;
     renderAll();
     return;
   }
 
-  const events = latestProjection.events || [];
+  const events = state.timelineEvents || [];
   if (events.length === 0) {
-    state.snapshot = latestSnapshot;
+    state.projection = latestProjection;
+    state.snapshot = snapshotFromRender(latestRender);
     state.selectedEventIndex = -1;
     renderAll();
     return;
@@ -232,7 +237,8 @@ async function refreshCurrentTrace() {
   }
 
   if (selectedIndex === events.length - 1) {
-    state.snapshot = latestSnapshot;
+    state.projection = latestProjection;
+    state.snapshot = snapshotFromRender(latestRender);
     state.selectedEventIndex = selectedIndex;
     renderAll();
     return;
@@ -240,13 +246,13 @@ async function refreshCurrentTrace() {
 
   const selectedEvent = events[selectedIndex];
   const unixNano = eventBoundaryUnixNano(selectedEvent);
-  const selectedResp = await fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot?t=${unixNano}`);
+  const selectedRender = await fetchRender(traceID, unixNano);
   if (token !== state.requestToken) {
     return;
   }
 
-  state.projection = selectedResp.projection || latestProjection;
-  state.snapshot = selectedResp.snapshot || latestSnapshot;
+  state.projection = projectionFromRender(selectedRender, state.timelineEvents);
+  state.snapshot = snapshotFromRender(selectedRender);
   const maxIndex = (state.projection?.events || []).length - 1;
   state.selectedEventIndex = maxIndex >= 0 ? Math.min(selectedIndex, maxIndex) : -1;
   renderAll();
@@ -619,6 +625,69 @@ async function fetchJSON(url, init) {
     throw new Error(`${resp.status} ${resp.statusText}: ${body}`);
   }
   return await resp.json();
+}
+
+async function fetchRender(traceID, unixNano) {
+  const params = new URLSearchParams();
+  params.set("traceID", traceID);
+  params.set("mode", "global");
+  if (unixNano && unixNano > 0) {
+    params.set("t", String(unixNano));
+  }
+  return await fetchJSON(`/api/v2/render?${params.toString()}`);
+}
+
+function projectionFromRender(render, timelineEvents) {
+  if (!render || !render.context) {
+    return null;
+  }
+  return {
+    startUnixNano: render.context.traceStartUnixNano || 0,
+    endUnixNano: render.context.traceEndUnixNano || render.context.unixNano || 0,
+    summary: {
+      title: render.context.traceTitle || "",
+    },
+    warnings: render.warnings || [],
+    events: Array.isArray(timelineEvents) ? timelineEvents : render.events || [],
+  };
+}
+
+function snapshotFromRender(render) {
+  if (!render) {
+    return null;
+  }
+
+  const objects = (render.objects || []).map((obj) => {
+    const stateHistory = [];
+    if (obj.currentState && typeof obj.currentState === "object") {
+      stateHistory.push({
+        outputState: obj.currentState,
+      });
+    }
+    return {
+      id: obj.objectID,
+      typeName: obj.typeName,
+      alias: obj.alias,
+      missingState: Boolean(obj.missingState),
+      stateHistory,
+    };
+  });
+
+  const edges = (render.edges || [])
+    .filter((edge) => edge.kind === "depends-on")
+    .map((edge) => ({
+      fromObjectID: edge.fromID,
+      toObjectID: edge.toID,
+      kind: edge.kind,
+      label: edge.label || "",
+      evidenceCount: edge.evidenceCount || 0,
+    }));
+
+  return {
+    objects,
+    edges,
+    activeEventIDs: render.activeCallIDs || [],
+  };
 }
 
 function traceIDFromPath() {

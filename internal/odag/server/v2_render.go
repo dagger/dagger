@@ -28,12 +28,16 @@ type v2RenderResponse struct {
 	Calls             []v2RenderCall            `json:"calls"`
 	Edges             []v2RenderEdge            `json:"edges"`
 	Events            []transform.MutationEvent `json:"events"`
+	ActiveCallIDs     []string                  `json:"activeCallIDs,omitempty"`
 	Navigation        v2RenderNavigation        `json:"navigation"`
 	Warnings          []string                  `json:"warnings,omitempty"`
 }
 
 type v2RenderContext struct {
 	TraceID            string `json:"traceID"`
+	TraceTitle         string `json:"traceTitle,omitempty"`
+	TraceStartUnixNano int64  `json:"traceStartUnixNano"`
+	TraceEndUnixNano   int64  `json:"traceEndUnixNano"`
 	UnixNano           int64  `json:"unixNano"`
 	Mode               string `json:"mode"`
 	View               string `json:"view,omitempty"`
@@ -44,17 +48,19 @@ type v2RenderContext struct {
 }
 
 type v2RenderObject struct {
-	ObjectID          string   `json:"objectID"`
-	BindingID         string   `json:"bindingID"`
-	TypeName          string   `json:"typeName"`
-	Alias             string   `json:"alias"`
-	CurrentSnapshotID string   `json:"currentSnapshotID,omitempty"`
-	FirstSeenUnixNano int64    `json:"firstSeenUnixNano"`
-	LastSeenUnixNano  int64    `json:"lastSeenUnixNano"`
-	StateCount        int      `json:"stateCount"`
-	MissingState      bool     `json:"missingState"`
-	ReferencedByTop   bool     `json:"referencedByTop"`
-	ActivityCallIDs   []string `json:"activityCallIDs,omitempty"`
+	ObjectID          string         `json:"objectID"`
+	BindingID         string         `json:"bindingID"`
+	TypeName          string         `json:"typeName"`
+	Alias             string         `json:"alias"`
+	CurrentSnapshotID string         `json:"currentSnapshotID,omitempty"`
+	CurrentState      map[string]any `json:"currentState,omitempty"`
+	SnapshotHistory   []string       `json:"snapshotHistory,omitempty"`
+	FirstSeenUnixNano int64          `json:"firstSeenUnixNano"`
+	LastSeenUnixNano  int64          `json:"lastSeenUnixNano"`
+	StateCount        int            `json:"stateCount"`
+	MissingState      bool           `json:"missingState"`
+	ReferencedByTop   bool           `json:"referencedByTop"`
+	ActivityCallIDs   []string       `json:"activityCallIDs,omitempty"`
 }
 
 type v2RenderCall struct {
@@ -356,8 +362,16 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 		currentSnapshot := ""
+		currentState := map[string]any(nil)
+		snapshotHistory := make([]string, 0, len(obj.StateHistory))
+		for _, st := range obj.StateHistory {
+			if st.StateDigest != "" {
+				snapshotHistory = append(snapshotHistory, st.StateDigest)
+			}
+		}
 		if n := len(obj.StateHistory); n > 0 {
 			currentSnapshot = obj.StateHistory[n-1].StateDigest
+			currentState = obj.StateHistory[n-1].OutputStateJSON
 		}
 		renderObjects = append(renderObjects, v2RenderObject{
 			ObjectID:          obj.ID,
@@ -365,6 +379,8 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			TypeName:          obj.TypeName,
 			Alias:             obj.Alias,
 			CurrentSnapshotID: currentSnapshot,
+			CurrentState:      currentState,
+			SnapshotHistory:   snapshotHistory,
 			FirstSeenUnixNano: obj.FirstSeenUnixNano,
 			LastSeenUnixNano:  obj.LastSeenUnixNano,
 			StateCount:        len(obj.StateHistory),
@@ -474,6 +490,9 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		DerivationVersion: derivationVersionV2,
 		Context: v2RenderContext{
 			TraceID:            q.TraceID,
+			TraceTitle:         proj.Summary.Title,
+			TraceStartUnixNano: proj.StartUnixNano,
+			TraceEndUnixNano:   proj.EndUnixNano,
 			UnixNano:           unixNano,
 			Mode:               string(mode),
 			View:               viewName,
@@ -482,10 +501,11 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			FocusObjectID:      focusObjectID,
 			DependencyHopCount: dependencyHops,
 		},
-		Objects: renderObjects,
-		Calls:   renderCalls,
-		Edges:   renderEdges,
-		Events:  filteredEvents,
+		Objects:       renderObjects,
+		Calls:         renderCalls,
+		Edges:         renderEdges,
+		Events:        filteredEvents,
+		ActiveCallIDs: snap.ActiveEventIDs,
 		Navigation: v2RenderNavigation{
 			ScopePath:          scopePath,
 			EnterableCallIDs:   sortedSetKeys(visibleCallIDs),

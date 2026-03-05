@@ -776,6 +776,11 @@ Phase 2.5 implementation note:
    - `/api/v2/render` with explicit `mode` query parameter
    - `/api/v2/views/{view}/render` with route-selected rendering universe
 6. Render response now carries precomputed containment + dependency structure (`calls`, `objects`, `edges`, `navigation`) so frontend views can iterate quickly with minimal local derivation logic.
+7. Render response now also carries trace context and object-state details needed for direct UI consumption:
+   - trace header fields (`traceTitle`, `traceStartUnixNano`, `traceEndUnixNano`)
+   - active call IDs at snapshot time
+   - object `currentState` and `snapshotHistory`
+8. Trace page data fetch path now uses `/api/v2/render` (global mode) for initial load, revision selection (`t`), and live refresh, reducing reliance on compatibility `/api/traces/{id}/snapshot` shaping.
 
 ### Phase 3: Payload evolution (future)
 

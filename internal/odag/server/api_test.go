@@ -425,11 +425,14 @@ func TestV2RenderEndpoints(t *testing.T) {
 	var renderResp struct {
 		DerivationVersion string `json:"derivationVersion"`
 		Context           struct {
-			Mode string `json:"mode"`
+			Mode       string `json:"mode"`
+			TraceTitle string `json:"traceTitle"`
 		} `json:"context"`
 		Objects []struct {
-			ObjectID string `json:"objectID"`
-			Alias    string `json:"alias"`
+			ObjectID        string         `json:"objectID"`
+			Alias           string         `json:"alias"`
+			CurrentState    map[string]any `json:"currentState"`
+			SnapshotHistory []string       `json:"snapshotHistory"`
 		} `json:"objects"`
 		Calls []struct {
 			CallID string `json:"callID"`
@@ -450,6 +453,9 @@ func TestV2RenderEndpoints(t *testing.T) {
 	if renderResp.Context.Mode != "global" {
 		t.Fatalf("unexpected render mode: %#v", renderResp.Context.Mode)
 	}
+	if renderResp.Context.TraceTitle == "" {
+		t.Fatalf("expected trace title in render context")
+	}
 	if len(renderResp.Objects) != 2 {
 		t.Fatalf("expected 2 render objects, got %#v", renderResp.Objects)
 	}
@@ -465,6 +471,17 @@ func TestV2RenderEndpoints(t *testing.T) {
 	directoryID := byAlias["Directory#1"]
 	if containerID == "" || directoryID == "" {
 		t.Fatalf("unexpected aliases: %#v", byAlias)
+	}
+	for _, obj := range renderResp.Objects {
+		if len(obj.SnapshotHistory) == 0 {
+			t.Fatalf("expected snapshot history for object: %#v", obj)
+		}
+		if obj.ObjectID == containerID {
+			fields, ok := obj.CurrentState["fields"].(map[string]any)
+			if !ok || len(fields) == 0 {
+				t.Fatalf("expected container current state fields, got %#v", obj.CurrentState)
+			}
+		}
 	}
 
 	depEdgeFound := false
