@@ -30,6 +30,15 @@ A Dang Dagger module requires:
 
 See [references/language.md](references/language.md) for complete syntax, types, and patterns.
 
+## Reference Module Examples
+
+Use these full module examples copied from `dogfood-workspace-api`:
+
+- [references/examples/docusaurus/docusaurus.dang](references/examples/docusaurus/docusaurus.dang)
+- [references/examples/docusaurus/dagger.json](references/examples/docusaurus/dagger.json)
+- [references/examples/markdownlint/markdownlint.dang](references/examples/markdownlint/markdownlint.dang)
+- [references/examples/markdownlint/dagger.json](references/examples/markdownlint/dagger.json)
+
 ## Dagger Module Patterns
 
 ### Basic Module Structure
