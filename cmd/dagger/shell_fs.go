@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // A SDK module that implements the `Runtime` interface

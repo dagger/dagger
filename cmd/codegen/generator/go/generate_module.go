@@ -54,7 +54,6 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	if moduleConfig.LibVersion == "" {
 		layers = append(layers,
 			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-			&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
 		)
 
 		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")

@@ -4,10 +4,10 @@ import (
 	"context"
 	"os"
 
-	"dagger.io/dagger/telemetry"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/defaults"
 	"github.com/dagger/dagger/util/ctrns"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel"
 )
 

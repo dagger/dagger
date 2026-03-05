@@ -20,9 +20,9 @@ import (
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/moby/locker"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type FileSyncer struct {

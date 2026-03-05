@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
