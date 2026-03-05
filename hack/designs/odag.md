@@ -43,6 +43,8 @@
    - if state arrives later, retroactively backfill affected timeline frames.
 9. State payload shape:
    - typed field map, JSON-encodable nested structure, scalar + object refs
+   - engine-emitted per-field `refs` is authoritative for dependency extraction (no backend path/type heuristics)
+   - hard cutover is acceptable for this new attribute (`dagger.io/dag.output.state` is not a released compatibility surface)
    - reuse existing DAGQL literal/JSON plumbing
    - Secret remains normal object reference semantics.
 10. Frontend stack:
@@ -115,8 +117,9 @@ The core plumbing already exists and can be reused directly:
      - `dagger.io/dag.output` (when returning an object)
 4. **New telemetry required for ODAG v1**:
    - serialized object state payload for each produced object ID
-   - payload includes object type and typed field map (`name`, `type`, `value`)
-   - field values include both scalar values and object references (IDs) for object-typed fields
+   - payload includes object type and typed field map (`name`, `type`, `value`, `refs`)
+   - `refs` contains unique object snapshot IDs referenced by that field (directly or nested), sorted deterministically
+   - backend treats `refs` as authoritative for field-reference extraction
    - payload preserves full nested structure (lists/objects), not flattened paths
    - payload values are JSON-encodable and should reuse existing engine JSON/literal encoding plumbing as much as possible (DRY)
    - Secret handling relies on existing DAGQL semantics (e.g. `Secret` as object reference ID), with no ODAG-specific redaction layer
@@ -204,7 +207,7 @@ type ArgRef struct {
 }
 
 type FieldRef struct {
-  Path        string // field path in serialized object state
+  FieldName   string // top-level field key in output-state payload
   StateDigest string // referenced object state digest
 }
 
@@ -406,8 +409,8 @@ Process call spans in `(endTime, startTime, spanID)` order:
 4. Map produced state digest -> objectID.
 5. Append produced state into object history.
 6. Emit dependency edges:
-   - for each field reference in emitted state payload, map referenced state -> object and emit `referenced object -> current object`
-   - edge label is field path from payload extraction (e.g. `mounts.src`)
+   - for each `(fieldName, targetStateDigest)` in emitted state payload refs, map referenced state -> object and emit `referenced object -> current object`
+   - edge label is field name (e.g. `Mounts`)
    - upsert aggregated edge and bump evidence count
    - update edge `FirstSeen`/`LastSeen` from mutation event time bounds.
 
@@ -658,6 +661,11 @@ Encoding note:
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 - [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
 
+### Active Next Tasks
+
+- [ ] Engine telemetry hard cutover: change `dagger.io/dag.output.state` payload to include per-field `refs` and bump payload version.
+- [ ] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
+
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
 - `/v1/logs` and `/v1/metrics` are currently compatibility no-op endpoints (`202 Accepted`) so standard OTEL env wiring works without exporter failures.
@@ -746,7 +754,10 @@ Stage 5 implementation note:
   - root: `{ type, fields }`
   - `fields` entry: `{ name, type, value }`
   - object references in values are emitted as immutable call digests (state IDs)
-- ODAG consumes these attributes when present and gracefully handles absence (`missingState`), enabling compatibility with both older and newer engines.
+- Active design decision (pending implementation): hard-cutover this schema to include per-field `refs`:
+  - `fields` entry target shape: `{ name, type, value, refs }`
+  - `refs` is the authoritative source for dependency extraction in ODAG backend materialization.
+- ODAG consumes these attributes when present and marks missing payloads as `missingState`.
 - Engine telemetry output-state encoding is hardened against typed-nil or panicking `dagql.IDable` and `dagql.Typed` values to prevent resolver panics; serializer now fails closed for those fields instead of crashing query execution.
 
 Post-MVP projection refinement:
