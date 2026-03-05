@@ -208,7 +208,7 @@ type ArgRef struct {
 
 type FieldRef struct {
   FieldName   string // top-level field key in output-state payload
-  StateDigest string // referenced object state digest
+  StateDigest string // single referenced object state digest (one row per target)
 }
 
 type StateField struct {
@@ -268,6 +268,7 @@ type ObjectSnapshot struct {
   TypeName        string
   OutputStateJSON map[string]any
   FieldRefs       []FieldRef // extracted snapshot references
+  StateMissing    bool       // true when referenced but state payload has not been observed yet
 }
 
 // Mutable ODAG identity: "binding" of an object through time.
@@ -299,6 +300,12 @@ Notes:
 1. Avoid synthetic span lifecycle transitions (`STARTED` event rows) unless ingestion actually captures them incrementally; treat span timing/status fields as source-of-truth.
 2. `ObjectSnapshot` is immutable and never archived.
 3. `ObjectBinding` is mutable and lifecycle-scoped (`Archived` derived from scope/session closure).
+4. `FieldRef` storage is normalized as a singular relation:
+   - key: `(from_snapshot_id, field_name, target_snapshot_id)`
+   - `UNIQUE` on that key; use standard sqlite upsert semantics for dedupe.
+5. Unresolved `target_snapshot_id` values are retained:
+   - create placeholder `ObjectSnapshot` rows with `StateMissing=true`
+   - fill/clear when payload later arrives for that snapshot.
 
 ## Backend API (V2 Source of Truth)
 
@@ -365,10 +372,11 @@ For each incoming span:
 3. Keep a `SpanRecord` index by span ID and call digest.
 4. Track parent span graph even for non-DAGQL spans (needed for top-level detection).
 5. Parse emitted serialized object state payload for produced objects and extract field object-ID refs.
-6. Build a lookup index `stateID -> typed field map` for node expansion and recursive exploration.
-7. If a span has `dagger.io/dag.output` but no `dagger.io/dag.output.state`, resolve from local state cache.
-8. If state payload is still unavailable, materialize object node as `state unavailable`, with no dependency edges for that state.
-9. If missing state payload arrives later for a known state ID, retroactively backfill that state in-place (same object/node identity) and recompute dependencies/history for affected timeline frames.
+6. For each extracted ref target, ensure a snapshot row exists (placeholder with `StateMissing=true` when payload is missing).
+7. Build a lookup index `stateID -> typed field map` for node expansion and recursive exploration.
+8. If a span has `dagger.io/dag.output` but no `dagger.io/dag.output.state`, resolve from local state cache.
+9. If state payload is still unavailable, materialize object node as `state unavailable`, with no dependency edges for that state.
+10. If missing state payload arrives later for a known state ID, retroactively backfill that state in-place (same object/node identity) and recompute dependencies/history for affected timeline frames.
 
 ### 2) Detect top-level DAGQL function spans
 
