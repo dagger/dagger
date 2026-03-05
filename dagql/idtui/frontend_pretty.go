@@ -499,7 +499,7 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 			}
 		}
 
-		fe.Compo.Update()
+		fe.Update()
 	})
 }
 
@@ -564,7 +564,7 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 				fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
 			}
 		}
-		fe.Compo.Update()
+		fe.Update()
 	})
 }
 
@@ -642,7 +642,7 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 		fe.handlePromptForm(form, func(f *huh.Form) {
 			close(done)
 		})
-		fe.Compo.Update()
+		fe.Update()
 	})
 
 	select {
@@ -673,7 +673,7 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 		fe.formWrap = nil
 		fe.formModel = nil
 		fe.tui.SetFocus(fe)
-		fe.Compo.Update()
+		fe.Update()
 	})
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
@@ -690,7 +690,7 @@ func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 func (fe *frontendPretty) SetVerbosity(n int) {
 	fe.tui.Dispatch(func() {
 		fe.Opts().Verbosity = n
-		fe.Compo.Update()
+		fe.Update()
 	})
 }
 
@@ -700,14 +700,14 @@ func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 		fe.ZoomedSpan = spanID
 		fe.FocusedSpan = spanID
 		fe.recalculateViewLocked()
-		fe.Compo.Update()
+		fe.Update()
 	})
 }
 
 func (fe *frontendPretty) RevealAllSpans() {
 	fe.tui.Dispatch(func() {
 		fe.ZoomedSpan = dagui.SpanID{}
-		fe.Compo.Update()
+		fe.Update()
 	})
 }
 
@@ -869,7 +869,7 @@ func (fe *frontendPretty) handleDone(err error) {
 		fe.quitting = true
 		fe.doQuit()
 	}
-	fe.Compo.Update()
+	fe.Update()
 }
 
 func (fe *frontendPretty) handleEOF() {
@@ -879,7 +879,7 @@ func (fe *frontendPretty) handleEOF() {
 		fe.quitting = true
 		fe.doQuit()
 	}
-	fe.Compo.Update()
+	fe.Update()
 }
 
 func (fe *frontendPretty) doQuit() {
@@ -967,7 +967,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 			}
 		}
 		fe.recalculateViewLocked()
-		fe.Compo.Update()
+		fe.Update()
 	})
 	return nil
 }
@@ -1021,7 +1021,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		}
 		fe.db.LogExporter().Export(context.Background(), logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
-		fe.Compo.Update()
+		fe.Update()
 	})
 	return nil
 }
@@ -1053,7 +1053,7 @@ func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *me
 	done := make(chan struct{})
 	fe.tui.Dispatch(func() {
 		fe.db.MetricExporter().Export(ctx, resourceMetrics)
-		fe.Compo.Update()
+		fe.Update()
 		close(done)
 	})
 	<-done
@@ -1619,7 +1619,7 @@ func (fe *frontendPretty) HandleKeyPress(_ tuist.EventContext, ev uv.KeyPressEve
 	// Schedule a re-render after the keypress highlight fades
 	fe.scheduleKeypressClear()
 
-	fe.Compo.Update()
+	fe.Update()
 	return true
 }
 
@@ -1859,7 +1859,7 @@ func (fe *frontendPretty) handleInputComplete() {
 			err := fe.shell.Handle(ctx, value)
 			fe.tui.Dispatch(func() {
 				fe.handleShellDone(err)
-				fe.Compo.Update()
+				fe.Update()
 			})
 		}()
 	}
@@ -2069,7 +2069,7 @@ func (fe *frontendPretty) runShellAsync(work func()) {
 		work()
 		fe.tui.Dispatch(func() {
 			fe.syncPrompt()
-			fe.Compo.Update()
+			fe.Update()
 		})
 	}()
 }
@@ -3131,7 +3131,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 			),
 			func(f *huh.Form) { close(done) },
 		)
-		fe.Compo.Update()
+		fe.Update()
 	})
 
 	select {
@@ -3160,7 +3160,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 			),
 			func(f *huh.Form) { close(done) },
 		)
-		fe.Compo.Update()
+		fe.Update()
 	})
 
 	select {
