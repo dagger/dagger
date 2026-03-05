@@ -305,6 +305,88 @@ func SnapshotAt(proj *TraceProjection, unixNano int64) Snapshot {
 	return snap
 }
 
+func SnapshotAtStep(proj *TraceProjection, step int) Snapshot {
+	if proj == nil {
+		return Snapshot{}
+	}
+
+	stepEventIndexes := make([]int, 0, len(proj.Events))
+	eventIndexBySpanID := make(map[string]int, len(proj.Events))
+	for idx, event := range proj.Events {
+		eventIndexBySpanID[event.SpanID] = idx
+		if event.ObjectID != "" {
+			stepEventIndexes = append(stepEventIndexes, idx)
+		}
+	}
+
+	if len(stepEventIndexes) == 0 {
+		return SnapshotAt(proj, proj.EndUnixNano)
+	}
+
+	if step < 0 {
+		step = 0
+	}
+	if step >= len(stepEventIndexes) {
+		step = len(stepEventIndexes) - 1
+	}
+
+	boundaryIdx := stepEventIndexes[step]
+	boundaryEvent := proj.Events[boundaryIdx]
+	boundaryTime := boundaryEvent.EndUnixNano
+	if boundaryTime == 0 {
+		boundaryTime = boundaryEvent.StartUnixNano
+	}
+
+	snap := Snapshot{
+		TraceID:  proj.TraceID,
+		UnixNano: boundaryTime,
+		Edges:    proj.Edges,
+	}
+
+	snap.Events = make([]MutationEvent, 0, boundaryIdx+1)
+	for idx := 0; idx <= boundaryIdx; idx++ {
+		snap.Events = append(snap.Events, proj.Events[idx])
+	}
+
+	activeEventIDs := make([]string, 0)
+	for _, event := range proj.Events {
+		if event.StartUnixNano <= boundaryTime && (event.EndUnixNano == 0 || event.EndUnixNano > boundaryTime) {
+			activeEventIDs = append(activeEventIDs, event.SpanID)
+		}
+	}
+	snap.ActiveEventIDs = activeEventIDs
+
+	snap.Objects = make([]ObjectNode, 0, len(proj.Objects))
+	for _, obj := range proj.Objects {
+		stateHistory := make([]ObjectState, 0, len(obj.StateHistory))
+		lastSeen := int64(0)
+		for _, state := range obj.StateHistory {
+			idx, ok := eventIndexBySpanID[state.SpanID]
+			if !ok || idx > boundaryIdx {
+				continue
+			}
+			stateHistory = append(stateHistory, state)
+			end := state.EndUnixNano
+			if end == 0 {
+				end = state.StartUnixNano
+			}
+			if end > lastSeen {
+				lastSeen = end
+			}
+		}
+		if len(stateHistory) == 0 {
+			continue
+		}
+
+		cloned := obj
+		cloned.StateHistory = stateHistory
+		cloned.LastSeenUnixNano = lastSeen
+		snap.Objects = append(snap.Objects, cloned)
+	}
+
+	return snap
+}
+
 type dataEnvelope struct {
 	Attributes map[string]any `json:"attributes"`
 }

@@ -247,17 +247,26 @@ func (s *Server) handleTraceSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	unixNano := proj.EndUnixNano
-	if rawT := strings.TrimSpace(r.URL.Query().Get("t")); rawT != "" {
-		v, err := strconv.ParseInt(rawT, 10, 64)
-		if err != nil {
-			http.Error(w, "invalid t", http.StatusBadRequest)
+	var snap transform.Snapshot
+	if rawStep := strings.TrimSpace(r.URL.Query().Get("step")); rawStep != "" {
+		step, err := strconv.Atoi(rawStep)
+		if err != nil || step < 0 {
+			http.Error(w, "invalid step", http.StatusBadRequest)
 			return
 		}
-		unixNano = v
+		snap = transform.SnapshotAtStep(proj, step)
+	} else {
+		unixNano := proj.EndUnixNano
+		if rawT := strings.TrimSpace(r.URL.Query().Get("t")); rawT != "" {
+			v, err := strconv.ParseInt(rawT, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid t", http.StatusBadRequest)
+				return
+			}
+			unixNano = v
+		}
+		snap = transform.SnapshotAt(proj, unixNano)
 	}
-
-	snap := transform.SnapshotAt(proj, unixNano)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"traceID":    traceID,
 		"projection": proj,

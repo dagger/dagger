@@ -3,7 +3,7 @@ const state = {
   selectedTraceID: "",
   projection: null,
   snapshot: null,
-  frameTimes: [],
+  frameSteps: [],
   frameIndex: 0,
   selectedObjectID: "",
   playTimer: null,
@@ -63,15 +63,15 @@ function bindEvents() {
 
   els.stepBtn.addEventListener("click", () => {
     stopPlaying();
-    loadFrame(Math.min(state.frameIndex + 1, state.frameTimes.length - 1)).catch((err) => showError(err));
+    loadFrame(Math.min(state.frameIndex + 1, state.frameSteps.length - 1)).catch((err) => showError(err));
   });
 
   els.endBtn.addEventListener("click", () => {
     stopPlaying();
-    if (state.frameTimes.length === 0) {
+    if (state.frameSteps.length === 0) {
       return;
     }
-    loadFrame(state.frameTimes.length - 1).catch((err) => showError(err));
+    loadFrame(state.frameSteps.length - 1).catch((err) => showError(err));
   });
 }
 
@@ -133,23 +133,35 @@ async function selectTrace(traceID) {
   }
 
   state.projection = resp.projection || null;
-  state.snapshot = resp.snapshot || null;
-  state.frameTimes = buildFrameTimes(state.projection);
-  state.frameIndex = Math.max(0, state.frameTimes.length - 1);
+  state.frameSteps = buildFrameSteps(state.projection);
+  state.frameIndex = Math.max(0, state.frameSteps.length - 1);
+
+  if (state.frameSteps.length > 0) {
+    const stepResp = await fetchJSON(
+      `/api/traces/${encodeURIComponent(traceID)}/snapshot?step=${state.frameIndex}`,
+    );
+    if (token !== state.requestToken) {
+      return;
+    }
+    state.projection = stepResp.projection || state.projection;
+    state.snapshot = stepResp.snapshot || resp.snapshot || null;
+  } else {
+    state.snapshot = resp.snapshot || null;
+  }
+
   syncTimelineControl();
 
   renderAll();
 }
 
 async function loadFrame(frameIndex) {
-  if (!state.selectedTraceID || !state.projection || state.frameTimes.length === 0) {
+  if (!state.selectedTraceID || !state.projection || state.frameSteps.length === 0) {
     return;
   }
 
-  const idx = Math.max(0, Math.min(frameIndex, state.frameTimes.length - 1));
-  const targetTime = state.frameTimes[idx];
+  const idx = Math.max(0, Math.min(frameIndex, state.frameSteps.length - 1));
   const token = ++state.requestToken;
-  const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?t=${targetTime}`);
+  const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?step=${idx}`);
   if (token !== state.requestToken) {
     return;
   }
@@ -161,41 +173,26 @@ async function loadFrame(frameIndex) {
   renderAll();
 }
 
-function buildFrameTimes(projection) {
+function buildFrameSteps(projection) {
   if (!projection) {
     return [];
   }
-  const set = new Set();
-  if (projection.startUnixNano > 0) {
-    set.add(projection.startUnixNano);
-  }
-  if (projection.endUnixNano > 0) {
-    set.add(projection.endUnixNano);
-  }
-  for (const event of projection.events || []) {
-    if (event.startUnixNano > 0) {
-      set.add(event.startUnixNano);
-    }
-    if (event.endUnixNano > 0) {
-      set.add(event.endUnixNano);
-    }
-  }
-  return [...set].sort((a, b) => a - b);
+  return (projection.events || []).filter((event) => Boolean(event.objectID));
 }
 
 function syncTimelineControl() {
-  const max = Math.max(0, state.frameTimes.length - 1);
+  const max = Math.max(0, state.frameSteps.length - 1);
   els.timelineSlider.max = String(max);
   els.timelineSlider.value = String(Math.min(state.frameIndex, max));
 }
 
 function startPlaying() {
-  if (state.playTimer !== null || state.frameTimes.length === 0) {
+  if (state.playTimer !== null || state.frameSteps.length === 0) {
     return;
   }
   els.playPauseBtn.textContent = "Pause";
   state.playTimer = window.setInterval(() => {
-    if (state.frameIndex >= state.frameTimes.length - 1) {
+    if (state.frameIndex >= state.frameSteps.length - 1) {
       stopPlaying();
       return;
     }
@@ -217,13 +214,13 @@ function stopPlaying() {
 function clearSelection(msg) {
   state.projection = null;
   state.snapshot = null;
-  state.frameTimes = [];
+  state.frameSteps = [];
   state.frameIndex = 0;
   stopPlaying();
   syncTimelineControl();
   els.traceStats.textContent = "";
-  els.timelineCurrent.textContent = "0 ms";
-  els.timelineEnd.textContent = "0 ms";
+  els.timelineCurrent.textContent = "Step 0";
+  els.timelineEnd.textContent = "Step 0";
   els.graphCanvas.innerHTML = "";
   els.graphEmpty.textContent = msg;
   els.graphEmpty.style.display = "block";
@@ -270,16 +267,25 @@ function renderTraceList() {
 }
 
 function renderTimeline() {
-  if (!state.projection || !state.snapshot || state.frameTimes.length === 0) {
-    els.timelineCurrent.textContent = "0 ms";
-    els.timelineEnd.textContent = "0 ms";
+  if (!state.projection || !state.snapshot || state.frameSteps.length === 0) {
+    els.timelineCurrent.textContent = "Step 0";
+    els.timelineEnd.textContent = "Step 0";
     els.traceStats.textContent = "";
     return;
   }
 
-  const t = state.frameTimes[state.frameIndex];
-  els.timelineCurrent.textContent = formatRelTime(t, state.projection.startUnixNano);
-  els.timelineEnd.textContent = formatRelTime(state.projection.endUnixNano, state.projection.startUnixNano);
+  const currentStep = state.frameIndex + 1;
+  const totalSteps = state.frameSteps.length;
+  const currentEvent = state.frameSteps[state.frameIndex];
+  const lastEvent = state.frameSteps[totalSteps - 1];
+  els.timelineCurrent.textContent = `Step ${currentStep} · ${formatRelTime(
+    currentEvent?.endUnixNano || 0,
+    state.projection.startUnixNano,
+  )}`;
+  els.timelineEnd.textContent = `Step ${totalSteps} · ${formatRelTime(
+    lastEvent?.endUnixNano || 0,
+    state.projection.startUnixNano,
+  )}`;
   const objectCount = (state.snapshot.objects || []).length;
   const eventCount = (state.snapshot.events || []).length;
   const warningCount = (state.projection.warnings || []).length;

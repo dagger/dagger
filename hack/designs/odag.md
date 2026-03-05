@@ -292,6 +292,13 @@ State transition policy for time `t`:
 
 This keeps state transitions deterministic and avoids showing future states early.
 
+Discrete playback mode (default UI):
+
+1. Build a step list from projected events that target an object (`event.objectID != ""`).
+2. Slider position maps to a step index, not absolute wall time.
+3. Backend resolves `GET /api/traces/{traceID}/snapshot?step=<n>` to an exact event boundary (stable even when multiple events share timestamps).
+4. Timeline labels show `Step i / N` (with relative time as secondary context).
+
 ## Standalone App Architecture
 
 ### Components
@@ -498,6 +505,7 @@ Stage 3 implementation note:
   - `GET /api/traces/{traceID}/meta`
   - `GET /api/traces/{traceID}/events`
   - `GET /api/traces/{traceID}/snapshot?t=<unix_nano>`
+  - `GET /api/traces/{traceID}/snapshot?step=<event_index>`
 - Backend now projects immutable DAGQL call/output spans into mutable object histories and mutation events, with top-level seed filtering.
 - Dependency edges remain empty until `dagger.io/dag.output.state` payloads are emitted by the engine (objects are still shown with `missingState` signaling).
 
@@ -505,7 +513,7 @@ Stage 4 implementation note:
 - `odag serve` now hosts an embedded web UI at `/` (no external frontend build step required for the local experiment).
 - UI includes:
   - stored trace selector
-  - timeline controls (play/pause, step, end, scrub)
+  - timeline controls (play/pause, step, end, scrub) driven by discrete object-event steps
   - ODAG object canvas (workflow-style cards with mutation highlighting)
   - event stream panel
   - inspector panel (selected object state history or current event details)

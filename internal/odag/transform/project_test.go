@@ -173,6 +173,56 @@ func TestSnapshotAt(t *testing.T) {
 	}
 }
 
+func TestSnapshotAtStep(t *testing.T) {
+	t.Parallel()
+
+	proj := &TraceProjection{
+		TraceID: "trace-step",
+		Objects: []ObjectNode{
+			{
+				ID:       "obj-1",
+				TypeName: "Container",
+				StateHistory: []ObjectState{
+					{StateDigest: "a", SpanID: "s1", StartUnixNano: 1, EndUnixNano: 10},
+					{StateDigest: "b", SpanID: "s2", StartUnixNano: 11, EndUnixNano: 20},
+					{StateDigest: "c", SpanID: "s3", StartUnixNano: 12, EndUnixNano: 20},
+				},
+			},
+		},
+		Events: []MutationEvent{
+			{SpanID: "sx", StartUnixNano: 1, EndUnixNano: 9, Kind: "call"},
+			{SpanID: "s1", StartUnixNano: 1, EndUnixNano: 10, Kind: "create", ObjectID: "obj-1"},
+			{SpanID: "s2", StartUnixNano: 11, EndUnixNano: 20, Kind: "mutate", ObjectID: "obj-1"},
+			{SpanID: "s3", StartUnixNano: 12, EndUnixNano: 20, Kind: "mutate", ObjectID: "obj-1"},
+		},
+		EndUnixNano: 20,
+	}
+
+	snap0 := SnapshotAtStep(proj, 0)
+	if len(snap0.Events) != 2 {
+		t.Fatalf("expected first step to include 2 events, got %d", len(snap0.Events))
+	}
+	if len(snap0.Objects) != 1 || len(snap0.Objects[0].StateHistory) != 1 {
+		t.Fatalf("expected first step to include one state, got %#v", snap0.Objects)
+	}
+
+	snap1 := SnapshotAtStep(proj, 1)
+	if len(snap1.Events) != 3 {
+		t.Fatalf("expected second step to include 3 events, got %d", len(snap1.Events))
+	}
+	if len(snap1.Objects) != 1 || len(snap1.Objects[0].StateHistory) != 2 {
+		t.Fatalf("expected second step to include two states, got %#v", snap1.Objects)
+	}
+
+	snap2 := SnapshotAtStep(proj, 2)
+	if len(snap2.Events) != 4 {
+		t.Fatalf("expected third step to include 4 events, got %d", len(snap2.Events))
+	}
+	if len(snap2.Objects) != 1 || len(snap2.Objects[0].StateHistory) != 3 {
+		t.Fatalf("expected third step to include three states, got %#v", snap2.Objects)
+	}
+}
+
 func TestProjectTraceFiltersInternalSeedsAndScalarOutputs(t *testing.T) {
 	t.Parallel()
 

@@ -150,6 +150,39 @@ func TestTraceAPIProjection(t *testing.T) {
 	if snapResp.Snapshot.Events[0].Kind != "create" || snapResp.Snapshot.Events[1].Kind != "mutate" {
 		t.Fatalf("unexpected event kinds: %#v", snapResp.Snapshot.Events)
 	}
+
+	stepReq := httptest.NewRequest(http.MethodGet, "/api/traces/"+traceIDHex+"/snapshot?step=0", nil)
+	stepRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(stepRec, stepReq)
+	if stepRec.Code != http.StatusOK {
+		t.Fatalf("step snapshot failed: status=%d body=%s", stepRec.Code, stepRec.Body.String())
+	}
+
+	var stepResp struct {
+		Snapshot struct {
+			Events []struct {
+				Kind   string `json:"kind"`
+				SpanID string `json:"spanID"`
+			} `json:"events"`
+			Objects []struct {
+				StateHistory []struct {
+					StateDigest string `json:"stateDigest"`
+				} `json:"stateHistory"`
+			} `json:"objects"`
+		} `json:"snapshot"`
+	}
+	if err := json.Unmarshal(stepRec.Body.Bytes(), &stepResp); err != nil {
+		t.Fatalf("decode step snapshot response: %v", err)
+	}
+	if len(stepResp.Snapshot.Events) != 1 {
+		t.Fatalf("expected 1 event at step 0, got %d", len(stepResp.Snapshot.Events))
+	}
+	if stepResp.Snapshot.Events[0].Kind != "create" {
+		t.Fatalf("expected step 0 event to be create, got %#v", stepResp.Snapshot.Events[0])
+	}
+	if len(stepResp.Snapshot.Objects) != 1 || len(stepResp.Snapshot.Objects[0].StateHistory) != 1 {
+		t.Fatalf("expected single-state object at step 0, got %#v", stepResp.Snapshot.Objects)
+	}
 }
 
 func TestOpenTraceValidation(t *testing.T) {
