@@ -254,9 +254,9 @@ type Call struct {
   TraceID             string
   ParentCallID        string
   ClientID            string
-  ReceiverSnapshotID  string
-  ArgSnapshotIDs      []string
-  OutputSnapshotID    string
+  ReceiverDagqlID     string
+  ArgDagqlIDs         []string
+  OutputDagqlID       string
   ReturnType          string
   TopLevel            bool
   ParentChainIncomplete bool
@@ -264,7 +264,7 @@ type Call struct {
 
 // Immutable object state (digest-keyed), potentially shared across traces/sessions.
 type ObjectSnapshot struct {
-  SnapshotID      string // dag.output digest / call digest fallback
+  DagqlID         string // immutable DAGQL object ID (dag.output digest / call digest fallback)
   TypeName        string
   OutputStateJSON map[string]any
   FieldRefs       []FieldRef // extracted snapshot references
@@ -278,7 +278,7 @@ type ObjectBinding struct {
   TypeName          string
   Alias             string // Type#N (ODAG-computed, not telemetry-native)
   ScopeSpanID       string // containment scope anchor
-  CurrentSnapshotID string
+  CurrentDagqlID    string
   Archived          bool // scope/session no longer active
 }
 
@@ -288,8 +288,8 @@ type BindingMutation struct {
   BindingID        string
   CauseCallID      string
   ScopeSpanID      string
-  PrevSnapshotID   string
-  NextSnapshotID   string
+  PrevDagqlID      string
+  NextDagqlID      string
   StartUnixNano    int64
   EndUnixNano      int64
   Visible          bool
@@ -301,9 +301,9 @@ Notes:
 2. `ObjectSnapshot` is immutable and never archived.
 3. `ObjectBinding` is mutable and lifecycle-scoped (`Archived` derived from scope/session closure).
 4. `FieldRef` storage is normalized as a singular relation:
-   - key: `(from_snapshot_id, field_name, target_snapshot_id)`
+   - key: `(from_dagql_id, field_name, target_dagql_id)`
    - `UNIQUE` on that key; use standard sqlite upsert semantics for dedupe.
-5. Unresolved `target_snapshot_id` values are retained:
+5. Unresolved `target_dagql_id` values are retained:
    - create placeholder `ObjectSnapshot` rows with `StateMissing=true`
    - fill/clear when payload later arrives for that snapshot.
 
