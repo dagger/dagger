@@ -233,23 +233,60 @@ function renderGraph() {
   els.graphEmpty.style.display = "none";
 
   const cols = Math.max(1, Math.ceil(Math.sqrt(objects.length)));
-  const cardW = 300;
-  const cardH = 166;
+  const cardW = 320;
+  const baseCardH = 86;
+  const fieldStartOffset = 68;
+  const fieldRowHeight = 20;
+  const expandedBottomPad = 18;
   const gapX = 72;
   const gapY = 84;
   const padding = 52;
+
+  const cards = objects.map((obj, idx) => {
+    const selected = obj.id === state.selectedObjectID;
+    const latest = obj.stateHistory?.[obj.stateHistory.length - 1] || null;
+    const fields = latestStateFields(latest);
+    let detailRows = [];
+    if (selected) {
+      if (fields.length > 0) {
+        detailRows = fields.map((field) => ({ kind: "field", field }));
+      } else if (obj.missingState) {
+        detailRows = [{ kind: "warn", text: "state unavailable" }];
+      } else {
+        detailRows = [{ kind: "sub", text: "no state fields" }];
+      }
+    }
+    const cardH = selected ? baseCardH + detailRows.length * fieldRowHeight + expandedBottomPad : baseCardH;
+    return { obj, idx, selected, detailRows, cardH };
+  });
+
+  const rows = Math.ceil(cards.length / cols);
+  const rowHeights = Array.from({ length: rows }, () => baseCardH);
+  for (const card of cards) {
+    card.col = card.idx % cols;
+    card.row = Math.floor(card.idx / cols);
+    rowHeights[card.row] = Math.max(rowHeights[card.row], card.cardH);
+  }
+
+  const rowOffsets = [];
+  let cursorY = padding;
+  for (let row = 0; row < rows; row++) {
+    rowOffsets.push(cursorY);
+    cursorY += rowHeights[row];
+    if (row < rows - 1) {
+      cursorY += gapY;
+    }
+  }
+
   const contentW = padding * 2 + cols * cardW + Math.max(0, cols - 1) * gapX;
-  const rows = Math.ceil(objects.length / cols);
-  const contentH = padding * 2 + rows * cardH + Math.max(0, rows - 1) * gapY;
+  const contentH = cursorY + padding;
 
   const positions = new Map();
-  objects.forEach((obj, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const x = padding + col * (cardW + gapX);
-    const y = padding + row * (cardH + gapY);
-    positions.set(obj.id, { x, y });
-  });
+  for (const card of cards) {
+    const x = padding + card.col * (cardW + gapX);
+    const y = rowOffsets[card.row];
+    positions.set(card.obj.id, { x, y, w: cardW, h: card.cardH });
+  }
 
   const activeSpanIDs = new Set(state.snapshot.activeEventIDs || []);
   const activeObjectIDs = new Set(
@@ -265,10 +302,10 @@ function renderGraph() {
       if (!from || !to) {
         return "";
       }
-      const x1 = from.x + cardW;
-      const y1 = from.y + cardH / 2;
+      const x1 = from.x + from.w;
+      const y1 = from.y + from.h / 2;
       const x2 = to.x;
-      const y2 = to.y + cardH / 2;
+      const y2 = to.y + to.h / 2;
       const midX = (x1 + x2) / 2;
       return `<path class="edge-line" d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" />`;
     })
@@ -277,48 +314,43 @@ function renderGraph() {
   const selectedEvent = state.selectedEventIndex >= 0 ? (state.projection.events || [])[state.selectedEventIndex] : null;
   const selectedEventObjectID = mutationObjectID(selectedEvent);
 
-  const nodeMarkup = objects
-    .map((obj) => {
+  const nodeMarkup = cards
+    .map((card) => {
+      const obj = card.obj;
       const pos = positions.get(obj.id);
       const isActive = activeObjectIDs.has(obj.id);
-      const selected = obj.id === state.selectedObjectID;
+      const selected = card.selected;
       const eventTarget = obj.id === selectedEventObjectID;
-      const latest = obj.stateHistory?.[obj.stateHistory.length - 1] || null;
-      const fields = latestStateFields(latest);
       const title = obj.alias || obj.typeName;
-      const maxFieldRows = 4;
-      const fieldStartY = pos.y + 68;
-      const rowHeight = 21;
       const keyX = pos.x + 16;
-      const valX = pos.x + 122;
+      const valX = pos.x + 128;
       let rowsMarkup = "";
-      if (fields.length > 0) {
-        const visibleRows = fields.length > maxFieldRows ? fields.slice(0, maxFieldRows-1) : fields;
-        rowsMarkup += visibleRows
-          .map((field, idx) => {
-            const y = fieldStartY + idx * rowHeight;
-            return `<text class="node-prop-key" x="${keyX}" y="${y}">${escapeHTML(field.name)}</text>
-        <text class="node-prop-val" x="${valX}" y="${y}">${escapeHTML(field.value)}</text>`;
-          })
-          .join("");
-        if (fields.length > maxFieldRows) {
-          const hidden = fields.length - (maxFieldRows - 1);
-          const y = fieldStartY + (maxFieldRows - 1) * rowHeight;
-          rowsMarkup += `<text class="node-sub" x="${keyX}" y="${y}">+${hidden} more fields</text>`;
-        }
-      } else if (obj.missingState) {
-        rowsMarkup = `<text class="node-warn" x="${keyX}" y="${fieldStartY}">state unavailable</text>`;
-      } else {
-        rowsMarkup = `<text class="node-sub" x="${keyX}" y="${fieldStartY}">no state fields</text>`;
+      if (selected) {
+        rowsMarkup = `
+          <line class="node-divider" x1="${pos.x + 12}" y1="${pos.y + 48}" x2="${pos.x + pos.w - 12}" y2="${pos.y + 48}" />
+          ${card.detailRows
+            .map((row, idx) => {
+              const y = pos.y + fieldStartOffset + idx * fieldRowHeight;
+              if (row.kind === "field") {
+                return `<text class="node-prop-key" x="${keyX}" y="${y}">${escapeHTML(row.field.name)}</text>
+          <text class="node-prop-val" x="${valX}" y="${y}">${escapeHTML(row.field.value)}</text>`;
+              }
+              if (row.kind === "warn") {
+                return `<text class="node-warn" x="${keyX}" y="${y}">${escapeHTML(row.text)}</text>`;
+              }
+              return `<text class="node-sub" x="${keyX}" y="${y}">${escapeHTML(row.text)}</text>`;
+            })
+            .join("")}
+        `;
       }
       const classNames = `node-card${isActive ? " active" : ""}${selected ? " object-selected" : ""}`;
       return `
       <g data-object-id="${escapeHTML(obj.id)}" style="cursor:pointer; animation: fadeIn 220ms ease;">
-        <rect class="${classNames}" x="${pos.x}" y="${pos.y}" rx="14" ry="14" width="${cardW}" height="${cardH}" />
-        ${eventTarget ? `<rect class="node-event-ring" x="${pos.x - 3}" y="${pos.y - 3}" rx="17" ry="17" width="${cardW + 6}" height="${cardH + 6}" />` : ""}
-        <circle class="node-port" cx="${pos.x}" cy="${pos.y + cardH / 2}" r="6" />
-        <circle class="node-port" cx="${pos.x + cardW}" cy="${pos.y + cardH / 2}" r="6" />
-        ${eventTarget ? `<circle class="node-event-badge" cx="${pos.x + cardW - 16}" cy="${pos.y + 14}" r="7" />` : ""}
+        <rect class="${classNames}" x="${pos.x}" y="${pos.y}" rx="14" ry="14" width="${pos.w}" height="${pos.h}" />
+        ${eventTarget ? `<rect class="node-event-ring" x="${pos.x - 3}" y="${pos.y - 3}" rx="17" ry="17" width="${pos.w + 6}" height="${pos.h + 6}" />` : ""}
+        <circle class="node-port" cx="${pos.x}" cy="${pos.y + pos.h / 2}" r="6" />
+        <circle class="node-port" cx="${pos.x + pos.w}" cy="${pos.y + pos.h / 2}" r="6" />
+        ${eventTarget ? `<circle class="node-event-badge" cx="${pos.x + pos.w - 16}" cy="${pos.y + 14}" r="7" />` : ""}
         <text class="node-label" x="${pos.x + 16}" y="${pos.y + 38}">${escapeHTML(title)}</text>
         ${rowsMarkup}
       </g>`;
@@ -338,7 +370,8 @@ function renderGraph() {
 
   for (const node of els.graphCanvas.querySelectorAll("[data-object-id]")) {
     node.addEventListener("click", () => {
-      state.selectedObjectID = node.getAttribute("data-object-id") || "";
+      const objectID = node.getAttribute("data-object-id") || "";
+      state.selectedObjectID = state.selectedObjectID === objectID ? "" : objectID;
       renderGraph();
       renderHistory();
     });

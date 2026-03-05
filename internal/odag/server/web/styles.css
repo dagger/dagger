@@ -572,6 +572,7 @@ body {
   fill: var(--node);
   stroke: rgba(119, 148, 184, 0.64);
   stroke-width: 1.2;
+  transition: stroke 140ms ease, fill 140ms ease;
 }
 
 .node-card.active {
@@ -618,6 +619,11 @@ body {
   font-size: 11.8px;
   fill: #d6e1f1;
   font-family: "IBM Plex Mono", "Menlo", monospace;
+}
+
+.node-divider {
+  stroke: rgba(110, 138, 172, 0.45);
+  stroke-width: 1;
 }
 
 .node-warn {
