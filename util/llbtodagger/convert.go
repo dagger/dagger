@@ -117,9 +117,9 @@ func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
 
 	switch {
 	case isBlob(dag):
-		err = unsupported(opDigest(dag), "source(blob)", "blob:// source is explicitly unsupported")
+		err = fmt.Errorf("blob:// source is explicitly unsupported")
 	case dag.GetBuild() != nil:
-		err = unsupported(opDigest(dag), "build", "BuildOp is explicitly unsupported")
+		err = fmt.Errorf("BuildOp is explicitly unsupported")
 	case hasExec(dag):
 		id, err = c.convertExec(mustExec(dag))
 	case hasFile(dag):
@@ -139,9 +139,9 @@ func (c *converter) convertOp(dag *buildkit.OpDAG) (*call.ID, error) {
 	case hasOCI(dag):
 		id, err = c.convertOCISource(mustOCI(dag))
 	case dag.GetSource() != nil:
-		err = unsupported(opDigest(dag), "source", "unsupported source scheme")
+		err = fmt.Errorf("unsupported source scheme")
 	default:
-		err = unsupported(opDigest(dag), "unknown", "unsupported op type")
+		err = fmt.Errorf("unsupported op type")
 	}
 
 	if err != nil {
@@ -189,7 +189,7 @@ func ensureContainerResult(id *call.ID) (*call.ID, error) {
 	}
 }
 
-func asDirectoryID(opDigest digest.Digest, opType string, id *call.ID) (*call.ID, error) {
+func asDirectoryID(id *call.ID) (*call.ID, error) {
 	if id == nil {
 		return scratchDirectoryID(), nil
 	}
@@ -200,7 +200,7 @@ func asDirectoryID(opDigest digest.Digest, opType string, id *call.ID) (*call.ID
 	case containerType().NamedType:
 		return appendCall(id, directoryType(), "rootfs"), nil
 	default:
-		return nil, unsupported(opDigest, opType, fmt.Sprintf("input type %q is not Directory/Container", id.Type().NamedType()))
+		return nil, fmt.Errorf("input type %q is not Directory/Container", id.Type().NamedType())
 	}
 }
 

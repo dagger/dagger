@@ -58,7 +58,7 @@ func (c *converter) convertGitSource(op *buildkit.GitOp) (*call.ID, error) {
 	fullURL := attrs[pb.AttrFullRemoteURL]
 	if fullURL == "" {
 		if remoteID == "" {
-			return nil, unsupported(opDigest(op.OpDAG), "source(git)", "missing remote URL")
+			return nil, fmt.Errorf("missing remote URL")
 		}
 		fullURL = "https://" + strings.TrimPrefix(remoteID, "/")
 	}
@@ -71,22 +71,22 @@ func (c *converter) convertGitSource(op *buildkit.GitOp) (*call.ID, error) {
 			// handled
 		case pb.AttrAuthTokenSecret:
 			if v != "" && v != llb.GitAuthTokenKey {
-				return nil, unsupported(opDigest(op.OpDAG), "source(git)", "custom auth token secret is unsupported")
+				return nil, fmt.Errorf("custom auth token secret is unsupported")
 			}
 		case pb.AttrAuthHeaderSecret:
 			if v != "" && v != llb.GitAuthHeaderKey {
-				return nil, unsupported(opDigest(op.OpDAG), "source(git)", "custom auth header secret is unsupported")
+				return nil, fmt.Errorf("custom auth header secret is unsupported")
 			}
 		case pb.AttrKnownSSHHosts:
 			if v != "" {
-				return nil, unsupported(opDigest(op.OpDAG), "source(git)", "known SSH hosts override is unsupported")
+				return nil, fmt.Errorf("known SSH hosts override is unsupported")
 			}
 		case pb.AttrMountSSHSock:
 			if v != "" && v != "default" {
-				return nil, unsupported(opDigest(op.OpDAG), "source(git)", "custom ssh socket mount is unsupported")
+				return nil, fmt.Errorf("custom ssh socket mount is unsupported")
 			}
 		default:
-			return nil, unsupported(opDigest(op.OpDAG), "source(git)", fmt.Sprintf("unsupported git attr %q", k))
+			return nil, fmt.Errorf("unsupported git attr %q", k)
 		}
 	}
 
@@ -121,10 +121,10 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 	attrs := op.SourceOp.Attrs
 	if isDockerfileMainContextSentinel(name, attrs) {
 		if c.mainContextDirectory == nil {
-			return nil, unsupported(opDigest(op.OpDAG), "source(local)", "dockerBuild main-context sentinel requires a context directory rebinding input")
+			return nil, fmt.Errorf("dockerBuild main-context sentinel requires a context directory rebinding input")
 		}
 		if c.mainContextDirectory.Type().NamedType() != directoryType().NamedType {
-			return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("dockerBuild main-context rebinding type %q is not Directory", c.mainContextDirectory.Type().NamedType()))
+			return nil, fmt.Errorf("dockerBuild main-context rebinding type %q is not Directory", c.mainContextDirectory.Type().NamedType())
 		}
 		return c.mainContextDirectory, nil
 	}
@@ -134,23 +134,23 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 		sourcePath = name
 	}
 	if sourcePath == "" {
-		return nil, unsupported(opDigest(op.OpDAG), "source(local)", "empty local source path")
+		return nil, fmt.Errorf("empty local source path")
 	}
 
 	includePatterns, err := parseJSONPatternList(attrs[pb.AttrIncludePatterns])
 	if err != nil {
-		return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("invalid include patterns: %v", err))
+		return nil, fmt.Errorf("invalid include patterns: %v", err)
 	}
 	excludePatterns, err := parseJSONPatternList(attrs[pb.AttrExcludePatterns])
 	if err != nil {
-		return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("invalid exclude patterns: %v", err))
+		return nil, fmt.Errorf("invalid exclude patterns: %v", err)
 	}
 	followPaths, err := parseJSONPatternList(attrs[pb.AttrFollowPaths])
 	if err != nil {
-		return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("invalid follow paths: %v", err))
+		return nil, fmt.Errorf("invalid follow paths: %v", err)
 	}
 	if differ := attrs[pb.AttrLocalDiffer]; differ != "" && differ != pb.AttrLocalDifferMetadata {
-		return nil, unsupported(opDigest(op.OpDAG), "source(local)", "unsupported local differ mode")
+		return nil, fmt.Errorf("unsupported local differ mode")
 	}
 
 	for k := range attrs {
@@ -164,7 +164,7 @@ func (c *converter) convertLocalSource(op *buildkit.LocalOp) (*call.ID, error) {
 			pb.AttrLocalDiffer:
 			// handled/accepted
 		default:
-			return nil, unsupported(opDigest(op.OpDAG), "source(local)", fmt.Sprintf("unsupported local attr %q", k))
+			return nil, fmt.Errorf("unsupported local attr %q", k)
 		}
 	}
 
@@ -192,7 +192,7 @@ func isDockerfileMainContextSentinel(name string, attrs map[string]string) bool 
 func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 	identifier := op.SourceOp.Identifier
 	if !strings.HasPrefix(identifier, srctypes.HTTPScheme+"://") && !strings.HasPrefix(identifier, srctypes.HTTPSScheme+"://") {
-		return nil, unsupported(opDigest(op.OpDAG), "source(http)", "invalid HTTP source identifier")
+		return nil, fmt.Errorf("invalid HTTP source identifier")
 	}
 
 	attrs := op.SourceOp.Attrs
@@ -201,22 +201,22 @@ func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 		case pb.AttrHTTPChecksum, pb.AttrHTTPFilename, pb.AttrHTTPPerm, pb.AttrHTTPUID, pb.AttrHTTPGID:
 			// handled below
 		default:
-			return nil, unsupported(opDigest(op.OpDAG), "source(http)", fmt.Sprintf("unsupported HTTP attr %q", k))
+			return nil, fmt.Errorf("unsupported HTTP attr %q", k)
 		}
 	}
 
 	if attrs[pb.AttrHTTPChecksum] != "" {
-		return nil, unsupported(opDigest(op.OpDAG), "source(http)", "http checksum enforcement is unsupported")
+		return nil, fmt.Errorf("http checksum enforcement is unsupported")
 	}
 	if attrs[pb.AttrHTTPUID] != "" || attrs[pb.AttrHTTPGID] != "" {
-		return nil, unsupported(opDigest(op.OpDAG), "source(http)", "http uid/gid override is unsupported")
+		return nil, fmt.Errorf("http uid/gid override is unsupported")
 	}
 
 	name := attrs[pb.AttrHTTPFilename]
 	if name == "" {
 		parsed, err := url.Parse(identifier)
 		if err != nil {
-			return nil, unsupported(opDigest(op.OpDAG), "source(http)", fmt.Sprintf("invalid URL %q", identifier))
+			return nil, fmt.Errorf("invalid URL %q", identifier)
 		}
 		name = path.Base(parsed.Path)
 		if name == "" || name == "." || name == "/" {
@@ -231,7 +231,7 @@ func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 	if permStr != "" {
 		perm, err := strconv.ParseInt(permStr, 0, 64)
 		if err != nil {
-			return nil, unsupported(opDigest(op.OpDAG), "source(http)", fmt.Sprintf("invalid permissions %q", permStr))
+			return nil, fmt.Errorf("invalid permissions %q", permStr)
 		}
 		httpArgs = append(httpArgs, argInt("permissions", perm))
 	}
@@ -242,7 +242,7 @@ func (c *converter) convertHTTPSource(op *buildkit.HTTPOp) (*call.ID, error) {
 }
 
 func (c *converter) convertOCISource(op *buildkit.OCIOp) (*call.ID, error) { //nolint:unparam
-	return nil, unsupported(opDigest(op.OpDAG), "source(oci-layout)", "oci-layout source is not yet supported")
+	return nil, fmt.Errorf("oci-layout source is not yet supported")
 }
 
 func parseJSONPatternList(raw string) ([]string, error) {

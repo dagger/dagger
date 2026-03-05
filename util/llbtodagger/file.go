@@ -10,12 +10,11 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 )
 
 func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 	if op == nil {
-		return nil, unsupported(opDigest(nil), "merge", "missing merge op")
+		return nil, fmt.Errorf("missing merge op")
 	}
 	if len(op.OpDAG.Inputs) == 0 {
 		return scratchDirectoryID(), nil
@@ -25,7 +24,7 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 	if err != nil {
 		return nil, err
 	}
-	id, err := asDirectoryID(opDigest(op.OpDAG), "merge", firstInputID)
+	id, err := asDirectoryID(firstInputID)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +38,7 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 		if err != nil {
 			return nil, err
 		}
-		nextID, err := asDirectoryID(opDigest(op.OpDAG), "merge", nextInputID)
+		nextID, err := asDirectoryID(nextInputID)
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +59,7 @@ func (c *converter) convertMerge(op *buildkit.MergeOp) (*call.ID, error) {
 
 func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
 	if op == nil || op.DiffOp == nil {
-		return nil, unsupported(opDigest(nil), "diff", "missing diff op")
+		return nil, fmt.Errorf("missing diff op")
 	}
 
 	lowerInputID, err := c.resolveDiffInput(op.OpDAG, op.Lower.Input)
@@ -71,11 +70,11 @@ func (c *converter) convertDiff(op *buildkit.DiffOp) (*call.ID, error) {
 	if err != nil {
 		return nil, err
 	}
-	lowerID, err := asDirectoryID(opDigest(op.OpDAG), "diff", lowerInputID)
+	lowerID, err := asDirectoryID(lowerInputID)
 	if err != nil {
 		return nil, err
 	}
-	upperID, err := asDirectoryID(opDigest(op.OpDAG), "diff", upperInputID)
+	upperID, err := asDirectoryID(upperInputID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,14 +92,14 @@ func (c *converter) resolveDiffInput(dag *buildkit.OpDAG, idx pb.InputIndex) (*c
 	}
 	i := int(idx)
 	if i < 0 || i >= len(dag.Inputs) {
-		return nil, unsupported(opDigest(dag), "diff", fmt.Sprintf("input index %d out of range", idx))
+		return nil, fmt.Errorf("input index %d out of range", idx)
 	}
 	return c.convertOp(dag.Inputs[i])
 }
 
 func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 	if op == nil || op.FileOp == nil {
-		return nil, unsupported(opDigest(nil), "file", "missing file op")
+		return nil, fmt.Errorf("missing file op")
 	}
 
 	inputIDs := make([]*call.ID, len(op.OpDAG.Inputs))
@@ -110,7 +109,7 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 		if err != nil {
 			return nil, err
 		}
-		dirID, err := asDirectoryID(opDigest(op.OpDAG), "file", id)
+		dirID, err := asDirectoryID(id)
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +151,7 @@ func (c *converter) convertFile(op *buildkit.FileOp) (*call.ID, error) {
 
 	outID, ok := outputIDs[op.OutputIndex()]
 	if !ok {
-		return nil, unsupported(opDigest(op.OpDAG), "file", fmt.Sprintf("no output for index %d", op.OutputIndex()))
+		return nil, fmt.Errorf("no output for index %d", op.OutputIndex())
 	}
 	if baseContainer := outputContainers[op.OutputIndex()]; baseContainer != nil {
 		if outID != nil && outID.Field() == "rootfs" && outID.Receiver() == baseContainer {
@@ -180,10 +179,10 @@ func resolveFileActionInput(
 
 	rel := i - len(opInputIDs)
 	if rel < 0 || rel >= len(actionOutputs) {
-		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input index %d out of range", idx))
+		return nil, fmt.Errorf("action input index %d out of range", idx)
 	}
 	if actionOutputs[rel] == nil {
-		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input %d references unresolved action output", idx))
+		return nil, fmt.Errorf("action input %d references unresolved action output", idx)
 	}
 	return actionOutputs[rel], nil
 }
@@ -206,10 +205,10 @@ func resolveFileActionInputContainer(
 
 	rel := i - len(opInputContainers)
 	if rel < 0 || rel >= len(actionOutputContainers) {
-		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input index %d out of range", idx))
+		return nil, fmt.Errorf("action input index %d out of range", idx)
 	}
 	if !actionOutputResolved[rel] {
-		return nil, unsupported(opDigest(dag), "file", fmt.Sprintf("action input %d references unresolved action output", idx))
+		return nil, fmt.Errorf("action input %d references unresolved action output", idx)
 	}
 	return actionOutputContainers[rel], nil
 }
@@ -223,17 +222,17 @@ func (c *converter) applyFileAction(
 	actionOutputs []*call.ID,
 ) (*call.ID, *call.ID, error) {
 	if baseID.Type().NamedType() != directoryType().NamedType {
-		return nil, nil, unsupported(opDigest(dag), "file", fmt.Sprintf("primary input type %q is not Directory", baseID.Type().NamedType()))
+		return nil, nil, fmt.Errorf("primary input type %q is not Directory", baseID.Type().NamedType())
 	}
 
 	switch x := action.Action.(type) {
 	case *pb.FileAction_Mkdir:
-		return applyMkdir(opDigest(dag), baseID, baseContainerID, x.Mkdir)
+		return applyMkdir(baseID, baseContainerID, x.Mkdir)
 	case *pb.FileAction_Mkfile:
-		nextID, err := applyMkfile(opDigest(dag), baseID, x.Mkfile)
+		nextID, err := applyMkfile(baseID, x.Mkfile)
 		return nextID, baseContainerID, err
 	case *pb.FileAction_Rm:
-		nextID, err := applyRm(opDigest(dag), baseID, x.Rm)
+		nextID, err := applyRm(baseID, x.Rm)
 		return nextID, baseContainerID, err
 	case *pb.FileAction_Copy:
 		srcID, err := resolveFileActionInput(dag, action.SecondaryInput, opInputIDs, actionOutputs)
@@ -241,37 +240,37 @@ func (c *converter) applyFileAction(
 			return nil, nil, err
 		}
 		if srcID.Type().NamedType() != directoryType().NamedType {
-			return nil, nil, unsupported(opDigest(dag), "file", fmt.Sprintf("copy source type %q is not Directory", srcID.Type().NamedType()))
+			return nil, nil, fmt.Errorf("copy source type %q is not Directory", srcID.Type().NamedType())
 		}
-		return applyCopy(opDigest(dag), baseID, baseContainerID, srcID, x.Copy)
+		return applyCopy(baseID, baseContainerID, srcID, x.Copy)
 	default:
-		return nil, nil, unsupported(opDigest(dag), "file", "unsupported file action")
+		return nil, nil, fmt.Errorf("unsupported file action")
 	}
 }
 
 const mkdirCompatSyntheticSourcePath = "/.__llbtodagger_mkdir__"
 
-func applyMkdir(opDgst digest.Digest, baseID *call.ID, baseContainerID *call.ID, mkdir *pb.FileActionMkDir) (*call.ID, *call.ID, error) {
+func applyMkdir(baseID *call.ID, baseContainerID *call.ID, mkdir *pb.FileActionMkDir) (*call.ID, *call.ID, error) {
 	if mkdir == nil {
-		return nil, nil, unsupported(opDgst, "file.mkdir", "missing mkdir action")
+		return nil, nil, fmt.Errorf("missing mkdir action")
 	}
 	if !mkdir.MakeParents {
-		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir without makeParents is unsupported")
+		return nil, nil, fmt.Errorf("mkdir without makeParents is unsupported")
 	}
 	if mkdir.Timestamp >= 0 {
-		return nil, nil, unsupported(opDgst, "file.mkdir", "mkdir timestamp override is unsupported")
+		return nil, nil, fmt.Errorf("mkdir timestamp override is unsupported")
 	}
 
 	mkdirPath := cleanPath(mkdir.Path)
 
 	owner, err := chownOwnerString(mkdir.Owner)
 	if err != nil {
-		return nil, nil, unsupported(opDgst, "file.mkdir", err.Error())
+		return nil, nil, err
 	}
 
 	if owner != "" && ownerRequiresContainerResolution(owner) {
 		if baseContainerID == nil {
-			return nil, nil, unsupported(opDgst, "file.mkdir", "named user/group chown requires container context")
+			return nil, nil, fmt.Errorf("named user/group chown requires container context")
 		}
 
 		workingContainerID := appendCall(
@@ -327,15 +326,15 @@ func applyMkdir(opDgst digest.Digest, baseID *call.ID, baseContainerID *call.ID,
 	return id, baseContainerID, nil
 }
 
-func applyMkfile(opDgst digest.Digest, baseID *call.ID, mkfile *pb.FileActionMkFile) (*call.ID, error) {
+func applyMkfile(baseID *call.ID, mkfile *pb.FileActionMkFile) (*call.ID, error) {
 	if mkfile == nil {
-		return nil, unsupported(opDgst, "file.mkfile", "missing mkfile action")
+		return nil, fmt.Errorf("missing mkfile action")
 	}
 	if mkfile.Timestamp >= 0 {
-		return nil, unsupported(opDgst, "file.mkfile", "mkfile timestamp override is unsupported")
+		return nil, fmt.Errorf("mkfile timestamp override is unsupported")
 	}
 	if !utf8.Valid(mkfile.Data) {
-		return nil, unsupported(opDgst, "file.mkfile", "mkfile binary data is unsupported")
+		return nil, fmt.Errorf("mkfile binary data is unsupported")
 	}
 
 	filePath := cleanPath(mkfile.Path)
@@ -350,11 +349,11 @@ func applyMkfile(opDgst digest.Digest, baseID *call.ID, mkfile *pb.FileActionMkF
 
 	owner, err := chownOwnerString(mkfile.Owner)
 	if err != nil {
-		return nil, unsupported(opDgst, "file.mkfile", err.Error())
+		return nil, err
 	}
 	if owner != "" {
 		if ownerRequiresContainerResolution(owner) {
-			return nil, unsupported(opDgst, "file.mkfile", "named user/group chown is unsupported for mkfile")
+			return nil, fmt.Errorf("named user/group chown is unsupported for mkfile")
 		}
 		id = appendCall(
 			id,
@@ -368,25 +367,24 @@ func applyMkfile(opDgst digest.Digest, baseID *call.ID, mkfile *pb.FileActionMkF
 	return id, nil
 }
 
-func applyRm(opDgst digest.Digest, baseID *call.ID, rm *pb.FileActionRm) (*call.ID, error) {
+func applyRm(baseID *call.ID, rm *pb.FileActionRm) (*call.ID, error) {
 	if rm == nil {
-		return nil, unsupported(opDgst, "file.rm", "missing rm action")
+		return nil, fmt.Errorf("missing rm action")
 	}
 	return appendCall(baseID, directoryType(), "withoutFile", argString("path", cleanPath(rm.Path))), nil
 }
 
 func applyCopy(
-	opDgst digest.Digest,
 	baseID *call.ID,
 	baseContainerID *call.ID,
 	sourceID *call.ID,
 	cp *pb.FileActionCopy,
 ) (*call.ID, *call.ID, error) {
 	if cp == nil {
-		return nil, nil, unsupported(opDgst, "file.copy", "missing copy action")
+		return nil, nil, fmt.Errorf("missing copy action")
 	}
 	if cp.AlwaysReplaceExistingDestPaths {
-		return nil, nil, unsupported(opDgst, "file.copy", "alwaysReplaceExistingDestPaths is unsupported")
+		return nil, nil, fmt.Errorf("alwaysReplaceExistingDestPaths is unsupported")
 	}
 
 	sourceSubdir, include := deriveCopySelection(cp)
@@ -397,11 +395,11 @@ func applyCopy(
 
 	owner, err := chownOwnerString(cp.Owner)
 	if err != nil {
-		return nil, nil, unsupported(opDgst, "file.copy", err.Error())
+		return nil, nil, err
 	}
 	if ownerRequiresContainerResolution(owner) {
 		if baseContainerID == nil {
-			return nil, nil, unsupported(opDgst, "file.copy", "named user/group chown requires container context")
+			return nil, nil, fmt.Errorf("named user/group chown requires container context")
 		}
 		id, ctrID := applyCopyViaContainer(baseID, baseContainerID, sourceDirID, cp, include, owner)
 		return id, ctrID, nil

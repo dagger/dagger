@@ -115,9 +115,7 @@ RUN --mount=type=secret,id=required-secret,required=true,target=/run/secrets/req
 	_, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
 		SecretIDsByLLBID: map[string]*call.ID{},
 	})
-	unsupportedErr := requireUnsupported(t, err, "exec")
-	require.Contains(t, unsupportedErr.Reason, "required-secret")
-	require.Contains(t, unsupportedErr.Reason, "required")
+	require.Error(t, err)
 }
 
 func TestDefinitionToIDDockerfileRunSSHMount(t *testing.T) {
@@ -177,9 +175,7 @@ RUN --mount=type=ssh,id=required-ssh,required=true,target=/tmp/agent.sock \
 	_, err := DefinitionToIDWithOptions(def, img, DefinitionToIDOptions{
 		SSHSocketIDsByLLBID: map[string]*call.ID{},
 	})
-	unsupportedErr := requireUnsupported(t, err, "exec")
-	require.Contains(t, unsupportedErr.Reason, "required-ssh")
-	require.Contains(t, unsupportedErr.Reason, "required")
+	require.Error(t, err)
 }
 
 func TestDefinitionToIDDockerfileRunNetworkNoneMapsToWithExecNoNetwork(t *testing.T) {

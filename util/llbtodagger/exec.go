@@ -13,32 +13,32 @@ import (
 //nolint:gocyclo
 func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if exec == nil || exec.ExecOp == nil {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec op")
+		return nil, fmt.Errorf("missing exec op")
 	}
 
 	if exec.Network != pb.NetMode_UNSET && exec.Network != pb.NetMode_NONE && exec.Network != pb.NetMode_HOST {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported network mode %v", exec.Network))
+		return nil, fmt.Errorf("unsupported network mode %v", exec.Network)
 	}
 	if exec.Security != pb.SecurityMode_SANDBOX && exec.Security != pb.SecurityMode_INSECURE {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported security mode %v", exec.Security))
+		return nil, fmt.Errorf("unsupported security mode %v", exec.Security)
 	}
 	if exec.Meta == nil {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "missing exec meta")
+		return nil, fmt.Errorf("missing exec meta")
 	}
 	if exec.Meta.Hostname != "" {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "hostname override is unsupported")
+		return nil, fmt.Errorf("hostname override is unsupported")
 	}
 	if len(exec.Meta.ExtraHosts) > 0 {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "extra hosts are unsupported")
+		return nil, fmt.Errorf("extra hosts are unsupported")
 	}
 	if len(exec.Meta.Ulimit) > 0 {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "ulimit is unsupported")
+		return nil, fmt.Errorf("ulimit is unsupported")
 	}
 	if exec.Meta.CgroupParent != "" {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "cgroup parent is unsupported")
+		return nil, fmt.Errorf("cgroup parent is unsupported")
 	}
 	if len(exec.Meta.ValidExitCodes) > 0 {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", "valid exit code overrides are unsupported")
+		return nil, fmt.Errorf("valid exit code overrides are unsupported")
 	}
 
 	inputIDs := make([]*call.ID, len(exec.Inputs))
@@ -52,10 +52,10 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 
 	rootMount, err := findRootExecMount(exec.Mounts)
 	if err != nil {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", err.Error())
+		return nil, err
 	}
 
-	rootDirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), rootMount, inputIDs)
+	rootDirID, err := c.resolveExecMountInputDir(rootMount, inputIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 	if ctrID == nil {
 		ctrID, err = queryContainerID(exec.Platform)
 		if err != nil {
-			return nil, fmt.Errorf("llbtodagger: exec %s: %w", opDigest(exec.OpDAG), err)
+			return nil, err
 		}
 		ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
 	}
@@ -115,15 +115,15 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 			continue
 		}
 		if m.ResultID != "" {
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", "mount resultID is unsupported")
+			return nil, fmt.Errorf("mount resultID is unsupported")
 		}
 		if m.ContentCache != pb.MountContentCache_DEFAULT {
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", "non-default mount content cache is unsupported")
+			return nil, fmt.Errorf("non-default mount content cache is unsupported")
 		}
 
 		switch m.MountType {
 		case pb.MountType_BIND:
-			dirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), m, inputIDs)
+			dirID, err := c.resolveExecMountInputDir(m, inputIDs)
 			if err != nil {
 				return nil, err
 			}
@@ -148,11 +148,11 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 
 		case pb.MountType_CACHE:
 			if m.CacheOpt == nil || m.CacheOpt.ID == "" {
-				return nil, unsupported(opDigest(exec.OpDAG), "exec", "cache mount is missing cache ID")
+				return nil, fmt.Errorf("cache mount is missing cache ID")
 			}
 			sharing, err := mountSharingEnum(m.CacheOpt.Sharing)
 			if err != nil {
-				return nil, unsupported(opDigest(exec.OpDAG), "exec", err.Error())
+				return nil, err
 			}
 			cacheID := appendCall(call.New(), cacheVolumeType(), "cacheVolume", argString("key", m.CacheOpt.ID))
 			args := []*call.Argument{
@@ -161,7 +161,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 				argEnum("sharing", sharing),
 			}
 			if m.Input != pb.Empty {
-				sourceDirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), m, inputIDs)
+				sourceDirID, err := c.resolveExecMountInputDir(m, inputIDs)
 				if err != nil {
 					return nil, err
 				}
@@ -188,7 +188,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 
 		case pb.MountType_SECRET:
 			if m.SecretOpt == nil {
-				return nil, unsupported(opDigest(exec.OpDAG), "exec", "secret mount is missing secret options")
+				return nil, fmt.Errorf("secret mount is missing secret options")
 			}
 			secretID, include, err := c.resolveSecretID(opDigest(exec.OpDAG), m.SecretOpt.ID, m.SecretOpt.Optional)
 			if err != nil {
@@ -213,10 +213,10 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 			}
 		case pb.MountType_SSH:
 			if m.SSHOpt == nil {
-				return nil, unsupported(opDigest(exec.OpDAG), "exec", "ssh mount is missing ssh options")
+				return nil, fmt.Errorf("ssh mount is missing ssh options")
 			}
 			if m.SSHOpt.Mode != 0 && m.SSHOpt.Mode != 0o600 {
-				return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("ssh mount mode %04o is unsupported", m.SSHOpt.Mode))
+				return nil, fmt.Errorf("ssh mount mode %o is not unsupported", m.SSHOpt.Mode)
 			}
 			socketID, include, err := c.resolveSSHSocketID(opDigest(exec.OpDAG), m.SSHOpt.ID, m.SSHOpt.Optional)
 			if err != nil {
@@ -239,14 +239,14 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 				addedUnixSocketPaths = append(addedUnixSocketPaths, path)
 			}
 		default:
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("unsupported mount type %v", m.MountType))
+			return nil, fmt.Errorf("unsupported mount type %v", m.MountType)
 		}
 	}
 
 	for _, envKV := range exec.Meta.Env {
 		name, val, ok := strings.Cut(envKV, "=")
 		if !ok {
-			return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("invalid env entry %q", envKV))
+			return nil, fmt.Errorf("invalid env entry %q", envKV)
 		}
 		ctrID = appendCall(
 			ctrID,
@@ -283,7 +283,7 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 
 	outMount, ok := findMountByOutput(exec.Mounts, exec.OutputIndex())
 	if !ok {
-		return nil, unsupported(opDigest(exec.OpDAG), "exec", fmt.Sprintf("no mount for output index %d", exec.OutputIndex()))
+		return nil, fmt.Errorf("no mount for output index %d", exec.OutputIndex())
 	}
 	if outMount.Dest == "/" {
 		cleanedID := withExecID
@@ -312,13 +312,13 @@ func (c *converter) resolveSecretID(opDgst digest.Digest, llbSecretID string, op
 		if optional {
 			return nil, false, nil
 		}
-		return nil, false, unsupported(opDgst, "exec", "secret id is empty")
+		return nil, false, fmt.Errorf("secret id is empty")
 	}
 
 	secretID, ok := c.secretIDsByLLBID[llbSecretID]
 	if ok && secretID != nil {
 		if secretID.Type().NamedType() != secretType().NamedType {
-			return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("mapped secret %q has non-Secret type %q", llbSecretID, secretID.Type().NamedType()))
+			return nil, false, fmt.Errorf("mapped secret %q has non-Secret type %q", llbSecretID, secretID.Type().NamedType())
 		}
 		return secretID, true, nil
 	}
@@ -328,9 +328,9 @@ func (c *converter) resolveSecretID(opDgst digest.Digest, llbSecretID string, op
 	}
 
 	if len(c.secretIDsByLLBID) == 0 {
-		return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("secret %q is required but no secret mappings were provided", llbSecretID))
+		return nil, false, fmt.Errorf("secret %q is required but no secret mappings were provided", llbSecretID)
 	}
-	return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("secret %q is required but was not provided", llbSecretID))
+	return nil, false, fmt.Errorf("secret %q is required but was not provided", llbSecretID)
 }
 
 func (c *converter) resolveSSHSocketID(opDgst digest.Digest, llbSSHID string, optional bool) (*call.ID, bool, error) {
@@ -342,7 +342,7 @@ func (c *converter) resolveSSHSocketID(opDgst digest.Digest, llbSSHID string, op
 	}
 	if ok && socketID != nil {
 		if socketID.Type().NamedType() != socketType().NamedType {
-			return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("mapped ssh socket %q has non-Socket type %q", llbSSHID, socketID.Type().NamedType()))
+			return nil, false, fmt.Errorf("mapped ssh socket %q has non-Socket type %q", llbSSHID, socketID.Type().NamedType())
 		}
 		return socketID, true, nil
 	}
@@ -352,9 +352,9 @@ func (c *converter) resolveSSHSocketID(opDgst digest.Digest, llbSSHID string, op
 	}
 
 	if len(c.sshSocketIDsByLLBID) == 0 {
-		return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("ssh mount %q is required but no ssh socket mappings were provided", llbSSHID))
+		return nil, false, fmt.Errorf("ssh mount %q is required but no ssh socket mappings were provided", llbSSHID)
 	}
-	return nil, false, unsupported(opDgst, "exec", fmt.Sprintf("ssh mount %q is required but was not provided", llbSSHID))
+	return nil, false, fmt.Errorf("ssh mount %q is required but was not provided", llbSSHID)
 }
 
 func findRootExecMount(mounts []*pb.Mount) (*pb.Mount, error) {
@@ -375,17 +375,17 @@ func findMountByOutput(mounts []*pb.Mount, out pb.OutputIndex) (*pb.Mount, bool)
 	return nil, false
 }
 
-func (c *converter) resolveExecMountInputDir(opDgst digest.Digest, mount *pb.Mount, inputIDs []*call.ID) (*call.ID, error) {
+func (c *converter) resolveExecMountInputDir(mount *pb.Mount, inputIDs []*call.ID) (*call.ID, error) {
 	var dirID *call.ID
 	if mount.Input == pb.Empty {
 		dirID = scratchDirectoryID()
 	} else {
 		idx := int(mount.Input)
 		if idx < 0 || idx >= len(inputIDs) {
-			return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input index %d out of range", mount.Input))
+			return nil, fmt.Errorf("mount input index %d out of range", mount.Input)
 		}
 		var err error
-		dirID, err = asDirectoryID(opDgst, "exec", inputIDs[idx])
+		dirID, err = asDirectoryID(inputIDs[idx])
 		if err != nil {
 			return nil, err
 		}
