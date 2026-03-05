@@ -1,6 +1,6 @@
 # WSFS: Workspace Filesystem Mounts with Lazy JIT Copy
 
-Status: Draft  
+Status: Prototype v0 implemented (Linux)  
 Scope: Prototype
 
 ## Problem
@@ -63,9 +63,9 @@ extend type Container {
 
 1. User calls `container.withMountedWorkspace("/work", ws)`.
 2. Container stores a `WorkspaceMountSource` in `ContainerMount`.
-3. During `withExec`, engine prepares WSFS runtime config for each workspace mount.
-4. WSFS daemon runs alongside the exec and mounts FUSE at target path.
-5. WSFS records read dependency trace and materializes writes in an upper layer directory.
+3. During `withExec` and service/terminal startup, engine prepares WSFS runtime config for each workspace mount.
+4. WSFS daemon runs alongside execution and mounts FUSE at target path.
+5. WSFS materializes writes in an upper layer directory (read dependency tracing is a v1 follow-up).
 
 ### Data Plane
 
@@ -74,6 +74,9 @@ WSFS uses overlay-like behavior:
 - Upper layer: writable state persisted in Dagger mount state (per container lineage).
 - Lower layer: lazy on-demand reads from `Workspace`.
 - Deletes/renames represented in upper layer (whiteout/tombstone semantics internal to WSFS).
+
+For service/terminal runs, WSFS uses the same lazy lower-layer reads, but writes are
+ephemeral to the service lifecycle (no snapshot commit into container lineage).
 
 This gives writable behavior without mutating host workspace.
 
@@ -91,9 +94,9 @@ Target mapping to avoid over-upload:
 
 WSFS can start with the API we already have:
 
-- `read` uses `Workspace.file(path)`.
-- `readdir` uses `Workspace.directory(path, include:["*"], exclude:["*/*"]).entries`.
-- `stat` uses `Workspace.file(path).stat` then fallback to `Workspace.directory(path).stat` (or equivalent existence/type checks).
+- `read` uses `Workspace.file(path)` and materializes file contents on first access.
+- `readdir` uses `Workspace.entries(path)` (shallow list), plus per-entry `Workspace.stat`.
+- `stat`/`access` use `Workspace.stat(path)`, with symlink-aware fallback (`lstat` + type probe) when followed stat is unavailable.
 
 This is enough for a functional prototype and validates the end-to-end architecture.
 
@@ -171,14 +174,15 @@ Effect:
 - Add `WorkspaceMountSource` with:
   - workspace ID/source
   - persisted upper-layer directory state
-  - dependency trace
-  - computed digest
+  - (v1) dependency trace
+  - (v1) computed digest
 
 ## Exec Wiring
 
 - Extend container exec preparation to initialize WSFS mounts.
+- Extend service startup (used by `Container.terminal`) to initialize WSFS mounts.
 - Start WSFS daemon before process start; unmount/flush on exit.
-- Persist upper-layer directory and trace back into updated container mount state.
+- Persist upper-layer directory back into updated container mount state.
 
 ## Caching Wiring
 
@@ -200,8 +204,9 @@ Effect:
 2. Readdir laziness: listing large dir does not upload descendants.
 3. Write persistence: write in exec A is visible in exec B in same lineage.
 4. No host sync-back: host workspace unchanged after writes.
-5. Cache behavior: unrelated workspace edits keep cache hit; related edits invalidate.
-6. Path traversal safety for read/stat/list and write paths.
+5. Cache behavior (v0): any workspace mount causes `withExec` cache-per-call.
+6. Cache behavior (v1 target): unrelated workspace edits keep cache hit; related edits invalidate.
+7. Path traversal safety for read/stat/list and write paths.
 
 ## Future Evolution
 
@@ -209,15 +214,8 @@ Effect:
 - Explicit conflict policy between host updates and upper-layer shadowed paths.
 - Richer metadata APIs if needed (`lstat`, xattrs, chmod/chown semantics).
 
-## Deferred Follow-Up: `Container.terminal`
+## Terminal / Service Status
 
-WSFS behavior parity for `Container.terminal` is deferred from the current
-`withExec` implementation track.
-
-Current note:
-
-- `withExec` mounts go through WSFS runtime setup.
-- `terminal` currently executes through the service path and needs explicit WSFS
-  runtime wiring to provide the same lazy workspace semantics.
-
-We will revisit this after `withExec` stabilization and QA.
+WSFS runtime wiring now also applies to service startup (the execution path used
+by `Container.terminal`), so terminal sessions read mounted workspace data
+lazily the same way as `withExec`.
