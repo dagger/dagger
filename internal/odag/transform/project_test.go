@@ -430,6 +430,127 @@ func TestProjectTraceDropsTopLevelCallOnlyFanoutObjects(t *testing.T) {
 	}
 }
 
+func TestProjectTracePrunesNonTopLevelOnlyObjects(t *testing.T) {
+	t.Parallel()
+
+	spans := []store.SpanRecord{
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace4",
+			spanID:       "s1",
+			parentSpanID: "",
+			name:         "Query.container",
+			start:        1,
+			end:          10,
+			output:       "state-container",
+			call: &callpbv1.Call{
+				Digest: "call-container",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace4",
+			spanID:       "s2",
+			parentSpanID: "s1",
+			name:         "Query.http",
+			start:        11,
+			end:          20,
+			output:       "state-file",
+			call: &callpbv1.Call{
+				Digest: "call-file",
+				Field:  "http",
+				Type:   &callpbv1.Type{NamedType: "File"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace4", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+
+	if len(proj.Objects) != 1 {
+		t.Fatalf("expected only top-level object to remain, got %d", len(proj.Objects))
+	}
+	if proj.Objects[0].TypeName != "Container" {
+		t.Fatalf("expected kept object type Container, got %s", proj.Objects[0].TypeName)
+	}
+
+	for _, event := range proj.Events {
+		if event.Name == "Query.http" && event.ObjectID != "" {
+			t.Fatalf("expected non-top-level object event to be pruned: %+v", event)
+		}
+	}
+}
+
+func TestProjectTraceSummaryAndCallDepth(t *testing.T) {
+	t.Parallel()
+
+	spans := []store.SpanRecord{
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace5",
+			spanID:       "s1",
+			parentSpanID: "",
+			name:         "Query.container",
+			start:        1,
+			end:          10,
+			output:       "state-a",
+			resource: map[string]any{
+				"service.name":         "dagger-cli",
+				"process.command_args": []any{"dagger", "call", "module", "test"},
+			},
+			scope: map[string]any{
+				"name": "dagger.io/cli",
+			},
+			call: &callpbv1.Call{
+				Digest: "call-1",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace5",
+			spanID:       "s2",
+			parentSpanID: "s1",
+			name:         "Container.withExec",
+			start:        11,
+			end:          20,
+			output:       "state-b",
+			call: &callpbv1.Call{
+				Digest:         "call-2",
+				ReceiverDigest: "state-a",
+				Field:          "withExec",
+				Type:           &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace5", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+
+	if proj.Summary.Title != "dagger call module test" {
+		t.Fatalf("unexpected summary title: %q", proj.Summary.Title)
+	}
+	if len(proj.Summary.RootSpans) != 1 {
+		t.Fatalf("expected 1 root span, got %d", len(proj.Summary.RootSpans))
+	}
+	if len(proj.Summary.CommandSpans) != 1 {
+		t.Fatalf("expected 1 command span, got %d", len(proj.Summary.CommandSpans))
+	}
+
+	var nested MutationEvent
+	for _, event := range proj.Events {
+		if event.SpanID == "s2" {
+			nested = event
+		}
+	}
+	if nested.CallDepth != 1 || nested.ParentCallSpanID != "s1" || nested.ParentCallName != "Query.container" {
+		t.Fatalf("unexpected nested call metadata: %+v", nested)
+	}
+}
+
 type callSpanInput struct {
 	traceID      string
 	spanID       string
@@ -439,6 +560,8 @@ type callSpanInput struct {
 	end          int64
 	output       string
 	internal     bool
+	resource     map[string]any
+	scope        map[string]any
 	call         *callpbv1.Call
 }
 
@@ -459,7 +582,14 @@ func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
 	if in.internal {
 		attrs[telemetry.UIInternalAttr] = true
 	}
-	data, err := json.Marshal(map[string]any{"attributes": attrs})
+	data := map[string]any{"attributes": attrs}
+	if len(in.resource) > 0 {
+		data["resource"] = in.resource
+	}
+	if len(in.scope) > 0 {
+		data["scope"] = in.scope
+	}
+	payload, err := json.Marshal(data)
 	if err != nil {
 		t.Fatalf("marshal data_json: %v", err)
 	}
@@ -472,7 +602,7 @@ func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
 		EndUnixNano:     in.end,
 		StatusCode:      "STATUS_CODE_OK",
 		StatusMessage:   "",
-		DataJSON:        string(data),
+		DataJSON:        string(payload),
 		UpdatedUnixNano: in.end,
 	}
 }

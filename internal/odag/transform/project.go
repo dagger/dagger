@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -54,23 +55,28 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		}
 
 		event := MutationEvent{
-			Index:               idx,
-			TraceID:             sp.span.TraceID,
-			SpanID:              sp.span.SpanID,
-			ParentSpanID:        sp.span.ParentSpanID,
-			StartUnixNano:       sp.span.StartUnixNano,
-			EndUnixNano:         sp.span.EndUnixNano,
-			StatusCode:          sp.span.StatusCode,
-			StatusMessage:       sp.span.StatusMessage,
-			Name:                sp.span.Name,
-			CallDigest:          sp.callDigest,
-			ReceiverStateDigest: sp.receiverStateDigest,
-			OutputStateDigest:   sp.outputStateDigest,
-			ReturnType:          sp.returnType,
-			TopLevel:            sp.isTopLevel,
-			Internal:            sp.isInternal,
-			Inputs:              sp.inputs,
-			Kind:                "call",
+			Index:                 idx,
+			TraceID:               sp.span.TraceID,
+			SpanID:                sp.span.SpanID,
+			ParentSpanID:          sp.span.ParentSpanID,
+			StartUnixNano:         sp.span.StartUnixNano,
+			EndUnixNano:           sp.span.EndUnixNano,
+			StatusCode:            sp.span.StatusCode,
+			StatusMessage:         sp.span.StatusMessage,
+			Name:                  sp.span.Name,
+			CallDigest:            sp.callDigest,
+			ReceiverStateDigest:   sp.receiverStateDigest,
+			OutputStateDigest:     sp.outputStateDigest,
+			ReturnType:            sp.returnType,
+			TopLevel:              sp.isTopLevel,
+			CallDepth:             sp.callDepth,
+			ParentCallSpanID:      sp.parentCallSpanID,
+			ParentCallName:        sp.parentCallName,
+			ParentChainIncomplete: sp.parentChainIncomplete,
+			Internal:              sp.isInternal,
+			Inputs:                sp.inputs,
+			Kind:                  "call",
+			RawKind:               "call",
 		}
 
 		if sp.outputStateDigest == "" || !sp.isObjectOutput {
@@ -85,6 +91,7 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 			canMutateReceiver(objectsByID[receiverObjectID].TypeName, sp.returnType) {
 			objectID = receiverObjectID
 			event.Kind = "mutate"
+			event.Operation = "mutate"
 		}
 		if objectID == "" {
 			if existingObjectID, ok := stateToObject[sp.outputStateDigest]; ok && existingObjectID != "" {
@@ -105,6 +112,10 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 				Alias:    shortTypeName(typ) + "#" + strconv.Itoa(typeCounters[typ]),
 			}
 			event.Kind = "create"
+			event.Operation = "create"
+		}
+		if event.Operation == "" && event.Kind == "mutate" {
+			event.Operation = "mutate"
 		}
 
 		obj := objectsByID[objectID]
@@ -138,6 +149,13 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 	objects := make([]ObjectNode, 0, len(objectsByID))
 	topReferencedObjectIDs := make(map[string]struct{}, len(objectsByID))
 	keptObjectIDs := make(map[string]struct{}, len(objectsByID))
+	hasNonTopObjectActivity := make(map[string]bool, len(objectsByID))
+	for _, event := range events {
+		if event.ObjectID == "" || event.Internal || event.TopLevel {
+			continue
+		}
+		hasNonTopObjectActivity[event.ObjectID] = true
+	}
 	markByState := func(stateDigest string, keep bool) {
 		if stateDigest == "" {
 			return
@@ -177,13 +195,12 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 			case "call":
 				// Keep root-level Query object calls by default; other top-level
 				// call-only objects are often fan-out noise from scalar selection.
-				if strings.HasPrefix(event.Name, "Query.") {
+				if strings.HasPrefix(event.Name, "Query.") || hasNonTopObjectActivity[event.ObjectID] {
 					keptObjectIDs[event.ObjectID] = struct{}{}
 				}
 			}
 			continue
 		}
-		keptObjectIDs[event.ObjectID] = struct{}{}
 	}
 
 	for objectID, obj := range objectsByID {
@@ -242,6 +259,7 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		TraceID:       traceID,
 		StartUnixNano: startUnixNano,
 		EndUnixNano:   endUnixNano,
+		Summary:       summarizeTrace(parsedSpans),
 		Objects:       objects,
 		Edges:         []ObjectEdge{},
 		Events:        filteredEvents,
@@ -388,22 +406,30 @@ func SnapshotAtStep(proj *TraceProjection, step int) Snapshot {
 }
 
 type dataEnvelope struct {
+	Resource   map[string]any `json:"resource"`
+	Scope      map[string]any `json:"scope"`
 	Attributes map[string]any `json:"attributes"`
 }
 
 type parsedSpan struct {
-	span                store.SpanRecord
-	attrs               map[string]any
-	isDAGCall           bool
-	isTopLevel          bool
-	isInternal          bool
-	isObjectOutput      bool
-	callDigest          string
-	receiverStateDigest string
-	outputStateDigest   string
-	outputStatePayload  map[string]any
-	returnType          string
-	inputs              []InputRef
+	span                  store.SpanRecord
+	resource              map[string]any
+	scope                 map[string]any
+	attrs                 map[string]any
+	isDAGCall             bool
+	isTopLevel            bool
+	callDepth             int
+	parentCallSpanID      string
+	parentCallName        string
+	parentChainIncomplete bool
+	isInternal            bool
+	isObjectOutput        bool
+	callDigest            string
+	receiverStateDigest   string
+	outputStateDigest     string
+	outputStatePayload    map[string]any
+	returnType            string
+	inputs                []InputRef
 }
 
 func parseSpans(spans []store.SpanRecord) ([]parsedSpan, []string) {
@@ -411,24 +437,26 @@ func parseSpans(spans []store.SpanRecord) ([]parsedSpan, []string) {
 	warnings := []string{}
 
 	for _, span := range spans {
-		attrs, err := decodeSpanAttributes(span.DataJSON)
+		env, err := decodeSpanEnvelope(span.DataJSON)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("span %s: decode data_json: %v", span.SpanID, err))
-			attrs = nil
+			env = dataEnvelope{}
 		}
 
 		p := parsedSpan{
-			span:  span,
-			attrs: attrs,
+			span:     span,
+			resource: env.Resource,
+			scope:    env.Scope,
+			attrs:    env.Attributes,
 		}
-		callPayload, _ := getString(attrs, telemetry.DagCallAttr)
-		callDigest, _ := getString(attrs, telemetry.DagDigestAttr)
-		outputDigest, _ := getString(attrs, telemetry.DagOutputAttr)
+		callPayload, _ := getString(p.attrs, telemetry.DagCallAttr)
+		callDigest, _ := getString(p.attrs, telemetry.DagDigestAttr)
+		outputDigest, _ := getString(p.attrs, telemetry.DagOutputAttr)
 		p.callDigest = callDigest
 		p.outputStateDigest = outputDigest
-		p.isInternal, _ = getBool(attrs, telemetry.UIInternalAttr)
+		p.isInternal, _ = getBool(p.attrs, telemetry.UIInternalAttr)
 
-		if outputStatePayload, err := decodeOutputStatePayload(attrs); err != nil {
+		if outputStatePayload, err := decodeOutputStatePayload(p.attrs); err != nil {
 			warnings = append(warnings, fmt.Sprintf("span %s: decode output state payload: %v", span.SpanID, err))
 		} else {
 			p.outputStatePayload = outputStatePayload
@@ -464,33 +492,38 @@ func markTopLevel(spans []parsedSpan, bySpanID map[string]*parsedSpan) {
 			continue
 		}
 
-		topLevel := true
+		dagDepth := 0
 		parentID := sp.span.ParentSpanID
 		for parentID != "" {
 			parent, ok := bySpanID[parentID]
 			if !ok {
+				sp.parentChainIncomplete = true
 				break
 			}
 			if parent.isDAGCall {
-				topLevel = false
-				break
+				dagDepth++
+				if sp.parentCallSpanID == "" {
+					sp.parentCallSpanID = parent.span.SpanID
+					sp.parentCallName = parent.span.Name
+				}
 			}
 			parentID = parent.span.ParentSpanID
 		}
-		sp.isTopLevel = topLevel
+		sp.callDepth = dagDepth
+		sp.isTopLevel = dagDepth == 0
 	}
 }
 
-func decodeSpanAttributes(dataJSON string) (map[string]any, error) {
+func decodeSpanEnvelope(dataJSON string) (dataEnvelope, error) {
 	if dataJSON == "" {
-		return nil, nil
+		return dataEnvelope{}, nil
 	}
 
 	var env dataEnvelope
 	if err := json.Unmarshal([]byte(dataJSON), &env); err != nil {
-		return nil, err
+		return dataEnvelope{}, err
 	}
-	return env.Attributes, nil
+	return env, nil
 }
 
 func decodeCallPayload(payload string) (*callpbv1.Call, error) {
@@ -662,6 +695,94 @@ func isScalarTypeName(typeName string) bool {
 	}
 }
 
+func summarizeTrace(spans []parsedSpan) TraceSummary {
+	if len(spans) == 0 {
+		return TraceSummary{}
+	}
+
+	roots := make([]SpanSummary, 0, 4)
+	commands := make([]CommandSummary, 0, 4)
+	var bestCommand *CommandSummary
+
+	for _, sp := range spans {
+		dur := spanDurationMs(sp.span.StartUnixNano, sp.span.EndUnixNano)
+		if sp.span.ParentSpanID == "" {
+			roots = append(roots, SpanSummary{
+				SpanID:        sp.span.SpanID,
+				Name:          sp.span.Name,
+				StartUnixNano: sp.span.StartUnixNano,
+				EndUnixNano:   sp.span.EndUnixNano,
+				DurationMs:    dur,
+			})
+		}
+
+		commandArgs := getStringSlice(sp.resource, "process.command_args")
+		serviceName, _ := getString(sp.resource, "service.name")
+		scopeName, _ := getString(sp.scope, "name")
+		if len(commandArgs) == 0 && serviceName != "dagger-cli" && scopeName != "dagger.io/cli" {
+			continue
+		}
+
+		cmd := CommandSummary{
+			SpanSummary: SpanSummary{
+				SpanID:        sp.span.SpanID,
+				Name:          sp.span.Name,
+				ParentSpanID:  sp.span.ParentSpanID,
+				StartUnixNano: sp.span.StartUnixNano,
+				EndUnixNano:   sp.span.EndUnixNano,
+				DurationMs:    dur,
+			},
+			ServiceName: serviceName,
+			ScopeName:   scopeName,
+			CommandArgs: commandArgs,
+		}
+		commands = append(commands, cmd)
+		if bestCommand == nil || cmd.DurationMs > bestCommand.DurationMs {
+			c := cmd
+			bestCommand = &c
+		}
+	}
+
+	slices.SortFunc(roots, func(a, b SpanSummary) int {
+		if cmp := compareInt64(a.StartUnixNano, b.StartUnixNano); cmp != 0 {
+			return cmp
+		}
+		return compareString(a.SpanID, b.SpanID)
+	})
+	slices.SortFunc(commands, func(a, b CommandSummary) int {
+		if cmp := compareInt64(a.StartUnixNano, b.StartUnixNano); cmp != 0 {
+			return cmp
+		}
+		return compareString(a.SpanID, b.SpanID)
+	})
+
+	title := ""
+	if bestCommand != nil {
+		if len(bestCommand.CommandArgs) > 0 {
+			title = strings.Join(bestCommand.CommandArgs, " ")
+		}
+		if strings.TrimSpace(title) == "" {
+			title = bestCommand.Name
+		}
+	}
+	if strings.TrimSpace(title) == "" && len(roots) > 0 {
+		title = roots[0].Name
+	}
+
+	return TraceSummary{
+		Title:        strings.TrimSpace(title),
+		RootSpans:    roots,
+		CommandSpans: commands,
+	}
+}
+
+func spanDurationMs(start, end int64) int64 {
+	if start <= 0 || end <= start {
+		return 0
+	}
+	return (end - start) / int64(time.Millisecond)
+}
+
 func compareInt64(a, b int64) int {
 	if a < b {
 		return -1
@@ -680,4 +801,27 @@ func compareString(a, b string) int {
 		return 1
 	}
 	return 0
+}
+
+func getStringSlice(m map[string]any, key string) []string {
+	if m == nil {
+		return nil
+	}
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		s, ok := item.(string)
+		if !ok || s == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }

@@ -274,8 +274,8 @@ Process call spans in `(endTime, startTime, spanID)` order:
 ### 5) Apply scope filter
 
 1. Keep objects referenced by top-level **create/mutate** events, including receiver/input object references for those events.
-2. Keep objects that have non-top-level non-internal activity (so deep mutation chains surfaced by top-level outputs remain visible).
-3. Keep top-level `Query.*` call outputs, but drop other top-level call-only objects by default (these are often fan-out read/accessor noise).
+2. Keep top-level call outputs only when they are `Query.*` roots or when they show non-top-level activity on the same object identity.
+3. Drop non-top-level-only objects by default (this avoids large `File`/`Directory` fan-out noise in execution-heavy traces).
 4. Optionally keep immediate neighbor objects if they are required to preserve an edge endpoint in rendered view (toggleable).
 5. Drop all others to reduce visual crowding.
 
@@ -298,6 +298,12 @@ Discrete playback mode (default UI):
 2. Slider position maps to a step index, not absolute wall time.
 3. Backend resolves `GET /api/traces/{traceID}/snapshot?step=<n>` to an exact event boundary (stable even when multiple events share timestamps).
 4. Timeline labels show `Step i / N` (with relative time as secondary context).
+
+Operator-friendly controls (default UI):
+
+1. Replace player/seek bar with explicit controls: first, back, forward, last.
+2. Show status, current step, and last step as independent readouts.
+3. Default selection stays on step 1 for newly selected traces; manual navigation controls progression.
 
 ## Standalone App Architecture
 
@@ -507,15 +513,19 @@ Stage 3 implementation note:
   - `GET /api/traces/{traceID}/snapshot?t=<unix_nano>`
   - `GET /api/traces/{traceID}/snapshot?step=<event_index>`
 - Backend now projects immutable DAGQL call/output spans into mutable object histories and mutation events, with top-level seed filtering.
+- Projection summary now includes command/root-span context:
+  - trace title inferred from CLI command spans (`process.command_args` when available)
+  - command span list and root span list for trace-level debug context
 - Dependency edges remain empty until `dagger.io/dag.output.state` payloads are emitted by the engine (objects are still shown with `missingState` signaling).
 
 Stage 4 implementation note:
 - `odag serve` now hosts an embedded web UI at `/` (no external frontend build step required for the local experiment).
 - UI includes:
   - stored trace selector
-  - timeline controls (play/pause, step, end, scrub) driven by discrete object-event steps
+  - timeline controls (first/back/forward/last) driven by discrete object-event steps
+  - status/current/last step readouts (no continuous seek bar)
   - ODAG object canvas (workflow-style cards with mutation highlighting)
-  - event stream panel
+  - event stream panel with raw-vs-derived operation columns (`rawKind` vs `operation`)
   - inspector panel (selected object state history or current event details)
 
 Stage 5 implementation note:
@@ -539,7 +549,8 @@ Post-MVP projection refinement:
 - Default rendering now excludes `dagger.io/ui.internal=true` spans/events from seed scope and UI event stream to reduce noise.
 - Object projection ignores scalar outputs (e.g. `String`, `Int`, `Boolean`, `Float`, `JSON`, `Void`) even if older traces contain `dag.output` for them.
 - Mutation collapse now tolerates module-qualified type names (e.g. `ModuleSource` vs `mymod.ModuleSource`) via normalized type matching, reducing false "create" splits in chains.
-- Default keep rules now prune top-level non-`Query.*` call-only objects (common GraphQL selection fan-out), while preserving top-level writes and non-top-level mutation-heavy objects.
+- Default keep rules now prune top-level non-`Query.*` call-only fan-out objects and non-top-level-only objects, while preserving top-level writes and mutation-heavy top-level outputs.
+- Event debug fields now include call-depth and nearest parent DAG call metadata to audit top-level classification directly in UI.
 
 ### Phase 0: Spike
 

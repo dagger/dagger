@@ -24,17 +24,25 @@
 
       <main class="main-panel">
         <section class="timeline-panel panel">
-          <div class="timeline-left">
-            <button id="playPauseBtn" class="btn">Play</button>
-            <button id="stepBtn" class="btn">Step</button>
-            <button id="endBtn" class="btn">End</button>
-          </div>
-          <div class="timeline-center">
-            <input id="timelineSlider" type="range" min="0" max="0" value="0" />
-            <div class="timeline-labels">
-              <span id="timelineCurrent">Step 0</span>
-              <span id="timelineEnd">Step 0</span>
+          <div class="timeline-stats">
+            <div class="timeline-stat">
+              <span class="timeline-stat-label">Status</span>
+              <span id="timelineStatus" class="timeline-stat-value">idle</span>
             </div>
+            <div class="timeline-stat">
+              <span class="timeline-stat-label">Current Step</span>
+              <span id="timelineCurrent">0</span>
+            </div>
+            <div class="timeline-stat">
+              <span class="timeline-stat-label">Last Step</span>
+              <span id="timelineEnd">0</span>
+            </div>
+          </div>
+          <div class="timeline-controls">
+            <button id="firstBtn" class="btn">First</button>
+            <button id="prevBtn" class="btn">Back</button>
+            <button id="nextBtn" class="btn">Forward</button>
+            <button id="lastBtn" class="btn">Last</button>
           </div>
           <div class="timeline-right">
             <span id="traceStats" class="stats"></span>
@@ -48,6 +56,14 @@
 
         <section class="events-panel panel">
           <h2>Event Stream</h2>
+          <div class="event-header">
+            <span>Call</span>
+            <span>Raw</span>
+            <span>Derived</span>
+            <span>Top</span>
+            <span>Depth</span>
+            <span>Object</span>
+          </div>
           <div id="eventList" class="event-list"></div>
         </section>
       </main>

@@ -4,10 +4,33 @@ type TraceProjection struct {
 	TraceID       string          `json:"traceID"`
 	StartUnixNano int64           `json:"startUnixNano"`
 	EndUnixNano   int64           `json:"endUnixNano"`
+	Summary       TraceSummary    `json:"summary"`
 	Objects       []ObjectNode    `json:"objects"`
 	Edges         []ObjectEdge    `json:"edges"`
 	Events        []MutationEvent `json:"events"`
 	Warnings      []string        `json:"warnings,omitempty"`
+}
+
+type TraceSummary struct {
+	Title        string           `json:"title,omitempty"`
+	RootSpans    []SpanSummary    `json:"rootSpans,omitempty"`
+	CommandSpans []CommandSummary `json:"commandSpans,omitempty"`
+}
+
+type SpanSummary struct {
+	SpanID        string `json:"spanID"`
+	Name          string `json:"name"`
+	ParentSpanID  string `json:"parentSpanID,omitempty"`
+	StartUnixNano int64  `json:"startUnixNano"`
+	EndUnixNano   int64  `json:"endUnixNano"`
+	DurationMs    int64  `json:"durationMs"`
+}
+
+type CommandSummary struct {
+	SpanSummary
+	ServiceName string   `json:"serviceName,omitempty"`
+	ScopeName   string   `json:"scopeName,omitempty"`
+	CommandArgs []string `json:"commandArgs,omitempty"`
 }
 
 type ObjectNode struct {
@@ -41,25 +64,31 @@ type ObjectEdge struct {
 }
 
 type MutationEvent struct {
-	Index               int        `json:"index"`
-	TraceID             string     `json:"traceID"`
-	SpanID              string     `json:"spanID"`
-	ParentSpanID        string     `json:"parentSpanID,omitempty"`
-	StartUnixNano       int64      `json:"startUnixNano"`
-	EndUnixNano         int64      `json:"endUnixNano"`
-	StatusCode          string     `json:"statusCode"`
-	StatusMessage       string     `json:"statusMessage,omitempty"`
-	Name                string     `json:"name"`
-	CallDigest          string     `json:"callDigest,omitempty"`
-	ReceiverStateDigest string     `json:"receiverStateDigest,omitempty"`
-	OutputStateDigest   string     `json:"outputStateDigest,omitempty"`
-	ReturnType          string     `json:"returnType,omitempty"`
-	TopLevel            bool       `json:"topLevel"`
-	Internal            bool       `json:"internal,omitempty"`
-	Kind                string     `json:"kind"` // create, mutate, call
-	ObjectID            string     `json:"objectID,omitempty"`
-	MissingOutputState  bool       `json:"missingOutputState"`
-	Inputs              []InputRef `json:"inputs,omitempty"`
+	Index                 int        `json:"index"`
+	TraceID               string     `json:"traceID"`
+	SpanID                string     `json:"spanID"`
+	ParentSpanID          string     `json:"parentSpanID,omitempty"`
+	StartUnixNano         int64      `json:"startUnixNano"`
+	EndUnixNano           int64      `json:"endUnixNano"`
+	StatusCode            string     `json:"statusCode"`
+	StatusMessage         string     `json:"statusMessage,omitempty"`
+	Name                  string     `json:"name"`
+	CallDigest            string     `json:"callDigest,omitempty"`
+	ReceiverStateDigest   string     `json:"receiverStateDigest,omitempty"`
+	OutputStateDigest     string     `json:"outputStateDigest,omitempty"`
+	ReturnType            string     `json:"returnType,omitempty"`
+	TopLevel              bool       `json:"topLevel"`
+	CallDepth             int        `json:"callDepth"`
+	ParentCallSpanID      string     `json:"parentCallSpanID,omitempty"`
+	ParentCallName        string     `json:"parentCallName,omitempty"`
+	ParentChainIncomplete bool       `json:"parentChainIncomplete,omitempty"`
+	Internal              bool       `json:"internal,omitempty"`
+	Kind                  string     `json:"kind"` // create, mutate, call
+	RawKind               string     `json:"rawKind"`
+	Operation             string     `json:"operation,omitempty"` // create, mutate
+	ObjectID              string     `json:"objectID,omitempty"`
+	MissingOutputState    bool       `json:"missingOutputState"`
+	Inputs                []InputRef `json:"inputs,omitempty"`
 }
 
 type InputRef struct {

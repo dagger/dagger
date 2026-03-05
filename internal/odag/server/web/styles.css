@@ -106,6 +106,13 @@ body {
   background: #21344a;
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  background: #1a2736;
+}
+
 .text-input {
   border: 1px solid rgba(92, 116, 147, 0.42);
   border-radius: 8px;
@@ -165,37 +172,52 @@ body {
 
 .timeline-panel {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 14px;
   padding: 12px;
 }
 
-.timeline-left {
-  display: flex;
+.timeline-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
-.timeline-center {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.timeline-stat {
+  border: 1px solid rgba(92, 116, 147, 0.32);
+  border-radius: 10px;
+  background: rgba(22, 32, 45, 0.7);
+  padding: 8px 10px;
 }
 
-#timelineSlider {
-  width: 100%;
-}
-
-.timeline-labels {
-  display: flex;
-  justify-content: space-between;
+.timeline-stat-label {
+  display: block;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
+}
+
+.timeline-stat-value,
+#timelineCurrent,
+#timelineEnd {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.9rem;
+}
+
+.timeline-controls {
+  display: flex;
+  gap: 8px;
 }
 
 .stats {
   color: var(--muted);
   font-size: 0.78rem;
+  display: block;
+  max-width: 540px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .graph-panel {
@@ -231,6 +253,18 @@ body {
   font-size: 0.95rem;
 }
 
+.event-header {
+  display: grid;
+  grid-template-columns: 3.5fr repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(90, 116, 146, 0.28);
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .event-list {
   overflow: auto;
   display: flex;
@@ -252,10 +286,18 @@ body {
   background: rgba(41, 66, 84, 0.85);
 }
 
-.event-top {
-  display: flex;
-  justify-content: space-between;
+.event-grid {
+  display: grid;
+  grid-template-columns: 3.5fr repeat(5, minmax(0, 1fr));
+  gap: 8px;
   color: #d5e0ee;
+  font-size: 0.78rem;
+}
+
+.event-grid > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .event-sub {
@@ -372,6 +414,19 @@ body {
 
   .main-panel {
     grid-template-rows: auto minmax(0, 1fr) 180px;
+  }
+
+  .timeline-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .timeline-stats {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .event-header,
+  .event-grid {
+    grid-template-columns: 2fr repeat(5, minmax(0, 1fr));
   }
 }
 

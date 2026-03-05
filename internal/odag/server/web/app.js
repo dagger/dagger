@@ -6,7 +6,6 @@ const state = {
   frameSteps: [],
   frameIndex: 0,
   selectedObjectID: "",
-  playTimer: null,
   requestToken: 0,
 };
 
@@ -16,12 +15,13 @@ const els = {
   cloudTraceID: document.getElementById("cloudTraceID"),
   cloudOrg: document.getElementById("cloudOrg"),
   traceList: document.getElementById("traceList"),
-  timelineSlider: document.getElementById("timelineSlider"),
+  timelineStatus: document.getElementById("timelineStatus"),
   timelineCurrent: document.getElementById("timelineCurrent"),
   timelineEnd: document.getElementById("timelineEnd"),
-  playPauseBtn: document.getElementById("playPauseBtn"),
-  stepBtn: document.getElementById("stepBtn"),
-  endBtn: document.getElementById("endBtn"),
+  firstBtn: document.getElementById("firstBtn"),
+  prevBtn: document.getElementById("prevBtn"),
+  nextBtn: document.getElementById("nextBtn"),
+  lastBtn: document.getElementById("lastBtn"),
   traceStats: document.getElementById("traceStats"),
   graphCanvas: document.getElementById("graphCanvas"),
   graphEmpty: document.getElementById("graphEmpty"),
@@ -48,26 +48,19 @@ function bindEvents() {
     importTraceFromCloud().catch((err) => showError(err));
   });
 
-  els.timelineSlider.addEventListener("input", () => {
-    const idx = Number.parseInt(els.timelineSlider.value, 10) || 0;
-    loadFrame(idx).catch((err) => showError(err));
+  els.firstBtn.addEventListener("click", () => {
+    loadFrame(0).catch((err) => showError(err));
   });
 
-  els.playPauseBtn.addEventListener("click", () => {
-    if (state.playTimer !== null) {
-      stopPlaying();
-      return;
-    }
-    startPlaying();
+  els.prevBtn.addEventListener("click", () => {
+    loadFrame(state.frameIndex - 1).catch((err) => showError(err));
   });
 
-  els.stepBtn.addEventListener("click", () => {
-    stopPlaying();
+  els.nextBtn.addEventListener("click", () => {
     loadFrame(Math.min(state.frameIndex + 1, state.frameSteps.length - 1)).catch((err) => showError(err));
   });
 
-  els.endBtn.addEventListener("click", () => {
-    stopPlaying();
+  els.lastBtn.addEventListener("click", () => {
     if (state.frameSteps.length === 0) {
       return;
     }
@@ -88,7 +81,7 @@ async function refreshTraces() {
   if (!state.selectedTraceID || !state.traces.some((t) => t.traceID === state.selectedTraceID)) {
     await selectTrace(state.traces[0].traceID);
   } else {
-    await selectTrace(state.selectedTraceID);
+    await selectTrace(state.selectedTraceID, { preserveStep: true });
   }
 }
 
@@ -120,10 +113,12 @@ async function importTraceFromCloud() {
   }
 }
 
-async function selectTrace(traceID) {
+async function selectTrace(traceID, opts = {}) {
+  const preserveStep = Boolean(opts.preserveStep);
+  const targetStep = preserveStep ? state.frameIndex : 0;
+
   state.selectedTraceID = traceID;
   state.selectedObjectID = "";
-  stopPlaying();
   renderTraceList();
 
   const token = ++state.requestToken;
@@ -134,7 +129,7 @@ async function selectTrace(traceID) {
 
   state.projection = resp.projection || null;
   state.frameSteps = buildFrameSteps(state.projection);
-  state.frameIndex = Math.max(0, state.frameSteps.length - 1);
+  state.frameIndex = clampStep(targetStep);
 
   if (state.frameSteps.length > 0) {
     const stepResp = await fetchJSON(
@@ -149,7 +144,7 @@ async function selectTrace(traceID) {
     state.snapshot = resp.snapshot || null;
   }
 
-  syncTimelineControl();
+  syncStepControls();
 
   renderAll();
 }
@@ -168,8 +163,9 @@ async function loadFrame(frameIndex) {
 
   state.projection = resp.projection || state.projection;
   state.snapshot = resp.snapshot || state.snapshot;
-  state.frameIndex = idx;
-  syncTimelineControl();
+  state.frameSteps = buildFrameSteps(state.projection);
+  state.frameIndex = clampStep(idx);
+  syncStepControls();
   renderAll();
 }
 
@@ -180,35 +176,21 @@ function buildFrameSteps(projection) {
   return (projection.events || []).filter((event) => Boolean(event.objectID));
 }
 
-function syncTimelineControl() {
+function clampStep(step) {
   const max = Math.max(0, state.frameSteps.length - 1);
-  els.timelineSlider.max = String(max);
-  els.timelineSlider.value = String(Math.min(state.frameIndex, max));
+  if (state.frameSteps.length === 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(step, max));
 }
 
-function startPlaying() {
-  if (state.playTimer !== null || state.frameSteps.length === 0) {
-    return;
-  }
-  els.playPauseBtn.textContent = "Pause";
-  state.playTimer = window.setInterval(() => {
-    if (state.frameIndex >= state.frameSteps.length - 1) {
-      stopPlaying();
-      return;
-    }
-    loadFrame(state.frameIndex + 1).catch((err) => {
-      stopPlaying();
-      showError(err);
-    });
-  }, 700);
-}
-
-function stopPlaying() {
-  if (state.playTimer !== null) {
-    window.clearInterval(state.playTimer);
-    state.playTimer = null;
-  }
-  els.playPauseBtn.textContent = "Play";
+function syncStepControls() {
+  const max = Math.max(0, state.frameSteps.length - 1);
+  const hasSteps = state.frameSteps.length > 0;
+  els.firstBtn.disabled = !hasSteps || state.frameIndex <= 0;
+  els.prevBtn.disabled = !hasSteps || state.frameIndex <= 0;
+  els.nextBtn.disabled = !hasSteps || state.frameIndex >= max;
+  els.lastBtn.disabled = !hasSteps || state.frameIndex >= max;
 }
 
 function clearSelection(msg) {
@@ -216,11 +198,11 @@ function clearSelection(msg) {
   state.snapshot = null;
   state.frameSteps = [];
   state.frameIndex = 0;
-  stopPlaying();
-  syncTimelineControl();
+  syncStepControls();
   els.traceStats.textContent = "";
-  els.timelineCurrent.textContent = "Step 0";
-  els.timelineEnd.textContent = "Step 0";
+  els.timelineStatus.textContent = "idle";
+  els.timelineCurrent.textContent = "0";
+  els.timelineEnd.textContent = "0";
   els.graphCanvas.innerHTML = "";
   els.graphEmpty.textContent = msg;
   els.graphEmpty.style.display = "block";
@@ -267,30 +249,29 @@ function renderTraceList() {
 }
 
 function renderTimeline() {
+  const traceMeta = getSelectedTraceMeta();
+  els.timelineStatus.textContent = traceMeta?.status || "unknown";
+
   if (!state.projection || !state.snapshot || state.frameSteps.length === 0) {
-    els.timelineCurrent.textContent = "Step 0";
-    els.timelineEnd.textContent = "Step 0";
+    els.timelineCurrent.textContent = "0";
+    els.timelineEnd.textContent = "0";
     els.traceStats.textContent = "";
+    syncStepControls();
     return;
   }
 
   const currentStep = state.frameIndex + 1;
   const totalSteps = state.frameSteps.length;
-  const currentEvent = state.frameSteps[state.frameIndex];
-  const lastEvent = state.frameSteps[totalSteps - 1];
-  els.timelineCurrent.textContent = `Step ${currentStep} · ${formatRelTime(
-    currentEvent?.endUnixNano || 0,
-    state.projection.startUnixNano,
-  )}`;
-  els.timelineEnd.textContent = `Step ${totalSteps} · ${formatRelTime(
-    lastEvent?.endUnixNano || 0,
-    state.projection.startUnixNano,
-  )}`;
+  els.timelineCurrent.textContent = String(currentStep);
+  els.timelineEnd.textContent = String(totalSteps);
+
+  const title = state.projection.summary?.title ? ` | ${state.projection.summary.title}` : "";
   const objectCount = (state.snapshot.objects || []).length;
   const eventCount = (state.snapshot.events || []).length;
   const warningCount = (state.projection.warnings || []).length;
   const warnText = warningCount > 0 ? ` | ${warningCount} warnings` : "";
-  els.traceStats.textContent = `${objectCount} objects | ${eventCount} events${warnText}`;
+  els.traceStats.textContent = `${objectCount} objects | ${eventCount} events${warnText}${title}`;
+  syncStepControls();
 }
 
 function renderGraph() {
@@ -409,11 +390,18 @@ function renderEvents() {
   els.eventList.innerHTML = recentEvents
     .map((event) => {
       const activeClass = active.has(event.spanID) ? "active" : "";
-      const title = `${event.kind.toUpperCase()} ${event.name || event.callDigest || event.spanID}`;
-      const detail = `${formatRelTime(event.endUnixNano, state.projection.startUnixNano)} · ${event.statusCode || "STATUS_CODE_UNSET"}`;
+      const callLabel = event.name || event.callDigest || event.spanID;
+      const detail = `${formatRelTime(event.endUnixNano, state.projection.startUnixNano)} · ${event.statusCode || "STATUS_CODE_UNSET"} · span ${shortDigest(event.spanID)}`;
       return `
       <div class="event-item ${activeClass}">
-        <div class="event-top"><span>${escapeHTML(title)}</span><span>${escapeHTML(shortDigest(event.objectID || ""))}</span></div>
+        <div class="event-grid">
+          <span>${escapeHTML(callLabel)}</span>
+          <span>${escapeHTML(event.rawKind || "call")}</span>
+          <span>${escapeHTML(event.operation || "-")}</span>
+          <span>${event.topLevel ? "yes" : "no"}</span>
+          <span>${Number(event.callDepth || 0)}</span>
+          <span>${escapeHTML(shortDigest(event.objectID || ""))}</span>
+        </div>
         <div class="event-sub">${escapeHTML(detail)}</div>
       </div>`;
     })
@@ -427,6 +415,25 @@ function renderInspector() {
   }
 
   const selectedObject = (state.snapshot.objects || []).find((obj) => obj.id === state.selectedObjectID);
+  const summary = state.projection.summary || {};
+  const commandMarkup = (summary.commandSpans || [])
+    .slice(0, 4)
+    .map((cmd) => {
+      const args = (cmd.commandArgs || []).join(" ");
+      const label = args || cmd.name || cmd.spanID;
+      return `<li><code>${escapeHTML(shortDigest(cmd.spanID || ""))}</code> ${escapeHTML(label)}</li>`;
+    })
+    .join("");
+
+  const headerBlock = `
+    <div class="inspector-block">
+      <div class="inspector-key">Trace Title</div>
+      <div class="inspector-value">${escapeHTML(summary.title || state.selectedTraceID)}</div>
+      <div class="inspector-key">Command Spans</div>
+      <ul>${commandMarkup || "<li>None detected</li>"}</ul>
+    </div>
+  `;
+
   if (selectedObject) {
     const stateRows = selectedObject.stateHistory
       .slice()
@@ -446,6 +453,7 @@ function renderInspector() {
       .join("");
 
     els.inspector.innerHTML = `
+      ${headerBlock}
       <div class="inspector-block">
         <div class="inspector-key">Object</div>
         <div class="inspector-value">${escapeHTML(selectedObject.alias)} (${escapeHTML(selectedObject.typeName)})</div>
@@ -481,10 +489,23 @@ function renderInspector() {
     .join("");
 
   els.inspector.innerHTML = `
+    ${headerBlock}
     <div class="inspector-block">
       <div class="inspector-key">Current Event</div>
       <div class="inspector-value">${escapeHTML(currentEvent.name || currentEvent.callDigest || currentEvent.spanID)}</div>
-      <div class="inspector-key">Kind</div>
+      <div class="inspector-key">Raw Kind</div>
+      <div class="inspector-value">${escapeHTML(currentEvent.rawKind || "call")}</div>
+      <div class="inspector-key">Derived Operation</div>
+      <div class="inspector-value">${escapeHTML(currentEvent.operation || "none")}</div>
+      <div class="inspector-key">Top Level / Call Depth</div>
+      <div class="inspector-value">${currentEvent.topLevel ? "yes" : "no"} / ${Number(currentEvent.callDepth || 0)}</div>
+      <div class="inspector-key">Parent DAG Call</div>
+      <div class="inspector-value">${escapeHTML(
+        currentEvent.parentCallName ? `${currentEvent.parentCallName} (${shortDigest(currentEvent.parentCallSpanID || "")})` : "none",
+      )}</div>
+      <div class="inspector-key">Parent Chain Incomplete</div>
+      <div class="inspector-value">${currentEvent.parentChainIncomplete ? "yes" : "no"}</div>
+      <div class="inspector-key">Legacy Kind</div>
       <div class="inspector-value">${escapeHTML(currentEvent.kind)}</div>
       <div class="inspector-key">Status</div>
       <div class="inspector-value">${escapeHTML(currentEvent.statusCode || "STATUS_CODE_UNSET")}</div>
@@ -533,6 +554,10 @@ function formatRelTime(unixNano, startUnixNano) {
   }
   const ms = (unixNano - startUnixNano) / 1e6;
   return `${ms.toFixed(1)} ms`;
+}
+
+function getSelectedTraceMeta() {
+  return state.traces.find((trace) => trace.traceID === state.selectedTraceID) || null;
 }
 
 function escapeHTML(raw) {
