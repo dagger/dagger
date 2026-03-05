@@ -1033,42 +1033,33 @@ func (s *workspaceSchema) checks(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.CheckGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
-	}
-
-	query, err := core.CurrentQuery(ctx)
+	include := workspaceIncludePatterns(args.Include)
+	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
-	served, err := query.Server.CurrentServedDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("current served deps: %w", err)
-	}
 
 	var allChecks []*core.Check
-	for _, mod := range served.PrimaryMods() {
-		userMod, ok := mod.(*core.Module)
-		if !ok {
-			continue
-		}
-		if mod.Name() == core.ModuleName {
-			continue
-		}
-		checkGroup, err := userMod.Checks(ctx, include)
+	for _, mod := range mods {
+		// Collect module-local checks first; workspace-level include filtering
+		// happens after reparenting so patterns can include the module prefix.
+		checkGroup, err := mod.Checks(ctx, nil)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Name(), err)
 		}
-		// Reparent the tree root so that check paths include the module
-		// name as a prefix (e.g. "eslint:lint" instead of just "lint").
-		if checkGroup.Node != nil {
-			checkGroup.Node.Parent = &core.ModTreeNode{}
-			checkGroup.Node.Name = mod.Name()
+		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Name())
+		filtered, err := filterNodesByInclude(
+			ctx,
+			checkGroup.Checks,
+			include,
+			func(check *core.Check) *core.ModTreeNode { return check.Node },
+			func(check *core.Check) string { return check.Name() },
+			"check",
+		)
+		if err != nil {
+			return nil, err
 		}
-		allChecks = append(allChecks, checkGroup.Checks...)
+		allChecks = append(allChecks, filtered...)
 	}
 
 	return &core.CheckGroup{
@@ -1083,13 +1074,52 @@ func (s *workspaceSchema) generators(
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.GeneratorGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
+	include := workspaceIncludePatterns(args.Include)
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
 	}
 
+	var allGenerators []*core.Generator
+	for _, mod := range mods {
+		// Collect module-local generators first; workspace-level include filtering
+		// happens after reparenting so patterns can include the module prefix.
+		generatorGroup, err := mod.Generators(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
+		}
+		reparentWorkspaceTreeRoot(generatorGroup.Node, mod.Name())
+		filtered, err := filterNodesByInclude(
+			ctx,
+			generatorGroup.Generators,
+			include,
+			func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+			func(generator *core.Generator) string { return generator.Name() },
+			"generator",
+		)
+		if err != nil {
+			return nil, err
+		}
+		allGenerators = append(allGenerators, filtered...)
+	}
+
+	return &core.GeneratorGroup{
+		Generators: allGenerators,
+	}, nil
+}
+
+func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
+	if !includeArg.Valid {
+		return nil
+	}
+	patterns := make([]string, 0, len(includeArg.Value))
+	for _, pattern := range includeArg.Value {
+		patterns = append(patterns, pattern.String())
+	}
+	return patterns
+}
+
+func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1099,31 +1129,61 @@ func (s *workspaceSchema) generators(
 		return nil, fmt.Errorf("current served deps: %w", err)
 	}
 
-	var allGenerators []*core.Generator
+	mods := make([]*core.Module, 0, len(served.PrimaryMods()))
 	for _, mod := range served.PrimaryMods() {
 		userMod, ok := mod.(*core.Module)
 		if !ok {
 			continue
 		}
-		if mod.Name() == core.ModuleName {
+		if userMod.Name() == core.ModuleName {
 			continue
 		}
-		generatorGroup, err := userMod.Generators(ctx, include)
-		if err != nil {
-			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
-		}
-		// Reparent the tree root so that generator paths include the module
-		// name as a prefix (e.g. "codegen:generate" instead of just "generate").
-		if generatorGroup.Node != nil {
-			generatorGroup.Node.Parent = &core.ModTreeNode{}
-			generatorGroup.Node.Name = mod.Name()
-		}
-		allGenerators = append(allGenerators, generatorGroup.Generators...)
+		mods = append(mods, userMod)
+	}
+	return mods, nil
+}
+
+func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string) {
+	if root == nil {
+		return
+	}
+	root.Parent = &core.ModTreeNode{}
+	root.Name = modName
+}
+
+func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include []string) (bool, error) {
+	if len(include) == 0 {
+		return true, nil
+	}
+	if node == nil {
+		return false, nil
+	}
+	return node.Match(ctx, include)
+}
+
+func filterNodesByInclude[T any](
+	ctx context.Context,
+	items []T,
+	include []string,
+	nodeOf func(T) *core.ModTreeNode,
+	nameOf func(T) string,
+	itemKind string,
+) ([]T, error) {
+	if len(include) == 0 {
+		return items, nil
 	}
 
-	return &core.GeneratorGroup{
-		Generators: allGenerators,
-	}, nil
+	filtered := make([]T, 0, len(items))
+	for _, item := range items {
+		match, err := matchWorkspaceInclude(ctx, nodeOf(item), include)
+		if err != nil {
+			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
+		}
+		if match {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
 }
 
 // readWorkspaceConfig reads the current workspace config from host, or returns a fresh empty config.
