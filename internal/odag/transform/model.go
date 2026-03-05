@@ -55,6 +55,7 @@ type MutationEvent struct {
 	OutputStateDigest   string     `json:"outputStateDigest,omitempty"`
 	ReturnType          string     `json:"returnType,omitempty"`
 	TopLevel            bool       `json:"topLevel"`
+	Internal            bool       `json:"internal,omitempty"`
 	Kind                string     `json:"kind"` // create, mutate, call
 	ObjectID            string     `json:"objectID,omitempty"`
 	MissingOutputState  bool       `json:"missingOutputState"`

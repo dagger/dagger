@@ -173,6 +173,109 @@ func TestSnapshotAt(t *testing.T) {
 	}
 }
 
+func TestProjectTraceFiltersInternalSeedsAndScalarOutputs(t *testing.T) {
+	t.Parallel()
+
+	spans := []store.SpanRecord{
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace2",
+			spanID:       "s1",
+			parentSpanID: "",
+			name:         "Query.moduleSource",
+			start:        1,
+			end:          2,
+			output:       "state-internal",
+			internal:     true,
+			call: &callpbv1.Call{
+				Digest: "call-internal",
+				Field:  "moduleSource",
+				Type:   &callpbv1.Type{NamedType: "ModuleSource"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace2",
+			spanID:       "s2",
+			parentSpanID: "",
+			name:         "Query.moduleSource",
+			start:        10,
+			end:          20,
+			output:       "state-a",
+			call: &callpbv1.Call{
+				Digest: "call-a",
+				Field:  "moduleSource",
+				Type:   &callpbv1.Type{NamedType: "ModuleSource"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace2",
+			spanID:       "s3",
+			parentSpanID: "s2",
+			name:         "ModuleSource.withName",
+			start:        21,
+			end:          30,
+			output:       "state-b",
+			call: &callpbv1.Call{
+				Digest:         "call-b",
+				ReceiverDigest: "state-a",
+				Field:          "withName",
+				Type:           &callpbv1.Type{NamedType: "mymod.ModuleSource"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace2",
+			spanID:       "s4",
+			parentSpanID: "",
+			name:         "Query.name",
+			start:        31,
+			end:          35,
+			output:       "state-string",
+			call: &callpbv1.Call{
+				Digest: "call-scalar",
+				Field:  "name",
+				Type:   &callpbv1.Type{NamedType: "String"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace2", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+
+	if len(proj.Objects) != 1 {
+		t.Fatalf("expected 1 rendered object, got %d", len(proj.Objects))
+	}
+	obj := proj.Objects[0]
+	if obj.TypeName != "ModuleSource" {
+		t.Fatalf("expected ModuleSource, got %s", obj.TypeName)
+	}
+	if len(obj.StateHistory) != 2 {
+		t.Fatalf("expected collapsed history of 2 states, got %d", len(obj.StateHistory))
+	}
+	if obj.StateHistory[0].StateDigest != "state-a" || obj.StateHistory[1].StateDigest != "state-b" {
+		t.Fatalf("unexpected state history: %#v", obj.StateHistory)
+	}
+
+	for _, event := range proj.Events {
+		if event.Internal {
+			t.Fatalf("internal events should be filtered, found %+v", event)
+		}
+	}
+
+	if len(proj.Events) != 3 {
+		t.Fatalf("expected 3 non-internal events, got %d", len(proj.Events))
+	}
+	if proj.Events[0].SpanID != "s2" || proj.Events[0].Kind != "create" {
+		t.Fatalf("unexpected first event: %+v", proj.Events[0])
+	}
+	if proj.Events[1].SpanID != "s3" || proj.Events[1].Kind != "mutate" {
+		t.Fatalf("unexpected second event: %+v", proj.Events[1])
+	}
+	if proj.Events[2].SpanID != "s4" || proj.Events[2].ObjectID != "" {
+		t.Fatalf("expected scalar output to stay as call event, got %+v", proj.Events[2])
+	}
+}
+
 type callSpanInput struct {
 	traceID      string
 	spanID       string
@@ -181,6 +284,7 @@ type callSpanInput struct {
 	start        int64
 	end          int64
 	output       string
+	internal     bool
 	call         *callpbv1.Call
 }
 
@@ -197,6 +301,9 @@ func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
 	}
 	if in.output != "" {
 		attrs[telemetry.DagOutputAttr] = in.output
+	}
+	if in.internal {
+		attrs[telemetry.UIInternalAttr] = true
 	}
 	data, err := json.Marshal(map[string]any{"attributes": attrs})
 	if err != nil {

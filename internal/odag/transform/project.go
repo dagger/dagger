@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -53,7 +54,7 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 			endUnixNano = sp.span.EndUnixNano
 		}
 
-		if sp.isTopLevel {
+		if sp.isTopLevel && !sp.isInternal {
 			if sp.receiverStateDigest != "" {
 				seedStates[sp.receiverStateDigest] = struct{}{}
 			}
@@ -82,11 +83,12 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 			OutputStateDigest:   sp.outputStateDigest,
 			ReturnType:          sp.returnType,
 			TopLevel:            sp.isTopLevel,
+			Internal:            sp.isInternal,
 			Inputs:              sp.inputs,
 			Kind:                "call",
 		}
 
-		if sp.outputStateDigest == "" {
+		if sp.outputStateDigest == "" || !sp.isObjectOutput {
 			events = append(events, event)
 			continue
 		}
@@ -94,9 +96,8 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		objectID := ""
 		if receiverObjectID, ok := stateToObject[sp.receiverStateDigest]; ok &&
 			receiverObjectID != "" &&
-			sp.returnType != "" &&
 			objectsByID[receiverObjectID] != nil &&
-			objectsByID[receiverObjectID].TypeName == sp.returnType {
+			canMutateReceiver(objectsByID[receiverObjectID].TypeName, sp.returnType) {
 			objectID = receiverObjectID
 			event.Kind = "mutate"
 		}
@@ -149,6 +150,26 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		events = append(events, event)
 	}
 
+	if len(seedStates) == 0 {
+		warnings = append(warnings, "no non-internal top-level seed states; falling back to all top-level seeds")
+		for _, sp := range parsedSpans {
+			if !sp.isTopLevel {
+				continue
+			}
+			if sp.receiverStateDigest != "" {
+				seedStates[sp.receiverStateDigest] = struct{}{}
+			}
+			if sp.outputStateDigest != "" {
+				seedStates[sp.outputStateDigest] = struct{}{}
+			}
+			for _, in := range sp.inputs {
+				if in.StateDigest != "" {
+					seedStates[in.StateDigest] = struct{}{}
+				}
+			}
+		}
+	}
+
 	objects := make([]ObjectNode, 0, len(objectsByID))
 	keptObjectIDs := make(map[string]struct{}, len(objectsByID))
 	for objectID, obj := range objectsByID {
@@ -186,6 +207,9 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 
 	filteredEvents := make([]MutationEvent, 0, len(events))
 	for _, event := range events {
+		if event.Internal {
+			continue
+		}
 		if event.ObjectID == "" {
 			// Keep top-level calls even if they don't return an object.
 			if event.TopLevel {
@@ -274,6 +298,8 @@ type parsedSpan struct {
 	attrs               map[string]any
 	isDAGCall           bool
 	isTopLevel          bool
+	isInternal          bool
+	isObjectOutput      bool
 	callDigest          string
 	receiverStateDigest string
 	outputStateDigest   string
@@ -302,6 +328,7 @@ func parseSpans(spans []store.SpanRecord) ([]parsedSpan, []string) {
 		outputDigest, _ := getString(attrs, telemetry.DagOutputAttr)
 		p.callDigest = callDigest
 		p.outputStateDigest = outputDigest
+		p.isInternal, _ = getBool(attrs, telemetry.UIInternalAttr)
 
 		if outputStatePayload, err := decodeOutputStatePayload(attrs); err != nil {
 			warnings = append(warnings, fmt.Sprintf("span %s: decode output state payload: %v", span.SpanID, err))
@@ -322,6 +349,9 @@ func parseSpans(spans []store.SpanRecord) ([]parsedSpan, []string) {
 					p.callDigest = callMsg.GetDigest()
 				}
 			}
+		}
+		if p.outputStateDigest != "" {
+			p.isObjectOutput = p.returnType == "" || !isScalarTypeName(p.returnType)
 		}
 		out = append(out, p)
 	}
@@ -467,6 +497,28 @@ func getString(m map[string]any, key string) (string, bool) {
 	return s, ok
 }
 
+func getBool(m map[string]any, key string) (bool, bool) {
+	if m == nil {
+		return false, false
+	}
+	v, ok := m[key]
+	if !ok {
+		return false, false
+	}
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case string:
+		if x == "true" {
+			return true, true
+		}
+		if x == "false" {
+			return false, true
+		}
+	}
+	return false, false
+}
+
 func shortTypeName(typeName string) string {
 	if typeName == "" {
 		return "Object"
@@ -482,6 +534,34 @@ func shortTypeName(typeName string) string {
 		return typeName[lastDot+1:]
 	}
 	return typeName
+}
+
+func canMutateReceiver(receiverType, returnType string) bool {
+	if receiverType == "" || returnType == "" {
+		return true
+	}
+	return sameTypeName(receiverType, returnType)
+}
+
+func sameTypeName(a, b string) bool {
+	if a == b {
+		return true
+	}
+	return normalizeTypeName(a) == normalizeTypeName(b)
+}
+
+func normalizeTypeName(v string) string {
+	short := shortTypeName(v)
+	return strings.TrimSuffix(short, "ID")
+}
+
+func isScalarTypeName(typeName string) bool {
+	switch normalizeTypeName(typeName) {
+	case "String", "Int", "Float", "Boolean", "Void", "JSON":
+		return true
+	default:
+		return false
+	}
 }
 
 func compareInt64(a, b int64) int {

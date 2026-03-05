@@ -525,6 +525,11 @@ Stage 5 implementation note:
   - object references in values are emitted as immutable call digests (state IDs)
 - ODAG consumes these attributes when present and gracefully handles absence (`missingState`), enabling compatibility with both older and newer engines.
 
+Post-MVP projection refinement:
+- Default rendering now excludes `dagger.io/ui.internal=true` spans/events from seed scope and UI event stream to reduce noise.
+- Object projection ignores scalar outputs (e.g. `String`, `Int`, `Boolean`, `Float`, `JSON`, `Void`) even if older traces contain `dag.output` for them.
+- Mutation collapse now tolerates module-qualified type names (e.g. `ModuleSource` vs `mymod.ModuleSource`) via normalized type matching, reducing false "create" splits in chains.
+
 ### Phase 0: Spike
 
 1. Implement ODAG transformer against recorded span fixture.
