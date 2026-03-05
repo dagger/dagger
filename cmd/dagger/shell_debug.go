@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/termenv"
 )

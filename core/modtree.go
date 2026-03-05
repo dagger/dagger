@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"dagger.io/dagger/querybuilder"
-	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	telemetry "github.com/dagger/otel-go"
 
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"

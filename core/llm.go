@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cenkalti/backoff/v4"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"

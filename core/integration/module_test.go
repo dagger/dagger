@@ -29,12 +29,12 @@ import (
 	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 )
 

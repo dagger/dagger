@@ -35,7 +35,6 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	var overlay fs.FS = layerfs.New(
 		mfs,
 		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-		&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
 	)
 
 	res := &generator.GeneratedState{
