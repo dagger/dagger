@@ -459,12 +459,13 @@ body {
 }
 
 .node-label {
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 600;
   fill: #edf3fc;
 }
 
 .node-sub {
-  font-size: 11px;
+  font-size: 12.5px;
   fill: #9bb1cd;
 }
 

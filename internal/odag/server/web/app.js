@@ -230,10 +230,10 @@ function renderGraph() {
   els.graphEmpty.style.display = "none";
 
   const cols = Math.max(1, Math.ceil(Math.sqrt(objects.length)));
-  const cardW = 260;
-  const cardH = 92;
-  const gapX = 68;
-  const gapY = 76;
+  const cardW = 300;
+  const cardH = 116;
+  const gapX = 72;
+  const gapY = 84;
   const padding = 52;
   const contentW = padding * 2 + cols * cardW + Math.max(0, cols - 1) * gapX;
   const rows = Math.ceil(objects.length / cols);
@@ -283,11 +283,11 @@ function renderGraph() {
       return `
       <g data-object-id="${escapeHTML(obj.id)}" style="cursor:pointer; animation: fadeIn 220ms ease;">
         <rect class="${classNames}" x="${pos.x}" y="${pos.y}" rx="14" ry="14" width="${cardW}" height="${cardH}" />
-        <circle class="node-port" cx="${pos.x}" cy="${pos.y + cardH / 2}" r="5" />
-        <circle class="node-port" cx="${pos.x + cardW}" cy="${pos.y + cardH / 2}" r="5" />
-        <text class="node-label" x="${pos.x + 14}" y="${pos.y + 28}">${escapeHTML(obj.typeName)}</text>
-        <text class="node-sub" x="${pos.x + 14}" y="${pos.y + 49}">${escapeHTML(subtitle)}</text>
-        <text class="node-sub" x="${pos.x + 14}" y="${pos.y + 69}">${escapeHTML(
+        <circle class="node-port" cx="${pos.x}" cy="${pos.y + cardH / 2}" r="6" />
+        <circle class="node-port" cx="${pos.x + cardW}" cy="${pos.y + cardH / 2}" r="6" />
+        <text class="node-label" x="${pos.x + 16}" y="${pos.y + 34}">${escapeHTML(obj.typeName)}</text>
+        <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 62}">${escapeHTML(subtitle)}</text>
+        <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 86}">${escapeHTML(
           `${obj.stateHistory.length} mutations`,
         )}${warning}</text>
       </g>`;
