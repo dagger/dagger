@@ -106,6 +106,7 @@ type MyModule {
     ])
   ) {
     self.source = src
+    self
   }
 }
 ```
