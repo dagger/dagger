@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,6 +63,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 type daggerSession struct {
@@ -1648,26 +1650,82 @@ func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *dag
 	return fmt.Errorf("workspace %q: resolving local path: %w", workspaceRef, err)
 }
 
+type workspaceRemoteRef struct {
+	cloneRef        string
+	version         string
+	workspaceSubdir string
+}
+
+func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRemoteRef, error) {
+	// Fragment refs are parsed via the same git URL parser used by Address.*.
+	if strings.Contains(remoteRef, "#") {
+		gitURL, err := gitutil.ParseURL(remoteRef)
+		if err != nil {
+			return workspaceRemoteRef{}, err
+		}
+		version := ""
+		subdir := "."
+		if gitURL.Fragment != nil {
+			version = gitURL.Fragment.Ref
+			subdir = gitURL.Fragment.Subdir
+		}
+		workspaceSubdir, err := normalizeWorkspaceRemoteSubdir(subdir)
+		if err != nil {
+			return workspaceRemoteRef{}, fmt.Errorf("invalid git subdir in workspace ref %q: %w", remoteRef, err)
+		}
+		return workspaceRemoteRef{
+			cloneRef:        gitURL.Remote(),
+			version:         version,
+			workspaceSubdir: workspaceSubdir,
+		}, nil
+	}
+
+	// Preserve legacy @ref parsing semantics for existing workspace refs.
+	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
+	if err != nil {
+		return workspaceRemoteRef{}, err
+	}
+	workspaceSubdir := "."
+	if parsedRef.RepoRootSubdir != "/" && parsedRef.RepoRootSubdir != "." {
+		workspaceSubdir = parsedRef.RepoRootSubdir
+	}
+	return workspaceRemoteRef{
+		cloneRef:        parsedRef.SourceCloneRef,
+		version:         parsedRef.ModVersion,
+		workspaceSubdir: workspaceSubdir,
+	}, nil
+}
+
+func normalizeWorkspaceRemoteSubdir(subdir string) (string, error) {
+	if subdir == "" {
+		return ".", nil
+	}
+	subdir = filepath.Clean(subdir)
+	subdir = strings.TrimPrefix(subdir, string(filepath.Separator))
+	if subdir == "" || subdir == "." {
+		return ".", nil
+	}
+	if !filepath.IsLocal(subdir) {
+		return "", fmt.Errorf("path points outside repository: %q", subdir)
+	}
+	return subdir, nil
+}
+
 // loadWorkspaceFromRemote clones a git repo and detects/loads the workspace from it.
 func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerClient, remoteRef string) error {
-	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
+	parsedRef, err := parseWorkspaceRemoteRef(ctx, remoteRef)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
 	}
 
-	tree, err := srv.cloneGitTree(ctx, client.dag, &parsedRef)
+	tree, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
 	}
 
-	cwd := "."
-	if parsedRef.RepoRootSubdir != "/" && parsedRef.RepoRootSubdir != "." {
-		cwd = parsedRef.RepoRootSubdir
-	}
-
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
 		subPath := filepath.Join(ws.Root, ws.Path, relPath)
-		return core.GitRefString(parsedRef.SourceCloneRef, subPath, parsedRef.ModVersion)
+		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
 	}
 
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
@@ -1675,7 +1733,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		func(ctx context.Context, path string) ([]byte, error) {
 			return core.DirectoryReadFile(ctx, tree, path)
 		},
-		cwd,
+		parsedRef.workspaceSubdir,
 		resolveLocalRef,
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
@@ -2044,13 +2102,13 @@ func (srv *Server) buildCoreWorkspace(
 }
 
 // cloneGitTree clones a git repository and returns its directory tree.
-func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, parsedRef *core.ParsedGitRefString) (dagql.ObjectResult[*core.Directory], error) {
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], error) {
 	// Build the ref selector — use "head" if no version specified.
 	refSelector := dagql.Selector{Field: "head"}
-	if parsedRef.ModVersion != "" {
+	if version != "" {
 		refSelector = dagql.Selector{
 			Field: "ref",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(parsedRef.ModVersion)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(version)}},
 		}
 	}
 
@@ -2059,7 +2117,7 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, parsedRe
 		dagql.Selector{
 			Field: "git",
 			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(parsedRef.SourceCloneRef)},
+				{Name: "url", Value: dagql.String(cloneRef)},
 			},
 		},
 		refSelector,
