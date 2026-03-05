@@ -18,3 +18,4 @@
   - [x] Add unit tests for workspace mount detection and runtime-hook behavior.
   - [x] Add integration test for workspace mount write persistence in-lineage and no sync-back to fresh mount.
   - [x] Add integration tests for laziness and caching behavior.
+  - [x] Handle missing `fusermount` by enabling direct FUSE mounts in WSFS runtime.

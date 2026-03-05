@@ -112,7 +112,16 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 
 	wsfs := newWSFSPathFS(r.ctx, upperPath, r.workspace)
 	nfs := pathfs.NewPathNodeFs(wsfs, nil)
-	server, _, err := nodefs.MountRoot(fusePath, nfs.Root(), &nodefs.Options{})
+	server, _, err := nodefs.Mount(
+		fusePath,
+		nfs.Root(),
+		&fuse.MountOptions{
+			// Avoid hard dependency on fusermount in the engine image.
+			// The engine already runs with mount capabilities required for direct mount.
+			DirectMount: true,
+		},
+		&nodefs.Options{},
+	)
 	if err != nil {
 		_ = os.RemoveAll(fusePath)
 		_ = upperMounter.Unmount()
