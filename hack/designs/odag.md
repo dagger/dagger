@@ -516,7 +516,14 @@ Stage 5 implementation note:
 - Telemetry protocol constants were added for upcoming output-state payload support:
   - `dagger.io/dag.output.state`
   - `dagger.io/dag.output.state.version`
-- Current ODAG implementation already consumes these attributes when present and gracefully handles their absence (`missingState`), enabling compatibility with both old and future engines.
+- Engine emission is now implemented in `core`:
+  - when a span sets `dagger.io/dag.output`, it also emits `dagger.io/dag.output.state` + `.version` (`v1`) for first-seen output IDs in a trace
+  - emitter deduplicates by `(traceID, dag.output)` and avoids resending the same state payload repeatedly
+- Current payload encoding is `base64(json)` (version `v1`) with shape:
+  - root: `{ type, fields }`
+  - `fields` entry: `{ name, type, value }`
+  - object references in values are emitted as immutable call digests (state IDs)
+- ODAG consumes these attributes when present and gracefully handles absence (`missingState`), enabling compatibility with both older and newer engines.
 
 ### Phase 0: Spike
 

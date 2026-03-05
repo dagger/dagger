@@ -253,7 +253,22 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 		if !isLoader {
 			objDigest := obj.ID().Digest()
-			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
+			outputDigest := objDigest.String()
+			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, outputDigest))
+
+			traceID := span.SpanContext().TraceID().String()
+			if outputStateEmitter.TryReserve(traceID, outputDigest) {
+				statePayload, err := encodeOutputStatePayload(obj)
+				if err != nil {
+					outputStateEmitter.Release(traceID, outputDigest)
+					slog.WarnContext(ctx, "failed to encode dag output state", "outputDigest", outputDigest, "err", err)
+				} else {
+					span.SetAttributes(
+						attribute.String(telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+						attribute.String(telemetry.DagOutputStateAttr, statePayload),
+					)
+				}
+			}
 		}
 	}
 }
