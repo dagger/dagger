@@ -23,7 +23,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/cellbuf"
-	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/bubbline/history"
@@ -1211,15 +1210,6 @@ func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	// container, not here. Their cursors propagate through tuist automatically.
 	// NOTE: keymapBar is rendered as a sibling in the TUI container.
 
-	// Truncate each line to terminal width so no line wraps to multiple
-	// physical rows. Without this, tuist's diff renderer miscounts
-	// cursor positions.
-	if fe.window.Width > 0 {
-		w := uint(fe.window.Width)
-		for i, line := range lines {
-			lines[i] = truncate.String(line, w)
-		}
-	}
 	return tuist.RenderResult{Lines: lines}
 }
 
