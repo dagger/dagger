@@ -14,10 +14,10 @@ import (
 	"github.com/opencontainers/go-digest"
 	"resenje.org/singleflight"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/contenthash"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var checksumG singleflight.Group[string, digest.Digest]

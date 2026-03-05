@@ -16,7 +16,6 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/prompts"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -26,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/jedevc/diffparser"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

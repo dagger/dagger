@@ -20,12 +20,12 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (

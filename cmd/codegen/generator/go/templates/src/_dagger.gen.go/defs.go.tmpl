@@ -18,7 +18,8 @@ import (
 
 {{ if IsModuleCode }}
 	"{{.UtilityPkgImport}}/querybuilder"
-	"{{.UtilityPkgImport}}/telemetry"
+	
+	telemetry "github.com/dagger/otel-go"
 {{ end }}
 
 {{- if IsStandaloneClient }}

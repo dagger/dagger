@@ -6,7 +6,7 @@
 
     <groupId>io.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
-    <version>0.20.0</version>
+    <version>0.20.1</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -18,6 +18,13 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>2.18.6</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>io.dagger</groupId>
                 <artifactId>dagger-java-sdk</artifactId>
@@ -284,7 +291,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <daggerengine.version>0.20.0</daggerengine.version>
+        <daggerengine.version>0.20.1</daggerengine.version>
         <daggerengine.schema></daggerengine.schema>
 
         <assertj-core.version>3.27.7</assertj-core.version>

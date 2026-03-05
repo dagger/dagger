@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"
 )

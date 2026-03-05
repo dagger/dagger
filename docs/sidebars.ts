@@ -126,6 +126,7 @@ module.exports = {
           collapsed: false,
           items: [
             "introduction/features/secrets",
+            "introduction/features/local-defaults",
             "introduction/features/shell",
             "introduction/features/llm",
           ],

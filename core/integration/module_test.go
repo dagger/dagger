@@ -27,13 +27,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	"github.com/dagger/dagger/internal/testutil"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 )
 

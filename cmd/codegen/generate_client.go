@@ -6,9 +6,10 @@ import (
 	"log/slog"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/spf13/cobra"
+
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (

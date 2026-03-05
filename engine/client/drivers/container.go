@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/adrg/xdg"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/google/go-containerregistry/pkg/name"
 	"go.opentelemetry.io/otel"
 

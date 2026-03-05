@@ -1,12 +1,12 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 
 	"github.com/dagger/testctx"
 )
