@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -1597,11 +1598,11 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 	case mnt.DirectorySource != nil: // mounted directory
 		dir, err = mnt.DirectorySource.Self().Directory(ctx, subpath)
 	case mnt.WorkspaceSource != nil: // mounted workspace
-		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
-		if wsErr != nil {
-			return nil, wsErr
+		if mnt.WorkspaceSource.Upper != nil {
+			dir, err = mnt.WorkspaceSource.Upper.Self().Directory(ctx, subpath)
+		} else {
+			dir, err = workspaceMountDirectory(ctx, mnt.WorkspaceSource, subpath)
 		}
-		dir, err = wsDir.Self().Directory(ctx, subpath)
 	case mnt.FileSource != nil: // mounted file
 		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
 	default:
@@ -1636,12 +1637,13 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
 		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
 	case mnt.WorkspaceSource != nil: // mounted workspace
-		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
-		if wsErr != nil {
-			return nil, wsErr
+		if mnt.WorkspaceSource.Upper != nil {
+			f, err = mnt.WorkspaceSource.Upper.Self().File(ctx, subpath)
+			err = RestoreErrPath(err, filePath)
+		} else {
+			f, err = workspaceMountFile(ctx, mnt.WorkspaceSource, subpath)
+			err = RestoreErrPath(err, filePath)
 		}
-		f, err = wsDir.Self().File(ctx, subpath)
-		err = RestoreErrPath(err, filePath)
 	case mnt.FileSource != nil: // mounted file
 		return mnt.FileSource.Self(), nil
 	default:
@@ -1875,14 +1877,33 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 		}
 
 	case mnt.WorkspaceSource != nil: // workspace mount
-		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
-		if wsErr != nil {
-			return false, wsErr
+		if mnt.WorkspaceSource.Upper != nil {
+			err = srv.Select(ctx, mnt.WorkspaceSource.Upper, &exists, dagql.Selector{
+				Field: "exists",
+				Args:  args,
+			})
+		} else {
+			stat, statErr := workspaceMountStat(ctx, mnt.WorkspaceSource, mntSubpath, doNotFollowSymlinks)
+			switch {
+			case statErr == nil:
+				switch targetType {
+				case "":
+					return true, nil
+				case ExistsTypeDirectory:
+					return stat.FileType == FileTypeDirectory, nil
+				case ExistsTypeRegular:
+					return stat.FileType == FileTypeRegular, nil
+				case ExistsTypeSymlink:
+					return stat.FileType == FileTypeSymlink, nil
+				default:
+					return false, fmt.Errorf("invalid exists type %q", targetType)
+				}
+			case errors.Is(statErr, os.ErrNotExist):
+				return false, nil
+			default:
+				return false, statErr
+			}
 		}
-		err = srv.Select(ctx, wsDir, &exists, dagql.Selector{
-			Field: "exists",
-			Args:  args,
-		})
 		if err != nil {
 			return false, err
 		}
@@ -1934,14 +1955,14 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 		}
 
 	case mnt.WorkspaceSource != nil: // workspace mount
-		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
-		if wsErr != nil {
-			return nil, wsErr
+		if mnt.WorkspaceSource.Upper != nil {
+			err = srv.Select(ctx, mnt.WorkspaceSource.Upper, &stat, dagql.Selector{
+				Field: "stat",
+				Args:  args,
+			})
+		} else {
+			stat, err = workspaceMountStat(ctx, mnt.WorkspaceSource, mntSubpath, doNotFollowSymlinks)
 		}
-		err = srv.Select(ctx, wsDir, &stat, dagql.Selector{
-			Field: "stat",
-			Args:  args,
-		})
 		if err != nil {
 			return nil, err
 		}
@@ -2889,6 +2910,96 @@ func resolveWorkspaceMountDir(
 	}
 
 	return &dir, nil
+}
+
+func workspaceMountDirectory(
+	ctx context.Context,
+	workspaceMnt *WorkspaceMountSource,
+	relPath string,
+) (*Directory, error) {
+	if workspaceMnt == nil {
+		return nil, fmt.Errorf("workspace mount source is nil")
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var dir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, workspaceMnt.Workspace, &dir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(relPath)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	return dir.Self(), nil
+}
+
+func workspaceMountFile(
+	ctx context.Context,
+	workspaceMnt *WorkspaceMountSource,
+	relPath string,
+) (*File, error) {
+	if workspaceMnt == nil {
+		return nil, fmt.Errorf("workspace mount source is nil")
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var file dagql.Result[*File]
+	if err := srv.Select(ctx, workspaceMnt.Workspace, &file, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(relPath)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	return file.Self(), nil
+}
+
+func workspaceMountStat(
+	ctx context.Context,
+	workspaceMnt *WorkspaceMountSource,
+	relPath string,
+	doNotFollowSymlinks bool,
+) (*Stat, error) {
+	if workspaceMnt == nil {
+		return nil, fmt.Errorf("workspace mount source is nil")
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.String(relPath)},
+	}
+	if doNotFollowSymlinks {
+		args = append(args, dagql.NamedInput{
+			Name:  "doNotFollowSymlinks",
+			Value: dagql.NewBoolean(true),
+		})
+	}
+
+	var stat *Stat
+	if err := srv.Select(ctx, workspaceMnt.Workspace, &stat, dagql.Selector{
+		Field: "stat",
+		Args:  args,
+	}); err != nil {
+		return nil, err
+	}
+
+	return stat, nil
 }
 
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
