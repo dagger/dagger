@@ -15,6 +15,7 @@
 - [UX Design](#ux-design)
 - [Feasibility and Tradeoffs](#feasibility-and-tradeoffs)
 - [Unknowns and Open Questions](#unknowns-and-open-questions)
+- [Handoff Snapshot](#handoff-snapshot)
 - [Implementation Plan](#implementation-plan)
 - [Validation Plan](#validation-plan)
 
@@ -998,6 +999,41 @@ Encoding note:
 6. **Explicit telemetry follow-up**: once engine spans export true session/client identifiers, the heuristic derivation should be removed rather than further complicated.
 7. **Client hierarchy correctness**: without explicit `parent_client_id`, nested-client relationships remain best-effort.
 
+## Handoff Snapshot
+
+These are the latest design decisions that should be preserved across handoff.
+
+1. **Immutable ID terminology**
+   - use `dagql_id` for immutable object-state IDs
+   - do not let `snapshot_id` linger as the primary name in new schema/API design
+2. **State payload contract**
+   - `dagger.io/dag.output.state` is new and can hard-cutover
+   - engine should emit per-field `refs`
+   - backend should treat `refs` as authoritative and stop inferring nested dependency paths
+3. **Edge taxonomy**
+   - default object DAG edge is `field_ref`
+   - containment is separate (`contains_call`, `contains_object`)
+   - receiver/arg lineage is provenance overlay, not default DAG structure
+4. **Ground truth vs ODAG inference**
+   - call receiver/args/output are telemetry facts
+   - bindings, mutations, and collapse decisions are ODAG derivations
+   - "receiver/output collapse onto the same binding" is heuristic, not protocol truth
+5. **`Query` handling**
+   - `Query` is technically an object
+   - v1 may treat `receiver=Query` as "no receiver binding"
+   - this should be implemented as a projection choice, not as a claim about underlying telemetry
+6. **Execution scope model**
+   - target API shape is client-tree first, sessions derived from root clients
+   - current telemetry does not make parentage/call ownership fully reliable
+   - explicit `session_id` / `client_id` / `parent_client_id` telemetry is the intended long-term fix
+7. **Client heuristic honesty**
+   - keep the `Client` / `Session` model in the API because it matches the product direction
+   - keep heuristic risk explicit in the contract and UI/debug surfaces
+   - do not overfit persistence or UX to current heuristic behavior
+8. **Trace role**
+   - trace remains useful as ingest/debug/import boundary
+   - it should not become the dominant user-facing silo in the v2 architecture
+
 ## Implementation Plan
 
 ### Stage Checklist (Execution Status)
@@ -1020,6 +1056,9 @@ Encoding note:
   - `field_ref` as default object-object dependency
   - call/object containment relations
   - receiver/arg provenance as optional overlays, not default DAG edges
+- [ ] Implement `Query` receiver handling explicitly in backend projection:
+  - default v1 behavior: treat as no receiver binding
+  - keep room for later promotion to a root binding/root scope anchor if useful
 - [ ] Add explicit engine OTEL telemetry for true execution-scope identifiers:
   - session ID on relevant spans
   - client ID on relevant spans
