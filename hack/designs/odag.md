@@ -169,6 +169,9 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
 3. **Views**:
    - session/client/trace scoped projections are query-time filters over one global pool.
    - primary UX is session-first; trace-centric views remain secondary/debug-oriented.
+4. **Heuristic policy**:
+   - heuristics are acceptable for deriving engine-defined execution scopes such as session/client when telemetry does not yet expose them directly
+   - those heuristics must live behind a narrow, versioned derivation boundary so they can be tuned or replaced later without changing the rest of the model.
 
 ### Proposed types
 
@@ -339,6 +342,9 @@ Notes:
    - spans and calls belong under a client (or directly under a session if client identity is unavailable).
    - object bindings are derived from calls and are therefore naturally attributable to client/session via those calls.
    - trace is an ingest/debug boundary, not the primary ownership hierarchy for ODAG entities.
+8. Derivation contract for session/client:
+   - current implementation may use heuristics to detect session/client boundaries from known engine span/resource patterns
+   - those rules should be isolated in one derivation module with explicit tests and `derivationVersion` coverage.
 
 ## Backend API (V2 Source of Truth)
 
@@ -677,16 +683,19 @@ Encoding note:
 1. **Mutation heuristic simplicity vs semantic precision**
    - Simple rule is robust and cheap.
    - Some calls may look like mutation but are conceptual forks; need override hooks later.
-2. **Apply mutation at end-time vs start-time**
+2. **Session/client heuristic derivation vs explicit telemetry**
+   - Heuristics are acceptable for clearly engine-defined scopes and unblock the session-first UX.
+   - They must remain encapsulated; once explicit telemetry exists, the heuristic layer should be replaceable without reshaping downstream APIs.
+3. **Apply mutation at end-time vs start-time**
    - End-time is semantically safer.
    - Start-time can feel more “live” but can show speculative state.
-3. **Top-level seed filter strictness**
+4. **Top-level seed filter strictness**
    - Strict seed filter reduces clutter strongly.
    - May hide useful transitive context unless “include neighbors” is available.
-4. **Backend transform vs browser-only transform**
+5. **Backend transform vs browser-only transform**
    - Backend transform allows reuse of Go internals and auth.
    - Browser-only would simplify deployment but complicate CORS/auth and protobuf decode parity.
-5. **Payload richness vs telemetry overhead**
+6. **Payload richness vs telemetry overhead**
    - Emitting object state payloads gives accurate dependencies and simpler UI semantics.
    - Payload size and serialization cost must be bounded for large traces.
 
@@ -714,6 +723,7 @@ Encoding note:
 - [ ] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
 - [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
 - [ ] Replace current `session == trace` approximation with explicit session/client derivation from telemetry; keep trace routes as secondary/debug views.
+- [ ] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, so the rules can be swapped out cleanly later.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
