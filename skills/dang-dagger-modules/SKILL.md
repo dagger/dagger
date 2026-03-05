@@ -142,7 +142,7 @@ let name = json.field(["name"]).asString ?? "unknown"
 # After `if (x != null)`, x is narrowed to non-null inside the block
 let pkgJsonFile: File = findPkgJson
 
-let contentsViaIf = if (pkgJsonFile != null) {
+let contents = if (pkgJsonFile != null) {
   pkgJsonFile.contents
 } else {
   ""
