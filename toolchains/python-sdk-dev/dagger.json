@@ -23,7 +23,7 @@
     {
       "name": "pytest",
       "source": "github.com/dagger/pytest@main",
-      "pin": "9d1757d125a8fd3d7f0caef2d2cb3c3115f886b0"
+      "pin": "8ecbf6650d1c3c9eaf0fa92bb57c9c15987c932b"
     },
     {
       "name": "wolfi",
