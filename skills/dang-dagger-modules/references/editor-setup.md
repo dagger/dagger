@@ -16,14 +16,14 @@ In Zed: Extensions > search "Dang" > Install.
 
 ### Configure Zed LSP
 
-Add to `~/.config/zed/settings.json` so Zed finds the binary explicitly (PATH resolution can be unreliable on macOS):
+Add to `~/.config/zed/settings.json`:
 
 ```json
 {
   "lsp": {
     "dang-lsp": {
       "binary": {
-        "path": "/Users/shykes/.local/bin/dang",
+        "path": "dang",
         "arguments": ["--lsp"]
       }
     }

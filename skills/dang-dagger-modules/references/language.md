@@ -469,7 +469,11 @@ Container chaining methods include: `.from()`, `.withExec()`, `.withDirectory()`
 
 Directory methods include: `.file()`, `.directory()`, `.entries`, `.glob(pattern)`, `.withFile()`, `.withDirectory()`, `.withNewFile()`, `.withoutDirectory()`, `.dockerBuild`, `.changes()`.
 
-Workspace methods include: `.directory(path, include?, exclude?)`, `.file(path)`. Workspace is always a function argument, never a field. See skill.md for Workspace API details.
+Workspace methods include: `.directory(path, include?, exclude?)`, `.file(path)`.
+Workspace is always a function argument, never a field. Use workspace-rooted
+paths (for example: `ws.directory(ws.root)` or
+`ws.directory(ws.root + "/foo")`) rather than `ws.directory(".")` or
+`ws.directory("foo")`. See skill.md for Workspace API details.
 
 ## Common Pitfalls
 

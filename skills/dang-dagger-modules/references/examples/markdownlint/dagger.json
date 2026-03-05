@@ -1,7 +1,0 @@
-{
-  "name": "markdown-lint",
-  "engineVersion": "v0.19.11",
-  "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk"
-  }
-}

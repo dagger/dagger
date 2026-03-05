@@ -9,35 +9,37 @@ Dang is a statically typed scripting language for GraphQL, used as a lightweight
 
 ## Project Setup
 
-A Dang Dagger module requires:
+A Dang Dagger module should be bootstrapped with Dagger CLI commands, not by
+hand-editing `dagger.json` first:
 
-1. **`dagger.json`** pointing to the Dang SDK:
+1. **Create the module skeleton:**
 
-```json
-{
-  "name": "my-module",
-  "engineVersion": "v0.19.11",
-  "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
-  },
-  "dependencies": []
-}
+```sh
+dagger module init
 ```
 
-2. **One or more `.dang` files** (typically `main.dang`). All `.dang` files in the module directory are loaded.
+2. **Pin the Dang SDK to this exact digest:**
+
+```sh
+dagger init --sdk=github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b
+```
+
+3. **Keep the module up to date over time:**
+
+```sh
+dagger update
+```
+
+4. **Add one or more `.dang` files** (typically `main.dang`). All `.dang`
+files in the module directory are loaded.
+
+The SDK digest above is intentionally hardcoded for this skill. When updating
+the language/syntax reference in this skill, update the SDK digest in lockstep
+to the matching `github.com/vito/dang/dagger-sdk@<digest>`.
 
 ## Language Reference
 
 See [references/language.md](references/language.md) for complete syntax, types, and patterns.
-
-## Reference Module Examples
-
-Use these full module examples copied from `dogfood-workspace-api`:
-
-- [references/examples/docusaurus/docusaurus.dang](references/examples/docusaurus/docusaurus.dang)
-- [references/examples/docusaurus/dagger.json](references/examples/docusaurus/dagger.json)
-- [references/examples/markdownlint/markdownlint.dang](references/examples/markdownlint/markdownlint.dang)
-- [references/examples/markdownlint/dagger.json](references/examples/markdownlint/dagger.json)
 
 ## Dagger Module Patterns
 
@@ -261,13 +263,17 @@ pub test: Void @check {
 
 ### Workspace API
 
-The Workspace API replaces the legacy `@defaultPath`/`@ignorePatterns` pattern for accessing project files. Instead of eagerly loading directories via constructor fields, functions declare a `ws: Workspace!` argument and call `ws.directory()`/`ws.file()` to lazily access files.
+The Workspace API replaces the legacy `@defaultPath`/`@ignorePatterns` pattern
+for accessing project files. Instead of eagerly loading directories via
+constructor fields, functions declare a `ws: Workspace!` argument and call
+`ws.directory()`/`ws.file()` to lazily access files.
 
 **Key rules:**
 
 - **`Workspace` must be a function argument, never a field.** The engine magically injects it. Storing it in a field is not supported.
 - **Any function that takes `ws: Workspace!` is never cached** — the engine can't know in advance which files will be accessed. Design accordingly: keep workspace-dependent functions thin, and push cacheable work into functions that take `Directory!` or `File!` instead.
-- **Always filter at the `ws.directory()` call** using `include:`/`exclude:` patterns. Never call `ws.directory(".")` without filters — that eagerly uploads the entire project.
+- **Use workspace-rooted paths.** Prefer `ws.directory(ws.root)` and `ws.directory(ws.root + "/foo")` over `ws.directory(".")` or `ws.directory("foo")`.
+- **Always filter at the `ws.directory()` call** using `include:`/`exclude:` patterns. Never call `ws.directory(ws.root)` without filters — that eagerly uploads the entire project.
 - **Push workspace access to the leaves** when possible. If a function only sometimes needs workspace files, or returns objects that may or may not need them, defer the `ws.directory()` call to the point of actual use. This avoids unnecessary uploads and keeps intermediate results cacheable.
 
 ```dang
@@ -278,7 +284,7 @@ type MyToolchain {
   Get filtered source from the workspace.
   """
   pub source(ws: Workspace!): Directory! {
-    ws.directory(sourcePath)
+    ws.directory(ws.root + "/" + sourcePath)
   }
 
   """
@@ -287,7 +293,7 @@ type MyToolchain {
   pub bump(ws: Workspace!, version: String!): Changeset! {
     let v = version.trimPrefix("v")
     let contents = "package version\n\nconst Version = \"" + v + "\"\n"
-    let workspace = ws.directory(".", include: [
+    let workspace = ws.directory(ws.root, include: [
       sourcePath + "/**",
     ])
     workspace
@@ -308,7 +314,7 @@ type Discoverer {
   """
   pub sites(ws: Workspace!): [Site!]! {
     # Only upload config files for discovery — not the full site dirs
-    let configs = ws.directory(".", include: ["**/config.json"])
+    let configs = ws.directory(ws.root, include: ["**/config.json"])
     let paths = configs.glob("**/config.json")
     paths.map { path =>
       let parts = path.split("/")
@@ -334,7 +340,11 @@ type Site {
   The full site directory (lazy — only uploaded when called).
   """
   pub dir(ws: Workspace!): Directory! {
-    ws.directory(path)
+    if (path == ".") {
+      ws.directory(ws.root)
+    } else {
+      ws.directory(ws.root + "/" + path)
+    }
   }
 }
 ```
