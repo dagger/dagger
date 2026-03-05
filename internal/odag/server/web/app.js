@@ -192,11 +192,14 @@ function renderHistory() {
       const rel = formatRelTime(eventBoundaryUnixNano(event), startUnixNano);
       return `
       <div class="history-item ${selected}" data-event-index="${idx}">
-        <div class="history-main">
-          <span class="history-pill">${escapeHTML(derived)}</span>
+        <div class="history-grid">
+          <span><span class="history-pill">${escapeHTML(derived)}</span></span>
           <span class="history-call">${escapeHTML(call)}</span>
+          <span class="history-parent">${escapeHTML(parent)}</span>
+          <span class="history-vis">${escapeHTML(vis)}</span>
+          <span class="history-time">${escapeHTML(rel)}</span>
         </div>
-        <div class="history-sub">${escapeHTML(`${raw} | parent: ${parent} | ${vis} | ${rel}`)}</div>
+        <div class="history-sub">${escapeHTML(raw)}</div>
       </div>`;
     })
     .join("");

@@ -224,6 +224,18 @@ body {
   gap: 8px;
 }
 
+.history-columns {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1.7fr) minmax(0, 1.3fr) 72px 70px;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(90, 116, 146, 0.28);
+  color: var(--muted);
+  font-size: 0.69rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .history-item {
   border: 1px solid rgba(93, 116, 148, 0.3);
   background: rgba(30, 42, 57, 0.75);
@@ -242,11 +254,18 @@ body {
   background: rgba(36, 58, 74, 0.82);
 }
 
-.history-main {
-  display: flex;
+.history-grid {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1.7fr) minmax(0, 1.3fr) 72px 70px;
   gap: 8px;
   align-items: center;
+}
+
+.history-grid > span {
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .history-pill {
@@ -261,15 +280,20 @@ body {
 
 .history-call {
   font-size: 0.8rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.history-parent,
+.history-vis,
+.history-time {
+  color: #adc0da;
+  font-size: 0.76rem;
 }
 
 .history-sub {
   margin-top: 5px;
-  color: var(--muted);
-  font-size: 0.74rem;
+  color: #90a5c3;
+  font-size: 0.72rem;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -520,6 +544,12 @@ body {
 
   .main-panel {
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .history-columns,
+  .history-grid {
+    grid-template-columns: 74px minmax(0, 1.4fr) minmax(0, 1fr) 60px 62px;
+    gap: 6px;
   }
 }
 

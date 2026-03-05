@@ -528,6 +528,7 @@ Stage 4 implementation note:
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
   - selecting a history item moves the DAG snapshot to that event boundary time
   - history pane includes checkbox filters for `calls`, `derived`, and `visible`
+  - history cards use table-like aligned columns (kind/call/parent/visible/time) while keeping card styling
   - dedicated central trace title row above the DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
   - inspector panel shows only selected object details; empty when no object is selected
