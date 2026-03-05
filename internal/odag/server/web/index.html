@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ODAG Trace Viewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="panel traces-panel">
+        <header class="panel-header">
+          <h1>ODAG</h1>
+          <p>Mutable object graph trace explorer</p>
+        </header>
+        <div class="trace-toolbar">
+          <button id="refreshTracesBtn" class="btn">Refresh</button>
+        </div>
+        <div id="traceList" class="trace-list"></div>
+      </aside>
+
+      <main class="main-panel">
+        <section class="timeline-panel panel">
+          <div class="timeline-left">
+            <button id="playPauseBtn" class="btn">Play</button>
+            <button id="stepBtn" class="btn">Step</button>
+            <button id="endBtn" class="btn">End</button>
+          </div>
+          <div class="timeline-center">
+            <input id="timelineSlider" type="range" min="0" max="0" value="0" />
+            <div class="timeline-labels">
+              <span id="timelineCurrent">0 ms</span>
+              <span id="timelineEnd">0 ms</span>
+            </div>
+          </div>
+          <div class="timeline-right">
+            <span id="traceStats" class="stats"></span>
+          </div>
+        </section>
+
+        <section class="graph-panel panel">
+          <svg id="graphCanvas" class="graph-canvas" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="graphEmpty" class="graph-empty">Select a trace to render its ODAG projection.</div>
+        </section>
+
+        <section class="events-panel panel">
+          <h2>Event Stream</h2>
+          <div id="eventList" class="event-list"></div>
+        </section>
+      </main>
+
+      <aside class="panel inspector-panel">
+        <h2>Inspector</h2>
+        <div id="inspector"></div>
+      </aside>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

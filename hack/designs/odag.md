@@ -483,7 +483,7 @@ Encoding note:
 - [x] Stage 1: CLI/server/store scaffold (`odag serve`, `odag run`, sqlite schema, health endpoint)
 - [x] Stage 2: OTLP ingest mode (trace/span persistence from `/v1/traces`)
 - [x] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
-- [ ] Stage 4: Web UI shell + timeline + ODAG canvas + inspector
+- [x] Stage 4: Web UI shell + timeline + ODAG canvas + inspector
 - [ ] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 
 Stage 2 implementation note:
@@ -498,6 +498,15 @@ Stage 3 implementation note:
   - `GET /api/traces/{traceID}/snapshot?t=<unix_nano>`
 - Backend now projects immutable DAGQL call/output spans into mutable object histories and mutation events, with top-level seed filtering.
 - Dependency edges remain empty until `dagger.io/dag.output.state` payloads are emitted by the engine (objects are still shown with `missingState` signaling).
+
+Stage 4 implementation note:
+- `odag serve` now hosts an embedded web UI at `/` (no external frontend build step required for the local experiment).
+- UI includes:
+  - stored trace selector
+  - timeline controls (play/pause, step, end, scrub)
+  - ODAG object canvas (workflow-style cards with mutation highlighting)
+  - event stream panel
+  - inspector panel (selected object state history or current event details)
 
 ### Phase 0: Spike
 

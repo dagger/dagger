@@ -107,8 +107,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("odag server\n"))
+	serveWebAsset(w, r)
 }
 
 func (s *Server) handleListTraces(w http.ResponseWriter, r *http.Request) {

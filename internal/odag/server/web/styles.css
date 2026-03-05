@@ -1,0 +1,375 @@
+:root {
+  --bg: #0d1117;
+  --bg-soft: #141b24;
+  --panel: rgba(19, 28, 39, 0.9);
+  --panel-border: rgba(120, 143, 173, 0.24);
+  --text: #e7edf7;
+  --muted: #95a6be;
+  --accent: #35d0a3;
+  --accent-soft: rgba(53, 208, 163, 0.2);
+  --warn: #efb85a;
+  --danger: #ff7575;
+  --event: #2f3d50;
+  --node: #182433;
+  --node-active: #1f3345;
+  --edge: rgba(140, 162, 192, 0.7);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  color: var(--text);
+  background:
+    radial-gradient(circle at 20% -10%, rgba(84, 132, 191, 0.16), transparent 38%),
+    radial-gradient(circle at 80% 110%, rgba(53, 208, 163, 0.12), transparent 42%),
+    var(--bg);
+  font-family: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 360px;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+}
+
+.panel {
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  border-radius: 14px;
+  backdrop-filter: blur(4px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.panel h2,
+.panel h1 {
+  margin: 0;
+}
+
+.traces-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.panel-header h1 {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 1.05rem;
+}
+
+.panel-header p {
+  margin: 8px 0 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.trace-toolbar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.btn {
+  padding: 6px 12px;
+  border: 1px solid rgba(92, 116, 147, 0.42);
+  border-radius: 8px;
+  background: #1a2736;
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  background: #21344a;
+}
+
+.trace-list {
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trace-item {
+  border: 1px solid rgba(92, 116, 147, 0.32);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  background: rgba(21, 30, 42, 0.65);
+}
+
+.trace-item:hover {
+  border-color: rgba(115, 150, 192, 0.7);
+}
+
+.trace-item.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+  background: rgba(34, 53, 67, 0.9);
+}
+
+.trace-id {
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.76rem;
+  word-break: break-all;
+  color: #b8c7da;
+}
+
+.trace-meta {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.main-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 220px;
+  gap: 12px;
+}
+
+.timeline-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+}
+
+.timeline-left {
+  display: flex;
+  gap: 8px;
+}
+
+.timeline-center {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#timelineSlider {
+  width: 100%;
+}
+
+.timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.stats {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.graph-panel {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20px 20px, rgba(120, 147, 183, 0.14) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+}
+
+.graph-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-empty {
+  position: absolute;
+  inset: auto 12px 12px 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  pointer-events: none;
+}
+
+.events-panel {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.events-panel h2 {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 0.95rem;
+}
+
+.event-list {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.event-item {
+  border: 1px solid rgba(93, 116, 148, 0.3);
+  background: rgba(30, 42, 57, 0.75);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.event-item.active {
+  border-color: var(--accent);
+  background: rgba(41, 66, 84, 0.85);
+}
+
+.event-top {
+  display: flex;
+  justify-content: space-between;
+  color: #d5e0ee;
+}
+
+.event-sub {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.inspector-panel {
+  padding: 14px;
+  overflow: auto;
+}
+
+.inspector-panel h2 {
+  font-size: 0.98rem;
+  margin-bottom: 12px;
+}
+
+.inspector-block {
+  border: 1px solid rgba(90, 116, 146, 0.35);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: rgba(24, 35, 49, 0.7);
+}
+
+.inspector-key {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.inspector-value {
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.state-row {
+  border-top: 1px dashed rgba(92, 116, 147, 0.3);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.state-row:first-child {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.node-card {
+  fill: var(--node);
+  stroke: rgba(119, 148, 184, 0.64);
+  stroke-width: 1.2;
+}
+
+.node-card.active {
+  fill: var(--node-active);
+  stroke: var(--accent);
+  stroke-width: 1.8;
+}
+
+.node-label {
+  font-size: 13px;
+  fill: #edf3fc;
+}
+
+.node-sub {
+  font-size: 11px;
+  fill: #9bb1cd;
+}
+
+.node-port {
+  fill: #6f8db4;
+}
+
+.edge-line {
+  stroke: var(--edge);
+  stroke-width: 1.4;
+  fill: none;
+  marker-end: url(#arrow);
+}
+
+.warn-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 184, 90, 0.4);
+  color: var(--warn);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 1280px) {
+  .app-shell {
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 300px;
+  }
+
+  .inspector-panel {
+    grid-column: 1 / span 2;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 240px minmax(0, 1fr) 300px 320px;
+    padding: 8px;
+  }
+
+  .traces-panel,
+  .main-panel,
+  .inspector-panel {
+    min-height: 0;
+  }
+
+  .main-panel {
+    grid-template-rows: auto minmax(0, 1fr) 180px;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
