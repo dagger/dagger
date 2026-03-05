@@ -529,6 +529,10 @@ Stage 4 implementation note:
   - status is rendered as dot-only signal (no text): pulsing yellow for ingesting, red for failed, green for succeeded, neutral fallback for unknown
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
   - trace navigation back to list uses a small top-left back-arrow control (unobtrusive, conventional placement)
+  - frontend live-refreshes via polling:
+    - trace list updates automatically when new traces/status arrive
+    - trace page updates revision history as new events arrive
+    - current selected revision is preserved (no forced auto-follow to latest)
   - selecting a history item moves the DAG snapshot to that event boundary time
   - history pane includes checkbox filters for `calls`, `derived`, and `visible`
   - history cards use table-like aligned columns (kind/call/parent/visible/time) while keeping card styling

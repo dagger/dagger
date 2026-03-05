@@ -11,7 +11,11 @@ const state = {
     visible: false,
   },
   requestToken: 0,
+  manualRequestInFlight: false,
+  liveBusy: false,
+  liveTimer: 0,
 };
+const liveRefreshIntervalMs = 2000;
 
 const els = {
   backBtn: document.getElementById("backBtn"),
@@ -42,6 +46,7 @@ async function init() {
     return;
   }
   await loadTrace(traceID);
+  startLiveRefresh();
 }
 
 function bindEvents() {
@@ -63,33 +68,53 @@ function bindEvents() {
     state.filters.visible = Boolean(els.filterVisible.checked);
     renderHistory();
   });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !state.liveBusy && !state.manualRequestInFlight) {
+      state.liveBusy = true;
+      refreshCurrentTrace()
+        .catch((err) => showError(err))
+        .finally(() => {
+          state.liveBusy = false;
+        });
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    stopLiveRefresh();
+  });
 }
 
 async function loadTrace(traceID) {
   state.selectedTraceID = traceID;
   state.selectedObjectID = "";
   document.title = `ODAG ${shortDigest(traceID)}`;
+  state.manualRequestInFlight = true;
 
-  const token = ++state.requestToken;
-  const [metaResp, snapResp] = await Promise.all([
-    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/meta`).catch(() => null),
-    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`),
-  ]);
-  if (token !== state.requestToken) {
-    return;
+  try {
+    const token = ++state.requestToken;
+    const [metaResp, snapResp] = await Promise.all([
+      fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/meta`).catch(() => null),
+      fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`),
+    ]);
+    if (token !== state.requestToken) {
+      return;
+    }
+
+    state.traceMeta = metaResp;
+    state.projection = snapResp.projection || null;
+    state.snapshot = snapResp.snapshot || null;
+
+    if (state.projection && (state.projection.events || []).length > 0) {
+      state.selectedEventIndex = state.projection.events.length - 1;
+    } else {
+      state.selectedEventIndex = -1;
+    }
+
+    renderAll();
+  } finally {
+    state.manualRequestInFlight = false;
   }
-
-  state.traceMeta = metaResp;
-  state.projection = snapResp.projection || null;
-  state.snapshot = snapResp.snapshot || null;
-
-  if (state.projection && (state.projection.events || []).length > 0) {
-    state.selectedEventIndex = state.projection.events.length - 1;
-  } else {
-    state.selectedEventIndex = -1;
-  }
-
-  renderAll();
 }
 
 async function selectEvent(eventIndex) {
@@ -99,18 +124,23 @@ async function selectEvent(eventIndex) {
 
   const event = state.projection.events[eventIndex];
   const unixNano = eventBoundaryUnixNano(event);
+  state.manualRequestInFlight = true;
 
-  const token = ++state.requestToken;
-  const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?t=${unixNano}`);
-  if (token !== state.requestToken) {
-    return;
+  try {
+    const token = ++state.requestToken;
+    const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?t=${unixNano}`);
+    if (token !== state.requestToken) {
+      return;
+    }
+
+    state.projection = resp.projection || state.projection;
+    state.snapshot = resp.snapshot || state.snapshot;
+    state.selectedEventIndex = eventIndex;
+
+    renderAll();
+  } finally {
+    state.manualRequestInFlight = false;
   }
-
-  state.projection = resp.projection || state.projection;
-  state.snapshot = resp.snapshot || state.snapshot;
-  state.selectedEventIndex = eventIndex;
-
-  renderAll();
 }
 
 function clearSelection(msg) {
@@ -133,6 +163,93 @@ function renderAll() {
   renderTraceHeader();
   renderHistory();
   renderGraph();
+}
+
+function startLiveRefresh() {
+  stopLiveRefresh();
+  state.liveTimer = window.setInterval(() => {
+    if (document.hidden || state.liveBusy || state.manualRequestInFlight) {
+      return;
+    }
+    state.liveBusy = true;
+    refreshCurrentTrace()
+      .catch((err) => showError(err))
+      .finally(() => {
+        state.liveBusy = false;
+      });
+  }, liveRefreshIntervalMs);
+}
+
+function stopLiveRefresh() {
+  if (state.liveTimer) {
+    window.clearInterval(state.liveTimer);
+    state.liveTimer = 0;
+  }
+}
+
+async function refreshCurrentTrace() {
+  if (!state.selectedTraceID || state.manualRequestInFlight) {
+    return;
+  }
+
+  const selectedIndexBefore = state.selectedEventIndex;
+  const traceID = state.selectedTraceID;
+
+  const token = ++state.requestToken;
+  const [metaResp, latestResp] = await Promise.all([
+    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/meta`).catch(() => null),
+    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`),
+  ]);
+  if (token !== state.requestToken) {
+    return;
+  }
+
+  const latestProjection = latestResp.projection || state.projection;
+  const latestSnapshot = latestResp.snapshot || state.snapshot;
+  state.traceMeta = metaResp;
+  state.projection = latestProjection;
+  if (!latestProjection) {
+    state.snapshot = latestSnapshot;
+    state.selectedEventIndex = -1;
+    renderAll();
+    return;
+  }
+
+  const events = latestProjection.events || [];
+  if (events.length === 0) {
+    state.snapshot = latestSnapshot;
+    state.selectedEventIndex = -1;
+    renderAll();
+    return;
+  }
+
+  let selectedIndex = selectedIndexBefore;
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) {
+    selectedIndex = events.length - 1;
+  }
+  if (selectedIndex >= events.length) {
+    selectedIndex = events.length - 1;
+  }
+
+  if (selectedIndex === events.length - 1) {
+    state.snapshot = latestSnapshot;
+    state.selectedEventIndex = selectedIndex;
+    renderAll();
+    return;
+  }
+
+  const selectedEvent = events[selectedIndex];
+  const unixNano = eventBoundaryUnixNano(selectedEvent);
+  const selectedResp = await fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot?t=${unixNano}`);
+  if (token !== state.requestToken) {
+    return;
+  }
+
+  state.projection = selectedResp.projection || latestProjection;
+  state.snapshot = selectedResp.snapshot || latestSnapshot;
+  const maxIndex = (state.projection?.events || []).length - 1;
+  state.selectedEventIndex = maxIndex >= 0 ? Math.min(selectedIndex, maxIndex) : -1;
+  renderAll();
 }
 
 function renderTraceHeader() {

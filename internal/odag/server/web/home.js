@@ -1,7 +1,10 @@
 const state = {
   traces: [],
+  liveTimer: 0,
+  liveBusy: false,
 };
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+const liveRefreshIntervalMs = 2000;
 
 const els = {
   refreshTracesBtn: document.getElementById("refreshTracesBtn"),
@@ -18,6 +21,7 @@ init().catch((err) => {
 async function init() {
   bindEvents();
   await refreshTraces();
+  startLiveRefresh();
 }
 
 function bindEvents() {
@@ -27,6 +31,23 @@ function bindEvents() {
 
   els.importCloudBtn.addEventListener("click", () => {
     importTraceFromCloud().catch((err) => renderInfo(String(err)));
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !state.liveBusy) {
+      state.liveBusy = true;
+      refreshTraces()
+        .catch((err) => {
+          console.error("trace refresh failed", err);
+        })
+        .finally(() => {
+          state.liveBusy = false;
+        });
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    stopLiveRefresh();
   });
 }
 
@@ -112,6 +133,30 @@ function renderTraceList() {
 
 function renderInfo(msg) {
   els.traceList.innerHTML = `<div class='trace-empty'>${escapeHTML(msg)}</div>`;
+}
+
+function startLiveRefresh() {
+  stopLiveRefresh();
+  state.liveTimer = window.setInterval(() => {
+    if (document.hidden || state.liveBusy) {
+      return;
+    }
+    state.liveBusy = true;
+    refreshTraces()
+      .catch((err) => {
+        console.error("trace refresh failed", err);
+      })
+      .finally(() => {
+        state.liveBusy = false;
+      });
+  }, liveRefreshIntervalMs);
+}
+
+function stopLiveRefresh() {
+  if (state.liveTimer) {
+    window.clearInterval(state.liveTimer);
+    state.liveTimer = 0;
+  }
 }
 
 async function fetchJSON(url, init) {
