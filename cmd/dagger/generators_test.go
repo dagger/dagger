@@ -43,4 +43,12 @@ func TestParseGenerateTargetArgs(t *testing.T) {
 		require.Nil(t, workspaceRef)
 		require.Nil(t, patterns)
 	})
+
+	t.Run("no separator infers workspace for URL-like first arg", func(t *testing.T) {
+		workspaceRef, patterns, err := parseGenerateTargetArgs([]string{"https://github.com/dagger/dagger"}, -1)
+		require.NoError(t, err)
+		require.NotNil(t, workspaceRef)
+		require.Equal(t, "https://github.com/dagger/dagger", *workspaceRef)
+		require.Empty(t, patterns)
+	})
 }

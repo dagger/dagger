@@ -126,6 +126,25 @@ Notes:
 - Nested non-module clients also use rule 3 by default.
 - Engine infers local-vs-remote workspace resolution from `workspace` when set.
 
+### 1.a CLI workspace target UX
+
+Top-level CLI commands that support explicit workspace selection should use an
+optional positional workspace target, not a dedicated workspace flag:
+
+- `dagger <cmd> [workspace --] [command args...]`
+
+This keeps command-specific positional semantics while allowing explicit
+workspace rebinding.
+
+Normative rules:
+
+1. If `workspace --` prefix is present, CLI sends `workspace` connect metadata.
+2. If prefix is absent, CLI leaves `workspace` unset and default binding rules apply.
+3. `--mod/-m` stays orthogonal: it controls extra module loading, not workspace binding.
+4. Commands MAY infer explicit workspace when the first positional token is
+   unambiguously workspace-like (for example URL/path-like refs). This should
+   not shadow normal function/check names.
+
 ### 2. Binding/Lock Coupling
 
 For any client:

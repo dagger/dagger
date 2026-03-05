@@ -78,7 +78,7 @@ Examples:
 //	dagger generate <workspace> -- <pattern...>
 //	dagger generate -- <pattern...>
 func parseGenerateTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
-	return parseWorkspaceTargetArgs(args, argsLenAtDash)
+	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
 }
 
 func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {

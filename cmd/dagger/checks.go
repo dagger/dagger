@@ -83,12 +83,15 @@ Examples:
 //	dagger check <workspace> -- <pattern...>
 //	dagger check -- <pattern...>
 func parseChecksTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
-	return parseWorkspaceTargetArgs(args, argsLenAtDash)
+	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
 }
 
 // loadGroupListDetails fetches name+description for every item in a group
-// using a single batch GraphQL query, with tracing suppressed to avoid
-// per-item span noise in list mode.
+// using a single batch GraphQL query.
+//
+// By default, nested spans are suppressed to keep list mode concise.
+// When verbosity is enabled (-v and above), preserve trace context so module
+// loading and selection internals remain visible for debugging.
 func loadGroupListDetails(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -100,9 +103,12 @@ func loadGroupListDetails(
 	ctx, span := Tracer().Start(ctx, spanName)
 	defer span.End()
 
-	noTraceCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+	queryCtx := ctx
+	if verbose == 0 {
+		queryCtx = trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+	}
 
-	id, err := getID(noTraceCtx)
+	id, err := getID(queryCtx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -114,7 +120,7 @@ func loadGroupListDetails(
 		}
 	}
 
-	err = dag.Do(noTraceCtx, &dagger.Request{
+	err = dag.Do(queryCtx, &dagger.Request{
 		Query:  query,
 		OpName: opName,
 		Variables: map[string]any{

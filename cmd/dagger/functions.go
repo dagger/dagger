@@ -90,6 +90,10 @@ type FuncCommand struct {
 	// DisableModuleLoad skips adding a flag for loading a user Dagger Module.
 	DisableModuleLoad bool
 
+	// ParseTargetArgs optionally rewrites command args into function-path args
+	// and may return an explicit workspace binding.
+	ParseTargetArgs func(args []string, argsLenAtDash int) (*string, []string, error)
+
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
 
@@ -172,8 +176,27 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
-				params := initModuleParams(a)
+				execArgs := a
+				// With DisableFlagParsing enabled, --help can remain in args when it
+				// appears after the first positional token. Strip it once we know help
+				// mode was requested, so dynamic command traversal doesn't treat it as a
+				// function segment.
+				if fc.needsHelp {
+					execArgs = stripHelpArgs(execArgs)
+				}
+
+				var workspaceRef *string
+				if fc.ParseTargetArgs != nil {
+					var err error
+					workspaceRef, execArgs, err = fc.ParseTargetArgs(execArgs, c.Flags().ArgsLenAtDash())
+					if err != nil {
+						return err
+					}
+				}
+
+				params := initModuleParams(execArgs)
 				params.SkipWorkspaceModules = shouldSkipWorkspaceModules(fc.DisableModuleLoad)
+				params.Workspace = workspaceRef
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -182,7 +205,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					// withEngine changes the context.
 					c.SetContext(ctx)
 
-					if err := fc.execute(c, a); err != nil {
+					if err := fc.execute(c, execArgs); err != nil {
 						// We've already handled printing the error in `fc.execute`
 						// because we want to show the usage for the right sub-command.
 						// Returning ExitError here will prevent the error from being printed
@@ -231,6 +254,17 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
+}
+
+func stripHelpArgs(args []string) []string {
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
 }
 
 func (fc *FuncCommand) Help(cmd *cobra.Command) error {
