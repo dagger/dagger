@@ -411,6 +411,43 @@ Notes:
 2. `Session` is primarily a wrapper around the root-client tree; it exists because the concept is useful in the UI and API.
 3. With current telemetry, `parent`, `children`, and `calls` may be heuristic/provisional unless explicit client identifiers are emitted.
 
+### Client Detection Heuristic and Risk
+
+Current state:
+
+1. ODAG can reliably detect candidate clients by finding spans with:
+   - scope `dagger.io/engine.client`
+   - name `connect`
+2. ODAG cannot currently treat the resulting client tree as protocol truth.
+3. The parent span of a `connect` span is **not** assumed to be a special "client span"; it is only a regular span executing in some client's context.
+
+Current heuristic:
+
+1. Each `dagger.io/engine.client` `connect` span defines one derived client.
+2. Parent client is inferred by walking ancestor spans and finding the nearest ancestor already attributable to another client.
+3. Root clients define sessions.
+4. Calls and spans are attributed to clients by:
+   - structural ownership where possible
+   - fallback root-local ordering when ancestry alone is insufficient
+
+Inherent risks:
+
+1. Nested clients are visible, but parentage is only inferred.
+2. Later DAGQL call spans often occur after the relevant `connect` span has finished, so strict descendant ownership is incomplete.
+3. Concurrent or interleaved clients within one root session may be misattributed.
+4. `Client.parent`, `Client.children`, and `Client.calls` should therefore be treated as best-effort derived structure until explicit telemetry exists.
+
+Design consequence:
+
+1. Keep the `Client` / `Session` API shape now because it is the right product model.
+2. Make the heuristic and its confidence explicit in the backend contract and UI/debug surfaces.
+3. Plan to replace the heuristic with explicit engine-emitted identifiers:
+   - session ID
+   - client ID
+   - parent client ID
+   - optional client kind metadata
+4. Do not let downstream schema or UX assumptions harden around current heuristic behavior.
+
 ## Backend API (V2 Source of Truth)
 
 V2 APIs expose global pools + filters. Session/client views are primary; trace-centric endpoints become convenience/debug views.
