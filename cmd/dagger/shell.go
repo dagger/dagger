@@ -435,10 +435,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
-func (h *shellCallHandler) Prompt(_ context.Context, out idtui.TermOutput, fg termenv.Color) string {
+func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
 	sb := new(strings.Builder)
 
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
+
+	var init func()
 
 	switch h.mode {
 	case modeShell:
@@ -450,6 +452,7 @@ func (h *shellCallHandler) Prompt(_ context.Context, out idtui.TermOutput, fg te
 		sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	case modePrompt:
+		// initialize LLM session if not already initialized
 		llm, err := h.llmMaybe()
 		if err != nil {
 			sb.WriteString(out.String("error").Bold().Foreground(termenv.ANSIRed).String())
@@ -461,12 +464,15 @@ func (h *shellCallHandler) Prompt(_ context.Context, out idtui.TermOutput, fg te
 		} else {
 			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
+			init = func() {
+				h.llm(ctx) //nolint:errcheck
+			}
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	}
 
-	return sb.String()
+	return sb.String(), init
 }
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
@@ -638,12 +644,18 @@ func (h *shellCallHandler) EncodeHistory(entry string) string {
 func (h *shellCallHandler) DecodeHistory(entry string) string {
 	if len(entry) > 0 {
 		switch entry[0] {
-		case '*', '>':
-			// Legacy format / prompt mode prefix
+		case '*':
+			// Legacy format in history
+			h.mode = modePrompt
+			return entry[1:]
+		case '>':
+			h.mode = modePrompt
 			return entry[1:]
 		case '!':
-			// Shell mode prefix
+			h.mode = modeShell
 			return entry[1:]
+		default:
+			h.mode = modeUnset
 		}
 	}
 	return entry

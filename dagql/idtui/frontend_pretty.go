@@ -506,7 +506,7 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.tui.Dispatch(func() {
 		fe.startShell(ctx, handler)
-		fe.Compo.Update()
+		fe.Update()
 	})
 	<-ctx.Done()
 }
@@ -1627,7 +1627,7 @@ func (fe *frontendPretty) HandleKeyPress(_ tuist.EventContext, ev uv.KeyPressEve
 // special keys before TextInput processes them. Returns true if consumed.
 func (fe *frontendPretty) interceptEditlineKey(ctx tuist.EventContext, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
-	keyStr := uvKeyString(k)
+	keyStr := k.String()
 	fe.recordKeyPress(keyStr)
 
 	// Let the completion menu handle keys when visible (up/down/esc/tab).
@@ -1694,7 +1694,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.EventContext, ev uv.Key
 //nolint:gocyclo // splitting this up doesn't feel more readable
 func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	k := uv.Key(ev)
-	keyStr := uvKeyString(k)
+	keyStr := k.String()
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
 
@@ -1880,12 +1880,6 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	fe.shellRunning = false
 }
 
-// uvKeyString converts a uv.Key to the same string format as tea.KeyMsg.String()
-// for compatibility with key.Binding comparison and pressedKey tracking.
-func uvKeyString(k uv.Key) string {
-	return k.String()
-}
-
 // ---------- mode switching --------------------------------------------------
 
 func (fe *frontendPretty) enterNavMode(auto bool) {
@@ -2051,14 +2045,19 @@ func (fe *frontendPretty) initTextInput() {
 	fe.editlineFocused = true
 }
 
-// syncPrompt refreshes the editline prompt string from the shell handler.
 // syncPrompt refreshes the text input prompt from the shell handler.
-// Pure — no side effects, no goroutines.
+// If the handler returns an async init function (e.g. for LLM setup),
+// it is run in a background goroutine that refreshes the prompt on
+// completion.
 func (fe *frontendPretty) syncPrompt() {
 	if fe.shell != nil && fe.textInput != nil {
 		promptOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		fe.textInput.Prompt = fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
+		prompt, init := fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
+		fe.textInput.Prompt = prompt
 		fe.textInput.Update()
+		if init != nil {
+			fe.runShellAsync(init)
+		}
 	}
 }
 
@@ -2504,6 +2503,8 @@ func (fe *frontendPretty) hasShownRootError() bool {
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	if len(row.Span.ErrorOrigins.Order) > 0 {
+		// span's error originated elsewhere; don't repeat the message, the ERROR status
+		// links to its origin instead
 		return
 	}
 	fe.shownErrs[row.Span.ID] = true
@@ -2531,9 +2532,10 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 	})
 	for _, c := range counts {
 		errText, count := c.text, c.count
+		// Calculate available width for text
 		prefixWidth := lipgloss.Width(prefix)
-		indentWidth := row.Depth * 2
-		markerWidth := 2
+		indentWidth := row.Depth * 2 // Assuming indent is 2 spaces per depth level
+		markerWidth := 2             // "! " prefix
 		availableWidth := fe.contentWidth - prefixWidth - indentWidth - markerWidth
 		if availableWidth > 0 {
 			errText = cellbuf.Wrap(errText, availableWidth, "")
@@ -2543,6 +2545,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 			errText = fmt.Sprintf("%dx ", count) + errText
 		}
 
+		// Print each wrapped line with proper indentation
 		first := true
 		for line := range strings.SplitSeq(strings.TrimSpace(errText), "\n") {
 			fmt.Fprint(out, prefix)
@@ -2581,8 +2584,16 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 
 	var empty bool
 	if span.Message != "" {
+		// when a span represents a message, we don't need to print its name
+		//
+		// NOTE: arguably this should be opt-in, but it's not clear how the
+		// span name relates to the message in all cases; is it the
+		// subject? or author? better to be explicit with attributes.
 		if fe.renderStepLogs(out, r, row, prefix, isFocused) {
 			if span.LLMRole == telemetry.LLMRoleUser {
+				// Bail early if we printed a user message span; these don't have any
+				// further information to show. Duration is always 0, metrics are empty,
+				// status is always OK.
 				return nil
 			}
 			r.fancyIndent(out, row, false, false)
@@ -2608,8 +2619,11 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 	}
 
 	if span != nil && !abridged {
+		// TODO: when a span has child spans that have progress, do 2-d progress
+		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span, !empty)
 
+		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {
 			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
 			if dots != "" {
@@ -2624,10 +2638,12 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 		summary := map[string]int{}
 		for effect := range span.EffectSpans {
 			if effect.Passthrough {
+				// Don't show spans which are aggressively hidden.
 				continue
 			}
 			icon, isInteresting := fe.statusIcon(effect)
 			if !isInteresting {
+				// summarize boring statuses, rather than showing them in full
 				summary[icon]++
 				continue
 			}
@@ -2696,36 +2712,48 @@ var statusColors = map[string]termenv.Color{
 	IconSuccess: termenv.ANSIGreen,
 }
 
+// brailleDots maps a count (0-8) to a Braille unicode character showing that many dots
+// Braille patterns "pile up" from bottom to top, left to right
 var brailleDots = []rune{
-	' ',      // 0 dots
-	'\u2840', // 1 dot
-	'\u2844', // 2 dots
-	'\u2846', // 3 dots
-	'\u2847', // 4 dots
-	'\u28C7', // 5 dots
-	'\u28E7', // 6 dots
-	'\u28F7', // 7 dots
-	'\u28FF', // 8 dots
+	' ',      // 0 dots: empty space
+	'\u2840', // 1 dot:  ⡀ (bottom-left)
+	'\u2844', // 2 dots: ⡄ (bottom-left, top-left)
+	'\u2846', // 3 dots: ⡆ (bottom-left, top-left, middle-left)
+	'\u2847', // 4 dots: ⡇ (left column full)
+	'\u28C7', // 5 dots: ⣇ (left column + bottom-right)
+	'\u28E7', // 6 dots: ⣧ (left column + bottom-right, top-right)
+	'\u28F7', // 7 dots: ⣷ (left column + bottom-right, top-right, middle-right)
+	'\u28FF', // 8 dots: ⣿ (all dots filled)
 }
 
+// renderRollUpDots renders a visual summary of child span states using pre-computed state
 func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, _ dagui.FrontendOpts) string {
 	if !span.RollUpSpans {
 		return ""
 	}
 
+	// Use pre-computed state instead of computing on every frame
 	state := span.RollUpState()
 	if state == nil {
 		return ""
 	}
 
+	// Calculate available width for dots
+	// Account for: prefix + indent (2 spaces per depth) + toggler + space + span name (rough estimate)
 	prefixWidth := lipgloss.Width(prefix)
 	indentWidth := row.Depth * 2
-	togglerWidth := 2
+	togglerWidth := 2 // toggler icon + space
 	nameWidth := lipgloss.Width(span.Name)
+
+	// Estimate width used by duration, metrics, status, effect summary
+	// This is a rough estimate - duration ~10 chars, status ~10 chars
 	extraWidth := 25
+
 	usedWidth := prefixWidth + indentWidth + togglerWidth + nameWidth + extraWidth
+	// Need at least some space for dots (minimum 5 characters for " " + 1 braille char)
 	availableWidth := max(fe.contentWidth-usedWidth, 5)
 
+	// Calculate total spans across all statuses
 	totalSpans := state.SuccessCount + state.CachedCount + state.FailedCount +
 		state.CanceledCount + state.RunningCount + state.PendingCount
 
@@ -2733,25 +2761,31 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 		return ""
 	}
 
+	// Each Braille char packs 8 dots. Calculate how many chars we can fit.
+	// Reserve 1 char for spacing between groups.
 	maxChars := availableWidth
 	maxDots := maxChars * 8
 
+	// Calculate scale factor: how many spans per dot
+	// Start at 1:1, then scale up as needed (1:1, 2:1, 3:1, 4:1, 5:1, 10:1, etc.)
 	scale := 1
 	for totalSpans/scale > maxDots {
 		if scale < 5 {
 			scale++
 		} else {
-			scale = (scale/5 + 1) * 5
+			scale = (scale/5 + 1) * 5 // Jump by 5s after reaching 5
 		}
 	}
 
 	var result strings.Builder
 
+	// Helper to render a group of dots with a given count and color
 	renderGroup := func(count int, color termenv.Color) {
 		if count == 0 {
 			return
 		}
-		dotCount := (count + scale - 1) / scale
+		// Scale down the count
+		dotCount := (count + scale - 1) / scale // Round up
 		for i := 0; i < dotCount; i += 8 {
 			dotsInChar := min(dotCount-i, 8)
 			braille := string(brailleDots[dotsInChar])
@@ -2760,12 +2794,15 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 		}
 	}
 
+	// Show scale indicator if we're not at 1:1
 	if scale > 1 {
 		scaleIndicator := fmt.Sprintf("%d×", scale)
 		styled := out.String(scaleIndicator).Foreground(termenv.ANSIBrightBlack).Faint()
 		result.WriteString(styled.String())
 	}
 
+	// Render in order: success, cached, failed, canceled, running, pending
+	// This creates a "settling" effect from right to left as tasks start and complete
 	renderGroup(state.SuccessCount, termenv.ANSIGreen)
 	renderGroup(state.CachedCount, termenv.ANSIBlue)
 	renderGroup(state.FailedCount, termenv.ANSIRed)
@@ -2776,6 +2813,8 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 	return result.String()
 }
 
+// statusIcon returns an icon indicating the span's status, and a bool
+// indicating whether it's interesting enough to reveal at a summary level
 func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
 		// Look up the per-span spinner for animation
@@ -2806,9 +2845,11 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 			icon = out.String(CaretRightFilled).Foreground(termenv.ANSIBrightBlack)
 		}
 	} else {
+		// Use a placeholder symbol for items without children
 		icon = out.String(DotFilled).Foreground(termenv.ANSIBrightBlack)
 	}
 
+	// Apply focus highlighting to chevron only
 	if isFocused {
 		icon = hl(icon.Foreground(statusColor(row.Span)))
 	}
@@ -2816,6 +2857,7 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 }
 
 func (fe *frontendPretty) renderStatusIcon(out TermOutput, row *dagui.TraceRow) {
+	// Then render the status icon (without focus highlighting)
 	icon, _ := fe.statusIcon(row.Span)
 	statusIcon := out.String(icon).Foreground(statusColor(row.Span))
 	fmt.Fprint(out, statusIcon.String())
@@ -2857,6 +2899,7 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	}
 
 	if depth == -1 {
+		// clear prefix when zoomed
 		logs.SetPrefix(prefix)
 	} else {
 		pipeBuf := new(strings.Builder)
@@ -2915,6 +2958,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
+		// Check for Markdown content type
 		contentType := ""
 		eof := false
 		verbose := false
@@ -2963,16 +3007,20 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
+// extractSpanContext extracts a meaningful context label from a span
 func (l *prettyLogs) extractSpanContext(span *dagui.Span) string {
 	call := span.Call()
 	if call == nil {
 		return span.Name
 	}
 
+	// Handle withExec: extract first argument (the command)
 	if call.Field == "withExec" {
 		if len(call.Args) > 0 && call.Args[0].Name == "args" {
+			// The args value is a list literal
 			if argList := call.Args[0].Value.GetList(); argList != nil {
 				if len(argList.Values) > 0 {
+					// Extract just the command name (first element of the list)
 					cmd := argList.Values[0].GetString_()
 					if cmd != "" {
 						return cmd
@@ -2983,10 +3031,12 @@ func (l *prettyLogs) extractSpanContext(span *dagui.Span) string {
 		return "exec"
 	}
 
+	// For function calls, use the function name
 	if call.Field != "" {
 		return call.Field
 	}
 
+	// Fallback to span name
 	return span.Name
 }
 
@@ -3001,6 +3051,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			break
 		}
 		if span.RollUpLogs {
+			// Found a roll-up span; find-or-create a prefixed writer for it.
 			pw, found := l.PrefixWriters[id]
 			if !found {
 				vterm := l.spanLogs(id)
@@ -3010,6 +3061,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			return pw, true
 		}
 		if span.ParentID.IsValid() {
+			// Keep walking upward
 			id = span.ParentID
 		} else {
 			break
