@@ -53,6 +53,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
 			),
+		dagql.FuncWithCacheKey("entries", s.entries, dagql.CachePerClient).
+			Doc(`Returns immediate children entries from the workspace directory at path.`,
+				`This is a shallow listing and does not recursively include descendants.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to list, relative to the workspace root (e.g., ".", "src").`),
+			),
+		dagql.FuncWithCacheKey("stat", s.stat, dagql.CachePerClient).
+			Doc(`Returns stat metadata for a path in the workspace without materializing unrelated descendants.`).
+			Args(
+				dagql.Arg("path").Doc(`Location to stat, relative to the workspace root.`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+			),
 	}.Install(srv)
 }
 
@@ -289,6 +301,124 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	return none, nil
+}
+
+type workspaceEntriesArgs struct {
+	Path string `default:"."`
+}
+
+func (s *workspaceSchema) entries(ctx context.Context, parent *core.Workspace, args workspaceEntriesArgs) (dagql.Array[dagql.String], error) {
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	absPath, err := pathutil.SandboxedRelativePath(args.Path, parent.Root)
+	if err != nil {
+		return nil, err
+	}
+
+	var dir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &dir,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(absPath)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString("*")}},
+				{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{dagql.NewString("*/*")}},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("workspace entries %q: %w", args.Path, err)
+	}
+
+	var entries dagql.Array[dagql.String]
+	if err := srv.Select(ctx, dir, &entries, dagql.Selector{
+		Field: "entries",
+	}); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+type workspaceStatArgs struct {
+	Path                string
+	DoNotFollowSymlinks bool `default:"false"`
+}
+
+func (s *workspaceSchema) stat(ctx context.Context, parent *core.Workspace, args workspaceStatArgs) (*core.Stat, error) {
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	absPath, err := pathutil.SandboxedRelativePath(args.Path, parent.Root)
+	if err != nil {
+		return nil, err
+	}
+
+	var hostDir dagql.ObjectResult[*core.Directory]
+	if path.Base(absPath) == "." {
+		if err := srv.Select(ctx, srv.Root(), &hostDir,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(absPath)},
+				},
+			},
+		); err != nil {
+			return nil, fmt.Errorf("workspace stat %q: %w", args.Path, err)
+		}
+	} else {
+		if err := srv.Select(ctx, srv.Root(), &hostDir,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(path.Dir(absPath))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(path.Base(absPath))}},
+				},
+			},
+		); err != nil {
+			return nil, fmt.Errorf("workspace stat %q: %w", args.Path, err)
+		}
+	}
+
+	statArgs := []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Base(absPath))},
+	}
+	if path.Base(absPath) == "." {
+		statArgs[0] = dagql.NamedInput{Name: "path", Value: dagql.NewString(".")}
+	}
+	if args.DoNotFollowSymlinks {
+		statArgs = append(statArgs, dagql.NamedInput{
+			Name:  "doNotFollowSymlinks",
+			Value: dagql.NewBoolean(true),
+		})
+	}
+
+	var stat *core.Stat
+	if err := srv.Select(ctx, hostDir, &stat, dagql.Selector{
+		Field: "stat",
+		Args:  statArgs,
+	}); err != nil {
+		return nil, err
+	}
+
+	return stat, nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

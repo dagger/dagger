@@ -11,6 +11,7 @@
   - [ ] Start/stop WSFS runtime for workspace mounts around container execution.
   - [x] Persist per-mount writable upper-layer state across container lineage.
 - [ ] Stage 4: Lazy operation mapping
+  - [x] Add `Workspace.entries` (shallow listing) and `Workspace.stat` primitives.
   - Implement `read`, `readdir`, and `stat` mapping to workspace APIs with shallow directory listing.
 - [ ] Stage 5: Validation and hardening
   - [x] Add unit tests for workspace mount detection and runtime-hook behavior.

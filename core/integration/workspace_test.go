@@ -294,6 +294,29 @@ func (WorkspaceSuite) TestWithMountedWorkspaceWritesPersistInLineage(ctx context
 	require.Equal(t, "missing", strings.TrimSpace(freshMountRes.Container.From.WithMountedWorkspace.WithExec.Stdout))
 }
 
+func (WorkspaceSuite) TestWorkspaceEntriesAndStatPrimitives(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	res, err := testutil.QueryWithClient[struct {
+		CurrentWorkspace struct {
+			Entries []string
+			Stat    struct {
+				FileType string
+			}
+		}
+	}](c, t, `{
+		currentWorkspace {
+			entries(path: ".")
+			stat(path: "go.mod") {
+				fileType
+			}
+		}
+	}`, nil)
+	require.NoError(t, err)
+	require.Contains(t, res.CurrentWorkspace.Entries, "go.mod")
+	require.Equal(t, "REGULAR", res.CurrentWorkspace.Stat.FileType)
+}
+
 // TestWorkspaceDirectoryExclude verifies that include/exclude patterns work
 // when calling Workspace.directory.
 func (WorkspaceSuite) TestWorkspaceDirectoryExclude(ctx context.Context, t *testctx.T) {
