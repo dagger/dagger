@@ -526,7 +526,9 @@ Stage 4 implementation note:
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
   - optional dev mode: `odag serve --dev [--web-dir ...]` serves frontend assets from disk and injects browser auto-reload on local file changes
 - UI includes:
-  - trace list rows include creation time (`firstSeen`) to aid scanability when many traces exist
+  - trace list uses a compact table layout (`trace`, `created`, `spans`, `status`) for faster scanability at high trace counts
+  - `created` is shown as relative time (e.g. `3 minutes ago`) instead of an absolute timestamp
+  - status is rendered as dot-only signal (no text): pulsing yellow for ingesting, red for failed, green for succeeded, neutral fallback for unknown
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
   - trace navigation back to list uses a small top-left back-arrow control (unobtrusive, conventional placement)
   - selecting a history item moves the DAG snapshot to that event boundary time
