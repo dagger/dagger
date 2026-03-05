@@ -6,11 +6,11 @@
   - Add explicit runtime-not-implemented errors where workspace mounts would execute today.
 - [x] Stage 2: Conservative caching for workspace-mounted execs (v0)
   - Force `withExec` cache key to `CachePerCall` whenever the container has any workspace mount.
-- [ ] Stage 3: WSFS runtime bootstrap in `withExec`
+- [x] Stage 3: WSFS runtime bootstrap in `withExec`
   - [x] Add explicit WSFS runtime setup/cleanup hook in `withExec`.
   - [x] Start/stop WSFS runtime for workspace mounts around container execution.
   - [x] Persist per-mount writable upper-layer state across container lineage.
-- [ ] Stage 4: Lazy operation mapping
+- [x] Stage 4: Lazy operation mapping
   - [x] Add `Workspace.entries` (shallow listing) and `Workspace.stat` primitives.
   - [x] Route mounted-workspace `file`/`directory`/`stat`/`exists` lookups through workspace APIs when no upper layer exists.
   - [x] Implement prototype `read`, `readdir`, and `stat` mapping to workspace APIs in WSFS runtime.
