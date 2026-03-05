@@ -47,6 +47,30 @@ func (outputStatePanicMethodIDable) ID() *call.ID {
 	panic("boom")
 }
 
+type outputStateTypedNilReceiver struct {
+	name string
+}
+
+func (t *outputStateTypedNilReceiver) Type() *ast.Type {
+	// Accessing a field forces panic when called on nil receiver.
+	return &ast.Type{NamedType: t.name}
+}
+
+type outputStateTypedPanicky struct{}
+
+func (outputStateTypedPanicky) Type() *ast.Type {
+	panic("boom")
+}
+
+type outputStateTypeNameEdgeCaseObject struct {
+	NilTyped   *outputStateTypedNilReceiver `json:"nilTyped"`
+	PanicTyped outputStateTypedPanicky      `json:"panicTyped"`
+}
+
+func (*outputStateTypeNameEdgeCaseObject) Type() *ast.Type {
+	return &ast.Type{NamedType: "OutputStateTypeNameEdgeCaseObject", NonNull: true}
+}
+
 func (*outputStateTestObject) Type() *ast.Type {
 	return &ast.Type{NamedType: "OutputStateTest", NonNull: true}
 }
@@ -165,5 +189,31 @@ func TestToOutputStateValuePanickingIDMethod(t *testing.T) {
 	}
 	if len(asMap) != 0 {
 		t.Fatalf("expected empty struct map, got %#v", asMap)
+	}
+}
+
+func TestBuildOutputStatePayloadFromTypedTypeNameEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	obj := &outputStateTypeNameEdgeCaseObject{}
+	payload, err := buildOutputStatePayloadFromTyped(obj, obj.Type())
+	if err != nil {
+		t.Fatalf("build payload: %v", err)
+	}
+
+	nilTyped, ok := payload.Fields["nilTyped"]
+	if !ok {
+		t.Fatalf("missing nilTyped field")
+	}
+	if nilTyped.Type == "" {
+		t.Fatalf("expected non-empty type fallback for nilTyped field")
+	}
+
+	panicTyped, ok := payload.Fields["panicTyped"]
+	if !ok {
+		t.Fatalf("missing panicTyped field")
+	}
+	if panicTyped.Type == "" {
+		t.Fatalf("expected non-empty type fallback for panicTyped field")
 	}
 }

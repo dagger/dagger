@@ -230,10 +230,8 @@ func outputStateFieldName(field reflect.StructField) (string, bool) {
 }
 
 func outputStateTypeName(field reflect.StructField, value reflect.Value) string {
-	if value.IsValid() && value.CanInterface() {
-		if typed, ok := value.Interface().(dagql.Typed); ok && typed.Type() != nil {
-			return typed.Type().String()
-		}
+	if typeName, ok := safeTypedTypeString(value); ok {
+		return typeName
 	}
 	return field.Type.String()
 }
@@ -413,6 +411,44 @@ func digestFromIDable(v any) (_ string, ok bool) {
 		return "", false
 	}
 	return id.Digest().String(), true
+}
+
+func safeTypedTypeString(v reflect.Value) (_ string, ok bool) {
+	if !v.IsValid() || !v.CanInterface() {
+		return "", false
+	}
+
+	val := v.Interface()
+	if val == nil {
+		return "", false
+	}
+
+	rv := reflect.ValueOf(val)
+	if !rv.IsValid() {
+		return "", false
+	}
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if rv.IsNil() {
+			return "", false
+		}
+	}
+
+	typed, ok := val.(dagql.Typed)
+	if !ok {
+		return "", false
+	}
+
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	typ := typed.Type()
+	if typ == nil {
+		return "", false
+	}
+	return typ.String(), true
 }
 
 func gqlTypeName(typ *ast.Type) string {
