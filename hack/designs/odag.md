@@ -481,10 +481,14 @@ Encoding note:
 ### Stage Checklist (Execution Status)
 
 - [x] Stage 1: CLI/server/store scaffold (`odag serve`, `odag run`, sqlite schema, health endpoint)
-- [ ] Stage 2: OTLP ingest mode (trace/span persistence from `/v1/traces`)
+- [x] Stage 2: OTLP ingest mode (trace/span persistence from `/v1/traces`)
 - [ ] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
 - [ ] Stage 4: Web UI shell + timeline + ODAG canvas + inspector
 - [ ] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
+
+Stage 2 implementation note:
+- `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
+- `/v1/logs` and `/v1/metrics` are currently compatibility no-op endpoints (`202 Accepted`) so standard OTEL env wiring works without exporter failures.
 
 ### Phase 0: Spike
 

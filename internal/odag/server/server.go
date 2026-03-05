@@ -1,11 +1,22 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
+
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/internal/odag/store"
 )
@@ -42,6 +53,9 @@ func New(cfg Config) (*Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", srv.handleHealthz)
 	mux.HandleFunc("GET /", srv.handleIndex)
+	mux.HandleFunc("POST /v1/traces", srv.handleTraceIngest)
+	mux.HandleFunc("POST /v1/logs", srv.handleNoopIngest)
+	mux.HandleFunc("POST /v1/metrics", srv.handleNoopIngest)
 
 	srv.http = &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -53,6 +67,8 @@ func New(cfg Config) (*Server, error) {
 }
 
 func (s *Server) Run(ctx context.Context) error {
+	defer s.store.Close()
+
 	errCh := make(chan error, 1)
 	go func() {
 		err := s.http.ListenAndServe()
@@ -87,4 +103,232 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("odag server\n"))
+}
+
+func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
+	body, err := readOTLPBody(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	var req coltracepb.ExportTraceServiceRequest
+	if err := proto.Unmarshal(body, &req); err != nil {
+		http.Error(w, fmt.Sprintf("decode OTLP protobuf: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	spans, err := spanRecordsFromOTLP(&req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("convert spans: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	summary, err := s.store.UpsertSpans(r.Context(), "collector", spans)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("persist spans: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"traces": summary.Traces,
+		"spans":  summary.Spans,
+	})
+}
+
+func (s *Server) handleNoopIngest(w http.ResponseWriter, r *http.Request) {
+	// OTLP exporters are configured as a set. Keep logs/metrics endpoints
+	// available so clients can point all telemetry at odag without failures.
+	_, _ = io.Copy(io.Discard, r.Body)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func readOTLPBody(r *http.Request) ([]byte, error) {
+	var reader io.Reader = r.Body
+	if enc := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding"))); enc == "gzip" {
+		gz, err := gzip.NewReader(r.Body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip reader: %w", err)
+		}
+		defer gz.Close()
+		reader = gz
+	}
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+func spanRecordsFromOTLP(req *coltracepb.ExportTraceServiceRequest) ([]store.SpanRecord, error) {
+	if req == nil {
+		return nil, nil
+	}
+
+	var spans []store.SpanRecord
+	now := time.Now().UnixNano()
+	for _, rs := range req.ResourceSpans {
+		resourceAttrs := keyValuesToMap(nil)
+		if rs.GetResource() != nil {
+			resourceAttrs = keyValuesToMap(rs.GetResource().GetAttributes())
+		}
+
+		for _, ss := range rs.GetScopeSpans() {
+			scopeName := ""
+			scopeVersion := ""
+			if ss.GetScope() != nil {
+				scopeName = ss.GetScope().GetName()
+				scopeVersion = ss.GetScope().GetVersion()
+			}
+
+			for _, span := range ss.GetSpans() {
+				traceID := hex.EncodeToString(span.GetTraceId())
+				spanID := hex.EncodeToString(span.GetSpanId())
+				if traceID == "" || spanID == "" {
+					continue
+				}
+
+				data := make(map[string]any)
+				if attrs := keyValuesToMap(span.GetAttributes()); len(attrs) > 0 {
+					data["attributes"] = attrs
+				}
+				if len(resourceAttrs) > 0 {
+					data["resource"] = resourceAttrs
+				}
+				if scopeName != "" || scopeVersion != "" {
+					data["scope"] = map[string]any{
+						"name":    scopeName,
+						"version": scopeVersion,
+					}
+				}
+				if events := spanEventsToJSON(span.GetEvents()); len(events) > 0 {
+					data["events"] = events
+				}
+				if links := spanLinksToJSON(span.GetLinks()); len(links) > 0 {
+					data["links"] = links
+				}
+
+				payload, err := json.Marshal(data)
+				if err != nil {
+					return nil, fmt.Errorf("marshal data for span %s/%s: %w", traceID, spanID, err)
+				}
+
+				spans = append(spans, store.SpanRecord{
+					TraceID:         traceID,
+					SpanID:          spanID,
+					ParentSpanID:    hex.EncodeToString(span.GetParentSpanId()),
+					Name:            span.GetName(),
+					StartUnixNano:   u64ToI64(span.GetStartTimeUnixNano()),
+					EndUnixNano:     u64ToI64(span.GetEndTimeUnixNano()),
+					StatusCode:      span.GetStatus().GetCode().String(),
+					StatusMessage:   span.GetStatus().GetMessage(),
+					DataJSON:        string(payload),
+					UpdatedUnixNano: now,
+				})
+			}
+		}
+	}
+
+	return spans, nil
+}
+
+func spanEventsToJSON(events []*tracepb.Span_Event) []map[string]any {
+	if len(events) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+		ev := map[string]any{
+			"time_unix_nano": u64ToI64(event.GetTimeUnixNano()),
+			"name":           event.GetName(),
+		}
+		if attrs := keyValuesToMap(event.GetAttributes()); len(attrs) > 0 {
+			ev["attributes"] = attrs
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+func spanLinksToJSON(links []*tracepb.Span_Link) []map[string]any {
+	if len(links) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(links))
+	for _, link := range links {
+		if link == nil {
+			continue
+		}
+		item := map[string]any{
+			"trace_id": hex.EncodeToString(link.GetTraceId()),
+			"span_id":  hex.EncodeToString(link.GetSpanId()),
+		}
+		if attrs := keyValuesToMap(link.GetAttributes()); len(attrs) > 0 {
+			item["attributes"] = attrs
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func keyValuesToMap(attrs []*commonpb.KeyValue) map[string]any {
+	if len(attrs) == 0 {
+		return nil
+	}
+
+	out := make(map[string]any, len(attrs))
+	for _, kv := range attrs {
+		if kv == nil {
+			continue
+		}
+		out[kv.GetKey()] = anyValueToJSON(kv.GetValue())
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func anyValueToJSON(v *commonpb.AnyValue) any {
+	if v == nil {
+		return nil
+	}
+	switch x := v.GetValue().(type) {
+	case *commonpb.AnyValue_StringValue:
+		return x.StringValue
+	case *commonpb.AnyValue_BoolValue:
+		return x.BoolValue
+	case *commonpb.AnyValue_IntValue:
+		return x.IntValue
+	case *commonpb.AnyValue_DoubleValue:
+		return x.DoubleValue
+	case *commonpb.AnyValue_ArrayValue:
+		vals := x.ArrayValue.GetValues()
+		out := make([]any, 0, len(vals))
+		for _, item := range vals {
+			out = append(out, anyValueToJSON(item))
+		}
+		return out
+	case *commonpb.AnyValue_KvlistValue:
+		return keyValuesToMap(x.KvlistValue.GetValues())
+	case *commonpb.AnyValue_BytesValue:
+		return base64.StdEncoding.EncodeToString(x.BytesValue)
+	default:
+		return nil
+	}
+}
+
+func u64ToI64(v uint64) int64 {
+	const maxInt64 = ^uint64(0) >> 1
+	if v > maxInt64 {
+		return int64(maxInt64)
+	}
+	return int64(v)
 }
