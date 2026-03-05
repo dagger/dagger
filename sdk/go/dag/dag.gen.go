@@ -58,6 +58,12 @@ func CacheVolume(key string) *dagger.CacheVolume {
 	return client.CacheVolume(key)
 }
 
+// Creates an empty changeset
+func Changeset() *dagger.Changeset {
+	client := initClient()
+	return client.Changeset()
+}
+
 // Dagger Cloud configuration and state
 func Cloud() *dagger.Cloud {
 	client := initClient()
@@ -390,6 +396,12 @@ func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 func LoadGitRepositoryFromID(id dagger.GitRepositoryID) *dagger.GitRepository {
 	client := initClient()
 	return client.LoadGitRepositoryFromID(id)
+}
+
+// Load a HealthcheckConfig from its ID.
+func LoadHealthcheckConfigFromID(id dagger.HealthcheckConfigID) *dagger.HealthcheckConfig {
+	client := initClient()
+	return client.LoadHealthcheckConfigFromID(id)
 }
 
 // Load a Host from its ID.

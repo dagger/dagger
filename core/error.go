@@ -1,7 +1,11 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/dagger/dagger/dagql"
@@ -17,6 +21,60 @@ func NewError(message string) *Error {
 	return &Error{
 		Message: message,
 	}
+}
+
+func NewErrorFromErr(ctx context.Context, fromErr error) (objErr dagql.ObjectResult[*Error], outerErr error) {
+	sels := []dagql.Selector{}
+	var extErr dagql.ExtendedError
+	if errors.As(fromErr, &extErr) {
+		sels = append(sels, dagql.Selector{
+			Field: "error",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "message",
+					Value: dagql.String(extErr.Error()),
+				},
+			},
+		})
+		exts := extErr.Extensions()
+		for _, k := range slices.Sorted(maps.Keys(exts)) {
+			val, err := json.Marshal(exts[k])
+			if err != nil {
+				fmt.Println("failed to marshal error value:", err)
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withValue",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "name",
+						Value: dagql.String(k),
+					},
+					{
+						Name:  "value",
+						Value: JSON(val),
+					},
+				},
+			})
+		}
+	} else {
+		sels = append(sels, dagql.Selector{
+			Field: "error",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "message",
+					Value: dagql.String(fromErr.Error()),
+				},
+			},
+		})
+	}
+	srv, srvErr := CurrentDagqlServer(ctx)
+	if srvErr != nil {
+		return objErr, srvErr
+	}
+	if selErr := srv.Select(ctx, srv.Root(), &objErr, sels...); selErr != nil {
+		return objErr, selErr
+	}
+	return objErr, nil
 }
 
 func (e *Error) Clone() *Error {

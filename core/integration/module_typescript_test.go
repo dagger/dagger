@@ -159,6 +159,22 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
 	})
 
+	t.Run("handles empty directory in src", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=emptyDir", "--sdk=typescript")).
+			WithDirectory("/work/src/empty-dir", c.Directory())
+
+		out, err := modGen.
+			With(daggerQuery(`{emptyDir{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"emptyDir":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
 	t.Run("with source", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

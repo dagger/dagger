@@ -549,6 +549,38 @@ export type ContainerWithDirectoryOpts = {
   expand?: boolean
 }
 
+export type ContainerWithDockerHealthcheckOpts = {
+  /**
+   * When true, command must be a single element, which is run using the container's shell
+   */
+  shell?: boolean
+
+  /**
+   * Interval between running healthcheck. Example: "30s"
+   */
+  interval?: string
+
+  /**
+   * Healthcheck timeout. Example: "3s"
+   */
+  timeout?: string
+
+  /**
+   * StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+   */
+  startPeriod?: string
+
+  /**
+   * StartInterval configures the duration between checks during the startup phase. Example: "5s"
+   */
+  startInterval?: string
+
+  /**
+   * The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+   */
+  retries?: number
+}
+
 export type ContainerWithEntrypointOpts = {
   /**
    * Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
@@ -1648,6 +1680,11 @@ export type GitRefTreeOpts = {
    * The depth of the tree to fetch.
    */
   depth?: number
+
+  /**
+   * Set to true to populate tag refs in the local checkout .git.
+   */
+  includeTags?: boolean
 }
 
 /**
@@ -1673,6 +1710,11 @@ export type GitRepositoryTagsOpts = {
  * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
  */
 export type GitRepositoryID = string & { __GitRepositoryID: never }
+
+/**
+ * The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+ */
+export type HealthcheckConfigID = string & { __HealthcheckConfigID: never }
 
 export type HostDirectoryOpts = {
   /**
@@ -3476,6 +3518,14 @@ export class Check extends BaseClient {
   }
 
   /**
+   * If the check failed, this is the error
+   */
+  error = (): Error => {
+    const ctx = this._ctx.select("error")
+    return new Error(ctx)
+  }
+
+  /**
    * Return the fully qualified name of the check
    */
   name = async (): Promise<string> => {
@@ -3837,6 +3887,14 @@ export class Container extends BaseClient {
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this container's configured docker healthcheck.
+   */
+  dockerHealthcheck = (): HealthcheckConfig => {
+    const ctx = this._ctx.select("dockerHealthcheck")
+    return new HealthcheckConfig(ctx)
   }
 
   /**
@@ -4378,6 +4436,24 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with the specificed docker healtcheck command set.
+   * @param args Healthcheck command to execute. Example: ["go", "run", "main.go"].
+   * @param opts.shell When true, command must be a single element, which is run using the container's shell
+   * @param opts.interval Interval between running healthcheck. Example: "30s"
+   * @param opts.timeout Healthcheck timeout. Example: "3s"
+   * @param opts.startPeriod StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+   * @param opts.startInterval StartInterval configures the duration between checks during the startup phase. Example: "5s"
+   * @param opts.retries The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+   */
+  withDockerHealthcheck = (
+    args: string[],
+    opts?: ContainerWithDockerHealthcheckOpts,
+  ): Container => {
+    const ctx = this._ctx.select("withDockerHealthcheck", { args, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, withExec ignores the entrypoint by default.
    * @param args Arguments of the entrypoint. Example: ["go", "run"].
    * @param opts.keepDefaultArgs Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
@@ -4809,6 +4885,14 @@ export class Container extends BaseClient {
     opts?: ContainerWithoutDirectoryOpts,
   ): Container => {
     const ctx = this._ctx.select("withoutDirectory", { path, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container without a configured docker healtcheck command.
+   */
+  withoutDockerHealthcheck = (): Container => {
+    const ctx = this._ctx.select("withoutDockerHealthcheck")
     return new Container(ctx)
   }
 
@@ -8926,6 +9010,7 @@ export class GitRef extends BaseClient {
    * The filesystem tree at this ref.
    * @param opts.discardGitDir Set to true to discard .git directory.
    * @param opts.depth The depth of the tree to fetch.
+   * @param opts.includeTags Set to true to populate tag refs in the local checkout .git.
    */
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
@@ -9067,6 +9152,159 @@ export class GitRepository extends BaseClient {
     }
 
     const ctx = this._ctx.select("url")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * Image healthcheck configuration.
+ */
+export class HealthcheckConfig extends BaseClient {
+  private readonly _id?: HealthcheckConfigID = undefined
+  private readonly _interval?: string = undefined
+  private readonly _retries?: number = undefined
+  private readonly _shell?: boolean = undefined
+  private readonly _startInterval?: string = undefined
+  private readonly _startPeriod?: string = undefined
+  private readonly _timeout?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: HealthcheckConfigID,
+    _interval?: string,
+    _retries?: number,
+    _shell?: boolean,
+    _startInterval?: string,
+    _startPeriod?: string,
+    _timeout?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._interval = _interval
+    this._retries = _retries
+    this._shell = _shell
+    this._startInterval = _startInterval
+    this._startPeriod = _startPeriod
+    this._timeout = _timeout
+  }
+
+  /**
+   * A unique identifier for this HealthcheckConfig.
+   */
+  id = async (): Promise<HealthcheckConfigID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<HealthcheckConfigID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Healthcheck command arguments.
+   */
+  args = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("args")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Interval between running healthcheck. Example:30s
+   */
+  interval = async (): Promise<string> => {
+    if (this._interval) {
+      return this._interval
+    }
+
+    const ctx = this._ctx.select("interval")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+   */
+  retries = async (): Promise<number> => {
+    if (this._retries) {
+      return this._retries
+    }
+
+    const ctx = this._ctx.select("retries")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Healthcheck command is a shell command.
+   */
+  shell = async (): Promise<boolean> => {
+    if (this._shell) {
+      return this._shell
+    }
+
+    const ctx = this._ctx.select("shell")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * StartInterval configures the duration between checks during the startup phase. Example:5s
+   */
+  startInterval = async (): Promise<string> => {
+    if (this._startInterval) {
+      return this._startInterval
+    }
+
+    const ctx = this._ctx.select("startInterval")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+   */
+  startPeriod = async (): Promise<string> => {
+    if (this._startPeriod) {
+      return this._startPeriod
+    }
+
+    const ctx = this._ctx.select("startPeriod")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Healthcheck timeout. Example:3s
+   */
+  timeout = async (): Promise<string> => {
+    if (this._timeout) {
+      return this._timeout
+    }
+
+    const ctx = this._ctx.select("timeout")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -10723,6 +10961,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+   */
+  generatedContextChangeset = (): Changeset => {
+    const ctx = this._ctx.select("generatedContextChangeset")
+    return new Changeset(ctx)
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDirectory = (): Directory => {
@@ -11452,6 +11698,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Creates an empty changeset
+   */
+  changeset = (): Changeset => {
+    const ctx = this._ctx.select("changeset")
+    return new Changeset(ctx)
+  }
+
+  /**
    * Dagger Cloud configuration and state
    */
   cloud = (): Cloud => {
@@ -11929,6 +12183,16 @@ export class Client extends BaseClient {
   loadGitRepositoryFromID = (id: GitRepositoryID): GitRepository => {
     const ctx = this._ctx.select("loadGitRepositoryFromID", { id })
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a HealthcheckConfig from its ID.
+   */
+  loadHealthcheckConfigFromID = (
+    id: HealthcheckConfigID,
+  ): HealthcheckConfig => {
+    const ctx = this._ctx.select("loadHealthcheckConfigFromID", { id })
+    return new HealthcheckConfig(ctx)
   }
 
   /**

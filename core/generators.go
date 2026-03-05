@@ -135,17 +135,15 @@ func (gg *GeneratorGroup) IsEmpty(ctx context.Context) (bool, error) {
 }
 
 func (gg *GeneratorGroup) Changes(ctx context.Context, conflictStrategy WithChangesetsMergeConflict) (*Changeset, error) {
-	switch len(gg.Generators) {
-	case 0:
-		return NewEmptyChangeset(ctx)
-	case 1:
-		return gg.Generators[0].Changes, nil
+	res, err := NewEmptyChangeset(ctx)
+	if err != nil {
+		return nil, err
 	}
 	cs := make([]*Changeset, 0, len(gg.Generators))
 	for _, g := range gg.Generators {
 		cs = append(cs, g.Changes)
 	}
-	return cs[0].WithChangesets(ctx, cs[1:], conflictStrategy)
+	return res.WithChangesets(ctx, cs, conflictStrategy)
 }
 
 func (gg *GeneratorGroup) Clone() *GeneratorGroup {

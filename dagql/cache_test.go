@@ -126,20 +126,55 @@ func TestCacheConcurrent(t *testing.T) {
 	ctx := t.Context()
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
+	c := cacheIface.(*cache)
 
 	keyID := cacheTestID("42")
 	initialized := map[int]bool{}
 	var initMu sync.Mutex
+	const totalCallers = 100
+	const concurrencyKey = "42"
+
+	firstCallEntered := make(chan struct{})
+	unblockFirstCall := make(chan struct{})
+
+	callConcKeys := callConcurrencyKeys{
+		callKey:        keyID.Digest().String(),
+		concurrencyKey: concurrencyKey,
+	}
 
 	wg := new(sync.WaitGroup)
-	for i := range 100 {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		res, err := cacheIface.GetOrInitCall(ctx, CacheKey{
+			ID:             keyID,
+			ConcurrencyKey: concurrencyKey,
+		}, func(_ context.Context) (AnyResult, error) {
+			initMu.Lock()
+			initialized[0] = true
+			initMu.Unlock()
+			close(firstCallEntered)
+			<-unblockFirstCall
+			return cacheTestIntResult(keyID, 0), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, cacheTestUnwrapInt(t, res))
+	}()
+
+	select {
+	case <-firstCallEntered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first caller to enter init callback")
+	}
+
+	for i := 1; i < totalCallers; i++ {
 		wg.Add(1)
 		i := i
 		go func() {
 			defer wg.Done()
 			res, err := cacheIface.GetOrInitCall(ctx, CacheKey{
 				ID:             keyID,
-				ConcurrencyKey: "42",
+				ConcurrencyKey: concurrencyKey,
 			}, func(_ context.Context) (AnyResult, error) {
 				initMu.Lock()
 				initialized[i] = true
@@ -147,19 +182,52 @@ func TestCacheConcurrent(t *testing.T) {
 				return cacheTestIntResult(keyID, i), nil
 			})
 			assert.NilError(t, err)
-			actual := cacheTestUnwrapInt(t, res)
-			initMu.Lock()
-			wasInitialized := initialized[actual]
-			initMu.Unlock()
-			assert.Assert(t, wasInitialized)
+			assert.Equal(t, 0, cacheTestUnwrapInt(t, res))
 		}()
 	}
+
+	waiterCountReached := false
+	waiterPollDeadline := time.Now().Add(3 * time.Second)
+	lastObservedWaiters := -1
+	for time.Now().Before(waiterPollDeadline) {
+		c.mu.Lock()
+		oc := c.ongoingCalls[callConcKeys]
+		if oc != nil {
+			lastObservedWaiters = oc.waiters
+		}
+		c.mu.Unlock()
+
+		if oc != nil && lastObservedWaiters == totalCallers {
+			waiterCountReached = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Assert(t, waiterCountReached, "expected %d waiters, last observed %d", totalCallers, lastObservedWaiters)
+
+	close(unblockFirstCall)
+
+	ongoingCleared := false
+	clearPollDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(clearPollDeadline) {
+		c.mu.Lock()
+		_, exists := c.ongoingCalls[callConcKeys]
+		c.mu.Unlock()
+		if !exists {
+			ongoingCleared = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Assert(t, ongoingCleared, "ongoing call was not cleared")
 
 	wg.Wait()
 
 	initMu.Lock()
 	defer initMu.Unlock()
 	assert.Assert(t, is.Len(initialized, 1))
+	assert.Assert(t, initialized[0])
+	assert.Equal(t, 1, cacheIface.Size())
 }
 
 func TestCacheErrors(t *testing.T) {
@@ -1110,16 +1178,45 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	key := "arbitrary-concurrent"
-	var initCalls atomic.Int32
+	initialized := map[int]bool{}
+	var initMu sync.Mutex
+	const totalCallers = 100
+
+	firstCallEntered := make(chan struct{})
+	unblockFirstCall := make(chan struct{})
 
 	wg := new(sync.WaitGroup)
-	for range 100 {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		res, err := c.GetOrInitArbitrary(ctx, key, func(context.Context) (any, error) {
+			initMu.Lock()
+			initialized[0] = true
+			initMu.Unlock()
+			close(firstCallEntered)
+			<-unblockFirstCall
+			return "value", nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, "value", res.Value())
+		assert.NilError(t, res.Release(ctx))
+	}()
+
+	select {
+	case <-firstCallEntered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first caller to enter init callback")
+	}
+
+	for i := 1; i < totalCallers; i++ {
 		wg.Add(1)
+		i := i
 		go func() {
 			defer wg.Done()
 			res, err := c.GetOrInitArbitrary(ctx, key, func(context.Context) (any, error) {
-				initCalls.Add(1)
-				time.Sleep(5 * time.Millisecond)
+				initMu.Lock()
+				initialized[i] = true
+				initMu.Unlock()
 				return "value", nil
 			})
 			assert.NilError(t, err)
@@ -1127,9 +1224,48 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 			assert.NilError(t, res.Release(ctx))
 		}()
 	}
+
+	waiterCountReached := false
+	waiterPollDeadline := time.Now().Add(3 * time.Second)
+	lastObservedWaiters := -1
+	for time.Now().Before(waiterPollDeadline) {
+		c.mu.Lock()
+		oc := c.ongoingArbitraryCalls[key]
+		if oc != nil {
+			lastObservedWaiters = oc.waiters
+		}
+		c.mu.Unlock()
+
+		if oc != nil && lastObservedWaiters == totalCallers {
+			waiterCountReached = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Assert(t, waiterCountReached, "expected %d waiters, last observed %d", totalCallers, lastObservedWaiters)
+
+	close(unblockFirstCall)
+
+	ongoingCleared := false
+	clearPollDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(clearPollDeadline) {
+		c.mu.Lock()
+		_, exists := c.ongoingArbitraryCalls[key]
+		c.mu.Unlock()
+		if !exists {
+			ongoingCleared = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Assert(t, ongoingCleared, "ongoing arbitrary call was not cleared")
+
 	wg.Wait()
 
-	assert.Equal(t, int32(1), initCalls.Load())
+	initMu.Lock()
+	defer initMu.Unlock()
+	assert.Assert(t, is.Len(initialized, 1))
+	assert.Assert(t, initialized[0])
 	assert.Equal(t, 0, c.Size())
 }
 

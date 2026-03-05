@@ -1,7 +1,0 @@
-kind: Fixed
-body: Update internal bbolt db configuration to do less syncing and possibly avoid
-  an upstream bug causing crashes
-time: 2026-02-11T18:28:02.858189627-08:00
-custom:
-  Author: sipsma
-  PR: "11850"

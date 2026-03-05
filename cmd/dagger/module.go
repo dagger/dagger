@@ -22,12 +22,12 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
@@ -743,11 +743,14 @@ This command is idempotent: you can run it at any time, any number of times. It 
 					if err != nil {
 						return localModuleErrorf("failed to get local context directory path: %w", err)
 					}
-					_, err = modSrc.
-						GeneratedContextDirectory().
-						Export(ctx, contextDirPath)
+
+					cs, err := modSrc.GeneratedContextChangeset().Sync(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to generate code: %w", err)
+					}
+
+					if _, err := cs.Export(ctx, contextDirPath); err != nil {
+						return fmt.Errorf("failed to apply generated code: %w", err)
 					}
 
 					// If no license has been created yet, and SDK is set, we should create one.

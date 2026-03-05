@@ -37,3 +37,9 @@ Use this checklist when asked to regenerate generated files.
 3. Search the temp file as needed instead of printing full output.
 
 4. Delete the temp file when done.
+
+## Regenerate Golden Tests
+
+Use this checklist when asked to regenerate telemetry golden tests.
+
+1. From the Dagger repo root, run `dagger -c 'engine-dev | test-telemetry --update | export .'`

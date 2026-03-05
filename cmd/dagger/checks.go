@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -9,18 +10,22 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
 	checksListMode bool
 )
+
+//go:embed checks.graphql
+var loadChecksQuery string
 
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
@@ -58,9 +63,9 @@ Examples:
 					checks = mod.Checks()
 				}
 				if checksListMode {
-					return listChecks(ctx, checks, cmd)
+					return listChecks(ctx, dag, checks, cmd)
 				} else {
-					return runChecks(ctx, checks, cmd)
+					return runChecks(ctx, dag, checks, cmd)
 				}
 			},
 		)
@@ -77,33 +82,70 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
-func loadCheckGroupInfo(ctx context.Context, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
-	ctx, span := Tracer().Start(ctx, "fetch check information")
+// loadGroupListDetails fetches name+description for every item in a group
+// using a single batch GraphQL query, with tracing suppressed to avoid
+// per-item span noise in list mode.
+func loadGroupListDetails(
+	ctx context.Context,
+	dag *dagger.Client,
+	spanName string,
+	getID func(context.Context) (any, error),
+	query string,
+	opName string,
+) ([]groupListItem, error) {
+	ctx, span := Tracer().Start(ctx, spanName)
 	defer span.End()
 
-	checks, err := checkgroup.List(ctx)
+	noTraceCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+
+	id, err := getID(noTraceCtx)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	var res struct {
+		Group struct {
+			List []groupListItem
+		}
+	}
+
+	err = dag.Do(noTraceCtx, &dagger.Request{
+		Query:  query,
+		OpName: opName,
+		Variables: map[string]any{
+			"id": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
+	return res.Group.List, nil
+}
+
+type groupListItem struct {
+	Name        string
+	Description string
+}
+
+func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
+	items, err := loadGroupListDetails(ctx, dag, "fetch check information",
+		func(ctx context.Context) (any, error) { return checkgroup.ID(ctx) },
+		loadChecksQuery, "CheckGroupListDetails",
+	)
 	if err != nil {
 		return nil, err
 	}
-	info := &CheckGroupInfo{}
-	for _, check := range checks {
-		checkInfo := &CheckInfo{}
-
-		name, err := check.Name(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		checkInfo.Name = cliName(name)
-
-		description, err := check.Description(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		checkInfo.Description = description
-
-		info.Checks = append(info.Checks, checkInfo)
+	info := &CheckGroupInfo{Checks: make([]*CheckInfo, 0, len(items))}
+	for _, item := range items {
+		info.Checks = append(info.Checks, &CheckInfo{
+			Name:        cliName(item.Name),
+			Description: item.Description,
+		})
 	}
 	return info, nil
 }
@@ -118,8 +160,8 @@ type CheckInfo struct {
 }
 
 // 'dagger checks -l'
-func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
-	info, err := loadCheckGroupInfo(ctx, checkgroup)
+func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
+	info, err := loadCheckGroupInfo(ctx, dag, checkgroup)
 	if err != nil {
 		return err
 	}
@@ -139,7 +181,7 @@ func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.C
 }
 
 // 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
@@ -147,17 +189,37 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Comm
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	checks, err := checkgroup.Run().List(ctx)
+	id, err := checkgroup.ID(ctx)
 	if err != nil {
 		return err
 	}
-	var failed int
-	for _, check := range checks {
-		passed, err := check.Passed(ctx)
-		if err != nil {
-			return err
+
+	var res struct {
+		CheckGroup struct {
+			Run struct {
+				List []struct {
+					Passed bool
+				}
+			}
 		}
-		if !passed {
+	}
+
+	err = dag.Do(ctx, &dagger.Request{
+		Query:  loadChecksQuery,
+		OpName: "CheckGroupRunStatuses",
+		Variables: map[string]any{
+			"checkGroup": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return err
+	}
+
+	var failed int
+	for _, check := range res.CheckGroup.Run.List {
+		if !check.Passed {
 			failed++
 		}
 	}

@@ -84,7 +84,7 @@ func (s *Server) WithCache(c *SessionCache) *Server {
 }
 
 type InstallHook interface {
-	InstallObject(ObjectType)
+	InstallObject(ObjectType, ...*ast.Directive)
 	// FIXME: add support for other install functions
 }
 
@@ -341,7 +341,7 @@ func (s *Server) Root() AnyObjectResult {
 
 // InstallObject installs the given Object type into the schema, or returns the
 // previously installed type if it was already present
-func (s *Server) InstallObject(class ObjectType) ObjectType {
+func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) ObjectType {
 	s.installLock.Lock()
 
 	if class, ok := s.objects[class.TypeName()]; ok {
@@ -355,19 +355,22 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
 
+		spec := FieldSpec{
+			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+			Type:        class.Typed(),
+			Args: NewInputSpecs(
+				InputSpec{
+					Name: "id",
+					Type: idType,
+				},
+			),
+			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
+			Directives: directives,
+		}
+
 		s.Root().ObjectType().Extend(
-			FieldSpec{
-				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:        class.Typed(),
-				Args: NewInputSpecs(
-					InputSpec{
-						Name: "id",
-						Type: idType,
-					},
-				),
-				DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-			},
+			spec,
 			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
 				idable, ok := args["id"].(IDable)
 				if !ok {
@@ -388,7 +391,7 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 	s.installLock.Unlock()
 
 	for _, hook := range s.installHooks {
-		hook.InstallObject(class)
+		hook.InstallObject(class, directives...)
 	}
 
 	return class

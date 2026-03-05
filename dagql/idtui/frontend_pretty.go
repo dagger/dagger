@@ -33,11 +33,11 @@ import (
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
@@ -2168,7 +2168,13 @@ func (fe *frontendPretty) hasShownRootError() bool {
 	if fe.err == nil {
 		return false
 	}
-	for _, origin := range telemetry.ParseErrorOrigins(fe.err.Error()) {
+	origins := telemetry.ParseErrorOrigins(fe.err.Error())
+	if len(origins) == 0 {
+		// No error origins means the error didn't come from a specific span,
+		// so it can't have been shown in the progress output.
+		return false
+	}
+	for _, origin := range origins {
 		if !origin.IsValid() {
 			return false
 		}

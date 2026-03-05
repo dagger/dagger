@@ -180,7 +180,7 @@ func (t *Test) Hello() string {
 					With(daggerExec("--progress=report", "check", fmt.Sprintf("%s:passing-check", strings.TrimPrefix(tc.toolchainPath, "../")))).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Regexp(t, `passingCheck.*OK`, out)
+				require.Regexp(t, `passing-check.*OK`, out)
 			})
 		}
 	})
@@ -577,8 +577,8 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			With(daggerExec("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `passingCheck.*OK`, out)
-		require.Regexp(t, `passingContainer.*OK`, out)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
 		require.NotContains(t, out, "failingCheck")
 		require.NotContains(t, out, "failingContainer")
 	})
@@ -628,8 +628,8 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 			With(daggerExec("--progress=report", "check")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, `passingCheck.*OK`, out)
-		require.Regexp(t, `passingContainer.*OK`, out)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
 	})
 }
 
@@ -646,13 +646,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@b19aca4e39448291f65ad96f0eea3005ea1cf356",
+			"github.com/dagger/jest@f5bd67ed5de44546049c677b6344f20ef7189691",
 		))
 
 		// will fail at name deduplication (both named "jest")
 		_, err := modGen.With(daggerExec(
 			"toolchain", "install",
-			"github.com/dagger/jest@1484257689c618ed314f5acefd1d712d80cda2dc",
+			"github.com/dagger/jest@9f0d39b447d44c175757a4a2297330e7fa372a0a",
 		)).CombinedOutput(ctx)
 
 		// this should error with "duplicate toolchain name"
@@ -669,13 +669,13 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		// Install first commit
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-old",
-			"github.com/dagger/jest@b19aca4e39448291f65ad96f0eea3005ea1cf356",
+			"github.com/dagger/jest@f5bd67ed5de44546049c677b6344f20ef7189691",
 		))
 
 		// will fail at name deduplication (both named "jest")
 		modGen = modGen.With(daggerExec(
 			"toolchain", "install", "--name", "jest-new",
-			"github.com/dagger/jest@1484257689c618ed314f5acefd1d712d80cda2dc",
+			"github.com/dagger/jest@9f0d39b447d44c175757a4a2297330e7fa372a0a",
 		))
 
 		// This should work if we use different names
