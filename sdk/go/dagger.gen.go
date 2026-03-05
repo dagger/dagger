@@ -14273,7 +14273,9 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Path is relative to workspace root. Use "." for the root directory.
+// Path must be absolute in host/repo context.
+//
+// By default, paths outside the workspace repository root are rejected.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14299,7 +14301,9 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Path is relative to workspace root.
+// Path must be absolute in host/repo context.
+//
+// By default, paths outside the workspace repository root are rejected.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14309,31 +14313,18 @@ func (r *Workspace) File(path string) *File {
 	}
 }
 
-// WorkspaceFindUpOpts contains options for Workspace.FindUp
-type WorkspaceFindUpOpts struct {
-	// Path to start the search from, relative to the workspace root.
-	//
-	// Default: "."
-	From string
-}
-
 // Search for a file or directory by walking up from the start path within the workspace.
 //
-// Returns the path relative to the workspace root if found, or null if not found.
+// Returns the absolute path if found, or null if not found.
 //
-// The search stops at the workspace root and will not traverse above it.
-func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
+// The search stops at the workspace repository root and will not traverse above it.
+func (r *Workspace) FindUp(ctx context.Context, name string, from string) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
 	}
 	q := r.query.Select("findUp")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `from` optional argument
-		if !querybuilder.IsZeroValue(opts[i].From) {
-			q = q.Arg("from", opts[i].From)
-		}
-	}
 	q = q.Arg("name", name)
+	q = q.Arg("from", from)
 
 	var response string
 

@@ -176,7 +176,7 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_findUp">findUp</a>(string $name, string|null $from = &#039;.&#039;)
+                    <a href="#method_findUp">findUp</a>(string $name, string $from)
         
                                             <p><p>Search for a file or directory by walking up from the start path within the workspace.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -330,7 +330,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_directory">
-        <div class="location">at line 30</div>
+        <div class="location">at line 32</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
         </code>
@@ -340,7 +340,8 @@
             
 
         <div class="method-description">
-                            <p><p>Returns a Directory from the workspace.</p></p>                <p><p>Path is relative to workspace root. Use &quot;.&quot; for the root directory.</p></p>        
+                            <p><p>Returns a Directory from the workspace.</p></p>                <p><p>Path must be absolute in host/repo context.</p>
+<p>By default, paths outside the workspace repository root are rejected.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -387,7 +388,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 55</div>
+        <div class="location">at line 59</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $path)
         </code>
@@ -397,7 +398,8 @@
             
 
         <div class="method-description">
-                            <p><p>Returns a File from the workspace.</p></p>                <p><p>Path is relative to workspace root.</p></p>        
+                            <p><p>Returns a File from the workspace.</p></p>                <p><p>Path must be absolute in host/repo context.</p>
+<p>By default, paths outside the workspace repository root are rejected.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -429,9 +431,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_findUp">
-        <div class="location">at line 69</div>
+        <div class="location">at line 73</div>
         <code>                    string
-    <strong>findUp</strong>(string $name, string|null $from = &#039;.&#039;)
+    <strong>findUp</strong>(string $name, string $from)
         </code>
     </h3>
     <div class="details">    
@@ -439,8 +441,8 @@
             
 
         <div class="method-description">
-                            <p><p>Search for a file or directory by walking up from the start path within the workspace.</p></p>                <p><p>Returns the path relative to the workspace root if found, or null if not found.</p>
-<p>The search stops at the workspace root and will not traverse above it.</p></p>        
+                            <p><p>Search for a file or directory by walking up from the start path within the workspace.</p></p>                <p><p>Returns the absolute path if found, or null if not found.</p>
+<p>The search stops at the workspace repository root and will not traverse above it.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -452,7 +454,7 @@
                 <td></td>
             </tr>
                     <tr>
-                <td>string|null</td>
+                <td>string</td>
                 <td>$from</td>
                 <td></td>
             </tr>
@@ -477,7 +479,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 82</div>
+        <div class="location">at line 84</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -509,7 +511,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_root">
-        <div class="location">at line 91</div>
+        <div class="location">at line 93</div>
         <code>                    string
     <strong>root</strong>()
         </code>

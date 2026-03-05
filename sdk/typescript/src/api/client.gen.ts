@@ -2725,13 +2725,6 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
-export type WorkspaceFindUpOpts = {
-  /**
-   * Path to start the search from, relative to the workspace root.
-   */
-  from?: string
-}
-
 /**
  * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
  */
@@ -13745,8 +13738,10 @@ export class Workspace extends BaseClient {
   /**
    * Returns a Directory from the workspace.
    *
-   * Path is relative to workspace root. Use "." for the root directory.
-   * @param path Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+   * Path must be absolute in host/repo context.
+   *
+   * By default, paths outside the workspace repository root are rejected.
+   * @param path Absolute location of the directory to retrieve in host/repo context.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -13759,8 +13754,10 @@ export class Workspace extends BaseClient {
   /**
    * Returns a File from the workspace.
    *
-   * Path is relative to workspace root.
-   * @param path Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+   * Path must be absolute in host/repo context.
+   *
+   * By default, paths outside the workspace repository root are rejected.
+   * @param path Absolute location of the file to retrieve in host/repo context.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -13770,21 +13767,18 @@ export class Workspace extends BaseClient {
   /**
    * Search for a file or directory by walking up from the start path within the workspace.
    *
-   * Returns the path relative to the workspace root if found, or null if not found.
+   * Returns the absolute path if found, or null if not found.
    *
-   * The search stops at the workspace root and will not traverse above it.
+   * The search stops at the workspace repository root and will not traverse above it.
    * @param name The name of the file or directory to search for.
-   * @param opts.from Path to start the search from, relative to the workspace root.
+   * @param from Absolute path to start the search from in host/repo context.
    */
-  findUp = async (
-    name: string,
-    opts?: WorkspaceFindUpOpts,
-  ): Promise<string> => {
+  findUp = async (name: string, from: string): Promise<string> => {
     if (this._findUp) {
       return this._findUp
     }
 
-    const ctx = this._ctx.select("findUp", { name, ...opts })
+    const ctx = this._ctx.select("findUp", { name, from })
 
     const response: Awaited<string> = await ctx.execute()
 

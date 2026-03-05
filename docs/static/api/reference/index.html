@@ -15730,7 +15730,8 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
                           <p>Returns a Directory from the workspace.</p>
-                          <p>Path is relative to workspace root. Use &quot;.&quot; for the root directory.</p>
+                          <p>Path must be absolute in host/repo context.</p>
+                          <p>By default, paths outside the workspace repository root are rejected.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15740,7 +15741,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve, relative to the workspace root (e.g., &quot;src&quot;, &quot;.&quot;).</p>
+                                <p>Absolute location of the directory to retrieve in host/repo context.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -15762,7 +15763,8 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-file" href="#Workspace-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td>
                           <p>Returns a File from the workspace.</p>
-                          <p>Path is relative to workspace root.</p>
+                          <p>Path must be absolute in host/repo context.</p>
+                          <p>By default, paths outside the workspace repository root are rejected.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15772,7 +15774,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to retrieve, relative to the workspace root (e.g., &quot;go.mod&quot;).</p>
+                                <p>Absolute location of the file to retrieve in host/repo context.</p>
                               </div>
                             </div>
                           </div>
@@ -15782,8 +15784,8 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-findUp" href="#Workspace-findUp"><code>findUp</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td>
                           <p>Search for a file or directory by walking up from the start path within the workspace.</p>
-                          <p>Returns the path relative to the workspace root if found, or null if not found.</p>
-                          <p>The search stops at the workspace root and will not traverse above it.</p>
+                          <p>Returns the absolute path if found, or null if not found.</p>
+                          <p>The search stops at the workspace repository root and will not traverse above it.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15796,8 +15798,8 @@
                                 <p>The name of the file or directory to search for.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Path to start the search from, relative to the workspace root.</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Absolute path to start the search from in host/repo context.</p>
                               </div>
                             </div>
                           </div>

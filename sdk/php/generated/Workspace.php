@@ -25,7 +25,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a Directory from the workspace.
      *
-     * Path is relative to workspace root. Use "." for the root directory.
+     * Path must be absolute in host/repo context.
+     *
+     * By default, paths outside the workspace repository root are rejected.
      */
     public function directory(
         string $path,
@@ -50,7 +52,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a File from the workspace.
      *
-     * Path is relative to workspace root.
+     * Path must be absolute in host/repo context.
+     *
+     * By default, paths outside the workspace repository root are rejected.
      */
     public function file(string $path): File
     {
@@ -62,17 +66,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Search for a file or directory by walking up from the start path within the workspace.
      *
-     * Returns the path relative to the workspace root if found, or null if not found.
+     * Returns the absolute path if found, or null if not found.
      *
-     * The search stops at the workspace root and will not traverse above it.
+     * The search stops at the workspace repository root and will not traverse above it.
      */
-    public function findUp(string $name, ?string $from = '.'): string
+    public function findUp(string $name, string $from): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
         $leafQueryBuilder->setArgument('name', $name);
-        if (null !== $from) {
         $leafQueryBuilder->setArgument('from', $from);
-        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
     }
 
