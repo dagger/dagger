@@ -565,7 +565,7 @@ func TestProjectTraceSummaryAndCallDepth(t *testing.T) {
 	}
 }
 
-func TestProjectTraceSkipsNonDagSpansInEventStream(t *testing.T) {
+func TestProjectTraceIncludesNonDagSpansInEventStream(t *testing.T) {
 	t.Parallel()
 
 	spans := []store.SpanRecord{
@@ -600,11 +600,14 @@ func TestProjectTraceSkipsNonDagSpansInEventStream(t *testing.T) {
 		t.Fatalf("project trace: %v", err)
 	}
 
-	if len(proj.Events) != 1 {
-		t.Fatalf("expected exactly one dag.call event, got %d", len(proj.Events))
+	if len(proj.Events) != 2 {
+		t.Fatalf("expected non-dag span + dag.call event, got %d", len(proj.Events))
 	}
-	if proj.Events[0].SpanID != "s1" {
-		t.Fatalf("expected only dag.call span in events, got %+v", proj.Events[0])
+	if proj.Events[0].SpanID != "root" || proj.Events[0].RawKind != "span" {
+		t.Fatalf("expected first event to be raw span, got %+v", proj.Events[0])
+	}
+	if proj.Events[1].SpanID != "s1" || proj.Events[1].RawKind != "call" {
+		t.Fatalf("expected second event to be dag.call span, got %+v", proj.Events[1])
 	}
 }
 

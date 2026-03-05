@@ -6,6 +6,11 @@ const state = {
   frameSteps: [],
   frameIndex: 0,
   selectedObjectID: "",
+  filters: {
+    calls: false,
+    derived: false,
+    visible: false,
+  },
   requestToken: 0,
 };
 
@@ -27,6 +32,9 @@ const els = {
   graphCanvas: document.getElementById("graphCanvas"),
   graphEmpty: document.getElementById("graphEmpty"),
   inspector: document.getElementById("inspector"),
+  filterCalls: document.getElementById("filterCalls"),
+  filterDerived: document.getElementById("filterDerived"),
+  filterVisible: document.getElementById("filterVisible"),
   eventList: document.getElementById("eventList"),
 };
 
@@ -66,6 +74,19 @@ function bindEvents() {
       return;
     }
     loadFrame(state.frameSteps.length - 1).catch((err) => showError(err));
+  });
+
+  els.filterCalls.addEventListener("change", () => {
+    state.filters.calls = Boolean(els.filterCalls.checked);
+    renderEvents();
+  });
+  els.filterDerived.addEventListener("change", () => {
+    state.filters.derived = Boolean(els.filterDerived.checked);
+    renderEvents();
+  });
+  els.filterVisible.addEventListener("change", () => {
+    state.filters.visible = Boolean(els.filterVisible.checked);
+    renderEvents();
   });
 }
 
@@ -388,16 +409,20 @@ function renderEvents() {
     return;
   }
   const active = new Set(state.snapshot.activeEventIDs || []);
-  const recentEvents = [...(state.snapshot.events || [])].slice(-120).reverse();
+  const recentEvents = [...(state.snapshot.events || [])]
+    .filter((event) => eventMatchesFilters(event, state.filters))
+    .slice(-120)
+    .reverse();
   if (recentEvents.length === 0) {
-    els.eventList.innerHTML = "<div class='event-item'>No events in this frame.</div>";
+    els.eventList.innerHTML = "<div class='event-item'>No events match current filters.</div>";
     return;
   }
 
   els.eventList.innerHTML = recentEvents
     .map((event) => {
       const activeClass = active.has(event.spanID) ? "active" : "";
-      const callLabel = event.name || event.callDigest || event.spanID;
+      const callLabel = event.rawKind === "call" ? event.name || event.callDigest || event.spanID : "-";
+      const rawLabel = `${event.rawKind || "span"} · ${event.name || "-"} · ${shortDigest(event.spanID)}`;
       const parentLabel = event.parentCallName || (event.parentCallSpanID ? shortDigest(event.parentCallSpanID) : "-");
       const detail = `${formatRelTime(event.endUnixNano, state.projection.startUnixNano)} · ${event.statusCode || "STATUS_CODE_UNSET"} · span ${shortDigest(event.spanID)}`;
       return `
@@ -405,7 +430,7 @@ function renderEvents() {
         <div class="event-grid">
           <span>${escapeHTML(callLabel)}</span>
           <span>${escapeHTML(parentLabel)}</span>
-          <span>${escapeHTML(event.rawKind || "call")}</span>
+          <span>${escapeHTML(rawLabel)}</span>
           <span>${escapeHTML(event.operation || "-")}</span>
           <span>${event.topLevel ? "yes" : "no"}</span>
           <span>${Number(event.callDepth || 0)}</span>
@@ -416,6 +441,19 @@ function renderEvents() {
       </div>`;
     })
     .join("");
+}
+
+function eventMatchesFilters(event, filters) {
+  if (filters.calls && event.rawKind !== "call") {
+    return false;
+  }
+  if (filters.derived && !event.operation) {
+    return false;
+  }
+  if (filters.visible && !event.visible) {
+    return false;
+  }
+  return true;
 }
 
 function renderInspector() {

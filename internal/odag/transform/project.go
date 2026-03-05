@@ -53,9 +53,6 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		if sp.span.EndUnixNano > endUnixNano {
 			endUnixNano = sp.span.EndUnixNano
 		}
-		if !sp.isDAGCall {
-			continue
-		}
 
 		event := MutationEvent{
 			Index:                 len(events),
@@ -78,9 +75,15 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 			ParentChainIncomplete: sp.parentChainIncomplete,
 			Internal:              sp.isInternal,
 			Inputs:                sp.inputs,
-			Kind:                  "call",
-			RawKind:               "call",
+			Kind:                  "span",
+			RawKind:               "span",
 		}
+		if !sp.isDAGCall {
+			events = append(events, event)
+			continue
+		}
+		event.Kind = "call"
+		event.RawKind = "call"
 
 		if sp.outputStateDigest == "" || !sp.isObjectOutput {
 			events = append(events, event)

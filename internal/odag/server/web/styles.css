@@ -272,6 +272,23 @@ body {
   font-size: 0.95rem;
 }
 
+.event-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(90, 116, 146, 0.28);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.event-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 .event-header {
   display: grid;
   grid-template-columns: 3.5fr repeat(7, minmax(0, 1fr));
