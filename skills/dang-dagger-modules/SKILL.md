@@ -418,7 +418,6 @@ raise "something went wrong"
 - Two-space indentation
 - Leading dots for method chains (NOT trailing dots)
 - Triple-quoted doc strings (`"""..."""`) — single-quoted `"..."` are NOT doc strings
-- No trailing commas in multi-line lists
 - No parens for zero-arg calls
 - One blank line between type members
 - 80 character line limit
