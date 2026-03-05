@@ -7,6 +7,8 @@
   --muted: #95a6be;
   --accent: #35d0a3;
   --accent-soft: rgba(53, 208, 163, 0.2);
+  --event-select: #f2b165;
+  --event-select-soft: rgba(242, 177, 101, 0.25);
   --warn: #efb85a;
   --danger: #ff7575;
   --event: #2f3d50;
@@ -254,10 +256,25 @@ body {
   border-color: rgba(121, 161, 202, 0.7);
 }
 
-.history-item.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft);
-  background: rgba(36, 58, 74, 0.82);
+.history-item.event-selected {
+  border-color: var(--event-select);
+  box-shadow: 0 0 0 1px var(--event-select-soft);
+  background: rgba(64, 49, 32, 0.84);
+}
+
+.history-item.object-match {
+  border-color: rgba(53, 208, 163, 0.7);
+}
+
+.history-item.object-match:not(.event-selected) {
+  box-shadow: 0 0 0 1px rgba(53, 208, 163, 0.22);
+  background: rgba(33, 62, 73, 0.82);
+}
+
+.history-item.event-selected.object-match {
+  box-shadow:
+    0 0 0 1px var(--event-select-soft),
+    inset 0 0 0 1px rgba(53, 208, 163, 0.4);
 }
 
 .history-grid {
@@ -484,8 +501,26 @@ body {
 
 .node-card.active {
   fill: var(--node-active);
-  stroke: var(--accent);
+  stroke: #6f8db4;
   stroke-width: 1.8;
+}
+
+.node-card.object-selected {
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
+
+.node-event-ring {
+  fill: none;
+  stroke: var(--event-select);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.node-event-badge {
+  fill: var(--event-select);
+  stroke: rgba(248, 252, 255, 0.72);
+  stroke-width: 1;
 }
 
 .node-label {

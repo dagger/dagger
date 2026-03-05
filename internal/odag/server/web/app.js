@@ -182,7 +182,8 @@ function renderHistory() {
   const startUnixNano = state.projection.startUnixNano || 0;
   els.historyList.innerHTML = rows
     .map(({ idx, event }) => {
-      const selected = idx === state.selectedEventIndex ? "selected" : "";
+      const selected = idx === state.selectedEventIndex ? "event-selected" : "";
+      const objectMatch = eventMutatesObject(event, state.selectedObjectID) ? "object-match" : "";
       const derived = event.operation ? event.operation.toUpperCase() : event.rawKind.toUpperCase();
       const call = event.rawKind === "call" ? event.name || event.callDigest || event.spanID : event.name || event.spanID;
       const raw = `${event.rawKind} · ${shortDigest(event.spanID)}`;
@@ -190,7 +191,7 @@ function renderHistory() {
       const vis = event.objectID ? (event.visible ? "visible" : "hidden") : "-";
       const rel = formatRelTime(eventBoundaryUnixNano(event), startUnixNano);
       return `
-      <div class="history-item ${selected}" data-event-index="${idx}">
+      <div class="history-item ${selected} ${objectMatch}" data-event-index="${idx}">
         <div class="history-grid">
           <span><span class="history-pill">${escapeHTML(derived)}</span></span>
           <span class="history-call">${escapeHTML(call)}</span>
@@ -273,19 +274,25 @@ function renderGraph() {
     })
     .join("");
 
+  const selectedEvent = state.selectedEventIndex >= 0 ? (state.projection.events || [])[state.selectedEventIndex] : null;
+  const selectedEventObjectID = mutationObjectID(selectedEvent);
+
   const nodeMarkup = objects
     .map((obj) => {
       const pos = positions.get(obj.id);
       const isActive = activeObjectIDs.has(obj.id);
       const selected = obj.id === state.selectedObjectID;
+      const eventTarget = obj.id === selectedEventObjectID;
       const title = obj.alias || obj.typeName;
       const warning = obj.missingState ? `<tspan class="warn-pill">state unavailable</tspan>` : "";
-      const classNames = `node-card${isActive ? " active" : ""}${selected ? " active" : ""}`;
+      const classNames = `node-card${isActive ? " active" : ""}${selected ? " object-selected" : ""}`;
       return `
       <g data-object-id="${escapeHTML(obj.id)}" style="cursor:pointer; animation: fadeIn 220ms ease;">
         <rect class="${classNames}" x="${pos.x}" y="${pos.y}" rx="14" ry="14" width="${cardW}" height="${cardH}" />
+        ${eventTarget ? `<rect class="node-event-ring" x="${pos.x - 3}" y="${pos.y - 3}" rx="17" ry="17" width="${cardW + 6}" height="${cardH + 6}" />` : ""}
         <circle class="node-port" cx="${pos.x}" cy="${pos.y + cardH / 2}" r="6" />
         <circle class="node-port" cx="${pos.x + cardW}" cy="${pos.y + cardH / 2}" r="6" />
+        ${eventTarget ? `<circle class="node-event-badge" cx="${pos.x + cardW - 16}" cy="${pos.y + 14}" r="7" />` : ""}
         <text class="node-label" x="${pos.x + 16}" y="${pos.y + 38}">${escapeHTML(title)}</text>
         <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 74}">${escapeHTML(
           `${obj.stateHistory.length} mutations`,
@@ -309,6 +316,7 @@ function renderGraph() {
     node.addEventListener("click", () => {
       state.selectedObjectID = node.getAttribute("data-object-id") || "";
       renderGraph();
+      renderHistory();
     });
   }
 }
@@ -324,6 +332,23 @@ function eventMatchesFilters(event, filters) {
     return false;
   }
   return true;
+}
+
+function eventMutatesObject(event, objectID) {
+  if (!objectID) {
+    return false;
+  }
+  return mutationObjectID(event) === objectID;
+}
+
+function mutationObjectID(event) {
+  if (!event || !event.objectID) {
+    return "";
+  }
+  if (event.operation === "create" || event.operation === "mutate") {
+    return event.objectID;
+  }
+  return "";
 }
 
 function shortEventLabel(event) {

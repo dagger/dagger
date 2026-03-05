@@ -530,6 +530,9 @@ Stage 4 implementation note:
   - selecting a history item moves the DAG snapshot to that event boundary time
   - history pane includes checkbox filters for `calls`, `derived`, and `visible`
   - history cards use table-like aligned columns (kind/call/parent/visible/time) while keeping card styling
+  - dual selection cues are explicit and composable:
+    - current-event selection highlights the event row and marks the mutated object with an event badge/ring
+    - selected-object selection uses a distinct object contour color and highlights all history rows that mutate that object
   - dedicated central trace title row above the DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
   - object cards show ODAG alias (`Type#N`) as primary label; immutable state digest text is hidden from card body
