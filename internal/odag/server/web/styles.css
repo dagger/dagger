@@ -54,12 +54,30 @@ body {
 }
 
 .trace-shell {
+  position: relative;
   display: grid;
   grid-template-columns: 420px minmax(0, 1fr);
   gap: 12px;
   width: 100%;
   height: 100%;
   padding: 12px;
+}
+
+.trace-back-btn {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 19px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  background: rgba(24, 38, 52, 0.92);
 }
 
 .panel {
@@ -323,14 +341,7 @@ body {
 }
 
 .trace-title-panel {
-  padding: 11px 14px;
-}
-
-.trace-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  padding: 12px 14px 11px 54px;
 }
 
 .trace-title {
@@ -566,6 +577,11 @@ body {
     grid-template-columns: 1fr;
     grid-template-rows: 260px minmax(0, 1fr);
     padding: 8px;
+  }
+
+  .trace-back-btn {
+    top: 10px;
+    left: 10px;
   }
 
   .home-shell {

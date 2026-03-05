@@ -527,6 +527,7 @@ Stage 4 implementation note:
 - UI includes:
   - trace list rows include creation time (`firstSeen`) to aid scanability when many traces exist
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
+  - trace navigation back to list uses a small top-left back-arrow control (unobtrusive, conventional placement)
   - selecting a history item moves the DAG snapshot to that event boundary time
   - history pane includes checkbox filters for `calls`, `derived`, and `visible`
   - history cards use table-like aligned columns (kind/call/parent/visible/time) while keeping card styling

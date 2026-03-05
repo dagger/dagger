@@ -8,6 +8,9 @@
   </head>
   <body>
     <div class="trace-shell">
+      <button id="backBtn" class="btn trace-back-btn" type="button" aria-label="Back to traces">
+        <span aria-hidden="true">&larr;</span>
+      </button>
       <aside class="panel history-panel">
         <div class="history-header">
           <h2>History</h2>
@@ -33,10 +36,7 @@
 
       <main class="main-panel">
         <section class="trace-title-panel panel">
-          <div class="trace-title-row">
-            <h2 id="traceTitle" class="trace-title">Trace</h2>
-            <button id="backBtn" class="btn">Traces</button>
-          </div>
+          <h2 id="traceTitle" class="trace-title">Trace</h2>
           <p id="traceSubtitle" class="trace-subtitle"></p>
         </section>
 
