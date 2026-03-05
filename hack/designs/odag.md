@@ -484,7 +484,7 @@ Encoding note:
 - [x] Stage 2: OTLP ingest mode (trace/span persistence from `/v1/traces`)
 - [x] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
 - [x] Stage 4: Web UI shell + timeline + ODAG canvas + inspector
-- [ ] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
+- [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -507,6 +507,16 @@ Stage 4 implementation note:
   - ODAG object canvas (workflow-style cards with mutation highlighting)
   - event stream panel
   - inspector panel (selected object state history or current event details)
+
+Stage 5 implementation note:
+- Cloud pull mode is implemented in both CLI and backend API:
+  - `odag fetch <traceID> [--org ...]`
+  - `POST /api/traces/open` with `{ "mode": "cloud", "traceID": "...", "org": "..." }`
+- Web UI now exposes Cloud import controls (trace ID + optional org) and refreshes local trace list after import.
+- Telemetry protocol constants were added for upcoming output-state payload support:
+  - `dagger.io/dag.output.state`
+  - `dagger.io/dag.output.state.version`
+- Current ODAG implementation already consumes these attributes when present and gracefully handles their absence (`missingState`), enabling compatibility with both old and future engines.
 
 ### Phase 0: Spike
 

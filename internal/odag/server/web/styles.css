@@ -86,6 +86,9 @@ body {
 .trace-toolbar {
   padding: 10px 16px;
   border-bottom: 1px solid var(--panel-border);
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 8px;
 }
 
 .btn {
@@ -101,6 +104,15 @@ body {
 .btn:hover {
   transform: translateY(-1px);
   background: #21344a;
+}
+
+.text-input {
+  border: 1px solid rgba(92, 116, 147, 0.42);
+  border-radius: 8px;
+  background: rgba(18, 28, 40, 0.95);
+  color: var(--text);
+  padding: 6px 10px;
+  min-width: 0;
 }
 
 .trace-list {

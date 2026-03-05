@@ -12,6 +12,9 @@ const state = {
 
 const els = {
   refreshTracesBtn: document.getElementById("refreshTracesBtn"),
+  importCloudBtn: document.getElementById("importCloudBtn"),
+  cloudTraceID: document.getElementById("cloudTraceID"),
+  cloudOrg: document.getElementById("cloudOrg"),
   traceList: document.getElementById("traceList"),
   timelineSlider: document.getElementById("timelineSlider"),
   timelineCurrent: document.getElementById("timelineCurrent"),
@@ -39,6 +42,10 @@ async function init() {
 function bindEvents() {
   els.refreshTracesBtn.addEventListener("click", () => {
     refreshTraces().catch((err) => showError(err));
+  });
+
+  els.importCloudBtn.addEventListener("click", () => {
+    importTraceFromCloud().catch((err) => showError(err));
   });
 
   els.timelineSlider.addEventListener("input", () => {
@@ -82,6 +89,34 @@ async function refreshTraces() {
     await selectTrace(state.traces[0].traceID);
   } else {
     await selectTrace(state.selectedTraceID);
+  }
+}
+
+async function importTraceFromCloud() {
+  const traceID = (els.cloudTraceID.value || "").trim();
+  if (!traceID) {
+    throw new Error("Cloud trace ID is required");
+  }
+  const org = (els.cloudOrg.value || "").trim();
+
+  els.importCloudBtn.disabled = true;
+  const prevLabel = els.importCloudBtn.textContent;
+  els.importCloudBtn.textContent = "Importing...";
+  try {
+    await fetchJSON("/api/traces/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "cloud",
+        traceID,
+        org: org || undefined,
+      }),
+    });
+    await refreshTraces();
+    await selectTrace(traceID);
+  } finally {
+    els.importCloudBtn.disabled = false;
+    els.importCloudBtn.textContent = prevLabel;
   }
 }
 
@@ -470,8 +505,8 @@ function renderError(msg) {
   )}</div></div>`;
 }
 
-async function fetchJSON(url) {
-  const resp = await fetch(url);
+async function fetchJSON(url, init) {
+  const resp = await fetch(url, init);
   if (!resp.ok) {
     const body = await resp.text();
     throw new Error(`${resp.status} ${resp.statusText}: ${body}`);

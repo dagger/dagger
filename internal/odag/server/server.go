@@ -19,6 +19,7 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/dagger/dagger/internal/odag/cloudpull"
 	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
 )
@@ -62,6 +63,7 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/traces/{traceID}/meta", srv.handleTraceMeta)
 	mux.HandleFunc("GET /api/traces/{traceID}/events", srv.handleTraceEvents)
 	mux.HandleFunc("GET /api/traces/{traceID}/snapshot", srv.handleTraceSnapshot)
+	mux.HandleFunc("POST /api/traces/open", srv.handleOpenTrace)
 
 	srv.http = &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -150,6 +152,58 @@ func (s *Server) handleTraceMeta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, trace)
+}
+
+type openTraceRequest struct {
+	Mode      string `json:"mode"`
+	TraceID   string `json:"traceID"`
+	Org       string `json:"org,omitempty"`
+	TimeoutMS int64  `json:"timeoutMs,omitempty"`
+}
+
+func (s *Server) handleOpenTrace(w http.ResponseWriter, r *http.Request) {
+	var req openTraceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Mode) == "" {
+		req.Mode = "cloud"
+	}
+	if req.Mode != "cloud" {
+		http.Error(w, "unsupported mode (expected 'cloud')", http.StatusBadRequest)
+		return
+	}
+	req.TraceID = strings.TrimSpace(req.TraceID)
+	if req.TraceID == "" {
+		http.Error(w, "traceID is required", http.StatusBadRequest)
+		return
+	}
+
+	timeout := 2 * time.Minute
+	if req.TimeoutMS > 0 {
+		timeout = time.Duration(req.TimeoutMS) * time.Millisecond
+	}
+
+	res, err := cloudpull.PullTrace(r.Context(), s.store, req.TraceID, cloudpull.PullOptions{
+		OrgName: strings.TrimSpace(req.Org),
+		Timeout: timeout,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("pull trace: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	traceMeta, err := s.store.GetTrace(r.Context(), req.TraceID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("lookup imported trace: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"result": res,
+		"trace":  traceMeta,
+	})
 }
 
 func (s *Server) handleTraceEvents(w http.ResponseWriter, r *http.Request) {

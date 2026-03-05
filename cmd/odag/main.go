@@ -8,8 +8,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/dagger/dagger/internal/odag/cloudpull"
 	"github.com/dagger/dagger/internal/odag/server"
+	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +37,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newRunCmd())
+	root.AddCommand(newFetchCmd())
 
 	return root
 }
@@ -114,6 +118,45 @@ func newRunCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&serverURL, "server", "http://"+defaultListenAddr, "ODAG server base URL")
+	return cmd
+}
+
+func newFetchCmd() *cobra.Command {
+	var dbPath string
+	var orgName string
+	var timeout time.Duration
+
+	cmd := &cobra.Command{
+		Use:   "fetch <trace-id>",
+		Short: "Import a completed trace from Dagger Cloud into the local ODAG store",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			traceID := args[0]
+
+			st, err := store.Open(dbPath)
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+
+			res, err := cloudpull.PullTrace(cmd.Context(), st, traceID, cloudpull.PullOptions{
+				OrgName: orgName,
+				Timeout: timeout,
+			})
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.ErrOrStderr(), "imported trace %s: %d batches, %d span updates\n", res.TraceID, res.Batches, res.SpanUpdates)
+			fmt.Fprintf(cmd.ErrOrStderr(), "start `odag serve` and open http://%s\n", defaultListenAddr)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&dbPath, "db", defaultDBPath, "path to sqlite database")
+	cmd.Flags().StringVar(&orgName, "org", "", "Dagger Cloud org name (defaults to current org)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Minute, "max time to wait for cloud trace stream")
+
 	return cmd
 }
 

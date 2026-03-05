@@ -13,11 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	dagOutputStateAttr        = "dagger.io/dag.output.state"
-	dagOutputStateVersionAttr = "dagger.io/dag.output.state.version"
-)
-
 func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, error) {
 	parsedSpans, warnings := parseSpans(spans)
 	if len(parsedSpans) == 0 {
@@ -383,14 +378,14 @@ func decodeCallPayload(payload string) (*callpbv1.Call, error) {
 }
 
 func decodeOutputStatePayload(attrs map[string]any) (map[string]any, error) {
-	payload, ok := getString(attrs, dagOutputStateAttr)
+	payload, ok := getString(attrs, telemetry.DagOutputStateAttr)
 	if !ok || payload == "" {
 		return nil, nil
 	}
 
 	// Current experimental parser expects base64(json). If/when the state payload
 	// moves to protobuf, this parser can branch on dagger.io/dag.output.state.version.
-	_, _ = getString(attrs, dagOutputStateVersionAttr)
+	_, _ = getString(attrs, telemetry.DagOutputStateVersionAttr)
 	raw, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
 		return nil, fmt.Errorf("base64 decode: %w", err)

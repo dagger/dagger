@@ -152,6 +152,30 @@ func TestTraceAPIProjection(t *testing.T) {
 	}
 }
 
+func TestOpenTraceValidation(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/traces/open", bytes.NewBufferString(`{"mode":"collector"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
 func kvString(t *testing.T, key, val string) *commonpb.KeyValue {
 	t.Helper()
 	return &commonpb.KeyValue{
