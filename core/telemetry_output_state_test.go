@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/base64"
+	"reflect"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
@@ -30,6 +31,20 @@ type outputStateTestObject struct {
 	Raw        []byte             `json:"raw"`
 	Nested     outputStateNested  `json:"nested"`
 	SkippedVal string             `json:"-"`
+}
+
+type outputStatePanickyIDable struct {
+	id *call.ID
+}
+
+func (r *outputStatePanickyIDable) ID() *call.ID {
+	return r.id
+}
+
+type outputStatePanicMethodIDable struct{}
+
+func (outputStatePanicMethodIDable) ID() *call.ID {
+	panic("boom")
 }
 
 func (*outputStateTestObject) Type() *ast.Type {
@@ -121,5 +136,34 @@ func TestOutputStateEmitterReserveAndRelease(t *testing.T) {
 	}
 	if len(cache.traces) > 2 {
 		t.Fatalf("expected eviction to cap trace cache, got %d", len(cache.traces))
+	}
+}
+
+func TestToOutputStateValueNilIDablePointer(t *testing.T) {
+	t.Parallel()
+
+	var nilRef *outputStatePanickyIDable
+	got, err := toOutputStateValue(reflect.ValueOf(nilRef), 0, map[visitKey]struct{}{})
+	if err != nil {
+		t.Fatalf("toOutputStateValue returned error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil value, got %#v", got)
+	}
+}
+
+func TestToOutputStateValuePanickingIDMethod(t *testing.T) {
+	t.Parallel()
+
+	got, err := toOutputStateValue(reflect.ValueOf(outputStatePanicMethodIDable{}), 0, map[visitKey]struct{}{})
+	if err != nil {
+		t.Fatalf("toOutputStateValue returned error: %v", err)
+	}
+	asMap, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("expected struct to serialize as map, got %#v", got)
+	}
+	if len(asMap) != 0 {
+		t.Fatalf("expected empty struct map, got %#v", asMap)
 	}
 }

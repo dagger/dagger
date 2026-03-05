@@ -545,6 +545,7 @@ Stage 5 implementation note:
   - `fields` entry: `{ name, type, value }`
   - object references in values are emitted as immutable call digests (state IDs)
 - ODAG consumes these attributes when present and gracefully handles absence (`missingState`), enabling compatibility with both older and newer engines.
+- Engine telemetry output-state encoding is hardened against typed-nil or panicking `dagql.IDable` values to prevent resolver panics; serializer now fails closed for those fields instead of crashing query execution.
 
 Post-MVP projection refinement:
 - Default rendering now excludes `dagger.io/ui.internal=true` spans/events from seed scope and UI event stream to reduce noise.

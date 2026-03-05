@@ -379,11 +379,35 @@ func toOutputStateValue(v reflect.Value, depth int, seen map[visitKey]struct{}) 
 	}
 }
 
-func digestFromIDable(v any) (string, bool) {
+func digestFromIDable(v any) (_ string, ok bool) {
+	if v == nil {
+		return "", false
+	}
+
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return "", false
+	}
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if rv.IsNil() {
+			return "", false
+		}
+	}
+
 	idable, ok := v.(dagql.IDable)
 	if !ok {
 		return "", false
 	}
+
+	// Telemetry serialization must never crash query execution. Some IDable
+	// values can be typed-nil interfaces or otherwise panic when ID() is called.
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+
 	id := idable.ID()
 	if id == nil {
 		return "", false
