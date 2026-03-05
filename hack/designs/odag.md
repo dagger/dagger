@@ -687,6 +687,9 @@ Stage 4 implementation note:
     - supports optional trace filter, include-internal toggle, and keep-rules toggle
     - renders global tables for mutations, bindings, calls, sessions/clients
     - keeps trace index as optional drill-down to `/traces/{traceID}`
+  - navigation polish:
+    - trace list "Open" actions now use regular links for native browser-history behavior
+    - trace-page top-left back control now prefers `history.back()` (same-origin referrer), with `/` fallback
   - trace index uses a compact table layout (`trace`, `created`, `spans`, `status`) for faster scanability at high trace counts
   - `created` is shown as relative time (e.g. `3 minutes ago`) instead of an absolute timestamp
   - status is rendered as dot-only signal (no text): pulsing yellow for ingesting, red for failed, green for succeeded, neutral fallback for unknown

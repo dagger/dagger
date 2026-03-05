@@ -404,7 +404,7 @@ function renderTraceList() {
         <span class="trace-cell trace-cell-spans">${Number(trace.spanCount || 0)}</span>
         <span class="trace-cell trace-cell-status">
           <span class="status-dot ${statusClass}" title="${escapeHTML(statusLabel)}" aria-label="${escapeHTML(statusLabel)}"></span>
-          <button class="btn btn-inline" data-open-trace-id="${escapeHTML(trace.traceID)}">Open</button>
+          <a class="btn btn-inline" href="/traces/${encodeURIComponent(trace.traceID)}">Open</a>
         </span>
       </div>
     `;
@@ -425,17 +425,6 @@ function renderTraceList() {
   `;
 
   wireTraceLinks(els.traceList);
-  for (const node of els.traceList.querySelectorAll("[data-open-trace-id]")) {
-    node.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const traceID = node.getAttribute("data-open-trace-id");
-      if (!traceID) {
-        return;
-      }
-      window.location.assign(`/traces/${encodeURIComponent(traceID)}`);
-    });
-  }
 }
 
 function wireTraceLinks(root) {

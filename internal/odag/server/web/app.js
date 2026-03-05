@@ -57,6 +57,14 @@ function bindEvents() {
 
   if (els.backBtn) {
     els.backBtn.addEventListener("click", () => {
+      const hasHistory = window.history.length > 1;
+      const sameOriginReferrer =
+        typeof document.referrer === "string" &&
+        document.referrer.startsWith(window.location.origin);
+      if (hasHistory && sameOriginReferrer) {
+        window.history.back();
+        return;
+      }
       window.location.assign("/");
     });
   }

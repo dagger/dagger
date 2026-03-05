@@ -172,6 +172,10 @@ body {
   color: var(--text);
   cursor: pointer;
   transition: transform 120ms ease, background 120ms ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn:hover {
