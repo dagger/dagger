@@ -155,6 +155,7 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
 
 1. **DAGQL**: immutable IDs (`<FooID>`) represent object states.
 2. **ODAG rendering**: mutable object (`<Foo>`) holds ordered history of immutable states.
+3. **ID scope**: DAGQL IDs are treated as globally scoped across traces/sessions; when an object must be isolated to a session/client, that scope is already mixed into the ID by the engine, so ODAG should not add an extra artificial session-local namespace.
 
 ### Source-of-truth layering
 
@@ -306,6 +307,9 @@ Notes:
 5. Unresolved `target_dagql_id` values are retained:
    - create placeholder `ObjectSnapshot` rows with `StateMissing=true`
    - fill/clear when payload later arrives for that snapshot.
+6. Sharing semantics:
+   - the same `dagql_id` may appear in multiple traces/sessions.
+   - if an object is session/client-isolated, that isolation is part of the emitted `dagql_id`; ODAG should model session/client/trace as properties and link tables, not as a second namespace layer over immutable IDs.
 
 ## Backend API (V2 Source of Truth)
 
