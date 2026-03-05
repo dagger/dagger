@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,13 +17,24 @@ type Store struct {
 }
 
 func Open(dbPath string) (*Store, error) {
+	dbPath, err := filepath.Abs(filepath.Clean(dbPath))
+	if err != nil {
+		return nil, fmt.Errorf("resolve db path: %w", err)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
+	uriPath := filepath.ToSlash(dbPath)
+	if !strings.HasPrefix(uriPath, "/") {
+		// file URIs must use an absolute path component (e.g. /C:/foo on Windows).
+		uriPath = "/" + uriPath
+	}
+
 	connURL := &url.URL{
 		Scheme: "file",
-		Path:   filepath.Clean(dbPath),
+		Path:   uriPath,
 	}
 	q := connURL.Query()
 	q.Add("_pragma", "journal_mode=WAL")
