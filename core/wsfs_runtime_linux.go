@@ -402,7 +402,7 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 		return nil, upperStatus
 	}
 
-	workspaceEntries, err := workspaceMountEntries(fsys.ctx, fsys.workspace, rel)
+	workspaceEntries, err := workspaceMountEntries(fsys.ctx, fsys.workspace, rel, fsys.workspace != nil && fsys.workspace.LiveRead)
 	if err != nil {
 		if upperStatus == fuse.OK {
 			return upperEntries, fuse.OK
@@ -563,7 +563,7 @@ func (fsys *wsfsPathFS) Rmdir(name string, c *fuse.Context) fuse.Status {
 	if !cleanStatus.Ok() {
 		return cleanStatus
 	}
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true)
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, fsys.workspace != nil && fsys.workspace.LiveRead)
 	switch {
 	case err == nil && stat.FileType == FileTypeDirectory:
 		fsys.journal.markDelete(rel)
@@ -591,7 +591,7 @@ func (fsys *wsfsPathFS) Unlink(name string, c *fuse.Context) fuse.Status {
 	if !cleanStatus.Ok() {
 		return cleanStatus
 	}
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true)
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, fsys.workspace != nil && fsys.workspace.LiveRead)
 	switch {
 	case err == nil && stat.FileType != FileTypeDirectory:
 		fsys.journal.markDelete(rel)
@@ -693,7 +693,7 @@ func (fsys *wsfsPathFS) materializeWorkspaceFileMode(name string, refresh bool) 
 		}
 	}
 
-	file, err := workspaceMountFile(fsys.ctx, fsys.workspace, rel)
+	file, err := workspaceMountFile(fsys.ctx, fsys.workspace, rel, fsys.workspace != nil && fsys.workspace.LiveRead)
 	if err != nil {
 		return err
 	}
@@ -1064,12 +1064,14 @@ func (fsys *wsfsPathFS) cleanRel(name string) (string, fuse.Status) {
 // fallback. This avoids dropping symlink entries when followed stat fails on
 // filtered snapshots.
 func (fsys *wsfsPathFS) workspaceStat(rel string) (*Stat, error) {
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false)
+	noCache := fsys.workspace != nil && fsys.workspace.LiveRead
+
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false, noCache)
 	if err == nil {
 		return stat, nil
 	}
 
-	lstat, lstatErr := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true)
+	lstat, lstatErr := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, noCache)
 	if lstatErr != nil {
 		return nil, err
 	}
@@ -1079,12 +1081,12 @@ func (fsys *wsfsPathFS) workspaceStat(rel string) (*Stat, error) {
 	}
 
 	resolved := lstat.Clone()
-	if _, entriesErr := workspaceMountEntries(fsys.ctx, fsys.workspace, rel); entriesErr == nil {
+	if _, entriesErr := workspaceMountEntries(fsys.ctx, fsys.workspace, rel, noCache); entriesErr == nil {
 		resolved.FileType = FileTypeDirectory
 		return resolved, nil
 	}
 
-	if _, fileErr := workspaceMountFile(fsys.ctx, fsys.workspace, rel); fileErr == nil {
+	if _, fileErr := workspaceMountFile(fsys.ctx, fsys.workspace, rel, noCache); fileErr == nil {
 		resolved.FileType = FileTypeRegular
 		return resolved, nil
 	}

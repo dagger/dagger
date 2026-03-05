@@ -39,7 +39,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
-		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Returns a File from the workspace.`,
 				`Path is relative to workspace root.`).
 			Args(
@@ -53,13 +53,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
 			),
-		dagql.FuncWithCacheKey("entries", s.entries, dagql.CachePerClient).
+		dagql.FuncWithCacheKey("entries", s.entries, dagql.CacheAsRequested).
 			Doc(`Returns immediate children entries from the workspace directory at path.`,
 				`This is a shallow listing and does not recursively include descendants.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to list, relative to the workspace root (e.g., ".", "src").`),
 			),
-		dagql.FuncWithCacheKey("stat", s.stat, dagql.CachePerClient).
+		dagql.FuncWithCacheKey("stat", s.stat, dagql.CacheAsRequested).
 			Doc(`Returns stat metadata for a path in the workspace without materializing unrelated descendants.`).
 			Args(
 				dagql.Arg("path").Doc(`Location to stat, relative to the workspace root.`),
@@ -190,9 +190,19 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 
 type workspaceFileArgs struct {
 	Path string
+
+	workspaceNoCacheArgs
 }
 
-func (workspaceFileArgs) CacheType() dagql.CacheControlType {
+type workspaceNoCacheArgs struct {
+	NoCache      bool   `default:"false" internal:"true" name:"noCache"`
+	NoCacheNonce string `default:"" internal:"true" name:"noCacheNonce"`
+}
+
+func (a workspaceNoCacheArgs) CacheType() dagql.CacheControlType {
+	if a.NoCache || a.NoCacheNonce != "" {
+		return dagql.CacheTypePerCall
+	}
 	return dagql.CacheTypePerClient
 }
 
@@ -222,6 +232,7 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(fileDir)},
 				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)}},
+				{Name: "noCache", Value: dagql.NewBoolean(args.NoCache)},
 			},
 		},
 		dagql.Selector{
@@ -305,6 +316,8 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 
 type workspaceEntriesArgs struct {
 	Path string `default:"."`
+
+	workspaceNoCacheArgs
 }
 
 func (s *workspaceSchema) entries(ctx context.Context, parent *core.Workspace, args workspaceEntriesArgs) (dagql.Array[dagql.String], error) {
@@ -332,6 +345,7 @@ func (s *workspaceSchema) entries(ctx context.Context, parent *core.Workspace, a
 				{Name: "path", Value: dagql.NewString(absPath)},
 				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString("*")}},
 				{Name: "exclude", Value: dagql.ArrayInput[dagql.String]{dagql.NewString("*/*")}},
+				{Name: "noCache", Value: dagql.NewBoolean(args.NoCache)},
 			},
 		},
 	); err != nil {
@@ -351,6 +365,8 @@ func (s *workspaceSchema) entries(ctx context.Context, parent *core.Workspace, a
 type workspaceStatArgs struct {
 	Path                string
 	DoNotFollowSymlinks bool `default:"false"`
+
+	workspaceNoCacheArgs
 }
 
 func (s *workspaceSchema) stat(ctx context.Context, parent *core.Workspace, args workspaceStatArgs) (*core.Stat, error) {
@@ -377,6 +393,7 @@ func (s *workspaceSchema) stat(ctx context.Context, parent *core.Workspace, args
 				Field: "directory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.NewString(absPath)},
+					{Name: "noCache", Value: dagql.NewBoolean(args.NoCache)},
 				},
 			},
 		); err != nil {
@@ -390,6 +407,7 @@ func (s *workspaceSchema) stat(ctx context.Context, parent *core.Workspace, args
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.NewString(path.Dir(absPath))},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(path.Base(absPath))}},
+					{Name: "noCache", Value: dagql.NewBoolean(args.NoCache)},
 				},
 			},
 		); err != nil {

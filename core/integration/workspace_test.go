@@ -602,6 +602,45 @@ func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesOpenFileInSameExe
 	})
 }
 
+func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesDirectoryEntriesInSameExec(ctx context.Context, t *testctx.T) {
+	run := func(ctx context.Context, t *testctx.T, liveRead bool) []string {
+		wd := t.TempDir()
+		firstLog := filepath.Join(wd, "hello-1.log")
+		secondLog := filepath.Join(wd, "hello-2.log")
+		require.NoError(t, os.WriteFile(firstLog, []byte("first\n"), 0o600))
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		wsID := currentWorkspaceID(ctx, t, c)
+
+		writeErrCh := make(chan error, 1)
+		go func() {
+			time.Sleep(1500 * time.Millisecond)
+			writeErrCh <- os.WriteFile(secondLog, []byte("second\n"), 0o600)
+		}()
+
+		_, stdout := withMountedWorkspaceExecWithLiveRead(ctx, t, c, wsID, liveRead, []string{
+			"sh",
+			"-ec",
+			`for i in 1 2 3 4 5; do find /ws -maxdepth 1 -name "hello-*.log" | wc -l; sleep 1; done`,
+		})
+
+		require.NoError(t, <-writeErrCh)
+		return strings.Fields(stdout)
+	}
+
+	t.Run("default mode keeps directory listing stale", func(ctx context.Context, t *testctx.T) {
+		counts := run(ctx, t, false)
+		require.Contains(t, counts, "1")
+		require.NotContains(t, counts, "2")
+	})
+
+	t.Run("liveRead sees newly created files", func(ctx context.Context, t *testctx.T) {
+		counts := run(ctx, t, true)
+		require.Contains(t, counts, "1")
+		require.Contains(t, counts, "2")
+	})
+}
+
 func (WorkspaceSuite) TestWithMountedWorkspaceLazyMaterialization(ctx context.Context, t *testctx.T) {
 	t.Run("read does not materialize siblings", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()

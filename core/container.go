@@ -1652,7 +1652,7 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 			f, err = mnt.WorkspaceSource.Upper.Self().File(ctx, subpath)
 			err = RestoreErrPath(err, filePath)
 		} else {
-			f, err = workspaceMountFile(ctx, mnt.WorkspaceSource, subpath)
+			f, err = workspaceMountFile(ctx, mnt.WorkspaceSource, subpath, false)
 			err = RestoreErrPath(err, filePath)
 		}
 	case mnt.FileSource != nil: // mounted file
@@ -1894,7 +1894,7 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 				Args:  args,
 			})
 		} else {
-			stat, statErr := workspaceMountStat(ctx, mnt.WorkspaceSource, mntSubpath, doNotFollowSymlinks)
+			stat, statErr := workspaceMountStat(ctx, mnt.WorkspaceSource, mntSubpath, doNotFollowSymlinks, false)
 			switch {
 			case statErr == nil:
 				switch targetType {
@@ -1972,7 +1972,7 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 				Args:  args,
 			})
 		} else {
-			stat, err = workspaceMountStat(ctx, mnt.WorkspaceSource, mntSubpath, doNotFollowSymlinks)
+			stat, err = workspaceMountStat(ctx, mnt.WorkspaceSource, mntSubpath, doNotFollowSymlinks, false)
 		}
 		if err != nil {
 			return nil, err
@@ -2954,6 +2954,7 @@ func workspaceMountFile(
 	ctx context.Context,
 	workspaceMnt *WorkspaceMountSource,
 	relPath string,
+	noCache bool,
 ) (*File, error) {
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
@@ -2964,12 +2965,20 @@ func workspaceMountFile(
 		return nil, err
 	}
 
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.String(relPath)},
+	}
+	if noCache {
+		args = append(args,
+			dagql.NamedInput{Name: "noCache", Value: dagql.NewBoolean(true)},
+			dagql.NamedInput{Name: "noCacheNonce", Value: dagql.String(identity.NewID())},
+		)
+	}
+
 	var file dagql.Result[*File]
 	if err := srv.Select(ctx, workspaceMnt.Workspace, &file, dagql.Selector{
 		Field: "file",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(relPath)},
-		},
+		Args:  args,
 	}); err != nil {
 		return nil, err
 	}
@@ -2982,6 +2991,7 @@ func workspaceMountStat(
 	workspaceMnt *WorkspaceMountSource,
 	relPath string,
 	doNotFollowSymlinks bool,
+	noCache bool,
 ) (*Stat, error) {
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
@@ -3001,6 +3011,12 @@ func workspaceMountStat(
 			Value: dagql.NewBoolean(true),
 		})
 	}
+	if noCache {
+		args = append(args,
+			dagql.NamedInput{Name: "noCache", Value: dagql.NewBoolean(true)},
+			dagql.NamedInput{Name: "noCacheNonce", Value: dagql.String(identity.NewID())},
+		)
+	}
 
 	var stat *Stat
 	if err := srv.Select(ctx, workspaceMnt.Workspace, &stat, dagql.Selector{
@@ -3017,6 +3033,7 @@ func workspaceMountEntries(
 	ctx context.Context,
 	workspaceMnt *WorkspaceMountSource,
 	relPath string,
+	noCache bool,
 ) ([]string, error) {
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
@@ -3027,12 +3044,20 @@ func workspaceMountEntries(
 		return nil, err
 	}
 
+	args := []dagql.NamedInput{
+		{Name: "path", Value: dagql.String(relPath)},
+	}
+	if noCache {
+		args = append(args,
+			dagql.NamedInput{Name: "noCache", Value: dagql.NewBoolean(true)},
+			dagql.NamedInput{Name: "noCacheNonce", Value: dagql.String(identity.NewID())},
+		)
+	}
+
 	var entries dagql.Array[dagql.String]
 	if err := srv.Select(ctx, workspaceMnt.Workspace, &entries, dagql.Selector{
 		Field: "entries",
-		Args: []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(relPath)},
-		},
+		Args:  args,
 	}); err != nil {
 		return nil, err
 	}
