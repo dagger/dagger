@@ -445,7 +445,7 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 		if fsys.journal.isShadowed(childRel) {
 			continue
 		}
-		stat, err := fsys.workspaceStat(childRel)
+		stat, err := fsys.workspaceStatMode(childRel, fsys.workspace != nil && fsys.workspace.LiveRead)
 		if err != nil {
 			continue
 		}
@@ -563,7 +563,7 @@ func (fsys *wsfsPathFS) Rmdir(name string, c *fuse.Context) fuse.Status {
 	if !cleanStatus.Ok() {
 		return cleanStatus
 	}
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, fsys.workspace != nil && fsys.workspace.LiveRead)
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, false)
 	switch {
 	case err == nil && stat.FileType == FileTypeDirectory:
 		fsys.journal.markDelete(rel)
@@ -591,7 +591,7 @@ func (fsys *wsfsPathFS) Unlink(name string, c *fuse.Context) fuse.Status {
 	if !cleanStatus.Ok() {
 		return cleanStatus
 	}
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, fsys.workspace != nil && fsys.workspace.LiveRead)
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true, false)
 	switch {
 	case err == nil && stat.FileType != FileTypeDirectory:
 		fsys.journal.markDelete(rel)
@@ -663,7 +663,9 @@ func (fsys *wsfsPathFS) materializeWorkspaceFileMode(name string, refresh bool) 
 		}
 	}
 
-	stat, err := fsys.workspaceStat(rel)
+	noCache := refresh && fsys.workspace != nil && fsys.workspace.LiveRead
+
+	stat, err := fsys.workspaceStatMode(rel, noCache)
 	if err != nil {
 		if refresh && errors.Is(err, os.ErrNotExist) {
 			if rmErr := os.RemoveAll(target); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
@@ -693,7 +695,7 @@ func (fsys *wsfsPathFS) materializeWorkspaceFileMode(name string, refresh bool) 
 		}
 	}
 
-	file, err := workspaceMountFile(fsys.ctx, fsys.workspace, rel, fsys.workspace != nil && fsys.workspace.LiveRead)
+	file, err := workspaceMountFile(fsys.ctx, fsys.workspace, rel, noCache)
 	if err != nil {
 		return err
 	}
@@ -1064,8 +1066,10 @@ func (fsys *wsfsPathFS) cleanRel(name string) (string, fuse.Status) {
 // fallback. This avoids dropping symlink entries when followed stat fails on
 // filtered snapshots.
 func (fsys *wsfsPathFS) workspaceStat(rel string) (*Stat, error) {
-	noCache := fsys.workspace != nil && fsys.workspace.LiveRead
+	return fsys.workspaceStatMode(rel, false)
+}
 
+func (fsys *wsfsPathFS) workspaceStatMode(rel string, noCache bool) (*Stat, error) {
 	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false, noCache)
 	if err == nil {
 		return stat, nil
