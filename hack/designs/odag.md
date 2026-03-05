@@ -146,6 +146,22 @@ The core plumbing already exists and can be reused directly:
 7. **Existing immutable DAG visualization helper**:
    - `dagql/dagui/dot.go`
    - Useful as reference for receiver/arg edge extraction.
+8. **Current telemetry signals for session/client derivation**:
+   - Current spans do not emit explicit `session_id` / `client_id` attributes in OTEL payloads.
+   - Useful resource attrs that are present today:
+     - `service.name`
+     - `service.version`
+     - `process.command_args`
+     - `dagger.io/client.version`
+     - `dagger.io/client.os`
+     - `dagger.io/client.arch`
+     - `dagger.io/client.machine_id` (sometimes present)
+     - VCS labels such as `dagger.io/git.remote`, `dagger.io/git.ref`, `dagger.io/git.branch`
+   - Useful scope/name patterns that are present today:
+     - root spans with scope `dagger.io/cli`
+     - lifecycle spans with scope `dagger.io/engine.client`
+     - common `dagger.io/engine.client` names: `connect`, `connecting to engine`, `creating client`, `starting session`, `subscribing to telemetry`, `consuming /v1/traces|logs|metrics`
+   - Current ODAG prototype still approximates `session == trace`; this should be replaced by a dedicated derivation pass using the signals above.
 
 Note: this research pass did not include `dagger/dagger.io` dagviz internals, so integration assumptions below stay conservative.
 
@@ -345,6 +361,10 @@ Notes:
 8. Derivation contract for session/client:
    - current implementation may use heuristics to detect session/client boundaries from known engine span/resource patterns
    - those rules should be isolated in one derivation module with explicit tests and `derivationVersion` coverage.
+9. Current heuristic target:
+   - session should be derived from Dagger entrypoint/root spans, not from OTel trace IDs
+   - client should be derived from `dagger.io/engine.client` lifecycle groups, not from top-level DAGQL calls
+   - until explicit IDs are emitted, derived `Session.ID` and `Client.ID` are synthetic and versioned.
 
 ## Backend API (V2 Source of Truth)
 
@@ -500,6 +520,50 @@ The UI event stream intentionally carries multiple abstraction layers in one row
 4. **Visibility signals**: `visible`, `topLevel`, `callDepth`, and nearest parent DAG call metadata.
 
 This model keeps ODAG rendering explainable when filtering/pruning hides many events or objects.
+
+### 8) Derive sessions and clients from current telemetry
+
+Current telemetry does not export explicit session/client IDs into OTEL span payloads, so ODAG must derive them behind a narrow heuristic boundary.
+
+Session derivation:
+
+1. Identify session-root candidates from root spans.
+2. A root span is a session-root candidate if any of the following hold:
+   - scope name is `dagger.io/cli`
+   - `process.command_args` is present
+   - `service.name` is a known Dagger entrypoint service (`dagger-cli`, `dagger`, `dagger-go-sdk`, or future SDK-specific service names)
+3. Each matched root span becomes one derived session.
+4. `Session.ID` is synthetic and stable within a derivation version: `session:<trace_id>/<root_span_id>`.
+5. All descendant spans belong to the nearest containing session root.
+6. Fallback: if no session-root candidate is found, synthesize one session per trace.
+
+Client derivation:
+
+1. Within each derived session, find spans where:
+   - scope name is `dagger.io/engine.client`
+   - span name is `connect`
+2. Each `connect` span becomes one derived client lifecycle anchor.
+3. `Client.ID` is synthetic and stable within a derivation version: `client:<trace_id>/<connect_span_id>`.
+4. Enrich derived client labels from the connect span resource:
+   - `service.name`
+   - `service.version`
+   - `process.command_args`
+   - `dagger.io/client.version`
+   - `dagger.io/client.os`
+   - `dagger.io/client.arch`
+   - `dagger.io/client.machine_id`
+5. Assign calls/spans to clients by root-local time windows:
+   - sort client `connect` anchors by start time
+   - a call/span belongs to the latest client anchor in the same session whose start time is `<=` the call/span start time
+   - if no client anchor exists yet, the call/span belongs directly to the session
+6. This avoids pretending that call ownership can be read directly from ancestry; in current traces, `connect` spans often finish before later `POST /query` / DAGQL call spans begin.
+
+Heuristic boundaries:
+
+1. This logic must live in one dedicated derivation module.
+2. It must be guarded by `derivationVersion`.
+3. It must be easy to replace with explicit telemetry once the engine emits true session/client IDs.
+4. If multiple concurrent clients share one session root and interleave heavily, the time-window heuristic may misattribute some calls; ODAG should surface that as derived behavior, not as protocol truth.
 
 ## Standalone App Architecture
 
@@ -686,6 +750,7 @@ Encoding note:
 2. **Session/client heuristic derivation vs explicit telemetry**
    - Heuristics are acceptable for clearly engine-defined scopes and unblock the session-first UX.
    - They must remain encapsulated; once explicit telemetry exists, the heuristic layer should be replaceable without reshaping downstream APIs.
+   - Current best heuristic is structurally clean but not semantically perfect: client ownership is inferred from `dagger.io/engine.client connect` anchors plus root-local time windows.
 3. **Apply mutation at end-time vs start-time**
    - End-time is semantically safer.
    - Start-time can feel more “live” but can show speculative state.
@@ -705,6 +770,8 @@ Encoding note:
 2. **Very large traces**: expected practical upper bounds (span count/object count) for v1 UX targets.
 3. **Collector transport expansion**: when to add OTLP gRPC ingest in addition to HTTP/protobuf.
 4. **Top-level certainty with partial ancestry**: some events show `parentChainIncomplete`; classify conservatively and expose debug context in UI.
+5. **Concurrent clients within one session root**: current time-window client assignment may be insufficient if future traces interleave multiple clients more aggressively.
+6. **Explicit telemetry follow-up**: once engine spans export true session/client identifiers, the heuristic derivation should be removed rather than further complicated.
 
 ## Implementation Plan
 
@@ -722,8 +789,9 @@ Encoding note:
 - [ ] Engine telemetry hard cutover: change `dagger.io/dag.output.state` payload to include per-field `refs` and bump payload version.
 - [ ] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
 - [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
-- [ ] Replace current `session == trace` approximation with explicit session/client derivation from telemetry; keep trace routes as secondary/debug views.
-- [ ] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, so the rules can be swapped out cleanly later.
+- [ ] Replace current `session == trace` approximation with derived sessions rooted at Dagger entry spans and derived clients rooted at `dagger.io/engine.client` `connect` spans; keep trace routes as secondary/debug views.
+- [ ] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, including root-local time-window assignment of calls/spans to derived clients.
+- [ ] Add explicit engine OTEL telemetry for true session/client identifiers so the heuristic derivation layer can eventually be removed.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
