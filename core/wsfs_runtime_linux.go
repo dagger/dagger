@@ -199,8 +199,23 @@ func newWSFSPathFS(ctx context.Context, upperRoot string, workspace *WorkspaceMo
 }
 
 func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.Status) {
-	if fsys.isDeleted(name) {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() {
+		return nil, status
+	}
+
+	if fsys.journal.isDeleted(rel) {
 		return nil, fuse.ENOENT
+	}
+
+	if fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(rel) {
+		stat, err := fsys.workspaceStat(rel)
+		if err == nil {
+			return statToFuseAttr(stat), fuse.OK
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fuse.ENOENT
+		}
 	}
 
 	if attr, status := fsys.FileSystem.GetAttr(name, c); status.Ok() {
@@ -209,10 +224,6 @@ func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.
 		return nil, status
 	}
 
-	rel, status := fsys.cleanRel(name)
-	if !status.Ok() {
-		return nil, status
-	}
 	stat, err := fsys.workspaceStat(rel)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -224,8 +235,23 @@ func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.
 }
 
 func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.Status {
-	if fsys.isDeleted(name) {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() {
+		return status
+	}
+
+	if fsys.journal.isDeleted(rel) {
 		return fuse.ENOENT
+	}
+
+	if fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(rel) {
+		_, err := fsys.workspaceStat(rel)
+		if err == nil {
+			return fuse.OK
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return fuse.ENOENT
+		}
 	}
 
 	if status := fsys.FileSystem.Access(name, mode, c); status.Ok() {
@@ -234,10 +260,6 @@ func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.S
 		return status
 	}
 
-	rel, status := fsys.cleanRel(name)
-	if !status.Ok() {
-		return status
-	}
 	_, err := fsys.workspaceStat(rel)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -249,18 +271,18 @@ func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.S
 }
 
 func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, fuse.Status) {
-	if fsys.isDeleted(name) {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() {
+		return nil, status
+	}
+
+	if fsys.journal.isDeleted(rel) {
 		return nil, fuse.ENOENT
 	}
 
 	upperEntries, upperStatus := fsys.FileSystem.OpenDir(name, c)
 	if upperStatus != fuse.OK && upperStatus != fuse.ENOENT {
 		return nil, upperStatus
-	}
-
-	rel, status := fsys.cleanRel(name)
-	if !status.Ok() {
-		return nil, status
 	}
 
 	workspaceEntries, err := workspaceMountEntries(fsys.ctx, fsys.workspace, rel)
@@ -277,6 +299,15 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 	out := make([]fuse.DirEntry, 0, len(upperEntries)+len(workspaceEntries))
 	seen := make(map[string]struct{}, len(upperEntries)+len(workspaceEntries))
 	for _, entry := range upperEntries {
+		childRel := entry.Name
+		if rel != "." {
+			childRel = path.Join(rel, entry.Name)
+		}
+		if fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(childRel) {
+			if _, err := fsys.workspaceStat(childRel); errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+		}
 		out = append(out, entry)
 		seen[entry.Name] = struct{}{}
 	}
@@ -294,7 +325,7 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 		if rel != "." {
 			childRel = path.Join(rel, entryName)
 		}
-		if fsys.journal.isDeleted(childRel) {
+		if fsys.journal.isShadowed(childRel) {
 			continue
 		}
 		stat, err := fsys.workspaceStat(childRel)
@@ -313,14 +344,29 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 }
 
 func (fsys *wsfsPathFS) Open(name string, flags uint32, c *fuse.Context) (nodefs.File, fuse.Status) {
-	if fsys.isDeleted(name) {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() {
+		return nil, status
+	}
+	if fsys.journal.isDeleted(rel) {
 		return nil, fuse.ENOENT
+	}
+
+	writeIntent := wsfsWriteIntent(flags)
+	if !writeIntent && fsys.workspace != nil && fsys.workspace.LiveRead && !fsys.journal.isShadowed(rel) {
+		if err := fsys.refreshWorkspaceFile(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fuse.ToStatus(err)
+		}
 	}
 
 	if f, status := fsys.FileSystem.Open(name, flags, c); status.Ok() {
 		return fsys.wrapTrackedFile(name, flags, f), status
 	} else if status != fuse.ENOENT {
 		return nil, status
+	}
+
+	if fsys.workspace != nil && fsys.workspace.LiveRead && !writeIntent {
+		return nil, fuse.ENOENT
 	}
 
 	if err := fsys.materializeWorkspaceFile(name); err != nil {
@@ -472,6 +518,14 @@ func (fsys *wsfsPathFS) Utimens(name string, atime *time.Time, mtime *time.Time,
 }
 
 func (fsys *wsfsPathFS) materializeWorkspaceFile(name string) error {
+	return fsys.materializeWorkspaceFileMode(name, false)
+}
+
+func (fsys *wsfsPathFS) refreshWorkspaceFile(name string) error {
+	return fsys.materializeWorkspaceFileMode(name, true)
+}
+
+func (fsys *wsfsPathFS) materializeWorkspaceFileMode(name string, refresh bool) error {
 	rel, status := fsys.cleanRel(name)
 	if !status.Ok() {
 		return syscall.EINVAL
@@ -481,10 +535,16 @@ func (fsys *wsfsPathFS) materializeWorkspaceFile(name string) error {
 	defer fsys.materializeMu.Unlock()
 
 	target := filepath.Join(fsys.upperRoot, filepath.FromSlash(rel))
-	if _, err := os.Lstat(target); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	if !refresh {
+		if _, err := os.Lstat(target); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	} else {
+		if err := os.RemoveAll(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 
 	stat, err := fsys.workspaceStat(rel)
@@ -553,14 +613,6 @@ func (fsys *wsfsPathFS) markDelete(name string) {
 		return
 	}
 	fsys.journal.markDelete(rel)
-}
-
-func (fsys *wsfsPathFS) isDeleted(name string) bool {
-	rel, status := fsys.cleanRel(name)
-	if !status.Ok() {
-		return false
-	}
-	return fsys.journal.isDeleted(rel)
 }
 
 func (fsys *wsfsPathFS) syncWriteThrough() error {
@@ -824,6 +876,23 @@ func (j *wsfsWriteJournal) isDeleted(rel string) bool {
 
 	for del := range j.deletes {
 		if wsfsPathHasPrefix(rel, del) {
+			return true
+		}
+	}
+	return false
+}
+
+func (j *wsfsWriteJournal) isShadowed(rel string) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	for del := range j.deletes {
+		if wsfsPathHasPrefix(rel, del) {
+			return true
+		}
+	}
+	for up := range j.upserts {
+		if wsfsPathHasPrefix(rel, up) || wsfsPathHasPrefix(up, rel) {
 			return true
 		}
 	}

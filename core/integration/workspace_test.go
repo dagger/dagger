@@ -166,6 +166,50 @@ func withMountedWorkspaceExecWithExport(
 	return execRes.ID, execRes.Stdout
 }
 
+func withMountedWorkspaceExecWithLiveRead(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	workspaceID string,
+	liveRead bool,
+	args []string,
+) (string, string) {
+	t.Helper()
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					WithExec struct {
+						ID     string
+						Stdout string
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Exec($ws: WorkspaceID!, $liveRead: Boolean!, $args: [String!]!) {
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws", source: $ws, liveRead: $liveRead) {
+					withExec(args: $args) {
+						id
+						stdout
+					}
+				}
+			}
+		}
+	}`, alpineImage), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws":       workspaceID,
+			"liveRead": liveRead,
+			"args":     args,
+		},
+	})
+	require.NoError(t, err)
+	execRes := res.Container.From.WithMountedWorkspace.WithExec
+	return execRes.ID, execRes.Stdout
+}
+
 func loadContainerExec(
 	ctx context.Context,
 	t *testctx.T,
@@ -477,6 +521,46 @@ func (WorkspaceSuite) TestWithMountedWorkspaceDefaultsToCurrentWorkspace(ctx con
 	}`, alpineImage), nil)
 	require.NoError(t, err)
 	require.Equal(t, "default-ws", strings.TrimSpace(res.Container.From.WithMountedWorkspace.WithExec.Stdout))
+}
+
+func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesSamePathAcrossExecs(ctx context.Context, t *testctx.T) {
+	t.Run("default mode keeps stale materialized read", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("old"), 0o600))
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		wsID := currentWorkspaceID(ctx, t, c)
+
+		ctrID, _ := withMountedWorkspaceExec(ctx, t, c, wsID, []string{
+			"sh", "-ec", "cat /ws/input.txt >/dev/null",
+		})
+
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("new"), 0o600))
+
+		_, stdout := loadContainerExec(ctx, t, c, ctrID, []string{
+			"cat", "/ws/input.txt",
+		})
+		require.Equal(t, "old", strings.TrimSpace(stdout))
+	})
+
+	t.Run("liveRead refreshes materialized reads", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("old"), 0o600))
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		wsID := currentWorkspaceID(ctx, t, c)
+
+		ctrID, _ := withMountedWorkspaceExecWithLiveRead(ctx, t, c, wsID, true, []string{
+			"sh", "-ec", "cat /ws/input.txt >/dev/null",
+		})
+
+		require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("new"), 0o600))
+
+		_, stdout := loadContainerExec(ctx, t, c, ctrID, []string{
+			"cat", "/ws/input.txt",
+		})
+		require.Equal(t, "new", strings.TrimSpace(stdout))
+	})
 }
 
 func (WorkspaceSuite) TestWithMountedWorkspaceLazyMaterialization(ctx context.Context, t *testctx.T) {

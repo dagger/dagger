@@ -60,3 +60,16 @@ func TestWSFSWriteJournalIsDeleted(t *testing.T) {
 	j.markUpsert("dir/file.txt")
 	require.False(t, j.isDeleted("dir/file.txt"))
 }
+
+func TestWSFSWriteJournalIsShadowed(t *testing.T) {
+	j := newWSFSWriteJournal()
+
+	j.markUpsert("dir/file.txt")
+	require.True(t, j.isShadowed("dir/file.txt"))
+	require.True(t, j.isShadowed("dir"))
+	require.False(t, j.isShadowed("other"))
+
+	j.markDelete("gone")
+	require.True(t, j.isShadowed("gone"))
+	require.True(t, j.isShadowed("gone/child"))
+}

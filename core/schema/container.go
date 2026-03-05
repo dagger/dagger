@@ -287,6 +287,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("export").Doc(`If true, export workspace mount writes back to the host workspace when execution finishes.`),
+				dagql.Arg("liveRead").Doc(`If true, refresh workspace reads during execution for paths not shadowed by local writes/deletes.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -1623,11 +1624,12 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 }
 
 type containerWithMountedWorkspaceArgs struct {
-	Path   string
-	Source dagql.Optional[core.WorkspaceID]
-	Owner  string `default:""`
-	Export bool   `default:"false"`
-	Expand bool   `default:"false"`
+	Path     string
+	Source   dagql.Optional[core.WorkspaceID]
+	Owner    string `default:""`
+	Export   bool   `default:"false"`
+	LiveRead bool   `default:"false"`
+	Expand   bool   `default:"false"`
 }
 
 func (s *containerSchema) withMountedWorkspace(ctx context.Context, parent *core.Container, args containerWithMountedWorkspaceArgs) (*core.Container, error) {
@@ -1659,7 +1661,7 @@ func (s *containerSchema) withMountedWorkspace(ctx context.Context, parent *core
 		return nil, err
 	}
 
-	return parent.WithMountedWorkspace(ctx, path, workspace, args.Owner, args.Export)
+	return parent.WithMountedWorkspace(ctx, path, workspace, args.Owner, args.Export, args.LiveRead)
 }
 
 type containerWithAnnotationArgs struct {

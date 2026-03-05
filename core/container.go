@@ -314,6 +314,10 @@ type WorkspaceMountSource struct {
 
 	// If true, writes are exported back to the workspace root.
 	Export bool
+
+	// If true, reads are refreshed from the workspace during execution when paths
+	// are not shadowed by local writes/deletes.
+	LiveRead bool
 }
 
 type CacheMountSource struct {
@@ -1294,6 +1298,7 @@ func (container *Container) WithMountedWorkspace(
 	workspace dagql.ObjectResult[*Workspace],
 	owner string,
 	export bool,
+	liveRead bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -1304,6 +1309,7 @@ func (container *Container) WithMountedWorkspace(
 			Workspace: workspace,
 			Owner:     owner,
 			Export:    export,
+			LiveRead:  liveRead,
 		},
 		Target: target,
 	})
