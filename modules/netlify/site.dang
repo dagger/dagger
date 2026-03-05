@@ -42,8 +42,9 @@ type Site {
       .withWorkdir(rootPath)
     if (token == null) {
       ctr
+    } else {
+      ctr.withSecretVariable("NETLIFY_AUTH_TOKEN", token)
     }
-    ctr.withSecretVariable("NETLIFY_AUTH_TOKEN", token)
   }
 
   """

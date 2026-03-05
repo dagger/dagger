@@ -37,7 +37,7 @@ type Netlify {
   Return a site by its workspace path
   """
   pub site(ws: Workspace!, root: String!): Site! {
-    let match = sites(ws).filter { s => s.path == root }[0]
+    let match = sites(ws).filter { s => s.rootPath == root }[0]
     if (match != null) {
       match
     } else {
