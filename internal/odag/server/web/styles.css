@@ -166,7 +166,7 @@ body {
 .main-panel {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) 220px;
+  grid-template-rows: auto auto minmax(0, 1fr) 220px;
   gap: 12px;
 }
 
@@ -224,6 +224,19 @@ body {
 
 .timeline-right {
   min-width: 0;
+}
+
+.trace-title-panel {
+  padding: 10px 14px;
+}
+
+.trace-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #dce8f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .graph-panel {
@@ -419,7 +432,7 @@ body {
   }
 
   .main-panel {
-    grid-template-rows: auto minmax(0, 1fr) 180px;
+    grid-template-rows: auto auto minmax(0, 1fr) 180px;
   }
 
   .timeline-panel {

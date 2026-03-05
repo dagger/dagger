@@ -524,10 +524,10 @@ Stage 4 implementation note:
   - stored trace selector
   - timeline controls (first/back/forward/last) driven by discrete object-event steps
   - status/current/last step readouts (no continuous seek bar)
-  - compact top-bar stats (title moved to inspector) to avoid layout collapse on long command strings
+  - dedicated central trace title row between navigator and DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
   - event stream panel with raw-vs-derived operation columns (`rawKind` vs `operation`)
-  - inspector panel (selected object state history or current event details)
+  - inspector panel shows only selected object details; empty when no object is selected
 
 Stage 5 implementation note:
 - Cloud pull mode is implemented in both CLI and backend API:

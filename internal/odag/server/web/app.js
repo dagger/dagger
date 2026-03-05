@@ -23,6 +23,7 @@ const els = {
   nextBtn: document.getElementById("nextBtn"),
   lastBtn: document.getElementById("lastBtn"),
   traceStats: document.getElementById("traceStats"),
+  traceTitle: document.getElementById("traceTitle"),
   graphCanvas: document.getElementById("graphCanvas"),
   graphEmpty: document.getElementById("graphEmpty"),
   inspector: document.getElementById("inspector"),
@@ -200,6 +201,7 @@ function clearSelection(msg) {
   state.frameIndex = 0;
   syncStepControls();
   els.traceStats.textContent = "";
+  els.traceTitle.textContent = "No trace selected";
   els.timelineStatus.textContent = "idle";
   els.timelineCurrent.textContent = "0";
   els.timelineEnd.textContent = "0";
@@ -207,11 +209,12 @@ function clearSelection(msg) {
   els.graphEmpty.textContent = msg;
   els.graphEmpty.style.display = "block";
   els.eventList.innerHTML = "";
-  els.inspector.innerHTML = renderError(msg);
+  els.inspector.innerHTML = "";
 }
 
 function renderAll() {
   renderTimeline();
+  renderTraceTitle();
   renderGraph();
   renderEvents();
   renderInspector();
@@ -271,6 +274,11 @@ function renderTimeline() {
   const warnText = warningCount > 0 ? ` | ${warningCount} warnings` : "";
   els.traceStats.textContent = `${objectCount} objects | ${eventCount} events${warnText}`;
   syncStepControls();
+}
+
+function renderTraceTitle() {
+  const title = state.projection?.summary?.title || "";
+  els.traceTitle.textContent = title || state.selectedTraceID || "No trace selected";
 }
 
 function renderGraph() {
@@ -409,113 +417,46 @@ function renderEvents() {
 
 function renderInspector() {
   if (!state.snapshot || !state.projection) {
-    els.inspector.innerHTML = renderError("No trace selected.");
+    els.inspector.innerHTML = "";
+    return;
+  }
+  const selectedObject = (state.snapshot.objects || []).find((obj) => obj.id === state.selectedObjectID);
+  if (!selectedObject) {
+    els.inspector.innerHTML = "";
     return;
   }
 
-  const selectedObject = (state.snapshot.objects || []).find((obj) => obj.id === state.selectedObjectID);
-  const summary = state.projection.summary || {};
-  const commandMarkup = (summary.commandSpans || [])
-    .slice(0, 4)
-    .map((cmd) => {
-      const args = (cmd.commandArgs || []).join(" ");
-      const label = args || cmd.name || cmd.spanID;
-      return `<li><code>${escapeHTML(shortDigest(cmd.spanID || ""))}</code> ${escapeHTML(label)}</li>`;
+  const stateRows = selectedObject.stateHistory
+    .slice()
+    .reverse()
+    .map((stateRow) => {
+      return `
+        <div class="state-row">
+          <div class="inspector-key">State</div>
+          <div class="inspector-value">${escapeHTML(stateRow.stateDigest)}</div>
+          <div class="inspector-key">Event</div>
+          <div class="inspector-value">${escapeHTML(stateRow.spanID)} @ ${escapeHTML(
+            formatRelTime(stateRow.endUnixNano, state.projection.startUnixNano),
+          )}</div>
+        </div>
+      `;
     })
     .join("");
 
-  const headerBlock = `
-    <div class="inspector-block">
-      <div class="inspector-key">Trace Title</div>
-      <div class="inspector-value">${escapeHTML(summary.title || state.selectedTraceID)}</div>
-      <div class="inspector-key">Command Spans</div>
-      <ul>${commandMarkup || "<li>None detected</li>"}</ul>
-    </div>
-  `;
-
-  if (selectedObject) {
-    const stateRows = selectedObject.stateHistory
-      .slice()
-      .reverse()
-      .map((stateRow) => {
-        return `
-          <div class="state-row">
-            <div class="inspector-key">State</div>
-            <div class="inspector-value">${escapeHTML(stateRow.stateDigest)}</div>
-            <div class="inspector-key">Event</div>
-            <div class="inspector-value">${escapeHTML(stateRow.spanID)} @ ${escapeHTML(
-              formatRelTime(stateRow.endUnixNano, state.projection.startUnixNano),
-            )}</div>
-          </div>
-        `;
-      })
-      .join("");
-
-    els.inspector.innerHTML = `
-      ${headerBlock}
-      <div class="inspector-block">
-        <div class="inspector-key">Object</div>
-        <div class="inspector-value">${escapeHTML(selectedObject.alias)} (${escapeHTML(selectedObject.typeName)})</div>
-        <div class="inspector-key">Current State</div>
-        <div class="inspector-value">${escapeHTML(
-          selectedObject.stateHistory[selectedObject.stateHistory.length - 1]?.stateDigest || "",
-        )}</div>
-        <div class="inspector-key">Referenced By Top-Level</div>
-        <div class="inspector-value">${selectedObject.referencedByTop ? "yes" : "no"}</div>
-      </div>
-      <div class="inspector-block">
-        <div class="inspector-key">Mutation History (${selectedObject.stateHistory.length})</div>
-        ${stateRows}
-      </div>
-    `;
-    return;
-  }
-
-  const currentEvent = (state.snapshot.events || [])[state.snapshot.events.length - 1];
-  if (!currentEvent) {
-    els.inspector.innerHTML = renderError("No event available for this frame.");
-    return;
-  }
-
-  const inputsMarkup =
-    (currentEvent.inputs || [])
-      .map((input) => `<li>${escapeHTML(input.path || input.name)}: <code>${escapeHTML(shortDigest(input.stateDigest))}</code></li>`)
-      .join("") || "<li>No object inputs</li>";
-
-  const warningMarkup = (state.projection.warnings || [])
-    .slice(0, 12)
-    .map((warning) => `<li>${escapeHTML(warning)}</li>`)
-    .join("");
-
   els.inspector.innerHTML = `
-    ${headerBlock}
     <div class="inspector-block">
-      <div class="inspector-key">Current Event</div>
-      <div class="inspector-value">${escapeHTML(currentEvent.name || currentEvent.callDigest || currentEvent.spanID)}</div>
-      <div class="inspector-key">Raw Kind</div>
-      <div class="inspector-value">${escapeHTML(currentEvent.rawKind || "call")}</div>
-      <div class="inspector-key">Derived Operation</div>
-      <div class="inspector-value">${escapeHTML(currentEvent.operation || "none")}</div>
-      <div class="inspector-key">Top Level / Call Depth</div>
-      <div class="inspector-value">${currentEvent.topLevel ? "yes" : "no"} / ${Number(currentEvent.callDepth || 0)}</div>
-      <div class="inspector-key">Parent DAG Call</div>
+      <div class="inspector-key">Object</div>
+      <div class="inspector-value">${escapeHTML(selectedObject.alias)} (${escapeHTML(selectedObject.typeName)})</div>
+      <div class="inspector-key">Current State</div>
       <div class="inspector-value">${escapeHTML(
-        currentEvent.parentCallName ? `${currentEvent.parentCallName} (${shortDigest(currentEvent.parentCallSpanID || "")})` : "none",
+        selectedObject.stateHistory[selectedObject.stateHistory.length - 1]?.stateDigest || "",
       )}</div>
-      <div class="inspector-key">Parent Chain Incomplete</div>
-      <div class="inspector-value">${currentEvent.parentChainIncomplete ? "yes" : "no"}</div>
-      <div class="inspector-key">Legacy Kind</div>
-      <div class="inspector-value">${escapeHTML(currentEvent.kind)}</div>
-      <div class="inspector-key">Status</div>
-      <div class="inspector-value">${escapeHTML(currentEvent.statusCode || "STATUS_CODE_UNSET")}</div>
+      <div class="inspector-key">Referenced By Top-Level</div>
+      <div class="inspector-value">${selectedObject.referencedByTop ? "yes" : "no"}</div>
     </div>
     <div class="inspector-block">
-      <div class="inspector-key">Inputs</div>
-      <ul>${inputsMarkup}</ul>
-    </div>
-    <div class="inspector-block">
-      <div class="inspector-key">Warnings</div>
-      <ul>${warningMarkup || "<li>None</li>"}</ul>
+      <div class="inspector-key">Mutation History (${selectedObject.stateHistory.length})</div>
+      ${stateRows}
     </div>
   `;
 }
