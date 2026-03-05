@@ -29,6 +29,7 @@ This spec describes the desired behavior of the Workspace API.
 - Workspace identity:
   - `Workspace` stores both `root` and `clientId`.
   - `Workspace.root` returns the absolute workspace root locator.
+  - `Workspace.root` is the discovered workspace root, not the caller CWD (unless caller CWD is itself the discovered root).
   - Local example: `/Users/idlsoft/myapp/foo/bar/my/workspace`.
   - Remote git example: `https://github.com/idlsoft/myapp#:foo/bar/my/workspace`.
   - Host filesystem operations are executed under the owning client (`clientId`), including when invoked from module runtime contexts.
@@ -42,6 +43,40 @@ This spec describes the desired behavior of the Workspace API.
   - Searches upward from `from`.
   - Stops at workspace repository root.
   - Returns an absolute path or `null`.
+
+### Path Contract
+
+| Field | Type | Contract | Valid examples | Invalid examples |
+|---|---|---|---|---|
+| `Workspace.root` | return value | Always absolute workspace locator | `/Users/alice/repo`, `https://github.com/acme/repo#:sub/dir` | `repo`, `./repo` |
+| `Workspace.directory(path)` | argument | Must be absolute in workspace context | `/work`, `/work/sub` | `.`, `./sub`, `../x`, `sub` |
+| `Workspace.file(path)` | argument | Must be absolute in workspace context | `/work/main.go`, `/work/sub/a.txt` | `.`, `./a.txt`, `../a.txt`, `a.txt` |
+| `Workspace.findUp(from)` | argument | Must be absolute in workspace context | `/work`, `/work/sub` | `.`, `./sub`, `../x`, `sub` |
+| `Workspace.findUp` | return value | Absolute path when found, else `null` | `/work/dagger.json`, `null` | `dagger.json`, `./dagger.json` |
+
+### Failure Behavior
+
+- Relative workspace path arguments fail with an error (e.g. `path "." must be absolute`).
+- Absolute paths outside the workspace repository root fail with an error (e.g. `outside workspace repository root`).
+- `findUp` returns `null` when no match is found before repository root.
+
+### Conformance Check
+
+Use this command in a branch-built playground. It must fail on relative path input:
+
+```sh
+dagger -m ./toolchains/engine-dev call playground \
+  with-exec \
+  --args=dagger --args=-M --args=-c \
+  --args='.core | current-workspace | directory . --exclude=\*/* | entries' \
+  combined-output
+```
+
+Expected error contains:
+
+```text
+path "." must be absolute
+```
 
 ## Workspace Function Arguments
 
