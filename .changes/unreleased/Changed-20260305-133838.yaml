@@ -1,0 +1,7 @@
+kind: Changed
+body: Toolchain customizations now support glob patterns and flexible casing for function paths and argument names.
+time: 2026-03-05T13:38:38.458227-05:00
+custom:
+  Author: Geoff Wilson
+  Issue: ""
+  PR: ""
