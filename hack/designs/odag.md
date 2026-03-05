@@ -478,6 +478,14 @@ Encoding note:
 
 ## Implementation Plan
 
+### Stage Checklist (Execution Status)
+
+- [x] Stage 1: CLI/server/store scaffold (`odag serve`, `odag run`, sqlite schema, health endpoint)
+- [ ] Stage 2: OTLP ingest mode (trace/span persistence from `/v1/traces`)
+- [ ] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
+- [ ] Stage 4: Web UI shell + timeline + ODAG canvas + inspector
+- [ ] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
+
 ### Phase 0: Spike
 
 1. Implement ODAG transformer against recorded span fixture.
