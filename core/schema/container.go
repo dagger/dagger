@@ -276,6 +276,19 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
+		dagql.Func("withMountedWorkspace", s.withMountedWorkspace).
+			Doc(`Retrieves this container plus a workspace mounted at the given path.`,
+				`Workspace mount runtime support is experimental and still in progress.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the mounted workspace (e.g., "/workspace").`),
+				dagql.Arg("source").Doc(`Identifier of the mounted workspace.`),
+				dagql.Arg("owner").Doc(`A user:group requested for the mounted workspace.`,
+					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
+					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+			),
+
 		dagql.Func("withMountedFile", s.withMountedFile).
 			Doc(`Retrieves this container plus a file mounted at the given path.`).
 			Args(
@@ -1599,6 +1612,32 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 	}
 
 	return parent.WithMountedDirectory(ctx, path, dir, args.Owner, false)
+}
+
+type containerWithMountedWorkspaceArgs struct {
+	Path   string
+	Source core.WorkspaceID
+	Owner  string `default:""`
+	Expand bool   `default:"false"`
+}
+
+func (s *containerSchema) withMountedWorkspace(ctx context.Context, parent *core.Container, args containerWithMountedWorkspaceArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	workspace, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithMountedWorkspace(ctx, path, workspace, args.Owner)
 }
 
 type containerWithAnnotationArgs struct {

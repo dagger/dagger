@@ -18,6 +18,8 @@ type DirectoryID = dagql.ID[*Directory]
 
 type FileID = dagql.ID[*File]
 
+type WorkspaceID = dagql.ID[*Workspace]
+
 type SecretID = dagql.ID[*Secret]
 
 type ModuleID = dagql.ID[*Module]

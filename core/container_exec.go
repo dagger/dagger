@@ -393,6 +393,9 @@ func (container *Container) WithExec(
 							container.Mounts[mountIdx] = ctrMnt
 							return nil
 						},
+						func(ws *WorkspaceMountSource) error {
+							return fmt.Errorf("unhandled workspace mount source type for mount %d", mountIdx)
+						},
 						func(cache *CacheMountSource) error {
 							container.Mounts[mountIdx] = ctrMnt
 							return nil
@@ -552,6 +555,9 @@ func (container *Container) WithExec(
 					}
 					container.Mounts[mountIdx] = ctrMnt
 					return nil
+				},
+				func(ws *WorkspaceMountSource) error {
+					return fmt.Errorf("unhandled workspace mount source type for mount %d", mountIdx)
 				},
 				func(cache *CacheMountSource) error {
 					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)

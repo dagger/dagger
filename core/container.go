@@ -154,6 +154,7 @@ func (container *Container) WithoutInputs() *Container {
 	for i, mount := range container.Mounts {
 		mount.DirectorySource = nil
 		mount.FileSource = nil
+		mount.WorkspaceSource = nil
 		mount.CacheSource = nil
 		mount.TmpfsSource = nil
 		container.Mounts[i] = mount
@@ -279,10 +280,22 @@ type ContainerMount struct {
 	DirectorySource *dagql.ObjectResult[*Directory]
 	// The mounted file
 	FileSource *dagql.ObjectResult[*File]
+	// The mounted workspace
+	WorkspaceSource *WorkspaceMountSource
 	// The mounted cache
 	CacheSource *CacheMountSource
 	// The mounted tmpfs
 	TmpfsSource *TmpfsMountSource
+}
+
+type WorkspaceMountSource struct {
+	// The workspace to mount.
+	Workspace dagql.ObjectResult[*Workspace]
+
+	// Requested mount owner.
+	//
+	// This is stored for future WSFS runtime wiring.
+	Owner string
 }
 
 type CacheMountSource struct {
@@ -305,6 +318,7 @@ func handleMountValues[T any](
 	mnt ContainerMount,
 	onDir func(*dagql.ObjectResult[*Directory]) (T, error),
 	onFile func(*dagql.ObjectResult[*File]) (T, error),
+	onWorkspace func(*WorkspaceMountSource) (T, error),
 	onCache func(*CacheMountSource) (T, error),
 	onTmpfs func(*TmpfsMountSource) (T, error),
 ) (T, error) {
@@ -313,6 +327,8 @@ func handleMountValues[T any](
 		return onDir(mnt.DirectorySource)
 	case mnt.FileSource != nil:
 		return onFile(mnt.FileSource)
+	case mnt.WorkspaceSource != nil:
+		return onWorkspace(mnt.WorkspaceSource)
 	case mnt.CacheSource != nil:
 		return onCache(mnt.CacheSource)
 	case mnt.TmpfsSource != nil:
@@ -327,6 +343,7 @@ func handleMountValue[T any](
 	mnt ContainerMount,
 	onDir func(*dagql.ObjectResult[*Directory]) T,
 	onFile func(*dagql.ObjectResult[*File]) T,
+	onWorkspace func(*WorkspaceMountSource) T,
 	onCache func(*CacheMountSource) T,
 	onTmpfs func(*TmpfsMountSource) T,
 ) T {
@@ -336,6 +353,9 @@ func handleMountValue[T any](
 		},
 		func(file *dagql.ObjectResult[*File]) (T, error) {
 			return onFile(file), nil
+		},
+		func(ws *WorkspaceMountSource) (T, error) {
+			return onWorkspace(ws), nil
 		},
 		func(cache *CacheMountSource) (T, error) {
 			return onCache(cache), nil
@@ -351,6 +371,7 @@ func handleMount(
 	mnt ContainerMount,
 	onDir func(*dagql.ObjectResult[*Directory]),
 	onFile func(*dagql.ObjectResult[*File]),
+	onWorkspace func(*WorkspaceMountSource),
 	onCache func(*CacheMountSource),
 	onTmpfs func(*TmpfsMountSource),
 ) {
@@ -361,6 +382,10 @@ func handleMount(
 		},
 		func(file *dagql.ObjectResult[*File]) (any, error) {
 			onFile(file)
+			return nil, nil
+		},
+		func(ws *WorkspaceMountSource) (any, error) {
+			onWorkspace(ws)
 			return nil, nil
 		},
 		func(cache *CacheMountSource) (any, error) {
@@ -381,6 +406,8 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 		return mnt.DirectorySource.Self().StateWithSourcePath()
 	case mnt.FileSource != nil:
 		return mnt.FileSource.Self().State()
+	case mnt.WorkspaceSource != nil:
+		return llb.Scratch(), nil
 	default:
 		return llb.Scratch(), nil
 	}
@@ -399,6 +426,9 @@ func (mnt *ContainerMount) GetLLB() *pb.Definition {
 			if file != nil && file.Self() != nil {
 				llb = file.Self().LLB
 			}
+		},
+		func(ws *WorkspaceMountSource) {
+			// Workspace mounts are runtime mounts and do not have static LLB.
 		},
 		func(cacheMount *CacheMountSource) {
 			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
@@ -1235,6 +1265,30 @@ func (container *Container) WithMountedDirectory(
 	return container, nil
 }
 
+func (container *Container) WithMountedWorkspace(
+	ctx context.Context,
+	target string,
+	workspace dagql.ObjectResult[*Workspace],
+	owner string,
+) (*Container, error) {
+	container = container.Clone()
+
+	target = absPath(container.Config.WorkingDir, target)
+
+	container.Mounts = container.Mounts.With(ContainerMount{
+		WorkspaceSource: &WorkspaceMountSource{
+			Workspace: workspace,
+			Owner:     owner,
+		},
+		Target: target,
+	})
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
 func (container *Container) WithMountedFile(
 	ctx context.Context,
 	target string,
@@ -1342,6 +1396,15 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 	container.ImageRef = ""
 
 	return container, nil
+}
+
+func (container *Container) HasWorkspaceMount() bool {
+	for _, mount := range container.Mounts {
+		if mount.WorkspaceSource != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (container *Container) WithMountedSecret(
@@ -1583,6 +1646,10 @@ func locatePath(
 
 			if mnt.CacheSource != nil {
 				return nil, "", fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
+			}
+
+			if mnt.WorkspaceSource != nil {
+				return nil, "", fmt.Errorf("%s: cannot retrieve path from workspace mount before wsfs runtime support", containerPath)
 			}
 
 			relPath, err := filepath.Rel(mnt.Target, containerPath)
