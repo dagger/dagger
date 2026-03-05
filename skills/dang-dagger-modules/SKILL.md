@@ -113,7 +113,7 @@ type MyModule {
 
 - `new()` args are NOT exposed as fields -- only available inside the body
 - Assign fields with `self.field = value`
-- `new()` implicitly returns `self`
+- `new()` must return the type being constructed (explicit `self`, or `self.withFoo`, etc.)
 - Directives (`@defaultPath`, etc.) go on the `new()` args
 - Arg names don't need to match field names
 - Runtime error if non-null fields aren't assigned
