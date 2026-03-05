@@ -20,3 +20,4 @@
   - [x] Add integration tests for laziness and caching behavior.
   - [x] Handle missing `fusermount` by enabling direct FUSE mounts in WSFS runtime.
   - [x] Fix mount output extraction for workspace mounts with no upper source yet.
+  - [x] Preserve symlinked subdirectory visibility/traversal in WSFS directory listings (with integration coverage).

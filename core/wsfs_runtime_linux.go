@@ -198,7 +198,7 @@ func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.
 	if !status.Ok() {
 		return nil, status
 	}
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false)
+	stat, err := fsys.workspaceStat(rel)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fuse.ENOENT
@@ -219,7 +219,7 @@ func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.S
 	if !status.Ok() {
 		return status
 	}
-	_, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false)
+	_, err := fsys.workspaceStat(rel)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fuse.ENOENT
@@ -271,7 +271,7 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 		if rel != "." {
 			childRel = path.Join(rel, entryName)
 		}
-		stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, childRel, false)
+		stat, err := fsys.workspaceStat(childRel)
 		if err != nil {
 			continue
 		}
@@ -323,7 +323,7 @@ func (fsys *wsfsPathFS) materializeWorkspaceFile(name string) error {
 		return err
 	}
 
-	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false)
+	stat, err := fsys.workspaceStat(rel)
 	if err != nil {
 		return err
 	}
@@ -334,6 +334,9 @@ func (fsys *wsfsPathFS) materializeWorkspaceFile(name string) error {
 	file, err := workspaceMountFile(fsys.ctx, fsys.workspace, rel)
 	if err != nil {
 		return err
+	}
+	if fileStat, statErr := file.Stat(fsys.ctx); statErr == nil {
+		stat = fileStat
 	}
 	contents, err := file.Contents(fsys.ctx, nil, nil)
 	if err != nil {
@@ -355,6 +358,38 @@ func (fsys *wsfsPathFS) cleanRel(name string) (string, fuse.Status) {
 		return "", fuse.EINVAL
 	}
 	return clean, fuse.OK
+}
+
+// workspaceStat resolves path metadata from workspace APIs with a symlink-aware
+// fallback. This avoids dropping symlink entries when followed stat fails on
+// filtered snapshots.
+func (fsys *wsfsPathFS) workspaceStat(rel string) (*Stat, error) {
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, false)
+	if err == nil {
+		return stat, nil
+	}
+
+	lstat, lstatErr := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true)
+	if lstatErr != nil {
+		return nil, err
+	}
+
+	if lstat.FileType != FileTypeSymlink {
+		return lstat, nil
+	}
+
+	resolved := lstat.Clone()
+	if _, entriesErr := workspaceMountEntries(fsys.ctx, fsys.workspace, rel); entriesErr == nil {
+		resolved.FileType = FileTypeDirectory
+		return resolved, nil
+	}
+
+	if _, fileErr := workspaceMountFile(fsys.ctx, fsys.workspace, rel); fileErr == nil {
+		resolved.FileType = FileTypeRegular
+		return resolved, nil
+	}
+
+	return resolved, nil
 }
 
 func statToFuseMode(stat *Stat) uint32 {

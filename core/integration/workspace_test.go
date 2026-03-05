@@ -427,6 +427,26 @@ func (WorkspaceSuite) TestWithMountedWorkspaceLazyMaterialization(ctx context.Co
 	})
 }
 
+func (WorkspaceSuite) TestWithMountedWorkspaceSymlinkedSubdirectory(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(wd, "real"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "real", "file.txt"), []byte("target"), 0o600))
+	require.NoError(t, os.Symlink("real", filepath.Join(wd, "linkdir")))
+
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	wsID := currentWorkspaceID(ctx, t, c)
+
+	_, rootStdout := withMountedWorkspaceExec(ctx, t, c, wsID, []string{
+		"sh", "-c", "ls -1A /ws",
+	})
+	require.Contains(t, rootStdout, "linkdir")
+
+	_, linkedStdout := withMountedWorkspaceExec(ctx, t, c, wsID, []string{
+		"cat", "/ws/linkdir/file.txt",
+	})
+	require.Equal(t, "target", strings.TrimSpace(linkedStdout))
+}
+
 func (WorkspaceSuite) TestWithMountedWorkspaceExecCachePolicy(ctx context.Context, t *testctx.T) {
 	runNoWorkspace := func() string {
 		c := connect(ctx, t)
