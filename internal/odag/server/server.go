@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/internal/odag/store"
+	"github.com/dagger/dagger/internal/odag/transform"
 )
 
 type Config struct {
@@ -56,6 +58,10 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /v1/traces", srv.handleTraceIngest)
 	mux.HandleFunc("POST /v1/logs", srv.handleNoopIngest)
 	mux.HandleFunc("POST /v1/metrics", srv.handleNoopIngest)
+	mux.HandleFunc("GET /api/traces", srv.handleListTraces)
+	mux.HandleFunc("GET /api/traces/{traceID}/meta", srv.handleTraceMeta)
+	mux.HandleFunc("GET /api/traces/{traceID}/events", srv.handleTraceEvents)
+	mux.HandleFunc("GET /api/traces/{traceID}/snapshot", srv.handleTraceSnapshot)
 
 	srv.http = &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -105,6 +111,120 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("odag server\n"))
 }
 
+func (s *Server) handleListTraces(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		v, err := strconv.Atoi(rawLimit)
+		if err != nil || v <= 0 {
+			http.Error(w, "invalid limit", http.StatusBadRequest)
+			return
+		}
+		limit = v
+	}
+
+	traces, err := s.store.ListTraces(r.Context(), limit)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("list traces: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"traces": traces,
+	})
+}
+
+func (s *Server) handleTraceMeta(w http.ResponseWriter, r *http.Request) {
+	traceID := strings.TrimSpace(r.PathValue("traceID"))
+	if traceID == "" {
+		http.Error(w, "traceID is required", http.StatusBadRequest)
+		return
+	}
+
+	trace, err := s.store.GetTrace(r.Context(), traceID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "trace not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("get trace: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, trace)
+}
+
+func (s *Server) handleTraceEvents(w http.ResponseWriter, r *http.Request) {
+	traceID := strings.TrimSpace(r.PathValue("traceID"))
+	if traceID == "" {
+		http.Error(w, "traceID is required", http.StatusBadRequest)
+		return
+	}
+
+	proj, err := s.projectTrace(r.Context(), traceID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "trace not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("project trace: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"traceID":  traceID,
+		"warnings": proj.Warnings,
+		"events":   proj.Events,
+	})
+}
+
+func (s *Server) handleTraceSnapshot(w http.ResponseWriter, r *http.Request) {
+	traceID := strings.TrimSpace(r.PathValue("traceID"))
+	if traceID == "" {
+		http.Error(w, "traceID is required", http.StatusBadRequest)
+		return
+	}
+
+	proj, err := s.projectTrace(r.Context(), traceID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "trace not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("project trace: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	unixNano := proj.EndUnixNano
+	if rawT := strings.TrimSpace(r.URL.Query().Get("t")); rawT != "" {
+		v, err := strconv.ParseInt(rawT, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid t", http.StatusBadRequest)
+			return
+		}
+		unixNano = v
+	}
+
+	snap := transform.SnapshotAt(proj, unixNano)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"traceID":    traceID,
+		"projection": proj,
+		"snapshot":   snap,
+	})
+}
+
+func (s *Server) projectTrace(ctx context.Context, traceID string) (*transform.TraceProjection, error) {
+	if _, err := s.store.GetTrace(ctx, traceID); err != nil {
+		return nil, err
+	}
+
+	spans, err := s.store.ListTraceSpans(ctx, traceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return transform.ProjectTrace(traceID, spans)
+}
+
 func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
 	body, err := readOTLPBody(r)
 	if err != nil {
@@ -130,9 +250,7 @@ func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"traces": summary.Traces,
 		"spans":  summary.Spans,
 	})
@@ -331,4 +449,10 @@ func u64ToI64(v uint64) int64 {
 		return int64(maxInt64)
 	}
 	return int64(v)
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
 }
