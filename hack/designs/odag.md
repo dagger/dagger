@@ -678,11 +678,16 @@ Stage 3 implementation note:
 
 Stage 4 implementation note:
 - `odag serve` now hosts an embedded web UI with split routes (no external frontend build step required for the local experiment):
-  - `/` trace list page (picker/import)
+  - `/` v2 global explorer page (no required trace silo)
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
   - optional dev mode: `odag serve --dev [--web-dir ...]` serves frontend assets from disk and injects browser auto-reload on local file changes
 - UI includes:
-  - trace list uses a compact table layout (`trace`, `created`, `spans`, `status`) for faster scanability at high trace counts
+  - index page is now v2-first and global by default:
+    - loads `/api/v2/*` entities without requiring `traceID`
+    - supports optional trace filter, include-internal toggle, and keep-rules toggle
+    - renders global tables for mutations, bindings, calls, sessions/clients
+    - keeps trace index as optional drill-down to `/traces/{traceID}`
+  - trace index uses a compact table layout (`trace`, `created`, `spans`, `status`) for faster scanability at high trace counts
   - `created` is shown as relative time (e.g. `3 minutes ago`) instead of an absolute timestamp
   - status is rendered as dot-only signal (no text): pulsing yellow for ingesting, red for failed, green for succeeded, neutral fallback for unknown
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)

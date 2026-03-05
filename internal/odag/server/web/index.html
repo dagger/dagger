@@ -3,24 +3,82 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ODAG Traces</title>
+    <title>ODAG V2</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="home-shell">
-      <section class="panel home-panel">
+      <section class="panel home-panel v2-home-panel">
         <header class="panel-header">
-          <h1>ODAG</h1>
-          <p>Select a trace to open the full ODAG view.</p>
+          <h1>ODAG V2 Explorer</h1>
+          <p>Global, non-siloed view of spans, calls, bindings, and mutations. Trace filter is optional.</p>
         </header>
-        <div class="trace-toolbar">
+        <div class="trace-toolbar v2-toolbar">
           <button id="refreshTracesBtn" class="btn">Refresh</button>
+          <input id="traceFilter" class="text-input" placeholder="Trace filter (optional)" />
+          <label class="toggle-input"><input id="includeInternal" type="checkbox" /> internal</label>
+          <label class="toggle-input"><input id="renderKeepRules" type="checkbox" checked /> keep-rules</label>
+          <button id="clearTraceFilterBtn" class="btn">Clear</button>
+          <span class="v2-toolbar-spacer"></span>
           <input id="cloudTraceID" class="text-input" placeholder="Cloud trace ID" />
           <input id="cloudOrg" class="text-input" placeholder="Org (optional)" />
           <button id="importCloudBtn" class="btn">Import</button>
         </div>
-        <div class="home-hint">Click any trace row to open `/traces/&lt;trace-id&gt;`.</div>
-        <div id="traceList" class="trace-list"></div>
+
+        <section class="v2-summary-row">
+          <div class="v2-summary-card"><span class="v2-summary-label">Spans</span><span id="countSpans" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Calls</span><span id="countCalls" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Snapshots</span><span id="countSnapshots" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Bindings</span><span id="countBindings" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Mutations</span><span id="countMutations" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Sessions</span><span id="countSessions" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Clients</span><span id="countClients" class="v2-summary-value">-</span></div>
+          <div class="v2-summary-card"><span class="v2-summary-label">Render Objects</span><span id="countRenderObjects" class="v2-summary-value">-</span></div>
+        </section>
+
+        <section class="v2-main-grid">
+          <section class="panel v2-pane">
+            <header class="v2-pane-head">
+              <h2>Recent Mutations</h2>
+              <span id="mutationsMeta" class="v2-meta"></span>
+            </header>
+            <div id="mutationTable" class="v2-table-wrap"></div>
+          </section>
+
+          <section class="panel v2-pane">
+            <header class="v2-pane-head">
+              <h2>Object Bindings</h2>
+              <span id="bindingsMeta" class="v2-meta"></span>
+            </header>
+            <div id="bindingTable" class="v2-table-wrap"></div>
+          </section>
+        </section>
+
+        <section class="v2-main-grid">
+          <section class="panel v2-pane">
+            <header class="v2-pane-head">
+              <h2>Recent Calls</h2>
+              <span id="callsMeta" class="v2-meta"></span>
+            </header>
+            <div id="callTable" class="v2-table-wrap"></div>
+          </section>
+
+          <section class="panel v2-pane">
+            <header class="v2-pane-head">
+              <h2>Sessions and Clients</h2>
+              <span id="sessionsMeta" class="v2-meta"></span>
+            </header>
+            <div id="sessionClientTable" class="v2-table-wrap"></div>
+          </section>
+        </section>
+
+        <section class="panel v2-pane">
+          <header class="v2-pane-head">
+            <h2>Trace Index</h2>
+            <span class="v2-meta">Optional drill-down to `/traces/{id}`</span>
+          </header>
+          <div id="traceList" class="trace-list"></div>
+        </section>
       </section>
     </div>
     <script type="module" src="/home.js"></script>
