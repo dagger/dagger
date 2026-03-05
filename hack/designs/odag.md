@@ -691,7 +691,15 @@ Stage 4 implementation note:
   - index page is now v2-first and global by default:
     - loads `/api/v2/*` entities without requiring `traceID`
     - supports optional trace filter, include-internal toggle, and keep-rules toggle
-    - renders global tables for mutations, bindings, calls, sessions/clients
+    - uses top-level navigation tabs to reduce crowding:
+      - `Overview`
+      - `Live Activity`
+      - `Objects`
+      - `Sessions/Clients`
+      - `Traces`
+      - `Import/Connect`
+    - each tab is a focused page-like view over the same global v2 model (single route, section toggling)
+    - renders global tables for mutations, bindings, calls, sessions/clients according to selected tab
     - keeps trace index as optional drill-down to `/traces/{traceID}`
   - navigation polish:
     - trace list "Open" actions now use regular links for native browser-history behavior

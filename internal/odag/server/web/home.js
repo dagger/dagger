@@ -13,6 +13,7 @@ const state = {
     includeInternal: false,
     keepRules: true,
   },
+  selectedPage: "overview",
   liveTimer: 0,
   liveBusy: false,
 };
@@ -42,11 +43,18 @@ const els = {
   bindingsMeta: document.getElementById("bindingsMeta"),
   callsMeta: document.getElementById("callsMeta"),
   sessionsMeta: document.getElementById("sessionsMeta"),
+  renderObjectsMeta: document.getElementById("renderObjectsMeta"),
   mutationTable: document.getElementById("mutationTable"),
   bindingTable: document.getElementById("bindingTable"),
   callTable: document.getElementById("callTable"),
   sessionClientTable: document.getElementById("sessionClientTable"),
+  renderObjectTable: document.getElementById("renderObjectTable"),
   traceList: document.getElementById("traceList"),
+  overviewScope: document.getElementById("overviewScope"),
+  overviewStatus: document.getElementById("overviewStatus"),
+  connectInfo: document.getElementById("connectInfo"),
+  tabButtons: Array.from(document.querySelectorAll("[data-page-tab]")),
+  pageSections: Array.from(document.querySelectorAll("[data-page]")),
 };
 
 init().catch((err) => {
@@ -60,6 +68,8 @@ async function init() {
 }
 
 function bindEvents() {
+  bindTabs();
+
   els.refreshTracesBtn.addEventListener("click", () => {
     refreshAll().catch((err) => renderInfo(String(err)));
   });
@@ -110,6 +120,32 @@ function bindEvents() {
   });
 }
 
+function bindTabs() {
+  const fromHash = normalizePageName(window.location.hash.replace(/^#/, ""));
+  if (fromHash) {
+    state.selectedPage = fromHash;
+  }
+  setActivePage(state.selectedPage, false);
+
+  for (const button of els.tabButtons) {
+    button.addEventListener("click", () => {
+      const page = normalizePageName(button.getAttribute("data-page-tab"));
+      if (!page) {
+        return;
+      }
+      setActivePage(page, true);
+    });
+  }
+
+  window.addEventListener("hashchange", () => {
+    const page = normalizePageName(window.location.hash.replace(/^#/, ""));
+    if (!page || page === state.selectedPage) {
+      return;
+    }
+    setActivePage(page, false);
+  });
+}
+
 async function refreshAll() {
   state.options.traceID = (els.traceFilter.value || "").trim();
   state.options.includeInternal = Boolean(els.includeInternal.checked);
@@ -152,10 +188,13 @@ async function refreshAll() {
       clientsResp.error ||
       renderResp.error,
   );
+  renderOverview();
   renderMutations();
   renderBindings();
   renderCalls();
+  renderRenderObjects();
   renderSessionsAndClients();
+  renderConnectInfo();
   renderTraceList();
 }
 
@@ -244,6 +283,110 @@ function renderSummary(errorMsg) {
   els.bindingsMeta.textContent = `${baseMeta} | ${cursorLabel(state.bindings)}`;
   els.callsMeta.textContent = `${baseMeta} | ${cursorLabel(state.calls)}`;
   els.sessionsMeta.textContent = `${baseMeta} | ${renderMeta}`;
+  if (els.renderObjectsMeta) {
+    els.renderObjectsMeta.textContent = state.options.traceID
+      ? `${baseMeta} | ${state.options.keepRules ? "keep-rules on" : "keep-rules off"}`
+      : "set trace filter to load render objects";
+  }
+}
+
+function renderOverview() {
+  const scopeRows = [
+    { key: "Scope", value: state.options.traceID ? `trace ${state.options.traceID}` : "global (all traces)" },
+    { key: "Internal", value: state.options.includeInternal ? "included" : "excluded" },
+    { key: "Keep Rules", value: state.options.keepRules ? "enabled" : "disabled" },
+    { key: "Page Size", value: `${v2Limit}` },
+  ];
+  els.overviewScope.innerHTML = scopeRows.map((row) => overviewKV(row.key, row.value)).join("");
+
+  const statusCounts = countTraceStatuses(state.traces);
+  const statusRows = [
+    { key: "Traces", value: String(state.traces.length) },
+    { key: "Ingesting", value: String(statusCounts.ingesting) },
+    { key: "Failed", value: String(statusCounts.failed) },
+    { key: "Completed", value: String(statusCounts.completed) },
+  ];
+  els.overviewStatus.innerHTML = statusRows.map((row) => overviewKV(row.key, row.value)).join("");
+}
+
+function renderRenderObjects() {
+  if (!els.renderObjectTable) {
+    return;
+  }
+  if (!state.options.traceID) {
+    els.renderObjectTable.innerHTML = `<div class="trace-empty">Set trace filter to inspect render objects.</div>`;
+    return;
+  }
+  const objects = state.render?.objects || [];
+  if (objects.length === 0) {
+    els.renderObjectTable.innerHTML = `<div class="trace-empty">No render objects for current filter.</div>`;
+    return;
+  }
+
+  const rows = objects.slice(0, 200).map((obj) => {
+    const current = obj.currentSnapshotID ? shortDigest(obj.currentSnapshotID) : "-";
+    return `
+      <tr>
+        <td>${escapeHTML(obj.alias || "-")}</td>
+        <td>${escapeHTML(obj.typeName || "-")}</td>
+        <td>${Number(obj.stateCount || 0)}</td>
+        <td>${escapeHTML(current)}</td>
+        <td>${obj.missingState ? "yes" : "no"}</td>
+      </tr>
+    `;
+  });
+
+  els.renderObjectTable.innerHTML = `
+    <table class="v2-table">
+      <thead>
+        <tr><th>Alias</th><th>Type</th><th>States</th><th>Current</th><th>Missing State</th></tr>
+      </thead>
+      <tbody>${rows.join("")}</tbody>
+    </table>
+  `;
+}
+
+function renderConnectInfo() {
+  if (!els.connectInfo) {
+    return;
+  }
+  const serverOrigin = window.location.origin;
+  const otlpEndpoint = `${serverOrigin}/v1/traces`;
+  const rows = [
+    { key: "OTLP HTTP/protobuf", value: otlpEndpoint },
+    { key: "ODAG server", value: serverOrigin },
+    { key: "Cloud import", value: "Use trace ID + optional org on this page" },
+    { key: "CLI wrapper", value: "ODAG_SERVER=<server> odag run -- dagger ..." },
+  ];
+  els.connectInfo.innerHTML = rows.map((row) => overviewKV(row.key, row.value)).join("");
+}
+
+function overviewKV(key, value) {
+  return `
+    <div class="v2-kv-row">
+      <span class="v2-kv-key">${escapeHTML(key)}</span>
+      <span class="v2-kv-value">${escapeHTML(value)}</span>
+    </div>
+  `;
+}
+
+function countTraceStatuses(traces) {
+  const out = { ingesting: 0, failed: 0, completed: 0 };
+  for (const trace of traces || []) {
+    const status = String(trace?.status || "").toLowerCase();
+    if (status === "ingesting") {
+      out.ingesting++;
+      continue;
+    }
+    if (status === "failed") {
+      out.failed++;
+      continue;
+    }
+    if (status === "completed" || status === "succeeded" || status === "success") {
+      out.completed++;
+    }
+  }
+  return out;
 }
 
 function renderMutations() {
@@ -461,6 +604,43 @@ function normalizeV2Response(data) {
     items: Array.isArray(data.items) ? data.items : [],
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor : "",
   };
+}
+
+function normalizePageName(raw) {
+  const page = String(raw || "").toLowerCase();
+  switch (page) {
+    case "overview":
+    case "activity":
+    case "objects":
+    case "sessions":
+    case "traces":
+    case "import":
+      return page;
+    default:
+      return "";
+  }
+}
+
+function setActivePage(page, writeHash) {
+  const normalized = normalizePageName(page) || "overview";
+  state.selectedPage = normalized;
+
+  for (const button of els.tabButtons) {
+    const matches = button.getAttribute("data-page-tab") === normalized;
+    button.classList.toggle("is-active", matches);
+    button.setAttribute("aria-selected", matches ? "true" : "false");
+  }
+  for (const section of els.pageSections) {
+    const matches = section.getAttribute("data-page") === normalized;
+    section.classList.toggle("is-active", matches);
+  }
+
+  if (writeHash) {
+    const targetHash = `#${normalized}`;
+    if (window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
+  }
 }
 
 function countLabel(v2resp) {

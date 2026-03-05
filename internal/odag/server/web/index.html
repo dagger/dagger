@@ -11,7 +11,7 @@
       <section class="panel home-panel v2-home-panel">
         <header class="panel-header">
           <h1>ODAG V2 Explorer</h1>
-          <p>Global, non-siloed view of spans, calls, bindings, and mutations. Trace filter is optional.</p>
+          <p>Explore your Dagger system from global state down to trace drill-downs.</p>
         </header>
         <div class="trace-toolbar v2-toolbar">
           <button id="refreshTracesBtn" class="btn">Refresh</button>
@@ -19,65 +19,136 @@
           <label class="toggle-input"><input id="includeInternal" type="checkbox" /> internal</label>
           <label class="toggle-input"><input id="renderKeepRules" type="checkbox" checked /> keep-rules</label>
           <button id="clearTraceFilterBtn" class="btn">Clear</button>
-          <span class="v2-toolbar-spacer"></span>
-          <input id="cloudTraceID" class="text-input" placeholder="Cloud trace ID" />
-          <input id="cloudOrg" class="text-input" placeholder="Org (optional)" />
-          <button id="importCloudBtn" class="btn">Import</button>
         </div>
 
-        <section class="v2-summary-row">
-          <div class="v2-summary-card"><span class="v2-summary-label">Spans</span><span id="countSpans" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Calls</span><span id="countCalls" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Snapshots</span><span id="countSnapshots" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Bindings</span><span id="countBindings" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Mutations</span><span id="countMutations" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Sessions</span><span id="countSessions" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Clients</span><span id="countClients" class="v2-summary-value">-</span></div>
-          <div class="v2-summary-card"><span class="v2-summary-label">Render Objects</span><span id="countRenderObjects" class="v2-summary-value">-</span></div>
-        </section>
+        <nav class="v2-tabs" aria-label="ODAG explorer pages">
+          <button class="v2-tab is-active" data-page-tab="overview" type="button">Overview</button>
+          <button class="v2-tab" data-page-tab="activity" type="button">Live Activity</button>
+          <button class="v2-tab" data-page-tab="objects" type="button">Objects</button>
+          <button class="v2-tab" data-page-tab="sessions" type="button">Sessions/Clients</button>
+          <button class="v2-tab" data-page-tab="traces" type="button">Traces</button>
+          <button class="v2-tab" data-page-tab="import" type="button">Import/Connect</button>
+        </nav>
 
-        <section class="v2-main-grid">
-          <section class="panel v2-pane">
-            <header class="v2-pane-head">
-              <h2>Recent Mutations</h2>
-              <span id="mutationsMeta" class="v2-meta"></span>
-            </header>
-            <div id="mutationTable" class="v2-table-wrap"></div>
+        <section class="v2-pages">
+          <section class="v2-page is-active" data-page="overview">
+            <section class="v2-summary-row">
+              <div class="v2-summary-card"><span class="v2-summary-label">Spans</span><span id="countSpans" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Calls</span><span id="countCalls" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Snapshots</span><span id="countSnapshots" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Bindings</span><span id="countBindings" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Mutations</span><span id="countMutations" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Sessions</span><span id="countSessions" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Clients</span><span id="countClients" class="v2-summary-value">-</span></div>
+              <div class="v2-summary-card"><span class="v2-summary-label">Render Objects</span><span id="countRenderObjects" class="v2-summary-value">-</span></div>
+            </section>
+
+            <section class="v2-overview-grid">
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Scope</h2>
+                </header>
+                <div class="v2-table-wrap">
+                  <div id="overviewScope" class="v2-kv-list"></div>
+                </div>
+              </section>
+
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Status</h2>
+                </header>
+                <div class="v2-table-wrap">
+                  <div id="overviewStatus" class="v2-kv-list"></div>
+                </div>
+              </section>
+            </section>
           </section>
 
-          <section class="panel v2-pane">
-            <header class="v2-pane-head">
-              <h2>Object Bindings</h2>
-              <span id="bindingsMeta" class="v2-meta"></span>
-            </header>
-            <div id="bindingTable" class="v2-table-wrap"></div>
-          </section>
-        </section>
+          <section class="v2-page" data-page="activity">
+            <section class="v2-main-grid">
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Recent Mutations</h2>
+                  <span id="mutationsMeta" class="v2-meta"></span>
+                </header>
+                <div id="mutationTable" class="v2-table-wrap"></div>
+              </section>
 
-        <section class="v2-main-grid">
-          <section class="panel v2-pane">
-            <header class="v2-pane-head">
-              <h2>Recent Calls</h2>
-              <span id="callsMeta" class="v2-meta"></span>
-            </header>
-            <div id="callTable" class="v2-table-wrap"></div>
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Recent Calls</h2>
+                  <span id="callsMeta" class="v2-meta"></span>
+                </header>
+                <div id="callTable" class="v2-table-wrap"></div>
+              </section>
+            </section>
           </section>
 
-          <section class="panel v2-pane">
-            <header class="v2-pane-head">
-              <h2>Sessions and Clients</h2>
-              <span id="sessionsMeta" class="v2-meta"></span>
-            </header>
-            <div id="sessionClientTable" class="v2-table-wrap"></div>
-          </section>
-        </section>
+          <section class="v2-page" data-page="objects">
+            <section class="v2-main-grid">
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Object Bindings</h2>
+                  <span id="bindingsMeta" class="v2-meta"></span>
+                </header>
+                <div id="bindingTable" class="v2-table-wrap"></div>
+              </section>
 
-        <section class="panel v2-pane">
-          <header class="v2-pane-head">
-            <h2>Trace Index</h2>
-            <span class="v2-meta">Optional drill-down to `/traces/{id}`</span>
-          </header>
-          <div id="traceList" class="trace-list"></div>
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Render Objects</h2>
+                  <span id="renderObjectsMeta" class="v2-meta"></span>
+                </header>
+                <div id="renderObjectTable" class="v2-table-wrap"></div>
+              </section>
+            </section>
+          </section>
+
+          <section class="v2-page" data-page="sessions">
+            <section class="panel v2-pane">
+              <header class="v2-pane-head">
+                <h2>Sessions and Clients</h2>
+                <span id="sessionsMeta" class="v2-meta"></span>
+              </header>
+              <div id="sessionClientTable" class="v2-table-wrap"></div>
+            </section>
+          </section>
+
+          <section class="v2-page" data-page="traces">
+            <section class="panel v2-pane">
+              <header class="v2-pane-head">
+                <h2>Trace Index</h2>
+                <span class="v2-meta">Optional drill-down to `/traces/{id}`</span>
+              </header>
+              <div id="traceList" class="trace-list"></div>
+            </section>
+          </section>
+
+          <section class="v2-page" data-page="import">
+            <section class="v2-main-grid">
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Import From Cloud</h2>
+                </header>
+                <div class="v2-table-wrap">
+                  <div class="v2-import-form">
+                    <input id="cloudTraceID" class="text-input" placeholder="Cloud trace ID" />
+                    <input id="cloudOrg" class="text-input" placeholder="Org (optional)" />
+                    <button id="importCloudBtn" class="btn">Import</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel v2-pane">
+                <header class="v2-pane-head">
+                  <h2>Connect Clients</h2>
+                </header>
+                <div class="v2-table-wrap">
+                  <div id="connectInfo" class="v2-kv-list"></div>
+                </div>
+              </section>
+            </section>
+          </section>
         </section>
       </section>
     </div>

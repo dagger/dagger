@@ -141,7 +141,7 @@ body {
 }
 
 .v2-toolbar {
-  grid-template-columns: auto minmax(220px, 1fr) auto auto auto minmax(200px, 1fr) minmax(160px, 1fr) auto;
+  grid-template-columns: auto minmax(220px, 1fr) auto auto auto;
   align-items: center;
 }
 
@@ -210,6 +210,48 @@ body {
   gap: 8px;
 }
 
+.v2-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 2px;
+}
+
+.v2-tab {
+  border: 1px solid rgba(92, 116, 147, 0.45);
+  border-radius: 999px;
+  background: rgba(22, 33, 46, 0.9);
+  color: #c7d8ea;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.v2-tab:hover {
+  border-color: rgba(133, 167, 210, 0.68);
+  background: rgba(32, 47, 66, 0.92);
+}
+
+.v2-tab.is-active {
+  border-color: rgba(53, 208, 163, 0.72);
+  color: #d9f8ee;
+  background: rgba(28, 67, 69, 0.9);
+}
+
+.v2-pages {
+  min-width: 0;
+}
+
+.v2-page {
+  display: none;
+  min-width: 0;
+}
+
+.v2-page.is-active {
+  display: grid;
+  gap: 10px;
+}
+
 .v2-summary-card {
   border: 1px solid rgba(92, 116, 147, 0.35);
   border-radius: 10px;
@@ -234,6 +276,12 @@ body {
 }
 
 .v2-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.v2-overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
@@ -270,6 +318,39 @@ body {
 .v2-table-wrap {
   padding: 8px;
   overflow: auto;
+}
+
+.v2-kv-list {
+  display: grid;
+  gap: 6px;
+}
+
+.v2-kv-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px;
+  border: 1px solid rgba(92, 116, 147, 0.24);
+  border-radius: 8px;
+  background: rgba(24, 36, 51, 0.72);
+  padding: 8px 10px;
+}
+
+.v2-kv-key {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.v2-kv-value {
+  color: #cfe1f6;
+  font-size: 0.78rem;
+  word-break: break-word;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+}
+
+.v2-import-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 1fr) auto;
+  gap: 8px;
 }
 
 .v2-table {
@@ -831,11 +912,28 @@ body {
     grid-template-columns: 1fr 1fr;
   }
 
+  .v2-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
   .v2-summary-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .v2-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .v2-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .v2-import-form {
+    grid-template-columns: 1fr;
+  }
+
+  .v2-kv-row {
     grid-template-columns: 1fr;
   }
 
