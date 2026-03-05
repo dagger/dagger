@@ -21,3 +21,5 @@
   - [x] Handle missing `fusermount` by enabling direct FUSE mounts in WSFS runtime.
   - [x] Fix mount output extraction for workspace mounts with no upper source yet.
   - [x] Preserve symlinked subdirectory visibility/traversal in WSFS directory listings (with integration coverage).
+  - [x] Wire WSFS runtime setup into service startup path used by `Container.terminal`.
+  - [x] Add integration coverage for workspace-mounted service startup reading workspace files.

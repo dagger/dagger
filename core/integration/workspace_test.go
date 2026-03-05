@@ -447,6 +447,42 @@ func (WorkspaceSuite) TestWithMountedWorkspaceSymlinkedSubdirectory(ctx context.
 	require.Equal(t, "target", strings.TrimSpace(linkedStdout))
 }
 
+func (WorkspaceSuite) TestWithMountedWorkspaceServiceStart(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "input.txt"), []byte("wsfs"), 0o600))
+
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	wsID := currentWorkspaceID(ctx, t, c)
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					AsService struct {
+						Start string
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Test($ws: WorkspaceID!) {
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws", source: $ws) {
+					asService(args: ["sh", "-ec", "test \"$(cat /ws/input.txt)\" = wsfs; tail -f /dev/null"]) {
+						start
+					}
+				}
+			}
+		}
+	}`, alpineImage), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws": wsID,
+		},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(res.Container.From.WithMountedWorkspace.AsService.Start))
+}
+
 func (WorkspaceSuite) TestWithMountedWorkspaceExecCachePolicy(ctx context.Context, t *testctx.T) {
 	runNoWorkspace := func() string {
 		c := connect(ctx, t)

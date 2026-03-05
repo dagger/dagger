@@ -397,7 +397,7 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, _, refs, _, err := getAllContainerMounts(ctx, ctr)
+	pbmounts, states, dgsts, refs, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
@@ -462,6 +462,16 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return nil, fmt.Errorf("prepare mounts: %w", err)
 	}
+
+	wsfsCleanup, err := ctr.setupWSFSMounts(ctx, ContainerMountData{
+		Mounts:      pbmounts,
+		Digests:     dgsts,
+		OutputCount: outputCount,
+	}, p.Mounts)
+	if err != nil {
+		return nil, fmt.Errorf("setup wsfs mounts: %w", err)
+	}
+	cleanup.Add("cleanup wsfs mounts", wsfsCleanup)
 
 	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
 		cleanup.Add("release active ref", func() error {
