@@ -1175,10 +1175,30 @@ type StatFS interface {
 	Stat(ctx context.Context, path string) (string, *Stat, error)
 }
 
+type ExistsFS interface {
+	Exists(ctx context.Context, path string) (string, bool, error)
+}
+
 type StatFSFunc func(ctx context.Context, path string) (string, *Stat, error)
 
 func (f StatFSFunc) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	return f(ctx, path)
+}
+
+func StatFSExists(ctx context.Context, statFS StatFS, path string) (string, bool, error) {
+	if existsFS, ok := statFS.(ExistsFS); ok {
+		return existsFS.Exists(ctx, path)
+	}
+
+	dirName, _, err := statFS.Stat(ctx, path)
+	switch {
+	case err == nil:
+		return dirName, true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
 }
 
 type CallerStatFS struct {
@@ -1212,9 +1232,42 @@ func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, 
 	}, nil
 }
 
+func (csfs CallerStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	dirName, _, err := csfs.Stat(ctx, path)
+	switch {
+	case err == nil:
+		return dirName, true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
+}
+
 type ModuleSourceStatFS struct {
 	bk  *buildkit.Client
 	src *ModuleSource
+}
+
+func CallDirExists(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, bool, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", false, err
+	}
+
+	var exists dagql.Boolean
+	err = dag.Select(ctx, dir, &exists,
+		dagql.Selector{
+			Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		},
+	)
+	if err != nil {
+		return "", false, err
+	}
+	return filepath.Dir(path), exists.Bool(), nil
 }
 
 func CallDirStat(ctx context.Context, dir dagql.ObjectResult[*Directory], path string) (string, *Stat, error) {
@@ -1245,6 +1298,10 @@ type DirectoryStatFS struct {
 
 func (dfs *DirectoryStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
 	return CallDirStat(ctx, dfs.Dir, path)
+}
+
+func (dfs *DirectoryStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	return CallDirExists(ctx, dfs.Dir, path)
 }
 
 // DirectoryReadFile reads file contents from a dagql Directory.
@@ -1281,6 +1338,26 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *St
 		return CallDirStat(ctx, fs.src.ContextDirectory, path)
 	default:
 		return "", nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
+}
+
+func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, bool, error) {
+	if fs.src == nil {
+		return "", false, nil
+	}
+
+	switch fs.src.Kind {
+	case ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return CallerStatFS{fs.bk}.Exists(ctx, path)
+	case ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirExists(ctx, fs.src.Git.UnfilteredContextDir, path)
+	case ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return CallDirExists(ctx, fs.src.ContextDirectory, path)
+	default:
+		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
 }
 

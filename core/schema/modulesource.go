@@ -590,16 +590,13 @@ func (s *moduleSourceSchema) gitModuleSource(
 		// first validate the given path exists at all, otherwise weird things like
 		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
 		// they find-up to a real dagger.json
-		statFS := core.StatFSFunc(func(ctx context.Context, path string) (string, *core.Stat, error) {
-			return core.CallDirStat(ctx, gitSrc.ContextDirectory, path)
-		})
+		statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
 
 		if gitSrc.SourceRootSubpath != "" {
-			if _, _, err := statFS.Stat(ctx, gitSrc.SourceRootSubpath); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
-				}
+			if _, exists, err := core.StatFSExists(ctx, statFS, gitSrc.SourceRootSubpath); err != nil {
 				return inst, fmt.Errorf("failed to stat git module source: %w", err)
+			} else if !exists {
+				return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
 			}
 		}
 

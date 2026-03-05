@@ -372,8 +372,11 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	curDir := absStart
 	for {
 		candidate := path.Join(curDir, args.Name)
-		_, _, err := statFS.Stat(ctx, candidate)
-		if err == nil {
+		_, exists, err := core.StatFSExists(ctx, statFS, candidate)
+		if err != nil {
+			return none, fmt.Errorf("stat %s: %w", candidate, err)
+		}
+		if exists {
 			// Found it — return path relative to workspace root
 			relPath, err := pathutil.LexicalRelativePath(cleanRoot, candidate)
 			if err != nil {
