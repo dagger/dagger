@@ -1445,19 +1445,47 @@ func getField(
 }
 
 func (specs InputSpecs) Decode(inputs map[string]Input, dest any, view call.View) error {
-	destT := reflect.TypeOf(dest).Elem()
-	destV := reflect.ValueOf(dest).Elem()
+	destV := reflect.ValueOf(dest)
+	if !destV.IsValid() {
+		return nil
+	}
+	destV = destV.Elem()
+	destT := destV.Type()
 	if destT == nil {
 		return nil
 	}
+	return specs.decodeValue(inputs, destT, destV, view)
+}
+
+func (specs InputSpecs) decodeValue(inputs map[string]Input, destT reflect.Type, destV reflect.Value, view call.View) error {
 	if destT.Kind() != reflect.Struct {
-		return fmt.Errorf("inputs must be a struct, got %T (%s)", dest, destT.Kind())
+		return fmt.Errorf("inputs must be a struct, got %s", destT.Kind())
 	}
 	for i := range destT.NumField() {
 		fieldT := destT.Field(i)
 		fieldV := destV.Field(i)
 		if fieldT.Anonymous {
-			// embedded struct
+			switch fieldT.Type.Kind() {
+			case reflect.Struct:
+				if err := specs.decodeValue(inputs, fieldT.Type, fieldV, view); err != nil {
+					return err
+				}
+				continue
+			case reflect.Pointer:
+				if fieldT.Type.Elem().Kind() == reflect.Struct {
+					if fieldV.IsNil() {
+						if !fieldV.CanSet() {
+							return fmt.Errorf("embedded field %q is not settable", fieldT.Name)
+						}
+						fieldV.Set(reflect.New(fieldT.Type.Elem()))
+					}
+					if err := specs.decodeValue(inputs, fieldT.Type.Elem(), fieldV.Elem(), view); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+
 			val := reflect.New(fieldT.Type)
 			if err := specs.Decode(inputs, val.Interface(), view); err != nil {
 				return err

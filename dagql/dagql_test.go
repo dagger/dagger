@@ -1375,6 +1375,40 @@ func (BuiltinsInput) TypeName() string {
 	return "BuiltinsInput"
 }
 
+type privateEmbeddedArgs struct {
+	Enabled dagql.Boolean `default:"false"`
+}
+
+type argsWithPrivateEmbedded struct {
+	privateEmbeddedArgs
+	Name dagql.String `default:"hello"`
+}
+
+func TestDecodeUnexportedEmbeddedArgs(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	dagql.Fields[Query]{
+		dagql.Func("echoEmbeddedArgs", func(ctx context.Context, self Query, args argsWithPrivateEmbedded) (dagql.String, error) {
+			if args.Enabled {
+				return args.Name, nil
+			}
+			return dagql.String("disabled"), nil
+		}).Args(
+			dagql.Arg("enabled"),
+			dagql.Arg("name"),
+		),
+	}.Install(srv)
+
+	var res struct {
+		Echo string
+	}
+	req(t, gql, `query {
+		echo: echoEmbeddedArgs(enabled: true, name: "ok")
+	}`, &res)
+	assert.Equal(t, "ok", res.Echo)
+}
+
 func TestInputObjects(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
