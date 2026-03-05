@@ -45,8 +45,8 @@
    - reuse existing DAGQL literal/JSON plumbing
    - Secret remains normal object reference semantics.
 10. Frontend stack:
-   - React + TypeScript + Vite + Tailwind + shadcn/ui
-   - React Flow + ELK for workflow/circuit-style canvas.
+   - current prototype: embedded HTML/CSS/JS + SVG renderer (no external frontend build)
+   - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
 
 ## Problem
 
@@ -64,7 +64,7 @@ Current trace UIs are built around append-only spans and immutable function-call
 2. **Preserve execution truth**: ODAG is a rendering layer only; no change to underlying immutable DAGQL semantics.
 3. **Collapse same-type chains**: represent same-type receiver->return calls as object mutations.
 4. **Render only referenced objects**: include only IDs referenced by top-level DAGQL call spans (returned, args, receiver).
-5. **Support time travel**: step, play, and jump-to-end views over object-state transitions.
+5. **Support discrete history navigation**: move across ODAG mutation revisions by selecting events.
 6. **Ship as a standalone local web app experiment**: runs locally, authenticates to Dagger Cloud, streams trace data, renders ODAG.
 7. **Scope v1 to completed traces**: no live in-progress trace mode in initial implementation.
 8. **Add object-state telemetry in v1**: emit serialized produced object state so dependencies are field-accurate.
@@ -87,7 +87,7 @@ Build a local web app with a small local backend:
    - Mutable object nodes with ordered state history.
    - Mutation events when same-type calls return same-type objects.
    - Dependency edges from receiver/arg/object references.
-4. Frontend renders ODAG at time `t` with controls for play/pause/step/end.
+4. Frontend renders ODAG at event-boundary time `t` selected from a revision-history pane.
 5. Scope filter keeps only objects referenced from top-level DAGQL call spans.
 6. Backend supports two data procurement modes:
    - **Cloud trace mode**: fetch by trace ID from Dagger Cloud (`spansUpdated` stream).
@@ -223,7 +223,7 @@ For each incoming span:
 3. Keep a `SpanRecord` index by span ID and call digest.
 4. Track parent span graph even for non-DAGQL spans (needed for top-level detection).
 5. Parse emitted serialized object state payload for produced objects and extract field object-ID refs.
-6. Build a lookup index `stateID -> typed field map` for inspector and recursive exploration.
+6. Build a lookup index `stateID -> typed field map` for node expansion and recursive exploration.
 7. If a span has `dagger.io/dag.output` but no `dagger.io/dag.output.state`, resolve from local state cache.
 8. If state payload is still unavailable, materialize object node as `state unavailable`, with no dependency edges for that state.
 9. If missing state payload arrives later for a known state ID, retroactively backfill that state in-place (same object/node identity) and recompute dependencies/history for affected timeline frames.
@@ -240,6 +240,7 @@ Algorithm:
 4. Remaining spans are top-level.
 
 This avoids false negatives when DAGQL span nesting includes passthrough/internal non-call spans between DAGQL calls.
+If parent ancestry is incomplete in collected data, flag that on events (`parentChainIncomplete`) so UI/debugging can audit classification confidence.
 
 ### 3) Compute referenced seed IDs (scope filter)
 
@@ -292,18 +293,23 @@ State transition policy for time `t`:
 
 This keeps state transitions deterministic and avoids showing future states early.
 
-Discrete playback mode (default UI):
+Discrete history mode (default UI):
 
-1. Build a step list from projected events that target an object (`event.objectID != ""`).
-2. Slider position maps to a step index, not absolute wall time.
-3. Backend resolves `GET /api/traces/{traceID}/snapshot?step=<n>` to an exact event boundary (stable even when multiple events share timestamps).
-4. Timeline labels show `Step i / N` (with relative time as secondary context).
+1. Build a revision list from projected events in reverse chronological order.
+2. Selecting a revision requests `GET /api/traces/{traceID}/snapshot?t=<event_end_unix_nano>`.
+3. Revision index is the canonical navigation unit; absolute time is displayed as supporting context.
+4. Default selection starts at the latest revision for a newly opened trace.
 
-Operator-friendly controls (default UI):
+### 7) Event model for debugability
 
-1. Replace player/seek bar with explicit controls: first, back, forward, last.
-2. Show status, current step, and last step as independent readouts.
-3. Default selection stays on step 1 for newly selected traces; manual navigation controls progression.
+The UI event stream intentionally carries multiple abstraction layers in one row:
+
+1. **RAW layer**: every span (`rawKind=span`) for plumbing/debug context.
+2. **CALL layer**: DAGQL call metadata when present (`rawKind=call`, call name/digest/types).
+3. **DERIVED layer**: ODAG operation when applicable (`operation=create|mutate` + `objectID`).
+4. **Visibility signals**: `visible`, `topLevel`, `callDepth`, and nearest parent DAG call metadata.
+
+This model keeps ODAG rendering explainable when filtering/pruning hides many events or objects.
 
 ## Standalone App Architecture
 
@@ -313,7 +319,8 @@ Operator-friendly controls (default UI):
    - Reuse `internal/cloud/auth` and `internal/cloud/trace` for auth + stream subscription.
    - Build ODAG transformer service and expose JSON/WS APIs.
 2. **Frontend (web SPA)**
-   - Workflow-style graph canvas + timeline controls + side inspector.
+   - Workflow-style graph canvas + left revision-history pane.
+   - Card-selection expansion for object state fields.
    - Receives incremental ODAG snapshots or patches over WebSocket.
 
 ### Backend / Frontend Boundary
@@ -326,7 +333,7 @@ Operator-friendly controls (default UI):
 2. **Frontend owns presentation**
    - layout, styling, animation
    - interaction and viewport state
-   - timeline controls and inspector rendering
+   - revision-history rendering and object-card expansion
 
 Frontend consumes ODAG-domain events/snapshots, not raw OTel.
 
@@ -369,26 +376,19 @@ Frontend consumes ODAG-domain events/snapshots, not raw OTel.
 
 ## Frontend Stack
 
-Chosen renderer direction is workflow/circuit-canvas style (similar to modern workflow editors), while keeping ODAG read-only in v1.
+Current implementation uses an embedded static web app (no external frontend toolchain):
 
-1. **Core stack**
-   - React + TypeScript + Vite
-   - Tailwind + shadcn/ui for application shell controls (panels, sliders, toggles, dialogs, tables)
-2. **Canvas engine**
-   - React Flow for nodes/edges, handles, pan/zoom/select, and interaction primitives
-   - ELK (`elkjs`) for layered DAG auto-layout
-3. **State and performance**
-   - Zustand for app state (timeline cursor, selection, filters, viewport)
-   - Worker-assisted transform/layout path for large traces
-   - Incremental graph patching from backend diffs
-4. **Visual profile**
+1. **Current prototype stack**
+   - server-embedded HTML/CSS/JS assets
+   - SVG graph rendering and interaction in plain JS
+   - no separate npm/vite build step; optional `odag serve --dev` file-watch reload
+2. **Visual profile**
    - Dark dotted background
-   - Rounded object nodes with typed ports
-   - Solid primary edges + styled secondary/context links
-   - Timeline-synchronized edge/node emphasis
-5. **Editability posture**
-   - v1 remains read-only
-   - component choices keep a clean path to optional future drag-and-drop editing.
+   - Rounded object cards with edge routing and event/object selection cues
+   - card expansion on selection to reveal full object state fields
+3. **Future candidate stack (if complexity grows)**
+   - React + TypeScript + Vite + shadcn/tailwind for UI composition
+   - React Flow + ELK for richer layout/interaction and potential editor-like affordances
 
 ### API sketch
 
@@ -417,42 +417,39 @@ web/odag/
 
 ### Main view
 
-1. **Graph panel**: ODAG object nodes + dependency edges.
-2. **Timeline panel**: scrubber, play/pause, step, speed, end.
-3. **Inspector panel**: selected object details:
-   - type (`CoreType` or `module.Type`)
-   - current state digest (short)
-   - state history table (time, producing call, span status)
-   - incoming/outgoing dependencies
+1. **Trace page layout**:
+   - left: revision history list (events)
+   - right: ODAG graph panel
+   - top center: trace title/subtitle context
+2. **Trace list page**:
+   - table layout (`trace`, `created`, `spans`, `status`)
+   - relative creation time and dot-based status signaling
 
 ### Node visual language
 
-1. Node title: object type.
-2. Node subtitle: object alias (`<Type>#N`) and current state short digest.
-3. State badge:
+1. Node title: object alias (`<Type>#N`).
+2. Collapsed state: title only.
+3. Expanded state (selected): full field list, one field per row.
+4. State badge:
    - `running` (active mutation in flight)
    - `cached`
    - `failed`
    - `stable`
-4. History sparkline or step count for mutation depth.
 
 ### Interactions
 
-1. Hover edge to highlight related call/arg path.
-2. Click node to lock inspector.
-3. Toggle filters:
-   - top-level scope only (default on)
-   - include neighbor dependencies
-   - show internal spans influence
-4. Playback modes:
-   - step event
-   - play to next mutation
-   - jump to end
+1. Click history row to set current revision and redraw graph at that boundary.
+2. Click node to toggle expansion and select object.
+3. Toggle filters on history stream:
+   - calls / derived / visible row filtering
+4. Dual selection cues must co-exist clearly:
+   - current event highlight (and mutated-object badge/ring)
+   - selected object highlight (and matching history rows)
 
-Current event details (timeline focus) should show:
+Current event row details should show:
 1. mutation call identity (`type.field`, span ID/time)
-2. input objects used by this event
-3. state payload summary and field-reference edges added/removed at this event.
+2. parent DAGQL call context (when present)
+3. raw span identity/kind and visibility classification
 
 ## Feasibility and Tradeoffs
 
@@ -491,6 +488,7 @@ Encoding note:
 1. **dagger.io dagviz reuse**: which components/algorithms can be imported directly once repository access is confirmed?
 2. **Very large traces**: expected practical upper bounds (span count/object count) for v1 UX targets.
 3. **Collector transport expansion**: when to add OTLP gRPC ingest in addition to HTTP/protobuf.
+4. **Top-level certainty with partial ancestry**: some events show `parentChainIncomplete`; classify conservatively and expose debug context in UI.
 
 ## Implementation Plan
 
@@ -499,7 +497,7 @@ Encoding note:
 - [x] Stage 1: CLI/server/store scaffold (`odag serve`, `odag run`, sqlite schema, health endpoint)
 - [x] Stage 2: OTLP ingest mode (trace/span persistence from `/v1/traces`)
 - [x] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
-- [x] Stage 4: Web UI shell + timeline + ODAG canvas + inspector
+- [x] Stage 4: Web UI shell + revision history + ODAG canvas
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 
 Stage 2 implementation note:
@@ -580,9 +578,9 @@ Post-MVP projection refinement:
 1. Add local Go server (`odag serve`) with persistent trace store + trace open/list/stream endpoints.
 2. Implement Mode A (cloud trace pull by trace ID).
 3. Implement Mode B (OTLP collector ingest endpoints).
-4. Add frontend with React Flow canvas, shadcn/tailwind shell, timeline, inspector.
-5. Implement top-level seed filter and neighbor toggle.
-6. Support playback: step, play, end.
+4. Add frontend with embedded web assets (SVG ODAG canvas + revision history UI).
+5. Implement top-level seed filter and default pruning heuristics.
+6. Support discrete event-step navigation via history selection.
 7. Add convenience wrapper (`odag run <command...>`) that injects OTEL env vars.
 
 ### Phase 2: Scale and robustness
@@ -618,4 +616,4 @@ Post-MVP projection refinement:
    - Field-reference edge evidence count equals number of contributing object states
 3. **UX checks**
    - 10k+ span traces remain interactive at end-state view
-   - timeline scrub remains responsive with progressive rendering
+   - revision-history navigation remains responsive with progressive rendering
