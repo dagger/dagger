@@ -378,9 +378,17 @@ function renderGraph() {
       if (fields.length > 0) {
         detailRows = fields.map((field) => ({ kind: "field", field }));
       } else if (obj.missingState) {
-        detailRows = [{ kind: "warn", text: "state unavailable" }];
+        detailRows = [
+          { kind: "warn", text: "state unavailable" },
+          { kind: "sub", text: `${obj.stateCount || 0} snapshot(s)` },
+          { kind: "sub", text: `${(obj.activityCallIDs || []).length} call(s)` },
+        ];
       } else {
-        detailRows = [{ kind: "sub", text: "no state fields" }];
+        detailRows = [
+          { kind: "sub", text: "no state fields" },
+          { kind: "sub", text: `${obj.stateCount || 0} snapshot(s)` },
+          { kind: "sub", text: `${(obj.activityCallIDs || []).length} call(s)` },
+        ];
       }
     }
     const cardH = selected ? baseCardH + detailRows.length * fieldRowHeight + expandedBottomPad : baseCardH;
@@ -674,6 +682,8 @@ function snapshotFromRender(render) {
       typeName: obj.typeName,
       alias: obj.alias,
       missingState: Boolean(obj.missingState),
+      stateCount: obj.stateCount || 0,
+      activityCallIDs: obj.activityCallIDs || [],
       stateHistory,
     };
   });

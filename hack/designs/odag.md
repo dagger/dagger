@@ -700,6 +700,7 @@ Stage 4 implementation note:
   - dedicated central trace title row above the DAG canvas
   - ODAG object cards are expandable on selection: collapsed cards show identity only; selected card expands and renders the full state field list (one field per line)
   - object cards show ODAG alias (`Type#N`) as primary label; immutable state digest text is hidden from card body
+  - when state payload is unavailable, selected object cards now show fallback metadata (`snapshot count`, `activity call count`) instead of only a single warning line
   - trace view drops the inspector pane to maximize graph/history real estate
 
 Stage 5 implementation note:
