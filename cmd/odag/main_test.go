@@ -30,3 +30,23 @@ func TestNewRunCmdServerFlagDefaultUsesEnv(t *testing.T) {
 		t.Fatalf("expected default flag value from env, got %q", flag.DefValue)
 	}
 }
+
+func TestNewServeCmdHasDevFlags(t *testing.T) {
+	cmd := newServeCmd()
+
+	devFlag := cmd.Flag("dev")
+	if devFlag == nil {
+		t.Fatalf("missing dev flag")
+	}
+	if devFlag.DefValue != "false" {
+		t.Fatalf("unexpected dev default: %q", devFlag.DefValue)
+	}
+
+	webDirFlag := cmd.Flag("web-dir")
+	if webDirFlag == nil {
+		t.Fatalf("missing web-dir flag")
+	}
+	if webDirFlag.DefValue == "" {
+		t.Fatalf("expected non-empty web-dir default")
+	}
+}

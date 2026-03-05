@@ -524,6 +524,7 @@ Stage 4 implementation note:
 - `odag serve` now hosts an embedded web UI with split routes (no external frontend build step required for the local experiment):
   - `/` trace list page (picker/import)
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
+  - optional dev mode: `odag serve --dev [--web-dir ...]` serves frontend assets from disk and injects browser auto-reload on local file changes
 - UI includes:
   - trace list rows include creation time (`firstSeen`) to aid scanability when many traces exist
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)

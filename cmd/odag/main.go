@@ -47,6 +47,8 @@ func newRootCmd() *cobra.Command {
 func newServeCmd() *cobra.Command {
 	var listenAddr string
 	var dbPath string
+	var devMode bool
+	var webDir string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -58,6 +60,8 @@ func newServeCmd() *cobra.Command {
 			srv, err := server.New(server.Config{
 				ListenAddr: listenAddr,
 				DBPath:     dbPath,
+				DevMode:    devMode,
+				WebDir:     webDir,
 			})
 			if err != nil {
 				return err
@@ -73,6 +77,8 @@ func newServeCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&listenAddr, "listen", defaultListenAddr, "HTTP listen address")
 	cmd.Flags().StringVar(&dbPath, "db", defaultDBPath, "path to sqlite database")
+	cmd.Flags().BoolVar(&devMode, "dev", false, "serve web UI from local files with automatic browser reload on changes")
+	cmd.Flags().StringVar(&webDir, "web-dir", server.DefaultDevWebDir, "web UI directory used when --dev is enabled")
 
 	return cmd
 }

@@ -30,12 +30,15 @@ import (
 type Config struct {
 	ListenAddr string
 	DBPath     string
+	DevMode    bool
+	WebDir     string
 }
 
 type Server struct {
 	cfg   Config
 	store *store.Store
 	http  *http.Server
+	web   *webAssets
 }
 
 func New(cfg Config) (*Server, error) {
@@ -50,15 +53,21 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	web, err := newWebAssets(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	srv := &Server{
 		cfg:   cfg,
 		store: st,
+		web:   web,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", srv.handleHealthz)
 	mux.HandleFunc("GET /", srv.handleIndex)
+	mux.HandleFunc("GET /__odag_dev_hash", srv.handleDevHash)
 	mux.HandleFunc("POST /v1/traces", srv.handleTraceIngest)
 	mux.HandleFunc("POST /v1/logs", srv.handleNoopIngest)
 	mux.HandleFunc("POST /v1/metrics", srv.handleNoopIngest)
@@ -120,7 +129,23 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	serveWebAsset(w, r)
+	s.web.serve(w, r)
+}
+
+func (s *Server) handleDevHash(w http.ResponseWriter, r *http.Request) {
+	if s.web == nil || !s.web.devMode {
+		http.NotFound(w, r)
+		return
+	}
+	hash, err := s.web.devHash()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("dev hash: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(hash))
 }
 
 func (s *Server) handleListTraces(w http.ResponseWriter, r *http.Request) {

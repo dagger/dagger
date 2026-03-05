@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -243,6 +244,52 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if !strings.Contains(traceRec.Body.String(), "backBtn") {
 		t.Fatalf("expected trace page html, got %q", traceRec.Body.String())
 	}
+}
+
+func TestDevModeWebHashAndInjection(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+		DevMode:    true,
+		WebDir:     testWebDir(t),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	hashReq := httptest.NewRequest(http.MethodGet, "/__odag_dev_hash", nil)
+	hashRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(hashRec, hashReq)
+	if hashRec.Code != http.StatusOK {
+		t.Fatalf("dev hash failed: %d %s", hashRec.Code, hashRec.Body.String())
+	}
+	if strings.TrimSpace(hashRec.Body.String()) == "" {
+		t.Fatalf("expected non-empty dev hash")
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	listRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list page failed: %d %s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), "/__odag_dev_hash") {
+		t.Fatalf("expected dev reload script injection, got %q", listRec.Body.String())
+	}
+}
+
+func testWebDir(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	return filepath.Join(filepath.Dir(file), "web")
 }
 
 func kvString(t *testing.T, key, val string) *commonpb.KeyValue {
