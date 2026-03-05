@@ -87,6 +87,7 @@ type MutationEvent struct {
 	RawKind               string     `json:"rawKind"`
 	Operation             string     `json:"operation,omitempty"` // create, mutate
 	ObjectID              string     `json:"objectID,omitempty"`
+	Visible               bool       `json:"visible"`
 	MissingOutputState    bool       `json:"missingOutputState"`
 	Inputs                []InputRef `json:"inputs,omitempty"`
 }

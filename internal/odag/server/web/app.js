@@ -174,7 +174,7 @@ function buildFrameSteps(projection) {
   if (!projection) {
     return [];
   }
-  return (projection.events || []).filter((event) => Boolean(event.objectID));
+  return (projection.events || []).filter((event) => Boolean(event.objectID) && Boolean(event.visible));
 }
 
 function clampStep(step) {
@@ -407,6 +407,7 @@ function renderEvents() {
           <span>${escapeHTML(event.operation || "-")}</span>
           <span>${event.topLevel ? "yes" : "no"}</span>
           <span>${Number(event.callDepth || 0)}</span>
+          <span>${event.objectID ? (event.visible ? "yes" : "no") : "-"}</span>
           <span>${escapeHTML(shortDigest(event.objectID || ""))}</span>
         </div>
         <div class="event-sub">${escapeHTML(detail)}</div>

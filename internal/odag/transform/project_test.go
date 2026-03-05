@@ -191,9 +191,9 @@ func TestSnapshotAtStep(t *testing.T) {
 		},
 		Events: []MutationEvent{
 			{SpanID: "sx", StartUnixNano: 1, EndUnixNano: 9, Kind: "call"},
-			{SpanID: "s1", StartUnixNano: 1, EndUnixNano: 10, Kind: "create", ObjectID: "obj-1"},
-			{SpanID: "s2", StartUnixNano: 11, EndUnixNano: 20, Kind: "mutate", ObjectID: "obj-1"},
-			{SpanID: "s3", StartUnixNano: 12, EndUnixNano: 20, Kind: "mutate", ObjectID: "obj-1"},
+			{SpanID: "s1", StartUnixNano: 1, EndUnixNano: 10, Kind: "create", ObjectID: "obj-1", Visible: true},
+			{SpanID: "s2", StartUnixNano: 11, EndUnixNano: 20, Kind: "mutate", ObjectID: "obj-1", Visible: true},
+			{SpanID: "s3", StartUnixNano: 12, EndUnixNano: 20, Kind: "mutate", ObjectID: "obj-1", Visible: true},
 		},
 		EndUnixNano: 20,
 	}
@@ -423,10 +423,17 @@ func TestProjectTraceDropsTopLevelCallOnlyFanoutObjects(t *testing.T) {
 		t.Fatalf("unexpected object types: %#v", types)
 	}
 
+	var foundHidden bool
 	for _, event := range proj.Events {
 		if event.Name == "Module.source" && event.ObjectID != "" {
-			t.Fatalf("expected Module.source call-only fan-out object to be pruned from events, got %+v", event)
+			foundHidden = true
+			if event.Visible {
+				t.Fatalf("expected Module.source fan-out object event to be hidden, got %+v", event)
+			}
 		}
+	}
+	if !foundHidden {
+		t.Fatalf("expected Module.source call-only fan-out event to remain in event stream")
 	}
 }
 
@@ -476,10 +483,17 @@ func TestProjectTracePrunesNonTopLevelOnlyObjects(t *testing.T) {
 		t.Fatalf("expected kept object type Container, got %s", proj.Objects[0].TypeName)
 	}
 
+	var foundHidden bool
 	for _, event := range proj.Events {
 		if event.Name == "Query.http" && event.ObjectID != "" {
-			t.Fatalf("expected non-top-level object event to be pruned: %+v", event)
+			foundHidden = true
+			if event.Visible {
+				t.Fatalf("expected non-top-level object event to be hidden: %+v", event)
+			}
 		}
+	}
+	if !foundHidden {
+		t.Fatalf("expected non-top-level object event to remain in event stream")
 	}
 }
 

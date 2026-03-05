@@ -243,16 +243,10 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 		if event.Internal {
 			continue
 		}
-		if event.ObjectID == "" {
-			// Keep top-level calls even if they don't return an object.
-			if event.TopLevel {
-				filteredEvents = append(filteredEvents, event)
-			}
-			continue
+		if event.ObjectID != "" {
+			_, event.Visible = keptObjectIDs[event.ObjectID]
 		}
-		if _, ok := keptObjectIDs[event.ObjectID]; ok {
-			filteredEvents = append(filteredEvents, event)
-		}
+		filteredEvents = append(filteredEvents, event)
 	}
 
 	return &TraceProjection{
@@ -332,7 +326,7 @@ func SnapshotAtStep(proj *TraceProjection, step int) Snapshot {
 	eventIndexBySpanID := make(map[string]int, len(proj.Events))
 	for idx, event := range proj.Events {
 		eventIndexBySpanID[event.SpanID] = idx
-		if event.ObjectID != "" {
+		if event.ObjectID != "" && event.Visible {
 			stepEventIndexes = append(stepEventIndexes, idx)
 		}
 	}
