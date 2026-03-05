@@ -38,14 +38,23 @@ func New(
 	// Base image for go build environment
 	// +optional
 	base *dagger.Container,
+
+	// Explicit version to set on the Dagger CLI.
+	// +optional
+	version string,
 ) (*CliDev, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	v := dag.Version()
-	version, err := v.Version(ctx)
-	if err != nil {
-		return nil, err
+
+	var err error
+	if version == "" {
+		version, err = v.Version(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	imageTag, err := v.ImageTag(ctx)
 	if err != nil {
 		return nil, err

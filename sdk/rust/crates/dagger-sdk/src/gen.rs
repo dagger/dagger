@@ -1108,6 +1108,41 @@ impl GitRepositoryId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct HealthcheckConfigId(pub String);
+impl From<&str> for HealthcheckConfigId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for HealthcheckConfigId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<HealthcheckConfigId> for HealthcheckConfig {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<HealthcheckConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<HealthcheckConfigId> for HealthcheckConfigId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<HealthcheckConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<HealthcheckConfigId, DaggerError>(self) })
+    }
+}
+impl HealthcheckConfigId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct HostId(pub String);
 impl From<&str> for HostId {
     fn from(value: &str) -> Self {
@@ -2687,6 +2722,15 @@ impl Check {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If the check failed, this is the error
+    pub fn error(&self) -> Error {
+        let query = self.selection.select("error");
+        Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Check.
     pub async fn id(&self) -> Result<CheckId, DaggerError> {
         let query = self.selection.select("id");
@@ -2984,6 +3028,27 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithDockerHealthcheckOpts<'a> {
+    /// Interval between running healthcheck. Example: "30s"
+    #[builder(setter(into, strip_option), default)]
+    pub interval: Option<&'a str>,
+    /// The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+    #[builder(setter(into, strip_option), default)]
+    pub retries: Option<isize>,
+    /// When true, command must be a single element, which is run using the container's shell
+    #[builder(setter(into, strip_option), default)]
+    pub shell: Option<bool>,
+    /// StartInterval configures the duration between checks during the startup phase. Example: "5s"
+    #[builder(setter(into, strip_option), default)]
+    pub start_interval: Option<&'a str>,
+    /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+    #[builder(setter(into, strip_option), default)]
+    pub start_period: Option<&'a str>,
+    /// Healthcheck timeout. Example: "3s"
+    #[builder(setter(into, strip_option), default)]
+    pub timeout: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEntrypointOpts {
@@ -3345,6 +3410,15 @@ impl Container {
             query = query.arg("expand", expand);
         }
         Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container's configured docker healthcheck.
+    pub fn docker_healthcheck(&self) -> HealthcheckConfig {
+        let query = self.selection.select("dockerHealthcheck");
+        HealthcheckConfig {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4007,6 +4081,64 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the specificed docker healtcheck command set.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Healthcheck command to execute. Example: ["go", "run", "main.go"].
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_docker_healthcheck(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withDockerHealthcheck");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the specificed docker healtcheck command set.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Healthcheck command to execute. Example: ["go", "run", "main.go"].
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_docker_healthcheck_opts<'a>(
+        &self,
+        args: Vec<impl Into<String>>,
+        opts: ContainerWithDockerHealthcheckOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withDockerHealthcheck");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(shell) = opts.shell {
+            query = query.arg("shell", shell);
+        }
+        if let Some(interval) = opts.interval {
+            query = query.arg("interval", interval);
+        }
+        if let Some(timeout) = opts.timeout {
+            query = query.arg("timeout", timeout);
+        }
+        if let Some(start_period) = opts.start_period {
+            query = query.arg("startPeriod", start_period);
+        }
+        if let Some(start_interval) = opts.start_interval {
+            query = query.arg("startInterval", start_interval);
+        }
+        if let Some(retries) = opts.retries {
+            query = query.arg("retries", retries);
         }
         Container {
             proc: self.proc.clone(),
@@ -5048,6 +5180,15 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container without a configured docker healtcheck command.
+    pub fn without_docker_healthcheck(&self) -> Container {
+        let query = self.selection.select("withoutDockerHealthcheck");
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -9711,6 +9852,9 @@ pub struct GitRefTreeOpts {
     /// Set to true to discard .git directory.
     #[builder(setter(into, strip_option), default)]
     pub discard_git_dir: Option<bool>,
+    /// Set to true to populate tag refs in the local checkout .git.
+    #[builder(setter(into, strip_option), default)]
+    pub include_tags: Option<bool>,
 }
 impl GitRef {
     /// The resolved commit id at this ref.
@@ -9773,6 +9917,9 @@ impl GitRef {
         }
         if let Some(depth) = opts.depth {
             query = query.arg("depth", depth);
+        }
+        if let Some(include_tags) = opts.include_tags {
+            query = query.arg("includeTags", include_tags);
         }
         Directory {
             proc: self.proc.clone(),
@@ -9939,6 +10086,54 @@ impl GitRepository {
     /// The URL of the git repository.
     pub async fn url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("url");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct HealthcheckConfig {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl HealthcheckConfig {
+    /// Healthcheck command arguments.
+    pub async fn args(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("args");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this HealthcheckConfig.
+    pub async fn id(&self) -> Result<HealthcheckConfigId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Interval between running healthcheck. Example:30s
+    pub async fn interval(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("interval");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+    pub async fn retries(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("retries");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Healthcheck command is a shell command.
+    pub async fn shell(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("shell");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// StartInterval configures the duration between checks during the startup phase. Example:5s
+    pub async fn start_interval(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("startInterval");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+    pub async fn start_period(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("startPeriod");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Healthcheck timeout. Example:3s
+    pub async fn timeout(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("timeout");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -11247,6 +11442,15 @@ impl ModuleSource {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+    pub fn generated_context_changeset(&self) -> Changeset {
+        let query = self.selection.select("generatedContextChangeset");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
@@ -11907,6 +12111,15 @@ impl Query {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
         CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates an empty changeset
+    pub fn changeset(&self) -> Changeset {
+        let query = self.selection.select("changeset");
+        Changeset {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -12875,6 +13088,25 @@ impl Query {
             }),
         );
         GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a HealthcheckConfig from its ID.
+    pub fn load_healthcheck_config_from_id(
+        &self,
+        id: impl IntoID<HealthcheckConfigId>,
+    ) -> HealthcheckConfig {
+        let mut query = self.selection.select("loadHealthcheckConfigFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        HealthcheckConfig {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

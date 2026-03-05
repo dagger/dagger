@@ -29,6 +29,15 @@ class Check extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * If the check failed, this is the error
+     */
+    public function error(): Error
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Check.
      */
     public function id(): CheckId

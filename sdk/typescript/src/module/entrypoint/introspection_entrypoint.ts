@@ -30,7 +30,7 @@ function getTsSourceCodeFiles(dir: string): string[] {
 
       return []
     })
-    .reduce((p, c) => [...c, ...p])
+    .reduce((p, c) => [...c, ...p], [])
 }
 
 async function main() {

@@ -107,8 +107,8 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 					}).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Regexp(t, `changesetFailure.*ERROR`, out)
-				require.Contains(t, out, "Error: get patch")
+				require.Regexp(t, `changeset-failure.*ERROR`, out)
+				require.Contains(t, out, "could not generate the changeset")
 			})
 		})
 	}

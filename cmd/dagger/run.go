@@ -20,11 +20,11 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var runCmd = &cobra.Command{

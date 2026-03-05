@@ -2,23 +2,27 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/codes"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
 	generateListMode bool
 )
+
+//go:embed generators.graphql
+var loadGeneratorsQuery string
 
 func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
@@ -55,7 +59,7 @@ Examples:
 					generators = mod.Generators()
 				}
 				if generateListMode {
-					return listGenerators(ctx, generators, cmd)
+					return listGenerators(ctx, dag, generators, cmd)
 				} else {
 					return runGenerators(ctx, dag, generators, cmd)
 				}
@@ -64,33 +68,20 @@ Examples:
 	},
 }
 
-func loadGeneratorGroupInfo(ctx context.Context, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {
-	ctx, span := Tracer().Start(ctx, "fetch generator information")
-	defer span.End()
-
-	generators, err := generatorGroup.List(ctx)
+func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {
+	items, err := loadGroupListDetails(ctx, dag, "fetch generator information",
+		func(ctx context.Context) (any, error) { return generatorGroup.ID(ctx) },
+		loadGeneratorsQuery, "GeneratorGroupListDetails",
+	)
 	if err != nil {
 		return nil, err
 	}
-	info := &GeneratorGroupInfo{}
-	for _, generator := range generators {
-		generatorInfo := &GeneratorInfo{}
-
-		name, err := generator.Name(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		generatorInfo.Name = cliName(name)
-
-		description, err := generator.Description(ctx)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		generatorInfo.Description = description
-
-		info.Generators = append(info.Generators, generatorInfo)
+	info := &GeneratorGroupInfo{Generators: make([]*GeneratorInfo, 0, len(items))}
+	for _, item := range items {
+		info.Generators = append(info.Generators, &GeneratorInfo{
+			Name:        cliName(item.Name),
+			Description: item.Description,
+		})
 	}
 	return info, nil
 }
@@ -105,8 +96,8 @@ type GeneratorInfo struct {
 }
 
 // 'dagger generators -l'
-func listGenerators(ctx context.Context, generatorGroup *dagger.GeneratorGroup, cmd *cobra.Command) error {
-	info, err := loadGeneratorGroupInfo(ctx, generatorGroup)
+func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, cmd *cobra.Command) error {
+	info, err := loadGeneratorGroupInfo(ctx, dag, generatorGroup)
 	if err != nil {
 		return err
 	}
@@ -134,15 +125,15 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	cs := generatorGroup.
+	cs, err := generatorGroup.
 		Run().
 		Changes(
 			dagger.GeneratorGroupChangesOpts{
 				OnConflict: dagger.ChangesetsMergeConflictFailEarly,
 			},
-		)
-
-	ctx, span := Tracer().Start(ctx, "applying changes")
-	defer telemetry.EndWithCause(span, &rerr)
+		).Sync(ctx)
+	if err != nil {
+		return err
+	}
 	return handleChangesetResponse(ctx, dag, cs, autoApply)
 }

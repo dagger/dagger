@@ -226,6 +226,9 @@ type GitRefID string
 // The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 type GitRepositoryID string
 
+// The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+type HealthcheckConfigID string
+
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
@@ -1226,6 +1229,15 @@ func (r *Check) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// If the check failed, this is the error
+func (r *Check) Error() *Error {
+	q := r.query.Select("error")
+
+	return &Error{
+		query: q,
+	}
+}
+
 // A unique identifier for this Check.
 func (r *Check) ID(ctx context.Context) (CheckID, error) {
 	if r.id != nil {
@@ -1691,6 +1703,15 @@ func (r *Container) Directory(path string, opts ...ContainerDirectoryOpts) *Dire
 	q = q.Arg("path", path)
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this container's configured docker healthcheck.
+func (r *Container) DockerHealthcheck() *HealthcheckConfig {
+	q := r.query.Select("dockerHealthcheck")
+
+	return &HealthcheckConfig{
 		query: q,
 	}
 }
@@ -2481,6 +2502,58 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 	}
 }
 
+// ContainerWithDockerHealthcheckOpts contains options for Container.WithDockerHealthcheck
+type ContainerWithDockerHealthcheckOpts struct {
+	// When true, command must be a single element, which is run using the container's shell
+	Shell bool
+	// Interval between running healthcheck. Example: "30s"
+	Interval string
+	// Healthcheck timeout. Example: "3s"
+	Timeout string
+	// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+	StartPeriod string
+	// StartInterval configures the duration between checks during the startup phase. Example: "5s"
+	StartInterval string
+	// The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+	Retries int
+}
+
+// Retrieves this container with the specificed docker healtcheck command set.
+func (r *Container) WithDockerHealthcheck(args []string, opts ...ContainerWithDockerHealthcheckOpts) *Container {
+	q := r.query.Select("withDockerHealthcheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `shell` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Shell) {
+			q = q.Arg("shell", opts[i].Shell)
+		}
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `startPeriod` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartPeriod) {
+			q = q.Arg("startPeriod", opts[i].StartPeriod)
+		}
+		// `startInterval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartInterval) {
+			q = q.Arg("startInterval", opts[i].StartInterval)
+		}
+		// `retries` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Retries) {
+			q = q.Arg("retries", opts[i].Retries)
+		}
+	}
+	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithEntrypointOpts contains options for Container.WithEntrypoint
 type ContainerWithEntrypointOpts struct {
 	// Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
@@ -3170,6 +3243,15 @@ func (r *Container) WithoutDirectory(path string, opts ...ContainerWithoutDirect
 		}
 	}
 	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container without a configured docker healtcheck command.
+func (r *Container) WithoutDockerHealthcheck() *Container {
+	q := r.query.Select("withoutDockerHealthcheck")
 
 	return &Container{
 		query: q,
@@ -8295,6 +8377,8 @@ type GitRefTreeOpts struct {
 	//
 	// Default: 1
 	Depth int
+	// Set to true to populate tag refs in the local checkout .git.
+	IncludeTags bool
 }
 
 // The filesystem tree at this ref.
@@ -8308,6 +8392,10 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 		// `depth` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Depth) {
 			q = q.Arg("depth", opts[i].Depth)
+		}
+		// `includeTags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeTags) {
+			q = q.Arg("includeTags", opts[i].IncludeTags)
 		}
 	}
 
@@ -8487,6 +8575,153 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 		return *r.url, nil
 	}
 	q := r.query.Select("url")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Image healthcheck configuration.
+type HealthcheckConfig struct {
+	query *querybuilder.Selection
+
+	id            *HealthcheckConfigID
+	interval      *string
+	retries       *int
+	shell         *bool
+	startInterval *string
+	startPeriod   *string
+	timeout       *string
+}
+
+func (r *HealthcheckConfig) WithGraphQLQuery(q *querybuilder.Selection) *HealthcheckConfig {
+	return &HealthcheckConfig{
+		query: q,
+	}
+}
+
+// Healthcheck command arguments.
+func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
+	q := r.query.Select("args")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this HealthcheckConfig.
+func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response HealthcheckConfigID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HealthcheckConfig) XXX_GraphQLType() string {
+	return "HealthcheckConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HealthcheckConfig) XXX_GraphQLIDType() string {
+	return "HealthcheckConfigID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HealthcheckConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HealthcheckConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Interval between running healthcheck. Example:30s
+func (r *HealthcheckConfig) Interval(ctx context.Context) (string, error) {
+	if r.interval != nil {
+		return *r.interval, nil
+	}
+	q := r.query.Select("interval")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+func (r *HealthcheckConfig) Retries(ctx context.Context) (int, error) {
+	if r.retries != nil {
+		return *r.retries, nil
+	}
+	q := r.query.Select("retries")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Healthcheck command is a shell command.
+func (r *HealthcheckConfig) Shell(ctx context.Context) (bool, error) {
+	if r.shell != nil {
+		return *r.shell, nil
+	}
+	q := r.query.Select("shell")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// StartInterval configures the duration between checks during the startup phase. Example:5s
+func (r *HealthcheckConfig) StartInterval(ctx context.Context) (string, error) {
+	if r.startInterval != nil {
+		return *r.startInterval, nil
+	}
+	q := r.query.Select("startInterval")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+func (r *HealthcheckConfig) StartPeriod(ctx context.Context) (string, error) {
+	if r.startPeriod != nil {
+		return *r.startPeriod, nil
+	}
+	q := r.query.Select("startPeriod")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Healthcheck timeout. Example:3s
+func (r *HealthcheckConfig) Timeout(ctx context.Context) (string, error) {
+	if r.timeout != nil {
+		return *r.timeout, nil
+	}
+	q := r.query.Select("timeout")
 
 	var response string
 
@@ -10530,6 +10765,15 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+func (r *ModuleSource) GeneratedContextChangeset() *Changeset {
+	q := r.query.Select("generatedContextChangeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
@@ -11331,6 +11575,15 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
+// Creates an empty changeset
+func (r *Client) Changeset() *Changeset {
+	q := r.query.Select("changeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Dagger Cloud configuration and state
 func (r *Client) Cloud() *Cloud {
 	q := r.query.Select("cloud")
@@ -12055,6 +12308,16 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	q = q.Arg("id", id)
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Load a HealthcheckConfig from its ID.
+func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
+	q := r.query.Select("loadHealthcheckConfigFromID")
+	q = q.Arg("id", id)
+
+	return &HealthcheckConfig{
 		query: q,
 	}
 }

@@ -12,9 +12,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 

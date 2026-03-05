@@ -45,7 +45,6 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/ebpf/filetracer"
 	"github.com/dagger/dagger/engine/ebpf/ovltracer"
@@ -53,6 +52,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const gracefulStopTimeout = 5 * time.Minute // need to sync disks, which could be expensive

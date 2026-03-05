@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -14,6 +15,8 @@ type Check struct {
 	Node      *ModTreeNode `json:"node"`
 	Completed bool         `field:"true" doc:"Whether the check completed"`
 	Passed    bool         `field:"true" doc:"Whether the check passed"`
+
+	Error dagql.Nullable[dagql.ObjectResult[*Error]] `field:"true" doc:"If the check failed, this is the error"`
 }
 
 type CheckGroup struct {
@@ -73,7 +76,17 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
 			err := check.Node.RunCheck(ctx, nil, nil)
 			check.Completed = true
-			check.Passed = (err == nil)
+			if err != nil {
+				check.Passed = false
+				errObj, errErr := NewErrorFromErr(ctx, err)
+				if errErr != nil {
+					return fmt.Errorf("create error from %w (%T): %w", err, err, errErr)
+				}
+				check.Error.Value = errObj
+				check.Error.Valid = true
+			} else {
+				check.Passed = true
+			}
 			return err
 		})
 	}
@@ -183,6 +196,16 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 
 	err := c.Node.RunCheck(ctx, nil, nil)
 	c.Completed = true
-	c.Passed = (err == nil)
+	if err != nil {
+		c.Passed = false
+		errObj, errErr := NewErrorFromErr(ctx, err)
+		if errErr != nil {
+			return nil, fmt.Errorf("create error from %w (%T): %w", err, err, errErr)
+		}
+		c.Error.Value = errObj
+		c.Error.Valid = true
+	} else {
+		c.Passed = true
+	}
 	return c, nil
 }

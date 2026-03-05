@@ -334,6 +334,10 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("onConflict").Doc(`What to do on a merge conflict`),
 			),
 	}.Install(srv)
+	dagql.Fields[*core.Query]{
+		dagql.Func("changeset", s.changeset).
+			Doc(`Creates an empty changeset`),
+	}.Install(srv)
 
 	ChangesetMergeConflictEnum.Install(srv)
 	ChangesetsMergeConflictEnum.Install(srv)
@@ -1289,6 +1293,10 @@ func (s *directorySchema) changesetWithChangesets(ctx context.Context, parent da
 	onConflictStrategy := mergeConflictsStrategyToCore(args.OnConflict)
 
 	return parent.Self().WithChangesets(ctx, changes, onConflictStrategy)
+}
+
+func (s *directorySchema) changeset(ctx context.Context, q *core.Query, args struct{}) (*core.Changeset, error) {
+	return core.NewEmptyChangeset(ctx)
 }
 
 type dirDockerBuildArgs struct {

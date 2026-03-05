@@ -184,14 +184,22 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	if iface.mod.ResultID == nil {
 		return fmt.Errorf("installing interface %q too early", iface.typeDef.Name)
 	}
-	class := dagql.NewClass(dag, dagql.ClassOpts[*InterfaceAnnotatedValue]{
+
+	classOpts := dagql.ClassOpts[*InterfaceAnnotatedValue]{
 		Typed: &InterfaceAnnotatedValue{
 			TypeDef:   iface.typeDef,
 			IfaceType: iface,
 		},
-	})
+	}
 
-	dag.InstallObject(class)
+	installDirectives := []*ast.Directive{}
+	if iface.typeDef.SourceMap.Valid {
+		classOpts.SourceMap = iface.typeDef.SourceMap.Value.TypeDirective()
+		installDirectives = append(installDirectives, iface.typeDef.SourceMap.Value.TypeDirective())
+	}
+
+	class := dagql.NewClass(dag, classOpts)
+	dag.InstallObject(class, installDirectives...)
 
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
@@ -358,7 +366,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	}
 
 	class.Install(fields...)
-	dag.InstallObject(class)
+	dag.InstallObject(class, installDirectives...)
 
 	idScalar := DynamicID{
 		typeName: iface.typeDef.Name,

@@ -5,11 +5,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"dagger/python-sdk-dev/internal/dagger"
-
-	"github.com/dagger/dagger/util/parallel"
 )
 
 // A toolchain to develop the Dagger Python SDK
@@ -131,32 +130,43 @@ func (t PythonSdkDev) WithDirectory(
 	return t
 }
 
-// +check
-// Test the Python SDK
-func (t PythonSdkDev) Test(ctx context.Context) error {
-	// FIXME: apply Erik's nested fix fix 2025-nov-7
-	jobs := parallel.New()
-	for _, version := range supportedVersions {
-		jobs = jobs.WithJob("test with python version "+version, func(ctx context.Context) error {
-			return t.TestSuite(version, false).RunDefault(ctx)
-		})
+// Test suite for python 3.10
+func (t PythonSdkDev) Python310() *TestForPythonVersion {
+	return &TestForPythonVersion{
+		Container: t.DevContainer,
+		Version:   "3.10",
 	}
-	return jobs.Run(ctx)
 }
 
-// TestSuite to run unit and other tests
-func (t PythonSdkDev) TestSuite(
-	// Python version
-	// +optional
-	version string,
-	// Disable nested execution for the test runs
-	// +optional
-	disableNestedExec bool,
-) *TestSuite {
-	return &TestSuite{
-		Container:         t.DevContainer,
-		Version:           version,
-		DisableNestedExec: disableNestedExec,
+// Test suite for python 3.11
+func (t PythonSdkDev) Python311() *TestForPythonVersion {
+	return &TestForPythonVersion{
+		Container: t.DevContainer,
+		Version:   "3.11",
+	}
+}
+
+// Test suite for python 3.12
+func (t PythonSdkDev) Python312() *TestForPythonVersion {
+	return &TestForPythonVersion{
+		Container: t.DevContainer,
+		Version:   "3.12",
+	}
+}
+
+// Test suite for python 3.13
+func (t PythonSdkDev) Python313() *TestForPythonVersion {
+	return &TestForPythonVersion{
+		Container: t.DevContainer,
+		Version:   "3.13",
+	}
+}
+
+// Test suite for python 3.14
+func (t PythonSdkDev) Python314() *TestForPythonVersion {
+	return &TestForPythonVersion{
+		Container: t.DevContainer,
+		Version:   "3.14",
 	}
 }
 
@@ -312,4 +322,67 @@ func (t PythonSdkDev) Docs() *Docs {
 	return &Docs{
 		Container: t.DevContainer,
 	}
+}
+
+func (t PythonSdkDev) Provision(
+	ctx context.Context,
+	// Dagger binary to use for test
+	cliBin *dagger.File,
+	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
+	// +optional
+	runnerHost string,
+) (*dagger.Container, error) {
+	archiveName := fmt.Sprintf("dagger_v0.x.y_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	checksumsName := "checksums.txt"
+
+	httpServer := t.DevContainer.
+		WithMountedFile("/src/dagger", cliBin).
+		WithWorkdir("/work").
+		WithExec([]string{"tar", "cvzf", archiveName, "-C", "/src", "dagger"}).
+		WithExec(
+			[]string{"sha256sum", archiveName},
+			dagger.ContainerWithExecOpts{RedirectStdout: checksumsName}).
+		WithExec([]string{"python", "-m", "http.server"}).
+		WithExposedPort(8000).
+		AsService()
+
+	httpServerURL, err := httpServer.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
+	if err != nil {
+		return nil, err
+	}
+	archiveURL := fmt.Sprintf("%s/%s", httpServerURL, archiveName)
+	checksumsURL := fmt.Sprintf("%s/%s", archiveURL, checksumsName)
+
+	dockerVersion := "24.0.7"
+
+	ctr := dag.Dockerd().Attach(
+		t.DevContainer.WithMountedFile(
+			"/opt/docker.tgz",
+			dag.HTTP(fmt.Sprintf("https://download.docker.com/linux/static/stable/%s/docker-%s.tgz", runtime.GOARCH, dockerVersion)),
+			dagger.ContainerWithMountedFileOpts{Owner: "root"}).
+			WithExec([]string{
+				"tar",
+				"xzvf",
+				"/opt/docker.tgz",
+				"--strip-components=1",
+				"-C",
+				"/usr/local/bin",
+				"docker/docker",
+			}),
+		dagger.DockerdAttachOpts{DockerVersion: dockerVersion})
+
+	if runnerHost != "" {
+		ctr = ctr.WithEnvVariable(
+			"_EXPERIMENTAL_DAGGER_RUNNER_HOST",
+			runnerHost)
+	}
+
+	return ctr.
+			WithServiceBinding("http_server", httpServer).
+			WithEnvVariable("_INTERNAL_DAGGER_TEST_CLI_URL", archiveURL).
+			WithEnvVariable("_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL", checksumsURL).
+			WithExec(
+				[]string{"pytest", "-m", "provision"},
+				dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}),
+		nil
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/parallel"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk"
@@ -28,6 +27,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
@@ -211,6 +211,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
+
+		dagql.NodeFunc("generatedContextChangeset", s.moduleSourceGeneratedContextChangeset).
+			Doc(`The generated files and directories made on top of the module source's context directory, returned as a Changeset.`),
 
 		dagql.Func("asString", s.moduleSourceAsString).
 			Doc(`A human readable ref string representation of this module source.`),
@@ -2765,28 +2768,32 @@ func (s *moduleSourceSchema) runClientGenerator(
 	return genDirInst, nil
 }
 
-func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
+// runGeneratedContext runs codegen, client generation, and dagger.json writing for the given
+// module source, returning the original context directory and the fully-generated context
+// directory. Callers can use these two directories to produce either a diff or a Changeset.
+func (s *moduleSourceSchema) runGeneratedContext(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
-) (res dagql.ObjectResult[*core.Directory], _ error) {
+) (originalCtxDir dagql.ObjectResult[*core.Directory], genDirInst dagql.ObjectResult[*core.Directory], _ error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get dag server: %w", err)
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
 	modCfg, err := s.loadModuleSourceConfig(srcInst.Self())
 	if err != nil {
-		return res, fmt.Errorf("failed to load module source config: %w", err)
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to load module source config: %w", err)
 	}
 
+	originalCtxDir = srcInst.Self().ContextDirectory
+
 	// run codegen too if we have a name and SDK
-	genDirInst := srcInst.Self().ContextDirectory
+	genDirInst = originalCtxDir
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
 		updatedGenDirInst, err := s.runCodegen(ctx, srcInst)
 		var missingImplErr ErrSDKCodegenNotImplemented
 		if err != nil && !errors.As(err, &missingImplErr) {
-			return res, fmt.Errorf("failed to run codegen: %w", err)
+			return originalCtxDir, genDirInst, fmt.Errorf("failed to run codegen: %w", err)
 		}
 		if err == nil {
 			genDirInst = updatedGenDirInst
@@ -2797,14 +2804,14 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	for _, client := range modCfg.Clients {
 		genDirInst, err = s.runClientGenerator(ctx, srcInst, genDirInst, client)
 		if err != nil {
-			return res, fmt.Errorf("failed to generate client %s: %w", client.Generator, err)
+			return originalCtxDir, genDirInst, fmt.Errorf("failed to generate client %s: %w", client.Generator, err)
 		}
 	}
 
 	// write dagger.json to the generated context directory
 	modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
 	if err != nil {
-		return res, fmt.Errorf("failed to encode module config: %w", err)
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to encode module config: %w", err)
 	}
 	modCfgBytes = append(modCfgBytes, '\n')
 	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, modules.Filename)
@@ -2819,11 +2826,29 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		},
 	)
 	if err != nil {
-		return res, fmt.Errorf("failed to add updated dagger.json to context dir: %w", err)
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated dagger.json to context dir: %w", err)
+	}
+
+	return originalCtxDir, genDirInst, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (res dagql.ObjectResult[*core.Directory], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	originalCtxDir, genDirInst, err := s.runGeneratedContext(ctx, srcInst)
+	if err != nil {
+		return res, err
 	}
 
 	// return just the diff of what we generated relative to the original context directory
-	err = dag.Select(ctx, srcInst.Self().ContextDirectory, &genDirInst,
+	err = dag.Select(ctx, originalCtxDir, &res,
 		dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
@@ -2835,7 +2860,37 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		return res, fmt.Errorf("failed to get context dir diff: %w", err)
 	}
 
-	return genDirInst, nil
+	return res, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	originalCtxDir, genDirInst, err := s.runGeneratedContext(ctx, srcInst)
+	if err != nil {
+		return res, err
+	}
+
+	// Build the changeset: genDirInst.Changes(originalCtxDir).
+	if err := dag.Select(ctx, genDirInst, &res,
+		dagql.Selector{
+			Field: "changes",
+			Args: []dagql.NamedInput{
+				{Name: "from", Value: dagql.NewID[*core.Directory](originalCtxDir.ID())},
+			},
+		},
+	); err != nil {
+		return res, fmt.Errorf("failed to compute changeset: %w", err)
+	}
+
+	return res, nil
 }
 
 func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInstContentHashed dagql.ObjectResult[*core.ModuleSource], mod *core.Module) (*core.Module, error) {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"

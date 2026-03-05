@@ -20,7 +20,13 @@ var Fail = ExitError{Code: 1}
 
 func (e ExitError) Error() string {
 	// Not actually printed anywhere.
-	return fmt.Sprintf("exit code %d", e.Code)
+	msg := fmt.Sprintf("exit code %d", e.Code)
+	if e.Original != nil {
+		// Be sure to include the original error in the message so that we can still
+		// parse out error origins.
+		msg += "\n\n" + e.Original.Error()
+	}
+	return msg
 }
 
 func (e ExitError) Unwrap() error {
