@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,6 +22,7 @@ const (
 	defaultListenAddr = "127.0.0.1:5454"
 	defaultDBPath     = ".odag/odag.db"
 	odagServerEnvVar  = "ODAG_SERVER"
+	runInterruptGrace = 3 * time.Second
 )
 
 func main() {
@@ -88,12 +90,20 @@ func newRunCmd() *cobra.Command {
 	inheritTraceContext := false
 
 	cmd := &cobra.Command{
-		Use:   "run <command> [args...]",
-		Short: "Run a command with ODAG OTEL interception",
-		Args:  cobra.MinimumNArgs(1),
+		Use:          "run <command> [args...]",
+		Short:        "Run a command with ODAG OTEL interception",
+		Args:         cobra.MinimumNArgs(1),
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			runCtx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+
 			healthz := serverURL + "/healthz"
-			resp, err := http.Get(healthz) //nolint:gosec
+			healthReq, err := http.NewRequestWithContext(runCtx, http.MethodGet, healthz, nil)
+			if err != nil {
+				return fmt.Errorf("build health check request: %w", err)
+			}
+			resp, err := http.DefaultClient.Do(healthReq) //nolint:gosec
 			if err != nil {
 				return fmt.Errorf("odag server unavailable at %s (run `odag serve`): %w", serverURL, err)
 			}
@@ -102,7 +112,7 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("odag server unhealthy (%s), got status %d", serverURL, resp.StatusCode)
 			}
 
-			sub := exec.CommandContext(cmd.Context(), args[0], args[1:]...) //nolint:gosec
+			sub := exec.Command(args[0], args[1:]...) //nolint:gosec
 			sub.Stdin = os.Stdin
 			sub.Stdout = os.Stdout
 			sub.Stderr = os.Stderr
@@ -115,13 +125,42 @@ func newRunCmd() *cobra.Command {
 				"OTEL_EXPORTER_OTLP_TRACES_LIVE=1",
 			)
 
-			err = sub.Run()
+			if err := sub.Start(); err != nil {
+				return err
+			}
+
+			waitCh := make(chan error, 1)
+			go func() {
+				waitCh <- sub.Wait()
+			}()
+
+			select {
+			case err := <-waitCh:
+				return runExitErr(err)
+			case <-runCtx.Done():
+				interruptProcess(sub.Process)
+			}
+
+			select {
+			case err := <-waitCh:
+				return runExitErr(err)
+			case <-time.After(runInterruptGrace):
+				killProcess(sub.Process)
+			}
+
+			err = <-waitCh
 			if err == nil {
-				return nil
+				return cmdErrf(130)
 			}
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
+				if exitErr.ExitCode() == -1 {
+					return cmdErrf(130)
+				}
 				return cmdErrf(exitErr.ExitCode())
+			}
+			if errors.Is(runCtx.Err(), context.Canceled) {
+				return cmdErrf(130)
 			}
 			return err
 		},
@@ -190,6 +229,35 @@ func cmdErrf(code int) error {
 		return nil
 	}
 	return cmdExitError{code: code}
+}
+
+func runExitErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code := exitErr.ExitCode()
+		if code == -1 {
+			code = 130
+		}
+		return cmdErrf(code)
+	}
+	return err
+}
+
+func interruptProcess(p *os.Process) {
+	if p == nil {
+		return
+	}
+	_ = p.Signal(os.Interrupt)
+}
+
+func killProcess(p *os.Process) {
+	if p == nil {
+		return
+	}
+	_ = p.Kill()
 }
 
 func runEnv(base []string, inheritTraceContext bool) []string {
