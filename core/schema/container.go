@@ -1150,6 +1150,12 @@ func (s *containerSchema) withExecCacheKey(
 	args containerExecArgs,
 	req dagql.GetCacheConfigRequest,
 ) (*dagql.GetCacheConfigResponse, error) {
+	if parent.Self().HasWorkspaceMount() {
+		// WSFS runtime tracing is not implemented yet. Keep this conservative to
+		// avoid stale hits when workspace-backed content can change.
+		return dagql.CachePerCall(ctx, parent, args, req)
+	}
+
 	argDigest, err := args.Digest()
 	if err != nil {
 		return nil, err
