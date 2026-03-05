@@ -197,7 +197,21 @@ func (srv *Server) gc() {
 	if len(srv.workerGCPolicies) == 0 {
 		return
 	}
-	report, err := srv.baseDagqlCache.Prune(context.Background(), srv.workerGCPolicies)
+
+	dstat, err := disk.GetDiskStat(srv.rootDir)
+	if err != nil {
+		bklog.G(context.Background()).Warnf("gc skipped: failed to get disk stats: %+v", err)
+		return
+	}
+
+	// Refresh policy free-space inputs per GC pass. The default policy values are
+	// static and must not be mutated in place.
+	prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
+	for i := range prunePolicies {
+		prunePolicies[i].CurrentFreeSpace = dstat.Free
+	}
+
+	report, err := srv.baseDagqlCache.Prune(context.Background(), prunePolicies)
 	if err != nil {
 		bklog.G(context.Background()).Errorf("gc error: %+v", err)
 	}
