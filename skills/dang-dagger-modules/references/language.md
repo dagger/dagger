@@ -89,9 +89,6 @@ Both `x == null` and `null == x` forms are supported, as are `!=` equivalents.
 ### Module-Level
 
 ```dang
-# Module description
-pub description = "My module"
-
 # Public binding (exposed to Dagger)
 pub myValue: String! = "hello"
 
