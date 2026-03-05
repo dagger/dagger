@@ -22,7 +22,6 @@ const els = {
   traceSubtitle: document.getElementById("traceSubtitle"),
   graphCanvas: document.getElementById("graphCanvas"),
   graphEmpty: document.getElementById("graphEmpty"),
-  inspector: document.getElementById("inspector"),
   filterCalls: document.getElementById("filterCalls"),
   filterDerived: document.getElementById("filterDerived"),
   filterVisible: document.getElementById("filterVisible"),
@@ -30,7 +29,9 @@ const els = {
 
 init().catch((err) => {
   console.error(err);
-  els.inspector.innerHTML = renderError(`Initialization failed: ${String(err)}`);
+  els.traceSubtitle.textContent = `Initialization failed: ${String(err)}`;
+  els.graphEmpty.textContent = "Failed to initialize trace view.";
+  els.graphEmpty.style.display = "block";
 });
 
 async function init() {
@@ -126,14 +127,12 @@ function clearSelection(msg) {
   els.graphEmpty.textContent = msg;
   els.graphEmpty.style.display = "block";
   els.historyList.innerHTML = "";
-  els.inspector.innerHTML = "";
 }
 
 function renderAll() {
   renderTraceHeader();
   renderHistory();
   renderGraph();
-  renderInspector();
 }
 
 function renderTraceHeader() {
@@ -312,55 +311,8 @@ function renderGraph() {
     node.addEventListener("click", () => {
       state.selectedObjectID = node.getAttribute("data-object-id") || "";
       renderGraph();
-      renderInspector();
     });
   }
-}
-
-function renderInspector() {
-  if (!state.snapshot || !state.projection) {
-    els.inspector.innerHTML = "";
-    return;
-  }
-  const selectedObject = (state.snapshot.objects || []).find((obj) => obj.id === state.selectedObjectID);
-  if (!selectedObject) {
-    els.inspector.innerHTML = "";
-    return;
-  }
-
-  const stateRows = selectedObject.stateHistory
-    .slice()
-    .reverse()
-    .map((stateRow) => {
-      return `
-        <div class="state-row">
-          <div class="inspector-key">State</div>
-          <div class="inspector-value">${escapeHTML(stateRow.stateDigest)}</div>
-          <div class="inspector-key">Event</div>
-          <div class="inspector-value">${escapeHTML(stateRow.spanID)} @ ${escapeHTML(
-            formatRelTime(stateRow.endUnixNano, state.projection.startUnixNano),
-          )}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  els.inspector.innerHTML = `
-    <div class="inspector-block">
-      <div class="inspector-key">Object</div>
-      <div class="inspector-value">${escapeHTML(selectedObject.alias)} (${escapeHTML(selectedObject.typeName)})</div>
-      <div class="inspector-key">Current State</div>
-      <div class="inspector-value">${escapeHTML(
-        selectedObject.stateHistory[selectedObject.stateHistory.length - 1]?.stateDigest || "",
-      )}</div>
-      <div class="inspector-key">Referenced By Top-Level</div>
-      <div class="inspector-value">${selectedObject.referencedByTop ? "yes" : "no"}</div>
-    </div>
-    <div class="inspector-block">
-      <div class="inspector-key">Mutation History (${selectedObject.stateHistory.length})</div>
-      ${stateRows}
-    </div>
-  `;
 }
 
 function eventMatchesFilters(event, filters) {
@@ -395,13 +347,7 @@ function eventBoundaryUnixNano(event) {
 
 function showError(err) {
   console.error(err);
-  els.inspector.innerHTML = renderError(String(err));
-}
-
-function renderError(msg) {
-  return `<div class="inspector-block"><div class="inspector-key">Info</div><div class="inspector-value">${escapeHTML(
-    msg,
-  )}</div></div>`;
+  els.traceSubtitle.textContent = `Error: ${String(err)}`;
 }
 
 async function fetchJSON(url, init) {

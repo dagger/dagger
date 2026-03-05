@@ -531,7 +531,7 @@ Stage 4 implementation note:
   - history cards use table-like aligned columns (kind/call/parent/visible/time) while keeping card styling
   - dedicated central trace title row above the DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
-  - inspector panel shows only selected object details; empty when no object is selected
+  - trace view drops the inspector pane to maximize graph/history real estate
 
 Stage 5 implementation note:
 - Cloud pull mode is implemented in both CLI and backend API:
