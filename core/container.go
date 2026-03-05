@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -34,6 +33,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/util/containerutil"
 	"github.com/dagger/dagger/util/llbtodagger"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/opencontainers/go-digest"

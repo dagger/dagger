@@ -30,8 +30,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/contenthash"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (

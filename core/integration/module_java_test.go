@@ -4,9 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"context"
+
 	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 
 	"github.com/dagger/testctx"
 )

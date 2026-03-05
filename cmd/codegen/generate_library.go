@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
+
 	"github.com/spf13/cobra"
 )
 

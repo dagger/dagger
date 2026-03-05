@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/lmittmann/tint"
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/baggage"

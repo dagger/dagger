@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
@@ -29,6 +28,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress/progressui"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/koron-go/prefixw"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"

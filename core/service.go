@@ -35,13 +35,13 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (
@@ -568,9 +568,20 @@ func (svc *Service) startContainer(
 	}
 
 	checked := make(chan error, 1)
-	go func() {
-		checked <- newHealth(bk, buildkit.NewDirectNS(svcID), fullHost, ctr.Ports).Check(ctx)
-	}()
+
+	if ctr.Config.Healthcheck != nil {
+		dockerHealthcheck, err := newDockerHealthcheck(exec, svcID, ctr, svc.Creator)
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup docker healthcheck: %w", err)
+		}
+		go func() {
+			checked <- dockerHealthcheck.Check(ctx)
+		}()
+	} else {
+		go func() {
+			checked <- newPortHealth(bk, buildkit.NewDirectNS(svcID), fullHost, ctr.Ports).Check(ctx)
+		}()
+	}
 
 	var stopped atomic.Bool
 
@@ -945,7 +956,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- newHealth(bk, netNS, fullHost, checkPorts).Check(svcCtx)
+		checked <- newPortHealth(bk, netNS, fullHost, checkPorts).Check(svcCtx)
 	}()
 
 	select {
