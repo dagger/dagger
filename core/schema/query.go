@@ -42,7 +42,6 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	core.ImageLayerCompressions.Install(srv)
 	core.ImageMediaTypesEnum.Install(srv)
 	core.CacheSharingModes.Install(srv)
-	core.WorkspaceWriteSyncModes.Install(srv)
 	core.TypeDefKinds.Install(srv)
 	core.ModuleSourceKindEnum.Install(srv)
 	core.ReturnTypesEnum.Install(srv)

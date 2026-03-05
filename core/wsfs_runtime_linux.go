@@ -153,7 +153,7 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 			errs = errors.Join(errs, err)
 		}
 		server.Wait()
-		if !r.readonly && r.workspace.WriteSync == WorkspaceWriteSyncWriteThrough {
+		if !r.readonly && r.workspace.Export {
 			if err := wsfs.syncWriteThrough(); err != nil {
 				errs = errors.Join(errs, err)
 			}
@@ -564,7 +564,7 @@ func (fsys *wsfsPathFS) isDeleted(name string) bool {
 }
 
 func (fsys *wsfsPathFS) syncWriteThrough() error {
-	if fsys.workspace == nil || fsys.workspace.WriteSync != WorkspaceWriteSyncWriteThrough {
+	if fsys.workspace == nil || !fsys.workspace.Export {
 		return nil
 	}
 	ws := fsys.workspace.Workspace.Self()

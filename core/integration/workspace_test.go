@@ -122,12 +122,12 @@ func withMountedWorkspaceExec(
 	return execRes.ID, execRes.Stdout
 }
 
-func withMountedWorkspaceExecWithWriteSync(
+func withMountedWorkspaceExecWithExport(
 	ctx context.Context,
 	t *testctx.T,
 	c *dagger.Client,
 	workspaceID string,
-	writeSync string,
+	export bool,
 	args []string,
 ) (string, string) {
 	t.Helper()
@@ -143,10 +143,10 @@ func withMountedWorkspaceExecWithWriteSync(
 				}
 			}
 		}
-	}](c, t, fmt.Sprintf(`query Exec($ws: WorkspaceID!, $writeSync: WorkspaceWriteSync!, $args: [String!]!) {
+	}](c, t, fmt.Sprintf(`query Exec($ws: WorkspaceID!, $export: Boolean!, $args: [String!]!) {
 		container {
 			from(address: %q) {
-				withMountedWorkspace(path: "/ws", source: $ws, writeSync: $writeSync) {
+				withMountedWorkspace(path: "/ws", source: $ws, export: $export) {
 					withExec(args: $args) {
 						id
 						stdout
@@ -156,9 +156,9 @@ func withMountedWorkspaceExecWithWriteSync(
 		}
 	}`, alpineImage), &testutil.QueryOptions{
 		Variables: map[string]any{
-			"ws":        workspaceID,
-			"writeSync": writeSync,
-			"args":      args,
+			"ws":     workspaceID,
+			"export": export,
+			"args":   args,
 		},
 	})
 	require.NoError(t, err)
@@ -428,14 +428,14 @@ func (WorkspaceSuite) TestWithMountedWorkspaceWritesPersistInLineage(ctx context
 	require.Equal(t, "missing", strings.TrimSpace(freshMountRes.Container.From.WithMountedWorkspace.WithExec.Stdout))
 }
 
-func (WorkspaceSuite) TestWithMountedWorkspaceWriteThroughSync(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestWithMountedWorkspaceExportSync(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(wd, "existing.txt"), []byte("old\n"), 0o600))
 
 	c := connect(ctx, t, dagger.WithWorkdir(wd))
 	wsID := currentWorkspaceID(ctx, t, c)
 
-	_, _ = withMountedWorkspaceExecWithWriteSync(ctx, t, c, wsID, "WRITE_THROUGH", []string{
+	_, _ = withMountedWorkspaceExecWithExport(ctx, t, c, wsID, true, []string{
 		"sh", "-ec", "echo updated > /ws/existing.txt; echo created > /ws/created.txt",
 	})
 
