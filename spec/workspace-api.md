@@ -26,6 +26,9 @@ This spec describes the desired behavior of the Workspace API.
   - Resolve to absolute path.
   - Walk up to nearest ancestor containing `.git`; if none, use the starting directory.
   - Workspace context can be local host filesystem or remote git repository context.
+- Workspace access boundary:
+  - If a git repository is detected, the boundary is the repository root.
+  - If no repository is detected, the boundary is the starting directory (caller CWD).
 - Workspace identity:
   - `Workspace` stores both `root` and `clientId`.
   - `Workspace.root` returns the absolute workspace root locator.
@@ -38,10 +41,10 @@ This spec describes the desired behavior of the Workspace API.
   - Paths resolve directly in the workspace's underlying context (host filesystem for local workspaces, repository tree for remote git workspaces).
   - All workspace path arguments (`directory.path`, `file.path`, `findUp.from`) must be absolute.
   - Relative path arguments are rejected.
-  - By default, path resolution outside the workspace git repository fails.
+  - By default, path resolution outside the workspace access boundary fails.
 - `findUp`:
   - Searches upward from `from`.
-  - Stops at workspace repository root.
+  - Stops at workspace access boundary.
   - Returns an absolute path or `null`.
 
 ### Path Contract
@@ -57,8 +60,8 @@ This spec describes the desired behavior of the Workspace API.
 ### Failure Behavior
 
 - Relative workspace path arguments fail with an error (e.g. `path "." must be absolute`).
-- Absolute paths outside the workspace repository root fail with an error (e.g. `outside workspace repository root`).
-- `findUp` returns `null` when no match is found before repository root.
+- Absolute paths outside the workspace access boundary fail with an error (e.g. `outside workspace access boundary`).
+- `findUp` returns `null` when no match is found before the access boundary.
 
 ### Conformance Check
 

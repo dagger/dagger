@@ -27,7 +27,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
      *
      * Path must be absolute in host/repo context.
      *
-     * By default, paths outside the workspace repository root are rejected.
+     * By default, paths outside the workspace access boundary are rejected.
      */
     public function directory(
         string $path,
@@ -54,7 +54,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
      *
      * Path must be absolute in host/repo context.
      *
-     * By default, paths outside the workspace repository root are rejected.
+     * By default, paths outside the workspace access boundary are rejected.
      */
     public function file(string $path): File
     {
@@ -68,7 +68,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
      *
      * Returns the absolute path if found, or null if not found.
      *
-     * The search stops at the workspace repository root and will not traverse above it.
+     * The search stops at the workspace access boundary and will not traverse above it.
      */
     public function findUp(string $name, string $from): string
     {

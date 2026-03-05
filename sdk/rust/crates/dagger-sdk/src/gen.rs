@@ -14643,11 +14643,11 @@ impl Workspace {
     }
     /// Returns a Directory from the workspace.
     /// Path must be absolute in host/repo context.
-    /// By default, paths outside the workspace repository root are rejected.
+    /// By default, paths outside the workspace access boundary are rejected.
     ///
     /// # Arguments
     ///
-    /// * `path` - Absolute location of the directory to retrieve in host/repo context.
+    /// * `path` - Location of the directory to retrieve. Must be an absolute path.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -14660,11 +14660,11 @@ impl Workspace {
     }
     /// Returns a Directory from the workspace.
     /// Path must be absolute in host/repo context.
-    /// By default, paths outside the workspace repository root are rejected.
+    /// By default, paths outside the workspace access boundary are rejected.
     ///
     /// # Arguments
     ///
-    /// * `path` - Absolute location of the directory to retrieve in host/repo context.
+    /// * `path` - Location of the directory to retrieve. Must be an absolute path.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
         &self,
@@ -14690,7 +14690,7 @@ impl Workspace {
     }
     /// Returns a File from the workspace.
     /// Path must be absolute in host/repo context.
-    /// By default, paths outside the workspace repository root are rejected.
+    /// By default, paths outside the workspace access boundary are rejected.
     ///
     /// # Arguments
     ///
@@ -14706,7 +14706,7 @@ impl Workspace {
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
     /// Returns the absolute path if found, or null if not found.
-    /// The search stops at the workspace repository root and will not traverse above it.
+    /// The search stops at the workspace access boundary and will not traverse above it.
     ///
     /// # Arguments
     ///

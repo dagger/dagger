@@ -92,7 +92,7 @@ type Greeter {
 }
 
 // TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
-// start path and stops at the repository root.
+// start path and stops at the workspace access boundary.
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -153,7 +153,7 @@ type Finder {
 }
 
 // TestWorkspaceRootIsRepoRoot verifies that Workspace.root resolves to the
-// repository root, not the caller's nested working directory.
+// workspace access boundary, not the caller's nested working directory.
 func (WorkspaceSuite) TestRootIsRepoRoot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -402,7 +402,7 @@ type Subdir {
 }
 
 // TestWorkspacePathTraversal verifies that, by default, a module cannot use
-// Workspace to access arbitrary host paths outside the workspace repository.
+// Workspace to access arbitrary host paths outside the workspace access boundary.
 func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -469,7 +469,7 @@ type EscapeFindup {
 		requireErrOut(t, err, "must be absolute")
 	})
 
-	t.Run("absolute path outside repo is rejected", func(ctx context.Context, t *testctx.T) {
+	t.Run("absolute path outside access boundary is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
 			WithNewFile("sub/inner.txt", "inner").
 			With(initDangModule("abs-rel", `
@@ -488,7 +488,7 @@ type AbsRel {
 `))
 		_, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "outside workspace repository root")
+		requireErrOut(t, err, "outside workspace access boundary")
 	})
 
 	t.Run("absolute path inside repo is allowed", func(ctx context.Context, t *testctx.T) {

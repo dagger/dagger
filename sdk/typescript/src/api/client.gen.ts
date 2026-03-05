@@ -13740,8 +13740,8 @@ export class Workspace extends BaseClient {
    *
    * Path must be absolute in host/repo context.
    *
-   * By default, paths outside the workspace repository root are rejected.
-   * @param path Absolute location of the directory to retrieve in host/repo context.
+   * By default, paths outside the workspace access boundary are rejected.
+   * @param path Location of the directory to retrieve. Must be an absolute path.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -13756,7 +13756,7 @@ export class Workspace extends BaseClient {
    *
    * Path must be absolute in host/repo context.
    *
-   * By default, paths outside the workspace repository root are rejected.
+   * By default, paths outside the workspace access boundary are rejected.
    * @param path Absolute location of the file to retrieve in host/repo context.
    */
   file = (path: string): File => {
@@ -13769,7 +13769,7 @@ export class Workspace extends BaseClient {
    *
    * Returns the absolute path if found, or null if not found.
    *
-   * The search stops at the workspace repository root and will not traverse above it.
+   * The search stops at the workspace access boundary and will not traverse above it.
    * @param name The name of the file or directory to search for.
    * @param from Absolute path to start the search from in host/repo context.
    */

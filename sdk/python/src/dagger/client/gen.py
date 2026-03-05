@@ -14191,13 +14191,12 @@ class Workspace(Type):
 
         Path must be absolute in host/repo context.
 
-        By default, paths outside the workspace repository root are rejected.
+        By default, paths outside the workspace access boundary are rejected.
 
         Parameters
         ----------
         path:
-            Absolute location of the directory to retrieve in host/repo
-            context.
+            Location of the directory to retrieve. Must be an absolute path.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -14221,7 +14220,7 @@ class Workspace(Type):
 
         Path must be absolute in host/repo context.
 
-        By default, paths outside the workspace repository root are rejected.
+        By default, paths outside the workspace access boundary are rejected.
 
         Parameters
         ----------
@@ -14240,7 +14239,7 @@ class Workspace(Type):
 
         Returns the absolute path if found, or null if not found.
 
-        The search stops at the workspace repository root and will not
+        The search stops at the workspace access boundary and will not
         traverse above it.
 
         Parameters

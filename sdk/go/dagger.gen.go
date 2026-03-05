@@ -14275,7 +14275,7 @@ type WorkspaceDirectoryOpts struct {
 //
 // Path must be absolute in host/repo context.
 //
-// By default, paths outside the workspace repository root are rejected.
+// By default, paths outside the workspace access boundary are rejected.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14303,7 +14303,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 //
 // Path must be absolute in host/repo context.
 //
-// By default, paths outside the workspace repository root are rejected.
+// By default, paths outside the workspace access boundary are rejected.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14317,7 +14317,7 @@ func (r *Workspace) File(path string) *File {
 //
 // Returns the absolute path if found, or null if not found.
 //
-// The search stops at the workspace repository root and will not traverse above it.
+// The search stops at the workspace access boundary and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, from string) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil

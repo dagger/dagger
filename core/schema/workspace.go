@@ -34,9 +34,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
 				`Path must be absolute in host/repo context.`,
-				`By default, paths outside the workspace repository root are rejected.`).
+				`By default, paths outside the workspace access boundary are rejected.`).
 			Args(
-				dagql.Arg("path").Doc(`Absolute location of the directory to retrieve in host/repo context.`),
+				dagql.Arg("path").Doc(`Location of the directory to retrieve. Must be an absolute path.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
@@ -44,14 +44,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
 				`Path must be absolute in host/repo context.`,
-				`By default, paths outside the workspace repository root are rejected.`).
+				`By default, paths outside the workspace access boundary are rejected.`).
 			Args(
 				dagql.Arg("path").Doc(`Absolute location of the file to retrieve in host/repo context.`),
 			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the absolute path if found, or null if not found.`,
-				`The search stops at the workspace repository root and will not traverse above it.`).
+				`The search stops at the workspace access boundary and will not traverse above it.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Absolute path to start the search from in host/repo context.`),
@@ -83,14 +83,14 @@ func (s *workspaceSchema) currentWorkspace(
 	cwd = normalizeWorkspacePath(cwd)
 
 	statFS := core.NewCallerStatFS(bk)
-	repoRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
+	boundaryRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
 	if err != nil {
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
 	if !found {
-		repoRoot = cwd
+		boundaryRoot = cwd
 	}
-	repoRoot = normalizeWorkspacePath(repoRoot)
+	boundaryRoot = normalizeWorkspacePath(boundaryRoot)
 
 	// Capture the current client ID so that when this workspace is passed to
 	// a module function, the directory/file resolvers can route host filesystem
@@ -101,8 +101,7 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	result := &core.Workspace{
-		Root:     repoRoot,
-		RepoRoot: repoRoot,
+		Root:     boundaryRoot,
 		ClientID: clientMetadata.ClientID,
 	}
 
@@ -164,20 +163,21 @@ func isPathWithinPrefix(targetPath, prefix string) bool {
 	return strings.HasPrefix(targetPath, prefix+"/")
 }
 
-func (s *workspaceSchema) enforceRepoBoundary(ws *core.Workspace, absPath string) error {
-	repoRoot := ws.RepoRoot
-	if repoRoot == "" {
-		repoRoot = ws.Root
-	}
-	if repoRoot == "" {
+func workspaceAccessBoundary(ws *core.Workspace) string {
+	return normalizeWorkspacePath(ws.Root)
+}
+
+func (s *workspaceSchema) enforceAccessBoundary(ws *core.Workspace, absPath string) error {
+	accessBoundary := workspaceAccessBoundary(ws)
+	if accessBoundary == "" || accessBoundary == "." {
 		return nil
 	}
 
-	if isPathWithinPrefix(absPath, repoRoot) {
+	if isPathWithinPrefix(absPath, accessBoundary) {
 		return nil
 	}
 
-	return fmt.Errorf("path %q is outside workspace repository root %q", absPath, repoRoot)
+	return fmt.Errorf("path %q is outside workspace access boundary %q", absPath, accessBoundary)
 }
 
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -201,7 +201,7 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	if err := s.enforceRepoBoundary(ws, absPath); err != nil {
+	if err := s.enforceAccessBoundary(ws, absPath); err != nil {
 		return inst, err
 	}
 
@@ -223,10 +223,7 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		dirArgs = append(dirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
 	}
 	if args.Gitignore {
-		gitIgnoreRoot := ws.RepoRoot
-		if gitIgnoreRoot == "" {
-			gitIgnoreRoot = ws.Root
-		}
+		gitIgnoreRoot := workspaceAccessBoundary(ws)
 		dirArgs = append(dirArgs,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
 			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(gitIgnoreRoot)},
@@ -269,7 +266,7 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, err
 	}
-	if err := s.enforceRepoBoundary(ws, absPath); err != nil {
+	if err := s.enforceAccessBoundary(ws, absPath); err != nil {
 		return inst, err
 	}
 	fileDir, fileName := path.Split(absPath)
@@ -327,17 +324,14 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	if err != nil {
 		return none, err
 	}
-	if err := s.enforceRepoBoundary(ws, absStart); err != nil {
+	if err := s.enforceAccessBoundary(ws, absStart); err != nil {
 		return none, err
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	cleanRepoRoot := path.Clean(ws.RepoRoot)
-	if cleanRepoRoot == "" {
-		cleanRepoRoot = path.Clean(ws.Root)
-	}
+	cleanAccessBoundary := path.Clean(workspaceAccessBoundary(ws))
 
-	// Walk up from absStart, stopping at repository root.
+	// Walk up from absStart, stopping at workspace access boundary.
 	curDir := absStart
 	for {
 		candidate := path.Join(curDir, args.Name)
@@ -346,8 +340,8 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 			return dagql.NonNull(dagql.NewString(normalizeWorkspacePath(candidate))), nil
 		}
 
-		// Stop at repository root.
-		if path.Clean(curDir) == cleanRepoRoot {
+		// Stop at workspace access boundary.
+		if path.Clean(curDir) == cleanAccessBoundary {
 			break
 		}
 

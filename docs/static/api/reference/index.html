@@ -15731,7 +15731,7 @@
                         <td>
                           <p>Returns a Directory from the workspace.</p>
                           <p>Path must be absolute in host/repo context.</p>
-                          <p>By default, paths outside the workspace repository root are rejected.</p>
+                          <p>By default, paths outside the workspace access boundary are rejected.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15741,7 +15741,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Absolute location of the directory to retrieve in host/repo context.</p>
+                                <p>Location of the directory to retrieve. Must be an absolute path.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -15764,7 +15764,7 @@
                         <td>
                           <p>Returns a File from the workspace.</p>
                           <p>Path must be absolute in host/repo context.</p>
-                          <p>By default, paths outside the workspace repository root are rejected.</p>
+                          <p>By default, paths outside the workspace access boundary are rejected.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15785,7 +15785,7 @@
                         <td>
                           <p>Search for a file or directory by walking up from the start path within the workspace.</p>
                           <p>Returns the absolute path if found, or null if not found.</p>
-                          <p>The search stops at the workspace repository root and will not traverse above it.</p>
+                          <p>The search stops at the workspace access boundary and will not traverse above it.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">

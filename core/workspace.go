@@ -6,10 +6,6 @@ import "github.com/vektah/gqlparser/v2/ast"
 type Workspace struct {
 	Root string `field:"true" doc:"Absolute path to the workspace root directory."`
 
-	// RepoRoot is the absolute path to the repository root that contains this
-	// workspace. Paths outside this root are rejected by default.
-	RepoRoot string
-
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
 	// when the workspace is passed to a module function.
