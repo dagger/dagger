@@ -61,6 +61,10 @@
    - this client-tree model is the target API shape
    - current telemetry does not prove the full hierarchy reliably enough to treat it as protocol truth
    - explicit engine-emitted `session_id` / `client_id` / `parent_client_id` telemetry is the preferred long-term fix.
+14. Edge semantics:
+   - default object-object edges are field-reference dependencies (`field_ref`)
+   - call containment and call-produced-object relationships are separate relations, not the same kind of edge
+   - receiver/input lineage is a provenance overlay, not part of the default supply-chain graph.
 
 ## Problem
 
@@ -447,6 +451,100 @@ Design consequence:
    - parent client ID
    - optional client kind metadata
 4. Do not let downstream schema or UX assumptions harden around current heuristic behavior.
+
+### Edge Taxonomy
+
+ODAG needs several different relationship types. They should not all be rendered as the same kind of edge.
+
+#### 1. Structural dependency edges
+
+These are the default object DAG edges.
+
+1. `field_ref`
+   - meaning: object state A contains a field whose value references object state B
+   - evidence source: emitted `dagger.io/dag.output.state` field `refs`
+   - storage level: `dagql_id -> dagql_id`
+   - render level: projected to `ObjectBinding -> ObjectBinding` at the selected revision
+   - story told: supply chain / composition / "this object currently depends on that object"
+
+This is the main edge type that should be shown in the default ODAG view.
+
+#### 2. Containment relations
+
+These are not object-object edges. They define nested render structure.
+
+1. `contains_call`
+   - call A contains child call B
+2. `contains_object`
+   - a call scope contains an object binding because that call created or mutated it in the current render lens
+
+Containment should be used for:
+1. call boxes containing child calls
+2. call scopes containing the objects directly created/mutated there
+
+Containment should **not** be inferred from object fields.
+
+#### 3. Provenance / lineage relations
+
+These explain where an object value came from, but they are not persistent structural dependencies.
+
+1. `produced_by`
+   - relation: binding mutation -> exact call that returned the new value
+   - objective, event-scoped, not subjective
+2. `derived_from_receiver`
+   - relation: output value was produced by invoking a call on a receiver object
+   - example: `foo = obj.bar()`
+   - meaning: `foo` is derived from `obj` through call `bar`
+3. `derived_from_arg`
+   - relation: output value was produced using one or more object-valued call arguments
+   - useful for debug/provenance overlays, usually too noisy for the default DAG
+
+Recommended rendering policy:
+1. keep these as optional overlays or side-panel facts
+2. do not mix them into the default `field_ref` supply-chain graph
+3. expose them in the backend render model so alternative views can use them
+
+#### 4. Snapshot-level evidence vs binding-level render
+
+As with `field_ref`, provenance evidence starts at immutable DAGQL state level:
+
+1. call has `receiver_dagql_id`
+2. call has zero or more `arg_dagql_id`
+3. call has `output_dagql_id`
+
+That evidence is then projected into binding-level relationships at the selected revision.
+
+Implications:
+
+1. A call does not guarantee a visible receiver binding:
+   - receiver may be `Query`
+   - receiver may be filtered out
+   - receiver may not yet have enough state to materialize a visible binding
+2. If receiver and output collapse onto the same binding, there is no separate inter-object edge:
+   - the relationship is represented as a mutation event on one binding
+3. If receiver and output map to different bindings, a provenance edge may be emitted:
+   - `receiver_binding -(derived_from_receiver)-> output_binding`
+
+#### 5. Collapse decision tree
+
+The exact collapse policy determines whether a call creates a new binding or mutates an existing one.
+
+Current recommended decision tree:
+
+1. If the call has no object output, emit no binding mutation.
+2. If the call has an object output but no receiver binding, create a new binding.
+3. If the call has a receiver binding and output type differs from receiver type, create a new binding.
+4. If the call has a receiver binding and output type matches receiver type, collapse to a mutation on the receiver binding.
+5. Future explicit engine hints should be able to override this heuristic:
+   - mutate existing binding
+   - create new binding
+   - alias existing binding / no-op
+
+Consequences:
+
+1. `produced_by` is always objective at call-event level.
+2. `contains_object` is partly view-dependent because it follows the chosen collapse/render lens.
+3. `derived_from_receiver` is objective at snapshot/call evidence level, but may disappear as a separate binding edge if collapse merges both sides into one binding.
 
 ## Backend API (V2 Source of Truth)
 
@@ -908,6 +1006,10 @@ Encoding note:
 - [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
 - [ ] Replace current `session == trace` approximation with a client tree derived from `dagger.io/engine.client` `connect` spans, then derive sessions from root clients; keep trace routes as secondary/debug views.
 - [ ] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, including parent-client inference from span ownership plus fallback root-local ordering for unresolved call attribution.
+- [ ] Materialize the edge taxonomy in the backend model:
+  - `field_ref` as default object-object dependency
+  - call/object containment relations
+  - receiver/arg provenance as optional overlays, not default DAG edges
 - [ ] Add explicit engine OTEL telemetry for true execution-scope identifiers:
   - session ID on relevant spans
   - client ID on relevant spans
