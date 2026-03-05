@@ -139,6 +139,7 @@ type Greeter {
 
   new(name: String!) {
     self.greeting = "Hello, " + name + "!"
+    self
   }
 }
 
@@ -148,7 +149,7 @@ type Greeter {
 Rules:
 - `new()` args are scoped to the body — not accessible in methods
 - Assign fields with `self.field = value`
-- `new()` implicitly returns `self`
+- `new()` must return the type being constructed (`self`, `self.withFoo(...)`, etc.)
 - Runtime error if non-null fields aren't assigned
 - Directives go on `new()` args: `new(src: Directory! @defaultPath(path: "/"))`
 - Arg names don't need to match field names
@@ -167,16 +168,19 @@ let ctr = container.from("alpine")
 ctr = ctr.withExec(["echo", "hi"])
 ```
 
+`let` and `pub` declare in the current lexical block. `=` without `let` or
+`pub` reassigns the nearest lexical binding declared earlier (Go-style).
+
 ## Expressions
 
 ### Literals
 
 ```dang
-"hello"           # String
-42                # Int
-true              # Boolean
-null              # Null
-["a", "b", "c"]   # List
+"hello"           # String!
+42                # Int!
+true              # Boolean!
+null              # a type variable (nullable form of any type it unifies with)
+["a", "b", "c"]   # [String!]!
 ```
 
 ### Function/Method Calls
@@ -223,11 +227,11 @@ let items = ["a", "b", "c"]
 let combined = items + ["d", "e"]    # List concatenation
 let first = items[0]                  # Indexing
 
-# Multi-line lists (no trailing commas)
+# Multi-line lists
 let packages = [
-  "bash"
-  "git"
-  "curl"
+  "bash",
+  "git",
+  "curl",
 ]
 ```
 
@@ -271,14 +275,21 @@ if (condition) {
 } else {
   fallback
 }
+
+# Case conditional - implicit `case (true)`
+case {
+  condition => doSomething
+  other => doOther
+  else => fallback
+}
 ```
 
-### For Loops
+### Iteration
 
 ```dang
 # Accumulator pattern (returns final value of ctr)
 let ctr = base
-for (pkg in packages) {
+packages.each { pkg =>
   ctr = ctr.withExec(["apk", "add", pkg])
 }
 ctr
@@ -291,6 +302,13 @@ let arch = case (platform) {
   "linux/amd64" => "x86_64"
   "linux/arm64" => "aarch64"
   else => "unknown"
+}
+
+# Case conditional - implicit `case (true)`
+case {
+  condition => doSomething
+  other => doOther
+  else => fallback
 }
 ```
 
@@ -358,10 +376,12 @@ pub source: Directory! @defaultPath("/")
 
 ```dang
 # Mark as a check function
-pub test: Void @check { ... }
+@check
+pub test: Void { ... }
 
 # Mark as a generator function
-pub generate: Changeset! @generate { ... }
+@generate
+pub generate: Changeset! { ... }
 ```
 
 ### Declaring Custom Directives
@@ -445,6 +465,7 @@ raise NotFoundError(message: "missing", resource: "user")
 assert { 1 + 1 == 2 }
 assert { "hello".toUpper == "HELLO" }
 assert { [1, 2, 3].length == 3 }
+assert("we are not in 1984") { 2 + 2 == 4 }
 ```
 
 ## Dagger API Globals
@@ -544,25 +565,22 @@ pub packageManager: String! {
   # Error: cannot use String as String!
 }
 
-# RIGHT — guard against null first, then access fields in the non-null branch
+# BETTER — leverage null contagiousness + coalescing
 pub packageManager: String! {
-  if (json == null) {
-    "npm"
-  } else {
-    json.field(["packageManager"]).asString ?? "npm"
-  }
+  json.field(["packageManager"]).asString ?? "npm"
 }
 ```
 
-The pattern: check the nullable receiver for null **before** accessing its fields. Inside the non-null branch, `json` is narrowed to non-null, so field access produces non-null results.
+The pattern: write the optimistic field access and then coalesce with `??`.
 
 ## Complete Examples
 
 ### Simple Build Module
 
 ```dang
-pub description = "Build a Go application"
-
+"""
+Build a Go application
+"""
 type GoBuild {
   pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
     "*"
@@ -615,8 +633,9 @@ type GoBuild {
 ### SDK Development Toolchain
 
 ```dang
-pub description = "Develop the Foo SDK"
-
+"""
+Develop the Foo SDK
+"""
 type FooSdkDev {
   pub workspace: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
     "*"

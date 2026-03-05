@@ -140,55 +140,44 @@ let name = json.field(["name"]).asString ?? "unknown"
 
 ```dang
 # After `if (x != null)`, x is narrowed to non-null inside the block
-let pkgJson = if (pkgDir.stat("package.json") != null) {
-  pkgDir.file("package.json").asJSON
+let pkgJsonFile: File = findPkgJson
+
+let contentsViaIf = if (pkgJsonFile != null) {
+  pkgJsonFile.contents
 } else {
-  null
+  ""
 }
+
+# If null is not semantically special, this is simpler:
+let contents = pkgJsonFile.contents ?? ""
 ```
 
-3. **Guard early, access late** — check the nullable value for null *before* accessing its fields, so the fields come back non-null:
-
-```dang
-# WRONG: accessing fields on nullable json produces nullable results
-let pm = json.field(["packageManager"]).asString  # String, not String!
-
-# RIGHT: check json for null first, then access fields in non-null branch
-if (json == null) {
-  "npm"
-} else if (hasField(json, "packageManager") == false) {
-  "npm"
-} else {
-  let pmField = json.field(["packageManager"])
-  pmField.asString.split("@")[0] ?? "npm"
-}
-```
-
-**Common pattern: JSON field access.** `json.field(...)` returns nullable values. Chaining `.field().field().asString` on a nullable receiver produces a nullable string even when a function expects `String!`. Always check for null before accessing:
-
-```dang
-# Defensive JSON access pattern
-if (json == null) {
-  [] :: [String!]!
-} else if (hasField(json, "docusaurus") == false) {
-  [] :: [String!]!
-} else {
-  let docusaurus = json.field(["docusaurus"])
-  if (hasField(docusaurus, "include") == false) {
-    [] :: [String!]!
-  } else {
-    let include = docusaurus.field(["include"])
-    include.asArray.{asString}.map { item => item.asString }
-  }
-}
-```
-
-**Null narrowing limitations:**
+**Flow-sensitive narrowing limitations:**
 
 - Only simple `x == null` / `x != null` checks narrow types
 - Compound conditions (`and`, `or`) and negation (`!`) do not narrow
 - Only direct variable names are narrowed (not nested field access like `a.b`)
 - Function calls in conditions do not trigger narrowing
+
+3. **Branch when behavior differs** — if `null` means a different outcome,
+use a null check:
+
+```dang
+# null means "this config is invalid" in this case
+let pmField = json.field(["packageManager"])
+if (pmField == null) {
+  raise "packageManager is required"
+} else {
+  pmField.asString
+}
+```
+
+For JSON fields where `null` means "use a default", prefer optimistic access
+plus coalescing:
+
+```dang
+json.field(["packageManager"]).asString ?? "npm"
+```
 
 ### Container Building (Method Chaining)
 

@@ -31,8 +31,6 @@ Add to `~/.config/zed/settings.json`:
 }
 ```
 
-This gives completions, hover, go-to-definition, rename, and formatting for `.dang` files.
-
 ### Troubleshooting
 
 If syntax highlighting is missing after a Zed update or extension install:
@@ -48,4 +46,4 @@ There is a VS Code extension at `editors/vscode` in the `github.com/vito/dang` r
 
 ## Neovim
 
-There is a Neovim plugin at `codeberg.org/vito/dang.nvim`.
+There is a Neovim plugin at `github.com/vito/dang.nvim`.
