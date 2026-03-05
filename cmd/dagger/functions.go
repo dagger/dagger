@@ -205,7 +205,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					// withEngine changes the context.
 					c.SetContext(ctx)
 
-					if err := fc.execute(c, execArgs); err != nil {
+					if err := fc.execute(c, execArgs, workspaceRef); err != nil {
 						// We've already handled printing the error in `fc.execute`
 						// because we want to show the usage for the right sub-command.
 						// Returning ExitError here will prevent the error from being printed
@@ -291,7 +291,7 @@ func (fc *FuncCommand) Help(cmd *cobra.Command) error {
 }
 
 // execute runs the main logic for the top level command's RunE function.
-func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
+func (fc *FuncCommand) execute(c *cobra.Command, a []string, workspaceRef *string) (rerr error) {
 	ctx := c.Context()
 
 	var cmd *cobra.Command
@@ -326,7 +326,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
 		// -m modules are loaded at engine connect time as extra modules.
-		mod, err = initializeWorkspace(ctx, fc.c.Dagger())
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger(), workspaceRef)
 	}
 	if err != nil {
 		return err

@@ -73,7 +73,7 @@ Examples:
 
 		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			// -m modules are loaded at engine connect time as extra modules.
-			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), workspaceRef)
 			if err != nil {
 				return err
 			}
