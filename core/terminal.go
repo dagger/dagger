@@ -9,7 +9,6 @@ import (
 	"github.com/muesli/termenv"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -58,20 +57,15 @@ func (container *Container) terminal(
 	richErr *buildkit.RichError,
 ) error {
 	container = container.Clone()
-	var err error
 
 	// HACK: ensure that container is entirely built before interrupting nice
 	// progress output with the terminal
-	evaluateCtx, evaluateSpan := Tracer(ctx).Start(ctx, "terminal: evaluate container")
-	_, err = container.Evaluate(evaluateCtx)
-	telemetry.EndWithCause(evaluateSpan, &err)
+	_, err := container.Evaluate(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
 
-	prepCtx, prepSpan := Tracer(ctx).Start(ctx, "terminal: prepare session")
-	term, output, err := prepTerminal(prepCtx, svcID, richErr)
-	telemetry.EndWithCause(prepSpan, &err)
+	term, output, err := prepTerminal(ctx, svcID, richErr)
 	if err != nil {
 		return err
 	}
@@ -79,25 +73,22 @@ func (container *Container) terminal(
 	container.Config.Env = prepTerminalEnv(output, container.Config.Env)
 
 	var svc *Service
-	createSvcCtx, createSvcSpan := Tracer(ctx).Start(ctx, "terminal: create service")
 	if richErr == nil {
-		svc, err = container.AsService(createSvcCtx, ContainerAsServiceArgs{
+		svc, err = container.AsService(ctx, ContainerAsServiceArgs{
 			Args:                          args.Cmd,
 			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 		})
 	} else {
-		svc, err = container.AsRecoveredService(createSvcCtx, richErr)
+		svc, err = container.AsRecoveredService(ctx, richErr)
 	}
-	telemetry.EndWithCause(createSvcSpan, &err)
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
 
 	eg, egctx := errgroup.WithContext(ctx)
-	startSvcCtx, startSvcSpan := Tracer(ctx).Start(ctx, "terminal: start service")
 	runningSvc, err := svc.Start(
-		startSvcCtx,
+		ctx,
 		svcID,
 		&ServiceIO{
 			Stdin:       term.Stdin,
@@ -107,7 +98,6 @@ func (container *Container) terminal(
 			Interactive: true,
 		},
 	)
-	telemetry.EndWithCause(startSvcSpan, &err)
 	if err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
@@ -173,11 +163,7 @@ func (*Service) Terminal(
 	svc dagql.ObjectResult[*Service],
 	args *ExecTerminalArgs,
 ) error {
-	var err error
-
-	prepCtx, prepSpan := Tracer(ctx).Start(ctx, "terminal: prepare session")
-	term, output, err := prepTerminal(prepCtx, svc.ID(), nil)
-	telemetry.EndWithCause(prepSpan, &err)
+	term, output, err := prepTerminal(ctx, svc.ID(), nil)
 	if err != nil {
 		return err
 	}
@@ -193,9 +179,7 @@ func (*Service) Terminal(
 	if err != nil {
 		return err
 	}
-	startBindingsCtx, startBindingsSpan := Tracer(ctx).Start(ctx, "terminal: start service bindings")
-	detach, runnings, err := svcs.StartBindings(startBindingsCtx, ServiceBindings{{Service: svc}})
-	telemetry.EndWithCause(startBindingsSpan, &err)
+	detach, runnings, err := svcs.StartBindings(ctx, ServiceBindings{{Service: svc}})
 	if err != nil {
 		return err
 	}
@@ -205,16 +189,13 @@ func (*Service) Terminal(
 	if running.Exec == nil {
 		return fmt.Errorf("service %s does not support terminal", svc.ID().Digest())
 	}
-	execCtx, execSpan := Tracer(ctx).Start(ctx, "terminal: exec")
-	err = running.Exec(execCtx, args.Cmd, env, &ServiceIO{
+	return running.Exec(ctx, args.Cmd, env, &ServiceIO{
 		Stdin:       term.Stdin,
 		Stdout:      term.Stdout,
 		Stderr:      term.Stderr,
 		ResizeCh:    term.ResizeCh,
 		Interactive: true,
 	})
-	telemetry.EndWithCause(execSpan, &err)
-	return err
 }
 
 func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichError) (*buildkit.TerminalClient, *termenv.Output, error) {
