@@ -8,7 +8,7 @@ const state = {
   selectedObjectID: "",
   filters: {
     calls: false,
-    derived: false,
+    derived: true,
     visible: false,
   },
   requestToken: 0,
@@ -51,6 +51,10 @@ async function init() {
 }
 
 function bindEvents() {
+  els.filterCalls.checked = state.filters.calls;
+  els.filterDerived.checked = state.filters.derived;
+  els.filterVisible.checked = state.filters.visible;
+
   if (els.backBtn) {
     els.backBtn.addEventListener("click", () => {
       window.location.assign("/");
@@ -631,6 +635,7 @@ async function fetchRender(traceID, unixNano) {
   const params = new URLSearchParams();
   params.set("traceID", traceID);
   params.set("mode", "global");
+  params.set("keepRules", "default");
   if (unixNano && unixNano > 0) {
     params.set("t", String(unixNano));
   }

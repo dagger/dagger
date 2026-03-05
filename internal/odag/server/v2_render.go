@@ -41,6 +41,7 @@ type v2RenderContext struct {
 	UnixNano           int64  `json:"unixNano"`
 	Mode               string `json:"mode"`
 	View               string `json:"view,omitempty"`
+	KeepRulesApplied   bool   `json:"keepRulesApplied"`
 	ScopeCallID        string `json:"scopeCallID,omitempty"`
 	ScopeParentCallID  string `json:"scopeParentCallID,omitempty"`
 	FocusObjectID      string `json:"focusObjectID,omitempty"`
@@ -149,6 +150,18 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		}
 		dependencyHops = v
 	}
+	applyKeepRules := false
+	if raw := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("keepRules"))); raw != "" {
+		switch raw {
+		case "1", "true", "on", "default":
+			applyKeepRules = true
+		case "0", "false", "off", "none":
+			applyKeepRules = false
+		default:
+			http.Error(w, "invalid keepRules", http.StatusBadRequest)
+			return
+		}
+	}
 
 	unixNano := int64(0)
 	if raw := strings.TrimSpace(r.URL.Query().Get("t")); raw != "" {
@@ -162,7 +175,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 
 	proj, err := s.projectTraceWithOptions(r.Context(), q.TraceID, transform.ProjectOptions{
 		IncludeInternal: q.IncludeInternal,
-		ApplyKeepRules:  false,
+		ApplyKeepRules:  applyKeepRules,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -496,6 +509,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			UnixNano:           unixNano,
 			Mode:               string(mode),
 			View:               viewName,
+			KeepRulesApplied:   applyKeepRules,
 			ScopeCallID:        scopeCallID,
 			ScopeParentCallID:  scopeParentID,
 			FocusObjectID:      focusObjectID,

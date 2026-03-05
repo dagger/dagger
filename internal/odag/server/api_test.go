@@ -523,11 +523,36 @@ func TestV2RenderEndpoints(t *testing.T) {
 		t.Fatalf("unexpected object view objects: %#v", viewResp.Objects)
 	}
 
+	keepReq := httptest.NewRequest(http.MethodGet, "/api/v2/render?traceID="+traceIDHex+"&keepRules=default", nil)
+	keepRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(keepRec, keepReq)
+	if keepRec.Code != http.StatusOK {
+		t.Fatalf("v2 render keepRules failed: status=%d body=%s", keepRec.Code, keepRec.Body.String())
+	}
+	var keepResp struct {
+		Context struct {
+			KeepRulesApplied bool `json:"keepRulesApplied"`
+		} `json:"context"`
+	}
+	if err := json.Unmarshal(keepRec.Body.Bytes(), &keepResp); err != nil {
+		t.Fatalf("decode keepRules response: %v", err)
+	}
+	if !keepResp.Context.KeepRulesApplied {
+		t.Fatalf("expected keepRulesApplied=true in response context")
+	}
+
 	badViewReq := httptest.NewRequest(http.MethodGet, "/api/v2/views/nope/render?traceID="+traceIDHex, nil)
 	badViewRec := httptest.NewRecorder()
 	srv.http.Handler.ServeHTTP(badViewRec, badViewReq)
 	if badViewRec.Code != http.StatusBadRequest {
 		t.Fatalf("expected bad request for unknown view, got %d", badViewRec.Code)
+	}
+
+	badKeepReq := httptest.NewRequest(http.MethodGet, "/api/v2/render?traceID="+traceIDHex+"&keepRules=wat", nil)
+	badKeepRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(badKeepRec, badKeepReq)
+	if badKeepRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for invalid keepRules, got %d", badKeepRec.Code)
 	}
 }
 

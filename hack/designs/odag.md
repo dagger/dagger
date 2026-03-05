@@ -331,8 +331,9 @@ Render-model view parameters:
 2. `scopeCallID`
 3. `focusObjectID`
 4. `dependencyHops`
-5. `t` (snapshot unix nano)
-6. `/api/v2/views/{view}/render` enforces mode by route (`global`, `scope`, `object`, `hybrid`) and keeps query parsing shared with `/api/v2/render`.
+5. `keepRules=default|off` (render-layer pruning toggle; default off for full-pool API parity)
+6. `t` (snapshot unix nano)
+7. `/api/v2/views/{view}/render` enforces mode by route (`global`, `scope`, `object`, `hybrid`) and keeps query parsing shared with `/api/v2/render`.
 
 Render-model payload intent:
 1. `objects`: renderable mutable object nodes with activity links.
@@ -781,6 +782,8 @@ Phase 2.5 implementation note:
    - active call IDs at snapshot time
    - object `currentState` and `snapshotHistory`
 8. Trace page data fetch path now uses `/api/v2/render` (global mode) for initial load, revision selection (`t`), and live refresh, reducing reliance on compatibility `/api/traces/{id}/snapshot` shaping.
+9. Trace page now requests `keepRules=default` for artifact-centric readability in large traces while preserving raw full-pool access for API/debug consumers.
+10. History filter defaults were tuned for legibility (`derived=true` by default) so raw-span noise does not dominate first render.
 
 ### Phase 3: Payload evolution (future)
 
