@@ -46,16 +46,19 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 	events := make([]MutationEvent, 0, len(parsedSpans))
 	startUnixNano, endUnixNano := parsedSpans[0].span.StartUnixNano, parsedSpans[0].span.EndUnixNano
 
-	for idx, sp := range parsedSpans {
+	for _, sp := range parsedSpans {
 		if startUnixNano == 0 || (sp.span.StartUnixNano > 0 && sp.span.StartUnixNano < startUnixNano) {
 			startUnixNano = sp.span.StartUnixNano
 		}
 		if sp.span.EndUnixNano > endUnixNano {
 			endUnixNano = sp.span.EndUnixNano
 		}
+		if !sp.isDAGCall {
+			continue
+		}
 
 		event := MutationEvent{
-			Index:                 idx,
+			Index:                 len(events),
 			TraceID:               sp.span.TraceID,
 			SpanID:                sp.span.SpanID,
 			ParentSpanID:          sp.span.ParentSpanID,

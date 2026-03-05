@@ -565,6 +565,49 @@ func TestProjectTraceSummaryAndCallDepth(t *testing.T) {
 	}
 }
 
+func TestProjectTraceSkipsNonDagSpansInEventStream(t *testing.T) {
+	t.Parallel()
+
+	spans := []store.SpanRecord{
+		{
+			TraceID:       "trace6",
+			SpanID:        "root",
+			ParentSpanID:  "",
+			Name:          "session",
+			StartUnixNano: 1,
+			EndUnixNano:   2,
+			StatusCode:    "STATUS_CODE_OK",
+			DataJSON:      `{"attributes":{"foo":"bar"}}`,
+		},
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace6",
+			spanID:       "s1",
+			parentSpanID: "root",
+			name:         "Query.container",
+			start:        3,
+			end:          4,
+			output:       "state-a",
+			call: &callpbv1.Call{
+				Digest: "call-1",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace6", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+
+	if len(proj.Events) != 1 {
+		t.Fatalf("expected exactly one dag.call event, got %d", len(proj.Events))
+	}
+	if proj.Events[0].SpanID != "s1" {
+		t.Fatalf("expected only dag.call span in events, got %+v", proj.Events[0])
+	}
+}
+
 type callSpanInput struct {
 	traceID      string
 	spanID       string
