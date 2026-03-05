@@ -13,4 +13,5 @@
 - [ ] Stage 4: Lazy operation mapping
   - Implement `read`, `readdir`, and `stat` mapping to workspace APIs with shallow directory listing.
 - [ ] Stage 5: Validation and hardening
-  - Add integration tests for mount semantics, laziness, and caching behavior.
+  - [x] Add unit tests for workspace mount detection and runtime-hook behavior.
+  - [ ] Add integration tests for mount semantics, laziness, and caching behavior.
