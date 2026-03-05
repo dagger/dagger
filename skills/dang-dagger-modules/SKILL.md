@@ -7,6 +7,39 @@ description: Write and edit Dagger modules using the Dang programming language (
 
 Dang is a statically typed scripting language for GraphQL, used as a lightweight Dagger SDK. Types and functions are loaded directly from the Dagger GraphQL schema. No codegen phase is needed.
 
+## Mandatory Architecture Rules
+
+These are hard requirements for this skill:
+
+- **One file per type.** If you define `type Site`, it lives in `site.dang`. Never define multiple types in one file.
+- **Artifact-centric design first.** Start by modeling artifacts, their fields, and relationships. Add behavior only after data model is clear.
+- **Module purpose is extending the user's workspace UX.** Public API must match what users expect to discover and operate on in their repo.
+- **Support dynamic artifact discovery.** If a workspace may contain multiple apps/sites/packages/projects, discover them via file markers (`glob`) and return typed objects.
+- **Attach behavior to owning type.** Site-specific behavior on `Site`, target-specific behavior on `Target`, config parsing on `Config`. Avoid top-level pass-through wrappers unless explicitly requested.
+- **No raw JSON plumbing in behavior types.** Parse JSON at boundary types (for example `Config`) and pass typed config objects into behavior types.
+- **Workspace access is expensive.** Always constrain `ws.directory()` with `include`/`exclude`. Never broad-mount workspace by default.
+- **Top-level constructor args are UX schema.** Constructor args on the module object are user-facing workspace config. Keep them stable, minimal, and documented.
+
+## Required Workflow
+
+Before editing code:
+
+1. Write a short type map: `Type -> artifact -> responsibilities`.
+2. Confirm discovery strategy (marker files and include filters).
+3. Confirm module-level constructor args as UX/config schema.
+
+While editing:
+
+1. Make smallest architectural step.
+2. Compile-check immediately: `dagger call -m <module> --help`.
+3. Fix type/syntax errors before further refactors.
+
+Before finishing:
+
+1. Re-check object ownership boundaries.
+2. Remove accidental helper pyramids or pass-through wrappers.
+3. Re-run module load check.
+
 ## Project Setup
 
 A Dang Dagger module requires:
@@ -18,13 +51,13 @@ A Dang Dagger module requires:
   "name": "my-module",
   "engineVersion": "v0.19.11",
   "sdk": {
-    "source": "github.com/vito/dang/dagger-sdk@be6466632453a52120517e5551c266a239d3899b"
+    "source": "github.com/vito/dang/dagger-sdk@da6ed3337a2a18b0c9a371813ef62b880e1c6f5d"
   },
   "dependencies": []
 }
 ```
 
-2. **One or more `.dang` files** (typically `main.dang`). All `.dang` files in the module directory are loaded.
+2. **One `.dang` file per type** (for example `netlify.dang`, `site.dang`, `target.dang`).
 
 ## Language Reference
 
@@ -105,6 +138,7 @@ type MyModule {
 - Arg names don't need to match field names
 - Runtime error if non-null fields aren't assigned
 - Types without `new()` derive constructors from fields (existing behavior)
+- Treat module-object constructor args as user-facing configuration schema/UX.
 
 ### Nullable Value Handling
 
@@ -260,6 +294,7 @@ The Workspace API replaces the legacy `@defaultPath`/`@ignorePatterns` pattern f
 - **Any function that takes `ws: Workspace!` is never cached** — the engine can't know in advance which files will be accessed. Design accordingly: keep workspace-dependent functions thin, and push cacheable work into functions that take `Directory!` or `File!` instead.
 - **Always filter at the `ws.directory()` call** using `include:`/`exclude:` patterns. Never call `ws.directory(".")` without filters — that eagerly uploads the entire project.
 - **Push workspace access to the leaves** when possible. If a function only sometimes needs workspace files, or returns objects that may or may not need them, defer the `ws.directory()` call to the point of actual use. This avoids unnecessary uploads and keeps intermediate results cacheable.
+- **Prefer marker-file discovery for multi-artifact workspaces** (`glob` on config files, then map to typed objects).
 
 ```dang
 type MyToolchain {
@@ -401,6 +436,38 @@ raise "something went wrong"
 - `Void` return type is never `Void!`
 
 See [references/language.md](references/language.md) Common Pitfalls section for details.
+
+## Keeping Dang Syntax Current
+
+Dang syntax evolves quickly. This skill must be maintained proactively.
+
+Authoritative local references:
+
+- [references/language.md](references/language.md) (syntax/types/control-flow reference)
+- This `SKILL.md` (workflow/pattern rules and examples)
+
+Update procedure for syntax-related changes:
+
+1. Update `references/language.md` first.
+2. Update syntax examples and guardrails in `SKILL.md` to match.
+3. Validate examples by loading real modules (`dagger call -m <module> --help`).
+4. If compiler behavior conflicts with docs, compiler behavior wins; update docs immediately.
+
+## Keeping Dang SDK Current
+
+`dagger update` does **not** reliably manage a module's `sdk.source` pin for Dang modules.
+
+Use this procedure instead:
+
+1. Decide SDK policy per module: pinned commit (recommended for reproducibility) or floating ref.
+2. Update module `dagger.json`:
+   - `"sdk": { "source": "github.com/vito/dang/dagger-sdk@<commit-or-ref>" }`
+3. If syncing with repo baseline, inspect:
+   - `core/integration/workspace_test.go` (`const dangSDK = ...`)
+4. Find all Dang SDK refs to update consistently:
+   - `rg -n '"source": "github.com/vito/dang/dagger-sdk' -g 'dagger.json' modules toolchains`
+5. Validate each changed module loads:
+   - `dagger call -m ./modules/<name> --help`
 
 ## Editor Setup
 
