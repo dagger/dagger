@@ -289,6 +289,231 @@ func TestTraceAPIProjection(t *testing.T) {
 	}
 }
 
+func TestV2RenderEndpoints(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "dddddddddddddddddddddddddddddddd"
+	call1SpanHex := "1111111111111111"
+	call2SpanHex := "2222222222222222"
+	call3SpanHex := "3333333333333333"
+
+	call1State := map[string]any{
+		"type": "Directory",
+		"fields": map[string]any{
+			"path": map[string]any{
+				"name":  "path",
+				"type":  "String",
+				"value": "/work",
+			},
+		},
+	}
+	containerState := map[string]any{
+		"type": "Container",
+		"fields": map[string]any{
+			"mounted": map[string]any{
+				"name":  "mounted",
+				"type":  "Directory",
+				"value": "state-a",
+			},
+		},
+	}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, call1SpanHex),
+								Name:              "Query.directory",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   20,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-a"),
+									kvString(t, telemetry.DagOutputAttr, "state-a"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, call1State)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-a",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, call2SpanHex),
+								ParentSpanId:      mustDecodeHex(t, call1SpanHex),
+								Name:              "Query.container",
+								StartTimeUnixNano: 25,
+								EndTimeUnixNano:   35,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-b"),
+									kvString(t, telemetry.DagOutputAttr, "state-b"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, containerState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-b",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, call3SpanHex),
+								ParentSpanId:      mustDecodeHex(t, call2SpanHex),
+								Name:              "Container.withMountedDirectory",
+								StartTimeUnixNano: 40,
+								EndTimeUnixNano:   50,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-c"),
+									kvString(t, telemetry.DagOutputAttr, "state-c"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, containerState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-c",
+										ReceiverDigest: "state-b",
+										Field:          "withMountedDirectory",
+										Type:           &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	renderReq := httptest.NewRequest(http.MethodGet, "/api/v2/render?traceID="+traceIDHex, nil)
+	renderRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(renderRec, renderReq)
+	if renderRec.Code != http.StatusOK {
+		t.Fatalf("v2 render failed: status=%d body=%s", renderRec.Code, renderRec.Body.String())
+	}
+
+	var renderResp struct {
+		DerivationVersion string `json:"derivationVersion"`
+		Context           struct {
+			Mode string `json:"mode"`
+		} `json:"context"`
+		Objects []struct {
+			ObjectID string `json:"objectID"`
+			Alias    string `json:"alias"`
+		} `json:"objects"`
+		Calls []struct {
+			CallID string `json:"callID"`
+		} `json:"calls"`
+		Edges []struct {
+			Kind          string `json:"kind"`
+			FromID        string `json:"fromID"`
+			ToID          string `json:"toID"`
+			EvidenceCount int    `json:"evidenceCount"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal(renderRec.Body.Bytes(), &renderResp); err != nil {
+		t.Fatalf("decode render response: %v", err)
+	}
+	if renderResp.DerivationVersion == "" {
+		t.Fatalf("expected derivationVersion")
+	}
+	if renderResp.Context.Mode != "global" {
+		t.Fatalf("unexpected render mode: %#v", renderResp.Context.Mode)
+	}
+	if len(renderResp.Objects) != 2 {
+		t.Fatalf("expected 2 render objects, got %#v", renderResp.Objects)
+	}
+	if len(renderResp.Calls) != 3 {
+		t.Fatalf("expected 3 render calls, got %#v", renderResp.Calls)
+	}
+
+	byAlias := map[string]string{}
+	for _, obj := range renderResp.Objects {
+		byAlias[obj.Alias] = obj.ObjectID
+	}
+	containerID := byAlias["Container#1"]
+	directoryID := byAlias["Directory#1"]
+	if containerID == "" || directoryID == "" {
+		t.Fatalf("unexpected aliases: %#v", byAlias)
+	}
+
+	depEdgeFound := false
+	for _, edge := range renderResp.Edges {
+		if edge.Kind != "depends-on" {
+			continue
+		}
+		if edge.FromID == containerID && edge.ToID == directoryID && edge.EvidenceCount >= 1 {
+			depEdgeFound = true
+			break
+		}
+	}
+	if !depEdgeFound {
+		t.Fatalf("expected depends-on edge from container to directory, edges=%#v", renderResp.Edges)
+	}
+
+	viewReq := httptest.NewRequest(http.MethodGet, "/api/v2/views/object/render?traceID="+traceIDHex+"&focusObjectID="+containerID+"&dependencyHops=0", nil)
+	viewRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(viewRec, viewReq)
+	if viewRec.Code != http.StatusOK {
+		t.Fatalf("v2 object view render failed: status=%d body=%s", viewRec.Code, viewRec.Body.String())
+	}
+	var viewResp struct {
+		Context struct {
+			Mode string `json:"mode"`
+			View string `json:"view"`
+		} `json:"context"`
+		Objects []struct {
+			ObjectID string `json:"objectID"`
+		} `json:"objects"`
+	}
+	if err := json.Unmarshal(viewRec.Body.Bytes(), &viewResp); err != nil {
+		t.Fatalf("decode object view response: %v", err)
+	}
+	if viewResp.Context.Mode != "object" || viewResp.Context.View != "object" {
+		t.Fatalf("unexpected object view context: %#v", viewResp.Context)
+	}
+	if len(viewResp.Objects) != 1 || viewResp.Objects[0].ObjectID != containerID {
+		t.Fatalf("unexpected object view objects: %#v", viewResp.Objects)
+	}
+
+	badViewReq := httptest.NewRequest(http.MethodGet, "/api/v2/views/nope/render?traceID="+traceIDHex, nil)
+	badViewRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(badViewRec, badViewReq)
+	if badViewRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for unknown view, got %d", badViewRec.Code)
+	}
+}
+
 func TestOpenTraceValidation(t *testing.T) {
 	t.Parallel()
 
@@ -411,6 +636,15 @@ func encodeCallB64(t *testing.T, call *callpbv1.Call) string {
 	b, err := proto.Marshal(call)
 	if err != nil {
 		t.Fatalf("marshal call: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func encodeOutputStateB64(t *testing.T, payload map[string]any) string {
+	t.Helper()
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal output state: %v", err)
 	}
 	return base64.StdEncoding.EncodeToString(b)
 }

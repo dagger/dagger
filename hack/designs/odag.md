@@ -311,6 +311,8 @@ GET /api/v2/object-bindings
 GET /api/v2/mutations
 GET /api/v2/sessions
 GET /api/v2/clients
+GET /api/v2/render
+GET /api/v2/views/{view}/render
 ```
 
 Common query parameters:
@@ -323,6 +325,24 @@ Convenience views (kept for compatibility):
 1. `/api/traces` and `/api/traces/{id}/meta`
 2. `/api/traces/{id}/events`
 3. `/api/traces/{id}/snapshot?t=...|step=...`
+
+Render-model view parameters:
+1. `mode=global|scope|object|hybrid` (for `/api/v2/render`)
+2. `scopeCallID`
+3. `focusObjectID`
+4. `dependencyHops`
+5. `t` (snapshot unix nano)
+6. `/api/v2/views/{view}/render` enforces mode by route (`global`, `scope`, `object`, `hybrid`) and keeps query parsing shared with `/api/v2/render`.
+
+Render-model payload intent:
+1. `objects`: renderable mutable object nodes with activity links.
+2. `calls`: normalized call nodes with parent/child + direct/subtree object membership.
+3. `edges`: mixed graph relations:
+   - `depends-on` (object field references)
+   - `contains-call` (call hierarchy)
+   - `contains-object` (direct call mutation containment)
+4. `events`: filtered event stream for the selected render lens.
+5. `navigation`: scope path and enterable IDs for drill-down UX.
 
 ### Derivation/versioning
 
@@ -635,6 +655,7 @@ Encoding note:
 - [x] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
 - [x] Stage 4: Web UI shell + revision history + ODAG canvas
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
+- [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -751,6 +772,10 @@ Phase 2.5 implementation note:
 2. Responses now include `derivationVersion` (`odag-v2alpha1`) and pagination cursor support (`cursor` as offset token + `nextCursor`).
 3. V2 derivation uses `ProjectTraceWithOptions` with keep-rules disabled so object/call pools are not constrained by the trace-view pruning heuristics.
 4. Existing `/api/traces/*` endpoints remain unchanged and continue to serve the current UI.
+5. Added render-model endpoints backed by the same v2 projection core:
+   - `/api/v2/render` with explicit `mode` query parameter
+   - `/api/v2/views/{view}/render` with route-selected rendering universe
+6. Render response now carries precomputed containment + dependency structure (`calls`, `objects`, `edges`, `navigation`) so frontend views can iterate quickly with minimal local derivation logic.
 
 ### Phase 3: Payload evolution (future)
 
