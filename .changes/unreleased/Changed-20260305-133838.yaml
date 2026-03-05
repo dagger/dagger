@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+    Added glob-style patterns to function and argument attributes in module customization. This allows "defaults" for all functions that have the matching argument.
+time: 2026-03-05T13:38:38.997453836-05:00
+custom:
+    Author: suprjinx
+    PR: "11906"
