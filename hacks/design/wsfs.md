@@ -158,6 +158,32 @@ Effect:
 - Accessed file/metadata changes do invalidate.
 - No up-front full repository hash/upload.
 
+## 10x Direction (Still Simple)
+
+Make workspace access trace a first-class internal artifact:
+
+1. Collect per-exec workspace access traces (`read`, `readdir`, `stat`) per mount.
+2. Normalize traces to path+operation sets and persist them in `WorkspaceMountSource`.
+3. Compute a mount digest from trace-resolved workspace content/metadata.
+4. Feed this digest into `ContainerDagOp` dependency hashing.
+
+Then optimize repeat executions:
+
+1. Materialize a "workspace slice" (only traced paths) for hot repeated execs.
+2. Keep WSFS fallback for trace misses/new paths.
+
+This keeps the API unchanged while making behavior faster and still unsurprising.
+
+## Laziness and Performance Priorities
+
+Order of work for highest return:
+
+1. Remove `readdir` N+1 metadata calls by returning entry metadata in one workspace API call.
+2. Add WSFS in-memory metadata caches (positive/negative) with strict invalidation on upper-layer mutations.
+3. Stream file materialization to disk (avoid large `file.Contents()` buffering).
+4. Add range-read workspace primitive (`offset`, `size`) to avoid full downloads for partial reads.
+5. Add trace-based cache digests (v1) so laziness also improves cache hit rate.
+
 ## Security and Isolation
 
 - Path resolution remains sandboxed to workspace root.
@@ -213,6 +239,69 @@ Effect:
 - Two-way sync from WSFS writes back to workspace.
 - Explicit conflict policy between host updates and upper-layer shadowed paths.
 - Richer metadata APIs if needed (`lstat`, xattrs, chmod/chown semantics).
+
+## Write-Back Sync Design (v2)
+
+Add explicit commit semantics instead of implicit always-on bidirectional sync.
+
+Candidate API shape:
+
+```graphql
+extend type Container {
+  withMountedWorkspace(
+    path: String!
+    source: Workspace!
+    owner: String = ""
+    expand: Boolean = false
+  ): Container!
+
+  commitMountedWorkspace(path: String!): Workspace!
+}
+```
+
+Execution model:
+
+1. Mount records a write journal (create/modify/delete/rename) against a captured base workspace snapshot identity.
+2. `commitMountedWorkspace` revalidates base identity and applies journal to a new workspace value.
+3. If conflicts are detected, commit fails with conflict details.
+4. No implicit host mutation; caller decides when to materialize/apply resulting workspace.
+
+This preserves reproducibility and avoids surprising side effects during execution.
+
+## Consistency and Sync Safety
+
+Yes, this is a real concern, especially once write-back exists.
+
+Recommended model:
+
+1. v0 (current): eventual view of host reads; exec may observe host changes between filesystem operations.
+2. v1: optional "frozen read snapshot" mode per mount for tools that require strict consistency.
+3. v2 write-back: optimistic concurrency with base-snapshot precondition + conflict detection.
+
+Conflict examples:
+
+- Host modified a file after WSFS first read but before commit.
+- Host deleted/renamed a path WSFS also modified.
+- Both sides changed the same file contents.
+
+Policy:
+
+- Default to fail-on-conflict.
+- Return structured conflict report so callers can retry/rebase/override intentionally.
+
+This keeps correctness explicit rather than hiding races.
+
+## `include` / `exclude` on `withMountedWorkspace`
+
+Potentially useful, but optional and not required for baseline laziness.
+
+Recommendation:
+
+1. Keep default API as-is (full workspace addressable lazily).
+2. If added, treat `include`/`exclude` as an addressability envelope, not eager transfer directives.
+3. Reject accesses outside envelope with clear errors.
+
+This can help advanced users constrain scope/safety, without weakening automatic dynamic filtering.
 
 ## Terminal / Service Status
 
