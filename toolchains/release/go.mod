@@ -6,6 +6,7 @@ replace github.com/dagger/dagger => ../..
 
 require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
+	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	golang.org/x/mod v0.32.0
 	golang.org/x/sync v0.19.0
@@ -18,7 +19,7 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.0
+	dagger.io/dagger v0.20.1
 	github.com/99designs/gqlgen v0.17.81 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -54,8 +55,8 @@ require (
 )
 
 replace (
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.0
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
-	go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.14.0
-	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.14.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.16.0
+	go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.16.0
+	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.16.0
 )
