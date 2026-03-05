@@ -35,6 +35,7 @@ func GoTypeDefsGenerator(
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
+		fullSchema:      schema,
 		schemaVersion:   schemaVersion,
 		pass:            pass,
 	}

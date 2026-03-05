@@ -76,8 +76,8 @@ func generateCode(
 	// Build two template sets: one bound to the core schema (most files) and
 	// one bound to the full schema (dag/dag.gen.go and other files that need
 	// to expose dep-contributed Query fields).
-	coreFuncs := templates.GoTemplateFuncs(ctx, coreSchema, schemaVersion, cfg, pkg, fset, pass)
-	fullFuncs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg, pkg, fset, pass)
+	coreFuncs := templates.GoTemplateFuncs(ctx, coreSchema, schema, schemaVersion, cfg, pkg, fset, pass)
+	fullFuncs := templates.GoTemplateFuncs(ctx, schema, schema, schemaVersion, cfg, pkg, fset, pass)
 
 	coreTmpls := templates.Templates(coreFuncs)
 	fullTmpls := templates.Templates(fullFuncs)
@@ -164,7 +164,7 @@ func generateDependencyFiles(
 	for _, depName := range depNames {
 		depSchema := schema.Include(depName)
 
-		funcs := templates.GoTemplateFuncs(ctx, depSchema, schemaVersion, cfg, pkg, fset, pass)
+		funcs := templates.GoTemplateFuncs(ctx, depSchema, schema, schemaVersion, cfg, pkg, fset, pass)
 		tmpl, err := templates.DepTemplate(funcs)
 		if err != nil {
 			return fmt.Errorf("get dependency template: %w", err)

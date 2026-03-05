@@ -22,12 +22,16 @@ import (
 func GoTemplateFuncs(
 	ctx context.Context,
 	schema *introspection.Schema,
+	fullSchema *introspection.Schema,
 	schemaVersion string,
 	cfg generator.Config,
 	pkg *packages.Package,
 	fset *token.FileSet,
 	pass int,
 ) template.FuncMap {
+	if fullSchema == nil {
+		fullSchema = schema
+	}
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
 		ctx:             ctx,
@@ -35,6 +39,7 @@ func GoTemplateFuncs(
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
+		fullSchema:      fullSchema,
 		schemaVersion:   schemaVersion,
 		pass:            pass,
 	}.FuncMap()
@@ -42,11 +47,15 @@ func GoTemplateFuncs(
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	ctx           context.Context
-	cfg           generator.Config
-	modulePkg     *packages.Package
-	moduleFset    *token.FileSet
-	schema        *introspection.Schema
+	ctx        context.Context
+	cfg        generator.Config
+	modulePkg  *packages.Package
+	moduleFset *token.FileSet
+	schema     *introspection.Schema
+	// fullSchema is the complete schema including all dependency types. It is
+	// used for type lookups (e.g. resolving dep-contributed enums in module
+	// code) while schema may be a filtered subset used for code rendering.
+	fullSchema    *introspection.Schema
 	schemaVersion string
 	pass          int
 }
