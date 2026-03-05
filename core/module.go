@@ -40,8 +40,11 @@ type Module struct {
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
 
-	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
+	// Runtime is the execution environment that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+	Runtime ModuleRuntime
+
+	// runtimeContainer is a cached container view of the runtime, for the GraphQL "runtime" field
+	runtimeContainer dagql.Nullable[dagql.ObjectResult[*Container]]
 
 	// The following are populated while initializing the module
 
@@ -225,6 +228,18 @@ func CacheModuleByContentDigest(
 	}
 
 	return nil
+}
+
+// GetRuntimeContainer returns the runtime as a Container for the GraphQL field.
+// Returns nil if the runtime doesn't use a container.
+func (mod *Module) GetRuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
+	if !mod.runtimeContainer.Valid && mod.Runtime != nil {
+		// Cache the container view
+		if ctr, ok := mod.Runtime.AsContainer(); ok {
+			mod.runtimeContainer = dagql.NonNull(ctr)
+		}
+	}
+	return mod.runtimeContainer
 }
 
 // Return all user defaults for this module
@@ -884,23 +899,22 @@ func (mod *Module) Patch() error {
 	return nil
 }
 
-func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], err error) {
+func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
 	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
 	if !ok {
-		return runtime, fmt.Errorf("no runtime implemented")
+		return nil, fmt.Errorf("no runtime implemented")
 	}
 
-	var src dagql.ObjectResult[*ModuleSource]
 	if !mod.Source.Valid {
-		return runtime, fmt.Errorf("no source")
+		return nil, fmt.Errorf("no source")
 	}
 
-	src = mod.Source.Value
+	src := mod.Source.Value
 	scopedSourceDigest := src.Self().ContentScopedDigest()
 	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
-	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
-		return runtime, fmt.Errorf("failed to load runtime: %w", err)
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
 	return runtime, nil

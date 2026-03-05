@@ -18,20 +18,21 @@ func (sdk *runtimeModule) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
-) (inst dagql.ObjectResult[*core.Container], rerr error) {
+) (_ core.ModuleRuntime, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	dag, err := sdk.mod.dag(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
+	var inst dagql.ObjectResult[*core.Container]
 	err = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
 			Field: "moduleRuntime",
@@ -57,7 +58,7 @@ func (sdk *runtimeModule) Runtime(
 		},
 	)
 	if err != nil {
-		return inst, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
+		return nil, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
 	}
-	return inst, nil
+	return &core.ContainerRuntime{Container: inst}, nil
 }

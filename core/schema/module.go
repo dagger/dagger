@@ -726,12 +726,17 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 	return self.CurrentFunctionCall(ctx)
 }
 
-func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.ObjectResult[*core.Container], error) {
-	if mod.Runtime.Valid {
-		return mod.Runtime.Value, nil
+func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {
+	if mod.Runtime != nil {
+		return mod.GetRuntimeContainer(), nil
 	}
 
-	return mod.LoadRuntime(ctx)
+	runtime, err := mod.LoadRuntime(ctx)
+	if err != nil {
+		return dagql.Nullable[dagql.ObjectResult[*core.Container]]{}, err
+	}
+	mod.Runtime = runtime
+	return mod.GetRuntimeContainer(), nil
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {

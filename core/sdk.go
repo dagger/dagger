@@ -2,9 +2,15 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 /*
@@ -124,14 +130,182 @@ type CodeGenerator interface {
 }
 
 /*
+ModuleRuntime is an abstraction over different ways to execute module code.
+
+This can be either:
+- A Container-based runtime (traditional SDKs)
+- A native execution environment (e.g., Dang running directly in the engine)
+*/
+type ModuleRuntime interface {
+	// AsContainer returns the runtime as a Container, if applicable.
+	// Returns false if this runtime doesn't use containers.
+	AsContainer() (dagql.ObjectResult[*Container], bool)
+
+	// Call executes a function call in this runtime.
+	// The runtime is responsible for preparing the execution environment,
+	// running the function, and returning the result.
+	// Returns the output bytes and the client ID that was used for execution.
+	Call(
+		ctx context.Context,
+		execMD *buildkit.ExecutionMetadata,
+		fnCall *FunctionCall,
+	) (outputBytes []byte, clientID string, err error)
+}
+
+/*
+ContainerRuntime wraps a Container to serve as a ModuleRuntime.
+*/
+type ContainerRuntime struct {
+	Container dagql.ObjectResult[*Container]
+}
+
+func (r *ContainerRuntime) AsContainer() (dagql.ObjectResult[*Container], bool) {
+	return r.Container, true
+}
+
+func (r *ContainerRuntime) Call(
+	ctx context.Context,
+	execMD *buildkit.ExecutionMetadata,
+	fnCall *FunctionCall,
+) ([]byte, string, error) {
+	srv := dagql.CurrentDagqlServer(ctx)
+
+	var metaDir dagql.ObjectResult[*Directory]
+	err := srv.Select(ctx, srv.Root(), &metaDir,
+		dagql.Selector{
+			Field: "directory",
+		},
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("create mod metadata directory: %w", err)
+	}
+
+	var ctr dagql.ObjectResult[*Container]
+	err = srv.Select(ctx, r.Container, &ctr,
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modMetaDirPath)},
+				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
+			},
+		},
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("exec function: %w", err)
+	}
+
+	execCtx := ctx
+	execCtx = dagql.WithSkip(execCtx) // this span shouldn't be shown (it's entirely useless)
+	err = srv.Select(execCtx, ctr, &ctr,
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
+				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
+				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
+				{Name: "execMD", Value: dagql.NewSerializedString(execMD)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("exec function: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("get buildkit client: %w", err)
+	}
+
+	_, err = ctr.Self().Evaluate(ctx)
+	if err != nil {
+		return nil, "", r.handleCallError(ctx, fnCall, bk, err)
+	}
+
+	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("get function output directory: %w", err)
+	}
+
+	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get mod meta file: %w", err)
+	}
+
+	// Read the output of the function
+	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("read function output file: %w", err)
+	}
+
+	// Get the client ID actually used during the function call - this might not
+	// be the same as execMD.ClientID if the function call was cached at the
+	// buildkit level
+	clientID, err := ctr.Self().usedClientID(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("get client ID from container: %w", err)
+	}
+
+	return outputBytes, clientID, nil
+}
+
+func (r *ContainerRuntime) handleCallError(ctx context.Context, call *FunctionCall, bk *buildkit.Client, baseErr error) error {
+	id, ok, extractErr := extractError(ctx, bk, baseErr)
+	if extractErr != nil {
+		// if the module hasn't provided us with a nice error, just return the
+		// original error
+		return baseErr
+	}
+	if ok {
+		srv := dagql.CurrentDagqlServer(ctx)
+		errInst, err := id.Load(ctx, srv)
+		if err != nil {
+			return fmt.Errorf("load error instance: %w", err)
+		}
+		dagErr := errInst.Self().Clone()
+		originCtx := trace.SpanContextFromContext(
+			telemetry.Propagator.Extract(
+				context.Background(),
+				telemetry.AnyMapCarrier(dagErr.Extensions()),
+			),
+		)
+		if !originCtx.IsValid() {
+			// If the Error doesn't already have an origin, inject the current trace
+			// context as its origin.
+			tm := propagation.MapCarrier{}
+			telemetry.Propagator.Inject(ctx, tm)
+			for _, key := range tm.Keys() {
+				val := tm.Get(key)
+				valJSON, err := json.Marshal(val)
+				if err != nil {
+					return fmt.Errorf("marshal value: %w", err)
+				}
+				dagErr.Values = append(dagErr.Values, &ErrorValue{
+					Name:  key,
+					Value: JSON(valJSON),
+				})
+			}
+		}
+		return dagErr
+	}
+	if call.Name == "" {
+		return fmt.Errorf("call constructor: %w", baseErr)
+	}
+	return fmt.Errorf("call function %q: %w", call.Name, baseErr)
+}
+
+/*
 Runtime is an interface that a SDK may implements to provide an executable
-container to run the module's code at runtime.
+environment to run the module's code at runtime.
 
 This include setup of the runtime environment, dependencies installation,
 and entrypoint setup.
 
-The returned container should have as entrypoint the execution of an
-entrypoint function that will register the module typedefs in the Dagger
+For container-based runtimes, the returned ModuleRuntime should wrap a container
+with an entrypoint that will register the module typedefs in the Dagger
 engine or execute a function of that module depending on the argument
 forwarded to that entrypoint:
   - If the called object is empty, the script should register type definitions
@@ -144,8 +318,8 @@ This interface MUST be implemented to support callable SDKs
 */
 type Runtime interface {
 	/*
-		Runtime returns a container that is used to execute module code at runtime
-		in the Dagger engine.
+		Runtime returns an execution environment that is used to execute module code
+		at runtime in the Dagger engine.
 
 		The provided Module is not fully initialized; the Runtime field will not
 		be set yet.
@@ -168,7 +342,7 @@ type Runtime interface {
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
-	) (dagql.ObjectResult[*Container], error)
+	) (ModuleRuntime, error)
 }
 
 /*
