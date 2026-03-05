@@ -2904,6 +2904,7 @@ func resolveWorkspaceMountDir(
 	if workspaceMnt.Upper != nil {
 		return workspaceMnt.Upper, nil
 	}
+	ctx = dagql.WithSkip(ctx)
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2931,6 +2932,7 @@ func workspaceMountDirectory(
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
 	}
+	ctx = dagql.WithSkip(ctx)
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2959,6 +2961,7 @@ func workspaceMountFile(
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
 	}
+	ctx = dagql.WithSkip(ctx)
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2996,6 +2999,7 @@ func workspaceMountStat(
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
 	}
+	ctx = dagql.WithSkip(ctx)
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -3038,6 +3042,7 @@ func workspaceMountEntries(
 	if workspaceMnt == nil {
 		return nil, fmt.Errorf("workspace mount source is nil")
 	}
+	ctx = dagql.WithSkip(ctx)
 
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
