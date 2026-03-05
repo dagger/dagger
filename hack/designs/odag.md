@@ -562,6 +562,7 @@ Post-MVP projection refinement:
 - Mutation collapse now tolerates module-qualified type names (e.g. `ModuleSource` vs `mymod.ModuleSource`) via normalized type matching, reducing false "create" splits in chains.
 - Default keep rules now prune top-level non-`Query.*` call-only fan-out objects and non-top-level-only objects, while preserving top-level writes and mutation-heavy top-level outputs.
 - Event debug fields now include call-depth and nearest parent DAG call metadata to audit top-level classification directly in UI.
+- Projection now rehydrates `dag.output.state` payloads by immutable output digest when emitters dedupe repeated IDs, avoiding false `state unavailable` flags on duplicate-return spans.
 
 ### Phase 0: Spike
 

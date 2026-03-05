@@ -482,6 +482,26 @@ func parseSpans(spans []store.SpanRecord) ([]parsedSpan, []string) {
 		out = append(out, p)
 	}
 
+	// Emitters may omit output-state payloads for repeated immutable IDs.
+	// Rehydrate from any previous span in the same trace that carried the state.
+	outputStateByDigest := make(map[string]map[string]any, len(out))
+	for _, p := range out {
+		if p.outputStateDigest == "" || p.outputStatePayload == nil {
+			continue
+		}
+		if _, ok := outputStateByDigest[p.outputStateDigest]; !ok {
+			outputStateByDigest[p.outputStateDigest] = p.outputStatePayload
+		}
+	}
+	for i := range out {
+		if out[i].outputStatePayload != nil || out[i].outputStateDigest == "" {
+			continue
+		}
+		if cached, ok := outputStateByDigest[out[i].outputStateDigest]; ok {
+			out[i].outputStatePayload = cached
+		}
+	}
+
 	return out, warnings
 }
 

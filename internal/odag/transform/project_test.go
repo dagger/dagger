@@ -611,6 +611,70 @@ func TestProjectTraceIncludesNonDagSpansInEventStream(t *testing.T) {
 	}
 }
 
+func TestProjectTraceRehydratesOutputStateFromDuplicateDigest(t *testing.T) {
+	t.Parallel()
+
+	outputState := map[string]any{
+		"type": "Container",
+		"fields": map[string]any{
+			"name": map[string]any{
+				"name":  "name",
+				"type":  "String",
+				"value": "demo",
+			},
+		},
+	}
+
+	spans := []store.SpanRecord{
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace7",
+			spanID:       "s1",
+			parentSpanID: "",
+			name:         "Query.container",
+			start:        1,
+			end:          10,
+			output:       "state-a",
+			outputState:  outputState,
+			call: &callpbv1.Call{
+				Digest: "call-1",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+		mustCallSpan(t, callSpanInput{
+			traceID:      "trace7",
+			spanID:       "s2",
+			parentSpanID: "",
+			name:         "Query.container",
+			start:        11,
+			end:          20,
+			output:       "state-a", // duplicate immutable state ID, payload omitted by emitter
+			call: &callpbv1.Call{
+				Digest: "call-2",
+				Field:  "container",
+				Type:   &callpbv1.Type{NamedType: "Container"},
+			},
+		}),
+	}
+
+	proj, err := ProjectTrace("trace7", spans)
+	if err != nil {
+		t.Fatalf("project trace: %v", err)
+	}
+	if len(proj.Objects) != 1 {
+		t.Fatalf("expected one object, got %d", len(proj.Objects))
+	}
+	if proj.Objects[0].MissingState {
+		t.Fatalf("expected missingState=false when duplicate digest payload is available elsewhere")
+	}
+	if len(proj.Objects[0].StateHistory) != 2 {
+		t.Fatalf("expected 2 state entries, got %d", len(proj.Objects[0].StateHistory))
+	}
+	if proj.Objects[0].StateHistory[1].OutputStateJSON == nil {
+		t.Fatalf("expected duplicate digest state entry to be rehydrated with payload")
+	}
+}
+
 type callSpanInput struct {
 	traceID      string
 	spanID       string
@@ -619,6 +683,7 @@ type callSpanInput struct {
 	start        int64
 	end          int64
 	output       string
+	outputState  map[string]any
 	internal     bool
 	resource     map[string]any
 	scope        map[string]any
@@ -638,6 +703,14 @@ func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
 	}
 	if in.output != "" {
 		attrs[telemetry.DagOutputAttr] = in.output
+	}
+	if in.outputState != nil {
+		raw, err := json.Marshal(in.outputState)
+		if err != nil {
+			t.Fatalf("marshal output state payload: %v", err)
+		}
+		attrs[telemetry.DagOutputStateAttr] = base64.StdEncoding.EncodeToString(raw)
+		attrs[telemetry.DagOutputStateVersionAttr] = "v1"
 	}
 	if in.internal {
 		attrs[telemetry.UIInternalAttr] = true
