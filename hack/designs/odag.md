@@ -524,6 +524,7 @@ Stage 4 implementation note:
   - stored trace selector
   - timeline controls (first/back/forward/last) driven by discrete object-event steps
   - status/current/last step readouts (no continuous seek bar)
+  - compact top-bar stats (title moved to inspector) to avoid layout collapse on long command strings
   - ODAG object canvas (workflow-style cards with mutation highlighting)
   - event stream panel with raw-vs-derived operation columns (`rawKind` vs `operation`)
   - inspector panel (selected object state history or current event details)

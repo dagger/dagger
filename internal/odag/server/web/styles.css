@@ -172,7 +172,7 @@ body {
 
 .timeline-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   padding: 12px;
@@ -182,6 +182,7 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  min-width: 380px;
 }
 
 .timeline-stat {
@@ -214,10 +215,15 @@ body {
   color: var(--muted);
   font-size: 0.78rem;
   display: block;
-  max-width: 540px;
+  width: 100%;
+  text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.timeline-right {
+  min-width: 0;
 }
 
 .graph-panel {

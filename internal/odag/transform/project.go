@@ -701,7 +701,7 @@ func summarizeTrace(spans []parsedSpan) TraceSummary {
 	}
 
 	roots := make([]SpanSummary, 0, 4)
-	commands := make([]CommandSummary, 0, 4)
+	commandsBySpanID := make(map[string]CommandSummary)
 	var bestCommand *CommandSummary
 
 	for _, sp := range spans {
@@ -714,6 +714,10 @@ func summarizeTrace(spans []parsedSpan) TraceSummary {
 				EndUnixNano:   sp.span.EndUnixNano,
 				DurationMs:    dur,
 			})
+		}
+
+		if sp.span.ParentSpanID != "" {
+			continue
 		}
 
 		commandArgs := getStringSlice(sp.resource, "process.command_args")
@@ -736,7 +740,7 @@ func summarizeTrace(spans []parsedSpan) TraceSummary {
 			ScopeName:   scopeName,
 			CommandArgs: commandArgs,
 		}
-		commands = append(commands, cmd)
+		commandsBySpanID[cmd.SpanID] = cmd
 		if bestCommand == nil || cmd.DurationMs > bestCommand.DurationMs {
 			c := cmd
 			bestCommand = &c
@@ -749,6 +753,10 @@ func summarizeTrace(spans []parsedSpan) TraceSummary {
 		}
 		return compareString(a.SpanID, b.SpanID)
 	})
+	commands := make([]CommandSummary, 0, len(commandsBySpanID))
+	for _, cmd := range commandsBySpanID {
+		commands = append(commands, cmd)
+	}
 	slices.SortFunc(commands, func(a, b CommandSummary) int {
 		if cmp := compareInt64(a.StartUnixNano, b.StartUnixNano); cmp != 0 {
 			return cmp

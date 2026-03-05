@@ -265,12 +265,11 @@ function renderTimeline() {
   els.timelineCurrent.textContent = String(currentStep);
   els.timelineEnd.textContent = String(totalSteps);
 
-  const title = state.projection.summary?.title ? ` | ${state.projection.summary.title}` : "";
   const objectCount = (state.snapshot.objects || []).length;
   const eventCount = (state.snapshot.events || []).length;
   const warningCount = (state.projection.warnings || []).length;
   const warnText = warningCount > 0 ? ` | ${warningCount} warnings` : "";
-  els.traceStats.textContent = `${objectCount} objects | ${eventCount} events${warnText}${title}`;
+  els.traceStats.textContent = `${objectCount} objects | ${eventCount} events${warnText}`;
   syncStepControls();
 }
 
