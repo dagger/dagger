@@ -311,6 +311,9 @@ type WorkspaceMountSource struct {
 	//
 	// This is stored for future WSFS runtime wiring.
 	Owner string
+
+	// Controls how workspace writes are synchronized back to the workspace root.
+	WriteSync WorkspaceWriteSync
 }
 
 type CacheMountSource struct {
@@ -1290,15 +1293,20 @@ func (container *Container) WithMountedWorkspace(
 	target string,
 	workspace dagql.ObjectResult[*Workspace],
 	owner string,
+	writeSync WorkspaceWriteSync,
 ) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
+	if writeSync == "" {
+		writeSync = WorkspaceWriteSyncEphemeral
+	}
 
 	container.Mounts = container.Mounts.With(ContainerMount{
 		WorkspaceSource: &WorkspaceMountSource{
 			Workspace: workspace,
 			Owner:     owner,
+			WriteSync: writeSync,
 		},
 		Target: target,
 	})

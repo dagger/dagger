@@ -122,6 +122,50 @@ func withMountedWorkspaceExec(
 	return execRes.ID, execRes.Stdout
 }
 
+func withMountedWorkspaceExecWithWriteSync(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	workspaceID string,
+	writeSync string,
+	args []string,
+) (string, string) {
+	t.Helper()
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					WithExec struct {
+						ID     string
+						Stdout string
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Exec($ws: WorkspaceID!, $writeSync: WorkspaceWriteSync!, $args: [String!]!) {
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws", source: $ws, writeSync: $writeSync) {
+					withExec(args: $args) {
+						id
+						stdout
+					}
+				}
+			}
+		}
+	}`, alpineImage), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws":        workspaceID,
+			"writeSync": writeSync,
+			"args":      args,
+		},
+	})
+	require.NoError(t, err)
+	execRes := res.Container.From.WithMountedWorkspace.WithExec
+	return execRes.ID, execRes.Stdout
+}
+
 func loadContainerExec(
 	ctx context.Context,
 	t *testctx.T,
@@ -382,6 +426,26 @@ func (WorkspaceSuite) TestWithMountedWorkspaceWritesPersistInLineage(ctx context
 	})
 	require.NoError(t, err)
 	require.Equal(t, "missing", strings.TrimSpace(freshMountRes.Container.From.WithMountedWorkspace.WithExec.Stdout))
+}
+
+func (WorkspaceSuite) TestWithMountedWorkspaceWriteThroughSync(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "existing.txt"), []byte("old\n"), 0o600))
+
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	wsID := currentWorkspaceID(ctx, t, c)
+
+	_, _ = withMountedWorkspaceExecWithWriteSync(ctx, t, c, wsID, "WRITE_THROUGH", []string{
+		"sh", "-ec", "echo updated > /ws/existing.txt; echo created > /ws/created.txt",
+	})
+
+	existingBytes, err := os.ReadFile(filepath.Join(wd, "existing.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "updated\n", string(existingBytes))
+
+	createdBytes, err := os.ReadFile(filepath.Join(wd, "created.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "created\n", string(createdBytes))
 }
 
 func (WorkspaceSuite) TestWithMountedWorkspaceLazyMaterialization(ctx context.Context, t *testctx.T) {

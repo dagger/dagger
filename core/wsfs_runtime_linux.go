@@ -6,14 +6,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	containerdmount "github.com/containerd/containerd/v2/core/mount"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/docker/docker/pkg/idtools"
@@ -149,6 +153,11 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 			errs = errors.Join(errs, err)
 		}
 		server.Wait()
+		if !r.readonly && r.workspace.WriteSync == WorkspaceWriteSyncWriteThrough {
+			if err := wsfs.syncWriteThrough(); err != nil {
+				errs = errors.Join(errs, err)
+			}
+		}
 		if err := os.RemoveAll(fusePath); err != nil {
 			errs = errors.Join(errs, err)
 		}
@@ -176,6 +185,7 @@ type wsfsPathFS struct {
 	workspace *WorkspaceMountSource
 
 	materializeMu sync.Mutex
+	journal       *wsfsWriteJournal
 }
 
 func newWSFSPathFS(ctx context.Context, upperRoot string, workspace *WorkspaceMountSource) *wsfsPathFS {
@@ -184,10 +194,15 @@ func newWSFSPathFS(ctx context.Context, upperRoot string, workspace *WorkspaceMo
 		ctx:        ctx,
 		upperRoot:  upperRoot,
 		workspace:  workspace,
+		journal:    newWSFSWriteJournal(),
 	}
 }
 
 func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.Status) {
+	if fsys.isDeleted(name) {
+		return nil, fuse.ENOENT
+	}
+
 	if attr, status := fsys.FileSystem.GetAttr(name, c); status.Ok() {
 		return attr, status
 	} else if status != fuse.ENOENT {
@@ -209,6 +224,10 @@ func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.
 }
 
 func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.Status {
+	if fsys.isDeleted(name) {
+		return fuse.ENOENT
+	}
+
 	if status := fsys.FileSystem.Access(name, mode, c); status.Ok() {
 		return status
 	} else if status != fuse.ENOENT {
@@ -230,6 +249,10 @@ func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.S
 }
 
 func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, fuse.Status) {
+	if fsys.isDeleted(name) {
+		return nil, fuse.ENOENT
+	}
+
 	upperEntries, upperStatus := fsys.FileSystem.OpenDir(name, c)
 	if upperStatus != fuse.OK && upperStatus != fuse.ENOENT {
 		return nil, upperStatus
@@ -271,6 +294,9 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 		if rel != "." {
 			childRel = path.Join(rel, entryName)
 		}
+		if fsys.journal.isDeleted(childRel) {
+			continue
+		}
 		stat, err := fsys.workspaceStat(childRel)
 		if err != nil {
 			continue
@@ -287,14 +313,14 @@ func (fsys *wsfsPathFS) OpenDir(name string, c *fuse.Context) ([]fuse.DirEntry, 
 }
 
 func (fsys *wsfsPathFS) Open(name string, flags uint32, c *fuse.Context) (nodefs.File, fuse.Status) {
-	if f, status := fsys.FileSystem.Open(name, flags, c); status.Ok() {
-		return f, status
-	} else if status != fuse.ENOENT {
-		return nil, status
+	if fsys.isDeleted(name) {
+		return nil, fuse.ENOENT
 	}
 
-	if flags&uint32(syscall.O_ACCMODE) != uint32(os.O_RDONLY) {
-		return nil, fuse.ENOENT
+	if f, status := fsys.FileSystem.Open(name, flags, c); status.Ok() {
+		return fsys.wrapTrackedFile(name, flags, f), status
+	} else if status != fuse.ENOENT {
+		return nil, status
 	}
 
 	if err := fsys.materializeWorkspaceFile(name); err != nil {
@@ -304,7 +330,145 @@ func (fsys *wsfsPathFS) Open(name string, flags uint32, c *fuse.Context) (nodefs
 		return nil, fuse.ToStatus(err)
 	}
 
-	return fsys.FileSystem.Open(name, flags, c)
+	f, status := fsys.FileSystem.Open(name, flags, c)
+	return fsys.wrapTrackedFile(name, flags, f), status
+}
+
+func (fsys *wsfsPathFS) Create(name string, flags uint32, mode uint32, c *fuse.Context) (nodefs.File, fuse.Status) {
+	f, status := fsys.FileSystem.Create(name, flags, mode, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return f, status
+}
+
+func (fsys *wsfsPathFS) Mkdir(name string, mode uint32, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Mkdir(name, mode, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Mknod(name string, mode uint32, dev uint32, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Mknod(name, mode, dev, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Symlink(value string, linkName string, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Symlink(value, linkName, c)
+	if status.Ok() {
+		fsys.markUpsert(linkName)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Link(oldName string, newName string, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Link(oldName, newName, c)
+	if status.Ok() {
+		fsys.markUpsert(newName)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Rename(oldName string, newName string, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Rename(oldName, newName, c)
+	if status.Ok() {
+		fsys.markDelete(oldName)
+		fsys.markUpsert(newName)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Rmdir(name string, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Rmdir(name, c)
+	if status.Ok() {
+		fsys.markDelete(name)
+		return status
+	}
+	if status != fuse.ENOENT {
+		return status
+	}
+
+	rel, cleanStatus := fsys.cleanRel(name)
+	if !cleanStatus.Ok() {
+		return cleanStatus
+	}
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true)
+	switch {
+	case err == nil && stat.FileType == FileTypeDirectory:
+		fsys.journal.markDelete(rel)
+		return fuse.OK
+	case err == nil:
+		return fuse.ENOTDIR
+	case errors.Is(err, os.ErrNotExist):
+		return fuse.ENOENT
+	default:
+		return fuse.ToStatus(err)
+	}
+}
+
+func (fsys *wsfsPathFS) Unlink(name string, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Unlink(name, c)
+	if status.Ok() {
+		fsys.markDelete(name)
+		return status
+	}
+	if status != fuse.ENOENT {
+		return status
+	}
+
+	rel, cleanStatus := fsys.cleanRel(name)
+	if !cleanStatus.Ok() {
+		return cleanStatus
+	}
+	stat, err := workspaceMountStat(fsys.ctx, fsys.workspace, rel, true)
+	switch {
+	case err == nil && stat.FileType != FileTypeDirectory:
+		fsys.journal.markDelete(rel)
+		return fuse.OK
+	case err == nil:
+		return fuse.EISDIR
+	case errors.Is(err, os.ErrNotExist):
+		return fuse.ENOENT
+	default:
+		return fuse.ToStatus(err)
+	}
+}
+
+func (fsys *wsfsPathFS) Truncate(name string, size uint64, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Truncate(name, size, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Chmod(name string, mode uint32, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Chmod(name, mode, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Chown(name string, uid uint32, gid uint32, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Chown(name, uid, gid, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return status
+}
+
+func (fsys *wsfsPathFS) Utimens(name string, atime *time.Time, mtime *time.Time, c *fuse.Context) fuse.Status {
+	status := fsys.FileSystem.Utimens(name, atime, mtime, c)
+	if status.Ok() {
+		fsys.markUpsert(name)
+	}
+	return status
 }
 
 func (fsys *wsfsPathFS) materializeWorkspaceFile(name string) error {
@@ -347,6 +511,333 @@ func (fsys *wsfsPathFS) materializeWorkspaceFile(name string) error {
 		return err
 	}
 	return os.WriteFile(target, contents, os.FileMode(stat.Permissions))
+}
+
+func wsfsWriteIntent(flags uint32) bool {
+	return flags&uint32(syscall.O_ACCMODE) != uint32(os.O_RDONLY) || flags&uint32(syscall.O_TRUNC) != 0
+}
+
+func (fsys *wsfsPathFS) wrapTrackedFile(name string, flags uint32, file nodefs.File) nodefs.File {
+	if file == nil || !wsfsWriteIntent(flags) {
+		return file
+	}
+
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() || rel == "." {
+		return file
+	}
+
+	tracked := &wsfsTrackedFile{
+		File: file,
+		mark: func() {
+			fsys.journal.markUpsert(rel)
+		},
+	}
+	if flags&uint32(syscall.O_TRUNC) != 0 {
+		tracked.markOnce()
+	}
+	return tracked
+}
+
+func (fsys *wsfsPathFS) markUpsert(name string) {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() || rel == "." {
+		return
+	}
+	fsys.journal.markUpsert(rel)
+}
+
+func (fsys *wsfsPathFS) markDelete(name string) {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() || rel == "." {
+		return
+	}
+	fsys.journal.markDelete(rel)
+}
+
+func (fsys *wsfsPathFS) isDeleted(name string) bool {
+	rel, status := fsys.cleanRel(name)
+	if !status.Ok() {
+		return false
+	}
+	return fsys.journal.isDeleted(rel)
+}
+
+func (fsys *wsfsPathFS) syncWriteThrough() error {
+	if fsys.workspace == nil || fsys.workspace.WriteSync != WorkspaceWriteSyncWriteThrough {
+		return nil
+	}
+	ws := fsys.workspace.Workspace.Self()
+	if ws == nil {
+		return fmt.Errorf("workspace mount has no workspace value")
+	}
+
+	upserts, deletes := fsys.journal.snapshot()
+	if len(upserts) == 0 && len(deletes) == 0 {
+		return nil
+	}
+
+	syncRoot, err := os.MkdirTemp("", "dagger-wsfs-sync-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(syncRoot)
+
+	for _, rel := range upserts {
+		if err := wsfsCopyFromUpper(fsys.upperRoot, syncRoot, rel); err != nil {
+			return fmt.Errorf("copy changed workspace path %q: %w", rel, err)
+		}
+	}
+
+	syncCtx, err := wsfsWorkspaceContext(fsys.ctx, ws)
+	if err != nil {
+		return err
+	}
+
+	query, err := CurrentQuery(syncCtx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(syncCtx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	return bk.LocalDirExport(syncCtx, syncRoot, ws.Root, true, deletes)
+}
+
+func wsfsWorkspaceContext(ctx context.Context, ws *Workspace) (context.Context, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is nil")
+	}
+	if ws.ClientID == "" {
+		return nil, fmt.Errorf("workspace has no client ID")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	clientMetadata, err := query.SpecificClientMetadata(ctx, ws.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("get client metadata: %w", err)
+	}
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+}
+
+func wsfsCopyFromUpper(upperRoot, syncRoot, rel string) error {
+	src := filepath.Join(upperRoot, filepath.FromSlash(rel))
+	info, err := os.Lstat(src)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+
+	dst := filepath.Join(syncRoot, filepath.FromSlash(rel))
+	return wsfsCopyPath(src, dst, info)
+}
+
+func wsfsCopyPath(src, dst string, info os.FileInfo) error {
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return os.Symlink(target, dst)
+
+	case info.IsDir():
+		if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			return err
+		}
+		for _, ent := range entries {
+			childSrc := filepath.Join(src, ent.Name())
+			childInfo, err := os.Lstat(childSrc)
+			if err != nil {
+				return err
+			}
+			childDst := filepath.Join(dst, ent.Name())
+			if err := wsfsCopyPath(childSrc, childDst, childInfo); err != nil {
+				return err
+			}
+		}
+		return nil
+
+	case info.Mode().IsRegular():
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		srcFile, err := os.Open(src)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+
+	default:
+		return fmt.Errorf("unsupported file type for %s", src)
+	}
+}
+
+type wsfsTrackedFile struct {
+	nodefs.File
+	once sync.Once
+	mark func()
+}
+
+func (f *wsfsTrackedFile) markOnce() {
+	if f.mark != nil {
+		f.once.Do(f.mark)
+	}
+}
+
+func (f *wsfsTrackedFile) Write(data []byte, off int64) (uint32, fuse.Status) {
+	f.markOnce()
+	return f.File.Write(data, off)
+}
+
+func (f *wsfsTrackedFile) Truncate(size uint64) fuse.Status {
+	f.markOnce()
+	return f.File.Truncate(size)
+}
+
+func (f *wsfsTrackedFile) Chmod(perms uint32) fuse.Status {
+	f.markOnce()
+	return f.File.Chmod(perms)
+}
+
+func (f *wsfsTrackedFile) Chown(uid uint32, gid uint32) fuse.Status {
+	f.markOnce()
+	return f.File.Chown(uid, gid)
+}
+
+func (f *wsfsTrackedFile) Utimens(atime *time.Time, mtime *time.Time) fuse.Status {
+	f.markOnce()
+	return f.File.Utimens(atime, mtime)
+}
+
+func (f *wsfsTrackedFile) Allocate(off uint64, size uint64, mode uint32) fuse.Status {
+	f.markOnce()
+	return f.File.Allocate(off, size, mode)
+}
+
+type wsfsWriteJournal struct {
+	mu      sync.Mutex
+	upserts map[string]struct{}
+	deletes map[string]struct{}
+}
+
+func newWSFSWriteJournal() *wsfsWriteJournal {
+	return &wsfsWriteJournal{
+		upserts: make(map[string]struct{}),
+		deletes: make(map[string]struct{}),
+	}
+}
+
+func (j *wsfsWriteJournal) markUpsert(rel string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	// Recreating or modifying a path invalidates deletes on the same path
+	// or any parent path.
+	for del := range j.deletes {
+		if wsfsPathHasPrefix(rel, del) {
+			delete(j.deletes, del)
+		}
+	}
+
+	// Keep only the broadest upsert path.
+	for up := range j.upserts {
+		if wsfsPathHasPrefix(rel, up) {
+			return
+		}
+		if wsfsPathHasPrefix(up, rel) {
+			delete(j.upserts, up)
+		}
+	}
+	j.upserts[rel] = struct{}{}
+}
+
+func (j *wsfsWriteJournal) markDelete(rel string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	// Deleting a path invalidates upserts under that path.
+	for up := range j.upserts {
+		if wsfsPathHasPrefix(up, rel) {
+			delete(j.upserts, up)
+		}
+	}
+
+	// Avoid redundant nested deletes.
+	for del := range j.deletes {
+		if wsfsPathHasPrefix(rel, del) {
+			return
+		}
+		if wsfsPathHasPrefix(del, rel) {
+			delete(j.deletes, del)
+		}
+	}
+	j.deletes[rel] = struct{}{}
+}
+
+func (j *wsfsWriteJournal) snapshot() ([]string, []string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	upserts := make([]string, 0, len(j.upserts))
+	for rel := range j.upserts {
+		upserts = append(upserts, rel)
+	}
+	deletes := make([]string, 0, len(j.deletes))
+	for rel := range j.deletes {
+		deletes = append(deletes, rel)
+	}
+	sort.Strings(upserts)
+	sort.Strings(deletes)
+	return upserts, deletes
+}
+
+func (j *wsfsWriteJournal) isDeleted(rel string) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	for del := range j.deletes {
+		if wsfsPathHasPrefix(rel, del) {
+			return true
+		}
+	}
+	return false
+}
+
+func wsfsPathHasPrefix(pathValue, prefix string) bool {
+	if prefix == "." || prefix == "" {
+		return true
+	}
+	if pathValue == prefix {
+		return true
+	}
+	return strings.HasPrefix(pathValue, prefix+"/")
 }
 
 func (fsys *wsfsPathFS) cleanRel(name string) (string, fuse.Status) {
