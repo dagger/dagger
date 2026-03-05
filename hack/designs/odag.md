@@ -784,6 +784,9 @@ Phase 2.5 implementation note:
 8. Trace page data fetch path now uses `/api/v2/render` (global mode) for initial load, revision selection (`t`), and live refresh, reducing reliance on compatibility `/api/traces/{id}/snapshot` shaping.
 9. Trace page now requests `keepRules=default` for artifact-centric readability in large traces while preserving raw full-pool access for API/debug consumers.
 10. History filter defaults were tuned for legibility (`derived=true` by default) so raw-span noise does not dominate first render.
+11. Real smoke run (`odag run -- dagger -c 'container | from alpine | with-exec -- sh -c "echo hi" | stdout'`) validated pruning impact on a 3069-span trace:
+   - full pool: 389 objects
+   - render with `keepRules=default`: 5 objects
 
 ### Phase 3: Payload evolution (future)
 
