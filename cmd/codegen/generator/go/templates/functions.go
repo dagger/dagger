@@ -91,8 +91,13 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"Dependencies":            funcs.Dependencies,
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
+		"IsExtendableType":        funcs.isExtendableType,
 		"json":                    funcs.json,
 	}
+}
+
+func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {
+	return slices.Contains([]string{"Query", "Binding", "Env"}, t.Name)
 }
 
 func (goTemplateFuncs) json(v any) (string, error) {
