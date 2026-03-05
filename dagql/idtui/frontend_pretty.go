@@ -656,7 +656,7 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 // blankLine is a trivial component that renders a single empty line.
 type blankLine struct{ tuist.Compo }
 
-func (blankLine) Render(tuist.RenderContext) tuist.RenderResult {
+func (*blankLine) Render(tuist.RenderContext) tuist.RenderResult {
 	return tuist.RenderResult{Lines: []string{""}}
 }
 
