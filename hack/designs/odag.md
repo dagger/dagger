@@ -505,6 +505,7 @@ Encoding note:
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
 - `/v1/logs` and `/v1/metrics` are currently compatibility no-op endpoints (`202 Accepted`) so standard OTEL env wiring works without exporter failures.
+- Server now emits simple lifecycle logs for client connect/disconnect and OTLP trace upload start/completion (per trace ID in each ingest batch).
 
 Stage 3 implementation note:
 - API endpoints now expose trace list/meta and projected ODAG data:

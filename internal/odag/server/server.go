@@ -9,7 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +72,14 @@ func New(cfg Config) (*Server, error) {
 		Addr:              cfg.ListenAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ConnState: func(conn net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				log.Printf("odag: client connected: %s", conn.RemoteAddr().String())
+			case http.StateClosed, http.StateHijacked:
+				log.Printf("odag: client disconnected: %s", conn.RemoteAddr().String())
+			}
+		},
 	}
 
 	return srv, nil
@@ -288,6 +299,11 @@ func (s *Server) projectTrace(ctx context.Context, traceID string) (*transform.T
 }
 
 func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
+	clientAddr := r.RemoteAddr
+	if clientAddr == "" {
+		clientAddr = "unknown"
+	}
+
 	body, err := readOTLPBody(r)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("read request body: %v", err), http.StatusBadRequest)
@@ -305,11 +321,18 @@ func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("convert spans: %v", err), http.StatusBadRequest)
 		return
 	}
+	traceCounts := countSpansByTrace(spans)
+	for _, traceID := range sortedTraceIDs(traceCounts) {
+		log.Printf("odag: client %s started sending trace %s (%d spans)", clientAddr, traceID, traceCounts[traceID])
+	}
 
 	summary, err := s.store.UpsertSpans(r.Context(), "collector", spans)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("persist spans: %v", err), http.StatusInternalServerError)
 		return
+	}
+	for _, traceID := range sortedTraceIDs(traceCounts) {
+		log.Printf("odag: client %s completed trace %s (%d spans)", clientAddr, traceID, traceCounts[traceID])
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -517,4 +540,27 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func countSpansByTrace(spans []store.SpanRecord) map[string]int {
+	counts := make(map[string]int, len(spans))
+	for _, span := range spans {
+		if span.TraceID == "" {
+			continue
+		}
+		counts[span.TraceID]++
+	}
+	return counts
+}
+
+func sortedTraceIDs(counts map[string]int) []string {
+	if len(counts) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(counts))
+	for traceID := range counts {
+		ids = append(ids, traceID)
+	}
+	sort.Strings(ids)
+	return ids
 }
