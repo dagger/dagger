@@ -64,7 +64,7 @@ type MyModule {
 }
 ```
 
-- `type` declares a Dagger object type. The first `type` is the module's main object.
+- `type` declares a Dagger object type. The `type` matching the module name (in CamelCase) is the module's main object.
 - `pub` fields/methods become Dagger functions. `let` keeps them private.
 - `"""..."""` triple-quoted doc strings become Dagger function descriptions.
 - `pub description = "..."` at module level sets the module description.
