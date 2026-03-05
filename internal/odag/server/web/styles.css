@@ -185,6 +185,12 @@ body {
   justify-content: space-between;
 }
 
+.trace-created {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: #9fb0c6;
+}
+
 .main-panel {
   min-width: 0;
   display: grid;

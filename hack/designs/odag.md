@@ -525,6 +525,7 @@ Stage 4 implementation note:
   - `/` trace list page (picker/import)
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
 - UI includes:
+  - trace list rows include creation time (`firstSeen`) to aid scanability when many traces exist
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
   - selecting a history item moves the DAG snapshot to that event boundary time
   - history pane includes checkbox filters for `calls`, `derived`, and `visible`

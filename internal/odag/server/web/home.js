@@ -1,6 +1,10 @@
 const state = {
   traces: [],
 };
+const createdAtFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 const els = {
   refreshTracesBtn: document.getElementById("refreshTracesBtn"),
@@ -69,6 +73,7 @@ function renderTraceList() {
   }
 
   const rows = state.traces.map((trace) => {
+    const created = formatCreatedAt(trace);
     return `
       <div class="trace-item" data-trace-id="${escapeHTML(trace.traceID)}">
         <div class="trace-id">${escapeHTML(trace.traceID)}</div>
@@ -76,6 +81,7 @@ function renderTraceList() {
           <span>${escapeHTML(trace.status || "unknown")}</span>
           <span>${Number(trace.spanCount || 0)} spans</span>
         </div>
+        <div class="trace-created">Created ${escapeHTML(created)}</div>
       </div>
     `;
   });
@@ -103,6 +109,26 @@ async function fetchJSON(url, init) {
     throw new Error(`${resp.status} ${resp.statusText}: ${body}`);
   }
   return await resp.json();
+}
+
+function formatCreatedAt(trace) {
+  const firstSeen = typeof trace?.firstSeen === "string" ? trace.firstSeen : "";
+  if (firstSeen) {
+    const dt = new Date(firstSeen);
+    if (!Number.isNaN(dt.getTime())) {
+      return createdAtFormatter.format(dt);
+    }
+  }
+
+  const firstSeenUnixNano = Number(trace?.firstSeenUnixNano || 0);
+  if (firstSeenUnixNano > 0) {
+    const dt = new Date(firstSeenUnixNano / 1e6);
+    if (!Number.isNaN(dt.getTime())) {
+      return createdAtFormatter.format(dt);
+    }
+  }
+
+  return "unknown";
 }
 
 function escapeHTML(raw) {
