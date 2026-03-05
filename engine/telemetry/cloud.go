@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"maps"
 	"net/url"
@@ -28,92 +29,112 @@ var (
 	configuredCloudExportersOnce   sync.Once
 )
 
+func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
+	if cloudAuth == nil || cloudAuth.Token == nil {
+		return nil, nil, nil, fmt.Errorf("no cloud auth provided")
+	}
+
+	authHeader := cloudAuthHeader(cloudAuth)
+
+	cloudURL := os.Getenv("DAGGER_CLOUD_URL")
+	if cloudURL == "" {
+		cloudURL = "https://api.dagger.cloud"
+	}
+
+	cloudEndpoint, err := url.Parse(cloudURL)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("bad cloud URL: %w", err)
+	}
+
+	tracesURL := cloudEndpoint.JoinPath("v1", "traces")
+	logsURL := cloudEndpoint.JoinPath("v1", "logs")
+	metricsURL := cloudEndpoint.JoinPath("v1", "metrics")
+
+	headers := map[string]string{
+		"Authorization": authHeader,
+	}
+	if cloudAuth.Org != nil {
+		headers["X-Dagger-Org"] = cloudAuth.Org.ID
+	}
+
+	spanExporter, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpointURL(tracesURL.String()),
+		otlptracehttp.WithHeaders(headers))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("configure cloud tracing: %w", err)
+	}
+
+	logExporter, err := otlploghttp.New(ctx,
+		otlploghttp.WithEndpointURL(logsURL.String()),
+		otlploghttp.WithHeaders(headers))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("configure cloud logging: %w", err)
+	}
+
+	metricExporter, err := otlpmetrichttp.New(ctx,
+		otlpmetrichttp.WithEndpointURL(metricsURL.String()),
+		otlpmetrichttp.WithHeaders(headers))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("configure cloud metrics: %w", err)
+	}
+
+	return spanExporter, logExporter, metricExporter, nil
+}
+
+// cloudAuthHeader converts a Cloud auth struct into an HTTP Authorization header value.
+func cloudAuthHeader(ca *auth.Cloud) string {
+	switch ca.Token.TokenType {
+	case "Basic":
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(ca.Token.AccessToken+":"))
+	case "OIDC":
+		return "Bearer " + ca.Token.AccessToken
+	default:
+		return ca.Token.Type() + " " + ca.Token.AccessToken
+	}
+}
+
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 	configuredCloudExportersOnce.Do(func() {
-		var (
-			authHeader string
-			token      *oauth2.Token
-			org        *auth.Org
-			err        error
-		)
+		cloudAuth, err := auth.GetCloudAuth(ctx)
+		if err != nil {
+			slog.Warn("failed to get cloud auth", "error", err)
+			return
+		}
+		if cloudAuth == nil || cloudAuth.Token == nil {
+			return
+		}
 
-		// Try token auth first
-		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-			authHeader, err = auth.GetDaggerCloudAuth(ctx, cloudToken)
-			if err != nil {
-				slog.Warn("failed to parse DAGGER_CLOUD_TOKEN", "error", err)
-				return
+		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth)
+		if err != nil {
+			slog.Warn("failed to configure cloud exporters", "error", err)
+			return
+		}
+
+		configuredCloudSpanExporter = spans
+		configuredCloudLogsExporter = logs
+		configuredCloudMetricsExporter = metrics
+
+		// If we're using OAuth token auth, wrap the exporters to handle
+		// token expiration by refreshing from disk credentials.
+		if cloudAuth.Token.TokenType != "Basic" && cloudAuth.Token.TokenType != "OIDC" {
+			token := cloudAuth.Token
+
+			cloudURL := os.Getenv("DAGGER_CLOUD_URL")
+			if cloudURL == "" {
+				cloudURL = "https://api.dagger.cloud"
 			}
-		}
+			cloudEndpoint, _ := url.Parse(cloudURL)
+			tracesURL := cloudEndpoint.JoinPath("v1", "traces")
+			logsURL := cloudEndpoint.JoinPath("v1", "logs")
+			metricsURL := cloudEndpoint.JoinPath("v1", "metrics")
 
-		// Try OAuth next
-		if authHeader == "" {
-			var err error
-			token, err = auth.Token(ctx)
-			if err != nil {
-				return
+			headers := map[string]string{
+				"Authorization": cloudAuthHeader(cloudAuth),
 			}
-			authHeader = token.Type() + " " + token.AccessToken
-			org, err = auth.CurrentOrg()
-			if err != nil {
-				return
+			if cloudAuth.Org != nil {
+				headers["X-Dagger-Org"] = cloudAuth.Org.ID
 			}
-		}
 
-		// No auth provided, abort
-		if authHeader == "" {
-			return
-		}
-
-		cloudURL := os.Getenv("DAGGER_CLOUD_URL")
-		if cloudURL == "" {
-			cloudURL = "https://api.dagger.cloud"
-		}
-
-		cloudEndpoint, err := url.Parse(cloudURL)
-		if err != nil {
-			slog.Warn("bad cloud URL", "error", err)
-			return
-		}
-
-		tracesURL := cloudEndpoint.JoinPath("v1", "traces")
-		logsURL := cloudEndpoint.JoinPath("v1", "logs")
-		metricsURL := cloudEndpoint.JoinPath("v1", "metrics")
-
-		headers := map[string]string{
-			"Authorization": authHeader,
-		}
-		if org != nil {
-			headers["X-Dagger-Org"] = org.ID
-		}
-
-		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,
-			otlptracehttp.WithEndpointURL(tracesURL.String()),
-			otlptracehttp.WithHeaders(headers))
-		if err != nil {
-			slog.Warn("failed to configure cloud tracing", "error", err)
-			return
-		}
-
-		configuredCloudLogsExporter, err = otlploghttp.New(ctx,
-			otlploghttp.WithEndpointURL(logsURL.String()),
-			otlploghttp.WithHeaders(headers))
-		if err != nil {
-			slog.Warn("failed to configure cloud tracing", "error", err)
-			return
-		}
-
-		configuredCloudMetricsExporter, err = otlpmetrichttp.New(ctx,
-			otlpmetrichttp.WithEndpointURL(metricsURL.String()),
-			otlpmetrichttp.WithHeaders(headers))
-		if err != nil {
-			slog.Warn("failed to configure cloud metrics", "error", err)
-			return
-		}
-
-		// If we're using token based auth, we need to wrap the exporter to handle
-		// token expiration
-		if token != nil {
 			configuredCloudSpanExporter = &refreshingSpanExporter{
 				Factory: func(token *oauth2.Token) (sdktrace.SpanExporter, error) {
 					authHeader := token.Type() + " " + token.AccessToken
