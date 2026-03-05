@@ -265,7 +265,7 @@ func applyMkdir(baseID *call.ID, baseContainerID *call.ID, mkdir *pb.FileActionM
 		return nil, nil, err
 	}
 
-	if owner != "" && ownerRequiresContainerResolution(owner) {
+	if owner != "" && isOwnerStringValid(owner) {
 		if baseContainerID == nil {
 			return nil, nil, fmt.Errorf("named user/group chown requires container context")
 		}
@@ -349,9 +349,6 @@ func applyMkfile(baseID *call.ID, mkfile *pb.FileActionMkFile) (*call.ID, error)
 		return nil, err
 	}
 	if owner != "" {
-		if ownerRequiresContainerResolution(owner) {
-			return nil, fmt.Errorf("named user/group chown is unsupported for mkfile")
-		}
 		id = appendCall(
 			id,
 			directoryType(),
@@ -394,7 +391,7 @@ func applyCopy(
 	if err != nil {
 		return nil, nil, err
 	}
-	if ownerRequiresContainerResolution(owner) {
+	if isOwnerStringValid(owner) {
 		if baseContainerID == nil {
 			return nil, nil, fmt.Errorf("named user/group chown requires container context")
 		}
@@ -688,7 +685,7 @@ func userOptToString(user *pb.UserOpt) (string, error) {
 	}
 }
 
-func ownerRequiresContainerResolution(owner string) bool {
+func isOwnerStringValid(owner string) bool {
 	if owner == "" {
 		return false
 	}
