@@ -547,6 +547,7 @@ Stage 5 implementation note:
   - `odag fetch <traceID> [--org ...]`
   - `POST /api/traces/open` with `{ "mode": "cloud", "traceID": "...", "org": "..." }`
 - Web UI now exposes Cloud import controls (trace ID + optional org) and refreshes local trace list after import.
+- `odag run` now isolates ambient trace context by default (clears inherited `TRACEPARENT`/`TRACESTATE`/`BAGGAGE` and legacy `OTEL_TRACE_*`) so nested invocations create a fresh trace; `--inherit-trace-context` restores chaining behavior when desired.
 - Telemetry protocol constants were added for upcoming output-state payload support:
   - `dagger.io/dag.output.state`
   - `dagger.io/dag.output.state.version`

@@ -85,6 +85,7 @@ func newServeCmd() *cobra.Command {
 
 func newRunCmd() *cobra.Command {
 	serverURL := defaultRunServerURL()
+	inheritTraceContext := false
 
 	cmd := &cobra.Command{
 		Use:   "run <command> [args...]",
@@ -105,7 +106,7 @@ func newRunCmd() *cobra.Command {
 			sub.Stdin = os.Stdin
 			sub.Stdout = os.Stdout
 			sub.Stderr = os.Stderr
-			sub.Env = append(os.Environ(),
+			sub.Env = append(runEnv(os.Environ(), inheritTraceContext),
 				"OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf",
 				fmt.Sprintf("OTEL_EXPORTER_OTLP_ENDPOINT=%s", serverURL),
 				fmt.Sprintf("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=%s/v1/traces", serverURL),
@@ -126,6 +127,7 @@ func newRunCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&serverURL, "server", serverURL, "ODAG server base URL (default: $ODAG_SERVER or http://127.0.0.1:5454)")
+	cmd.Flags().BoolVar(&inheritTraceContext, "inherit-trace-context", false, "inherit TRACEPARENT/TRACESTATE/BAGGAGE from parent process")
 	return cmd
 }
 
@@ -188,4 +190,31 @@ func cmdErrf(code int) error {
 		return nil
 	}
 	return cmdExitError{code: code}
+}
+
+func runEnv(base []string, inheritTraceContext bool) []string {
+	if inheritTraceContext {
+		return base
+	}
+
+	strip := map[string]struct{}{
+		"TRACEPARENT":       {},
+		"TRACESTATE":        {},
+		"BAGGAGE":           {},
+		"OTEL_TRACE_PARENT": {},
+		"OTEL_TRACE_STATE":  {},
+	}
+
+	out := make([]string, 0, len(base))
+	for _, kv := range base {
+		key, _, found := strings.Cut(kv, "=")
+		if !found {
+			continue
+		}
+		if _, blocked := strip[strings.ToUpper(key)]; blocked {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
