@@ -8,6 +8,7 @@
 - [Solution](#solution)
 - [Research Notes (Existing Plumbing)](#research-notes-existing-plumbing)
 - [Core Data Model](#core-data-model)
+- [Backend API (V2 Source of Truth)](#backend-api-v2-source-of-truth)
 - [Algorithms](#algorithms)
 - [Standalone App Architecture](#standalone-app-architecture)
 - [Frontend Stack](#frontend-stack)
@@ -144,10 +145,22 @@ Note: this research pass did not include `dagger/dagger.io` dagviz internals, so
 
 ## Core Data Model
 
+The backend REST API is the architectural source of truth for ODAG.  
+Persistence and API semantics are modeled from OTel span data first; higher-level entities are derived deterministically.
+
 ### Semantic distinction
 
 1. **DAGQL**: immutable IDs (`<FooID>`) represent object states.
 2. **ODAG rendering**: mutable object (`<Foo>`) holds ordered history of immutable states.
+
+### Source-of-truth layering
+
+1. **Ingested (authoritative)**:
+   - OTel spans (`trace_id`, `span_id`, parent, timing, status, attrs, events, resource/scope).
+2. **Derived (versioned transform output)**:
+   - DAGQL calls, object snapshots, mutable object bindings, binding mutations, session/client labels.
+3. **Views**:
+   - trace/session/client scoped projections are query-time filters over one global pool.
 
 ### Proposed types
 
@@ -211,6 +224,111 @@ type ObjectEdge struct {
   EvidenceCount int                  // number of object states where this field-ref appears
 }
 ```
+
+### V2 backend entities (REST-domain)
+
+```go
+// Ingested from OTLP. Closest model to telemetry source-of-truth.
+type Span struct {
+  TraceID       string
+  SpanID        string
+  ParentSpanID  string
+  Name          string
+  StartUnixNano int64
+  EndUnixNano   int64
+  StatusCode    string
+  StatusMessage string
+  Attributes    map[string]any
+  Events        []map[string]any
+  Resource      map[string]any
+  Scope         map[string]any
+}
+
+// Derived from spans carrying dagger.io/dag.call.
+type Call struct {
+  ID                  string // stable derived ID (e.g. spanID)
+  SpanID              string
+  TraceID             string
+  ParentCallID        string
+  ClientID            string
+  ReceiverSnapshotID  string
+  ArgSnapshotIDs      []string
+  OutputSnapshotID    string
+  ReturnType          string
+  TopLevel            bool
+  ParentChainIncomplete bool
+}
+
+// Immutable object state (digest-keyed), potentially shared across traces/sessions.
+type ObjectSnapshot struct {
+  SnapshotID      string // dag.output digest / call digest fallback
+  TypeName        string
+  OutputStateJSON map[string]any
+  FieldRefs       []FieldRef // extracted snapshot references
+}
+
+// Mutable ODAG identity: "binding" of an object through time.
+// This is the entity rendered as a DAG node in ODAG views.
+type ObjectBinding struct {
+  BindingID         string // obj-*
+  TypeName          string
+  Alias             string // Type#N (ODAG-computed, not telemetry-native)
+  ScopeSpanID       string // containment scope anchor
+  CurrentSnapshotID string
+  Archived          bool // scope/session no longer active
+}
+
+// Derived event: binding changed from one immutable state to another.
+type BindingMutation struct {
+  MutationID       string
+  BindingID        string
+  CauseCallID      string
+  ScopeSpanID      string
+  PrevSnapshotID   string
+  NextSnapshotID   string
+  StartUnixNano    int64
+  EndUnixNano      int64
+  Visible          bool
+}
+```
+
+Notes:
+1. Avoid synthetic span lifecycle transitions (`STARTED` event rows) unless ingestion actually captures them incrementally; treat span timing/status fields as source-of-truth.
+2. `ObjectSnapshot` is immutable and never archived.
+3. `ObjectBinding` is mutable and lifecycle-scoped (`Archived` derived from scope/session closure).
+
+## Backend API (V2 Source of Truth)
+
+V2 APIs expose global pools + filters. Trace-centric endpoints become convenience views.
+
+### Canonical endpoints
+
+```http
+GET /api/v2/spans
+GET /api/v2/calls
+GET /api/v2/object-snapshots
+GET /api/v2/object-bindings
+GET /api/v2/mutations
+GET /api/v2/sessions
+GET /api/v2/clients
+```
+
+Common query parameters:
+1. `traceID`, `sessionID`, `clientID`
+2. `from`, `to` (unix nano)
+3. `limit`, `cursor`
+4. `includeInternal=true|false`
+
+Convenience views (kept for compatibility):
+1. `/api/traces` and `/api/traces/{id}/meta`
+2. `/api/traces/{id}/events`
+3. `/api/traces/{id}/snapshot?t=...|step=...`
+
+### Derivation/versioning
+
+1. Every derived entity set is associated with a `derivationVersion` for reproducibility.
+2. Unknown or partial ancestry is surfaced explicitly (`parentChainIncomplete`) rather than hidden.
+3. Clients should not assume derived identities are immutable across derivation-version changes.
 
 ## Algorithms
 
@@ -451,6 +569,24 @@ Current event row details should show:
 2. parent DAGQL call context (when present)
 3. raw span identity/kind and visibility classification
 
+### Containment vs dependency (for future rendering exploration)
+
+To support "enter a box" UX without semantic ambiguity:
+
+1. **Dependency edge (`A -> B`)**:
+   - means object/reference relationship (field/input/receiver/output reference).
+   - this is graph connectivity, not ownership.
+2. **Containment (`inside X`)**:
+   - primary containment axis is **call scope** (span subtree / call subtree).
+   - "show objects created inside this function call" is strict containment.
+3. **Object-centric lens (`inside object`)**:
+   - implemented as a filtered view over calls/mutations where object is receiver or direct cause path.
+   - this is a lens, not structural ownership.
+4. **Russian-doll / zoom-in story**:
+   - entering a call opens a nested call-scoped ODAG subgraph.
+   - entering an object applies object-centric lens on top of current call scope.
+   - both can compose, but containment remains call-first for deterministic semantics.
+
 ## Feasibility and Tradeoffs
 
 ### Feasibility
@@ -592,6 +728,12 @@ Post-MVP projection refinement:
 1. Incremental ODAG diff updates.
 2. Performance optimizations (virtualization, edge culling, workerized layout).
 3. Better edge/type labeling and mutation-heuristic overrides.
+
+### Phase 2.5: Source-of-truth API stabilization
+
+1. Add `/api/v2/*` global entity endpoints (spans, calls, snapshots, bindings, mutations).
+2. Keep `/api/traces/*` as compatibility views backed by v2 entities.
+3. Add derivation-version metadata and migration tests for deterministic behavior.
 
 ### Phase 3: Payload evolution (future)
 
