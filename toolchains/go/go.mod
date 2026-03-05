@@ -10,7 +10,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/containerd/platforms v1.0.0-rc.1
-	github.com/dagger/otel-go v1.41.0
+	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel v1.41.0
 	go.opentelemetry.io/otel/sdk v1.41.0
