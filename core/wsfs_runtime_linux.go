@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	containerdmount "github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/executor"
@@ -96,15 +95,8 @@ func (r *wsfsMountableRef) IdentityMapping() *idtools.IdentityMapping {
 }
 
 func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error) {
-	mountCtx, mountSpan := Tracer(r.ctx).Start(r.ctx, "workspace mount: setup FUSE")
-	var mountErr error
-	defer func() {
-		telemetry.EndWithCause(mountSpan, &mountErr)
-	}()
-
 	baseMounts, baseCleanup, err := r.base.Mount()
 	if err != nil {
-		mountErr = err
 		return nil, nil, err
 	}
 
@@ -112,7 +104,6 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 	upperPath, err := upperMounter.Mount()
 	if err != nil {
 		_ = baseCleanup()
-		mountErr = err
 		return nil, nil, err
 	}
 
@@ -120,11 +111,10 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 	if err != nil {
 		_ = upperMounter.Unmount()
 		_ = baseCleanup()
-		mountErr = err
 		return nil, nil, err
 	}
 
-	wsfs := newWSFSPathFS(mountCtx, upperPath, r.workspace)
+	wsfs := newWSFSPathFS(r.ctx, upperPath, r.workspace)
 	nfs := pathfs.NewPathNodeFs(wsfs, nil)
 	server, _, err := nodefs.Mount(
 		fusePath,
@@ -140,21 +130,16 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 		_ = os.RemoveAll(fusePath)
 		_ = upperMounter.Unmount()
 		_ = baseCleanup()
-		mountErr = err
 		return nil, nil, err
 	}
 	go server.Serve()
-	_, waitSpan := Tracer(mountCtx).Start(mountCtx, "workspace mount: wait for FUSE ready")
-	waitErr := server.WaitMount()
-	telemetry.EndWithCause(waitSpan, &waitErr)
-	if waitErr != nil {
+	if err := server.WaitMount(); err != nil {
 		_ = server.Unmount()
 		server.Wait()
 		_ = os.RemoveAll(fusePath)
 		_ = upperMounter.Unmount()
 		_ = baseCleanup()
-		mountErr = waitErr
-		return nil, nil, waitErr
+		return nil, nil, err
 	}
 
 	bindOpts := []string{"rbind"}
@@ -163,13 +148,6 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 	}
 
 	cleanup := func() error {
-		cleanupCtx := context.WithoutCancel(mountCtx)
-		cleanupCtx, cleanupSpan := Tracer(cleanupCtx).Start(cleanupCtx, "workspace mount: teardown FUSE")
-		var cleanupErr error
-		defer func() {
-			telemetry.EndWithCause(cleanupSpan, &cleanupErr)
-		}()
-
 		var errs error
 		if err := wsfs.stopLiveReadLoop(); err != nil {
 			errs = errors.Join(errs, err)
@@ -179,11 +157,8 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 		}
 		server.Wait()
 		if !r.readonly && r.workspace.Export {
-			_, exportSpan := Tracer(cleanupCtx).Start(cleanupCtx, "workspace mount: export writes")
-			exportErr := wsfs.syncWriteThrough()
-			telemetry.EndWithCause(exportSpan, &exportErr)
-			if exportErr != nil {
-				errs = errors.Join(errs, exportErr)
+			if err := wsfs.syncWriteThrough(); err != nil {
+				errs = errors.Join(errs, err)
 			}
 		}
 		if err := os.RemoveAll(fusePath); err != nil {
@@ -195,11 +170,9 @@ func (r *wsfsMountableRef) Mount() ([]containerdmount.Mount, func() error, error
 		if err := baseCleanup(); err != nil {
 			errs = errors.Join(errs, err)
 		}
-		cleanupErr = errs
 		return errs
 	}
 
-	mountErr = nil
 	return []containerdmount.Mount{{
 		Type:    "bind",
 		Source:  fusePath,
@@ -247,12 +220,6 @@ func newWSFSPathFS(ctx context.Context, upperRoot string, workspace *WorkspaceMo
 }
 
 func (fsys *wsfsPathFS) stopLiveReadLoop() error {
-	_, stopSpan := Tracer(fsys.ctx).Start(fsys.ctx, "workspace mount: stop live-read")
-	var stopErr error
-	defer func() {
-		telemetry.EndWithCause(stopSpan, &stopErr)
-	}()
-
 	fsys.liveReadMu.Lock()
 	if !fsys.liveReadRunning {
 		fsys.liveReadMu.Unlock()
@@ -273,7 +240,6 @@ func (fsys *wsfsPathFS) stopLiveReadLoop() error {
 		<-doneCh
 	}
 
-	stopErr = nil
 	return nil
 }
 
@@ -762,7 +728,7 @@ func (fsys *wsfsPathFS) markDelete(name string) {
 	fsys.untrackLiveReadPath(rel, true)
 }
 
-func (fsys *wsfsPathFS) syncWriteThrough() (rerr error) {
+func (fsys *wsfsPathFS) syncWriteThrough() error {
 	if fsys.workspace == nil || !fsys.workspace.Export {
 		return nil
 	}
@@ -771,9 +737,6 @@ func (fsys *wsfsPathFS) syncWriteThrough() (rerr error) {
 		return fmt.Errorf("workspace mount has no workspace value")
 	}
 
-	syncCtx, syncSpan := Tracer(fsys.ctx).Start(fsys.ctx, "workspace mount: sync write-through")
-	defer telemetry.EndWithCause(syncSpan, &rerr)
-
 	upserts, deletes := fsys.journal.snapshot()
 	if len(upserts) == 0 && len(deletes) == 0 {
 		return nil
@@ -781,48 +744,31 @@ func (fsys *wsfsPathFS) syncWriteThrough() (rerr error) {
 
 	syncRoot, err := os.MkdirTemp("", "dagger-wsfs-sync-")
 	if err != nil {
-		rerr = err
-		return rerr
+		return err
 	}
 	defer os.RemoveAll(syncRoot)
 
-	_, stageSpan := Tracer(syncCtx).Start(syncCtx, "workspace mount: stage changed paths")
-	stageErr := func() error {
-		for _, rel := range upserts {
-			if err := wsfsCopyFromUpper(fsys.upperRoot, syncRoot, rel); err != nil {
-				return fmt.Errorf("copy changed workspace path %q: %w", rel, err)
-			}
+	for _, rel := range upserts {
+		if err := wsfsCopyFromUpper(fsys.upperRoot, syncRoot, rel); err != nil {
+			return fmt.Errorf("copy changed workspace path %q: %w", rel, err)
 		}
-		return nil
-	}()
-	telemetry.EndWithCause(stageSpan, &stageErr)
-	if stageErr != nil {
-		rerr = stageErr
-		return rerr
 	}
 
-	syncCtx, err = wsfsWorkspaceContext(syncCtx, ws)
+	syncCtx, err := wsfsWorkspaceContext(fsys.ctx, ws)
 	if err != nil {
-		rerr = err
-		return rerr
+		return err
 	}
 
 	query, err := CurrentQuery(syncCtx)
 	if err != nil {
-		rerr = err
-		return rerr
+		return err
 	}
 	bk, err := query.Buildkit(syncCtx)
 	if err != nil {
-		rerr = fmt.Errorf("failed to get buildkit client: %w", err)
-		return rerr
+		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	exportCtx, exportSpan := Tracer(syncCtx).Start(syncCtx, "workspace mount: export staged paths")
-	exportErr := bk.LocalDirExport(exportCtx, syncRoot, ws.Root, true, deletes)
-	telemetry.EndWithCause(exportSpan, &exportErr)
-	rerr = exportErr
-	return rerr
+	return bk.LocalDirExport(syncCtx, syncRoot, ws.Root, true, deletes)
 }
 
 func wsfsWorkspaceContext(ctx context.Context, ws *Workspace) (context.Context, error) {
