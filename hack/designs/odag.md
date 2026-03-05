@@ -187,6 +187,10 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
 1. **DAGQL**: immutable IDs (`<FooID>`) represent object states.
 2. **ODAG rendering**: mutable object (`<Foo>`) holds ordered history of immutable states.
 3. **ID scope**: DAGQL IDs are treated as globally scoped across traces/sessions; when an object must be isolated to a session/client, that scope is already mixed into the ID by the engine, so ODAG should not add an extra artificial session-local namespace.
+4. **Ground truth vs inference**:
+   - receiver, args, output, span ancestry, and emitted object state are telemetry facts
+   - object bindings, mutations, `contains_object`, and collapse decisions are ODAG derivations
+   - the API should preserve that distinction explicitly.
 
 ### Source-of-truth layering
 
@@ -520,9 +524,13 @@ Implications:
    - receiver may be `Query`
    - receiver may be filtered out
    - receiver may not yet have enough state to materialize a visible binding
-2. If receiver and output collapse onto the same binding, there is no separate inter-object edge:
+2. `Query` handling:
+   - `Query` is technically an object in DAGQL semantics
+   - for ODAG binding projection, v1 may treat `receiver=Query` as "no receiver binding"
+   - if useful later, `Query` can be promoted to a first-class root binding or root scope anchor without changing the underlying telemetry model
+3. If receiver and output collapse onto the same binding, there is no separate inter-object edge:
    - the relationship is represented as a mutation event on one binding
-3. If receiver and output map to different bindings, a provenance edge may be emitted:
+4. If receiver and output map to different bindings, a provenance edge may be emitted:
    - `receiver_binding -(derived_from_receiver)-> output_binding`
 
 #### 5. Collapse decision tree
@@ -543,8 +551,10 @@ Current recommended decision tree:
 Consequences:
 
 1. `produced_by` is always objective at call-event level.
-2. `contains_object` is partly view-dependent because it follows the chosen collapse/render lens.
-3. `derived_from_receiver` is objective at snapshot/call evidence level, but may disappear as a separate binding edge if collapse merges both sides into one binding.
+2. `receiver_dagql_id` is always objective at call-event level.
+3. `contains_object` is partly view-dependent because it follows the chosen collapse/render lens.
+4. `derived_from_receiver` is objective at snapshot/call evidence level, but may disappear as a separate binding edge if collapse merges both sides into one binding.
+5. "receiver/output collapse onto the same binding" is an ODAG heuristic, not a telemetry fact.
 
 ## Backend API (V2 Source of Truth)
 
