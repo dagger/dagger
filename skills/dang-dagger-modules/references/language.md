@@ -1,4 +1,6 @@
-# Dang Language Reference
+# Dang Language Patterns and Semantics
+
+Syntax is maintained separately in [syntax.md](syntax.md). Use this file for type semantics, nullability behavior, and module-authoring patterns.
 
 ## Table of Contents
 
@@ -25,6 +27,7 @@
 |------|----------|-------------|
 | `String` | `String!` | Text value |
 | `Int` | `Int!` | Integer value |
+| `Float` | `Float!` | Floating-point value |
 | `Boolean` | `Boolean!` | `true` or `false` |
 | `Void` | - | No value (use `null` to return) |
 
@@ -279,12 +282,21 @@ if (condition) {
 ### For Loops
 
 ```dang
-# Accumulator pattern (returns final value of ctr)
-let ctr = base
-for (pkg in packages) {
-  ctr = ctr.withExec(["apk", "add", pkg])
+# Condition loop
+let i = 0
+for (i < 3) {
+  i += 1
 }
-ctr
+
+# Infinite loop
+for {
+  break
+}
+
+# List iteration is usually done with block methods
+packages.each { pkg =>
+  print(pkg)
+}
 ```
 
 ### Case Expressions

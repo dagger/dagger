@@ -61,7 +61,8 @@ A Dang Dagger module requires:
 
 ## Language Reference
 
-See [references/language.md](references/language.md) for complete syntax, types, and patterns.
+- Syntax and grammar: [references/syntax.md](references/syntax.md)
+- Semantics, nullability, and module patterns: [references/language.md](references/language.md)
 
 ## Dagger Module Patterns
 
@@ -380,10 +381,10 @@ if (dryRun == true) {
   ctr = ctr.withExec(["deploy"])
 }
 
-# For loops (mutable accumulator pattern)
-let ctr = base
-for (pkg in packages) {
-  ctr = ctr.withExec(["install", pkg])
+# For loops (condition or infinite loop forms)
+let i = 0
+for (i < packages.length) {
+  i += 1
 }
 
 # Case expressions
@@ -441,17 +442,21 @@ See [references/language.md](references/language.md) Common Pitfalls section for
 
 Dang syntax evolves quickly. This skill must be maintained proactively.
 
-Authoritative local references:
+Authoritative references:
 
-- [references/language.md](references/language.md) (syntax/types/control-flow reference)
-- This `SKILL.md` (workflow/pattern rules and examples)
+- Upstream grammar source: `pkg/dang/dang.peg` in `github.com/vito/dang`
+- Upstream executable syntax coverage: `tests/test_*.dang` in `github.com/vito/dang`
+- Local syntax reference: [references/syntax.md](references/syntax.md)
+- Local workflow and module patterns: this `SKILL.md`
 
 Update procedure for syntax-related changes:
 
-1. Update `references/language.md` first.
-2. Update syntax examples and guardrails in `SKILL.md` to match.
-3. Validate examples by loading real modules (`dagger call -m <module> --help`).
-4. If compiler behavior conflicts with docs, compiler behavior wins; update docs immediately.
+1. Get latest Dang commit: `git ls-remote https://github.com/vito/dang HEAD`.
+2. Inspect `pkg/dang/dang.peg` and relevant `tests/test_*.dang`.
+3. Update `references/syntax.md` first, including the sync commit line.
+4. Update any conflicting syntax examples in `SKILL.md`.
+5. Validate with module load checks (`dagger call -m <module> --help`).
+6. If docs conflict with compiler/tests, compiler/tests win; update docs immediately.
 
 ## Keeping Dang SDK Current
 
