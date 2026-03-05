@@ -22,6 +22,9 @@ func (s *Store) ListTraces(ctx context.Context, limit int) ([]TraceRecord, error
 	if limit <= 0 {
 		limit = 100
 	}
+	if err := s.ReconcileTraceStatuses(ctx); err != nil {
+		return nil, err
+	}
 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
@@ -65,6 +68,9 @@ LIMIT ?
 }
 
 func (s *Store) GetTrace(ctx context.Context, traceID string) (TraceRecord, error) {
+	if err := s.ReconcileTraceStatuses(ctx); err != nil {
+		return TraceRecord{}, err
+	}
 	var rec TraceRecord
 	err := s.db.QueryRowContext(ctx, `
 SELECT

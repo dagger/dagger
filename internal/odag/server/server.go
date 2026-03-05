@@ -455,7 +455,7 @@ func spanRecordsFromOTLP(req *coltracepb.ExportTraceServiceRequest) ([]store.Spa
 				spans = append(spans, store.SpanRecord{
 					TraceID:         traceID,
 					SpanID:          spanID,
-					ParentSpanID:    hex.EncodeToString(span.GetParentSpanId()),
+					ParentSpanID:    store.NormalizeParentSpanID(hex.EncodeToString(span.GetParentSpanId())),
 					Name:            span.GetName(),
 					StartUnixNano:   u64ToI64(span.GetStartTimeUnixNano()),
 					EndUnixNano:     u64ToI64(span.GetEndTimeUnixNano()),

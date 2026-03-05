@@ -136,6 +136,40 @@ func TestSpanRecordsFromOTLP(t *testing.T) {
 	}
 }
 
+func TestSpanRecordsFromOTLPTreatsZeroParentAsEmpty(t *testing.T) {
+	t.Parallel()
+
+	req := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Spans: []*tracepb.Span{
+							{
+								TraceId:      mustHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+								SpanId:       mustHex(t, "bbbbbbbbbbbbbbbb"),
+								ParentSpanId: mustHex(t, "0000000000000000"),
+								Name:         "Query.container",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	records, err := spanRecordsFromOTLP(req)
+	if err != nil {
+		t.Fatalf("convert OTLP spans: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 span record, got %d", len(records))
+	}
+	if records[0].ParentSpanID != "" {
+		t.Fatalf("expected zero parent span id to normalize to empty, got %q", records[0].ParentSpanID)
+	}
+}
+
 func mustHex(t *testing.T, s string) []byte {
 	t.Helper()
 	b, err := hex.DecodeString(s)

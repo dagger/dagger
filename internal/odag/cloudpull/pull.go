@@ -143,7 +143,7 @@ func spansToRecords(spans []cloud.SpanData) ([]store.SpanRecord, error) {
 
 		parentSpanID := ""
 		if span.ParentID != nil {
-			parentSpanID = *span.ParentID
+			parentSpanID = store.NormalizeParentSpanID(*span.ParentID)
 		}
 
 		endUnixNano := int64(0)

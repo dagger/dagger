@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,11 @@ type IngestSummary struct {
 	Traces int
 	Spans  int
 }
+
+const (
+	traceStatusCloseGracePeriod = 30 * time.Second
+	traceStatusHardStaleTimeout = 24 * time.Hour
+)
 
 func (s *Store) UpsertSpans(ctx context.Context, sourceMode string, spans []SpanRecord) (IngestSummary, error) {
 	if len(spans) == 0 {
@@ -134,6 +140,7 @@ ON CONFLICT(trace_id, span_id) DO UPDATE SET
 		touched[span.TraceID] = struct{}{}
 	}
 
+	nowUnixNano := time.Now().UnixNano()
 	const summarizeTraceSQL = `
 UPDATE traces
 SET
@@ -144,23 +151,57 @@ SET
     WHEN EXISTS(
       SELECT 1 FROM spans
       WHERE trace_id = ?
-        AND (parent_span_id IS NULL OR parent_span_id = '')
+        AND (` + traceRootPredicateSQL + `)
         AND end_unix_nano > 0
         AND status_code = 'STATUS_CODE_ERROR'
     ) THEN 'failed'
     WHEN EXISTS(
       SELECT 1 FROM spans
       WHERE trace_id = ?
-        AND (parent_span_id IS NULL OR parent_span_id = '')
+        AND (` + traceRootPredicateSQL + `)
         AND end_unix_nano > 0
     ) THEN 'completed'
+    WHEN NOT EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = ?
+        AND end_unix_nano = 0
+    ) AND EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = ?
+        AND end_unix_nano > 0
+    ) AND (? - COALESCE((SELECT MAX(updated_unix_nano) FROM spans WHERE trace_id = ?), 0)) >= ? THEN
+      CASE
+        WHEN EXISTS(
+          SELECT 1 FROM spans
+          WHERE trace_id = ?
+            AND end_unix_nano > 0
+            AND status_code = 'STATUS_CODE_ERROR'
+        ) THEN 'failed'
+        ELSE 'completed'
+      END
+    WHEN EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = ?
+    ) AND (? - COALESCE((SELECT MAX(updated_unix_nano) FROM spans WHERE trace_id = ?), 0)) >= ? THEN
+      CASE
+        WHEN EXISTS(
+          SELECT 1 FROM spans
+          WHERE trace_id = ?
+            AND end_unix_nano > 0
+            AND status_code = 'STATUS_CODE_ERROR'
+        ) THEN 'failed'
+        ELSE 'completed'
+      END
     ELSE 'ingesting'
   END
 WHERE trace_id = ?
 `
 	for traceID := range touched {
 		if _, err := tx.ExecContext(ctx, summarizeTraceSQL,
-			traceID, traceID, traceID, traceID, traceID, traceID,
+			traceID, traceID, traceID, traceID, traceID,
+			traceID, traceID, nowUnixNano, traceID, int64(traceStatusCloseGracePeriod), traceID,
+			traceID, nowUnixNano, traceID, int64(traceStatusHardStaleTimeout), traceID,
+			traceID,
 		); err != nil {
 			return IngestSummary{}, fmt.Errorf("summarize trace %s: %w", traceID, err)
 		}
@@ -185,4 +226,80 @@ func nullString(v string) sql.NullString {
 		String: v,
 		Valid:  true,
 	}
+}
+
+const traceRootPredicateSQL = "parent_span_id IS NULL OR parent_span_id = '' OR TRIM(parent_span_id, '0') = ''"
+
+func NormalizeParentSpanID(v string) string {
+	v = strings.TrimSpace(strings.ToLower(v))
+	if v == "" {
+		return ""
+	}
+	if strings.Trim(v, "0") == "" {
+		return ""
+	}
+	return v
+}
+
+func (s *Store) ReconcileTraceStatuses(ctx context.Context) error {
+	nowUnixNano := time.Now().UnixNano()
+	const reconcileSQL = `
+UPDATE traces
+SET
+  status = CASE
+    WHEN EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = traces.trace_id
+        AND (` + traceRootPredicateSQL + `)
+        AND end_unix_nano > 0
+        AND status_code = 'STATUS_CODE_ERROR'
+    ) THEN 'failed'
+    WHEN EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = traces.trace_id
+        AND (` + traceRootPredicateSQL + `)
+        AND end_unix_nano > 0
+    ) THEN 'completed'
+    WHEN NOT EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = traces.trace_id
+        AND end_unix_nano = 0
+    ) AND EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = traces.trace_id
+        AND end_unix_nano > 0
+    ) AND (? - COALESCE((SELECT MAX(updated_unix_nano) FROM spans WHERE trace_id = traces.trace_id), 0)) >= ? THEN
+      CASE
+        WHEN EXISTS(
+          SELECT 1 FROM spans
+          WHERE trace_id = traces.trace_id
+            AND end_unix_nano > 0
+            AND status_code = 'STATUS_CODE_ERROR'
+        ) THEN 'failed'
+        ELSE 'completed'
+      END
+    WHEN EXISTS(
+      SELECT 1 FROM spans
+      WHERE trace_id = traces.trace_id
+    ) AND (? - COALESCE((SELECT MAX(updated_unix_nano) FROM spans WHERE trace_id = traces.trace_id), 0)) >= ? THEN
+      CASE
+        WHEN EXISTS(
+          SELECT 1 FROM spans
+          WHERE trace_id = traces.trace_id
+            AND end_unix_nano > 0
+            AND status_code = 'STATUS_CODE_ERROR'
+        ) THEN 'failed'
+        ELSE 'completed'
+      END
+    ELSE 'ingesting'
+  END
+WHERE status = 'ingesting' OR status = 'unknown'
+`
+	if _, err := s.db.ExecContext(ctx, reconcileSQL,
+		nowUnixNano, int64(traceStatusCloseGracePeriod),
+		nowUnixNano, int64(traceStatusHardStaleTimeout),
+	); err != nil {
+		return fmt.Errorf("reconcile trace statuses: %w", err)
+	}
+	return nil
 }

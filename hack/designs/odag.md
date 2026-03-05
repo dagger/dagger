@@ -662,6 +662,12 @@ Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
 - `/v1/logs` and `/v1/metrics` are currently compatibility no-op endpoints (`202 Accepted`) so standard OTEL env wiring works without exporter failures.
 - Server now emits simple lifecycle logs for client connect/disconnect and OTLP trace upload start/completion (per trace ID in each ingest batch).
+- Trace lifecycle/status robustness improvements:
+  - OTLP parent span IDs that are all-zero (`000...`) are normalized to empty, so root spans are correctly recognized as roots.
+  - Root detection in trace summarization also treats all-zero parent IDs as root-equivalent for backward compatibility with previously ingested rows.
+  - Store now runs stale-status reconciliation (`ingesting` -> `completed`/`failed`) with two safety nets:
+    - close-grace timeout for traces with no open spans and no recent updates
+    - hard stale timeout for traces that remain ingesting long after the last update.
 
 Stage 3 implementation note:
 - API endpoints now expose trace list/meta and projected ODAG data:

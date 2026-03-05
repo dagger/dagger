@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestUpsertSpansAndTraceSummary(t *testing.T) {
@@ -122,5 +123,115 @@ WHERE trace_id = ? AND span_id = ?
 	}
 	if rootMessage != "boom" {
 		t.Fatalf("expected root status message to be updated, got %q", rootMessage)
+	}
+}
+
+func TestUpsertSpansTreatsZeroParentAsRoot(t *testing.T) {
+	t.Parallel()
+
+	st, err := Open(filepath.Join(t.TempDir(), "odag.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	ctx := context.Background()
+	traceID := "dddddddddddddddddddddddddddddddd"
+	rootID := "eeeeeeeeeeeeeeee"
+
+	_, err = st.UpsertSpans(ctx, "collector", []SpanRecord{
+		{
+			TraceID:       traceID,
+			SpanID:        rootID,
+			ParentSpanID:  "0000000000000000",
+			Name:          "Query.container",
+			StartUnixNano: 10,
+			EndUnixNano:   20,
+			StatusCode:    "STATUS_CODE_OK",
+			DataJSON:      `{"attributes":{"dagger.io/dag.digest":"root"}}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert spans: %v", err)
+	}
+
+	var status string
+	if err := st.db.QueryRowContext(ctx, `
+SELECT status
+FROM traces
+WHERE trace_id = ?
+`, traceID).Scan(&status); err != nil {
+		t.Fatalf("query trace status: %v", err)
+	}
+	if status != "completed" {
+		t.Fatalf("expected status=completed for zero-parent root, got %q", status)
+	}
+}
+
+func TestReconcileTraceStatusesHardTimeoutClosesStaleIngesting(t *testing.T) {
+	t.Parallel()
+
+	st, err := Open(filepath.Join(t.TempDir(), "odag.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	ctx := context.Background()
+	traceID := "ffffffffffffffffffffffffffffffff"
+	spanID := "abababababababab"
+
+	_, err = st.UpsertSpans(ctx, "collector", []SpanRecord{
+		{
+			TraceID:       traceID,
+			SpanID:        spanID,
+			ParentSpanID:  "1111111111111111",
+			Name:          "Container.from",
+			StartUnixNano: 10,
+			EndUnixNano:   0,
+			StatusCode:    "STATUS_CODE_OK",
+			DataJSON:      `{"attributes":{"dagger.io/dag.digest":"child"}}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert spans: %v", err)
+	}
+
+	var status string
+	if err := st.db.QueryRowContext(ctx, `
+SELECT status
+FROM traces
+WHERE trace_id = ?
+`, traceID).Scan(&status); err != nil {
+		t.Fatalf("query initial trace status: %v", err)
+	}
+	if status != "ingesting" {
+		t.Fatalf("expected initial status=ingesting, got %q", status)
+	}
+
+	old := time.Now().Add(-25 * time.Hour).UnixNano()
+	if _, err := st.db.ExecContext(ctx, `
+UPDATE spans SET updated_unix_nano = ? WHERE trace_id = ?
+`, old, traceID); err != nil {
+		t.Fatalf("age span updates: %v", err)
+	}
+
+	if err := st.ReconcileTraceStatuses(ctx); err != nil {
+		t.Fatalf("reconcile trace statuses: %v", err)
+	}
+
+	if err := st.db.QueryRowContext(ctx, `
+SELECT status
+FROM traces
+WHERE trace_id = ?
+`, traceID).Scan(&status); err != nil {
+		t.Fatalf("query reconciled trace status: %v", err)
+	}
+	if status != "completed" {
+		t.Fatalf("expected stale trace to be completed after reconcile, got %q", status)
 	}
 }
