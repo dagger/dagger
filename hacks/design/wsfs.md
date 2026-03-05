@@ -33,7 +33,8 @@ extend type Container {
 
 - Reads are fetched lazily from `Workspace` APIs.
 - Writes are allowed and persist across `withExec` calls on the returned container lineage.
-- Writes are ephemeral to Dagger state and are not synced back to the host workspace.
+- v0 writes are ephemeral to Dagger state and are not synced back to the host workspace.
+- Future modes can opt into explicit commit or live sync behavior.
 
 ## Goals
 
@@ -55,7 +56,17 @@ extend type Container {
 3. Re-mounting at the same path replaces prior mount state at that path.
 4. Branching containers keeps branch-local write history.
 5. Workspace host updates are visible unless shadowed by prior writes in that lineage.
-6. No writes are synced back to host workspace.
+6. v0: no writes are synced back to host workspace.
+
+## Workspace State Model
+
+`Workspace` is a special external-state capability, not a purely immutable content value.
+
+Design implication:
+
+1. Keep `Workspace` as the escape hatch for live external state.
+2. Add explicit snapshot semantics where deterministic behavior is required.
+3. Keep sync behavior explicit and mode-driven, not implicit.
 
 ## Architecture
 
@@ -171,6 +182,7 @@ Then optimize repeat executions:
 
 1. Materialize a "workspace slice" (only traced paths) for hot repeated execs.
 2. Keep WSFS fallback for trace misses/new paths.
+3. Combine static seed scope + dynamic trace scope for hybrid workloads.
 
 This keeps the API unchanged while making behavior faster and still unsurprising.
 
@@ -183,13 +195,14 @@ Order of work for highest return:
 3. Stream file materialization to disk (avoid large `file.Contents()` buffering).
 4. Add range-read workspace primitive (`offset`, `size`) to avoid full downloads for partial reads.
 5. Add trace-based cache digests (v1) so laziness also improves cache hit rate.
+6. Add hybrid seed+trace digesting so known includes narrow invalidation before dynamic accesses occur.
 
 ## Security and Isolation
 
 - Path resolution remains sandboxed to workspace root.
 - WSFS must reject `..` escapes and normalize paths exactly once.
 - Client ownership model follows existing workspace client binding behavior.
-- No new host write capability is introduced.
+- v0 introduces no host write capability; future live sync must remain explicit opt-in.
 
 ## Implementation Sketch
 
@@ -236,47 +249,78 @@ Order of work for highest return:
 
 ## Future Evolution
 
-- Two-way sync from WSFS writes back to workspace.
-- Explicit conflict policy between host updates and upper-layer shadowed paths.
+- Sync modes for workspace writes (`EPHEMERAL`, `COMMIT`, `LIVE`).
+- Explicit conflict policy between host updates and WSFS writes.
 - Richer metadata APIs if needed (`lstat`, xattrs, chmod/chown semantics).
 
-## Write-Back Sync Design (v2)
+## Write Sync Design (v2+)
 
-Add explicit commit semantics instead of implicit always-on bidirectional sync.
+Do not make bidirectional sync implicit. Use explicit modes:
+
+1. `EPHEMERAL` (default): current behavior; writes stay in lineage only.
+2. `COMMIT`: record write journal and apply explicitly.
+3. `LIVE`: best-effort write-through to backing workspace.
 
 Candidate API shape:
 
 ```graphql
+enum WorkspaceSyncMode {
+  EPHEMERAL
+  COMMIT
+  LIVE
+}
+
+enum WorkspaceConsistencyMode {
+  EVENTUAL
+  SNAPSHOT
+}
+
 extend type Container {
   withMountedWorkspace(
     path: String!
     source: Workspace!
     owner: String = ""
     expand: Boolean = false
+    sync: WorkspaceSyncMode = EPHEMERAL
+    consistency: WorkspaceConsistencyMode = EVENTUAL
+    include: [String!] = []
+    exclude: [String!] = []
   ): Container!
 
   commitMountedWorkspace(path: String!): Workspace!
 }
 ```
 
-Execution model:
+Execution model for `COMMIT`:
 
-1. Mount records a write journal (create/modify/delete/rename) against a captured base workspace snapshot identity.
-2. `commitMountedWorkspace` revalidates base identity and applies journal to a new workspace value.
-3. If conflicts are detected, commit fails with conflict details.
-4. No implicit host mutation; caller decides when to materialize/apply resulting workspace.
+1. Capture base workspace snapshot identity at mount start.
+2. Record write journal (create/modify/delete/rename).
+3. `commitMountedWorkspace` revalidates base identity and applies journal.
+4. On conflict, fail with structured conflict details.
 
-This preserves reproducibility and avoids surprising side effects during execution.
+Execution model for `LIVE`:
+
+1. Apply writes through to backing workspace as operations occur.
+2. Keep local upper-layer coherence for in-process correctness.
+3. Expose best-effort semantics; `SNAPSHOT` consistency is incompatible with `LIVE`.
 
 ## Consistency and Sync Safety
 
 Yes, this is a real concern, especially once write-back exists.
 
+Devil's-advocate baseline is true: native host tooling already has concurrent-writer race risk.
+WSFS adds additional race surfaces that must be explicit:
+
+1. Copy-up shadowing can preserve stale bytes after host changes.
+2. Separate remote calls for `readdir`/`stat`/`read` can produce cross-operation skew.
+3. Write-back introduces distributed conflicts (container writes vs host writes).
+
 Recommended model:
 
 1. v0 (current): eventual view of host reads; exec may observe host changes between filesystem operations.
-2. v1: optional "frozen read snapshot" mode per mount for tools that require strict consistency.
-3. v2 write-back: optimistic concurrency with base-snapshot precondition + conflict detection.
+2. v1: optional `SNAPSHOT` consistency mode per mount for tools requiring deterministic reads.
+3. v2 `COMMIT`: optimistic concurrency with base-snapshot precondition + conflict detection.
+4. v2+ `LIVE`: explicit dev mode where native-style races are accepted.
 
 Conflict examples:
 
@@ -291,17 +335,23 @@ Policy:
 
 This keeps correctness explicit rather than hiding races.
 
-## `include` / `exclude` on `withMountedWorkspace`
+## `include` / `exclude` Hybrid Mode
 
-Potentially useful, but optional and not required for baseline laziness.
+These are useful as optional optimization and scope controls.
 
-Recommendation:
+Model:
 
-1. Keep default API as-is (full workspace addressable lazily).
-2. If added, treat `include`/`exclude` as an addressability envelope, not eager transfer directives.
-3. Reject accesses outside envelope with clear errors.
+1. Seed phase: apply known include/exclude scope first (narrow upfront surface).
+2. Dynamic phase: WSFS still lazily resolves unknown runtime-dependent accesses.
+3. Cache phase: combine `seedDigest + dynamicTraceDigest` for invalidation.
 
-This can help advanced users constrain scope/safety, without weakening automatic dynamic filtering.
+Semantics:
+
+1. `include`/`exclude` must not force eager recursive upload by default.
+2. They define a prioritized known set for invalidation narrowing and optional prefetch.
+3. Access outside configured envelope is either allowed (hybrid mode) or rejected (strict mode), controlled by a future flag.
+
+This supports the hybrid use case: known dependency set plus runtime discovery.
 
 ## Terminal / Service Status
 
