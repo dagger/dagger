@@ -366,10 +366,15 @@ if (dryRun == true) {
   ctr = ctr.withExec(["deploy"])
 }
 
-# For loops (mutable accumulator pattern)
+# Iterating (mutable accumulator pattern)
 let ctr = base
-for (pkg in packages) {
+packages.each { pkg =>
   ctr = ctr.withExec(["install", pkg])
+}
+
+# Reducing (functional pattern)
+let ctr = packages.reduce(base) { ctr, pkg =>
+  ctr.withExec(["install", pkg])
 }
 
 # Case expressions
