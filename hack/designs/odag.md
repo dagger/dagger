@@ -57,6 +57,10 @@
    - clients are the primary derived execution objects
    - sessions are derived from root clients
    - every client maps to one `dagger.io/engine.client` `connect` span.
+13. Reliability boundary:
+   - this client-tree model is the target API shape
+   - current telemetry does not prove the full hierarchy reliably enough to treat it as protocol truth
+   - explicit engine-emitted `session_id` / `client_id` / `parent_client_id` telemetry is the preferred long-term fix.
 
 ## Problem
 
@@ -405,6 +409,7 @@ type Session {
 Notes:
 1. `calls` is the conceptual relationship exposed by the API, not a promise that current telemetry makes strict descendant-walk attribution trivial.
 2. `Session` is primarily a wrapper around the root-client tree; it exists because the concept is useful in the UI and API.
+3. With current telemetry, `parent`, `children`, and `calls` may be heuristic/provisional unless explicit client identifiers are emitted.
 
 ## Backend API (V2 Source of Truth)
 
@@ -565,6 +570,20 @@ This model keeps ODAG rendering explainable when filtering/pruning hides many ev
 
 Current telemetry does not export explicit session/client IDs into OTEL span payloads, so ODAG must derive them behind a narrow heuristic boundary.
 
+Reliability assessment:
+
+1. Root client detection is reasonably reliable:
+   - `dagger.io/engine.client` `connect` spans are clearly identifiable.
+2. Nested client detection is partially reliable:
+   - child module/client connects do appear as spans and can often be found.
+3. Parent-child client hierarchy is not reliably encoded in raw span ancestry:
+   - a child client's `connect` span is often nested somewhere inside the parent client's work, but not under the parent client's own `connect` span
+   - later DAGQL query/call spans also often occur after the relevant `connect` span has completed
+4. Therefore:
+   - client hierarchy can be approximated
+   - client call ownership can be approximated
+   - neither should be mistaken for exact protocol truth until explicit IDs are emitted.
+
 Client derivation:
 
 1. Find spans where:
@@ -581,10 +600,15 @@ Client derivation:
    - `dagger.io/client.arch`
    - `dagger.io/client.machine_id`
 5. Derive parent client from span ancestry:
+   - do **not** treat the parent span of `connect` as a special "client span"
+   - instead, treat it as an ordinary span executing in some client's context
    - walk ancestors of the `connect` span
    - find the nearest ancestor span that is already attributable to another client
    - if found, that owning client is the parent
    - otherwise the client is a root client
+6. Confidence:
+   - this yields a plausible tree in many observed traces
+   - it is not guaranteed correct by current telemetry semantics.
 
 Session derivation:
 
@@ -603,6 +627,9 @@ Call/span attribution:
 4. Where strict ancestry does not settle ownership, use root-local ordering as a fallback:
    - within one root-client session, a call/span belongs to the latest client anchor that started before it and is not shadowed by a more specific child-client attribution
 5. Top-level DAGQL calls exposed on `Client.calls` are those attributed to that client after this ownership pass.
+6. Confidence:
+   - this is useful for exploration and debugging
+   - it is not strong enough to be the sole source of truth for persistent client hierarchy semantics.
 
 Heuristic boundaries:
 
@@ -610,6 +637,11 @@ Heuristic boundaries:
 2. It must be guarded by `derivationVersion`.
 3. It must be easy to replace with explicit telemetry once the engine emits true session/client IDs.
 4. If multiple concurrent clients share one session root and interleave heavily, fallback ordering heuristics may misattribute some calls; ODAG should surface that as derived behavior, not as protocol truth.
+5. If correctness of client hierarchy matters to the product model, emit explicit telemetry:
+   - `dagger.io/dag.session_id`
+   - `dagger.io/dag.client_id`
+   - `dagger.io/dag.parent_client_id` on `connect` spans
+   - optional `dagger.io/dag.client_kind` (`root`, `module`, `nested-sdk`, ...)
 
 ## Standalone App Architecture
 
@@ -797,6 +829,7 @@ Encoding note:
    - Heuristics are acceptable for clearly engine-defined scopes and unblock the session-first UX.
    - They must remain encapsulated; once explicit telemetry exists, the heuristic layer should be replaceable without reshaping downstream APIs.
    - Current best heuristic is structurally clean but not semantically perfect: client ownership is inferred from `dagger.io/engine.client connect` anchors plus root-local time windows.
+   - If the client tree becomes central to the product model, explicit telemetry should replace heuristics early rather than after the API solidifies.
 3. **Apply mutation at end-time vs start-time**
    - End-time is semantically safer.
    - Start-time can feel more “live” but can show speculative state.
@@ -818,6 +851,7 @@ Encoding note:
 4. **Top-level certainty with partial ancestry**: some events show `parentChainIncomplete`; classify conservatively and expose debug context in UI.
 5. **Concurrent clients within one session root**: current time-window client assignment may be insufficient if future traces interleave multiple clients more aggressively.
 6. **Explicit telemetry follow-up**: once engine spans export true session/client identifiers, the heuristic derivation should be removed rather than further complicated.
+7. **Client hierarchy correctness**: without explicit `parent_client_id`, nested-client relationships remain best-effort.
 
 ## Implementation Plan
 
@@ -837,7 +871,12 @@ Encoding note:
 - [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
 - [ ] Replace current `session == trace` approximation with a client tree derived from `dagger.io/engine.client` `connect` spans, then derive sessions from root clients; keep trace routes as secondary/debug views.
 - [ ] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, including parent-client inference from span ownership plus fallback root-local ordering for unresolved call attribution.
-- [ ] Add explicit engine OTEL telemetry for true session/client identifiers so the heuristic derivation layer can eventually be removed.
+- [ ] Add explicit engine OTEL telemetry for true execution-scope identifiers:
+  - session ID on relevant spans
+  - client ID on relevant spans
+  - parent client ID on `dagger.io/engine.client` `connect` spans
+  - optional client kind metadata
+- [ ] Once explicit execution-scope telemetry lands, remove or heavily downgrade client/session heuristics and treat emitted IDs as the only source of truth.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
