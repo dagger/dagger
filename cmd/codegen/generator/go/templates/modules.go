@@ -1006,14 +1006,14 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams [
 func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
 	tokenFile := ps.fset.File(obj.Pos())
 	filename := tokenFile.Name()
-	
+
 	// Match any *.gen.go file inside internal/dagger/ — dependency types are
 	// now split into per-dep files (e.g. dep.gen.go) alongside dagger.gen.go.
 	if filepath.Base(filepath.Dir(filename)) == "dagger" &&
 		strings.HasSuffix(filename, ".gen.go") {
 		return true
 	}
-	
+
 	return filepath.Base(filename) == daggerGenFilename
 }
 
