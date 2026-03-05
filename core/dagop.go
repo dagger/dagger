@@ -635,7 +635,6 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 		var llb *pb.Definition
 		var res bkcache.ImmutableRef
 		var dgst digest.Digest
-		var mountErr error
 		handleMount(mnt,
 			func(dirMnt *dagql.ObjectResult[*Directory]) {
 				mount.Selector = dirMnt.Self().Dir
@@ -656,7 +655,8 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 			func(wsMnt *WorkspaceMountSource) {
-				mountErr = fmt.Errorf("workspace mount at %q: wsfs runtime support not implemented yet", mnt.Target)
+				// WSFS runtime wiring happens in withExec; there is no static LLB
+				// source to add here.
 			},
 			func(cache *CacheMountSource) {
 				if cache.Base != nil && cache.Base.Self() != nil {
@@ -685,10 +685,6 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 		)
-		if mountErr != nil {
-			return mountErr
-		}
-
 		st, err := defToState(llb)
 		if err != nil {
 			return err

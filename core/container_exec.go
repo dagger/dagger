@@ -240,6 +240,19 @@ func (container *Container) WithExec(
 		return nil, fmt.Errorf("no dagop here")
 	}
 
+	wsfsCleanup, err := container.setupWSFSMounts(ctx, mounts)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if wsfsCleanup == nil {
+			return
+		}
+		if err := wsfsCleanup(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("wsfs cleanup: %w", err))
+		}
+	}()
+
 	workerRefs := make([]*worker.WorkerRef, 0, len(mounts.Inputs))
 	for _, ref := range mounts.InputRefs() {
 		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
