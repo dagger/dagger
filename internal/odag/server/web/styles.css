@@ -36,9 +36,24 @@ body {
   font-family: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
-.app-shell {
+.home-shell {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+}
+
+.home-panel {
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.trace-shell {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 12px;
   width: 100%;
   height: 100%;
@@ -63,6 +78,13 @@ body {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.home-hint {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .panel-header {
@@ -425,24 +447,23 @@ body {
 }
 
 @media (max-width: 1280px) {
-  .app-shell {
-    grid-template-columns: 280px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) 300px;
-  }
-
-  .inspector-panel {
-    grid-column: 1 / span 2;
+  .trace-shell {
+    grid-template-columns: minmax(0, 1fr) 320px;
   }
 }
 
 @media (max-width: 900px) {
-  .app-shell {
+  .trace-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: 240px minmax(0, 1fr) 300px 320px;
+    grid-template-rows: minmax(0, 1fr) 320px;
     padding: 8px;
   }
 
-  .traces-panel,
+  .home-shell {
+    padding: 8px;
+  }
+
+  .home-panel,
   .main-panel,
   .inspector-panel {
     min-height: 0;

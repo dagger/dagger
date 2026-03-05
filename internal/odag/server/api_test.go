@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger/telemetry"
@@ -206,6 +207,41 @@ func TestOpenTraceValidation(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected bad request, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWebRouteFallbacks(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	listReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	listRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list page failed: %d %s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), "home.js") {
+		t.Fatalf("expected traces list page html, got %q", listRec.Body.String())
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/traces/abc123", nil)
+	traceRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace page failed: %d %s", traceRec.Code, traceRec.Body.String())
+	}
+	if !strings.Contains(traceRec.Body.String(), "backBtn") {
+		t.Fatalf("expected trace page html, got %q", traceRec.Body.String())
 	}
 }
 

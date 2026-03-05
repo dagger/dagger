@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ODAG Trace</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="trace-shell">
+      <main class="main-panel">
+        <section class="timeline-panel panel">
+          <div class="timeline-stats">
+            <div class="timeline-stat">
+              <span class="timeline-stat-label">Status</span>
+              <span id="timelineStatus" class="timeline-stat-value">idle</span>
+            </div>
+            <div class="timeline-stat">
+              <span class="timeline-stat-label">Current Step</span>
+              <span id="timelineCurrent">0</span>
+            </div>
+            <div class="timeline-stat">
+              <span class="timeline-stat-label">Last Step</span>
+              <span id="timelineEnd">0</span>
+            </div>
+          </div>
+          <div class="timeline-controls">
+            <button id="backBtn" class="btn">Traces</button>
+            <button id="firstBtn" class="btn">First</button>
+            <button id="prevBtn" class="btn">Back</button>
+            <button id="nextBtn" class="btn">Forward</button>
+            <button id="lastBtn" class="btn">Last</button>
+          </div>
+          <div class="timeline-right">
+            <span id="traceStats" class="stats"></span>
+          </div>
+        </section>
+
+        <section class="trace-title-panel panel">
+          <h2 id="traceTitle" class="trace-title">Trace</h2>
+        </section>
+
+        <section class="graph-panel panel">
+          <svg id="graphCanvas" class="graph-canvas" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="graphEmpty" class="graph-empty">Loading trace projection...</div>
+        </section>
+
+        <section class="events-panel panel">
+          <h2>Event Stream</h2>
+          <div class="event-filters">
+            <label><input id="filterCalls" type="checkbox" /> calls</label>
+            <label><input id="filterDerived" type="checkbox" /> derived</label>
+            <label><input id="filterVisible" type="checkbox" /> visible</label>
+          </div>
+          <div class="event-header">
+            <span>Call</span>
+            <span>Parent</span>
+            <span>Raw</span>
+            <span>Derived</span>
+            <span>Top</span>
+            <span>Depth</span>
+            <span>Visible</span>
+            <span>Object</span>
+          </div>
+          <div id="eventList" class="event-list"></div>
+        </section>
+      </main>
+
+      <aside class="panel inspector-panel">
+        <h2>Inspector</h2>
+        <div id="inspector"></div>
+      </aside>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

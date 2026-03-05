@@ -32,19 +32,23 @@ func serveWebAsset(w http.ResponseWriter, r *http.Request) {
 
 	data, err := fs.ReadFile(webFS, assetPath)
 	if err != nil {
-		// Single-page app fallback.
-		data, err = fs.ReadFile(webFS, "index.html")
+		// Route-level fallback for split UI pages.
+		fallback := "index.html"
+		if strings.HasPrefix(cleanPath, "/traces/") {
+			fallback = "trace.html"
+		}
+		data, err = fs.ReadFile(webFS, fallback)
 		if err != nil {
 			http.Error(w, "web ui unavailable", http.StatusInternalServerError)
 			return
 		}
-		assetPath = "index.html"
+		assetPath = fallback
 	}
 
 	if contentType := mime.TypeByExtension(filepath.Ext(assetPath)); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
-	if assetPath == "index.html" {
+	if assetPath == "index.html" || assetPath == "trace.html" {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 	w.WriteHeader(http.StatusOK)

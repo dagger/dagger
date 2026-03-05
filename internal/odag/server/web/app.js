@@ -1,6 +1,6 @@
 const state = {
-  traces: [],
   selectedTraceID: "",
+  traceMeta: null,
   projection: null,
   snapshot: null,
   frameSteps: [],
@@ -15,11 +15,7 @@ const state = {
 };
 
 const els = {
-  refreshTracesBtn: document.getElementById("refreshTracesBtn"),
-  importCloudBtn: document.getElementById("importCloudBtn"),
-  cloudTraceID: document.getElementById("cloudTraceID"),
-  cloudOrg: document.getElementById("cloudOrg"),
-  traceList: document.getElementById("traceList"),
+  backBtn: document.getElementById("backBtn"),
   timelineStatus: document.getElementById("timelineStatus"),
   timelineCurrent: document.getElementById("timelineCurrent"),
   timelineEnd: document.getElementById("timelineEnd"),
@@ -45,17 +41,20 @@ init().catch((err) => {
 
 async function init() {
   bindEvents();
-  await refreshTraces();
+  const traceID = traceIDFromPath();
+  if (!traceID) {
+    clearSelection("No trace id in URL. Open this page from the traces list.");
+    return;
+  }
+  await loadTrace(traceID);
 }
 
 function bindEvents() {
-  els.refreshTracesBtn.addEventListener("click", () => {
-    refreshTraces().catch((err) => showError(err));
-  });
-
-  els.importCloudBtn.addEventListener("click", () => {
-    importTraceFromCloud().catch((err) => showError(err));
-  });
+  if (els.backBtn) {
+    els.backBtn.addEventListener("click", () => {
+      window.location.assign("/");
+    });
+  }
 
   els.firstBtn.addEventListener("click", () => {
     loadFrame(0).catch((err) => showError(err));
@@ -90,84 +89,40 @@ function bindEvents() {
   });
 }
 
-async function refreshTraces() {
-  const resp = await fetchJSON("/api/traces?limit=200");
-  state.traces = resp.traces || [];
-  renderTraceList();
-
-  if (state.traces.length === 0) {
-    clearSelection("No traces available yet. Run `odag run dagger call ...` to capture one.");
-    return;
-  }
-
-  if (!state.selectedTraceID || !state.traces.some((t) => t.traceID === state.selectedTraceID)) {
-    await selectTrace(state.traces[0].traceID);
-  } else {
-    await selectTrace(state.selectedTraceID, { preserveStep: true });
-  }
-}
-
-async function importTraceFromCloud() {
-  const traceID = (els.cloudTraceID.value || "").trim();
-  if (!traceID) {
-    throw new Error("Cloud trace ID is required");
-  }
-  const org = (els.cloudOrg.value || "").trim();
-
-  els.importCloudBtn.disabled = true;
-  const prevLabel = els.importCloudBtn.textContent;
-  els.importCloudBtn.textContent = "Importing...";
-  try {
-    await fetchJSON("/api/traces/open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode: "cloud",
-        traceID,
-        org: org || undefined,
-      }),
-    });
-    await refreshTraces();
-    await selectTrace(traceID);
-  } finally {
-    els.importCloudBtn.disabled = false;
-    els.importCloudBtn.textContent = prevLabel;
-  }
-}
-
-async function selectTrace(traceID, opts = {}) {
+async function loadTrace(traceID, opts = {}) {
   const preserveStep = Boolean(opts.preserveStep);
   const targetStep = preserveStep ? state.frameIndex : 0;
 
   state.selectedTraceID = traceID;
   state.selectedObjectID = "";
-  renderTraceList();
+  document.title = `ODAG ${shortDigest(traceID)}`;
 
   const token = ++state.requestToken;
-  const resp = await fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`);
+  const [metaResp, snapResp] = await Promise.all([
+    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/meta`).catch(() => null),
+    fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot`),
+  ]);
   if (token !== state.requestToken) {
     return;
   }
 
-  state.projection = resp.projection || null;
+  state.traceMeta = metaResp;
+  state.projection = snapResp.projection || null;
   state.frameSteps = buildFrameSteps(state.projection);
   state.frameIndex = clampStep(targetStep);
 
   if (state.frameSteps.length > 0) {
-    const stepResp = await fetchJSON(
-      `/api/traces/${encodeURIComponent(traceID)}/snapshot?step=${state.frameIndex}`,
-    );
+    const stepResp = await fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot?step=${state.frameIndex}`);
     if (token !== state.requestToken) {
       return;
     }
     state.projection = stepResp.projection || state.projection;
-    state.snapshot = stepResp.snapshot || resp.snapshot || null;
+    state.snapshot = stepResp.snapshot || snapResp.snapshot || null;
   } else {
-    state.snapshot = resp.snapshot || null;
+    state.snapshot = snapResp.snapshot || null;
   }
 
   syncStepControls();
-
   renderAll();
 }
 
@@ -216,6 +171,7 @@ function syncStepControls() {
 }
 
 function clearSelection(msg) {
+  state.traceMeta = null;
   state.projection = null;
   state.snapshot = null;
   state.frameSteps = [];
@@ -241,40 +197,8 @@ function renderAll() {
   renderInspector();
 }
 
-function renderTraceList() {
-  if (state.traces.length === 0) {
-    els.traceList.innerHTML = "<div class='trace-item'>No traces yet.</div>";
-    return;
-  }
-
-  const rows = state.traces.map((trace) => {
-    const selected = trace.traceID === state.selectedTraceID ? "selected" : "";
-    return `
-      <div class="trace-item ${selected}" data-trace-id="${escapeHTML(trace.traceID)}">
-        <div class="trace-id">${escapeHTML(trace.traceID)}</div>
-        <div class="trace-meta">
-          <span>${escapeHTML(trace.status || "unknown")}</span>
-          <span>${Number(trace.spanCount || 0)} spans</span>
-        </div>
-      </div>
-    `;
-  });
-
-  els.traceList.innerHTML = rows.join("");
-  for (const node of els.traceList.querySelectorAll("[data-trace-id]")) {
-    node.addEventListener("click", () => {
-      const id = node.getAttribute("data-trace-id");
-      if (!id || id === state.selectedTraceID) {
-        return;
-      }
-      selectTrace(id).catch((err) => showError(err));
-    });
-  }
-}
-
 function renderTimeline() {
-  const traceMeta = getSelectedTraceMeta();
-  els.timelineStatus.textContent = traceMeta?.status || "unknown";
+  els.timelineStatus.textContent = state.traceMeta?.status || "unknown";
 
   if (!state.projection || !state.snapshot || state.frameSteps.length === 0) {
     els.timelineCurrent.textContent = "0";
@@ -299,7 +223,7 @@ function renderTimeline() {
 
 function renderTraceTitle() {
   const title = state.projection?.summary?.title || "";
-  els.traceTitle.textContent = title || state.selectedTraceID || "No trace selected";
+  els.traceTitle.textContent = title || state.selectedTraceID || "Trace";
 }
 
 function renderGraph() {
@@ -522,6 +446,14 @@ async function fetchJSON(url, init) {
   return await resp.json();
 }
 
+function traceIDFromPath() {
+  const prefix = "/traces/";
+  if (!window.location.pathname.startsWith(prefix)) {
+    return "";
+  }
+  return decodeURIComponent(window.location.pathname.slice(prefix.length));
+}
+
 function shortDigest(v) {
   if (!v) {
     return "-";
@@ -535,10 +467,6 @@ function formatRelTime(unixNano, startUnixNano) {
   }
   const ms = (unixNano - startUnixNano) / 1e6;
   return `${ms.toFixed(1)} ms`;
-}
-
-function getSelectedTraceMeta() {
-  return state.traces.find((trace) => trace.traceID === state.selectedTraceID) || null;
 }
 
 function escapeHTML(raw) {

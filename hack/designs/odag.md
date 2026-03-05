@@ -521,9 +521,10 @@ Stage 3 implementation note:
 - Dependency edges remain empty until `dagger.io/dag.output.state` payloads are emitted by the engine (objects are still shown with `missingState` signaling).
 
 Stage 4 implementation note:
-- `odag serve` now hosts an embedded web UI at `/` (no external frontend build step required for the local experiment).
+- `odag serve` now hosts an embedded web UI with split routes (no external frontend build step required for the local experiment):
+  - `/` trace list page (picker/import)
+  - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
 - UI includes:
-  - stored trace selector
   - timeline controls (first/back/forward/last) driven by discrete object-event steps
   - status/current/last step readouts (no continuous seek bar)
   - dedicated central trace title row between navigator and DAG canvas

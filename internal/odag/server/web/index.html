@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ODAG Trace Viewer</title>
+    <title>ODAG Traces</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="panel traces-panel">
+    <div class="home-shell">
+      <section class="panel home-panel">
         <header class="panel-header">
           <h1>ODAG</h1>
-          <p>Mutable object graph trace explorer</p>
+          <p>Select a trace to open the full ODAG view.</p>
         </header>
         <div class="trace-toolbar">
           <button id="refreshTracesBtn" class="btn">Refresh</button>
@@ -19,71 +19,10 @@
           <input id="cloudOrg" class="text-input" placeholder="Org (optional)" />
           <button id="importCloudBtn" class="btn">Import</button>
         </div>
+        <div class="home-hint">Click any trace row to open `/traces/&lt;trace-id&gt;`.</div>
         <div id="traceList" class="trace-list"></div>
-      </aside>
-
-      <main class="main-panel">
-        <section class="timeline-panel panel">
-          <div class="timeline-stats">
-            <div class="timeline-stat">
-              <span class="timeline-stat-label">Status</span>
-              <span id="timelineStatus" class="timeline-stat-value">idle</span>
-            </div>
-            <div class="timeline-stat">
-              <span class="timeline-stat-label">Current Step</span>
-              <span id="timelineCurrent">0</span>
-            </div>
-            <div class="timeline-stat">
-              <span class="timeline-stat-label">Last Step</span>
-              <span id="timelineEnd">0</span>
-            </div>
-          </div>
-          <div class="timeline-controls">
-            <button id="firstBtn" class="btn">First</button>
-            <button id="prevBtn" class="btn">Back</button>
-            <button id="nextBtn" class="btn">Forward</button>
-            <button id="lastBtn" class="btn">Last</button>
-          </div>
-          <div class="timeline-right">
-            <span id="traceStats" class="stats"></span>
-          </div>
-        </section>
-
-        <section class="trace-title-panel panel">
-          <h2 id="traceTitle" class="trace-title">No trace selected</h2>
-        </section>
-
-        <section class="graph-panel panel">
-          <svg id="graphCanvas" class="graph-canvas" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet"></svg>
-          <div id="graphEmpty" class="graph-empty">Select a trace to render its ODAG projection.</div>
-        </section>
-
-        <section class="events-panel panel">
-          <h2>Event Stream</h2>
-          <div class="event-filters">
-            <label><input id="filterCalls" type="checkbox" /> calls</label>
-            <label><input id="filterDerived" type="checkbox" /> derived</label>
-            <label><input id="filterVisible" type="checkbox" /> visible</label>
-          </div>
-          <div class="event-header">
-            <span>Call</span>
-            <span>Parent</span>
-            <span>Raw</span>
-            <span>Derived</span>
-            <span>Top</span>
-            <span>Depth</span>
-            <span>Visible</span>
-            <span>Object</span>
-          </div>
-          <div id="eventList" class="event-list"></div>
-        </section>
-      </main>
-
-      <aside class="panel inspector-panel">
-        <h2>Inspector</h2>
-        <div id="inspector"></div>
-      </aside>
+      </section>
     </div>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/home.js"></script>
   </body>
 </html>
