@@ -735,6 +735,19 @@ Post-MVP projection refinement:
 2. Keep `/api/traces/*` as compatibility views backed by v2 entities.
 3. Add derivation-version metadata and migration tests for deterministic behavior.
 
+Phase 2.5 implementation note:
+1. Implemented read-only `/api/v2/*` endpoints:
+   - `/api/v2/spans`
+   - `/api/v2/calls`
+   - `/api/v2/object-snapshots`
+   - `/api/v2/object-bindings`
+   - `/api/v2/mutations`
+   - `/api/v2/sessions`
+   - `/api/v2/clients`
+2. Responses now include `derivationVersion` (`odag-v2alpha1`) and pagination cursor support (`cursor` as offset token + `nextCursor`).
+3. V2 derivation uses `ProjectTraceWithOptions` with keep-rules disabled so object/call pools are not constrained by the trace-view pruning heuristics.
+4. Existing `/api/traces/*` endpoints remain unchanged and continue to serve the current UI.
+
 ### Phase 3: Payload evolution (future)
 
 1. Version object-state payload format for compatibility.

@@ -15,7 +15,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type ProjectOptions struct {
+	IncludeInternal bool
+	ApplyKeepRules  bool
+}
+
+var defaultProjectOptions = ProjectOptions{
+	IncludeInternal: false,
+	ApplyKeepRules:  true,
+}
+
 func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, error) {
+	return ProjectTraceWithOptions(traceID, spans, defaultProjectOptions)
+}
+
+func ProjectTraceWithOptions(traceID string, spans []store.SpanRecord, opts ProjectOptions) (*TraceProjection, error) {
 	parsedSpans, warnings := parseSpans(spans)
 	if len(parsedSpans) == 0 {
 		return &TraceProjection{
@@ -156,78 +170,85 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 	topReferencedObjectIDs := make(map[string]struct{}, len(objectsByID))
 	keptObjectIDs := make(map[string]struct{}, len(objectsByID))
 	hasNonTopObjectActivity := make(map[string]bool, len(objectsByID))
-	for _, event := range events {
-		if event.ObjectID == "" || event.Internal || event.TopLevel {
-			continue
-		}
-		hasNonTopObjectActivity[event.ObjectID] = true
-	}
-	markByState := func(stateDigest string, keep bool) {
-		if stateDigest == "" {
-			return
-		}
-		objectID, ok := stateToObject[stateDigest]
-		if !ok || objectID == "" {
-			return
-		}
-		topReferencedObjectIDs[objectID] = struct{}{}
-		if keep {
-			keptObjectIDs[objectID] = struct{}{}
-		}
-	}
-	for _, event := range events {
-		if event.Internal {
-			continue
-		}
 
-		keepTopRefs := event.TopLevel && (event.Kind == "create" || event.Kind == "mutate")
-		if event.TopLevel {
-			if event.ObjectID != "" {
-				topReferencedObjectIDs[event.ObjectID] = struct{}{}
+	if opts.ApplyKeepRules {
+		for _, event := range events {
+			if event.ObjectID == "" || (!opts.IncludeInternal && event.Internal) || event.TopLevel {
+				continue
 			}
-			markByState(event.ReceiverStateDigest, keepTopRefs)
-			for _, in := range event.Inputs {
-				markByState(in.StateDigest, keepTopRefs)
+			hasNonTopObjectActivity[event.ObjectID] = true
+		}
+		markByState := func(stateDigest string, keep bool) {
+			if stateDigest == "" {
+				return
+			}
+			objectID, ok := stateToObject[stateDigest]
+			if !ok || objectID == "" {
+				return
+			}
+			topReferencedObjectIDs[objectID] = struct{}{}
+			if keep {
+				keptObjectIDs[objectID] = struct{}{}
 			}
 		}
+		for _, event := range events {
+			if !opts.IncludeInternal && event.Internal {
+				continue
+			}
 
-		if event.ObjectID == "" {
-			continue
-		}
-		if event.TopLevel {
-			switch event.Kind {
-			case "create", "mutate":
-				keptObjectIDs[event.ObjectID] = struct{}{}
-			case "call":
-				// Keep root-level Query object calls by default; other top-level
-				// call-only objects are often fan-out noise from scalar selection.
-				if strings.HasPrefix(event.Name, "Query.") || hasNonTopObjectActivity[event.ObjectID] {
-					keptObjectIDs[event.ObjectID] = struct{}{}
+			keepTopRefs := event.TopLevel && (event.Kind == "create" || event.Kind == "mutate")
+			if event.TopLevel {
+				if event.ObjectID != "" {
+					topReferencedObjectIDs[event.ObjectID] = struct{}{}
+				}
+				markByState(event.ReceiverStateDigest, keepTopRefs)
+				for _, in := range event.Inputs {
+					markByState(in.StateDigest, keepTopRefs)
 				}
 			}
-			continue
-		}
-	}
 
-	for objectID, obj := range objectsByID {
-		if _, ok := topReferencedObjectIDs[objectID]; ok {
-			obj.ReferencedByTop = true
+			if event.ObjectID == "" {
+				continue
+			}
+			if event.TopLevel {
+				switch event.Kind {
+				case "create", "mutate":
+					keptObjectIDs[event.ObjectID] = struct{}{}
+				case "call":
+					// Keep root-level Query object calls by default; other top-level
+					// call-only objects are often fan-out noise from scalar selection.
+					if strings.HasPrefix(event.Name, "Query.") || hasNonTopObjectActivity[event.ObjectID] {
+						keptObjectIDs[event.ObjectID] = struct{}{}
+					}
+				}
+				continue
+			}
 		}
-	}
 
-	// If the default keep rules prune everything (e.g. partial traces), recover
-	// with top-level references first, then all objects.
-	if len(keptObjectIDs) == 0 {
-		if len(topReferencedObjectIDs) > 0 {
-			warnings = append(warnings, "default object keep rules yielded no objects; falling back to top-level references")
-			for objectID := range topReferencedObjectIDs {
-				keptObjectIDs[objectID] = struct{}{}
+		for objectID, obj := range objectsByID {
+			if _, ok := topReferencedObjectIDs[objectID]; ok {
+				obj.ReferencedByTop = true
 			}
-		} else {
-			warnings = append(warnings, "no top-level object references found; falling back to all objects")
-			for objectID := range objectsByID {
-				keptObjectIDs[objectID] = struct{}{}
+		}
+
+		// If the default keep rules prune everything (e.g. partial traces), recover
+		// with top-level references first, then all objects.
+		if len(keptObjectIDs) == 0 {
+			if len(topReferencedObjectIDs) > 0 {
+				warnings = append(warnings, "default object keep rules yielded no objects; falling back to top-level references")
+				for objectID := range topReferencedObjectIDs {
+					keptObjectIDs[objectID] = struct{}{}
+				}
+			} else {
+				warnings = append(warnings, "no top-level object references found; falling back to all objects")
+				for objectID := range objectsByID {
+					keptObjectIDs[objectID] = struct{}{}
+				}
 			}
+		}
+	} else {
+		for objectID := range objectsByID {
+			keptObjectIDs[objectID] = struct{}{}
 		}
 	}
 
@@ -246,11 +267,14 @@ func ProjectTrace(traceID string, spans []store.SpanRecord) (*TraceProjection, e
 
 	filteredEvents := make([]MutationEvent, 0, len(events))
 	for _, event := range events {
-		if event.Internal {
+		if !opts.IncludeInternal && event.Internal {
 			continue
 		}
 		if event.ObjectID != "" {
 			_, event.Visible = keptObjectIDs[event.ObjectID]
+			if !opts.ApplyKeepRules {
+				event.Visible = true
+			}
 		}
 		filteredEvents = append(filteredEvents, event)
 	}

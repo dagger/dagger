@@ -76,6 +76,13 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/traces/{traceID}/events", srv.handleTraceEvents)
 	mux.HandleFunc("GET /api/traces/{traceID}/snapshot", srv.handleTraceSnapshot)
 	mux.HandleFunc("POST /api/traces/open", srv.handleOpenTrace)
+	mux.HandleFunc("GET /api/v2/spans", srv.handleV2Spans)
+	mux.HandleFunc("GET /api/v2/calls", srv.handleV2Calls)
+	mux.HandleFunc("GET /api/v2/object-snapshots", srv.handleV2ObjectSnapshots)
+	mux.HandleFunc("GET /api/v2/object-bindings", srv.handleV2ObjectBindings)
+	mux.HandleFunc("GET /api/v2/mutations", srv.handleV2Mutations)
+	mux.HandleFunc("GET /api/v2/sessions", srv.handleV2Sessions)
+	mux.HandleFunc("GET /api/v2/clients", srv.handleV2Clients)
 
 	srv.http = &http.Server{
 		Addr:              cfg.ListenAddr,

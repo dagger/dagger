@@ -185,6 +185,108 @@ func TestTraceAPIProjection(t *testing.T) {
 	if len(stepResp.Snapshot.Objects) != 1 || len(stepResp.Snapshot.Objects[0].StateHistory) != 1 {
 		t.Fatalf("expected single-state object at step 0, got %#v", stepResp.Snapshot.Objects)
 	}
+
+	v2CallsReq := httptest.NewRequest(http.MethodGet, "/api/v2/calls?traceID="+traceIDHex, nil)
+	v2CallsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(v2CallsRec, v2CallsReq)
+	if v2CallsRec.Code != http.StatusOK {
+		t.Fatalf("v2 calls failed: status=%d body=%s", v2CallsRec.Code, v2CallsRec.Body.String())
+	}
+	var v2CallsResp struct {
+		DerivationVersion string `json:"derivationVersion"`
+		Items             []struct {
+			SpanID           string `json:"spanID"`
+			DerivedOperation string `json:"derivedOperation"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(v2CallsRec.Body.Bytes(), &v2CallsResp); err != nil {
+		t.Fatalf("decode v2 calls: %v", err)
+	}
+	if v2CallsResp.DerivationVersion == "" || len(v2CallsResp.Items) != 2 {
+		t.Fatalf("unexpected v2 calls response: %#v", v2CallsResp)
+	}
+	if v2CallsResp.Items[0].DerivedOperation != "create" || v2CallsResp.Items[1].DerivedOperation != "mutate" {
+		t.Fatalf("unexpected v2 call operations: %#v", v2CallsResp.Items)
+	}
+
+	v2BindingsReq := httptest.NewRequest(http.MethodGet, "/api/v2/object-bindings?traceID="+traceIDHex, nil)
+	v2BindingsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(v2BindingsRec, v2BindingsReq)
+	if v2BindingsRec.Code != http.StatusOK {
+		t.Fatalf("v2 object-bindings failed: status=%d body=%s", v2BindingsRec.Code, v2BindingsRec.Body.String())
+	}
+	var v2BindingsResp struct {
+		Items []struct {
+			BindingID string   `json:"bindingID"`
+			TraceID   string   `json:"traceID"`
+			Archived  bool     `json:"archived"`
+			History   []string `json:"snapshotHistory"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(v2BindingsRec.Body.Bytes(), &v2BindingsResp); err != nil {
+		t.Fatalf("decode v2 object-bindings: %v", err)
+	}
+	if len(v2BindingsResp.Items) != 1 {
+		t.Fatalf("expected 1 v2 binding, got %#v", v2BindingsResp.Items)
+	}
+	if v2BindingsResp.Items[0].TraceID != traceIDHex || len(v2BindingsResp.Items[0].History) != 2 {
+		t.Fatalf("unexpected v2 binding content: %#v", v2BindingsResp.Items[0])
+	}
+
+	v2SnapshotsReq := httptest.NewRequest(http.MethodGet, "/api/v2/object-snapshots?traceID="+traceIDHex, nil)
+	v2SnapshotsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(v2SnapshotsRec, v2SnapshotsReq)
+	if v2SnapshotsRec.Code != http.StatusOK {
+		t.Fatalf("v2 object-snapshots failed: status=%d body=%s", v2SnapshotsRec.Code, v2SnapshotsRec.Body.String())
+	}
+	var v2SnapshotsResp struct {
+		Items []struct {
+			SnapshotID string `json:"snapshotID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(v2SnapshotsRec.Body.Bytes(), &v2SnapshotsResp); err != nil {
+		t.Fatalf("decode v2 object-snapshots: %v", err)
+	}
+	if len(v2SnapshotsResp.Items) != 2 {
+		t.Fatalf("expected 2 v2 snapshots, got %#v", v2SnapshotsResp.Items)
+	}
+
+	v2MutationsReq := httptest.NewRequest(http.MethodGet, "/api/v2/mutations?traceID="+traceIDHex, nil)
+	v2MutationsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(v2MutationsRec, v2MutationsReq)
+	if v2MutationsRec.Code != http.StatusOK {
+		t.Fatalf("v2 mutations failed: status=%d body=%s", v2MutationsRec.Code, v2MutationsRec.Body.String())
+	}
+	var v2MutationsResp struct {
+		Items []struct {
+			Kind string `json:"kind"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(v2MutationsRec.Body.Bytes(), &v2MutationsResp); err != nil {
+		t.Fatalf("decode v2 mutations: %v", err)
+	}
+	if len(v2MutationsResp.Items) != 2 || v2MutationsResp.Items[0].Kind != "create" || v2MutationsResp.Items[1].Kind != "mutate" {
+		t.Fatalf("unexpected v2 mutations: %#v", v2MutationsResp.Items)
+	}
+
+	v2SpansReq := httptest.NewRequest(http.MethodGet, "/api/v2/spans?traceID="+traceIDHex, nil)
+	v2SpansRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(v2SpansRec, v2SpansReq)
+	if v2SpansRec.Code != http.StatusOK {
+		t.Fatalf("v2 spans failed: status=%d body=%s", v2SpansRec.Code, v2SpansRec.Body.String())
+	}
+	var v2SpansResp struct {
+		Items []struct {
+			TraceID string `json:"traceID"`
+			SpanID  string `json:"spanID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(v2SpansRec.Body.Bytes(), &v2SpansResp); err != nil {
+		t.Fatalf("decode v2 spans: %v", err)
+	}
+	if len(v2SpansResp.Items) != 2 {
+		t.Fatalf("expected 2 v2 spans, got %#v", v2SpansResp.Items)
+	}
 }
 
 func TestOpenTraceValidation(t *testing.T) {
