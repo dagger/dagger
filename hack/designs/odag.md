@@ -536,7 +536,7 @@ Stage 4 implementation note:
     - current-event selection highlights the event row and marks the mutated object with an event badge/ring
     - selected-object selection uses a distinct object contour color and highlights all history rows that mutate that object
   - dedicated central trace title row above the DAG canvas
-  - ODAG object canvas (workflow-style cards with mutation highlighting)
+  - ODAG object canvas uses workflow-style cards with latest object state fields rendered as per-field key/value rows (replacing mutation-count text)
   - object cards show ODAG alias (`Type#N`) as primary label; immutable state digest text is hidden from card body
   - trace view drops the inspector pane to maximize graph/history real estate
 

@@ -234,7 +234,7 @@ function renderGraph() {
 
   const cols = Math.max(1, Math.ceil(Math.sqrt(objects.length)));
   const cardW = 300;
-  const cardH = 116;
+  const cardH = 166;
   const gapX = 72;
   const gapY = 84;
   const padding = 52;
@@ -283,8 +283,34 @@ function renderGraph() {
       const isActive = activeObjectIDs.has(obj.id);
       const selected = obj.id === state.selectedObjectID;
       const eventTarget = obj.id === selectedEventObjectID;
+      const latest = obj.stateHistory?.[obj.stateHistory.length - 1] || null;
+      const fields = latestStateFields(latest);
       const title = obj.alias || obj.typeName;
-      const warning = obj.missingState ? `<tspan class="warn-pill">state unavailable</tspan>` : "";
+      const maxFieldRows = 4;
+      const fieldStartY = pos.y + 68;
+      const rowHeight = 21;
+      const keyX = pos.x + 16;
+      const valX = pos.x + 122;
+      let rowsMarkup = "";
+      if (fields.length > 0) {
+        const visibleRows = fields.length > maxFieldRows ? fields.slice(0, maxFieldRows-1) : fields;
+        rowsMarkup += visibleRows
+          .map((field, idx) => {
+            const y = fieldStartY + idx * rowHeight;
+            return `<text class="node-prop-key" x="${keyX}" y="${y}">${escapeHTML(field.name)}</text>
+        <text class="node-prop-val" x="${valX}" y="${y}">${escapeHTML(field.value)}</text>`;
+          })
+          .join("");
+        if (fields.length > maxFieldRows) {
+          const hidden = fields.length - (maxFieldRows - 1);
+          const y = fieldStartY + (maxFieldRows - 1) * rowHeight;
+          rowsMarkup += `<text class="node-sub" x="${keyX}" y="${y}">+${hidden} more fields</text>`;
+        }
+      } else if (obj.missingState) {
+        rowsMarkup = `<text class="node-warn" x="${keyX}" y="${fieldStartY}">state unavailable</text>`;
+      } else {
+        rowsMarkup = `<text class="node-sub" x="${keyX}" y="${fieldStartY}">no state fields</text>`;
+      }
       const classNames = `node-card${isActive ? " active" : ""}${selected ? " object-selected" : ""}`;
       return `
       <g data-object-id="${escapeHTML(obj.id)}" style="cursor:pointer; animation: fadeIn 220ms ease;">
@@ -294,9 +320,7 @@ function renderGraph() {
         <circle class="node-port" cx="${pos.x + cardW}" cy="${pos.y + cardH / 2}" r="6" />
         ${eventTarget ? `<circle class="node-event-badge" cx="${pos.x + cardW - 16}" cy="${pos.y + 14}" r="7" />` : ""}
         <text class="node-label" x="${pos.x + 16}" y="${pos.y + 38}">${escapeHTML(title)}</text>
-        <text class="node-sub" x="${pos.x + 16}" y="${pos.y + 74}">${escapeHTML(
-          `${obj.stateHistory.length} mutations`,
-        )}${warning}</text>
+        ${rowsMarkup}
       </g>`;
     })
     .join("");
@@ -349,6 +373,71 @@ function mutationObjectID(event) {
     return event.objectID;
   }
   return "";
+}
+
+function latestStateFields(latestState) {
+  const payload = latestState?.outputState;
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+  const fields = payload.fields;
+  if (!fields || typeof fields !== "object") {
+    return [];
+  }
+
+  const out = [];
+  for (const [fallbackName, raw] of Object.entries(fields)) {
+    if (!raw || typeof raw !== "object") {
+      continue;
+    }
+    const name = typeof raw.name === "string" && raw.name ? raw.name : fallbackName;
+    const value = formatStateValue(raw.value);
+    out.push({ name, value });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
+function formatStateValue(v) {
+  if (v === null) {
+    return "null";
+  }
+  if (v === undefined) {
+    return "";
+  }
+  if (typeof v === "string") {
+    if (looksLikeDigest(v)) {
+      return shortDigest(v);
+    }
+    return truncateText(v, 28);
+  }
+  if (typeof v === "number" || typeof v === "boolean") {
+    return String(v);
+  }
+  if (Array.isArray(v)) {
+    return `[${v.length}]`;
+  }
+  if (typeof v === "object") {
+    if (typeof v.error === "string" && v.error) {
+      return `error: ${truncateText(v.error, 18)}`;
+    }
+    return "{...}";
+  }
+  return String(v);
+}
+
+function looksLikeDigest(v) {
+  return (v.startsWith("xxh3:") || v.startsWith("sha256:")) && v.length > 12;
+}
+
+function truncateText(v, maxLen) {
+  if (!v || v.length <= maxLen) {
+    return v;
+  }
+  if (maxLen <= 1) {
+    return v.slice(0, maxLen);
+  }
+  return `${v.slice(0, maxLen - 1)}…`;
 }
 
 function shortEventLabel(event) {

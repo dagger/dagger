@@ -545,6 +545,22 @@ body {
   fill: #9bb1cd;
 }
 
+.node-prop-key {
+  font-size: 11.5px;
+  fill: #92a7c1;
+}
+
+.node-prop-val {
+  font-size: 11.8px;
+  fill: #d6e1f1;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+}
+
+.node-warn {
+  font-size: 12px;
+  fill: var(--warn);
+}
+
 .node-port {
   fill: #6f8db4;
 }
