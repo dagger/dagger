@@ -2,6 +2,14 @@
 
 package dagger
 
+import (
+{{ if IsModuleCode -}}
+	"{{.UtilityPkgImport}}/querybuilder"
+{{- else -}}
+	"dagger.io/dagger/querybuilder"
+{{- end }}
+)
+
 {{ range .Types }}
   {{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
   {{ if eq .Kind "INPUT_OBJECT" }}{{ template "_types/input.go.tmpl" . }}{{ end }}
