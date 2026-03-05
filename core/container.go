@@ -211,6 +211,17 @@ func (container *Container) OnRelease(ctx context.Context) error {
 				}
 			}
 		}
+		if src := mount.WorkspaceSource; src != nil && src.Upper != nil {
+			if src := src.Upper.Self(); src != nil {
+				res := src.Result
+				if res != nil {
+					err := res.Release(ctx)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -291,6 +302,9 @@ type ContainerMount struct {
 type WorkspaceMountSource struct {
 	// The workspace to mount.
 	Workspace dagql.ObjectResult[*Workspace]
+
+	// Writable upper layer state captured after exec.
+	Upper *dagql.ObjectResult[*Directory]
 
 	// Requested mount owner.
 	//
@@ -407,6 +421,9 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 	case mnt.FileSource != nil:
 		return mnt.FileSource.Self().State()
 	case mnt.WorkspaceSource != nil:
+		if upper := mnt.WorkspaceSource.Upper; upper != nil && upper.Self() != nil {
+			return upper.Self().StateWithSourcePath()
+		}
 		return llb.Scratch(), nil
 	default:
 		return llb.Scratch(), nil
@@ -428,7 +445,9 @@ func (mnt *ContainerMount) GetLLB() *pb.Definition {
 			}
 		},
 		func(ws *WorkspaceMountSource) {
-			// Workspace mounts are runtime mounts and do not have static LLB.
+			if ws != nil && ws.Upper != nil && ws.Upper.Self() != nil {
+				llb = ws.Upper.Self().LLB
+			}
 		},
 		func(cacheMount *CacheMountSource) {
 			if cacheMount != nil && cacheMount.Base != nil && cacheMount.Base.Self() != nil {
@@ -1577,6 +1596,12 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		}
 	case mnt.DirectorySource != nil: // mounted directory
 		dir, err = mnt.DirectorySource.Self().Directory(ctx, subpath)
+	case mnt.WorkspaceSource != nil: // mounted workspace
+		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
+		if wsErr != nil {
+			return nil, wsErr
+		}
+		dir, err = wsDir.Self().Directory(ctx, subpath)
 	case mnt.FileSource != nil: // mounted file
 		return nil, fmt.Errorf("path %s is a file, not a directory", dirPath)
 	default:
@@ -1610,6 +1635,13 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 	case mnt.DirectorySource != nil: // mounted directory
 		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
 		err = RestoreErrPath(err, filePath) // preserve the full filePath, rather than subpath
+	case mnt.WorkspaceSource != nil: // mounted workspace
+		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
+		if wsErr != nil {
+			return nil, wsErr
+		}
+		f, err = wsDir.Self().File(ctx, subpath)
+		err = RestoreErrPath(err, filePath)
 	case mnt.FileSource != nil: // mounted file
 		return mnt.FileSource.Self(), nil
 	default:
@@ -1646,10 +1678,6 @@ func locatePath(
 
 			if mnt.CacheSource != nil {
 				return nil, "", fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
-			}
-
-			if mnt.WorkspaceSource != nil {
-				return nil, "", fmt.Errorf("%s: cannot retrieve path from workspace mount before wsfs runtime support", containerPath)
 			}
 
 			relPath, err := filepath.Rel(mnt.Target, containerPath)
@@ -1846,6 +1874,19 @@ func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targe
 			return false, err
 		}
 
+	case mnt.WorkspaceSource != nil: // workspace mount
+		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
+		if wsErr != nil {
+			return false, wsErr
+		}
+		err = srv.Select(ctx, wsDir, &exists, dagql.Selector{
+			Field: "exists",
+			Args:  args,
+		})
+		if err != nil {
+			return false, err
+		}
+
 	case mnt.FileSource != nil: // file mount
 		if targetType == "" {
 			return true, nil
@@ -1885,6 +1926,19 @@ func (container *Container) Stat(ctx context.Context, srv *dagql.Server, targetP
 
 	case mnt.DirectorySource != nil: // directory mount
 		err = srv.Select(ctx, mnt.DirectorySource, &stat, dagql.Selector{
+			Field: "stat",
+			Args:  args,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+	case mnt.WorkspaceSource != nil: // workspace mount
+		wsDir, wsErr := resolveWorkspaceMountDir(ctx, mnt.WorkspaceSource)
+		if wsErr != nil {
+			return nil, wsErr
+		}
+		err = srv.Select(ctx, wsDir, &stat, dagql.Selector{
 			Field: "stat",
 			Args:  args,
 		})
@@ -2808,6 +2862,35 @@ func UpdatedRootFS(
 	return &updatedRootfs, nil
 }
 
+func resolveWorkspaceMountDir(
+	ctx context.Context,
+	workspaceMnt *WorkspaceMountSource,
+) (*dagql.ObjectResult[*Directory], error) {
+	if workspaceMnt == nil {
+		return nil, fmt.Errorf("workspace mount source is nil")
+	}
+	if workspaceMnt.Upper != nil {
+		return workspaceMnt.Upper, nil
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var dir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, workspaceMnt.Workspace, &dir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(".")},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to resolve workspace mount directory: %w", err)
+	}
+
+	return &dir, nil
+}
+
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
 // The returned ObjectResult uses the ID of the current operation.
 //
@@ -2847,6 +2930,26 @@ func updatedDirMount(
 		return nil, err
 	}
 	return &updatedDirMnt, nil
+}
+
+func updatedWorkspaceMount(
+	ctx context.Context,
+	workspaceMnt *WorkspaceMountSource,
+	mntTarget string,
+	dir *Directory,
+) (*WorkspaceMountSource, error) {
+	if workspaceMnt == nil {
+		return nil, fmt.Errorf("workspace mount source is nil")
+	}
+
+	upper, err := updatedDirMount(ctx, dir, mntTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	updated := *workspaceMnt
+	updated.Upper = upper
+	return &updated, nil
 }
 
 // updatedFileMount returns an updated mount for a given file after an exec/import/etc.

@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -209,6 +211,87 @@ type Lister {
 	require.Contains(t, entries, "a.txt")
 	require.Contains(t, entries, "b.txt")
 	require.Contains(t, entries, "sub/")
+}
+
+// TestWithMountedWorkspaceWritesPersistInLineage verifies that writes to a
+// mounted workspace are visible to subsequent withExec calls in the same
+// container lineage, but not to fresh mounts.
+func (WorkspaceSuite) TestWithMountedWorkspaceWritesPersistInLineage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	var randBytes [8]byte
+	_, err := rand.Read(randBytes[:])
+	require.NoError(t, err)
+	relPath := fmt.Sprintf(".wsfs-test-%x", randBytes)
+	writeCmd := fmt.Sprintf("echo wsfs > /ws/%s", relPath)
+	mountedPath := "/ws/" + relPath
+
+	wsRes, err := testutil.QueryWithClient[struct {
+		CurrentWorkspace struct {
+			ID string
+		}
+	}](c, t, `{ currentWorkspace { id } }`, nil)
+	require.NoError(t, err)
+
+	writeThenReadRes, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					WithExec struct {
+						WithExec struct {
+							Stdout string
+						}
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Test($ws: WorkspaceID!) {
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws", source: $ws) {
+					withExec(args: ["sh", "-c", %q]) {
+						withExec(args: ["cat", %q]) {
+							stdout
+						}
+					}
+				}
+			}
+		}
+	}`, alpineImage, writeCmd, mountedPath), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws": wsRes.CurrentWorkspace.ID,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "wsfs", strings.TrimSpace(writeThenReadRes.Container.From.WithMountedWorkspace.WithExec.WithExec.Stdout))
+
+	freshMountRes, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithMountedWorkspace struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Test($ws: WorkspaceID!) {
+		container {
+			from(address: %q) {
+				withMountedWorkspace(path: "/ws", source: $ws) {
+					withExec(args: ["sh", "-c", "if [ ! -e %s ]; then echo missing; fi"]) {
+						stdout
+					}
+				}
+			}
+		}
+	}`, alpineImage, mountedPath), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws": wsRes.CurrentWorkspace.ID,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "missing", strings.TrimSpace(freshMountRes.Container.From.WithMountedWorkspace.WithExec.Stdout))
 }
 
 // TestWorkspaceDirectoryExclude verifies that include/exclude patterns work

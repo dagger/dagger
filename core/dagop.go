@@ -635,6 +635,7 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 		var llb *pb.Definition
 		var res bkcache.ImmutableRef
 		var dgst digest.Digest
+		var mountErr error
 		handleMount(mnt,
 			func(dirMnt *dagql.ObjectResult[*Directory]) {
 				mount.Selector = dirMnt.Self().Dir
@@ -655,8 +656,19 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 			func(wsMnt *WorkspaceMountSource) {
-				// WSFS runtime wiring happens in withExec; there is no static LLB
-				// source to add here.
+				wsDir, err := resolveWorkspaceMountDir(ctx, wsMnt)
+				if err != nil {
+					mountErr = err
+					return
+				}
+
+				mount.Selector = wsDir.Self().Dir
+				llb = wsDir.Self().LLB
+				res = wsDir.Self().Result
+				dgst = wsDir.ID().Digest()
+				if wsDir.ID().ContentDigest() != "" {
+					dgst = wsDir.ID().ContentDigest()
+				}
 			},
 			func(cache *CacheMountSource) {
 				if cache.Base != nil && cache.Base.Self() != nil {
@@ -685,6 +697,9 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				}
 			},
 		)
+		if mountErr != nil {
+			return mountErr
+		}
 		st, err := defToState(llb)
 		if err != nil {
 			return err
@@ -890,7 +905,17 @@ func (op *ContainerDagOp) setAllContainerMounts(
 					return nil
 				},
 				func(ws *WorkspaceMountSource) error {
-					return fmt.Errorf("unhandled workspace mount source type for mount %d", mountIdx)
+					dir := &Directory{
+						LLB:      def.ToPB(),
+						Dir:      "/",
+						Platform: container.Platform,
+					}
+					ctrMnt.WorkspaceSource, err = updatedWorkspaceMount(ctx, ctrMnt.WorkspaceSource, ctrMnt.Target, dir)
+					if err != nil {
+						return fmt.Errorf("failed to update workspace mount: %w", err)
+					}
+					container.Mounts[mountIdx-2] = ctrMnt
+					return nil
 				},
 				func(cache *CacheMountSource) error {
 					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)

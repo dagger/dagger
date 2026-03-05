@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,10 +42,21 @@ func TestSetupWSFSMounts(t *testing.T) {
 		}}
 
 		cleanup, err := ctr.setupWSFSMounts(ctx, ContainerMountData{})
-		require.Nil(t, cleanup)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "wsfs runtime not implemented yet")
-		require.Contains(t, err.Error(), "/src")
-		require.Contains(t, err.Error(), "/data")
+		require.NoError(t, err)
+		require.NotNil(t, cleanup)
+		require.NoError(t, cleanup())
 	})
+}
+
+func TestResolveWorkspaceMountDirUsesUpper(t *testing.T) {
+	ctx := context.Background()
+
+	upper := dagql.ObjectResult[*Directory]{}
+	workspaceMnt := &WorkspaceMountSource{
+		Upper: &upper,
+	}
+
+	resolved, err := resolveWorkspaceMountDir(ctx, workspaceMnt)
+	require.NoError(t, err)
+	require.Same(t, workspaceMnt.Upper, resolved)
 }

@@ -407,7 +407,17 @@ func (container *Container) WithExec(
 							return nil
 						},
 						func(ws *WorkspaceMountSource) error {
-							return fmt.Errorf("unhandled workspace mount source type for mount %d", mountIdx)
+							dir := &Directory{
+								Result:   iref,
+								Dir:      "/",
+								Platform: container.Platform,
+							}
+							ctrMnt.WorkspaceSource, err = updatedWorkspaceMount(ctx, ctrMnt.WorkspaceSource, ctrMnt.Target, dir)
+							if err != nil {
+								return fmt.Errorf("failed to update workspace mount: %w", err)
+							}
+							container.Mounts[mountIdx] = ctrMnt
+							return nil
 						},
 						func(cache *CacheMountSource) error {
 							container.Mounts[mountIdx] = ctrMnt
@@ -570,7 +580,17 @@ func (container *Container) WithExec(
 					return nil
 				},
 				func(ws *WorkspaceMountSource) error {
-					return fmt.Errorf("unhandled workspace mount source type for mount %d", mountIdx)
+					dir := &Directory{
+						Result:   iref,
+						Dir:      "/",
+						Platform: container.Platform,
+					}
+					ctrMnt.WorkspaceSource, err = updatedWorkspaceMount(ctx, ctrMnt.WorkspaceSource, ctrMnt.Target, dir)
+					if err != nil {
+						return fmt.Errorf("failed to update workspace mount: %w", err)
+					}
+					container.Mounts[mountIdx] = ctrMnt
+					return nil
 				},
 				func(cache *CacheMountSource) error {
 					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
