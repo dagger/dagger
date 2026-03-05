@@ -47,12 +47,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/network"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (

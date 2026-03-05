@@ -15,7 +15,7 @@ import (
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"go.opentelemetry.io/otel/trace"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // ExecError is a custom dagger error that occurs during a `withExec` execution.

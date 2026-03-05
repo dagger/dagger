@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"dagger.io/dagger/telemetry"
 )
 
 type cliSessionConn struct {
@@ -108,7 +106,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	ctx = fallbackSpanContext(ctx)
 
 	// propagate trace context to the child process (i.e. for Dagger-in-Dagger)
-	env = append(env, telemetry.PropagationEnv(ctx)...)
+	env = append(env, propagationEnv(ctx)...)
 
 	cmdCtx, cmdCancel := context.WithCancelCause(ctx)
 

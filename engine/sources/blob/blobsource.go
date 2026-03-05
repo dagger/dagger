@@ -15,8 +15,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/contenthash"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (
