@@ -525,12 +525,11 @@ Stage 4 implementation note:
   - `/` trace list page (picker/import)
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
 - UI includes:
-  - timeline controls (first/back/forward/last) driven by discrete object-event steps
-  - status/current/last step readouts (no continuous seek bar)
-  - dedicated central trace title row between navigator and DAG canvas
+  - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
+  - selecting a history item moves the DAG snapshot to that event boundary time
+  - history pane includes checkbox filters for `calls`, `derived`, and `visible`
+  - dedicated central trace title row above the DAG canvas
   - ODAG object canvas (workflow-style cards with mutation highlighting)
-  - event stream panel includes all non-internal spans (calls + non-calls), with `CALL` for dagql function-call info and `RAW` for low-level span info
-  - event stream includes checkbox filters for `calls`, `derived`, and `visible`
   - inspector panel shows only selected object details; empty when no object is selected
 
 Stage 5 implementation note:

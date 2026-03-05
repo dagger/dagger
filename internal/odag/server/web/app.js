@@ -3,8 +3,7 @@ const state = {
   traceMeta: null,
   projection: null,
   snapshot: null,
-  frameSteps: [],
-  frameIndex: 0,
+  selectedEventIndex: -1,
   selectedObjectID: "",
   filters: {
     calls: false,
@@ -16,22 +15,17 @@ const state = {
 
 const els = {
   backBtn: document.getElementById("backBtn"),
-  timelineStatus: document.getElementById("timelineStatus"),
-  timelineCurrent: document.getElementById("timelineCurrent"),
-  timelineEnd: document.getElementById("timelineEnd"),
-  firstBtn: document.getElementById("firstBtn"),
-  prevBtn: document.getElementById("prevBtn"),
-  nextBtn: document.getElementById("nextBtn"),
-  lastBtn: document.getElementById("lastBtn"),
-  traceStats: document.getElementById("traceStats"),
+  traceStatus: document.getElementById("traceStatus"),
+  historyPosition: document.getElementById("historyPosition"),
+  historyList: document.getElementById("historyList"),
   traceTitle: document.getElementById("traceTitle"),
+  traceSubtitle: document.getElementById("traceSubtitle"),
   graphCanvas: document.getElementById("graphCanvas"),
   graphEmpty: document.getElementById("graphEmpty"),
   inspector: document.getElementById("inspector"),
   filterCalls: document.getElementById("filterCalls"),
   filterDerived: document.getElementById("filterDerived"),
   filterVisible: document.getElementById("filterVisible"),
-  eventList: document.getElementById("eventList"),
 };
 
 init().catch((err) => {
@@ -56,43 +50,21 @@ function bindEvents() {
     });
   }
 
-  els.firstBtn.addEventListener("click", () => {
-    loadFrame(0).catch((err) => showError(err));
-  });
-
-  els.prevBtn.addEventListener("click", () => {
-    loadFrame(state.frameIndex - 1).catch((err) => showError(err));
-  });
-
-  els.nextBtn.addEventListener("click", () => {
-    loadFrame(Math.min(state.frameIndex + 1, state.frameSteps.length - 1)).catch((err) => showError(err));
-  });
-
-  els.lastBtn.addEventListener("click", () => {
-    if (state.frameSteps.length === 0) {
-      return;
-    }
-    loadFrame(state.frameSteps.length - 1).catch((err) => showError(err));
-  });
-
   els.filterCalls.addEventListener("change", () => {
     state.filters.calls = Boolean(els.filterCalls.checked);
-    renderEvents();
+    renderHistory();
   });
   els.filterDerived.addEventListener("change", () => {
     state.filters.derived = Boolean(els.filterDerived.checked);
-    renderEvents();
+    renderHistory();
   });
   els.filterVisible.addEventListener("change", () => {
     state.filters.visible = Boolean(els.filterVisible.checked);
-    renderEvents();
+    renderHistory();
   });
 }
 
-async function loadTrace(traceID, opts = {}) {
-  const preserveStep = Boolean(opts.preserveStep);
-  const targetStep = preserveStep ? state.frameIndex : 0;
-
+async function loadTrace(traceID) {
   state.selectedTraceID = traceID;
   state.selectedObjectID = "";
   document.title = `ODAG ${shortDigest(traceID)}`;
@@ -108,122 +80,137 @@ async function loadTrace(traceID, opts = {}) {
 
   state.traceMeta = metaResp;
   state.projection = snapResp.projection || null;
-  state.frameSteps = buildFrameSteps(state.projection);
-  state.frameIndex = clampStep(targetStep);
+  state.snapshot = snapResp.snapshot || null;
 
-  if (state.frameSteps.length > 0) {
-    const stepResp = await fetchJSON(`/api/traces/${encodeURIComponent(traceID)}/snapshot?step=${state.frameIndex}`);
-    if (token !== state.requestToken) {
-      return;
-    }
-    state.projection = stepResp.projection || state.projection;
-    state.snapshot = stepResp.snapshot || snapResp.snapshot || null;
+  if (state.projection && (state.projection.events || []).length > 0) {
+    state.selectedEventIndex = state.projection.events.length - 1;
   } else {
-    state.snapshot = snapResp.snapshot || null;
+    state.selectedEventIndex = -1;
   }
 
-  syncStepControls();
   renderAll();
 }
 
-async function loadFrame(frameIndex) {
-  if (!state.selectedTraceID || !state.projection || state.frameSteps.length === 0) {
+async function selectEvent(eventIndex) {
+  if (!state.selectedTraceID || !state.projection || eventIndex < 0 || eventIndex >= state.projection.events.length) {
     return;
   }
 
-  const idx = Math.max(0, Math.min(frameIndex, state.frameSteps.length - 1));
+  const event = state.projection.events[eventIndex];
+  const unixNano = eventBoundaryUnixNano(event);
+
   const token = ++state.requestToken;
-  const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?step=${idx}`);
+  const resp = await fetchJSON(`/api/traces/${encodeURIComponent(state.selectedTraceID)}/snapshot?t=${unixNano}`);
   if (token !== state.requestToken) {
     return;
   }
 
   state.projection = resp.projection || state.projection;
   state.snapshot = resp.snapshot || state.snapshot;
-  state.frameSteps = buildFrameSteps(state.projection);
-  state.frameIndex = clampStep(idx);
-  syncStepControls();
+  state.selectedEventIndex = eventIndex;
+
   renderAll();
-}
-
-function buildFrameSteps(projection) {
-  if (!projection) {
-    return [];
-  }
-  return (projection.events || []).filter((event) => Boolean(event.objectID) && Boolean(event.visible));
-}
-
-function clampStep(step) {
-  const max = Math.max(0, state.frameSteps.length - 1);
-  if (state.frameSteps.length === 0) {
-    return 0;
-  }
-  return Math.max(0, Math.min(step, max));
-}
-
-function syncStepControls() {
-  const max = Math.max(0, state.frameSteps.length - 1);
-  const hasSteps = state.frameSteps.length > 0;
-  els.firstBtn.disabled = !hasSteps || state.frameIndex <= 0;
-  els.prevBtn.disabled = !hasSteps || state.frameIndex <= 0;
-  els.nextBtn.disabled = !hasSteps || state.frameIndex >= max;
-  els.lastBtn.disabled = !hasSteps || state.frameIndex >= max;
 }
 
 function clearSelection(msg) {
   state.traceMeta = null;
   state.projection = null;
   state.snapshot = null;
-  state.frameSteps = [];
-  state.frameIndex = 0;
-  syncStepControls();
-  els.traceStats.textContent = "";
+  state.selectedEventIndex = -1;
+  state.selectedObjectID = "";
+  els.traceStatus.textContent = "idle";
+  els.historyPosition.textContent = "0 / 0";
   els.traceTitle.textContent = "No trace selected";
-  els.timelineStatus.textContent = "idle";
-  els.timelineCurrent.textContent = "0";
-  els.timelineEnd.textContent = "0";
+  els.traceSubtitle.textContent = "";
   els.graphCanvas.innerHTML = "";
   els.graphEmpty.textContent = msg;
   els.graphEmpty.style.display = "block";
-  els.eventList.innerHTML = "";
+  els.historyList.innerHTML = "";
   els.inspector.innerHTML = "";
 }
 
 function renderAll() {
-  renderTimeline();
-  renderTraceTitle();
+  renderTraceHeader();
+  renderHistory();
   renderGraph();
-  renderEvents();
   renderInspector();
 }
 
-function renderTimeline() {
-  els.timelineStatus.textContent = state.traceMeta?.status || "unknown";
+function renderTraceHeader() {
+  const title = state.projection?.summary?.title || "";
+  els.traceTitle.textContent = title || state.selectedTraceID || "Trace";
 
-  if (!state.projection || !state.snapshot || state.frameSteps.length === 0) {
-    els.timelineCurrent.textContent = "0";
-    els.timelineEnd.textContent = "0";
-    els.traceStats.textContent = "";
-    syncStepControls();
+  const status = state.traceMeta?.status || "unknown";
+  els.traceStatus.textContent = status;
+
+  const totalEvents = (state.projection?.events || []).length;
+  const current = state.selectedEventIndex >= 0 ? state.selectedEventIndex + 1 : 0;
+  els.historyPosition.textContent = `${current} / ${totalEvents}`;
+
+  const selectedEvent =
+    state.selectedEventIndex >= 0 && state.projection ? (state.projection.events || [])[state.selectedEventIndex] : null;
+  const selectedLabel = selectedEvent ? shortEventLabel(selectedEvent) : "none";
+  const objectCount = (state.snapshot?.objects || []).length;
+  const warningCount = (state.projection?.warnings || []).length;
+  const warnText = warningCount > 0 ? ` | ${warningCount} warnings` : "";
+  els.traceSubtitle.textContent = `status: ${status} | objects: ${objectCount} | selected revision: ${selectedLabel}${warnText}`;
+}
+
+function renderHistory() {
+  if (!state.projection) {
+    els.historyList.innerHTML = "";
     return;
   }
 
-  const currentStep = state.frameIndex + 1;
-  const totalSteps = state.frameSteps.length;
-  els.timelineCurrent.textContent = String(currentStep);
-  els.timelineEnd.textContent = String(totalSteps);
+  const rows = [];
+  const events = state.projection.events || [];
+  for (let idx = events.length - 1; idx >= 0; idx--) {
+    const event = events[idx];
+    if (!eventMatchesFilters(event, state.filters)) {
+      continue;
+    }
+    rows.push({ idx, event });
+    if (rows.length >= 600) {
+      break;
+    }
+  }
 
-  const objectCount = (state.snapshot.objects || []).length;
-  const eventCount = (state.snapshot.events || []).length;
-  const warningCount = (state.projection.warnings || []).length;
-  const warnText = warningCount > 0 ? ` | ${warningCount} warnings` : "";
-  els.traceStats.textContent = `${objectCount} objects | ${eventCount} events${warnText}`;
-  syncStepControls();
-}
+  if (rows.length === 0) {
+    els.historyList.innerHTML = "<div class='history-item'>No events match current filters.</div>";
+    return;
+  }
 
-function renderTraceTitle() {
-  const title = state.projection?.summary?.title || "";
-  els.traceTitle.textContent = title || state.selectedTraceID || "Trace";
+  const startUnixNano = state.projection.startUnixNano || 0;
+  els.historyList.innerHTML = rows
+    .map(({ idx, event }) => {
+      const selected = idx === state.selectedEventIndex ? "selected" : "";
+      const derived = event.operation ? event.operation.toUpperCase() : event.rawKind.toUpperCase();
+      const call = event.rawKind === "call" ? event.name || event.callDigest || event.spanID : event.name || event.spanID;
+      const raw = `${event.rawKind} · ${shortDigest(event.spanID)}`;
+      const parent = event.parentCallName || (event.parentCallSpanID ? shortDigest(event.parentCallSpanID) : "-");
+      const vis = event.objectID ? (event.visible ? "visible" : "hidden") : "-";
+      const rel = formatRelTime(eventBoundaryUnixNano(event), startUnixNano);
+      return `
+      <div class="history-item ${selected}" data-event-index="${idx}">
+        <div class="history-main">
+          <span class="history-pill">${escapeHTML(derived)}</span>
+          <span class="history-call">${escapeHTML(call)}</span>
+        </div>
+        <div class="history-sub">${escapeHTML(`${raw} | parent: ${parent} | ${vis} | ${rel}`)}</div>
+      </div>`;
+    })
+    .join("");
+
+  for (const node of els.historyList.querySelectorAll("[data-event-index]")) {
+    node.addEventListener("click", () => {
+      const raw = node.getAttribute("data-event-index");
+      const idx = Number(raw);
+      if (!Number.isInteger(idx) || idx === state.selectedEventIndex) {
+        return;
+      }
+      selectEvent(idx).catch((err) => showError(err));
+    });
+  }
 }
 
 function renderGraph() {
@@ -327,59 +314,6 @@ function renderGraph() {
   }
 }
 
-function renderEvents() {
-  if (!state.snapshot || !state.projection) {
-    els.eventList.innerHTML = "";
-    return;
-  }
-  const active = new Set(state.snapshot.activeEventIDs || []);
-  const recentEvents = [...(state.snapshot.events || [])]
-    .filter((event) => eventMatchesFilters(event, state.filters))
-    .slice(-120)
-    .reverse();
-  if (recentEvents.length === 0) {
-    els.eventList.innerHTML = "<div class='event-item'>No events match current filters.</div>";
-    return;
-  }
-
-  els.eventList.innerHTML = recentEvents
-    .map((event) => {
-      const activeClass = active.has(event.spanID) ? "active" : "";
-      const callLabel = event.rawKind === "call" ? event.name || event.callDigest || event.spanID : "-";
-      const rawLabel = `${event.rawKind || "span"} · ${event.name || "-"} · ${shortDigest(event.spanID)}`;
-      const parentLabel = event.parentCallName || (event.parentCallSpanID ? shortDigest(event.parentCallSpanID) : "-");
-      const detail = `${formatRelTime(event.endUnixNano, state.projection.startUnixNano)} · ${event.statusCode || "STATUS_CODE_UNSET"} · span ${shortDigest(event.spanID)}`;
-      return `
-      <div class="event-item ${activeClass}">
-        <div class="event-grid">
-          <span>${escapeHTML(callLabel)}</span>
-          <span>${escapeHTML(parentLabel)}</span>
-          <span>${escapeHTML(rawLabel)}</span>
-          <span>${escapeHTML(event.operation || "-")}</span>
-          <span>${event.topLevel ? "yes" : "no"}</span>
-          <span>${Number(event.callDepth || 0)}</span>
-          <span>${event.objectID ? (event.visible ? "yes" : "no") : "-"}</span>
-          <span>${escapeHTML(shortDigest(event.objectID || ""))}</span>
-        </div>
-        <div class="event-sub">${escapeHTML(detail)}</div>
-      </div>`;
-    })
-    .join("");
-}
-
-function eventMatchesFilters(event, filters) {
-  if (filters.calls && event.rawKind !== "call") {
-    return false;
-  }
-  if (filters.derived && !event.operation) {
-    return false;
-  }
-  if (filters.visible && !event.visible) {
-    return false;
-  }
-  return true;
-}
-
 function renderInspector() {
   if (!state.snapshot || !state.projection) {
     els.inspector.innerHTML = "";
@@ -424,6 +358,36 @@ function renderInspector() {
       ${stateRows}
     </div>
   `;
+}
+
+function eventMatchesFilters(event, filters) {
+  if (filters.calls && event.rawKind !== "call") {
+    return false;
+  }
+  if (filters.derived && !event.operation) {
+    return false;
+  }
+  if (filters.visible && !event.visible) {
+    return false;
+  }
+  return true;
+}
+
+function shortEventLabel(event) {
+  if (!event) {
+    return "none";
+  }
+  if (event.rawKind === "call") {
+    return event.name || event.callDigest || shortDigest(event.spanID);
+  }
+  return `${event.rawKind}:${event.name || shortDigest(event.spanID)}`;
+}
+
+function eventBoundaryUnixNano(event) {
+  if (!event) {
+    return 0;
+  }
+  return event.endUnixNano || event.startUnixNano || 0;
 }
 
 function showError(err) {
