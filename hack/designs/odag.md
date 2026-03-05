@@ -50,6 +50,9 @@
 10. Frontend stack:
    - current prototype: embedded HTML/CSS/JS + SVG renderer (no external frontend build)
    - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
+11. Primary navigation hierarchy:
+   - `dagql session` -> `dagql client` -> spans/calls -> object bindings
+   - trace remains a secondary ingest/debug/import escape hatch, not the primary UI silo.
 
 ## Problem
 
@@ -164,7 +167,8 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
 2. **Derived (versioned transform output)**:
    - DAGQL calls, object snapshots, mutable object bindings, binding mutations, session/client labels.
 3. **Views**:
-   - trace/session/client scoped projections are query-time filters over one global pool.
+   - session/client/trace scoped projections are query-time filters over one global pool.
+   - primary UX is session-first; trace-centric views remain secondary/debug-oriented.
 
 ### Proposed types
 
@@ -295,6 +299,26 @@ type BindingMutation struct {
   EndUnixNano      int64
   Visible          bool
 }
+
+// Derived execution scope. This should become the top-level UX entity.
+type Session struct {
+  ID                string
+  Status            string
+  Open              bool
+  TraceIDs          []string
+  FirstSeenUnixNano int64
+  LastSeenUnixNano  int64
+}
+
+// Derived actor within a session (CLI invocation / SDK client / similar).
+type Client struct {
+  ID                string
+  SessionID         string
+  TraceIDs          []string
+  RootSpanIDs       []string
+  FirstSeenUnixNano int64
+  LastSeenUnixNano  int64
+}
 ```
 
 Notes:
@@ -310,10 +334,15 @@ Notes:
 6. Sharing semantics:
    - the same `dagql_id` may appear in multiple traces/sessions.
    - if an object is session/client-isolated, that isolation is part of the emitted `dagql_id`; ODAG should model session/client/trace as properties and link tables, not as a second namespace layer over immutable IDs.
+7. Hierarchy semantics:
+   - session and client are higher-level execution scopes derived from telemetry.
+   - spans and calls belong under a client (or directly under a session if client identity is unavailable).
+   - object bindings are derived from calls and are therefore naturally attributable to client/session via those calls.
+   - trace is an ingest/debug boundary, not the primary ownership hierarchy for ODAG entities.
 
 ## Backend API (V2 Source of Truth)
 
-V2 APIs expose global pools + filters. Trace-centric endpoints become convenience views.
+V2 APIs expose global pools + filters. Session/client views are primary; trace-centric endpoints become convenience/debug views.
 
 ### Canonical endpoints
 
@@ -339,6 +368,7 @@ Convenience views (kept for compatibility):
 1. `/api/traces` and `/api/traces/{id}/meta`
 2. `/api/traces/{id}/events`
 3. `/api/traces/{id}/snapshot?t=...|step=...`
+4. These remain useful for import, plumbing debug, and exact OTel boundary inspection, but should not dominate the main UX.
 
 Render-model view parameters:
 1. `mode=global|scope|object|hybrid` (for `/api/v2/render`)
@@ -571,11 +601,16 @@ web/odag/
 
 ### Main view
 
-1. **Trace page layout**:
+1. **Primary hierarchy**:
+   - session list
+   - session detail with clients/activity summary
+   - client detail with calls/history/bindings
+2. **Trace page layout**:
    - left: revision history list (events)
    - right: ODAG graph panel
    - top center: trace title/subtitle context
-2. **Trace list page**:
+   - this is a secondary/debug-oriented route, not the default way users should enter the data.
+3. **Trace list page**:
    - table layout (`trace`, `created`, `spans`, `status`)
    - relative creation time and dot-based status signaling
 
@@ -678,6 +713,7 @@ Encoding note:
 - [ ] Engine telemetry hard cutover: change `dagger.io/dag.output.state` payload to include per-field `refs` and bump payload version.
 - [ ] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
 - [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
+- [ ] Replace current `session == trace` approximation with explicit session/client derivation from telemetry; keep trace routes as secondary/debug views.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
