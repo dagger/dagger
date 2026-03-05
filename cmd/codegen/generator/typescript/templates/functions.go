@@ -104,6 +104,9 @@ func (funcs typescriptTemplateFuncs) commentToLines(s string) []string {
 		return []string{}
 	}
 
+	// Escape */ to prevent premature closure of JSDoc block comments
+	s = strings.ReplaceAll(s, "*/", `*\/`)
+
 	split := strings.Split(s, "\n")
 	return split
 }

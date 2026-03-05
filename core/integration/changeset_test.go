@@ -1517,39 +1517,59 @@ func (ChangesetSuite) TestWithChangesets(ctx context.Context, t *testctx.T) {
 			WithNewFile("file4.txt", "file 4 added in changeset3").
 			Changes(baseDir)
 
-		// Merge all changesets at once using octopus merge
-		res, err := original.WithChangesets([]*dagger.Changeset{changeset1, changeset2, changeset3}).Sync(ctx)
-		require.NoError(t, err)
+		for _, tc := range []struct {
+			name  string
+			build func() (*dagger.Changeset, error)
+		}{
+			{
+				name: "from original",
+				build: func() (*dagger.Changeset, error) {
+					return original.WithChangesets([]*dagger.Changeset{changeset1, changeset2, changeset3}).Sync(ctx)
+				},
+			},
+			{
+				name: "merge array",
+				build: func() (*dagger.Changeset, error) {
+					return c.Changeset().WithChangesets([]*dagger.Changeset{original, changeset1, changeset2, changeset3}).Sync(ctx)
+				},
+			},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				// Merge all changesets at once using octopus merge
+				res, err := tc.build()
+				require.NoError(t, err)
 
-		// Verify the merged changeset contains changes from all changesets
-		modifiedPaths, err := res.ModifiedPaths(ctx)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{"filea.txt", "fileb.txt", "filec.txt", "filee.txt"}, modifiedPaths)
+				// Verify the merged changeset contains changes from all changesets
+				modifiedPaths, err := res.ModifiedPaths(ctx)
+				require.NoError(t, err)
+				require.ElementsMatch(t, []string{"filea.txt", "fileb.txt", "filec.txt", "filee.txt"}, modifiedPaths)
 
-		addedPaths, err := res.AddedPaths(ctx)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{"file1.txt", "file2.txt", "file3.txt", "file4.txt"}, addedPaths)
+				addedPaths, err := res.AddedPaths(ctx)
+				require.NoError(t, err)
+				require.ElementsMatch(t, []string{"file1.txt", "file2.txt", "file3.txt", "file4.txt"}, addedPaths)
 
-		removedPaths, err := res.RemovedPaths(ctx)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{"filed.txt"}, removedPaths)
+				removedPaths, err := res.RemovedPaths(ctx)
+				require.NoError(t, err)
+				require.ElementsMatch(t, []string{"filed.txt"}, removedPaths)
 
-		// Verify file contents from each changeset are present
-		content, err := res.After().File("filea.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "file a modified in original", content)
+				// Verify file contents from each changeset are present
+				content, err := res.After().File("filea.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file a modified in original", content)
 
-		content, err = res.After().File("fileb.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "file b modified in changeset1", content)
+				content, err = res.After().File("fileb.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file b modified in changeset1", content)
 
-		content, err = res.After().File("filec.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "file c modified in changeset2", content)
+				content, err = res.After().File("filec.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file c modified in changeset2", content)
 
-		content, err = res.After().File("filee.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "file e modified in changeset3", content)
+				content, err = res.After().File("filee.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file e modified in changeset3", content)
+			})
+		}
 	})
 
 	t.Run("with conflicts - fail early", func(ctx context.Context, t *testctx.T) {

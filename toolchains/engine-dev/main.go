@@ -114,6 +114,8 @@ func (dev *EngineDev) Playground(
 	sharedCache bool,
 	// +optional
 	metrics bool,
+	//+optional
+	version string,
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
@@ -128,11 +130,12 @@ func (dev *EngineDev) Playground(
 		gpuSupport,
 		sharedCache,
 		metrics,
+		version,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return dev.InstallClient(ctx, ctr, svc)
+	return dev.InstallClient(ctx, ctr, svc, version)
 }
 
 // Build the engine container
@@ -188,7 +191,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -217,6 +220,8 @@ func (dev *EngineDev) Service(
 	sharedCache bool,
 	// +optional
 	metrics bool,
+	// +optional
+	version string,
 ) (*dagger.Service, error) {
 	// Support 256 layers of nested dagger engines :-P
 	dev = dev.IncrementSubnet()
@@ -236,7 +241,7 @@ func (dev *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, "", "")
+	devEngine, err := dev.Container(ctx, "", gpuSupport, version, "")
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +280,8 @@ func (dev *EngineDev) InstallClient(
 	// The engine service to bind
 	// +optional
 	service *dagger.Service,
+	// +optional
+	version string,
 ) (*dagger.Container, error) {
 	if service == nil {
 		var err error
@@ -284,6 +291,7 @@ func (dev *EngineDev) InstallClient(
 			false, // gpuSupport
 			false, // sharedCache
 			false, // metrics
+			version,
 		)
 		if err != nil {
 			return nil, err
@@ -298,7 +306,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
+		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -314,7 +322,7 @@ func (dev *EngineDev) InstallClient(
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
 func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false)
+	playground, err := dev.Playground(ctx, nil, false, false, false, "")
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +339,7 @@ func (dev *EngineDev) GraphqlSchema(
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false)
+	playground, err := dev.Playground(ctx, nil, false, false, false, "")
 	if err != nil {
 		return nil, err
 	}

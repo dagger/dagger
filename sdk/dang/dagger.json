@@ -4,6 +4,6 @@
   "blueprint": {
     "name": "dang-sdk",
     "source": "github.com/vito/dang/dagger-sdk@main",
-    "pin": "be6466632453a52120517e5551c266a239d3899b"
+    "pin": "da6ed3337a2a18b0c9a371813ef62b880e1c6f5d"
   }
 }

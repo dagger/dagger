@@ -34,6 +34,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Creates an empty changeset
+     */
+    public function changeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Dagger Cloud configuration and state
      */
     public function cloud(): Cloud
@@ -643,6 +652,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGitRepositoryFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a HealthcheckConfig from its ID.
+     */
+    public function loadHealthcheckConfigFromID(HealthcheckConfigId|HealthcheckConfig $id): HealthcheckConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHealthcheckConfigFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

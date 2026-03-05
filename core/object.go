@@ -236,9 +236,17 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 		opt = opts[0]
 	}
 
-	class := dagql.NewClass(dag, dagql.ClassOpts[*ModuleObject]{
+	classOpts := dagql.ClassOpts[*ModuleObject]{
 		Typed: obj,
-	})
+	}
+
+	installDirectives := []*ast.Directive{}
+	if obj.TypeDef.SourceMap.Valid {
+		classOpts.SourceMap = obj.TypeDef.SourceMap.Value.TypeDirective()
+		installDirectives = append(installDirectives, obj.TypeDef.SourceMap.Value.TypeDirective())
+	}
+
+	class := dagql.NewClass(dag, classOpts)
 	objDef := obj.TypeDef
 	mod := obj.Module
 	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) && !opt.SkipConstructor {
@@ -255,7 +263,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	fields = append(fields, funs...)
 
 	class.Install(fields...)
-	dag.InstallObject(class)
+	dag.InstallObject(class, installDirectives...)
 
 	return nil
 }

@@ -718,6 +718,10 @@ func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
 type ID[T Typed] struct {
 	id    *call.ID
 	inner T
+
+	// The inner type sourceMap directive so additional type
+	// registered by the engine can store also store its origin.
+	sourceMap *ast.Directive
 }
 
 func NewID[T Typed](id *call.ID) ID[T] {
@@ -767,7 +771,7 @@ var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
 func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
-	return &ast.Definition{
+	typedef := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
 		Description: fmt.Sprintf(
@@ -777,6 +781,12 @@ func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
 		),
 		BuiltIn: true,
 	}
+
+	if i.sourceMap != nil {
+		typedef.Directives = append(typedef.Directives, i.sourceMap)
+	}
+
+	return typedef
 }
 
 // New creates a new ID with the given value.

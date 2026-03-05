@@ -31,7 +31,7 @@
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-plugin-typedoc": "^1.4.2",
     "posthog-docusaurus": "^2.0.5",
-    "posthog-js": "^1.354.3",
+    "posthog-js": "^1.358.0",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -48,7 +48,7 @@
     "@docusaurus/tsconfig": "^3.9.2",
     "@docusaurus/types": "^3.5.2",
     "@types/node": "^25.3",
-    "markdownlint-cli": "^0.47.0"
+    "markdownlint-cli": "^0.48.0"
   },
   "browserslist": {
     "production": [

@@ -2220,6 +2220,8 @@ func (fe *frontendPretty) hasShownRootError() bool {
 	}
 	origins := telemetry.ParseErrorOrigins(fe.err.Error())
 	if len(origins) == 0 {
+		// No error origins means the error didn't come from a specific span,
+		// so it can't have been shown in the progress output.
 		return false
 	}
 	for _, origin := range origins {

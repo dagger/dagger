@@ -4,6 +4,8 @@ updates:
     directories:
       - "/"
       - "/sdk/go"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -30,6 +32,8 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -46,6 +50,8 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/docs"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -62,6 +68,8 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -80,6 +88,8 @@ updates:
     directories:
       - "/sdk/python/runtime"
       - "/modules/ruff/build"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -100,6 +110,8 @@ updates:
 
   - package-ecosystem: "maven"
     directory: "/sdk/java"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -119,6 +131,8 @@ updates:
 
   - package-ecosystem: "mix"
     directory: "/sdk/elixir"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
