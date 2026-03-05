@@ -273,6 +273,7 @@ class Client extends Client\AbstractClient
         string $url,
         ?string $name = null,
         ?int $permissions = null,
+        ?string $checksum = null,
         SecretId|Secret|null $authHeader = null,
         ServiceId|Service|null $experimentalServiceHost = null,
     ): File {
@@ -283,6 +284,9 @@ class Client extends Client\AbstractClient
         }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $checksum) {
+        $innerQueryBuilder->setArgument('checksum', $checksum);
         }
         if (null !== $authHeader) {
         $innerQueryBuilder->setArgument('authHeader', $authHeader);
