@@ -64,6 +64,7 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 type daggerSession struct {
@@ -1786,6 +1787,13 @@ type pendingModule struct {
 	DefaultsFromDotEnv bool
 }
 
+type moduleLoadRequest struct {
+	mod   pendingModule
+	extra bool
+}
+
+const maxParallelModuleResolves = 8
+
 // findBlueprint returns the index of the first blueprint module in pending,
 // or -1 if none exists.
 func findBlueprint(pending []pendingModule) int {
@@ -1964,7 +1972,14 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// (1) Workspace config modules
 	if ws.Config != nil {
-		for name, entry := range ws.Config.Modules {
+		moduleNames := make([]string, 0, len(ws.Config.Modules))
+		for name := range ws.Config.Modules {
+			moduleNames = append(moduleNames, name)
+		}
+		slices.Sort(moduleNames)
+
+		for _, name := range moduleNames {
+			entry := ws.Config.Modules[name]
 			ref := entry.Source
 			pendingMod := pendingModule{
 				Ref:                ref,
@@ -2151,23 +2166,46 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		return fmt.Errorf("waiting for client session: %w", err)
 	}
 
-	// Load gathered modules (workspace config + implicit CWD).
-	for _, mod := range client.pendingModules {
-		if err := srv.loadModuleWithProgress(ctx, client, mod, false); err != nil {
-			client.modulesErr = fmt.Errorf("loading module %q: %w", mod.Ref, err)
+	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules)
+	resolvedMods := make([]*core.Module, len(loads))
+	resolveErrs := make([]error, len(loads))
+
+	// Resolve modules in parallel, then apply to client state in deterministic order.
+	jobs := parallel.New().
+		WithContextualTracer(true).
+		WithLimit(moduleResolveParallelism(len(loads)))
+	for i, load := range loads {
+		i := i
+		load := load
+		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
+			resolved, err := srv.resolveModule(ctx, client.dag, load.mod)
+			if err != nil {
+				resolveErrs[i] = err
+				return nil
+			}
+			resolvedMods[i] = resolved
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		client.modulesErr = fmt.Errorf("resolving modules: %w", err)
+		client.modulesLoaded = true
+		return client.modulesErr
+	}
+
+	for i, load := range loads {
+		if resolveErrs[i] != nil {
+			client.modulesErr = moduleLoadErr(load, resolveErrs[i])
 			client.modulesLoaded = true
 			return client.modulesErr
 		}
 	}
 
-	// Load extra modules (-m flag, may arrive late).
-	for _, extra := range client.pendingExtraModules {
-		if err := srv.loadModuleWithProgress(ctx, client, pendingModule{
-			Ref:       extra.Ref,
-			Name:      extra.Name,
-			Blueprint: extra.Blueprint,
-		}, true); err != nil {
-			client.modulesErr = fmt.Errorf("loading extra module %q: %w", extra.Ref, err)
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+	for i, load := range loads {
+		if err := srv.serveModuleWithDeps(client, resolvedMods[i]); err != nil {
+			client.modulesErr = moduleLoadErr(load, err)
 			client.modulesLoaded = true
 			return client.modulesErr
 		}
@@ -2175,6 +2213,34 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	client.modulesLoaded = true
 	return nil
+}
+
+func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {
+	loads := make([]moduleLoadRequest, 0, len(pending)+len(extras))
+	for _, mod := range pending {
+		loads = append(loads, moduleLoadRequest{mod: mod})
+	}
+	for _, extra := range extras {
+		loads = append(loads, moduleLoadRequest{
+			mod: pendingModule{
+				Ref:       extra.Ref,
+				Name:      extra.Name,
+				Blueprint: extra.Blueprint,
+			},
+			extra: true,
+		})
+	}
+	return loads
+}
+
+func moduleResolveParallelism(moduleCount int) int {
+	if moduleCount <= 1 {
+		return 1
+	}
+	if moduleCount > maxParallelModuleResolves {
+		return maxParallelModuleResolves
+	}
+	return moduleCount
 }
 
 func moduleProgressName(mod pendingModule) string {
@@ -2187,33 +2253,30 @@ func moduleProgressName(mod pendingModule) string {
 	return "<unknown>"
 }
 
-func (srv *Server) loadModuleWithProgress(
-	ctx context.Context,
-	client *daggerClient,
-	mod pendingModule,
-	extra bool,
-) (rerr error) {
-	progressName := moduleProgressName(mod)
-	spanName := "load module: " + progressName
-	if extra {
-		spanName = "load extra module: " + progressName
+func moduleLoadJobName(load moduleLoadRequest) string {
+	prefix := "load module: "
+	if load.extra {
+		prefix = "load extra module: "
 	}
-
-	spanCtx, span := telemetry.Tracer(ctx, InstrumentationLibrary).Start(ctx, spanName, telemetry.Encapsulate())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	return srv.loadModule(spanCtx, client, client.dag, mod)
+	return prefix + moduleProgressName(load.mod)
 }
 
-// loadModule resolves a module through the dagql pipeline and serves it
-// to the client. Handles all module sources uniformly: workspace config
-// modules, implicit CWD modules, and -m flag modules.
-func (srv *Server) loadModule(
+func moduleLoadErr(load moduleLoadRequest, err error) error {
+	prefix := "loading module"
+	if load.extra {
+		prefix = "loading extra module"
+	}
+	return fmt.Errorf("%s %q: %w", prefix, load.mod.Ref, err)
+}
+
+// resolveModule resolves a module through the dagql pipeline.
+// Handles all module sources uniformly: workspace config modules,
+// implicit CWD modules, and -m flag modules.
+func (srv *Server) resolveModule(
 	ctx context.Context,
-	client *daggerClient,
 	dag *dagql.Server,
 	mod pendingModule,
-) error {
+) (*core.Module, error) {
 	args := []dagql.NamedInput{
 		{Name: "refString", Value: dagql.String(mod.Ref)},
 	}
@@ -2230,7 +2293,7 @@ func (srv *Server) loadModule(
 		dagql.Selector{Field: "asModule"},
 	)
 	if err != nil {
-		return fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
 	if mod.Name != "" {
@@ -2246,13 +2309,7 @@ func (srv *Server) loadModule(
 		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
 	}
 
-	// Serve the module and its dependencies to the client. Dependencies are
-	// served without constructors — their types are available for schema
-	// resolution (e.g. when a function returns a dependency type through an
-	// interface) but only directly-loaded modules get constructors on Query.
-	client.stateMu.Lock()
-	defer client.stateMu.Unlock()
-	return srv.serveModuleWithDeps(client, resolved.Self())
+	return resolved.Self(), nil
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.

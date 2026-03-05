@@ -2,7 +2,9 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
@@ -80,8 +82,12 @@ func Detect(
 	// Step 1: .dagger/ found → look for config.toml
 	if hasDaggerDir {
 		configPath := filepath.Join(daggerDir, WorkspaceDirName, ConfigFileName)
-		data, err := readFile(ctx, configPath)
-		if err == nil {
+		if _, _, err := statFS.Stat(ctx, configPath); err == nil {
+			data, err := readFile(ctx, configPath)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s: %w", configPath, err)
+			}
+
 			cfg, err := ParseConfig(data)
 			if err != nil {
 				return nil, fmt.Errorf("parsing %s: %w", configPath, err)
@@ -93,7 +99,10 @@ func Detect(
 				Initialized: true,
 				Config:      cfg,
 			}, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("stat %s: %w", configPath, err)
 		}
+
 		// .dagger/ exists but no config.toml — empty workspace
 		sandbox := sandboxFor(daggerDir)
 		return &Workspace{

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -282,6 +283,57 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 		require.Equal(t, "main", ref.version)
 		require.Equal(t, ".", ref.workspaceSubdir)
 	})
+}
+
+func TestGatherModuleLoadRequests(t *testing.T) {
+	t.Parallel()
+
+	loads := gatherModuleLoadRequests(
+		[]pendingModule{
+			{Ref: "github.com/acme/a", Name: "a"},
+			{Ref: "github.com/acme/b", Name: "b"},
+		},
+		[]engine.ExtraModule{
+			{Ref: "github.com/acme/extra1", Name: "extra1", Blueprint: true},
+			{Ref: "github.com/acme/extra2", Name: "extra2"},
+		},
+	)
+
+	require.Len(t, loads, 4)
+	require.False(t, loads[0].extra)
+	require.False(t, loads[1].extra)
+	require.True(t, loads[2].extra)
+	require.True(t, loads[3].extra)
+
+	require.Equal(t, "github.com/acme/a", loads[0].mod.Ref)
+	require.Equal(t, "github.com/acme/b", loads[1].mod.Ref)
+	require.Equal(t, "github.com/acme/extra1", loads[2].mod.Ref)
+	require.Equal(t, "github.com/acme/extra2", loads[3].mod.Ref)
+	require.True(t, loads[2].mod.Blueprint)
+}
+
+func TestModuleResolveParallelism(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, 1, moduleResolveParallelism(0))
+	require.Equal(t, 1, moduleResolveParallelism(1))
+	require.Equal(t, 3, moduleResolveParallelism(3))
+	require.Equal(t, maxParallelModuleResolves, moduleResolveParallelism(maxParallelModuleResolves+4))
+}
+
+func TestModuleLoadErr(t *testing.T) {
+	t.Parallel()
+
+	err := errors.New("boom")
+
+	normal := moduleLoadErr(moduleLoadRequest{mod: pendingModule{Ref: "github.com/acme/mod"}}, err)
+	require.ErrorContains(t, normal, `loading module "github.com/acme/mod": boom`)
+
+	extra := moduleLoadErr(moduleLoadRequest{
+		mod:   pendingModule{Ref: "github.com/acme/extra"},
+		extra: true,
+	}, err)
+	require.ErrorContains(t, extra, `loading extra module "github.com/acme/extra": boom`)
 }
 
 func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
