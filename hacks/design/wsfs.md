@@ -34,7 +34,7 @@ extend type Container {
 - Reads are fetched lazily from `Workspace` APIs.
 - Writes are allowed and persist across `withExec` calls on the returned container lineage.
 - v0 writes are ephemeral to Dagger state and are not synced back to the host workspace.
-- Future modes can opt into explicit commit or live sync behavior.
+- Future modes can opt into explicit commit, write-through sync, and/or live-read behavior.
 
 ## Goals
 
@@ -45,7 +45,7 @@ extend type Container {
 
 ## Non-Goals (Prototype)
 
-- Bidirectional sync back to host workspace.
+- Write-through sync back to host workspace.
 - Non-Linux support.
 - Perfect POSIX fidelity for all inode/xattr/device edge cases.
 
@@ -202,7 +202,7 @@ Order of work for highest return:
 - Path resolution remains sandboxed to workspace root.
 - WSFS must reject `..` escapes and normalize paths exactly once.
 - Client ownership model follows existing workspace client binding behavior.
-- v0 introduces no host write capability; future live sync must remain explicit opt-in.
+- v0 introduces no host write capability; future write-through/live-read modes must remain explicit opt-in.
 
 ## Implementation Sketch
 
@@ -249,30 +249,36 @@ Order of work for highest return:
 
 ## Future Evolution
 
-- Sync modes for workspace writes (`EPHEMERAL`, `COMMIT`, `LIVE`).
+- Separate read-consistency and write-sync controls.
 - Explicit conflict policy between host updates and WSFS writes.
 - Richer metadata APIs if needed (`lstat`, xattrs, chmod/chown semantics).
 
-## Write Sync Design (v2+)
+## Read Consistency + Write Sync Design (v2+)
 
 Do not make bidirectional sync implicit. Use explicit modes:
 
-1. `EPHEMERAL` (default): current behavior; writes stay in lineage only.
-2. `COMMIT`: record write journal and apply explicitly.
-3. `LIVE`: best-effort write-through to backing workspace.
+1. Read consistency:
+  - `EVENTUAL` (default): host updates may be observed during execution.
+  - `SNAPSHOT`: frozen read view for deterministic tools.
+  - `LIVE_READ`: reflect host changes during execution as quickly as possible.
+2. Write sync:
+  - `EPHEMERAL` (default): writes stay in lineage only.
+  - `COMMIT`: record write journal and apply explicitly.
+  - `WRITE_THROUGH`: best-effort immediate sync of writes to backing workspace.
 
 Candidate API shape:
 
 ```graphql
-enum WorkspaceSyncMode {
-  EPHEMERAL
-  COMMIT
-  LIVE
-}
-
-enum WorkspaceConsistencyMode {
+enum WorkspaceReadConsistency {
   EVENTUAL
   SNAPSHOT
+  LIVE_READ
+}
+
+enum WorkspaceWriteSync {
+  EPHEMERAL
+  COMMIT
+  WRITE_THROUGH
 }
 
 extend type Container {
@@ -281,8 +287,8 @@ extend type Container {
     source: Workspace!
     owner: String = ""
     expand: Boolean = false
-    sync: WorkspaceSyncMode = EPHEMERAL
-    consistency: WorkspaceConsistencyMode = EVENTUAL
+    readConsistency: WorkspaceReadConsistency = EVENTUAL
+    writeSync: WorkspaceWriteSync = EPHEMERAL
     include: [String!] = []
     exclude: [String!] = []
   ): Container!
@@ -298,11 +304,13 @@ Execution model for `COMMIT`:
 3. `commitMountedWorkspace` revalidates base identity and applies journal.
 4. On conflict, fail with structured conflict details.
 
-Execution model for `LIVE`:
+Execution model for `WRITE_THROUGH`:
 
 1. Apply writes through to backing workspace as operations occur.
 2. Keep local upper-layer coherence for in-process correctness.
-3. Expose best-effort semantics; `SNAPSHOT` consistency is incompatible with `LIVE`.
+3. Expose best-effort semantics; `SNAPSHOT` read consistency is incompatible with `WRITE_THROUGH`.
+
+If both `LIVE_READ` and `WRITE_THROUGH` are enabled, treat it as explicit bidirectional live mode.
 
 ## Consistency and Sync Safety
 
@@ -320,7 +328,7 @@ Recommended model:
 1. v0 (current): eventual view of host reads; exec may observe host changes between filesystem operations.
 2. v1: optional `SNAPSHOT` consistency mode per mount for tools requiring deterministic reads.
 3. v2 `COMMIT`: optimistic concurrency with base-snapshot precondition + conflict detection.
-4. v2+ `LIVE`: explicit dev mode where native-style races are accepted.
+4. v2+: `LIVE_READ` +/or `WRITE_THROUGH` as explicit dev modes where native-style races are accepted.
 
 Conflict examples:
 
