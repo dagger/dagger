@@ -104,14 +104,10 @@ type PackageJson {
     if (sectionValue == null) {
       false
     } else {
-      let found = false
-      for (name in sectionValue.fields) {
+      sectionValue.fields.any { name =>
         let spec = sectionValue.field([name]).asString ?? ""
-        if (isLocalDependencySpec(spec)) {
-          found = true
-        }
+        isLocalDependencySpec(spec)
       }
-      found
     }
   }
 
