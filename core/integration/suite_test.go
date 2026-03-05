@@ -165,9 +165,8 @@ func ensureEngine(ctx context.Context) {
 			Tag:                engine.Tag,
 		}).Start(ctx)
 		if err != nil {
-			var execErr *dagger.ExecError
-			if errors.As(err, &execErr) {
-				panic(fmt.Sprintf("ensureEngine: engine failed to start: %v\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr))
+			if info, ok := asExecError(err); ok {
+				panic(fmt.Sprintf("ensureEngine: engine failed to start: %v\nStdout: %s\nStderr: %s", err, info.Stdout, info.Stderr))
 			}
 			panic(fmt.Sprintf("ensureEngine: engine failed to start: %v", err))
 		}
@@ -509,6 +508,63 @@ func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *dagger.CacheV
 	}
 }
 
+// execErrorInfo holds ExecError fields extracted from any error that carries
+// EXEC_ERROR extensions, regardless of which Go package defined the ExecError type.
+// This is needed because the internal testutil SDK and the published SDK define
+// separate ExecError types that are not interchangeable via errors.As.
+type execErrorInfo struct {
+	Cmd      []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+// asExecError extracts ExecError information from an error chain. It uses the
+// Extensions() interface to handle ExecError types from any package.
+func asExecError(err error) (*execErrorInfo, bool) {
+	// Try the typed approach first (works when types match)
+	var execErr *dagger.ExecError
+	if errors.As(err, &execErr) {
+		return &execErrorInfo{
+			Cmd:      execErr.Cmd,
+			ExitCode: execErr.ExitCode,
+			Stdout:   execErr.Stdout,
+			Stderr:   execErr.Stderr,
+		}, true
+	}
+
+	// Fall back to interface-based extraction for cross-package ExecError types
+	type hasExtensions interface {
+		Extensions() map[string]any
+	}
+	var ext hasExtensions
+	if !errors.As(err, &ext) {
+		return nil, false
+	}
+	extensions := ext.Extensions()
+	if extensions["_type"] != "EXEC_ERROR" {
+		return nil, false
+	}
+	info := &execErrorInfo{}
+	if code, ok := extensions["exitCode"].(float64); ok {
+		info.ExitCode = int(code)
+	}
+	if args, ok := extensions["cmd"].([]interface{}); ok {
+		for _, a := range args {
+			if s, ok := a.(string); ok {
+				info.Cmd = append(info.Cmd, s)
+			}
+		}
+	}
+	if stdout, ok := extensions["stdout"].(string); ok {
+		info.Stdout = stdout
+	}
+	if stderr, ok := extensions["stderr"].(string); ok {
+		info.Stderr = stderr
+	}
+	return info, true
+}
+
 // requireErrOut is the same as require.ErrorContains, except it also looks in
 // the Stdout/Stderr of a *dagger.ExecErr, since that's something we do a lot
 // in tests.
@@ -520,11 +576,10 @@ func requireErrOut(t *testctx.T, err error, out string, msgAndInterface ...any) 
 	if err == nil {
 		require.Fail(t, "expected error, got nil")
 	}
-	var execErr *dagger.ExecError
-	if errors.As(err, &execErr) {
+	if info, ok := asExecError(err); ok {
 		require.Contains(
 			t,
-			fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr),
+			fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, info.Stdout, info.Stderr),
 			out,
 			msgAndInterface...,
 		)
@@ -544,12 +599,11 @@ func requireErrRegexp(t *testctx.T, err error, re string) {
 	if err == nil {
 		require.Fail(t, "expected error, got nil")
 	}
-	var execErr *dagger.ExecError
-	if errors.As(err, &execErr) {
+	if info, ok := asExecError(err); ok {
 		require.Regexp(
 			t,
 			re,
-			fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr),
+			fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, info.Stdout, info.Stderr),
 		)
 		return
 	}

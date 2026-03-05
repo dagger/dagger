@@ -8,7 +8,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -7014,9 +7013,8 @@ class Test:
 			require.Error(t, err)
 
 			errMsg := err.Error()
-			var execErr *dagger.ExecError
-			if errors.As(err, &execErr) {
-				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr)
+			if info, ok := asExecError(err); ok {
+				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, info.Stdout, info.Stderr)
 			}
 
 			if strings.Contains(errMsg, "failed to run command [docker info]") ||
@@ -7416,14 +7414,14 @@ func (m *Test) RunNoisy(ctx context.Context) error {
 			RunNoisy any
 		}
 	}](c, t, `{test{runNoisy}}`, nil)
-	var execError *dagger.ExecError
-	require.ErrorAs(t, err, &execError)
+	execInfo, ok := asExecError(err)
+	require.True(t, ok, "expected ExecError, got %T", err)
 
 	// if we get `2` here, that means we're getting the less helpful error:
 	// process "/runtime" did not complete successfully: exit code: 2
-	require.Equal(t, 42, execError.ExitCode)
-	require.Contains(t, execError.Stdout, "xxxxx")
-	require.Contains(t, execError.Stderr, "yyyyy")
+	require.Equal(t, 42, execInfo.ExitCode)
+	require.Contains(t, execInfo.Stdout, "xxxxx")
+	require.Contains(t, execInfo.Stderr, "yyyyy")
 }
 
 func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {

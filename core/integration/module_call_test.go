@@ -2725,8 +2725,8 @@ func (m *Test) Quit() {
 		With(daggerCall("quit")).
 		Sync(ctx)
 
-	var exErr *dagger.ExecError
-	require.ErrorAs(t, err, &exErr)
+	exErr, ok := asExecError(err)
+	require.True(t, ok, "expected ExecError, got %T", err)
 	require.Equal(t, 6, exErr.ExitCode)
 }
 

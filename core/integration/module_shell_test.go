@@ -989,9 +989,9 @@ func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
 		t.Run("builtin argument with "+prefix, func(ctx context.Context, t *testctx.T) {
 			script := prefix + "exit $(directory | with-new-file exit_code 5 | file exit_code | contents)"
 			_, err := modGen.With(daggerShellNoMod(script)).Sync(ctx)
-			var execErr *dagger.ExecError
-			require.ErrorAs(t, err, &execErr)
-			require.Equal(t, 5, execErr.ExitCode)
+			execInfo, ok := asExecError(err)
+			require.True(t, ok, "expected ExecError, got %T", err)
+			require.Equal(t, 5, execInfo.ExitCode)
 		})
 	}
 }
@@ -1041,11 +1041,11 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-		var execErr *dagger.ExecError
-		require.ErrorAs(t, err, &execErr)
-		require.Equal(t, 5, execErr.ExitCode)
-		require.Contains(t, execErr.Stdout, "foo")
-		require.NotContains(t, execErr.Stdout, "ok")
+		execInfo, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
+		require.Equal(t, 5, execInfo.ExitCode)
+		require.Contains(t, execInfo.Stdout, "foo")
+		require.NotContains(t, execInfo.Stdout, "ok")
 	})
 
 	t.Run("specific code with tty", func(ctx context.Context, t *testctx.T) {
@@ -1076,10 +1076,10 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-		var execErr *dagger.ExecError
-		require.ErrorAs(t, err, &execErr)
-		require.Equal(t, 1, execErr.ExitCode)
-		require.NotContains(t, execErr.Stdout, "ok")
+		execInfo, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
+		require.Equal(t, 1, execInfo.ExitCode)
+		require.NotContains(t, execInfo.Stdout, "ok")
 	})
 
 	t.Run("no error", func(ctx context.Context, t *testctx.T) {
@@ -1102,10 +1102,10 @@ func (ShellSuite) TestExecExit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
-	var execErr *dagger.ExecError
-	require.ErrorAs(t, err, &execErr)
-	require.Equal(t, 5, execErr.ExitCode)
-	require.Contains(t, execErr.Stderr, msg)
+	execInfo, ok := asExecError(err)
+	require.True(t, ok, "expected ExecError, got %T", err)
+	require.Equal(t, 5, execInfo.ExitCode)
+	require.Contains(t, execInfo.Stderr, msg)
 }
 
 func (ShellSuite) TestNonExecChainBreak(ctx context.Context, t *testctx.T) {
@@ -1185,9 +1185,9 @@ job3=$!
 		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
 		// should exit with the same exit code as the first failed command
-		var ex *dagger.ExecError
-		require.ErrorAs(t, err, &ex)
-		require.Equal(t, 5, ex.ExitCode)
+		execInfo, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
+		require.Equal(t, 5, execInfo.ExitCode)
 	})
 
 	t.Run("async error no pids", func(ctx context.Context, t *testctx.T) {

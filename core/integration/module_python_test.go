@@ -1857,10 +1857,10 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
 		_, err := ctr.With(daggerCall("unhandled")).Sync(ctx)
-		var exerr *dagger.ExecError
-		require.ErrorAs(t, err, &exerr)
-		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
-		require.Contains(t, exerr.Stderr, "ValueError: a foo bubbles up to bar")
+		execInfo, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
+		require.Contains(t, execInfo.Stderr, "Unhandled exception while executing function")
+		require.Contains(t, execInfo.Stderr, "ValueError: a foo bubbles up to bar")
 	})
 }
 

@@ -3257,9 +3257,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 			)}).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
-
-		require.ErrorAs(t, err, &exErr)
+		exErr, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
 		require.Equal(t, outMsg, exErr.Stdout)
 		require.Equal(t, errMsg, exErr.Stderr)
 	})
@@ -3278,9 +3277,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 			).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
-
-		require.ErrorAs(t, err, &exErr)
+		exErr, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
 		require.Equal(t, outMsg, exErr.Stdout)
 		require.Equal(t, errMsg, exErr.Stderr)
 	})
@@ -3324,9 +3322,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", "base64 -d encout >&1; base64 -d encerr >&2; exit 1"}).
 			Sync(ctx)
 
-		var exErr *dagger.ExecError
-
-		require.ErrorAs(t, err, &exErr)
+		exErr, ok := asExecError(err)
+		require.True(t, ok, "expected ExecError, got %T", err)
 		require.Equal(t, truncMsg+stdoutStr[extraByteCount+len(truncMsg):], exErr.Stdout)
 		require.Equal(t, truncMsg+stderrStr[extraByteCount+len(truncMsg):], exErr.Stderr)
 	})

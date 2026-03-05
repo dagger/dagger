@@ -2,10 +2,8 @@ module github.com/dagger/dagger/internal/testutil/dagger
 
 go 1.24.0
 
-toolchain go1.24.1
-
 require (
-	dagger.io/dagger v0.19.11
+	dagger.io/dagger v0.20.0
 	github.com/Khan/genqlient v0.8.1
 	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel v1.38.0

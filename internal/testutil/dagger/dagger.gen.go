@@ -158,7 +158,7 @@ type CheckID string
 type CiID string
 
 // The `CliID` scalar type represents an identifier for an object of type Cli.
-type CliID string
+type CliID string // cli (../../toolchains/cli-dev/main.go:82:6)
 
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
@@ -170,13 +170,13 @@ type ContainerID string
 type CurrentModuleID string
 
 // The `DaggerDevID` scalar type represents an identifier for an object of type DaggerDev.
-type DaggerDevID string
+type DaggerDevID string // dagger-dev (../../.dagger/main.go:15:6)
 
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
 
 // The `DocsID` scalar type represents an identifier for an object of type Docs.
-type DocsID string
+type DocsID string // docs (../../toolchains/docs-dev/main.go:36:6)
 
 // The `ElixirSdkID` scalar type represents an identifier for an object of type ElixirSdk.
 type ElixirSDKID string
@@ -191,10 +191,10 @@ type EngineCacheEntrySetID string
 type EngineCacheID string
 
 // The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
-type EngineDevID string
+type EngineDevID string // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 
 // The `EngineDevLoadedEngineID` scalar type represents an identifier for an object of type EngineDevLoadedEngine.
-type EngineDevLoadedEngineID string
+type EngineDevLoadedEngineID string // engine-dev (../../toolchains/engine-dev/docker.go:77:6)
 
 // The `EngineID` scalar type represents an identifier for an object of type Engine.
 type EngineID string
@@ -254,16 +254,19 @@ type GitRefID string
 type GitRepositoryID string
 
 // The `GoID` scalar type represents an identifier for an object of type Go.
-type GoID string
+type GoID string // go (../../toolchains/go/main.go:128:6)
 
 // The `GoSdkID` scalar type represents an identifier for an object of type GoSdk.
 type GoSDKID string
 
 // The `GolintID` scalar type represents an identifier for an object of type Golint.
-type GolintID string
+type GolintID string // golint (../../toolchains/go/main.go:128:6)
+
+// The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+type HealthcheckConfigID string
 
 // The `HelmID` scalar type represents an identifier for an object of type Helm.
-type HelmID string
+type HelmID string // helm (../../toolchains/helm-dev/main.go:27:6)
 
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
@@ -272,7 +275,7 @@ type HostID string
 type InputTypeDefID string
 
 // The `InstallersID` scalar type represents an identifier for an object of type Installers.
-type InstallersID string
+type InstallersID string // installers (../../toolchains/installers/main.go:17:6)
 
 // The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
 type InterfaceTypeDefID string
@@ -311,7 +314,7 @@ type ModuleSourceID string
 type ObjectTypeDefID string
 
 // The `PhpSdkID` scalar type represents an identifier for an object of type PhpSdk.
-type PhpSDKID string
+type PhpSDKID string // php-sdk (../../toolchains/php-sdk-dev/main.go:25:6)
 
 // The platform config OS and architecture in a Container.
 //
@@ -322,28 +325,31 @@ type Platform string
 type PortID string
 
 // The `PythonSdkDocsID` scalar type represents an identifier for an object of type PythonSdkDocs.
-type PythonSDKDocsID string
+type PythonSDKDocsID string // python-sdk (../../toolchains/python-sdk-dev/docs.go:9:6)
 
 // The `PythonSdkID` scalar type represents an identifier for an object of type PythonSdk.
-type PythonSDKID string
+type PythonSDKID string // python-sdk (../../toolchains/python-sdk-dev/main.go:15:6)
 
-// The `PythonSdkTestSuiteID` scalar type represents an identifier for an object of type PythonSdkTestSuite.
-type PythonSDKTestSuiteID string
+// The `PythonSdkTestForPythonVersionID` scalar type represents an identifier for an object of type PythonSdkTestForPythonVersion.
+type PythonSDKTestForPythonVersionID string // python-sdk (../../toolchains/python-sdk-dev/test.go:9:6)
 
 // The `ReleaseID` scalar type represents an identifier for an object of type Release.
-type ReleaseID string
+type ReleaseID string // release (../../toolchains/release/main.go:21:6)
 
 // The `ReleaseReportArtifactID` scalar type represents an identifier for an object of type ReleaseReportArtifact.
-type ReleaseReportArtifactID string
+type ReleaseReportArtifactID string // release (../../toolchains/release/main.go:36:6)
 
 // The `ReleaseReportFollowUpID` scalar type represents an identifier for an object of type ReleaseReportFollowUp.
-type ReleaseReportFollowUpID string
+type ReleaseReportFollowUpID string // release (../../toolchains/release/main.go:46:6)
 
 // The `ReleaseReportID` scalar type represents an identifier for an object of type ReleaseReport.
-type ReleaseReportID string
+type ReleaseReportID string // release (../../toolchains/release/main.go:23:6)
+
+// The `ReleaseTestID` scalar type represents an identifier for an object of type ReleaseTest.
+type ReleaseTestID string // release (../../toolchains/release/tests.go:27:6)
 
 // The `RustSdkID` scalar type represents an identifier for an object of type RustSdk.
-type RustSDKID string
+type RustSDKID string // rust-sdk (../../toolchains/rust-sdk-dev/main.go:31:6)
 
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
 type SDKConfigID string
@@ -352,7 +358,7 @@ type SDKConfigID string
 type ScalarTypeDefID string
 
 // The `SdksID` scalar type represents an identifier for an object of type Sdks.
-type SdksID string
+type SdksID string // sdks (../../toolchains/all-sdks/main.go:13:6)
 
 // The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
 type SearchResultID string
@@ -391,7 +397,7 @@ type TypeDefID string
 type TypescriptSDKID string
 
 // The `VersionID` scalar type represents an identifier for an object of type Version.
-type VersionID string
+type VersionID string // version (../../version/main.go:54:6)
 
 // The absence of a value.
 //
@@ -709,7 +715,7 @@ func (r *Binding) AsCi() *Ci {
 }
 
 // Retrieve the binding value, as type Cli
-func (r *Binding) AsCli() *Cli {
+func (r *Binding) AsCli() *Cli { // cli (../../toolchains/cli-dev/main.go:82:6)
 	q := r.query.Select("asCli")
 
 	return &Cli{
@@ -736,7 +742,7 @@ func (r *Binding) AsContainer() *Container {
 }
 
 // Retrieve the binding value, as type DaggerDev
-func (r *Binding) AsDaggerDev() *DaggerDev {
+func (r *Binding) AsDaggerDev() *DaggerDev { // dagger-dev (../../.dagger/main.go:15:6)
 	q := r.query.Select("asDaggerDev")
 
 	return &DaggerDev{
@@ -754,7 +760,7 @@ func (r *Binding) AsDirectory() *Directory {
 }
 
 // Retrieve the binding value, as type Docs
-func (r *Binding) AsDocs() *Docs {
+func (r *Binding) AsDocs() *Docs { // docs (../../toolchains/docs-dev/main.go:36:6)
 	q := r.query.Select("asDocs")
 
 	return &Docs{
@@ -772,7 +778,7 @@ func (r *Binding) AsElixirSDK() *ElixirSDK {
 }
 
 // Retrieve the binding value, as type EngineDev
-func (r *Binding) AsEngineDev() *EngineDev {
+func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	q := r.query.Select("asEngineDev")
 
 	return &EngineDev{
@@ -781,7 +787,7 @@ func (r *Binding) AsEngineDev() *EngineDev {
 }
 
 // Retrieve the binding value, as type EngineDevLoadedEngine
-func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine {
+func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-dev (../../toolchains/engine-dev/docker.go:77:6)
 	q := r.query.Select("asEngineDevLoadedEngine")
 
 	return &EngineDevLoadedEngine{
@@ -853,7 +859,7 @@ func (r *Binding) AsGitRepository() *GitRepository {
 }
 
 // Retrieve the binding value, as type Go
-func (r *Binding) AsGo() *Go {
+func (r *Binding) AsGo() *Go { // go (../../toolchains/go/main.go:128:6)
 	q := r.query.Select("asGo")
 
 	return &Go{
@@ -871,7 +877,7 @@ func (r *Binding) AsGoSDK() *GoSDK {
 }
 
 // Retrieve the binding value, as type Golint
-func (r *Binding) AsGolint() *Golint {
+func (r *Binding) AsGolint() *Golint { // golint (../../toolchains/go/main.go:128:6)
 	q := r.query.Select("asGolint")
 
 	return &Golint{
@@ -880,7 +886,7 @@ func (r *Binding) AsGolint() *Golint {
 }
 
 // Retrieve the binding value, as type Helm
-func (r *Binding) AsHelm() *Helm {
+func (r *Binding) AsHelm() *Helm { // helm (../../toolchains/helm-dev/main.go:27:6)
 	q := r.query.Select("asHelm")
 
 	return &Helm{
@@ -889,7 +895,7 @@ func (r *Binding) AsHelm() *Helm {
 }
 
 // Retrieve the binding value, as type Installers
-func (r *Binding) AsInstallers() *Installers {
+func (r *Binding) AsInstallers() *Installers { // installers (../../toolchains/installers/main.go:17:6)
 	q := r.query.Select("asInstallers")
 
 	return &Installers{
@@ -943,7 +949,7 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 }
 
 // Retrieve the binding value, as type PhpSdk
-func (r *Binding) AsPhpSDK() *PhpSDK {
+func (r *Binding) AsPhpSDK() *PhpSDK { // php-sdk (../../toolchains/php-sdk-dev/main.go:25:6)
 	q := r.query.Select("asPhpSdk")
 
 	return &PhpSDK{
@@ -952,7 +958,7 @@ func (r *Binding) AsPhpSDK() *PhpSDK {
 }
 
 // Retrieve the binding value, as type PythonSdk
-func (r *Binding) AsPythonSDK() *PythonSDK {
+func (r *Binding) AsPythonSDK() *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:15:6)
 	q := r.query.Select("asPythonSdk")
 
 	return &PythonSDK{
@@ -961,7 +967,7 @@ func (r *Binding) AsPythonSDK() *PythonSDK {
 }
 
 // Retrieve the binding value, as type PythonSdkDocs
-func (r *Binding) AsPythonSDKDocs() *PythonSDKDocs {
+func (r *Binding) AsPythonSDKDocs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/docs.go:9:6)
 	q := r.query.Select("asPythonSdkDocs")
 
 	return &PythonSDKDocs{
@@ -969,17 +975,17 @@ func (r *Binding) AsPythonSDKDocs() *PythonSDKDocs {
 	}
 }
 
-// Retrieve the binding value, as type PythonSdkTestSuite
-func (r *Binding) AsPythonSDKTestSuite() *PythonSDKTestSuite {
-	q := r.query.Select("asPythonSdkTestSuite")
+// Retrieve the binding value, as type PythonSdkTestForPythonVersion
+func (r *Binding) AsPythonSDKTestForPythonVersion() *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/test.go:9:6)
+	q := r.query.Select("asPythonSdkTestForPythonVersion")
 
-	return &PythonSDKTestSuite{
+	return &PythonSDKTestForPythonVersion{
 		query: q,
 	}
 }
 
 // Retrieve the binding value, as type Release
-func (r *Binding) AsRelease() *Release {
+func (r *Binding) AsRelease() *Release { // release (../../toolchains/release/main.go:21:6)
 	q := r.query.Select("asRelease")
 
 	return &Release{
@@ -988,7 +994,7 @@ func (r *Binding) AsRelease() *Release {
 }
 
 // Retrieve the binding value, as type ReleaseReport
-func (r *Binding) AsReleaseReport() *ReleaseReport {
+func (r *Binding) AsReleaseReport() *ReleaseReport { // release (../../toolchains/release/main.go:23:6)
 	q := r.query.Select("asReleaseReport")
 
 	return &ReleaseReport{
@@ -997,7 +1003,7 @@ func (r *Binding) AsReleaseReport() *ReleaseReport {
 }
 
 // Retrieve the binding value, as type ReleaseReportArtifact
-func (r *Binding) AsReleaseReportArtifact() *ReleaseReportArtifact {
+func (r *Binding) AsReleaseReportArtifact() *ReleaseReportArtifact { // release (../../toolchains/release/main.go:36:6)
 	q := r.query.Select("asReleaseReportArtifact")
 
 	return &ReleaseReportArtifact{
@@ -1006,7 +1012,7 @@ func (r *Binding) AsReleaseReportArtifact() *ReleaseReportArtifact {
 }
 
 // Retrieve the binding value, as type ReleaseReportFollowUp
-func (r *Binding) AsReleaseReportFollowUp() *ReleaseReportFollowUp {
+func (r *Binding) AsReleaseReportFollowUp() *ReleaseReportFollowUp { // release (../../toolchains/release/main.go:46:6)
 	q := r.query.Select("asReleaseReportFollowUp")
 
 	return &ReleaseReportFollowUp{
@@ -1014,8 +1020,17 @@ func (r *Binding) AsReleaseReportFollowUp() *ReleaseReportFollowUp {
 	}
 }
 
+// Retrieve the binding value, as type ReleaseTest
+func (r *Binding) AsReleaseTest() *ReleaseTest { // release (../../toolchains/release/tests.go:27:6)
+	q := r.query.Select("asReleaseTest")
+
+	return &ReleaseTest{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type RustSdk
-func (r *Binding) AsRustSDK() *RustSDK {
+func (r *Binding) AsRustSDK() *RustSDK { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:31:6)
 	q := r.query.Select("asRustSdk")
 
 	return &RustSDK{
@@ -1024,7 +1039,7 @@ func (r *Binding) AsRustSDK() *RustSDK {
 }
 
 // Retrieve the binding value, as type Sdks
-func (r *Binding) AsSdks() *Sdks {
+func (r *Binding) AsSdks() *Sdks { // sdks (../../toolchains/all-sdks/main.go:13:6)
 	q := r.query.Select("asSdks")
 
 	return &Sdks{
@@ -1127,7 +1142,7 @@ func (r *Binding) AsTypescriptSDK() *TypescriptSDK {
 }
 
 // Retrieve the binding value, as type Version
-func (r *Binding) AsVersion() *Version {
+func (r *Binding) AsVersion() *Version { // version (../../version/main.go:54:6)
 	q := r.query.Select("asVersion")
 
 	return &Version{
@@ -1946,7 +1961,7 @@ func (r *Ci) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-type Cli struct { // cli (../../toolchains/cli-dev/main.go:73:6)
+type Cli struct { // cli (../../toolchains/cli-dev/main.go:82:6)
 	query *querybuilder.Selection
 
 	id              *CliID
@@ -1964,11 +1979,11 @@ func (r *Cli) WithGraphQLQuery(q *querybuilder.Selection) *Cli {
 
 // CliBinaryOpts contains options for Cli.Binary
 type CliBinaryOpts struct {
-	Platform Platform // cli (../../toolchains/cli-dev/main.go:83:2)
+	Platform Platform // cli (../../toolchains/cli-dev/main.go:92:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *Cli) Binary(opts ...CliBinaryOpts) *File { // cli (../../toolchains/cli-dev/main.go:81:1)
+func (r *Cli) Binary(opts ...CliBinaryOpts) *File { // cli (../../toolchains/cli-dev/main.go:90:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -1984,12 +1999,12 @@ func (r *Cli) Binary(opts ...CliBinaryOpts) *File { // cli (../../toolchains/cli
 
 // CliDevBinariesOpts contains options for Cli.DevBinaries
 type CliDevBinariesOpts struct {
-	Platform Platform // cli (../../toolchains/cli-dev/main.go:117:2)
+	Platform Platform // cli (../../toolchains/cli-dev/main.go:126:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *Cli) DevBinaries(opts ...CliDevBinariesOpts) *Directory { // cli (../../toolchains/cli-dev/main.go:115:1)
+func (r *Cli) DevBinaries(opts ...CliDevBinariesOpts) *Directory { // cli (../../toolchains/cli-dev/main.go:124:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -2127,15 +2142,15 @@ func (r *Cli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSe
 
 // CliReferenceOpts contains options for Cli.Reference
 type CliReferenceOpts struct {
-	Frontmatter string // cli (../../toolchains/cli-dev/main.go:95:2)
+	Frontmatter string // cli (../../toolchains/cli-dev/main.go:104:2)
 	//
 	// Include experimental commands
 	//
-	IncludeExperimental bool // cli (../../toolchains/cli-dev/main.go:98:2)
+	IncludeExperimental bool // cli (../../toolchains/cli-dev/main.go:107:2)
 }
 
 // Generate a markdown CLI reference doc
-func (r *Cli) Reference(opts ...CliReferenceOpts) *File { // cli (../../toolchains/cli-dev/main.go:93:1)
+func (r *Cli) Reference(opts ...CliReferenceOpts) *File { // cli (../../toolchains/cli-dev/main.go:102:1)
 	q := r.query.Select("reference")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `frontmatter` optional argument
@@ -2163,7 +2178,7 @@ func (r *Cli) ReleaseDryRun(ctx context.Context) error { // cli (../../toolchain
 	return q.Execute(ctx)
 }
 
-func (r *Cli) Tag(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:75:2)
+func (r *Cli) Tag(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:84:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -2175,7 +2190,7 @@ func (r *Cli) Tag(ctx context.Context) (string, error) { // cli (../../toolchain
 	return response, q.Execute(ctx)
 }
 
-func (r *Cli) Version(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:74:2)
+func (r *Cli) Version(ctx context.Context) (string, error) { // cli (../../toolchains/cli-dev/main.go:83:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -2434,6 +2449,15 @@ func (r *Container) Directory(path string, opts ...ContainerDirectoryOpts) *Dire
 	q = q.Arg("path", path)
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this container's configured docker healthcheck.
+func (r *Container) DockerHealthcheck() *HealthcheckConfig {
+	q := r.query.Select("dockerHealthcheck")
+
+	return &HealthcheckConfig{
 		query: q,
 	}
 }
@@ -3224,6 +3248,58 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 	}
 }
 
+// ContainerWithDockerHealthcheckOpts contains options for Container.WithDockerHealthcheck
+type ContainerWithDockerHealthcheckOpts struct {
+	// When true, command must be a single element, which is run using the container's shell
+	Shell bool
+	// Interval between running healthcheck. Example: "30s"
+	Interval string
+	// Healthcheck timeout. Example: "3s"
+	Timeout string
+	// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example: "0s"
+	StartPeriod string
+	// StartInterval configures the duration between checks during the startup phase. Example: "5s"
+	StartInterval string
+	// The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+	Retries int
+}
+
+// Retrieves this container with the specificed docker healtcheck command set.
+func (r *Container) WithDockerHealthcheck(args []string, opts ...ContainerWithDockerHealthcheckOpts) *Container {
+	q := r.query.Select("withDockerHealthcheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `shell` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Shell) {
+			q = q.Arg("shell", opts[i].Shell)
+		}
+		// `interval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Interval) {
+			q = q.Arg("interval", opts[i].Interval)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+		// `startPeriod` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartPeriod) {
+			q = q.Arg("startPeriod", opts[i].StartPeriod)
+		}
+		// `startInterval` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StartInterval) {
+			q = q.Arg("startInterval", opts[i].StartInterval)
+		}
+		// `retries` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Retries) {
+			q = q.Arg("retries", opts[i].Retries)
+		}
+	}
+	q = q.Arg("args", args)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithEntrypointOpts contains options for Container.WithEntrypoint
 type ContainerWithEntrypointOpts struct {
 	// Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.
@@ -3919,6 +3995,15 @@ func (r *Container) WithoutDirectory(path string, opts ...ContainerWithoutDirect
 	}
 }
 
+// Retrieves this container without a configured docker healtcheck command.
+func (r *Container) WithoutDockerHealthcheck() *Container {
+	q := r.query.Select("withoutDockerHealthcheck")
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithoutEntrypointOpts contains options for Container.WithoutEntrypoint
 type ContainerWithoutEntrypointOpts struct {
 	// Don't remove the default arguments when unsetting the entrypoint.
@@ -4362,6 +4447,10 @@ type DaggerDevCliOpts struct {
 	// Base image for go build environment
 	//
 	Base *Container // cli (../../toolchains/cli-dev/main.go:40:2)
+	//
+	// Explicit version to set on the Dagger CLI.
+	//
+	Version string // cli (../../toolchains/cli-dev/main.go:44:2)
 }
 
 func (r *DaggerDev) Cli(opts ...DaggerDevCliOpts) *Cli { // cli (../../toolchains/cli-dev/main.go:12:1)
@@ -4378,6 +4467,10 @@ func (r *DaggerDev) Cli(opts ...DaggerDevCliOpts) *Cli { // cli (../../toolchain
 		// `base` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Base) {
 			q = q.Arg("base", opts[i].Base)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 
@@ -4884,13 +4977,13 @@ type DaggerDevPythonSDKOpts struct {
 	//
 	// A workspace containing the SDK source code and other relevant files
 	//
-	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:46:2)
+	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:45:2)
 
 	// Default: "sdk/python"
-	SourcePath string // python-sdk (../../toolchains/python-sdk-dev/main.go:49:2)
+	SourcePath string // python-sdk (../../toolchains/python-sdk-dev/main.go:48:2)
 }
 
-func (r *DaggerDev) PythonSDK(opts ...DaggerDevPythonSDKOpts) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:25:1)
+func (r *DaggerDev) PythonSDK(opts ...DaggerDevPythonSDKOpts) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:24:1)
 	q := r.query.Select("pythonSdk")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -6801,7 +6894,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../toolchai
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../toolchains/engine-dev/main.go:358:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../toolchains/engine-dev/main.go:366:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -6812,17 +6905,17 @@ func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../t
 
 // EngineDevContainerOpts contains options for EngineDev.Container
 type EngineDevContainerOpts struct {
-	Platform Platform // engine-dev (../../toolchains/engine-dev/main.go:143:2)
+	Platform Platform // engine-dev (../../toolchains/engine-dev/main.go:146:2)
 
-	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:145:2)
+	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:148:2)
 
-	Version string // engine-dev (../../toolchains/engine-dev/main.go:147:2)
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:150:2)
 
-	Tag string // engine-dev (../../toolchains/engine-dev/main.go:149:2)
+	Tag string // engine-dev (../../toolchains/engine-dev/main.go:152:2)
 }
 
 // Build the engine container
-func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:139:1)
+func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:142:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -6850,7 +6943,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../toolchains/engine-dev/main.go:373:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../toolchains/engine-dev/main.go:381:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -6860,11 +6953,11 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../toolchains/engi
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../toolchains/engine-dev/main.go:332:2)
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:340:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../toolchains/engine-dev/main.go:329:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../toolchains/engine-dev/main.go:337:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -6931,17 +7024,23 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../toolchains/engine-dev/main.go:277:2)
+	Service *Service // engine-dev (../../toolchains/engine-dev/main.go:282:2)
+
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:284:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:271:1)
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../toolchains/engine-dev/main.go:276:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `service` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Service) {
 			q = q.Arg("service", opts[i].Service)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("client", client)
@@ -6953,7 +7052,7 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../toolchains/engine-dev/main.go:316:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../toolchains/engine-dev/main.go:324:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -6962,7 +7061,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../toolchains/
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../toolchains/engine-dev/main.go:350:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../toolchains/engine-dev/main.go:358:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -7036,6 +7135,8 @@ type EngineDevPlaygroundOpts struct {
 	SharedCache bool // engine-dev (../../toolchains/engine-dev/main.go:114:2)
 
 	Metrics bool // engine-dev (../../toolchains/engine-dev/main.go:116:2)
+
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:118:2)
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
@@ -7058,6 +7159,10 @@ func (r *EngineDev) Playground(opts ...EngineDevPlaygroundOpts) *Container { // 
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
 		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
+		}
 	}
 
 	return &Container{
@@ -7072,17 +7177,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../toolchains/engine-dev/main.go:466:2)
+	Image string // engine-dev (../../toolchains/engine-dev/main.go:474:2)
 
-	DryRun bool // engine-dev (../../toolchains/engine-dev/main.go:471:2)
+	DryRun bool // engine-dev (../../toolchains/engine-dev/main.go:479:2)
 
-	RegistryUsername string // engine-dev (../../toolchains/engine-dev/main.go:474:2)
+	RegistryUsername string // engine-dev (../../toolchains/engine-dev/main.go:482:2)
 
-	RegistryPassword *Secret // engine-dev (../../toolchains/engine-dev/main.go:476:2)
+	RegistryPassword *Secret // engine-dev (../../toolchains/engine-dev/main.go:484:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../toolchains/engine-dev/main.go:461:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../toolchains/engine-dev/main.go:469:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -7110,7 +7215,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../toolchains/engine-dev/main.go:447:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../toolchains/engine-dev/main.go:455:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -7121,15 +7226,17 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (..
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:215:2)
+	GpuSupport bool // engine-dev (../../toolchains/engine-dev/main.go:218:2)
 
-	SharedCache bool // engine-dev (../../toolchains/engine-dev/main.go:217:2)
+	SharedCache bool // engine-dev (../../toolchains/engine-dev/main.go:220:2)
 
-	Metrics bool // engine-dev (../../toolchains/engine-dev/main.go:219:2)
+	Metrics bool // engine-dev (../../toolchains/engine-dev/main.go:222:2)
+
+	Version string // engine-dev (../../toolchains/engine-dev/main.go:224:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../toolchains/engine-dev/main.go:211:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../toolchains/engine-dev/main.go:214:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
@@ -7143,6 +7250,10 @@ func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service 
 		// `metrics` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Metrics) {
 			q = q.Arg("metrics", opts[i].Metrics)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 	q = q.Arg("name", name)
@@ -8005,7 +8116,7 @@ func (r *Env) WithCiOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Cli in the environment
-func (r *Env) WithCliInput(name string, value *Cli, description string) *Env {
+func (r *Env) WithCliInput(name string, value *Cli, description string) *Env { // cli (../../toolchains/cli-dev/main.go:82:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withCliInput")
 	q = q.Arg("name", name)
@@ -8018,7 +8129,7 @@ func (r *Env) WithCliInput(name string, value *Cli, description string) *Env {
 }
 
 // Declare a desired Cli output to be assigned in the environment
-func (r *Env) WithCliOutput(name string, description string) *Env {
+func (r *Env) WithCliOutput(name string, description string) *Env { // cli (../../toolchains/cli-dev/main.go:82:6)
 	q := r.query.Select("withCliOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8088,7 +8199,7 @@ func (r *Env) WithCurrentModule() *Env {
 }
 
 // Create or update a binding of type DaggerDev in the environment
-func (r *Env) WithDaggerDevInput(name string, value *DaggerDev, description string) *Env {
+func (r *Env) WithDaggerDevInput(name string, value *DaggerDev, description string) *Env { // dagger-dev (../../.dagger/main.go:15:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withDaggerDevInput")
 	q = q.Arg("name", name)
@@ -8101,7 +8212,7 @@ func (r *Env) WithDaggerDevInput(name string, value *DaggerDev, description stri
 }
 
 // Declare a desired DaggerDev output to be assigned in the environment
-func (r *Env) WithDaggerDevOutput(name string, description string) *Env {
+func (r *Env) WithDaggerDevOutput(name string, description string) *Env { // dagger-dev (../../.dagger/main.go:15:6)
 	q := r.query.Select("withDaggerDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8136,7 +8247,7 @@ func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Docs in the environment
-func (r *Env) WithDocsInput(name string, value *Docs, description string) *Env {
+func (r *Env) WithDocsInput(name string, value *Docs, description string) *Env { // docs (../../toolchains/docs-dev/main.go:36:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withDocsInput")
 	q = q.Arg("name", name)
@@ -8149,7 +8260,7 @@ func (r *Env) WithDocsInput(name string, value *Docs, description string) *Env {
 }
 
 // Declare a desired Docs output to be assigned in the environment
-func (r *Env) WithDocsOutput(name string, description string) *Env {
+func (r *Env) WithDocsOutput(name string, description string) *Env { // docs (../../toolchains/docs-dev/main.go:36:6)
 	q := r.query.Select("withDocsOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8184,7 +8295,7 @@ func (r *Env) WithElixirSDKOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type EngineDev in the environment
-func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env {
+func (r *Env) WithEngineDevInput(name string, value *EngineDev, description string) *Env { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEngineDevInput")
 	q = q.Arg("name", name)
@@ -8197,7 +8308,7 @@ func (r *Env) WithEngineDevInput(name string, value *EngineDev, description stri
 }
 
 // Create or update a binding of type EngineDevLoadedEngine in the environment
-func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoadedEngine, description string) *Env {
+func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoadedEngine, description string) *Env { // engine-dev (../../toolchains/engine-dev/docker.go:77:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEngineDevLoadedEngineInput")
 	q = q.Arg("name", name)
@@ -8210,7 +8321,7 @@ func (r *Env) WithEngineDevLoadedEngineInput(name string, value *EngineDevLoaded
 }
 
 // Declare a desired EngineDevLoadedEngine output to be assigned in the environment
-func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *Env {
+func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *Env { // engine-dev (../../toolchains/engine-dev/docker.go:77:6)
 	q := r.query.Select("withEngineDevLoadedEngineOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8221,7 +8332,7 @@ func (r *Env) WithEngineDevLoadedEngineOutput(name string, description string) *
 }
 
 // Declare a desired EngineDev output to be assigned in the environment
-func (r *Env) WithEngineDevOutput(name string, description string) *Env {
+func (r *Env) WithEngineDevOutput(name string, description string) *Env { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	q := r.query.Select("withEngineDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8400,7 +8511,7 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Go in the environment
-func (r *Env) WithGoInput(name string, value *Go, description string) *Env {
+func (r *Env) WithGoInput(name string, value *Go, description string) *Env { // go (../../toolchains/go/main.go:128:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGoInput")
 	q = q.Arg("name", name)
@@ -8413,7 +8524,7 @@ func (r *Env) WithGoInput(name string, value *Go, description string) *Env {
 }
 
 // Declare a desired Go output to be assigned in the environment
-func (r *Env) WithGoOutput(name string, description string) *Env {
+func (r *Env) WithGoOutput(name string, description string) *Env { // go (../../toolchains/go/main.go:128:6)
 	q := r.query.Select("withGoOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8448,7 +8559,7 @@ func (r *Env) WithGoSDKOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Golint in the environment
-func (r *Env) WithGolintInput(name string, value *Golint, description string) *Env {
+func (r *Env) WithGolintInput(name string, value *Golint, description string) *Env { // golint (../../toolchains/go/main.go:128:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGolintInput")
 	q = q.Arg("name", name)
@@ -8461,7 +8572,7 @@ func (r *Env) WithGolintInput(name string, value *Golint, description string) *E
 }
 
 // Declare a desired Golint output to be assigned in the environment
-func (r *Env) WithGolintOutput(name string, description string) *Env {
+func (r *Env) WithGolintOutput(name string, description string) *Env { // golint (../../toolchains/go/main.go:128:6)
 	q := r.query.Select("withGolintOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8472,7 +8583,7 @@ func (r *Env) WithGolintOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Helm in the environment
-func (r *Env) WithHelmInput(name string, value *Helm, description string) *Env {
+func (r *Env) WithHelmInput(name string, value *Helm, description string) *Env { // helm (../../toolchains/helm-dev/main.go:27:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withHelmInput")
 	q = q.Arg("name", name)
@@ -8485,7 +8596,7 @@ func (r *Env) WithHelmInput(name string, value *Helm, description string) *Env {
 }
 
 // Declare a desired Helm output to be assigned in the environment
-func (r *Env) WithHelmOutput(name string, description string) *Env {
+func (r *Env) WithHelmOutput(name string, description string) *Env { // helm (../../toolchains/helm-dev/main.go:27:6)
 	q := r.query.Select("withHelmOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8496,7 +8607,7 @@ func (r *Env) WithHelmOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Installers in the environment
-func (r *Env) WithInstallersInput(name string, value *Installers, description string) *Env {
+func (r *Env) WithInstallersInput(name string, value *Installers, description string) *Env { // installers (../../toolchains/installers/main.go:17:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withInstallersInput")
 	q = q.Arg("name", name)
@@ -8509,7 +8620,7 @@ func (r *Env) WithInstallersInput(name string, value *Installers, description st
 }
 
 // Declare a desired Installers output to be assigned in the environment
-func (r *Env) WithInstallersOutput(name string, description string) *Env {
+func (r *Env) WithInstallersOutput(name string, description string) *Env { // installers (../../toolchains/installers/main.go:17:6)
 	q := r.query.Select("withInstallersOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8668,7 +8779,7 @@ func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type PhpSdk in the environment
-func (r *Env) WithPhpSDKInput(name string, value *PhpSDK, description string) *Env {
+func (r *Env) WithPhpSDKInput(name string, value *PhpSDK, description string) *Env { // php-sdk (../../toolchains/php-sdk-dev/main.go:25:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withPhpSdkInput")
 	q = q.Arg("name", name)
@@ -8681,7 +8792,7 @@ func (r *Env) WithPhpSDKInput(name string, value *PhpSDK, description string) *E
 }
 
 // Declare a desired PhpSdk output to be assigned in the environment
-func (r *Env) WithPhpSDKOutput(name string, description string) *Env {
+func (r *Env) WithPhpSDKOutput(name string, description string) *Env { // php-sdk (../../toolchains/php-sdk-dev/main.go:25:6)
 	q := r.query.Select("withPhpSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8692,7 +8803,7 @@ func (r *Env) WithPhpSDKOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type PythonSdkDocs in the environment
-func (r *Env) WithPythonSDKDocsInput(name string, value *PythonSDKDocs, description string) *Env {
+func (r *Env) WithPythonSDKDocsInput(name string, value *PythonSDKDocs, description string) *Env { // python-sdk (../../toolchains/python-sdk-dev/docs.go:9:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withPythonSdkDocsInput")
 	q = q.Arg("name", name)
@@ -8705,7 +8816,7 @@ func (r *Env) WithPythonSDKDocsInput(name string, value *PythonSDKDocs, descript
 }
 
 // Declare a desired PythonSdkDocs output to be assigned in the environment
-func (r *Env) WithPythonSDKDocsOutput(name string, description string) *Env {
+func (r *Env) WithPythonSDKDocsOutput(name string, description string) *Env { // python-sdk (../../toolchains/python-sdk-dev/docs.go:9:6)
 	q := r.query.Select("withPythonSdkDocsOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8716,7 +8827,7 @@ func (r *Env) WithPythonSDKDocsOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type PythonSdk in the environment
-func (r *Env) WithPythonSDKInput(name string, value *PythonSDK, description string) *Env {
+func (r *Env) WithPythonSDKInput(name string, value *PythonSDK, description string) *Env { // python-sdk (../../toolchains/python-sdk-dev/main.go:15:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withPythonSdkInput")
 	q = q.Arg("name", name)
@@ -8729,7 +8840,7 @@ func (r *Env) WithPythonSDKInput(name string, value *PythonSDK, description stri
 }
 
 // Declare a desired PythonSdk output to be assigned in the environment
-func (r *Env) WithPythonSDKOutput(name string, description string) *Env {
+func (r *Env) WithPythonSDKOutput(name string, description string) *Env { // python-sdk (../../toolchains/python-sdk-dev/main.go:15:6)
 	q := r.query.Select("withPythonSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8739,10 +8850,10 @@ func (r *Env) WithPythonSDKOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type PythonSdkTestSuite in the environment
-func (r *Env) WithPythonSDKTestSuiteInput(name string, value *PythonSDKTestSuite, description string) *Env {
+// Create or update a binding of type PythonSdkTestForPythonVersion in the environment
+func (r *Env) WithPythonSDKTestForPythonVersionInput(name string, value *PythonSDKTestForPythonVersion, description string) *Env { // python-sdk (../../toolchains/python-sdk-dev/test.go:9:6)
 	assertNotNil("value", value)
-	q := r.query.Select("withPythonSdkTestSuiteInput")
+	q := r.query.Select("withPythonSdkTestForPythonVersionInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -8752,9 +8863,9 @@ func (r *Env) WithPythonSDKTestSuiteInput(name string, value *PythonSDKTestSuite
 	}
 }
 
-// Declare a desired PythonSdkTestSuite output to be assigned in the environment
-func (r *Env) WithPythonSDKTestSuiteOutput(name string, description string) *Env {
-	q := r.query.Select("withPythonSdkTestSuiteOutput")
+// Declare a desired PythonSdkTestForPythonVersion output to be assigned in the environment
+func (r *Env) WithPythonSDKTestForPythonVersionOutput(name string, description string) *Env { // python-sdk (../../toolchains/python-sdk-dev/test.go:9:6)
+	q := r.query.Select("withPythonSdkTestForPythonVersionOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -8764,7 +8875,7 @@ func (r *Env) WithPythonSDKTestSuiteOutput(name string, description string) *Env
 }
 
 // Create or update a binding of type Release in the environment
-func (r *Env) WithReleaseInput(name string, value *Release, description string) *Env {
+func (r *Env) WithReleaseInput(name string, value *Release, description string) *Env { // release (../../toolchains/release/main.go:21:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withReleaseInput")
 	q = q.Arg("name", name)
@@ -8777,7 +8888,7 @@ func (r *Env) WithReleaseInput(name string, value *Release, description string) 
 }
 
 // Declare a desired Release output to be assigned in the environment
-func (r *Env) WithReleaseOutput(name string, description string) *Env {
+func (r *Env) WithReleaseOutput(name string, description string) *Env { // release (../../toolchains/release/main.go:21:6)
 	q := r.query.Select("withReleaseOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8788,7 +8899,7 @@ func (r *Env) WithReleaseOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type ReleaseReportArtifact in the environment
-func (r *Env) WithReleaseReportArtifactInput(name string, value *ReleaseReportArtifact, description string) *Env {
+func (r *Env) WithReleaseReportArtifactInput(name string, value *ReleaseReportArtifact, description string) *Env { // release (../../toolchains/release/main.go:36:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withReleaseReportArtifactInput")
 	q = q.Arg("name", name)
@@ -8801,7 +8912,7 @@ func (r *Env) WithReleaseReportArtifactInput(name string, value *ReleaseReportAr
 }
 
 // Declare a desired ReleaseReportArtifact output to be assigned in the environment
-func (r *Env) WithReleaseReportArtifactOutput(name string, description string) *Env {
+func (r *Env) WithReleaseReportArtifactOutput(name string, description string) *Env { // release (../../toolchains/release/main.go:36:6)
 	q := r.query.Select("withReleaseReportArtifactOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8812,7 +8923,7 @@ func (r *Env) WithReleaseReportArtifactOutput(name string, description string) *
 }
 
 // Create or update a binding of type ReleaseReportFollowUp in the environment
-func (r *Env) WithReleaseReportFollowUpInput(name string, value *ReleaseReportFollowUp, description string) *Env {
+func (r *Env) WithReleaseReportFollowUpInput(name string, value *ReleaseReportFollowUp, description string) *Env { // release (../../toolchains/release/main.go:46:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withReleaseReportFollowUpInput")
 	q = q.Arg("name", name)
@@ -8825,7 +8936,7 @@ func (r *Env) WithReleaseReportFollowUpInput(name string, value *ReleaseReportFo
 }
 
 // Declare a desired ReleaseReportFollowUp output to be assigned in the environment
-func (r *Env) WithReleaseReportFollowUpOutput(name string, description string) *Env {
+func (r *Env) WithReleaseReportFollowUpOutput(name string, description string) *Env { // release (../../toolchains/release/main.go:46:6)
 	q := r.query.Select("withReleaseReportFollowUpOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8836,7 +8947,7 @@ func (r *Env) WithReleaseReportFollowUpOutput(name string, description string) *
 }
 
 // Create or update a binding of type ReleaseReport in the environment
-func (r *Env) WithReleaseReportInput(name string, value *ReleaseReport, description string) *Env {
+func (r *Env) WithReleaseReportInput(name string, value *ReleaseReport, description string) *Env { // release (../../toolchains/release/main.go:23:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withReleaseReportInput")
 	q = q.Arg("name", name)
@@ -8849,7 +8960,7 @@ func (r *Env) WithReleaseReportInput(name string, value *ReleaseReport, descript
 }
 
 // Declare a desired ReleaseReport output to be assigned in the environment
-func (r *Env) WithReleaseReportOutput(name string, description string) *Env {
+func (r *Env) WithReleaseReportOutput(name string, description string) *Env { // release (../../toolchains/release/main.go:23:6)
 	q := r.query.Select("withReleaseReportOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8859,8 +8970,32 @@ func (r *Env) WithReleaseReportOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type ReleaseTest in the environment
+func (r *Env) WithReleaseTestInput(name string, value *ReleaseTest, description string) *Env { // release (../../toolchains/release/tests.go:27:6)
+	assertNotNil("value", value)
+	q := r.query.Select("withReleaseTestInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ReleaseTest output to be assigned in the environment
+func (r *Env) WithReleaseTestOutput(name string, description string) *Env { // release (../../toolchains/release/tests.go:27:6)
+	q := r.query.Select("withReleaseTestOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type RustSdk in the environment
-func (r *Env) WithRustSDKInput(name string, value *RustSDK, description string) *Env {
+func (r *Env) WithRustSDKInput(name string, value *RustSDK, description string) *Env { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:31:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withRustSdkInput")
 	q = q.Arg("name", name)
@@ -8873,7 +9008,7 @@ func (r *Env) WithRustSDKInput(name string, value *RustSDK, description string) 
 }
 
 // Declare a desired RustSdk output to be assigned in the environment
-func (r *Env) WithRustSDKOutput(name string, description string) *Env {
+func (r *Env) WithRustSDKOutput(name string, description string) *Env { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:31:6)
 	q := r.query.Select("withRustSdkOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -8884,7 +9019,7 @@ func (r *Env) WithRustSDKOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Sdks in the environment
-func (r *Env) WithSdksInput(name string, value *Sdks, description string) *Env {
+func (r *Env) WithSdksInput(name string, value *Sdks, description string) *Env { // sdks (../../toolchains/all-sdks/main.go:13:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withSdksInput")
 	q = q.Arg("name", name)
@@ -8897,7 +9032,7 @@ func (r *Env) WithSdksInput(name string, value *Sdks, description string) *Env {
 }
 
 // Declare a desired Sdks output to be assigned in the environment
-func (r *Env) WithSdksOutput(name string, description string) *Env {
+func (r *Env) WithSdksOutput(name string, description string) *Env { // sdks (../../toolchains/all-sdks/main.go:13:6)
 	q := r.query.Select("withSdksOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -9147,7 +9282,7 @@ func (r *Env) WithTypescriptSDKOutput(name string, description string) *Env {
 }
 
 // Create or update a binding of type Version in the environment
-func (r *Env) WithVersionInput(name string, value *Version, description string) *Env {
+func (r *Env) WithVersionInput(name string, value *Version, description string) *Env { // version (../../version/main.go:54:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withVersionInput")
 	q = q.Arg("name", name)
@@ -9160,7 +9295,7 @@ func (r *Env) WithVersionInput(name string, value *Version, description string) 
 }
 
 // Declare a desired Version output to be assigned in the environment
-func (r *Env) WithVersionOutput(name string, description string) *Env {
+func (r *Env) WithVersionOutput(name string, description string) *Env { // version (../../version/main.go:54:6)
 	q := r.query.Select("withVersionOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -11414,6 +11549,8 @@ type GitRefTreeOpts struct {
 	//
 	// Default: 1
 	Depth int
+	// Set to true to populate tag refs in the local checkout .git.
+	IncludeTags bool
 }
 
 // The filesystem tree at this ref.
@@ -11427,6 +11564,10 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 		// `depth` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Depth) {
 			q = q.Arg("depth", opts[i].Depth)
+		}
+		// `includeTags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeTags) {
+			q = q.Arg("includeTags", opts[i].IncludeTags)
 		}
 	}
 
@@ -13011,6 +13152,153 @@ func (r *Golint) Version(ctx context.Context) (string, error) { // golint (../..
 		return *r.version, nil
 	}
 	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Image healthcheck configuration.
+type HealthcheckConfig struct {
+	query *querybuilder.Selection
+
+	id            *HealthcheckConfigID
+	interval      *string
+	retries       *int
+	shell         *bool
+	startInterval *string
+	startPeriod   *string
+	timeout       *string
+}
+
+func (r *HealthcheckConfig) WithGraphQLQuery(q *querybuilder.Selection) *HealthcheckConfig {
+	return &HealthcheckConfig{
+		query: q,
+	}
+}
+
+// Healthcheck command arguments.
+func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
+	q := r.query.Select("args")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this HealthcheckConfig.
+func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response HealthcheckConfigID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *HealthcheckConfig) XXX_GraphQLType() string {
+	return "HealthcheckConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *HealthcheckConfig) XXX_GraphQLIDType() string {
+	return "HealthcheckConfigID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *HealthcheckConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *HealthcheckConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Interval between running healthcheck. Example:30s
+func (r *HealthcheckConfig) Interval(ctx context.Context) (string, error) {
+	if r.interval != nil {
+		return *r.interval, nil
+	}
+	q := r.query.Select("interval")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+func (r *HealthcheckConfig) Retries(ctx context.Context) (int, error) {
+	if r.retries != nil {
+		return *r.retries, nil
+	}
+	q := r.query.Select("retries")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Healthcheck command is a shell command.
+func (r *HealthcheckConfig) Shell(ctx context.Context) (bool, error) {
+	if r.shell != nil {
+		return *r.shell, nil
+	}
+	q := r.query.Select("shell")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// StartInterval configures the duration between checks during the startup phase. Example:5s
+func (r *HealthcheckConfig) StartInterval(ctx context.Context) (string, error) {
+	if r.startInterval != nil {
+		return *r.startInterval, nil
+	}
+	q := r.query.Select("startInterval")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// StartPeriod allows for failures during this initial startup period which do not count towards maximum number of retries. Example:0s
+func (r *HealthcheckConfig) StartPeriod(ctx context.Context) (string, error) {
+	if r.startPeriod != nil {
+		return *r.startPeriod, nil
+	}
+	q := r.query.Select("startPeriod")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Healthcheck timeout. Example:3s
+func (r *HealthcheckConfig) Timeout(ctx context.Context) (string, error) {
+	if r.timeout != nil {
+		return *r.timeout, nil
+	}
+	q := r.query.Select("timeout")
 
 	var response string
 
@@ -15494,6 +15782,15 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+func (r *ModuleSource) GeneratedContextChangeset() *Changeset {
+	q := r.query.Select("generatedContextChangeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
@@ -16557,14 +16854,13 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 }
 
 // A toolchain to develop the Dagger Python SDK
-type PythonSDK struct { // python-sdk (../../toolchains/python-sdk-dev/main.go:16:6)
+type PythonSDK struct { // python-sdk (../../toolchains/python-sdk-dev/main.go:15:6)
 	query *querybuilder.Selection
 
 	id            *PythonSDKID
 	release       *Void
 	releaseDryRun *Void
 	sourcePath    *string
-	test          *Void
 	typecheck     *Void
 }
 type WithPythonSDKFunc func(r *PythonSDK) *PythonSDK
@@ -16589,11 +16885,11 @@ type PythonSDKBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:273:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:283:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:270:1)
+func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:280:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -16608,7 +16904,7 @@ func (r *PythonSDK) Build(opts ...PythonSDKBuildOpts) *Container { // python-sdk
 }
 
 // Bump the Python SDK's Engine dependency
-func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:258:1)
+func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:268:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
 
@@ -16618,7 +16914,7 @@ func (r *PythonSDK) Bump(version string) *Changeset { // python-sdk (../../toolc
 }
 
 // Regenerate the core Python client library
-func (r *PythonSDK) ClientLibrary() *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:165:1)
+func (r *PythonSDK) ClientLibrary() *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:175:1)
 	q := r.query.Select("clientLibrary")
 
 	return &Changeset{
@@ -16627,7 +16923,7 @@ func (r *PythonSDK) ClientLibrary() *Changeset { // python-sdk (../../toolchains
 }
 
 // Python container to develop Python SDK
-func (r *PythonSDK) DevContainer() *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:18:2)
+func (r *PythonSDK) DevContainer() *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:17:2)
 	q := r.query.Select("devContainer")
 
 	return &Container{
@@ -16636,7 +16932,7 @@ func (r *PythonSDK) DevContainer() *Container { // python-sdk (../../toolchains/
 }
 
 // Preview the reference documentation
-func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/main.go:311:1)
+func (r *PythonSDK) Docs() *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/main.go:321:1)
 	q := r.query.Select("docs")
 
 	return &PythonSDKDocs{
@@ -16649,11 +16945,11 @@ type PythonSDKFormatOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:105:2)
+	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:104:2)
 }
 
 // Format source files
-func (r *PythonSDK) Format(opts ...PythonSDKFormatOpts) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:102:1)
+func (r *PythonSDK) Format(opts ...PythonSDKFormatOpts) *Changeset { // python-sdk (../../toolchains/python-sdk-dev/main.go:101:1)
 	q := r.query.Select("format")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -16712,11 +17008,11 @@ type PythonSDKLintOpts struct {
 	//
 	// List of files or directories to check
 	//
-	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:93:2)
+	Paths []string // python-sdk (../../toolchains/python-sdk-dev/main.go:92:2)
 }
 
 // Check for linting errors
-func (r *PythonSDK) Lint(opts ...PythonSDKLintOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:90:1)
+func (r *PythonSDK) Lint(opts ...PythonSDKLintOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:89:1)
 	q := r.query.Select("lint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `paths` optional argument
@@ -16732,11 +17028,11 @@ func (r *PythonSDK) Lint(opts ...PythonSDKLintOpts) *Container { // python-sdk (
 
 // PythonSDKLintDocsSnippetsOpts contains options for PythonSDK.LintDocsSnippets
 type PythonSDKLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:82:2)
+	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:81:2)
 }
 
 // Lint the Python snippets in the documentation
-func (r *PythonSDK) LintDocsSnippets(opts ...PythonSDKLintDocsSnippetsOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:75:1)
+func (r *PythonSDK) LintDocsSnippets(opts ...PythonSDKLintDocsSnippetsOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:74:1)
 	q := r.query.Select("lintDocsSnippets")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -16750,6 +17046,30 @@ func (r *PythonSDK) LintDocsSnippets(opts ...PythonSDKLintDocsSnippetsOpts) *Con
 	}
 }
 
+// PythonSDKProvisionOpts contains options for PythonSDK.Provision
+type PythonSDKProvisionOpts struct {
+	//
+	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
+	//
+	RunnerHost string // python-sdk (../../toolchains/python-sdk-dev/main.go:333:2)
+}
+
+func (r *PythonSDK) Provision(cliBin *File, opts ...PythonSDKProvisionOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:327:1)
+	assertNotNil("cliBin", cliBin)
+	q := r.query.Select("provision")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `runnerHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RunnerHost) {
+			q = q.Arg("runnerHost", opts[i].RunnerHost)
+		}
+	}
+	q = q.Arg("cliBin", cliBin)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // PythonSDKPublishOpts contains options for PythonSDK.Publish
 type PythonSDKPublishOpts struct {
 	//
@@ -16757,15 +17077,15 @@ type PythonSDKPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:287:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:297:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-sdk (../../toolchains/python-sdk-dev/main.go:290:2)
+	URL string // python-sdk (../../toolchains/python-sdk-dev/main.go:300:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:282:1)
+func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:292:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16785,17 +17105,62 @@ func (r *PythonSDK) Publish(token *Secret, opts ...PythonSDKPublishOpts) *Contai
 	}
 }
 
+// Test suite for python 3.10
+func (r *PythonSDK) Python310() *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/main.go:134:1)
+	q := r.query.Select("python310")
+
+	return &PythonSDKTestForPythonVersion{
+		query: q,
+	}
+}
+
+// Test suite for python 3.11
+func (r *PythonSDK) Python311() *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/main.go:142:1)
+	q := r.query.Select("python311")
+
+	return &PythonSDKTestForPythonVersion{
+		query: q,
+	}
+}
+
+// Test suite for python 3.12
+func (r *PythonSDK) Python312() *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/main.go:150:1)
+	q := r.query.Select("python312")
+
+	return &PythonSDKTestForPythonVersion{
+		query: q,
+	}
+}
+
+// Test suite for python 3.13
+func (r *PythonSDK) Python313() *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/main.go:158:1)
+	q := r.query.Select("python313")
+
+	return &PythonSDKTestForPythonVersion{
+		query: q,
+	}
+}
+
+// Test suite for python 3.14
+func (r *PythonSDK) Python314() *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/main.go:166:1)
+	q := r.query.Select("python314")
+
+	return &PythonSDKTestForPythonVersion{
+		query: q,
+	}
+}
+
 // PythonSDKReleaseOpts contains options for PythonSDK.Release
 type PythonSDKReleaseOpts struct {
-	DryRun bool // python-sdk (../../toolchains/python-sdk-dev/main.go:229:2)
+	DryRun bool // python-sdk (../../toolchains/python-sdk-dev/main.go:239:2)
 
-	PypiRepo string // python-sdk (../../toolchains/python-sdk-dev/main.go:232:2)
+	PypiRepo string // python-sdk (../../toolchains/python-sdk-dev/main.go:242:2)
 
-	PypiToken *Secret // python-sdk (../../toolchains/python-sdk-dev/main.go:235:2)
+	PypiToken *Secret // python-sdk (../../toolchains/python-sdk-dev/main.go:245:2)
 }
 
 // Release the Python SDK
-func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:222:1)
+func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...PythonSDKReleaseOpts) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:232:1)
 	if r.release != nil {
 		return nil
 	}
@@ -16820,7 +17185,7 @@ func (r *PythonSDK) Release(ctx context.Context, sourceTag string, opts ...Pytho
 }
 
 // Test the publishing process
-func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:211:1)
+func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:221:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -16829,7 +17194,7 @@ func (r *PythonSDK) ReleaseDryRun(ctx context.Context) error { // python-sdk (..
 	return q.Execute(ctx)
 }
 
-func (r *PythonSDK) SourcePath(ctx context.Context) (string, error) { // python-sdk (../../toolchains/python-sdk-dev/main.go:20:2)
+func (r *PythonSDK) SourcePath(ctx context.Context) (string, error) { // python-sdk (../../toolchains/python-sdk-dev/main.go:19:2)
 	if r.sourcePath != nil {
 		return *r.sourcePath, nil
 	}
@@ -16842,23 +17207,13 @@ func (r *PythonSDK) SourcePath(ctx context.Context) (string, error) { // python-
 }
 
 // Supported Python versions
-func (r *PythonSDK) SupportedVersions(ctx context.Context) ([]string, error) { // python-sdk (../../toolchains/python-sdk-dev/main.go:22:2)
+func (r *PythonSDK) SupportedVersions(ctx context.Context) ([]string, error) { // python-sdk (../../toolchains/python-sdk-dev/main.go:21:2)
 	q := r.query.Select("supportedVersions")
 
 	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Test the Python SDK
-func (r *PythonSDK) Test(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:136:1)
-	if r.test != nil {
-		return nil
-	}
-	q := r.query.Select("test")
-
-	return q.Execute(ctx)
 }
 
 // PythonSDKTestPublishOpts contains options for PythonSDK.TestPublish
@@ -16868,11 +17223,11 @@ type PythonSDKTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:305:2)
+	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:315:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:300:1)
+func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/main.go:310:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -16888,40 +17243,9 @@ func (r *PythonSDK) TestPublish(token *Secret, opts ...PythonSDKTestPublishOpts)
 	}
 }
 
-// PythonSDKTestSuiteOpts contains options for PythonSDK.TestSuite
-type PythonSDKTestSuiteOpts struct {
-	//
-	// Python version
-	//
-	Version string // python-sdk (../../toolchains/python-sdk-dev/main.go:151:2)
-	//
-	// Disable nested execution for the test runs
-	//
-	DisableNestedExec bool // python-sdk (../../toolchains/python-sdk-dev/main.go:154:2)
-}
-
-// TestSuite to run unit and other tests
-func (r *PythonSDK) TestSuite(opts ...PythonSDKTestSuiteOpts) *PythonSDKTestSuite { // python-sdk (../../toolchains/python-sdk-dev/main.go:148:1)
-	q := r.query.Select("testSuite")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `version` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Version) {
-			q = q.Arg("version", opts[i].Version)
-		}
-		// `disableNestedExec` optional argument
-		if !querybuilder.IsZeroValue(opts[i].DisableNestedExec) {
-			q = q.Arg("disableNestedExec", opts[i].DisableNestedExec)
-		}
-	}
-
-	return &PythonSDKTestSuite{
-		query: q,
-	}
-}
-
 // Run the type checker (mypy)
 // FIXME: this is not included as an automated check. Should it?
-func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:117:1)
+func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/main.go:116:1)
 	if r.typecheck != nil {
 		return nil
 	}
@@ -16931,7 +17255,7 @@ func (r *PythonSDK) Typecheck(ctx context.Context) error { // python-sdk (../../
 }
 
 // Mount a directory on the base container
-func (r *PythonSDK) WithDirectory(source *Directory) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:126:1)
+func (r *PythonSDK) WithDirectory(source *Directory) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:125:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	q = q.Arg("source", source)
@@ -16941,7 +17265,7 @@ func (r *PythonSDK) WithDirectory(source *Directory) *PythonSDK { // python-sdk 
 	}
 }
 
-func (r *PythonSDK) Workspace() *Directory { // python-sdk (../../toolchains/python-sdk-dev/main.go:19:2)
+func (r *PythonSDK) Workspace() *Directory { // python-sdk (../../toolchains/python-sdk-dev/main.go:18:2)
 	q := r.query.Select("workspace")
 
 	return &Directory{
@@ -17035,47 +17359,46 @@ func (r *PythonSDKDocs) Preview(opts ...PythonSDKDocsPreviewOpts) *Service { // 
 	}
 }
 
-// Run the test suite.
-type PythonSDKTestSuite struct { // python-sdk (../../toolchains/python-sdk-dev/test.go:12:6)
+type PythonSDKTestForPythonVersion struct { // python-sdk (../../toolchains/python-sdk-dev/test.go:9:6)
 	query *querybuilder.Selection
 
-	id         *PythonSDKTestSuiteID
-	run        *Void
-	runDefault *Void
-	unit       *Void
+	id   *PythonSDKTestForPythonVersionID
+	run  *Void
+	slow *Void
+	unit *Void
 }
 
-func (r *PythonSDKTestSuite) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDKTestSuite {
-	return &PythonSDKTestSuite{
+func (r *PythonSDKTestForPythonVersion) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDKTestForPythonVersion {
+	return &PythonSDKTestForPythonVersion{
 		query: q,
 	}
 }
 
-// A unique identifier for this PythonSdkTestSuite.
-func (r *PythonSDKTestSuite) ID(ctx context.Context) (PythonSDKTestSuiteID, error) {
+// A unique identifier for this PythonSdkTestForPythonVersion.
+func (r *PythonSDKTestForPythonVersion) ID(ctx context.Context) (PythonSDKTestForPythonVersionID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PythonSDKTestSuiteID
+	var response PythonSDKTestForPythonVersionID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *PythonSDKTestSuite) XXX_GraphQLType() string {
-	return "PythonSdkTestSuite"
+func (r *PythonSDKTestForPythonVersion) XXX_GraphQLType() string {
+	return "PythonSdkTestForPythonVersion"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *PythonSDKTestSuite) XXX_GraphQLIDType() string {
-	return "PythonSDKTestSuiteID"
+func (r *PythonSDKTestForPythonVersion) XXX_GraphQLIDType() string {
+	return "PythonSDKTestForPythonVersionID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *PythonSDKTestSuite) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *PythonSDKTestForPythonVersion) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -17083,7 +17406,7 @@ func (r *PythonSDKTestSuite) XXX_GraphQLID(ctx context.Context) (string, error) 
 	return string(id), nil
 }
 
-func (r *PythonSDKTestSuite) MarshalJSON() ([]byte, error) {
+func (r *PythonSDKTestForPythonVersion) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -17091,36 +17414,8 @@ func (r *PythonSDKTestSuite) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// PythonSDKTestSuiteProvisionOpts contains options for PythonSDKTestSuite.Provision
-type PythonSDKTestSuiteProvisionOpts struct {
-	//
-	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
-	//
-	RunnerHost string // python-sdk (../../toolchains/python-sdk-dev/test.go:59:2)
-}
-
-// Test provisioning.
-//
-// This publishes a cli binary in an ephemeral http server and checks
-// if the SDK can download, extract and run it.
-func (r *PythonSDKTestSuite) Provision(cliBin *File, opts ...PythonSDKTestSuiteProvisionOpts) *Container { // python-sdk (../../toolchains/python-sdk-dev/test.go:53:1)
-	assertNotNil("cliBin", cliBin)
-	q := r.query.Select("provision")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `runnerHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RunnerHost) {
-			q = q.Arg("runnerHost", opts[i].RunnerHost)
-		}
-	}
-	q = q.Arg("cliBin", cliBin)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // Run the pytest command.
-func (r *PythonSDKTestSuite) Run(ctx context.Context, args []string) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:25:1)
+func (r *PythonSDKTestForPythonVersion) Run(ctx context.Context, args []string) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:31:1)
 	if r.run != nil {
 		return nil
 	}
@@ -17130,18 +17425,18 @@ func (r *PythonSDKTestSuite) Run(ctx context.Context, args []string) error { // 
 	return q.Execute(ctx)
 }
 
-// Run python tests.
-func (r *PythonSDKTestSuite) RunDefault(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:40:1)
-	if r.runDefault != nil {
+// Run python slow tests
+func (r *PythonSDKTestForPythonVersion) Slow(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:20:1)
+	if r.slow != nil {
 		return nil
 	}
-	q := r.query.Select("runDefault")
+	q := r.query.Select("slow")
 
 	return q.Execute(ctx)
 }
 
-// Run unit tests.
-func (r *PythonSDKTestSuite) Unit(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:45:1)
+// Run python unit tests
+func (r *PythonSDKTestForPythonVersion) Unit(ctx context.Context) error { // python-sdk (../../toolchains/python-sdk-dev/test.go:26:1)
 	if r.unit != nil {
 		return nil
 	}
@@ -17196,6 +17491,15 @@ func (r *Client) Changelog(opts ...ChangelogOpts) *Changelog {
 	}
 }
 
+// Creates an empty changeset
+func (r *Client) Changeset() *Changeset {
+	q := r.query.Select("changeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *Client) Ci() *Ci {
 	q := r.query.Select("ci")
 
@@ -17213,6 +17517,10 @@ type CliOpts struct {
 	// Base image for go build environment
 	//
 	Base *Container // cli (../../toolchains/cli-dev/main.go:40:2)
+	//
+	// Explicit version to set on the Dagger CLI.
+	//
+	Version string // cli (../../toolchains/cli-dev/main.go:44:2)
 }
 
 func (r *Client) Cli(opts ...CliOpts) *Cli { // cli (../../toolchains/cli-dev/main.go:12:1)
@@ -17229,6 +17537,10 @@ func (r *Client) Cli(opts ...CliOpts) *Cli { // cli (../../toolchains/cli-dev/ma
 		// `base` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Base) {
 			q = q.Arg("base", opts[i].Base)
+		}
+		// `version` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Version) {
+			q = q.Arg("version", opts[i].Version)
 		}
 	}
 
@@ -18133,7 +18445,7 @@ func (r *Client) LoadCiFromID(id CiID) *Ci {
 }
 
 // Load a Cli from its ID.
-func (r *Client) LoadCliFromID(id CliID) *Cli {
+func (r *Client) LoadCliFromID(id CliID) *Cli { // cli (../../toolchains/cli-dev/main.go:82:6)
 	q := r.query.Select("loadCliFromID")
 	q = q.Arg("id", id)
 
@@ -18173,7 +18485,7 @@ func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 }
 
 // Load a DaggerDev from its ID.
-func (r *Client) LoadDaggerDevFromID(id DaggerDevID) *DaggerDev {
+func (r *Client) LoadDaggerDevFromID(id DaggerDevID) *DaggerDev { // dagger-dev (../../.dagger/main.go:15:6)
 	q := r.query.Select("loadDaggerDevFromID")
 	q = q.Arg("id", id)
 
@@ -18193,7 +18505,7 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 }
 
 // Load a Docs from its ID.
-func (r *Client) LoadDocsFromID(id DocsID) *Docs {
+func (r *Client) LoadDocsFromID(id DocsID) *Docs { // docs (../../toolchains/docs-dev/main.go:36:6)
 	q := r.query.Select("loadDocsFromID")
 	q = q.Arg("id", id)
 
@@ -18243,7 +18555,7 @@ func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
 }
 
 // Load a EngineDev from its ID.
-func (r *Client) LoadEngineDevFromID(id EngineDevID) *EngineDev {
+func (r *Client) LoadEngineDevFromID(id EngineDevID) *EngineDev { // engine-dev (../../toolchains/engine-dev/main.go:58:6)
 	q := r.query.Select("loadEngineDevFromID")
 	q = q.Arg("id", id)
 
@@ -18253,7 +18565,7 @@ func (r *Client) LoadEngineDevFromID(id EngineDevID) *EngineDev {
 }
 
 // Load a EngineDevLoadedEngine from its ID.
-func (r *Client) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *EngineDevLoadedEngine {
+func (r *Client) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *EngineDevLoadedEngine { // engine-dev (../../toolchains/engine-dev/docker.go:77:6)
 	q := r.query.Select("loadEngineDevLoadedEngineFromID")
 	q = q.Arg("id", id)
 
@@ -18453,7 +18765,7 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 }
 
 // Load a Go from its ID.
-func (r *Client) LoadGoFromID(id GoID) *Go {
+func (r *Client) LoadGoFromID(id GoID) *Go { // go (../../toolchains/go/main.go:128:6)
 	q := r.query.Select("loadGoFromID")
 	q = q.Arg("id", id)
 
@@ -18473,7 +18785,7 @@ func (r *Client) LoadGoSDKFromID(id GoSDKID) *GoSDK {
 }
 
 // Load a Golint from its ID.
-func (r *Client) LoadGolintFromID(id GolintID) *Golint {
+func (r *Client) LoadGolintFromID(id GolintID) *Golint { // golint (../../toolchains/go/main.go:128:6)
 	q := r.query.Select("loadGolintFromID")
 	q = q.Arg("id", id)
 
@@ -18482,8 +18794,18 @@ func (r *Client) LoadGolintFromID(id GolintID) *Golint {
 	}
 }
 
+// Load a HealthcheckConfig from its ID.
+func (r *Client) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
+	q := r.query.Select("loadHealthcheckConfigFromID")
+	q = q.Arg("id", id)
+
+	return &HealthcheckConfig{
+		query: q,
+	}
+}
+
 // Load a Helm from its ID.
-func (r *Client) LoadHelmFromID(id HelmID) *Helm {
+func (r *Client) LoadHelmFromID(id HelmID) *Helm { // helm (../../toolchains/helm-dev/main.go:27:6)
 	q := r.query.Select("loadHelmFromID")
 	q = q.Arg("id", id)
 
@@ -18513,7 +18835,7 @@ func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 }
 
 // Load a Installers from its ID.
-func (r *Client) LoadInstallersFromID(id InstallersID) *Installers {
+func (r *Client) LoadInstallersFromID(id InstallersID) *Installers { // installers (../../toolchains/installers/main.go:17:6)
 	q := r.query.Select("loadInstallersFromID")
 	q = q.Arg("id", id)
 
@@ -18633,7 +18955,7 @@ func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 }
 
 // Load a PhpSdk from its ID.
-func (r *Client) LoadPhpSDKFromID(id PhpSDKID) *PhpSDK {
+func (r *Client) LoadPhpSDKFromID(id PhpSDKID) *PhpSDK { // php-sdk (../../toolchains/php-sdk-dev/main.go:25:6)
 	q := r.query.Select("loadPhpSdkFromID")
 	q = q.Arg("id", id)
 
@@ -18653,7 +18975,7 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 }
 
 // Load a PythonSdkDocs from its ID.
-func (r *Client) LoadPythonSDKDocsFromID(id PythonSDKDocsID) *PythonSDKDocs {
+func (r *Client) LoadPythonSDKDocsFromID(id PythonSDKDocsID) *PythonSDKDocs { // python-sdk (../../toolchains/python-sdk-dev/docs.go:9:6)
 	q := r.query.Select("loadPythonSdkDocsFromID")
 	q = q.Arg("id", id)
 
@@ -18663,7 +18985,7 @@ func (r *Client) LoadPythonSDKDocsFromID(id PythonSDKDocsID) *PythonSDKDocs {
 }
 
 // Load a PythonSdk from its ID.
-func (r *Client) LoadPythonSDKFromID(id PythonSDKID) *PythonSDK {
+func (r *Client) LoadPythonSDKFromID(id PythonSDKID) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:15:6)
 	q := r.query.Select("loadPythonSdkFromID")
 	q = q.Arg("id", id)
 
@@ -18672,18 +18994,18 @@ func (r *Client) LoadPythonSDKFromID(id PythonSDKID) *PythonSDK {
 	}
 }
 
-// Load a PythonSdkTestSuite from its ID.
-func (r *Client) LoadPythonSDKTestSuiteFromID(id PythonSDKTestSuiteID) *PythonSDKTestSuite {
-	q := r.query.Select("loadPythonSdkTestSuiteFromID")
+// Load a PythonSdkTestForPythonVersion from its ID.
+func (r *Client) LoadPythonSDKTestForPythonVersionFromID(id PythonSDKTestForPythonVersionID) *PythonSDKTestForPythonVersion { // python-sdk (../../toolchains/python-sdk-dev/test.go:9:6)
+	q := r.query.Select("loadPythonSdkTestForPythonVersionFromID")
 	q = q.Arg("id", id)
 
-	return &PythonSDKTestSuite{
+	return &PythonSDKTestForPythonVersion{
 		query: q,
 	}
 }
 
 // Load a Release from its ID.
-func (r *Client) LoadReleaseFromID(id ReleaseID) *Release {
+func (r *Client) LoadReleaseFromID(id ReleaseID) *Release { // release (../../toolchains/release/main.go:21:6)
 	q := r.query.Select("loadReleaseFromID")
 	q = q.Arg("id", id)
 
@@ -18693,7 +19015,7 @@ func (r *Client) LoadReleaseFromID(id ReleaseID) *Release {
 }
 
 // Load a ReleaseReportArtifact from its ID.
-func (r *Client) LoadReleaseReportArtifactFromID(id ReleaseReportArtifactID) *ReleaseReportArtifact {
+func (r *Client) LoadReleaseReportArtifactFromID(id ReleaseReportArtifactID) *ReleaseReportArtifact { // release (../../toolchains/release/main.go:36:6)
 	q := r.query.Select("loadReleaseReportArtifactFromID")
 	q = q.Arg("id", id)
 
@@ -18703,7 +19025,7 @@ func (r *Client) LoadReleaseReportArtifactFromID(id ReleaseReportArtifactID) *Re
 }
 
 // Load a ReleaseReportFollowUp from its ID.
-func (r *Client) LoadReleaseReportFollowUpFromID(id ReleaseReportFollowUpID) *ReleaseReportFollowUp {
+func (r *Client) LoadReleaseReportFollowUpFromID(id ReleaseReportFollowUpID) *ReleaseReportFollowUp { // release (../../toolchains/release/main.go:46:6)
 	q := r.query.Select("loadReleaseReportFollowUpFromID")
 	q = q.Arg("id", id)
 
@@ -18713,7 +19035,7 @@ func (r *Client) LoadReleaseReportFollowUpFromID(id ReleaseReportFollowUpID) *Re
 }
 
 // Load a ReleaseReport from its ID.
-func (r *Client) LoadReleaseReportFromID(id ReleaseReportID) *ReleaseReport {
+func (r *Client) LoadReleaseReportFromID(id ReleaseReportID) *ReleaseReport { // release (../../toolchains/release/main.go:23:6)
 	q := r.query.Select("loadReleaseReportFromID")
 	q = q.Arg("id", id)
 
@@ -18722,8 +19044,18 @@ func (r *Client) LoadReleaseReportFromID(id ReleaseReportID) *ReleaseReport {
 	}
 }
 
+// Load a ReleaseTest from its ID.
+func (r *Client) LoadReleaseTestFromID(id ReleaseTestID) *ReleaseTest { // release (../../toolchains/release/tests.go:27:6)
+	q := r.query.Select("loadReleaseTestFromID")
+	q = q.Arg("id", id)
+
+	return &ReleaseTest{
+		query: q,
+	}
+}
+
 // Load a RustSdk from its ID.
-func (r *Client) LoadRustSDKFromID(id RustSDKID) *RustSDK {
+func (r *Client) LoadRustSDKFromID(id RustSDKID) *RustSDK { // rust-sdk (../../toolchains/rust-sdk-dev/main.go:31:6)
 	q := r.query.Select("loadRustSdkFromID")
 	q = q.Arg("id", id)
 
@@ -18753,7 +19085,7 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 }
 
 // Load a Sdks from its ID.
-func (r *Client) LoadSdksFromID(id SdksID) *Sdks {
+func (r *Client) LoadSdksFromID(id SdksID) *Sdks { // sdks (../../toolchains/all-sdks/main.go:13:6)
 	q := r.query.Select("loadSdksFromID")
 	q = q.Arg("id", id)
 
@@ -18883,7 +19215,7 @@ func (r *Client) LoadTypescriptSDKFromID(id TypescriptSDKID) *TypescriptSDK {
 }
 
 // Load a Version from its ID.
-func (r *Client) LoadVersionFromID(id VersionID) *Version {
+func (r *Client) LoadVersionFromID(id VersionID) *Version { // version (../../version/main.go:54:6)
 	q := r.query.Select("loadVersionFromID")
 	q = q.Arg("id", id)
 
@@ -18999,13 +19331,13 @@ type PythonSDKOpts struct {
 	//
 	// A workspace containing the SDK source code and other relevant files
 	//
-	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:46:2)
+	Workspace *Directory // python-sdk (../../toolchains/python-sdk-dev/main.go:45:2)
 
 	// Default: "sdk/python"
-	SourcePath string // python-sdk (../../toolchains/python-sdk-dev/main.go:49:2)
+	SourcePath string // python-sdk (../../toolchains/python-sdk-dev/main.go:48:2)
 }
 
-func (r *Client) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:25:1)
+func (r *Client) PythonSDK(opts ...PythonSDKOpts) *PythonSDK { // python-sdk (../../toolchains/python-sdk-dev/main.go:24:1)
 	q := r.query.Select("pythonSdk")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -19496,6 +19828,15 @@ func (r *Release) Publish(tag string, commit string, opts ...ReleasePublishOpts)
 	}
 }
 
+// Create a fake release a run checks to catch potential breaking changes.
+func (r *Release) TestLocalRelease() *ReleaseTest { // release (../../toolchains/release/tests.go:14:1)
+	q := r.query.Select("testLocalRelease")
+
+	return &ReleaseTest{
+		query: q,
+	}
+}
+
 type ReleaseReport struct { // release (../../toolchains/release/main.go:23:6)
 	query *querybuilder.Selection
 
@@ -19908,6 +20249,99 @@ func (r *ReleaseReportFollowUp) Name(ctx context.Context) (string, error) { // r
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+type ReleaseTest struct { // release (../../toolchains/release/tests.go:27:6)
+	query *querybuilder.Selection
+
+	existingModule *Void
+	id             *ReleaseTestID
+	newModule      *Void
+}
+
+func (r *ReleaseTest) WithGraphQLQuery(q *querybuilder.Selection) *ReleaseTest {
+	return &ReleaseTest{
+		query: q,
+	}
+}
+
+func (r *ReleaseTest) Container() *Container { // release (../../toolchains/release/tests.go:28:2)
+	q := r.query.Select("container")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// ReleaseTestExistingModuleOpts contains options for ReleaseTest.ExistingModule
+type ReleaseTestExistingModuleOpts struct {
+	Testdata *Directory // release (../../toolchains/release/tests.go:55:2)
+}
+
+// Test calling an existing module with basic commands.
+func (r *ReleaseTest) ExistingModule(ctx context.Context, opts ...ReleaseTestExistingModuleOpts) error { // release (../../toolchains/release/tests.go:51:1)
+	if r.existingModule != nil {
+		return nil
+	}
+	q := r.query.Select("existingModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `testdata` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Testdata) {
+			q = q.Arg("testdata", opts[i].Testdata)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// A unique identifier for this ReleaseTest.
+func (r *ReleaseTest) ID(ctx context.Context) (ReleaseTestID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ReleaseTestID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ReleaseTest) XXX_GraphQLType() string {
+	return "ReleaseTest"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ReleaseTest) XXX_GraphQLIDType() string {
+	return "ReleaseTestID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ReleaseTest) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ReleaseTest) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Test creating a new module and executing basic commands
+func (r *ReleaseTest) NewModule(ctx context.Context) error { // release (../../toolchains/release/tests.go:33:1)
+	if r.newModule != nil {
+		return nil
+	}
+	q := r.query.Select("newModule")
+
+	return q.Execute(ctx)
 }
 
 // Develop the Dagger Rust SDK (experimental)
@@ -21425,11 +21859,13 @@ type TestSplit struct {
 
 	id                     *TestSplitID
 	testBase               *Void
+	testBaseHeavy          *Void
 	testCallAndShell       *Void
-	testCliEngine          *Void
 	testClientGenerator    *Void
 	testContainer          *Void
 	testContainerProvision *Void
+	testEngine             *Void
+	testEngineTar          *Void
 	testInterface          *Void
 	testLlm                *Void
 	testModuleRuntimes     *Void
@@ -21493,12 +21929,22 @@ func (r *TestSplit) Source() *Directory {
 	}
 }
 
-// Test Base
+// Test Base (lighter tests, base-only deps — no registries, no engine.tar)
 func (r *TestSplit) TestBase(ctx context.Context) error {
 	if r.testBase != nil {
 		return nil
 	}
 	q := r.query.Select("testBase")
+
+	return q.Execute(ctx)
+}
+
+// Test Base Heavy (base-only deps — no registries, no engine.tar)
+func (r *TestSplit) TestBaseHeavy(ctx context.Context) error {
+	if r.testBaseHeavy != nil {
+		return nil
+	}
+	q := r.query.Select("testBaseHeavy")
 
 	return q.Execute(ctx)
 }
@@ -21513,16 +21959,6 @@ func (r *TestSplit) TestCallAndShell(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
-// Test CLI Engine
-func (r *TestSplit) TestCliEngine(ctx context.Context) error {
-	if r.testCliEngine != nil {
-		return nil
-	}
-	q := r.query.Select("testCliEngine")
-
-	return q.Execute(ctx)
-}
-
 // Test Client Generator
 func (r *TestSplit) TestClientGenerator(ctx context.Context) error {
 	if r.testClientGenerator != nil {
@@ -21533,7 +21969,10 @@ func (r *TestSplit) TestClientGenerator(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
-// Test Container (excluding DinD/nested engine tests)
+// Test Container (needs registries + engine.tar, excluding DinD/nested engine tests).
+// TestContainer runs first alphabetically and sets up the superset of deps
+// (registries + engine.tar) needed by TestDockerfile (registries), TestPlatform
+// (registries), and TestServices (registries + engine.tar).
 func (r *TestSplit) TestContainer(ctx context.Context) error {
 	if r.testContainer != nil {
 		return nil
@@ -21549,6 +21988,26 @@ func (r *TestSplit) TestContainerProvision(ctx context.Context) error {
 		return nil
 	}
 	q := r.query.Select("testContainerProvision")
+
+	return q.Execute(ctx)
+}
+
+// Test Engine (needs engine.tar)
+func (r *TestSplit) TestEngine(ctx context.Context) error {
+	if r.testEngine != nil {
+		return nil
+	}
+	q := r.query.Select("testEngine")
+
+	return q.Execute(ctx)
+}
+
+// Test Engine Tar (needs engine.tar but not registries)
+func (r *TestSplit) TestEngineTar(ctx context.Context) error {
+	if r.testEngineTar != nil {
+		return nil
+	}
+	q := r.query.Select("testEngineTar")
 
 	return q.Execute(ctx)
 }
@@ -21573,7 +22032,7 @@ func (r *TestSplit) TestLLM(ctx context.Context) error {
 	return q.Execute(ctx)
 }
 
-// Test Module Runtimes
+// Test Module Runtimes (base-only deps — no registries, no engine.tar)
 func (r *TestSplit) TestModuleRuntimes(ctx context.Context) error {
 	if r.testModuleRuntimes != nil {
 		return nil
@@ -23624,23 +24083,6 @@ type Client struct {
 	client graphql.Client
 }
 
-// errorWrappedClient wraps the SDK's graphql.Client to convert errors
-// into this package's ExecError type instead of the SDK's ExecError type.
-type errorWrappedClient struct {
-	graphql.Client
-}
-
-func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
-	err := c.Client.MakeRequest(ctx, req, resp)
-	if err != nil {
-		if e := getCustomError(err); e != nil {
-			return e
-		}
-		return err
-	}
-	return nil
-}
-
 // ClientOpt holds a client option
 type ClientOpt = dagger.ClientOpt
 
@@ -23677,18 +24119,15 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 
-	gqlClient := errorWrappedClient{dag.GraphQLClient()}
 	c := &Client{
-		query:  dag.QueryBuilder().Client(gqlClient),
-		client: gqlClient,
+		query:  dag.QueryBuilder(),
+		client: dag.GraphQLClient(),
 		dag:    dag,
 	}
 
-	// Serve module dependencies on a best-effort basis. The testutil client
-	// has the root module's toolchain deps baked in, which can't be resolved
-	// from within test containers. Suppressing errors here is safe because
-	// individual test-generated clients will have their own proper error handling.
-	_ = serveModuleDependencies(ctx, c)
+	if err := serveModuleDependencies(ctx, c); err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
@@ -23709,29 +24148,7 @@ func (c *Client) QueryBuilder() *querybuilder.Selection {
 
 // Do executes a raw GraphQL request using the client's session
 func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
-	daggerReq := &dagger.Request{
-		Query:     req.Query,
-		Variables: req.Variables,
-		OpName:    req.OpName,
-	}
-	daggerResp := &dagger.Response{
-		Data:       resp.Data,
-		Extensions: resp.Extensions,
-		Errors:     resp.Errors,
-	}
-
-	err := c.dag.Do(ctx, daggerReq, daggerResp)
-
-	resp.Data = daggerResp.Data
-	resp.Extensions = daggerResp.Extensions
-	resp.Errors = daggerResp.Errors
-
-	if err != nil {
-		if e := getCustomError(err); e != nil {
-			return e
-		}
-	}
-	return err
+	return c.dag.Do(ctx, req, resp)
 }
 
 // serveModuleDependencies services all dependencies of the module.
@@ -23742,9 +24159,6 @@ func serveModuleDependencies(ctx context.Context, client *Client) error {
 	configExist, err := modSrc.ConfigExists(ctx)
 	if err != nil {
 		return err
-	}
-	if !configExist {
-		return fmt.Errorf("dagger.json not found but is required to load local dependencies or the module itself")
 	}
 
 	if configExist {

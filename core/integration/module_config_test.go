@@ -604,8 +604,9 @@ func (m *Foo) CheckEnv() string {
 				output, err := ctr.With(daggerCall("check-env")).Stdout(ctx)
 				if tc.expectedError != "" {
 					require.NotNil(t, err)
-					execerror := err.(*dagger.ExecError)
-					require.Contains(t, execerror.Stderr, tc.expectedError)
+					execInfo, ok := asExecError(err)
+					require.True(t, ok, "expected ExecError, got %T", err)
+					require.Contains(t, execInfo.Stderr, tc.expectedError)
 				} else {
 					require.Nil(t, err)
 					require.Equal(t, tc.expectedValue, output)
@@ -833,8 +834,9 @@ func (m *Foo) GetCoolName() string {
 				output, err := ctr.With(daggerCall("get-cool-name")).Stdout(ctx)
 				if tc.expectedError != "" {
 					require.NotNil(t, err)
-					execerror := err.(*dagger.ExecError)
-					require.Contains(t, execerror.Stderr, tc.expectedError)
+					execInfo, ok := asExecError(err)
+					require.True(t, ok, "expected ExecError, got %T", err)
+					require.Contains(t, execInfo.Stderr, tc.expectedError)
 				} else {
 					require.Nil(t, err)
 					require.Equal(t, tc.expectedCoolName, output)

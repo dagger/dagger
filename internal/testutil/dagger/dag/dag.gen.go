@@ -64,6 +64,12 @@ func Changelog(opts ...dagger.ChangelogOpts) *dagger.Changelog {
 	return client.Changelog(opts...)
 }
 
+// Creates an empty changeset
+func Changeset() *dagger.Changeset {
+	client := initClient()
+	return client.Changeset()
+}
+
 func Ci() *dagger.Ci {
 	client := initClient()
 	return client.Ci()
@@ -524,6 +530,12 @@ func LoadGolintFromID(id dagger.GolintID) *dagger.Golint {
 	return client.LoadGolintFromID(id)
 }
 
+// Load a HealthcheckConfig from its ID.
+func LoadHealthcheckConfigFromID(id dagger.HealthcheckConfigID) *dagger.HealthcheckConfig {
+	client := initClient()
+	return client.LoadHealthcheckConfigFromID(id)
+}
+
 // Load a Helm from its ID.
 func LoadHelmFromID(id dagger.HelmID) *dagger.Helm {
 	client := initClient()
@@ -638,10 +650,10 @@ func LoadPythonSDKFromID(id dagger.PythonSDKID) *dagger.PythonSDK {
 	return client.LoadPythonSDKFromID(id)
 }
 
-// Load a PythonSdkTestSuite from its ID.
-func LoadPythonSDKTestSuiteFromID(id dagger.PythonSDKTestSuiteID) *dagger.PythonSDKTestSuite {
+// Load a PythonSdkTestForPythonVersion from its ID.
+func LoadPythonSDKTestForPythonVersionFromID(id dagger.PythonSDKTestForPythonVersionID) *dagger.PythonSDKTestForPythonVersion {
 	client := initClient()
-	return client.LoadPythonSDKTestSuiteFromID(id)
+	return client.LoadPythonSDKTestForPythonVersionFromID(id)
 }
 
 // Load a Release from its ID.
@@ -666,6 +678,12 @@ func LoadReleaseReportFollowUpFromID(id dagger.ReleaseReportFollowUpID) *dagger.
 func LoadReleaseReportFromID(id dagger.ReleaseReportID) *dagger.ReleaseReport {
 	client := initClient()
 	return client.LoadReleaseReportFromID(id)
+}
+
+// Load a ReleaseTest from its ID.
+func LoadReleaseTestFromID(id dagger.ReleaseTestID) *dagger.ReleaseTest {
+	client := initClient()
+	return client.LoadReleaseTestFromID(id)
 }
 
 // Load a RustSdk from its ID.
