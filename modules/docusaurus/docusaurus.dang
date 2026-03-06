@@ -1,0 +1,348 @@
+"""
+A Dagger module for docusaurus, a documentation website builder. https://docusaurus.io
+"""
+type Docusaurus {
+
+  """
+  Scan all docusaurus sites, and ensure that they build.
+  """
+  pub checkBuild(ws: Workspace!): Void @check {
+    let builds = sites(ws).reduce(directory) { builds, site =>
+      builds.withDirectory(site.path, site.build(ws))
+    }
+    builds.sync
+    null
+  }
+
+  pub sites(ws: Workspace!): [Site!]! {
+    ws
+      .directory(ws.root, include: [
+        "**/docusaurus.config.ts",
+        "**/docusaurus.config.js",
+      ])
+      .glob("**/docusaurus.config.*")
+      .map { configPath =>
+        let path = configPath
+          .trimSuffix("docusaurus.config.ts")
+          .trimSuffix("docusaurus.config.js")
+          .trimSuffix("/")
+        let pkgDir = ws.directory(path, include: ["package.json"])
+        let pkgJson = if (pkgDir.stat("package.json") != null) {
+          pkgDir.file("package.json").asJSON
+        } else {
+          null
+        }
+        Site(path: path, packageJson: PackageJson(json: pkgJson))
+      }
+  }
+
+  """
+  Return one docusaurus site by its workspace-relative path.
+  """
+  pub site(ws: Workspace!, path: String!): Site! {
+    let match = sites(ws).filter { site => site.path == path }[0]
+    if (match != null) {
+      match
+    } else {
+      raise "docusaurus site not found: " + path
+    }
+  }
+}
+
+"""
+A Docusaurus site.
+"""
+
+"""
+Package.json helpers.
+"""
+type PackageJson {
+  let json: JSONValue
+
+  # TODO: remove when JSONValue.field becomes nullable
+  let tryField(path: [String!]!): JSONValue {
+    try {
+      let field = json.field(path)
+      field.id # force querying
+      field
+    } catch {
+      _ => null
+    }
+  }
+
+  let hasPrefix(value: String!, prefix: String!): Boolean! {
+    value.trimPrefix(prefix) != value
+  }
+
+  let isLocalDependencySpec(spec: String!): Boolean! {
+    if (hasPrefix(spec, "file:")) {
+      true
+    } else if (hasPrefix(spec, "link:")) {
+      true
+    } else if (hasPrefix(spec, "workspace:")) {
+      true
+    } else {
+      false
+    }
+  }
+
+  let sectionHasLocalDependencyRefs(section: String!): Boolean! {
+    let sectionValue = tryField([section])
+    if (sectionValue == null) {
+      false
+    } else {
+      let found = false
+      for (name in sectionValue.fields) {
+        let spec = sectionValue.field([name]).asString ?? ""
+        if (isLocalDependencySpec(spec)) {
+          found = true
+        }
+      }
+      found
+    }
+  }
+
+  """
+  The package manager command (read from package.json "packageManager" field).
+  """
+  pub packageManager: String! {
+    tryField(["packageManager"]).asString.split("@")[0] ?? "npm"
+  }
+
+  """
+  Whether package.json uses local dependency protocols (file/link/workspace).
+  """
+  pub hasLocalDependencyRefs: Boolean! {
+    if (sectionHasLocalDependencyRefs("dependencies")) {
+      true
+    } else if (sectionHasLocalDependencyRefs("devDependencies")) {
+      true
+    } else if (sectionHasLocalDependencyRefs("optionalDependencies")) {
+      true
+    } else {
+      sectionHasLocalDependencyRefs("peerDependencies")
+    }
+  }
+
+  """
+  Optional source include paths from package.json "docusaurus.include".
+  """
+  pub include: [String!]! {
+    tryField(["docusaurus", "include"]).asArray.{asString}.map { item => item.asString } ?? []
+  }
+
+  """
+  Source exclude paths from package.json "docusaurus.exclude".
+  """
+  pub exclude: [String!]! {
+    tryField(["docusaurus", "exclude"]).asArray.{asString}.map { item => item.asString } ?? []
+  }
+
+  """
+  Whether package.json "docusaurus.nginxConfig" is explicitly set.
+  """
+  pub hasNginxConfig: Boolean! {
+    tryField(["docusaurus", "nginxConfig"]) != null
+  }
+
+  """
+  Path to nginx config from package.json "docusaurus.nginxConfig".
+  Defaults to "./nginx.conf" when the field is not set.
+  """
+  pub nginxConfig: String! {
+    tryField(["docusaurus", "nginxConfig"]).asString ?? "./nginx.conf"
+  }
+}
+
+type Site {
+  """
+  Path of the site directory in the workspace
+  """
+  pub path: String!
+
+  """
+  Parsed package.json helpers for the site.
+  """
+  let packageJson: PackageJson!
+
+  """
+  The package manager command.
+  """
+  let pm: String! {
+    packageJson.packageManager
+  }
+
+  """
+  Path to the nginx config file in the workspace.
+  """
+  let nginxConfigPath: String! {
+    let cfgPath = packageJson.nginxConfig.trimPrefix("./")
+    if (path == ".") {
+      cfgPath
+    } else {
+      path + "/" + cfgPath
+    }
+  }
+
+  """
+  The install command for the package manager.
+  """
+  let installCmd(ws: Workspace!): [String!]! {
+    case (pm) {
+      "yarn" => ["yarn", "install", "--frozen-lockfile"]
+      "pnpm" => ["pnpm", "install", "--frozen-lockfile"]
+      else => ["npm", "install"]
+    }
+  }
+
+
+  let traceInstallForRuntimeExternalPaths: Boolean! {
+    packageJson.hasLocalDependencyRefs
+  }
+
+  """
+  Include globs for files under the site path.
+  """
+  let siteOnlyIncludes: [String!]! {
+    if (path == ".") {
+      ["**"]
+    } else {
+      [path + "/**"]
+    }
+  }
+
+  """
+  Include globs for source and known local dependencies.
+  """
+  let sourceIncludes: [String!]! {
+    siteOnlyIncludes + packageJson.include.map { inc =>
+      if (path == ".") { inc } else { path + "/" + inc }
+    }
+  }
+
+  """
+  Exclude globs for source selection.
+  """
+  let sourceExcludes: [String!]! {
+    [
+      "node_modules/",
+      ".docusaurus/",
+      "build/",
+      ".git/",
+    ] + packageJson.exclude.map { exc =>
+      if (path == ".") { exc } else { path + "/" + exc }
+    }
+  }
+
+  """
+  The Docusaurus site source files.
+  """
+  pub source(ws: Workspace!): Directory! {
+    ws.directory(
+      ".",
+      include: sourceIncludes,
+      exclude: sourceExcludes,
+    )
+  }
+
+  """
+  Base container for docusaurus.
+  """
+  let base: Container! {
+    container
+      .from("node:lts-alpine")
+      .withoutEntrypoint
+      .withWorkdir("/app")
+      .withExec(["corepack", "enable"])
+      .withMountedCache(
+        "/root/.npm/_cacache",
+        cacheVolume("npm-cache"),
+      )
+      .withMountedCache(
+        "/usr/local/share/.cache/yarn",
+        cacheVolume("yarn-cache"),
+      )
+      .withMountedCache(
+        "/root/.local/share/pnpm/store",
+        cacheVolume("pnpm-cache"),
+      )
+  }
+
+  let workspaceRootPath: String! = "/workspace"
+  let docusaurusToolsPath: String! = "/docusaurus-tools"
+  let packageJSONEditHelperPath: String! = docusaurusToolsPath + "/package-json-edit.cjs"
+  let docusaurusBuildCmd: [String!]! = ["./node_modules/.bin/docusaurus", "build"]
+  let docusaurusDevCmd: [String!]! = ["./node_modules/.bin/docusaurus", "start", "--host", "0.0.0.0", "--poll", "1000"]
+
+  let workspaceSitePath: String! {
+    if (path == ".") {
+      workspaceRootPath
+    } else {
+      workspaceRootPath + "/" + path
+    }
+  }
+
+  let siteCacheVolumeKey(ws: Workspace!): String! {
+    "docusaurus-cache-" + ws.root + "-" + path
+  }
+
+  """
+  Site-specific build sandbox.
+  """
+  pub sandbox(ws: Workspace!): Sandbox! {
+    base
+      .withWorkdir("/work")
+      .withMountedWorkspace(".", workspace: ws, liveRead: true, export: true)
+      .withMountedCache(
+        "./" + path + "/node_modules",
+        cacheVolume(path + "/node_modules"),
+        sharing: CacheSharingMode.LOCKED,
+      )
+      .withWorkdir("./" + path)
+  }
+
+  """
+  Build the static site.
+  """
+  pub build(ws: Workspace!): Directory! {
+    sandbox(ws)
+      .withExec(ws, installCmd(ws))
+      .withExec(ws, docusaurusBuildCmd)
+      .directory("build")
+  }
+
+  pub dev(ws: Workspace!): Service! {
+    sandbox(ws)
+      .withExec(ws, installCmd(ws))
+      .withExposedPort(3000)
+      .asService(args: devCmd(ws))
+  }
+
+  """
+  Serve the static site with nginx.
+  """
+  pub server(ws: Workspace!): Service! {
+    let ctr = container
+      .from("nginx:alpine")
+      .withDirectory("/usr/share/nginx/html", build(ws))
+
+    if (packageJson.hasNginxConfig) {
+      ctr = ctr.withFile(
+        "/etc/nginx/conf.d/default.conf",
+        ws.file(nginxConfigPath),
+      )
+    } else {
+      let defaultConfig = ws
+        .directory(path, include: ["nginx.conf"])
+        .stat("nginx.conf")
+      if (defaultConfig != null) {
+        ctr = ctr.withFile(
+          "/etc/nginx/conf.d/default.conf",
+          ws.file(nginxConfigPath),
+        )
+      }
+    }
+
+    ctr.withExposedPort(80).asService
+  }
+}

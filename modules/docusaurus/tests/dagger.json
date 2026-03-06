@@ -1,0 +1,14 @@
+{
+  "name": "tests",
+  "engineVersion": "v0.19.11",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk"
+  },
+  "dependencies": [
+    {
+      "name": "docusaurus",
+      "source": ".."
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}
