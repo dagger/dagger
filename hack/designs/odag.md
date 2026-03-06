@@ -1067,7 +1067,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Implement `Query` receiver handling explicitly in backend projection:
   - default v1 behavior: treat as no receiver binding
   - keep room for later promotion to a root binding/root scope anchor if useful
-- [ ] Add global rebuild workflow for derived data:
+- [x] Add global rebuild workflow for derived data:
   - `odag rebuild`
   - delete all derived ODAG data
   - recompute derived state in one pass from stored source-truth telemetry/span data

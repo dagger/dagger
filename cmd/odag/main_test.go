@@ -50,3 +50,25 @@ func TestNewServeCmdHasDevFlags(t *testing.T) {
 		t.Fatalf("expected non-empty web-dir default")
 	}
 }
+
+func TestNewRootCmdIncludesRebuild(t *testing.T) {
+	cmd := newRootCmd()
+	rebuild, _, err := cmd.Find([]string{"rebuild"})
+	if err != nil {
+		t.Fatalf("find rebuild command: %v", err)
+	}
+	if rebuild == nil || rebuild.Name() != "rebuild" {
+		t.Fatalf("expected rebuild command, got %#v", rebuild)
+	}
+}
+
+func TestNewRebuildCmdHasDBFlag(t *testing.T) {
+	cmd := newRebuildCmd()
+	dbFlag := cmd.Flag("db")
+	if dbFlag == nil {
+		t.Fatalf("missing db flag")
+	}
+	if dbFlag.DefValue != defaultDBPath {
+		t.Fatalf("unexpected db default: %q", dbFlag.DefValue)
+	}
+}

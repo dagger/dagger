@@ -235,3 +235,104 @@ WHERE trace_id = ?
 		t.Fatalf("expected stale trace to be completed after reconcile, got %q", status)
 	}
 }
+
+func TestRebuildDerivedRecomputesTraceSummariesFromSpans(t *testing.T) {
+	t.Parallel()
+
+	st, err := Open(filepath.Join(t.TempDir(), "odag.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+
+	ctx := context.Background()
+	traceID := "rebuild-trace"
+	rootID := "rebuild-root"
+	childID := "rebuild-child"
+
+	if _, err := st.UpsertSpans(ctx, "cloud", []SpanRecord{
+		{
+			TraceID:         traceID,
+			SpanID:          rootID,
+			Name:            "Query.container",
+			StartUnixNano:   10,
+			EndUnixNano:     20,
+			StatusCode:      "STATUS_CODE_OK",
+			DataJSON:        `{"attributes":{"dagger.io/dag.digest":"root"}}`,
+			UpdatedUnixNano: 21,
+		},
+		{
+			TraceID:         traceID,
+			SpanID:          childID,
+			ParentSpanID:    rootID,
+			Name:            "Container.from",
+			StartUnixNano:   12,
+			EndUnixNano:     18,
+			StatusCode:      "STATUS_CODE_OK",
+			DataJSON:        `{"attributes":{"dagger.io/dag.digest":"child"}}`,
+			UpdatedUnixNano: 19,
+		},
+	}); err != nil {
+		t.Fatalf("upsert spans: %v", err)
+	}
+
+	if _, err := st.db.ExecContext(ctx, `
+UPDATE traces
+SET first_seen_unix_nano = 999,
+    last_seen_unix_nano = 1000,
+    span_count = 999,
+    status = 'unknown'
+WHERE trace_id = ?
+`, traceID); err != nil {
+		t.Fatalf("corrupt trace summary: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `
+INSERT INTO traces (trace_id, source_mode, first_seen_unix_nano, last_seen_unix_nano, span_count, status)
+VALUES (?, 'collector', 1, 1, 0, 'unknown')
+`, "orphan-trace"); err != nil {
+		t.Fatalf("insert orphan trace: %v", err)
+	}
+
+	summary, err := st.RebuildDerived(ctx)
+	if err != nil {
+		t.Fatalf("rebuild derived: %v", err)
+	}
+	if summary.Traces != 1 || summary.Spans != 2 {
+		t.Fatalf("unexpected rebuild summary: %+v", summary)
+	}
+
+	var sourceMode string
+	var firstSeen int64
+	var lastSeen int64
+	var spanCount int
+	var status string
+	if err := st.db.QueryRowContext(ctx, `
+SELECT source_mode, first_seen_unix_nano, last_seen_unix_nano, span_count, status
+FROM traces
+WHERE trace_id = ?
+`, traceID).Scan(&sourceMode, &firstSeen, &lastSeen, &spanCount, &status); err != nil {
+		t.Fatalf("query rebuilt trace: %v", err)
+	}
+	if sourceMode != "cloud" {
+		t.Fatalf("expected source mode to be preserved, got %q", sourceMode)
+	}
+	if firstSeen != 10 || lastSeen != 20 {
+		t.Fatalf("unexpected rebuilt bounds: first=%d last=%d", firstSeen, lastSeen)
+	}
+	if spanCount != 2 {
+		t.Fatalf("expected rebuilt span_count=2, got %d", spanCount)
+	}
+	if status != "completed" {
+		t.Fatalf("expected rebuilt status=completed, got %q", status)
+	}
+
+	var traceRows int
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM traces`).Scan(&traceRows); err != nil {
+		t.Fatalf("count rebuilt traces: %v", err)
+	}
+	if traceRows != 1 {
+		t.Fatalf("expected orphan derived rows to be removed, got %d traces", traceRows)
+	}
+}

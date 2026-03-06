@@ -42,6 +42,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newRunCmd())
 	root.AddCommand(newFetchCmd())
+	root.AddCommand(newRebuildCmd())
 
 	return root
 }
@@ -212,6 +213,35 @@ func newFetchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dbPath, "db", defaultDBPath, "path to sqlite database")
 	cmd.Flags().StringVar(&orgName, "org", "", "Dagger Cloud org name (defaults to current org)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Minute, "max time to wait for cloud trace stream")
+
+	return cmd
+}
+
+func newRebuildCmd() *cobra.Command {
+	var dbPath string
+
+	cmd := &cobra.Command{
+		Use:   "rebuild",
+		Short: "Rebuild derived ODAG state from stored telemetry",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := store.Open(dbPath)
+			if err != nil {
+				return err
+			}
+			defer st.Close()
+
+			res, err := st.RebuildDerived(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.ErrOrStderr(), "rebuilt derived state: %d traces, %d spans\n", res.Traces, res.Spans)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&dbPath, "db", defaultDBPath, "path to sqlite database")
 
 	return cmd
 }
