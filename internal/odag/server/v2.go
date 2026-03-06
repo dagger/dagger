@@ -68,20 +68,20 @@ type v2Call struct {
 	TopLevel              bool     `json:"topLevel"`
 	CallDepth             int      `json:"callDepth"`
 	ParentChainIncomplete bool     `json:"parentChainIncomplete,omitempty"`
-	ReceiverSnapshotID    string   `json:"receiverSnapshotID,omitempty"`
-	ArgSnapshotIDs        []string `json:"argSnapshotIDs,omitempty"`
-	OutputSnapshotID      string   `json:"outputSnapshotID,omitempty"`
+	ReceiverDagqlID       string   `json:"receiverDagqlID,omitempty"`
+	ArgDagqlIDs           []string `json:"argDagqlIDs,omitempty"`
+	OutputDagqlID         string   `json:"outputDagqlID,omitempty"`
 	DerivedOperation      string   `json:"derivedOperation,omitempty"`
 	Internal              bool     `json:"internal,omitempty"`
 }
 
 type v2FieldRef struct {
-	Path       string `json:"path"`
-	SnapshotID string `json:"snapshotID"`
+	Path    string `json:"path"`
+	DagqlID string `json:"dagqlID"`
 }
 
 type v2ObjectSnapshot struct {
-	SnapshotID        string         `json:"snapshotID"`
+	DagqlID           string         `json:"dagqlID"`
 	TypeName          string         `json:"typeName,omitempty"`
 	OutputState       map[string]any `json:"outputState,omitempty"`
 	FieldRefs         []v2FieldRef   `json:"fieldRefs,omitempty"`
@@ -101,31 +101,31 @@ type v2ObjectBinding struct {
 	TypeName          string   `json:"typeName"`
 	Alias             string   `json:"alias"`
 	ScopeSpanID       string   `json:"scopeSpanID,omitempty"`
-	CurrentSnapshotID string   `json:"currentSnapshotID,omitempty"`
+	CurrentDagqlID    string   `json:"currentDagqlID,omitempty"`
 	FirstSeenUnixNano int64    `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64    `json:"lastSeenUnixNano"`
 	Archived          bool     `json:"archived"`
-	SnapshotHistory   []string `json:"snapshotHistory,omitempty"`
+	DagqlHistory      []string `json:"dagqlHistory,omitempty"`
 	ActivityCallIDs   []string `json:"activityCallIDs,omitempty"`
 }
 
 type v2Mutation struct {
-	ID             string `json:"id"`
-	TraceID        string `json:"traceID"`
-	SessionID      string `json:"sessionID,omitempty"`
-	ClientID       string `json:"clientID,omitempty"`
-	BindingID      string `json:"bindingID"`
-	CauseCallID    string `json:"causeCallID"`
-	ScopeSpanID    string `json:"scopeSpanID,omitempty"`
-	Name           string `json:"name"`
-	Kind           string `json:"kind"`
-	StartUnixNano  int64  `json:"startUnixNano"`
-	EndUnixNano    int64  `json:"endUnixNano"`
-	StatusCode     string `json:"statusCode"`
-	PrevSnapshotID string `json:"prevSnapshotID,omitempty"`
-	NextSnapshotID string `json:"nextSnapshotID,omitempty"`
-	Visible        bool   `json:"visible"`
-	Internal       bool   `json:"internal,omitempty"`
+	ID            string `json:"id"`
+	TraceID       string `json:"traceID"`
+	SessionID     string `json:"sessionID,omitempty"`
+	ClientID      string `json:"clientID,omitempty"`
+	BindingID     string `json:"bindingID"`
+	CauseCallID   string `json:"causeCallID"`
+	ScopeSpanID   string `json:"scopeSpanID,omitempty"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	StartUnixNano int64  `json:"startUnixNano"`
+	EndUnixNano   int64  `json:"endUnixNano"`
+	StatusCode    string `json:"statusCode"`
+	PrevDagqlID   string `json:"prevDagqlID,omitempty"`
+	NextDagqlID   string `json:"nextDagqlID,omitempty"`
+	Visible       bool   `json:"visible"`
+	Internal      bool   `json:"internal,omitempty"`
 }
 
 type v2Session struct {
@@ -292,11 +292,11 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 				}
 				argSet[in.StateDigest] = struct{}{}
 			}
-			argSnapshotIDs := make([]string, 0, len(argSet))
+			argDagqlIDs := make([]string, 0, len(argSet))
 			for digest := range argSet {
-				argSnapshotIDs = append(argSnapshotIDs, digest)
+				argDagqlIDs = append(argDagqlIDs, digest)
 			}
-			sort.Strings(argSnapshotIDs)
+			sort.Strings(argDagqlIDs)
 			callID := spanKey(traceID, event.SpanID)
 			parentCallID := ""
 			if event.ParentCallSpanID != "" {
@@ -317,9 +317,9 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 				TopLevel:              event.TopLevel,
 				CallDepth:             event.CallDepth,
 				ParentChainIncomplete: event.ParentChainIncomplete,
-				ReceiverSnapshotID:    event.ReceiverStateDigest,
-				ArgSnapshotIDs:        argSnapshotIDs,
-				OutputSnapshotID:      event.OutputStateDigest,
+				ReceiverDagqlID:       event.ReceiverStateDigest,
+				ArgDagqlIDs:           argDagqlIDs,
+				OutputDagqlID:         event.OutputStateDigest,
 				DerivedOperation:      event.Operation,
 				Internal:              event.Internal,
 			})
@@ -399,7 +399,7 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 				if agg == nil {
 					agg = &snapshotAgg{
 						item: v2ObjectSnapshot{
-							SnapshotID:        st.StateDigest,
+							DagqlID:           st.StateDigest,
 							TypeName:          obj.TypeName,
 							OutputState:       st.OutputStateJSON,
 							FirstSeenUnixNano: st.StartUnixNano,
@@ -439,7 +439,7 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 					agg.clientIDs[clientID] = struct{}{}
 				}
 				for _, ref := range extractFieldRefs(st.OutputStateJSON) {
-					key := ref.Path + "|" + ref.SnapshotID
+					key := ref.Path + "|" + ref.DagqlID
 					if _, ok := agg.fieldRefSet[key]; ok {
 						continue
 					}
@@ -460,7 +460,7 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 			if agg.item.FieldRefs[i].Path != agg.item.FieldRefs[j].Path {
 				return agg.item.FieldRefs[i].Path < agg.item.FieldRefs[j].Path
 			}
-			return agg.item.FieldRefs[i].SnapshotID < agg.item.FieldRefs[j].SnapshotID
+			return agg.item.FieldRefs[i].DagqlID < agg.item.FieldRefs[j].DagqlID
 		})
 		items = append(items, agg.item)
 	}
@@ -469,7 +469,7 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 		if items[i].FirstSeenUnixNano != items[j].FirstSeenUnixNano {
 			return items[i].FirstSeenUnixNano < items[j].FirstSeenUnixNano
 		}
-		return items[i].SnapshotID < items[j].SnapshotID
+		return items[i].DagqlID < items[j].DagqlID
 	})
 
 	page, next := paginate(items, q.Offset, q.Limit)
@@ -521,7 +521,7 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 			callSet := map[string]struct{}{}
 			clientSet := map[string]struct{}{}
 			sessionSet := map[string]struct{}{}
-			snapshotHistory := make([]string, 0, len(obj.StateHistory))
+			dagqlHistory := make([]string, 0, len(obj.StateHistory))
 			matchedScope := !hasV2ScopeFilter(q)
 			for _, st := range obj.StateHistory {
 				if !q.IncludeInternal {
@@ -530,7 +530,7 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 					}
 				}
 				if st.StateDigest != "" {
-					snapshotHistory = append(snapshotHistory, st.StateDigest)
+					dagqlHistory = append(dagqlHistory, st.StateDigest)
 				}
 				if st.SpanID != "" {
 					callSet[spanKey(traceID, st.SpanID)] = struct{}{}
@@ -559,11 +559,11 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 				TypeName:          obj.TypeName,
 				Alias:             obj.Alias,
 				ScopeSpanID:       first.SpanID,
-				CurrentSnapshotID: last.StateDigest,
+				CurrentDagqlID:    last.StateDigest,
 				FirstSeenUnixNano: obj.FirstSeenUnixNano,
 				LastSeenUnixNano:  obj.LastSeenUnixNano,
 				Archived:          meta.Status != "ingesting",
-				SnapshotHistory:   snapshotHistory,
+				DagqlHistory:      dagqlHistory,
 				ActivityCallIDs:   setToSortedSlice(callSet),
 			})
 		}
@@ -631,22 +631,22 @@ func (s *Server) handleV2Mutations(w http.ResponseWriter, r *http.Request) {
 				scopeSpanID = event.ParentSpanID
 			}
 			items = append(items, v2Mutation{
-				ID:             spanKey(traceID, event.SpanID),
-				TraceID:        traceID,
-				SessionID:      sessionID,
-				ClientID:       clientID,
-				BindingID:      objectBindingID(traceID, event.ObjectID),
-				CauseCallID:    spanKey(traceID, event.SpanID),
-				ScopeSpanID:    scopeSpanID,
-				Name:           event.Name,
-				Kind:           event.Operation,
-				StartUnixNano:  event.StartUnixNano,
-				EndUnixNano:    event.EndUnixNano,
-				StatusCode:     event.StatusCode,
-				PrevSnapshotID: event.ReceiverStateDigest,
-				NextSnapshotID: event.OutputStateDigest,
-				Visible:        event.Visible,
-				Internal:       event.Internal,
+				ID:            spanKey(traceID, event.SpanID),
+				TraceID:       traceID,
+				SessionID:     sessionID,
+				ClientID:      clientID,
+				BindingID:     objectBindingID(traceID, event.ObjectID),
+				CauseCallID:   spanKey(traceID, event.SpanID),
+				ScopeSpanID:   scopeSpanID,
+				Name:          event.Name,
+				Kind:          event.Operation,
+				StartUnixNano: event.StartUnixNano,
+				EndUnixNano:   event.EndUnixNano,
+				StatusCode:    event.StatusCode,
+				PrevDagqlID:   event.ReceiverStateDigest,
+				NextDagqlID:   event.OutputStateDigest,
+				Visible:       event.Visible,
+				Internal:      event.Internal,
 			})
 		}
 	}
@@ -1012,8 +1012,8 @@ func extractFieldRefs(state map[string]any) []v2FieldRef {
 				continue
 			}
 			refs = append(refs, v2FieldRef{
-				Path:       path,
-				SnapshotID: ref,
+				Path:    path,
+				DagqlID: ref,
 			})
 		}
 	}

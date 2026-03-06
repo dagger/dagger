@@ -350,7 +350,7 @@ function renderRenderObjects() {
   }
 
   const rows = objects.slice(0, 200).map((obj) => {
-    const current = obj.currentSnapshotID ? shortDigest(obj.currentSnapshotID) : "-";
+    const current = obj.currentDagqlID ? shortDigest(obj.currentDagqlID) : "-";
     return `
       <tr>
         <td>${escapeHTML(obj.alias || "-")}</td>
@@ -457,13 +457,13 @@ function renderBindings() {
 
   const rows = items.slice(0, 160).map((item) => {
     const archived = item.archived ? "archived" : "open";
-    const current = item.currentSnapshotID ? shortDigest(item.currentSnapshotID) : "-";
+    const current = item.currentDagqlID ? shortDigest(item.currentDagqlID) : "-";
     return `
       <tr>
         <td>${escapeHTML(item.alias || "-")}</td>
         <td>${escapeHTML(item.typeName || "-")}</td>
         <td>${traceTag(item.traceID)}</td>
-        <td>${Number((item.snapshotHistory || []).length)}</td>
+        <td>${Number((item.dagqlHistory || []).length)}</td>
         <td>${escapeHTML(current)}</td>
         <td>${escapeHTML(archived)}</td>
       </tr>

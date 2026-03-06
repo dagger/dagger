@@ -56,9 +56,9 @@ type v2RenderObject struct {
 	BindingID         string         `json:"bindingID"`
 	TypeName          string         `json:"typeName"`
 	Alias             string         `json:"alias"`
-	CurrentSnapshotID string         `json:"currentSnapshotID,omitempty"`
+	CurrentDagqlID    string         `json:"currentDagqlID,omitempty"`
 	CurrentState      map[string]any `json:"currentState,omitempty"`
-	SnapshotHistory   []string       `json:"snapshotHistory,omitempty"`
+	DagqlHistory      []string       `json:"dagqlHistory,omitempty"`
 	FirstSeenUnixNano int64          `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64          `json:"lastSeenUnixNano"`
 	StateCount        int            `json:"stateCount"`
@@ -450,16 +450,16 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		if _, ok := visibleObjectIDs[obj.ID]; !ok {
 			continue
 		}
-		currentSnapshot := ""
+		currentDagqlID := ""
 		currentState := map[string]any(nil)
-		snapshotHistory := make([]string, 0, len(obj.StateHistory))
+		dagqlHistory := make([]string, 0, len(obj.StateHistory))
 		for _, st := range obj.StateHistory {
 			if st.StateDigest != "" {
-				snapshotHistory = append(snapshotHistory, st.StateDigest)
+				dagqlHistory = append(dagqlHistory, st.StateDigest)
 			}
 		}
 		if n := len(obj.StateHistory); n > 0 {
-			currentSnapshot = obj.StateHistory[n-1].StateDigest
+			currentDagqlID = obj.StateHistory[n-1].StateDigest
 			currentState = obj.StateHistory[n-1].OutputStateJSON
 		}
 		renderObjects = append(renderObjects, v2RenderObject{
@@ -467,9 +467,9 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			BindingID:         objectBindingID(traceID, obj.ID),
 			TypeName:          obj.TypeName,
 			Alias:             obj.Alias,
-			CurrentSnapshotID: currentSnapshot,
+			CurrentDagqlID:    currentDagqlID,
 			CurrentState:      currentState,
-			SnapshotHistory:   snapshotHistory,
+			DagqlHistory:      dagqlHistory,
 			FirstSeenUnixNano: obj.FirstSeenUnixNano,
 			LastSeenUnixNano:  obj.LastSeenUnixNano,
 			StateCount:        len(obj.StateHistory),

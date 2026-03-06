@@ -222,7 +222,7 @@ func TestTraceAPIProjection(t *testing.T) {
 			BindingID string   `json:"bindingID"`
 			TraceID   string   `json:"traceID"`
 			Archived  bool     `json:"archived"`
-			History   []string `json:"snapshotHistory"`
+			History   []string `json:"dagqlHistory"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(v2BindingsRec.Body.Bytes(), &v2BindingsResp); err != nil {
@@ -243,7 +243,7 @@ func TestTraceAPIProjection(t *testing.T) {
 	}
 	var v2SnapshotsResp struct {
 		Items []struct {
-			SnapshotID string `json:"snapshotID"`
+			DagqlID string `json:"dagqlID"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(v2SnapshotsRec.Body.Bytes(), &v2SnapshotsResp); err != nil {
@@ -692,10 +692,10 @@ func TestV2RenderEndpoints(t *testing.T) {
 			TraceTitle string `json:"traceTitle"`
 		} `json:"context"`
 		Objects []struct {
-			ObjectID        string         `json:"objectID"`
-			Alias           string         `json:"alias"`
-			CurrentState    map[string]any `json:"currentState"`
-			SnapshotHistory []string       `json:"snapshotHistory"`
+			ObjectID     string         `json:"objectID"`
+			Alias        string         `json:"alias"`
+			CurrentState map[string]any `json:"currentState"`
+			DagqlHistory []string       `json:"dagqlHistory"`
 		} `json:"objects"`
 		Calls []struct {
 			CallID string `json:"callID"`
@@ -736,7 +736,7 @@ func TestV2RenderEndpoints(t *testing.T) {
 		t.Fatalf("unexpected aliases: %#v", byAlias)
 	}
 	for _, obj := range renderResp.Objects {
-		if len(obj.SnapshotHistory) == 0 {
+		if len(obj.DagqlHistory) == 0 {
 			t.Fatalf("expected snapshot history for object: %#v", obj)
 		}
 		if obj.ObjectID == containerID {
