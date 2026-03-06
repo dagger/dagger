@@ -2684,7 +2684,11 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		return err
 	}
 
-	fmt.Fprintln(out)
+	// User prompts already have a trailing newline from renderLogs,
+	// so skip the extra newline to avoid a blank gap.
+	if row.Span.LLMRole != telemetry.LLMRoleUser {
+		fmt.Fprintln(out)
+	}
 
 	return nil
 }
