@@ -252,4 +252,11 @@ expanded scope).
 
 ## Tasks
 
-TBD — to be detailed in implementation plan.
+See `hack/designs/2026-03-06-module-develop-to-generate-plan.md` for the full implementation plan.
+
+Summary of phases:
+1. **Go SDK Generate Module** — Create `sdk/go/dev/` Dang module with `+generate` function
+2. **Update `dagger module init`** — Create `.dagger/config.toml` during init, bootstrap via generate
+3. **Migration** — Extend `dagger migrate` to create dev workspaces for existing modules
+4. **Remove `dagger develop`** — Delete command, interfaces, SkipWorkspaceModules path
+5. **Other SDK Generate Modules** — Python, TypeScript (future work)
