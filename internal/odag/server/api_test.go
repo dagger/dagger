@@ -230,6 +230,7 @@ func TestTraceAPIProjection(t *testing.T) {
 	var v2BindingsResp struct {
 		Items []struct {
 			BindingID string   `json:"bindingID"`
+			ObjectID  string   `json:"objectID"`
 			TraceID   string   `json:"traceID"`
 			Archived  bool     `json:"archived"`
 			History   []string `json:"dagqlHistory"`
@@ -241,7 +242,7 @@ func TestTraceAPIProjection(t *testing.T) {
 	if len(v2BindingsResp.Items) != 1 {
 		t.Fatalf("expected 1 v2 binding, got %#v", v2BindingsResp.Items)
 	}
-	if v2BindingsResp.Items[0].TraceID != traceIDHex || len(v2BindingsResp.Items[0].History) != 2 {
+	if v2BindingsResp.Items[0].TraceID != traceIDHex || len(v2BindingsResp.Items[0].History) != 2 || v2BindingsResp.Items[0].ObjectID == "" {
 		t.Fatalf("unexpected v2 binding content: %#v", v2BindingsResp.Items[0])
 	}
 
@@ -1329,6 +1330,16 @@ func TestWebRouteFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(traceRec.Body.String(), "backBtn") {
 		t.Fatalf("expected trace page html, got %q", traceRec.Body.String())
+	}
+
+	dagReq := httptest.NewRequest(http.MethodGet, "/dag?traceID=abc123", nil)
+	dagRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(dagRec, dagReq)
+	if dagRec.Code != http.StatusOK {
+		t.Fatalf("dag page failed: %d %s", dagRec.Code, dagRec.Body.String())
+	}
+	if !strings.Contains(dagRec.Body.String(), "dag.js") {
+		t.Fatalf("expected dag page html, got %q", dagRec.Body.String())
 	}
 }
 

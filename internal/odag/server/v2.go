@@ -96,6 +96,7 @@ type v2ObjectSnapshot struct {
 
 type v2ObjectBinding struct {
 	BindingID         string   `json:"bindingID"`
+	ObjectID          string   `json:"objectID"`
 	TraceID           string   `json:"traceID"`
 	SessionID         string   `json:"sessionID,omitempty"`
 	ClientIDs         []string `json:"clientIDs,omitempty"`
@@ -556,6 +557,7 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 			sessionIDs := setToSortedSlice(sessionSet)
 			items = append(items, v2ObjectBinding{
 				BindingID:         objectBindingID(traceID, obj.ID),
+				ObjectID:          obj.ID,
 				TraceID:           traceID,
 				SessionID:         firstSortedValue(sessionIDs),
 				ClientIDs:         setToSortedSlice(clientSet),

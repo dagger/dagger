@@ -328,6 +328,7 @@ function renderObjects() {
         <td>${row.stateCount}</td>
         <td class="data-mono">${escapeHTML(shortDigest(row.currentDagqlID || "-"))}</td>
         <td>${statusPill(row.archived ? "archived" : "live")}</td>
+        <td>${row.dagLink ? `<a class="data-link-btn" href="${escapeHTML(row.dagLink)}">Open DAG</a>` : `<span class="data-placeholder">-</span>`}</td>
         <td>${escapeHTML(formatAbsoluteRelative(row.lastSeenUnixNano))}</td>
       </tr>
     `;
@@ -345,6 +346,7 @@ function renderObjects() {
           <th>States</th>
           <th>Current</th>
           <th>Status</th>
+          <th>DAG</th>
           <th>Updated</th>
         </tr>
       </thead>
@@ -372,7 +374,15 @@ function buildObjectRows() {
       clientIDs,
       clientNames,
       currentDagqlID: item.currentDagqlID || "",
+      dagLink: buildDagURL({
+        clientID: clientIDs.length === 1 ? clientIDs[0] : "",
+        focusObjectID: item.objectID || "",
+        mode: "object",
+        sessionID: item.sessionID || "",
+        traceID: item.traceID || "",
+      }),
       lastSeenUnixNano: Number(item.lastSeenUnixNano || 0),
+      objectID: item.objectID || "",
       searchText: [
         item.alias,
         item.typeName,
@@ -448,6 +458,7 @@ function renderEvents() {
         <td>${row.clientHTML}</td>
         <td class="data-mono">${escapeHTML(row.subject)}</td>
         <td>${escapeHTML(row.details)}</td>
+        <td>${row.dagLink ? `<a class="data-link-btn" href="${escapeHTML(row.dagLink)}">Open DAG</a>` : `<span class="data-placeholder">-</span>`}</td>
       </tr>
     `;
   });
@@ -464,6 +475,7 @@ function renderEvents() {
           <th>Client</th>
           <th>Subject</th>
           <th>Details</th>
+          <th>DAG</th>
         </tr>
       </thead>
       <tbody>${tableRows.join("")}</tbody>
@@ -482,6 +494,13 @@ function buildEventRows() {
       clientHTML: item.clientID
         ? clientTag(item.clientID, item.traceID, item.sessionID, clientTitle(clientsByID.get(item.clientID), item.clientID))
         : `<span class="data-placeholder">-</span>`,
+      dagLink: buildDagURL({
+        clientID: item.clientID || "",
+        mode: "scope",
+        scopeCallID: item.id || "",
+        sessionID: item.sessionID || "",
+        traceID: item.traceID || "",
+      }),
       details: [item.derivedOperation || "call", item.topLevel ? "top-level" : `depth ${Number(item.callDepth || 0)}`]
         .filter(Boolean)
         .join(" | "),
@@ -513,6 +532,13 @@ function buildEventRows() {
       clientHTML: item.clientID
         ? clientTag(item.clientID, item.traceID, item.sessionID, clientTitle(clientsByID.get(item.clientID), item.clientID))
         : `<span class="data-placeholder">-</span>`,
+      dagLink: buildDagURL({
+        clientID: item.clientID || "",
+        mode: "scope",
+        scopeCallID: item.causeCallID || item.id || "",
+        sessionID: item.sessionID || "",
+        traceID: item.traceID || "",
+      }),
       details: [`call ${shortDigest(item.causeCallID || "-")}`, item.visible ? "visible" : "hidden"].join(" | "),
       kind: "mutation",
       name: item.name || (item.kind ? `${String(item.kind).toUpperCase()} mutation` : "Mutation"),
@@ -542,6 +568,7 @@ function buildEventRows() {
       clientHTML: item.clientID
         ? clientTag(item.clientID, item.traceID, item.sessionID, clientTitle(clientsByID.get(item.clientID), item.clientID))
         : `<span class="data-placeholder">-</span>`,
+      dagLink: "",
       details: [item.statusCode || "", item.internal ? "internal" : ""].filter(Boolean).join(" | "),
       kind: "span",
       name: item.name || "Span",
@@ -649,6 +676,38 @@ function renderClientList(traceID, sessionID, clientIDs, clientNames) {
     tags.push(`<span class="data-note">+${clientIDs.length - visibleCount}</span>`);
   }
   return `<div class="data-chip-group">${tags.join("")}</div>`;
+}
+
+function buildDagURL({ traceID, sessionID, clientID, mode, focusObjectID, scopeCallID }) {
+  const params = new URLSearchParams();
+  const resolvedTraceID = state.options.traceID || traceID || "";
+  const resolvedSessionID = state.options.sessionID || sessionID || "";
+  const resolvedClientID = state.options.clientID || clientID || "";
+
+  if (resolvedTraceID) {
+    params.set("traceID", resolvedTraceID);
+  }
+  if (resolvedSessionID) {
+    params.set("sessionID", resolvedSessionID);
+  }
+  if (resolvedClientID) {
+    params.set("clientID", resolvedClientID);
+  }
+  if (mode) {
+    params.set("mode", mode);
+  }
+  if (focusObjectID) {
+    params.set("focusObjectID", focusObjectID);
+  }
+  if (scopeCallID) {
+    params.set("scopeCallID", scopeCallID);
+  }
+  params.set("dependencyHops", "1");
+  params.set("keepRules", "default");
+  if (state.options.includeInternal) {
+    params.set("includeInternal", "true");
+  }
+  return `/dag?${params.toString()}`;
 }
 
 function scopeSummaryItem(label, valueHTML) {

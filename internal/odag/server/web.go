@@ -74,7 +74,7 @@ func (w *webAssets) serve(wr http.ResponseWriter, r *http.Request) {
 
 	if w.devMode {
 		wr.Header().Set("Cache-Control", "no-store")
-	} else if servedPath == "index.html" || servedPath == "trace.html" {
+	} else if servedPath == "index.html" || servedPath == "trace.html" || servedPath == "dag.html" {
 		wr.Header().Set("Cache-Control", "no-cache")
 	}
 	if contentType := mime.TypeByExtension(filepath.Ext(servedPath)); contentType != "" {
@@ -97,6 +97,8 @@ func (w *webAssets) readRouteAsset(cleanPath string, assetPath string) ([]byte, 
 	fallback := "index.html"
 	if strings.HasPrefix(cleanPath, "/traces/") {
 		fallback = "trace.html"
+	} else if cleanPath == "/dag" || strings.HasPrefix(cleanPath, "/dag/") {
+		fallback = "dag.html"
 	}
 	data, err = w.readFile(fallback)
 	if err != nil {

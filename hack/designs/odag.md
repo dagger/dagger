@@ -1108,19 +1108,28 @@ Stage 4 implementation note:
   - `/` v2 global explorer page (no required trace silo)
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
   - optional dev mode: `odag serve --dev [--web-dir ...]` serves frontend assets from disk and injects browser auto-reload on local file changes
-- UI includes:
-  - index page is now a simpler v2-first data explorer:
-    - loads `/api/v2/*` entities without requiring `traceID`
-    - keeps a compact top toolbar for:
-      - optional trace filter
+  - UI includes:
+    - index page is now a simpler v2-first data explorer:
+      - loads `/api/v2/*` entities without requiring `traceID`
+      - keeps a compact top toolbar for:
+        - optional trace filter
       - include-internal toggle
       - cloud trace import
     - reduces home-route navigation to two page-like views:
       - `Objects`
       - `Events`
-    - `Objects` page is a wide table-first view over object bindings, with trace/session/client folded into columns on each row
-    - `Events` page is a unified table over call, mutation, and span activity rows
-    - both pages support row search, basic client-side sort/filter controls, and clickable trace/session/client chips for scope narrowing
+      - `Objects` page is a wide table-first view over object bindings, with trace/session/client folded into columns on each row
+      - `Events` page is a unified table over call, mutation, and span activity rows
+      - both pages support row search, basic client-side sort/filter controls, and clickable trace/session/client chips for scope narrowing
+      - row-level DAG entry actions now open a dedicated `/dag` page:
+        - object rows open `mode=object` with `focusObjectID=<objectID>`
+        - call and mutation rows open `mode=scope` with `scopeCallID=<callID>`
+        - links carry the current trace/session/client scope when available
+    - `/dag` is now a separate object-graph page backed by `/api/v2/render`:
+      - graph defaults to structural `field_ref` edges only
+      - containment and provenance remain out of the default view
+      - default render query uses `keepRules=default` and `dependencyHops=1`
+      - selected object details move into a sidebar inspector instead of expanding every graph node
   - navigation polish:
     - trace list "Open" actions now use regular links for native browser-history behavior
     - trace-page top-left back control now prefers `history.back()` (same-origin referrer), with `/` fallback
