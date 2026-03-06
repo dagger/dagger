@@ -37,8 +37,7 @@ type Config {
       false
     } else {
       sectionValue.fields.any { name =>
-        let spec = sectionValue.field([name]).asString ?? ""
-        isLocalDependencySpec(spec)
+        isLocalDependencySpec(sectionValue.field([name]).asString ?? "")
       }
     }
   }
@@ -49,11 +48,9 @@ type Config {
       [] :: [Int!]!
     } else {
       try {
-        field
-          .asArray.{asInteger}
-          .map { item =>
-            item.asInteger
-          }
+        field.asArray.{asInteger}.map { item =>
+          item.asInteger
+        }
       } catch {
         _ => [] :: [Int!]!
       }
@@ -71,18 +68,7 @@ type Config {
   The package manager command (read from package.json "packageManager").
   """
   pub packageManager: String! {
-    let raw = tryField(["packageManager"]).asString ?? ""
-    if (hasPrefix(raw, "pnpm@")) {
-      "pnpm"
-    } else if (hasPrefix(raw, "yarn@")) {
-      "yarn"
-    } else if (hasPrefix(raw, "npm@")) {
-      "npm"
-    } else if (raw != "") {
-      raw
-    } else {
-      "npm"
-    }
+    tryField(["packageManager"]).asString.split("@")[0] ?? "npm"
   }
 
   """

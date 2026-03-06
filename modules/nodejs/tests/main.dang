@@ -1,55 +1,31 @@
 type Tests {
   let fixtureRoot: String! = "modules/nodejs/tests/testdata/workspace"
 
-  let allPackagePaths(ws: Workspace!): [String!]! {
-    nodejs.packages(ws).{path}.map { pkg =>
-      pkg.path
-    }
-  }
-
-  let fixturePackagePaths(ws: Workspace!): [String!]! {
-    let paths = [] :: [String!]!
-    allPackagePaths(ws).each { path =>
-      if (path == fixtureRoot
-        or path == fixtureRoot + "/apps/admin"
-        or path == fixtureRoot + "/apps/web"
-        or path == fixtureRoot + "/shared/lib") {
-        paths = paths + [path]
+  let fixturePackages(ws: Workspace!): [Package!]! {
+    nodejs
+      .packages(ws)
+      .filter { pkg =>
+        pkg.path == fixtureRoot or
+          pkg.path == fixtureRoot + "/apps/admin" or
+          pkg.path == fixtureRoot + "/apps/web" or
+          pkg.path == fixtureRoot + "/shared/lib"
       }
-    }
-    paths
-  }
-
-  let hasPath(paths: [String!]!, path: String!): Boolean! {
-    let found = false
-    paths.each { candidate =>
-      if (candidate == path) {
-        found = true
-      }
-    }
-    found
-  }
-
-  let hasPort(pkg: NodejsPackage!, want: Int!): Boolean! {
-    let found = false
-    pkg.ports.each { port =>
-      if (port == want) {
-        found = true
-      }
-    }
-    found
   }
 
   """
   Discover package.json files beneath the fixture workspace.
   """
   pub discoversPackages(ws: Workspace!): Void @check {
-    let paths = fixturePackagePaths(ws)
-    if (paths.length != 4) {
+    let packages = fixturePackages(ws)
+    if (packages.length != 4) {
       raise "expected 4 fixture packages"
     }
 
-    if (hasPath(allPackagePaths(ws), fixtureRoot + "/apps/web/node_modules/ignored")) {
+    let ignored = nodejs
+      .packages(ws)
+      .filter { pkg => pkg.path == fixtureRoot + "/apps/web/node_modules/ignored" }
+      .length > 0
+    if (ignored) {
       raise "package discovery should ignore node_modules"
     }
 
@@ -65,14 +41,14 @@ type Tests {
       raise "expected 2 ports for apps/web"
     }
 
-    let has3000 = hasPort(web, 3000)
-    let has3001 = hasPort(web, 3001)
+    let has3000 = web.ports.filter { port => port == 3000 }.length > 0
+    let has3001 = web.ports.filter { port => port == 3001 }.length > 0
     if (has3000 == false or has3001 == false) {
       raise "apps/web ports were not parsed correctly"
     }
 
     let admin = nodejs.package(ws, fixtureRoot + "/apps/admin")
-    let has8080 = hasPort(admin, 8080)
+    let has8080 = admin.ports.filter { port => port == 8080 }.length > 0
     if (has8080 == false) {
       raise "apps/admin ports were not parsed correctly"
     }

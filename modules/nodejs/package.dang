@@ -2,9 +2,6 @@
 A Node.js package.
 """
 type Package {
-  let configFile: File!
-  let workspace: Directory!
-  let workspaceRoot: String!
 
   """
   Path to the package config file (package.json)
@@ -15,50 +12,16 @@ type Package {
   Path to the package root directory (parent of package.json)
   """
   pub path: String! {
-    let dir = configPath
-      .trimSuffix("package.json")
-      .trimSuffix("/")
-    if (dir == "") {
-      "."
-    } else {
-      dir
-    }
+    configPath
+    .trimSuffix("package.json")
+    .trimSuffix("/")
   }
 
   """
   The parsed and validated package configuration
   """
   let config: Config! {
-    Config(json: configFile.asJSON)
-  }
-
-  """
-  Package name.
-  """
-  pub name: String! {
-    config.name
-  }
-
-  """
-  Package manager for this package.
-  """
-  pub packageManager: String! {
-    config.packageManager
-  }
-
-  """
-  Ports to expose when serving the package.
-  """
-  pub ports: [Int!]! {
-    config.ports
-  }
-
-  pub hasBuildScript: Boolean! {
-    config.hasBuildScript
-  }
-
-  pub startScript: String! {
-    config.startScript
+    Config(json: ws.file(configPath).asJSON)
   }
 
   let packageIncludes: [String!]! {
@@ -82,14 +45,6 @@ type Package {
     }
   }
 
-  let installFromWorkspaceRoot: Boolean! {
-    if (path == ".") {
-      true
-    } else {
-      config.hasLocalDependencyRefs or config.hasWorkspaces
-    }
-  }
-
   let workspaceExcludes: [String!]! {
     [
       "node_modules/",
@@ -99,130 +54,65 @@ type Package {
     ]
   }
 
-  let workspaceFiles: Directory! {
-    if (installFromWorkspaceRoot) {
-      workspace.filter(exclude: workspaceExcludes)
+  let workspaceFiles(ws: Workspace!): Directory! {
+    if (installFromWorkspaceRoot(ws)) {
+      ws.directory(".", exclude: workspaceExcludes)
     } else {
-      workspace.filter(
+      ws.directory(
+        ".",
         include: packageIncludes,
         exclude: workspaceExcludes,
       )
     }
   }
 
-  let workdirPath: String! {
-    if (path == ".") {
-      "/work"
-    } else {
-      "/work/" + path
-    }
-  }
-
-  let installWorkdir: String! {
-    if (installFromWorkspaceRoot) {
-      "/work"
-    } else {
-      workdirPath
-    }
-  }
-
   let installCmd: [String!]! {
-    if (packageManager == "yarn") {
-      ["yarn", "install", "--frozen-lockfile"]
-    } else if (packageManager == "pnpm") {
-      ["pnpm", "install", "--frozen-lockfile"]
-    } else {
-      ["npm", "install"]
+    case (packageManager) {
+      "yarn" => ["yarn", "install", "--frozen-lockfile"]
+      "pnpm" => ["pnpm", "install", "--frozen-lockfile"]
+      else => ["npm", "install"]
     }
   }
 
   let runScriptCmd(script: String!): [String!]! {
-    if (packageManager == "yarn") {
-      ["yarn", script]
-    } else if (packageManager == "pnpm") {
-      ["pnpm", "run", script]
-    } else {
-      ["npm", "run", script]
+    case (packageManager) {
+      "yarn" => ["yarn", script]
+      "pnpm" => ["pnpm", "run", script]
+      else => ["npm", "run", script]
     }
   }
 
-  let rootNodeModulesCacheKey: String! {
-    "nodejs-root-node-modules-" + workspaceRoot
+  let rootNodeModulesCacheKey(ws: Workspace!): String! {
+    "nodejs-root-node-modules-" + ws.root
   }
 
-  let packageNodeModulesCacheKey: String! {
-    "nodejs-package-node-modules-" + workspaceRoot + "-" + path
+  let packageNodeModulesCacheKey(ws: Workspace!): String! {
+    "nodejs-package-node-modules-" + ws.root + "-" + path
   }
 
   """
   Build a container with the workspace mounted and Node package manager caches enabled.
   """
-  pub sandbox: Container! {
-    let ctr = base
+  pub sandbox(ws: Workspace!): Container! {
+    base
       .withWorkdir("/work")
-      .withDirectory(".", workspaceFiles)
-    if (installFromWorkspaceRoot) {
-      ctr
-        .withMountedCache(
-          "/work/node_modules",
-          cacheVolume(rootNodeModulesCacheKey),
-          sharing: CacheSharingMode.LOCKED,
-        )
-        .withWorkdir(workdirPath)
-    } else {
-      ctr
-        .withMountedCache(
-          workdirPath + "/node_modules",
-          cacheVolume(packageNodeModulesCacheKey),
-          sharing: CacheSharingMode.LOCKED,
-        )
-        .withWorkdir(workdirPath)
-    }
-  }
-
-  """
-  Install dependencies and optionally run the build script.
-  """
-  pub build: Container! {
-    let ctr = base
-      .withWorkdir("/work")
-      .withDirectory(".", workspaceFiles)
-
-    if (installFromWorkspaceRoot) {
-      ctr = ctr.withMountedCache(
-        "/work/node_modules",
-        cacheVolume(rootNodeModulesCacheKey),
+      .withMountedWorkspace("/work", liveRead: true)
+      .withMountedCache(
+        "./node_modules",
+        cacheVolume(rootPath + "/node_modules"),
         sharing: CacheSharingMode.LOCKED,
       )
-    } else {
-      ctr = ctr.withMountedCache(
-        workdirPath + "/node_modules",
-        cacheVolume(packageNodeModulesCacheKey),
-        sharing: CacheSharingMode.LOCKED,
-      )
-    }
-
-    ctr = ctr
-      .withWorkdir(installWorkdir)
-      .withExec(installCmd)
-      .withWorkdir(workdirPath)
-
-    if (hasBuildScript) {
-      ctr = ctr.withExec(runScriptCmd("build"))
-    }
-
-    ctr
   }
 
   """
   Run the package as a Dagger service.
   """
-  pub server: Service! {
-    let ctr = build
-    ports.each { port =>
+  pub server(ws: Workspace!): Service! {
+    let ctr = build(ws)
+    config.ports.each { port =>
       ctr = ctr.withExposedPort(port)
     }
-    ctr.asService(args: runScriptCmd(startScript))
+    ctr.asService(args: runScriptCmd(packageJson.startScript))
   }
 
   let base: Container! {
