@@ -92,7 +92,7 @@ type PackageJson {
       false
     } else {
       let found = false
-      for (name in sectionValue.fields) {
+      sectionValue.fields.each { name =>
         let spec = sectionValue.field([name]).asString ?? ""
         if (isLocalDependencySpec(spec)) {
           found = true
@@ -289,10 +289,10 @@ type Site {
   """
   Site-specific build sandbox.
   """
-  pub sandbox(ws: Workspace!): Sandbox! {
+  pub sandbox(ws: Workspace!): Container! {
     base
       .withWorkdir("/work")
-      .withMountedWorkspace(".", workspace: ws, liveRead: true, export: true)
+      .withMountedDirectory(".", source(ws))
       .withMountedCache(
         "./" + path + "/node_modules",
         cacheVolume(path + "/node_modules"),
@@ -306,16 +306,16 @@ type Site {
   """
   pub build(ws: Workspace!): Directory! {
     sandbox(ws)
-      .withExec(ws, installCmd(ws))
-      .withExec(ws, docusaurusBuildCmd)
+      .withExec(installCmd(ws))
+      .withExec(docusaurusBuildCmd)
       .directory("build")
   }
 
   pub dev(ws: Workspace!): Service! {
     sandbox(ws)
-      .withExec(ws, installCmd(ws))
+      .withExec(installCmd(ws))
       .withExposedPort(3000)
-      .asService(args: devCmd(ws))
+      .asService(args: docusaurusDevCmd)
   }
 
   """
