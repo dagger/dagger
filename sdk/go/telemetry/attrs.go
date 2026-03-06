@@ -210,4 +210,10 @@ const (
 
 	// When scaling out calls to engines, the ID of the engine handling for the span
 	EngineIDAttr = "dagger.io/engine.id"
+
+	// Stable execution-scope identifiers emitted by the engine.
+	EngineSessionIDAttr      = "dagger.io/engine.session.id"
+	EngineClientIDAttr       = "dagger.io/engine.client.id"
+	EngineParentClientIDAttr = "dagger.io/engine.client.parent.id"
+	EngineClientKindAttr     = "dagger.io/engine.client.kind"
 )

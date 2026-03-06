@@ -80,6 +80,7 @@ const (
 	enableChecksScaleOutEnvName = "_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT"
 	// shutdown timeout, default is 10s
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
+	parentClientIDEnvName  = "DAGGER_PARENT_CLIENT_ID"
 )
 
 type Params struct {
@@ -164,6 +165,8 @@ type Client struct {
 
 	hostname       string
 	stableClientID string
+	parentClientID string
+	clientKind     string
 
 	nestedSessionPort int
 
@@ -187,6 +190,17 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	}
 	if c.SecretToken == "" {
 		c.SecretToken = uuid.New().String()
+	}
+
+	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
+	c.parentClientID = strings.TrimSpace(os.Getenv(parentClientIDEnvName))
+	switch {
+	case isNestedSession:
+		c.clientKind = enginetel.ClientKindNested
+	case configuredSessionID != "":
+		c.clientKind = enginetel.ClientKindAttached
+	default:
+		c.clientKind = enginetel.ClientKindRoot
 	}
 
 	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv(enableChecksScaleOutEnvName) != ""
@@ -223,11 +237,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	}
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
+	connectCtx, span := c.startSpan(ctx, "connect", true, connectSpanOpts...)
 	defer telemetry.EndWithCause(span, &rerr)
 	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 
-	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
@@ -306,6 +319,9 @@ type EngineToEngineParams struct {
 	// The caller's session grpc conn, which will be proxied back to
 	CallerSessionConn *grpc.ClientConn
 
+	// The client that initiated the scale-out connection.
+	ParentClientID string
+
 	// important we forward the original client's stable id so that filesync
 	// caching can work as expected
 	StableClientID string
@@ -355,9 +371,11 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 	c.hostname = hostname
 
 	c.stableClientID = params.StableClientID
+	c.parentClientID = params.ParentClientID
+	c.clientKind = enginetel.ClientKindCloudScaleOut
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	connectCtx, span := Tracer(ctx).Start(ctx, "connect to cloud engine")
+	connectCtx, span := c.startSpan(ctx, "connect to cloud engine", true)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	if err := c.startEngine(connectCtx, params.Params); err != nil {
@@ -420,7 +438,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		}
 	}
 
-	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
+	provisionCtx, provisionSpan := c.startSpan(ctx, "starting engine", false)
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		DaggerCloudToken: cloudToken,
@@ -437,13 +455,13 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		return err
 	}
 
-	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
+	ctx, span := c.startSpan(ctx, "connecting to engine", false, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	slog.Debug("connecting", "runner", c.RunnerHost)
 
-	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
+	bkCtx, span := c.startSpan(ctx, "creating client", false)
 	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
 	telemetry.EndWithCause(span, &err)
 	if err != nil {
@@ -461,7 +479,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		imageBackend = driver.ImageLoader(ctx)
 	}
 	if imageBackend != nil {
-		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")
+		imgloadCtx, span := c.startSpan(ctx, "configuring image store", false)
 		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
 		if err != nil {
 			err = fmt.Errorf("failed to get image loader: %w", err)
@@ -476,7 +494,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 }
 
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
+	ctx, span := c.startSpan(ctx, "subscribing to telemetry", false,
 		telemetry.Encapsulated())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -505,7 +523,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
-	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
+	ctx, sessionSpan := c.startSpan(ctx, "starting session", false, telemetry.Encapsulate())
 	defer telemetry.EndWithCause(sessionSpan, &rerr)
 
 	clientMetadata := c.clientMetadata()
@@ -588,7 +606,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.ClientConn) (rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "starting scale-out session",
+	ctx, span := c.startSpan(ctx, "starting scale-out session", false,
 		telemetry.Encapsulated())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -829,12 +847,14 @@ type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
 	traceID    trace.TraceID
+	sessionID  string
 	clientID   string
+	clientKind string
 	eg         *errgroup.Group
 }
 
 func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "consuming "+c.path)
+	ctx, span := c.startSpan(ctx, "consuming "+c.path)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID)
@@ -899,6 +919,18 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 	return nil
 }
 
+func (c *otlpConsumer) startSpan(ctx context.Context, spanName string) (context.Context, trace.Span) {
+	attrs := enginetel.ExecutionScopeAttributes(&engine.ClientMetadata{
+		SessionID:  c.sessionID,
+		ClientID:   c.clientID,
+		ClientKind: c.clientKind,
+	})
+	if len(attrs) == 0 {
+		return Tracer(ctx).Start(ctx, spanName)
+	}
+	return Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+}
+
 func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
@@ -907,7 +939,9 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		sessionID:  c.SessionID,
 		clientID:   c.ID,
+		clientKind: c.clientKind,
 		httpClient: httpClient,
 		eg:         c.telemetry,
 	}
@@ -942,7 +976,9 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		sessionID:  c.SessionID,
 		clientID:   c.ID,
+		clientKind: c.clientKind,
 		httpClient: httpClient,
 		eg:         c.telemetry,
 	}
@@ -967,7 +1003,9 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 	exp := &otlpConsumer{
 		path:       "/v1/metrics",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		sessionID:  c.SessionID,
 		clientID:   c.ID,
+		clientKind: c.clientKind,
 		httpClient: httpClient,
 		eg:         c.telemetry,
 	}
@@ -1383,6 +1421,8 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
 		SessionID:                 c.SessionID,
+		ParentClientID:            c.parentClientID,
+		ClientKind:                c.clientKind,
 		ClientSecretToken:         c.SecretToken,
 		ClientHostname:            c.hostname,
 		ClientStableID:            c.stableClientID,
@@ -1400,6 +1440,28 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
+}
+
+func (c *Client) executionScopeMetadata() *engine.ClientMetadata {
+	return &engine.ClientMetadata{
+		SessionID:      c.SessionID,
+		ClientID:       c.ID,
+		ParentClientID: c.parentClientID,
+		ClientKind:     c.clientKind,
+	}
+}
+
+func (c *Client) startSpan(ctx context.Context, spanName string, includeParent bool, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	var attrs []attribute.KeyValue
+	if includeParent {
+		attrs = enginetel.ExecutionScopeConnectAttributes(c.executionScopeMetadata())
+	} else {
+		attrs = enginetel.ExecutionScopeAttributes(c.executionScopeMetadata())
+	}
+	if len(attrs) > 0 {
+		opts = append(opts, trace.WithAttributes(attrs...))
+	}
+	return Tracer(ctx).Start(ctx, spanName, opts...)
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {

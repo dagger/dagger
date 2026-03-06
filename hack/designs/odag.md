@@ -1071,7 +1071,7 @@ These are the latest design decisions that should be preserved across handoff.
   - `odag rebuild`
   - delete all derived ODAG data
   - recompute derived state in one pass from stored source-truth telemetry/span data
-- [ ] Add explicit engine OTEL telemetry for true execution-scope identifiers:
+- [x] Add explicit engine OTEL telemetry for true execution-scope identifiers:
   - session ID on relevant spans
   - client ID on relevant spans
   - parent client ID on `dagger.io/engine.client` `connect` spans

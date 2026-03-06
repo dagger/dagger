@@ -667,6 +667,7 @@ func (srv *Server) initializeDaggerClient(
 	// configure OTel providers that export to SQLite
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
+		sdktrace.WithSpanProcessor(newExecutionScopeSpanProcessor()),
 		// install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format
 		sdktrace.WithSpanProcessor(buildkit.NewSpanProcessor(
@@ -968,6 +969,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientVersion:     clientVersion,
 			ClientSecretToken: execMD.SecretToken,
 			SessionID:         execMD.SessionID,
+			ParentClientID:    execMD.CallerClientID,
+			ClientKind:        enginetel.ClientKindNested,
 			ClientHostname:    execMD.Hostname,
 			ClientStableID:    execMD.ClientStableID,
 			Labels:            map[string]string{},
@@ -1644,6 +1647,7 @@ func (srv *Server) CloudEngineClient(
 			EnableCloudScaleOut: false,
 		},
 		CallerSessionConn: parentSession.Conn(),
+		ParentClientID:    parentClient.clientMetadata.ClientID,
 		Labels:            enginetel.NewLabels(parentClient.clientMetadata.Labels, nil, nil),
 		StableClientID:    parentClient.clientMetadata.ClientStableID,
 	})

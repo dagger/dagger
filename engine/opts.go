@@ -50,6 +50,12 @@ type ClientMetadata struct {
 	// module clients connect to
 	SessionID string `json:"session_id"`
 
+	// ParentClientID identifies the client that spawned this one, if any.
+	ParentClientID string `json:"parent_client_id,omitempty"`
+
+	// ClientKind classifies the execution context for ODAG/UI consumers.
+	ClientKind string `json:"client_kind,omitempty"`
+
 	// ClientHostname is the hostname of the client that made the request. It's
 	// used to help identify clients in the logs more clearly; nothing functional.
 	ClientHostname string `json:"client_hostname"`

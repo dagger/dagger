@@ -66,9 +66,10 @@ const (
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
 	DaggerNoInitEnv          = "_DAGGER_NOINIT"
 
-	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
-	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
-	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
+	DaggerSessionPortEnv    = "DAGGER_SESSION_PORT"
+	DaggerSessionTokenEnv   = "DAGGER_SESSION_TOKEN"
+	DaggerEngineNumCPUEnv   = "DAGGER_ENGINE_NUM_CPU"
+	DaggerParentClientIDEnv = "DAGGER_PARENT_CLIENT_ID"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
@@ -987,6 +988,9 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
+	if w.execMD.CallerClientID != "" {
+		state.spec.Process.Env = append(state.spec.Process.Env, DaggerParentClientIDEnv+"="+w.execMD.CallerClientID)
+	}
 
 	w.execMD.ClientStableID = randid.NewID()
 
