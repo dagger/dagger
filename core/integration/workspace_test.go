@@ -211,6 +211,54 @@ func withMountedWorkspaceExecWithLiveRead(
 	return execRes.ID, execRes.Stdout
 }
 
+func withMountedWorkspaceExecWithUser(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	workspaceID string,
+	user string,
+	args []string,
+) (string, string) {
+	t.Helper()
+
+	res, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				WithUser struct {
+					WithMountedWorkspace struct {
+						WithExec struct {
+							ID     string
+							Stdout string
+						}
+					}
+				}
+			}
+		}
+	}](c, t, fmt.Sprintf(`query Exec($ws: WorkspaceID!, $user: String!, $args: [String!]!) {
+		container {
+			from(address: %q) {
+				withUser(name: $user) {
+					withMountedWorkspace(path: "/ws", source: $ws) {
+						withExec(args: $args) {
+							id
+							stdout
+						}
+					}
+				}
+			}
+		}
+	}`, alpineImage), &testutil.QueryOptions{
+		Variables: map[string]any{
+			"ws":   workspaceID,
+			"user": user,
+			"args": args,
+		},
+	})
+	require.NoError(t, err)
+	execRes := res.Container.From.WithUser.WithMountedWorkspace.WithExec
+	return execRes.ID, execRes.Stdout
+}
+
 func loadContainerExec(
 	ctx context.Context,
 	t *testctx.T,
@@ -562,6 +610,22 @@ func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesSamePathAcrossExe
 		})
 		require.Equal(t, "new", strings.TrimSpace(stdout))
 	})
+}
+
+func (WorkspaceSuite) TestWithMountedWorkspaceReadableRootForNonRootUser(ctx context.Context, t *testctx.T) {
+	wd := t.TempDir()
+	require.NoError(t, os.Chmod(wd, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(wd, "index.html"), []byte("wsfs"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
+	wsID := currentWorkspaceID(ctx, t, c)
+
+	_, stdout := withMountedWorkspaceExecWithUser(ctx, t, c, wsID, "nobody", []string{
+		"sh",
+		"-ec",
+		`test -r /ws/index.html && cat /ws/index.html`,
+	})
+	require.Equal(t, "wsfs", strings.TrimSpace(stdout))
 }
 
 func (WorkspaceSuite) TestWithMountedWorkspaceLiveReadRefreshesOpenFileInSameExec(ctx context.Context, t *testctx.T) {

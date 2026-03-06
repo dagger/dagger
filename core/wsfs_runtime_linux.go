@@ -325,6 +325,17 @@ func (fsys *wsfsPathFS) GetAttr(name string, c *fuse.Context) (*fuse.Attr, fuse.
 		return nil, fuse.ENOENT
 	}
 
+	if rel == "." && fsys.workspace != nil {
+		stat, err := fsys.workspaceStat(rel)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, fuse.ENOENT
+			}
+			return nil, fuse.ToStatus(err)
+		}
+		return statToFuseAttr(stat), fuse.OK
+	}
+
 	if attr, status := fsys.FileSystem.GetAttr(name, c); status.Ok() {
 		return attr, status
 	} else if status != fuse.ENOENT {
@@ -349,6 +360,17 @@ func (fsys *wsfsPathFS) Access(name string, mode uint32, c *fuse.Context) fuse.S
 
 	if fsys.journal.isDeleted(rel) {
 		return fuse.ENOENT
+	}
+
+	if rel == "." && fsys.workspace != nil {
+		_, err := fsys.workspaceStat(rel)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fuse.ENOENT
+			}
+			return fuse.ToStatus(err)
+		}
+		return fuse.OK
 	}
 
 	if status := fsys.FileSystem.Access(name, mode, c); status.Ok() {
