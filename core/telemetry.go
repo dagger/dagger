@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	daggertelemetry "dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -264,8 +265,8 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 					slog.WarnContext(ctx, "failed to encode dag output state", "outputDigest", outputDigest, "err", err)
 				} else {
 					span.SetAttributes(
-						attribute.String(telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
-						attribute.String(telemetry.DagOutputStateAttr, statePayload),
+						attribute.String(daggertelemetry.DagOutputStateVersionAttr, daggertelemetry.DagOutputStateVersionV2),
+						attribute.String(daggertelemetry.DagOutputStateAttr, statePayload),
 					)
 				}
 			}
