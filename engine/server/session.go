@@ -1916,7 +1916,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	skipModules := !client.pendingWorkspaceLoad || (clientMD != nil && clientMD.SkipWorkspaceModules)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
-	ws, err := workspace.Detect(ctx, statFS, readFile, cwd)
+	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
+		return core.StatFSExists(ctx, statFS, path)
+	}, readFile, cwd)
 	if err != nil {
 		return err
 	}

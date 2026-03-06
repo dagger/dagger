@@ -10,10 +10,21 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/util/parallel"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// isLocalRef performs a fast heuristic check to determine whether a module
+// reference string refers to a local path (as opposed to a git source).
+func isLocalRef(source, pin string) bool {
+	if pin != "" {
+		return false
+	}
+	if len(source) > 0 && (source[0] == '/' || source[0] == '.') {
+		return true
+	}
+	return !strings.Contains(source, ".")
+}
 
 // MigrationIO abstracts host file operations needed for migration.
 type MigrationIO interface {
@@ -167,7 +178,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 
 	for _, tc := range cfg.Toolchains {
 		source := tc.Source
-		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+		if isLocalRef(tc.Source, tc.Pin) {
 			source = filepath.Join("..", tc.Source)
 		}
 		entry := ModuleEntry{
@@ -189,7 +200,7 @@ func Migrate(ctx context.Context, bk MigrationIO, migErr *ErrMigrationRequired, 
 	// 3c. Handle blueprint -> workspace module
 	if cfg.Blueprint != nil {
 		source := cfg.Blueprint.Source
-		if core.FastModuleSourceKindCheck(cfg.Blueprint.Source, cfg.Blueprint.Pin) == core.ModuleSourceKindLocal {
+		if isLocalRef(cfg.Blueprint.Source, cfg.Blueprint.Pin) {
 			source = filepath.Join("..", cfg.Blueprint.Source)
 		}
 		name := cfg.Blueprint.Name
@@ -289,7 +300,7 @@ func buildMigratedModuleJSON(cfg *legacyConfig, newModulePath string) ([]byte, i
 	depRewriteCount := 0
 	for _, dep := range cfg.Dependencies {
 		source := dep.Source
-		if core.FastModuleSourceKindCheck(dep.Source, dep.Pin) == core.ModuleSourceKindLocal {
+		if isLocalRef(dep.Source, dep.Pin) {
 			source = filepath.Join(prefix, dep.Source)
 			depRewriteCount++
 		}
@@ -363,7 +374,7 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 		}
 		fmt.Fprintf(&b, "[modules.%s]\n", name)
 		source := cfg.Blueprint.Source
-		if core.FastModuleSourceKindCheck(cfg.Blueprint.Source, cfg.Blueprint.Pin) == core.ModuleSourceKindLocal {
+		if isLocalRef(cfg.Blueprint.Source, cfg.Blueprint.Pin) {
 			source = filepath.Join("..", cfg.Blueprint.Source)
 		}
 		fmt.Fprintf(&b, "source = %q\n", source)
@@ -381,7 +392,7 @@ func generateMigrationConfigTOML(cfg *legacyConfig, warnings []migrationWarning,
 		}
 		fmt.Fprintf(&b, "[modules.%s]\n", tc.Name)
 		source := tc.Source
-		if core.FastModuleSourceKindCheck(tc.Source, tc.Pin) == core.ModuleSourceKindLocal {
+		if isLocalRef(tc.Source, tc.Pin) {
 			source = filepath.Join("..", tc.Source)
 		}
 		fmt.Fprintf(&b, "source = %q\n", source)

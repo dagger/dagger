@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dagger/dagger/core"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,13 +13,13 @@ func TestDetectMissingConfigDoesNotReadFile(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	exists := map[string]core.FileType{
-		"/repo/app/.dagger": core.FileTypeDirectory,
-		"/repo/.git":        core.FileTypeDirectory,
+	existing := map[string]struct{}{
+		"/repo/app/.dagger": {},
+		"/repo/.git":        {},
 	}
 
 	readCalls := 0
-	ws, err := Detect(ctx, fakeStatFS(exists), func(context.Context, string) ([]byte, error) {
+	ws, err := Detect(ctx, fakePathExists(existing), func(context.Context, string) ([]byte, error) {
 		readCalls++
 		return nil, os.ErrNotExist
 	}, "/repo/app")
@@ -36,14 +35,14 @@ func TestDetectReadsConfigWhenPresent(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	exists := map[string]core.FileType{
-		"/repo/app/.dagger":             core.FileTypeDirectory,
-		"/repo/.git":                    core.FileTypeDirectory,
-		"/repo/app/.dagger/config.toml": core.FileTypeRegular,
+	existing := map[string]struct{}{
+		"/repo/app/.dagger":             {},
+		"/repo/.git":                    {},
+		"/repo/app/.dagger/config.toml": {},
 	}
 
 	readCalls := 0
-	ws, err := Detect(ctx, fakeStatFS(exists), func(context.Context, string) ([]byte, error) {
+	ws, err := Detect(ctx, fakePathExists(existing), func(context.Context, string) ([]byte, error) {
 		readCalls++
 		return []byte(`
 [modules]
@@ -57,17 +56,12 @@ func TestDetectReadsConfigWhenPresent(t *testing.T) {
 	require.NotNil(t, ws.Config)
 }
 
-func fakeStatFS(exists map[string]core.FileType) core.StatFSFunc {
-	return func(_ context.Context, path string) (string, *core.Stat, error) {
+func fakePathExists(existing map[string]struct{}) PathExistsFunc {
+	return func(_ context.Context, path string) (string, bool, error) {
 		cleanPath := filepath.Clean(path)
-		fileType, ok := exists[cleanPath]
-		if !ok {
-			return "", nil, os.ErrNotExist
+		if _, ok := existing[cleanPath]; ok {
+			return filepath.Dir(cleanPath), true, nil
 		}
-
-		return filepath.Dir(cleanPath), &core.Stat{
-			Name:     filepath.Base(cleanPath),
-			FileType: fileType,
-		}, nil
+		return "", false, nil
 	}
 }

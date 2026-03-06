@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-
-	"github.com/dagger/dagger/core"
 )
 
 const (
@@ -36,6 +34,10 @@ type Workspace struct {
 	Config *Config // parsed config (nil if no config.toml)
 }
 
+// PathExistsFunc checks whether a filesystem path exists.
+// Returns the canonical parent directory and whether the path exists.
+type PathExistsFunc func(ctx context.Context, path string) (parentDir string, exists bool, err error)
+
 // Detect finds the workspace root and config from the given working directory.
 //
 // Uses a 3-step fallback chain:
@@ -44,16 +46,12 @@ type Workspace struct {
 //  3. No .git → cwd is workspace root (empty workspace)
 func Detect(
 	ctx context.Context,
-	statFS core.StatFS,
+	pathExists PathExistsFunc,
 	readFile func(ctx context.Context, path string) ([]byte, error),
 	cwd string,
 ) (*Workspace, error) {
 	// Single-pass find-up for workspace markers
-	soughtNames := map[string]struct{}{
-		WorkspaceDirName: {},
-		".git":           {},
-	}
-	found, err := core.Host{}.FindUpAll(ctx, statFS, cwd, soughtNames)
+	found, err := findUpAll(ctx, pathExists, cwd, WorkspaceDirName, ".git")
 	if err != nil {
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
@@ -80,7 +78,7 @@ func Detect(
 	// Step 1: .dagger/ found → look for config.toml
 	if hasDaggerDir {
 		configPath := filepath.Join(daggerDir, WorkspaceDirName, ConfigFileName)
-		_, configExists, err := core.StatFSExists(ctx, statFS, configPath)
+		_, configExists, err := pathExists(ctx, configPath)
 		if err != nil {
 			return nil, fmt.Errorf("stat %s: %w", configPath, err)
 		}
@@ -135,4 +133,44 @@ type ErrMigrationRequired struct {
 
 func (e *ErrMigrationRequired) Error() string {
 	return `Migration required: run "dagger migrate" to update this project to the workspace format.`
+}
+
+// findUpAll walks from curDirPath toward the filesystem root, checking for each
+// sought name. Returns a map of name → parent directory for each name found.
+func findUpAll(
+	ctx context.Context,
+	pathExists PathExistsFunc,
+	curDirPath string,
+	names ...string,
+) (map[string]string, error) {
+	sought := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		sought[n] = struct{}{}
+	}
+
+	found := make(map[string]string, len(sought))
+	for {
+		for name := range sought {
+			parentDir, exists, err := pathExists(ctx, filepath.Join(curDirPath, name))
+			if err != nil {
+				return nil, fmt.Errorf("failed to stat %s: %w", name, err)
+			}
+			if exists {
+				delete(sought, name)
+				found[name] = parentDir
+			}
+		}
+
+		if len(sought) == 0 {
+			break
+		}
+
+		nextDirPath := filepath.Dir(curDirPath)
+		if curDirPath == nextDirPath {
+			break
+		}
+		curDirPath = nextDirPath
+	}
+
+	return found, nil
 }
