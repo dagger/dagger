@@ -527,15 +527,19 @@ func (s *moduleSourceSchema) localModuleSource(
 		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
-				return fmt.Errorf("failed to load local module source context: %w", err)
-			}
-
+			// Load the SDK implementation first so that loadModuleSourceContext
+			// can ask it for its managed paths and include them when syncing the
+			// host directory (needed to detect deletions of previously-generated
+			// but gitignored files).
 			if localSrc.SDK != nil {
 				localSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query.Self(), localSrc.SDK, localSrc)
 				if err != nil {
 					return fmt.Errorf("failed to load sdk for local module source: %w", err)
 				}
+			}
+
+			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
+				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
 			return nil
@@ -1262,6 +1266,53 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 			return err
 		}
 
+		// Merge in any paths managed by the SDK's codegen.
+		// These files are typically gitignored, so we need a separate host load with
+		// gitignore disabled to capture them for deletion detection in changesets.
+		if src.SDKImpl != nil {
+			if codeGenImpl, ok := src.SDKImpl.AsCodeGenerator(); ok {
+				managedPaths, err := codeGenImpl.ManagedPaths(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get managed paths from SDK: %w", err)
+				}
+
+				if len(managedPaths) > 0 {
+					rebasedManagedPaths, err := rebasePatterns(managedPaths, src.SourceSubpath)
+					if err != nil {
+						return fmt.Errorf("failed to rebase managed paths: %w", err)
+					}
+
+					var managedFilesDir dagql.ObjectResult[*core.Directory]
+					err = dag.Select(ctx, dag.Root(), &managedFilesDir,
+						dagql.Selector{Field: "host"},
+						dagql.Selector{
+							Field: "directory",
+							Args: []dagql.NamedInput{
+								{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
+								{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(rebasedManagedPaths...))},
+								{Name: "gitignore", Value: dagql.NewBoolean(false)},
+							},
+						},
+					)
+					if err != nil {
+						return fmt.Errorf("failed to load SDK-managed files from host: %w", err)
+					}
+
+					err = dag.Select(ctx, src.ContextDirectory, &src.ContextDirectory,
+						dagql.Selector{
+							Field: "withDirectory",
+							Args: []dagql.NamedInput{
+								{Name: "path", Value: dagql.String("/")},
+								{Name: "source", Value: dagql.NewID[*core.Directory](managedFilesDir.ID())},
+							},
+						},
+					)
+					if err != nil {
+						return fmt.Errorf("failed to merge SDK-managed files into context directory: %w", err)
+					}
+				}
+			}
+		}
 	case core.ModuleSourceKindGit:
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 

@@ -121,6 +121,15 @@ type CodeGenerator interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 	) (*GeneratedCode, error)
+
+	/*
+		ManagedPaths returns the list of paths managed by this SDK's codegen,
+		relative to the module's source subpath. These paths are used to ensure
+		previously generated files are visible when computing changesets, enabling
+		deletion of files that are no longer generated (e.g. after uninstalling a
+		dependency). The paths may contain glob patterns (e.g. "internal/dagger/**").
+	*/
+	ManagedPaths(ctx context.Context) ([]string, error)
 }
 
 /*

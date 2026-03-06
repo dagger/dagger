@@ -176,6 +176,12 @@ func (sdk *goSDK) GenerateClient(
 	return modifiedSrcDir, nil
 }
 
+func (sdk *goSDK) ManagedPaths(_ context.Context) ([]string, error) {
+	return []string{
+		"internal/dagger/**",
+	}, nil
+}
+
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
@@ -491,7 +497,7 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, err
 	}
 
-	// rm dagger.gen.go if it exists, which is going to be overwritten
+	// rm dagger.gen.go and internal/dagger if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
 	var updatedContextDir dagql.Result[*core.Directory]
@@ -505,8 +511,17 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
+		dagql.Selector{
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(srcSubpath, "internal/dagger")),
+				},
+			},
+		},
 	); err != nil {
-		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
+		return ctr, fmt.Errorf("failed to remove dagger generated files from source directory: %w", err)
 	}
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{

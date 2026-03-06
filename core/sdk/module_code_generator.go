@@ -14,6 +14,11 @@ type codeGeneratorModule struct {
 	mod *module
 }
 
+func (sdk *codeGeneratorModule) ManagedPaths(_ context.Context) ([]string, error) {
+	// Module-based SDKs don't expose managed paths yet.
+	return []string{}, nil
+}
+
 func (sdk *codeGeneratorModule) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
