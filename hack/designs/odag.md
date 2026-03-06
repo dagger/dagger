@@ -1125,10 +1125,12 @@ Stage 4 implementation note:
         - object rows open `mode=object` with `focusObjectID=<objectID>`
         - call and mutation rows open `mode=scope` with `scopeCallID=<callID>`
         - links carry the current trace/session/client scope when available
+        - explicit row drill-ins default `keepRules=off` so the selected object/call cannot be pruned away before render
     - `/dag` is now a separate object-graph page backed by `/api/v2/render`:
       - graph defaults to structural `field_ref` edges only
       - containment and provenance remain out of the default view
-      - default render query uses `keepRules=default` and `dependencyHops=1`
+      - broad DAG entry keeps `keepRules=default` and `dependencyHops=1`
+      - if an explicit object/call drill-in still resolves to an empty graph, the page retries once with pruning disabled
       - selected object details move into a sidebar inspector instead of expanding every graph node
   - navigation polish:
     - trace list "Open" actions now use regular links for native browser-history behavior

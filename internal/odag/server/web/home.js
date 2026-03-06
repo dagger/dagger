@@ -683,6 +683,7 @@ function buildDagURL({ traceID, sessionID, clientID, mode, focusObjectID, scopeC
   const resolvedTraceID = state.options.traceID || traceID || "";
   const resolvedSessionID = state.options.sessionID || sessionID || "";
   const resolvedClientID = state.options.clientID || clientID || "";
+  const explicitDrillIn = Boolean(focusObjectID || scopeCallID);
 
   if (resolvedTraceID) {
     params.set("traceID", resolvedTraceID);
@@ -703,7 +704,7 @@ function buildDagURL({ traceID, sessionID, clientID, mode, focusObjectID, scopeC
     params.set("scopeCallID", scopeCallID);
   }
   params.set("dependencyHops", "1");
-  params.set("keepRules", "default");
+  params.set("keepRules", explicitDrillIn ? "off" : "default");
   if (state.options.includeInternal) {
     params.set("includeInternal", "true");
   }

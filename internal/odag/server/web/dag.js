@@ -4,6 +4,7 @@ const state = {
   requestToken: 0,
   liveBusy: false,
   liveTimer: 0,
+  fallbackNote: "",
   options: {
     traceID: "",
     sessionID: "",
@@ -142,7 +143,11 @@ function readOptionsFromURL() {
   state.options.scopeCallID = stringOrEmpty(params.get("scopeCallID"));
   state.options.dependencyHops = clampDependencyHops(params.get("dependencyHops"));
   state.options.includeInternal = parseBoolish(params.get("includeInternal"));
-  state.options.keepRules = parseKeepRules(params.get("keepRules"));
+  if (params.has("keepRules")) {
+    state.options.keepRules = parseKeepRules(params.get("keepRules"));
+  } else {
+    state.options.keepRules = !(state.options.focusObjectID || state.options.scopeCallID);
+  }
   state.options.mode = normalizeMode(params.get("mode")) || defaultModeFromOptions();
 }
 
@@ -167,10 +172,22 @@ async function refreshDag() {
 
   syncControls();
   writeURL();
+  state.fallbackNote = "";
   renderStatus("Loading DAG...");
 
   const token = ++state.requestToken;
-  const render = await fetchRender();
+  let render = await fetchRender();
+  if (
+    (render?.objects || []).length === 0 &&
+    state.options.keepRules &&
+    (state.options.focusObjectID || state.options.scopeCallID)
+  ) {
+    state.options.keepRules = false;
+    state.fallbackNote = "Keep rules hid the selected drill-in, so pruning was disabled for this view";
+    syncControls();
+    writeURL();
+    render = await fetchRender();
+  }
   if (token !== state.requestToken) {
     return;
   }
@@ -282,7 +299,8 @@ function renderStatus(prefix) {
   const edges = fieldEdges().length;
   const warnings = Array.isArray(state.render?.warnings) ? state.render.warnings.length : 0;
   const warningText = warnings > 0 ? ` | ${warnings} warning(s)` : "";
-  els.statusNote.textContent = `${objects} object(s), ${edges} field reference edge(s), dependency hops ${state.options.dependencyHops}${warningText}.`;
+  const fallbackText = state.fallbackNote ? ` | ${state.fallbackNote}` : "";
+  els.statusNote.textContent = `${objects} object(s), ${edges} field reference edge(s), dependency hops ${state.options.dependencyHops}${warningText}${fallbackText}.`;
 }
 
 function renderObjectList() {
