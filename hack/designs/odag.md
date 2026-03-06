@@ -1109,29 +1109,25 @@ Stage 4 implementation note:
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
   - optional dev mode: `odag serve --dev [--web-dir ...]` serves frontend assets from disk and injects browser auto-reload on local file changes
 - UI includes:
-  - index page is now v2-first and global by default:
+  - index page is now a simpler v2-first data explorer:
     - loads `/api/v2/*` entities without requiring `traceID`
-    - supports optional trace filter, include-internal toggle, and keep-rules toggle
-    - uses top-level navigation tabs to reduce crowding:
-      - `Overview`
-      - `Live Activity`
+    - keeps a compact top toolbar for:
+      - optional trace filter
+      - include-internal toggle
+      - cloud trace import
+    - reduces home-route navigation to two page-like views:
       - `Objects`
-      - `Sessions/Clients`
-      - `Traces`
-      - `Import/Connect`
-    - each tab is a focused page-like view over the same global v2 model (single route, section toggling)
-    - renders global tables for mutations, bindings, calls, sessions/clients according to selected tab
-    - keeps trace index as optional drill-down to `/traces/{traceID}`
+      - `Events`
+    - `Objects` page is a wide table-first view over object bindings, with trace/session/client folded into columns on each row
+    - `Events` page is a unified table over call, mutation, and span activity rows
+    - both pages support row search, basic client-side sort/filter controls, and clickable trace/session/client chips for scope narrowing
   - navigation polish:
     - trace list "Open" actions now use regular links for native browser-history behavior
     - trace-page top-left back control now prefers `history.back()` (same-origin referrer), with `/` fallback
-  - trace index uses a compact table layout (`trace`, `created`, `spans`, `status`) for faster scanability at high trace counts
-  - `created` is shown as relative time (e.g. `3 minutes ago`) instead of an absolute timestamp
-  - status is rendered as dot-only signal (no text): pulsing yellow for ingesting, red for failed, green for succeeded, neutral fallback for unknown
   - dedicated trace page now uses a left-side revision history pane (replacing top step controls and bottom event stream)
   - trace navigation back to list uses a small top-left back-arrow control (unobtrusive, conventional placement)
   - frontend live-refreshes via polling:
-    - trace list updates automatically when new traces/status arrive
+    - home-route tables update automatically when new rows arrive for the active scope
     - trace page updates revision history as new events arrive
     - current selected revision is preserved (no forced auto-follow to latest)
   - selecting a history item moves the DAG snapshot to that event boundary time

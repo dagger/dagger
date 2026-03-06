@@ -1,66 +1,65 @@
 const state = {
-  traces: [],
+  bindings: { items: [], nextCursor: "" },
   spans: { items: [], nextCursor: "" },
   calls: { items: [], nextCursor: "" },
-  snapshots: { items: [], nextCursor: "" },
-  bindings: { items: [], nextCursor: "" },
   mutations: { items: [], nextCursor: "" },
   sessions: { items: [], nextCursor: "" },
   clients: { items: [], nextCursor: "" },
-  render: null,
   options: {
     traceID: "",
     sessionID: "",
     clientID: "",
     includeInternal: false,
-    keepRules: true,
   },
-  selectedPage: "overview",
+  filters: {
+    objects: {
+      search: "",
+      status: "all",
+      sort: "recent",
+    },
+    events: {
+      search: "",
+      kind: "all",
+      sort: "newest",
+    },
+  },
+  selectedPage: "objects",
   liveTimer: 0,
   liveBusy: false,
 };
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-const liveRefreshIntervalMs = 3000;
+const liveRefreshIntervalMs = 4000;
 const v2Limit = 250;
 
 const els = {
-  refreshTracesBtn: document.getElementById("refreshTracesBtn"),
-  clearTraceFilterBtn: document.getElementById("clearTraceFilterBtn"),
+  refreshBtn: document.getElementById("refreshBtn"),
+  clearScopeBtn: document.getElementById("clearScopeBtn"),
   importCloudBtn: document.getElementById("importCloudBtn"),
   cloudTraceID: document.getElementById("cloudTraceID"),
   cloudOrg: document.getElementById("cloudOrg"),
   traceFilter: document.getElementById("traceFilter"),
   includeInternal: document.getElementById("includeInternal"),
-  renderKeepRules: document.getElementById("renderKeepRules"),
-  countSpans: document.getElementById("countSpans"),
-  countCalls: document.getElementById("countCalls"),
-  countSnapshots: document.getElementById("countSnapshots"),
-  countBindings: document.getElementById("countBindings"),
-  countMutations: document.getElementById("countMutations"),
-  countSessions: document.getElementById("countSessions"),
-  countClients: document.getElementById("countClients"),
-  countRenderObjects: document.getElementById("countRenderObjects"),
-  mutationsMeta: document.getElementById("mutationsMeta"),
-  bindingsMeta: document.getElementById("bindingsMeta"),
-  callsMeta: document.getElementById("callsMeta"),
-  sessionsMeta: document.getElementById("sessionsMeta"),
-  renderObjectsMeta: document.getElementById("renderObjectsMeta"),
-  mutationTable: document.getElementById("mutationTable"),
-  bindingTable: document.getElementById("bindingTable"),
-  callTable: document.getElementById("callTable"),
-  sessionClientTable: document.getElementById("sessionClientTable"),
-  renderObjectTable: document.getElementById("renderObjectTable"),
-  traceList: document.getElementById("traceList"),
-  overviewScope: document.getElementById("overviewScope"),
-  overviewStatus: document.getElementById("overviewStatus"),
-  connectInfo: document.getElementById("connectInfo"),
+  scopeSummary: document.getElementById("scopeSummary"),
+  statusNote: document.getElementById("statusNote"),
+  objectSearch: document.getElementById("objectSearch"),
+  objectStatus: document.getElementById("objectStatus"),
+  objectSort: document.getElementById("objectSort"),
+  objectMeta: document.getElementById("objectMeta"),
+  objectTable: document.getElementById("objectTable"),
+  eventSearch: document.getElementById("eventSearch"),
+  eventKind: document.getElementById("eventKind"),
+  eventSort: document.getElementById("eventSort"),
+  eventMeta: document.getElementById("eventMeta"),
+  eventTable: document.getElementById("eventTable"),
   tabButtons: Array.from(document.querySelectorAll("[data-page-tab]")),
   pageSections: Array.from(document.querySelectorAll("[data-page]")),
 };
 
 init().catch((err) => {
-  renderInfo(`Initialization failed: ${String(err)}`);
+  renderStatus(String(err));
+  renderEmpty(els.objectTable, "Initialization failed.");
+  renderEmpty(els.eventTable, "Initialization failed.");
 });
 
 async function init() {
@@ -72,20 +71,17 @@ async function init() {
 function bindEvents() {
   bindTabs();
 
-  els.refreshTracesBtn.addEventListener("click", () => {
-    refreshAll().catch((err) => renderInfo(String(err)));
+  els.refreshBtn.addEventListener("click", () => {
+    refreshAll().catch((err) => renderStatus(String(err)));
   });
 
-  els.clearTraceFilterBtn.addEventListener("click", () => {
-    els.traceFilter.value = "";
-    state.options.traceID = "";
-    state.options.sessionID = "";
-    state.options.clientID = "";
-    refreshAll().catch((err) => renderInfo(String(err)));
+  els.clearScopeBtn.addEventListener("click", () => {
+    clearScope();
+    refreshAll().catch((err) => renderStatus(String(err)));
   });
 
   els.importCloudBtn.addEventListener("click", () => {
-    importTraceFromCloud().catch((err) => renderInfo(String(err)));
+    importTraceFromCloud().catch((err) => renderStatus(String(err)));
   });
 
   els.traceFilter.addEventListener("keydown", (event) => {
@@ -95,26 +91,45 @@ function bindEvents() {
     state.options.traceID = (els.traceFilter.value || "").trim();
     state.options.sessionID = "";
     state.options.clientID = "";
-    refreshAll().catch((err) => renderInfo(String(err)));
+    refreshAll().catch((err) => renderStatus(String(err)));
   });
 
   els.includeInternal.addEventListener("change", () => {
     state.options.includeInternal = Boolean(els.includeInternal.checked);
-    refreshAll().catch((err) => renderInfo(String(err)));
+    refreshAll().catch((err) => renderStatus(String(err)));
   });
 
-  els.renderKeepRules.addEventListener("change", () => {
-    state.options.keepRules = Boolean(els.renderKeepRules.checked);
-    refreshAll().catch((err) => renderInfo(String(err)));
+  els.objectSearch.addEventListener("input", () => {
+    state.filters.objects.search = els.objectSearch.value || "";
+    renderObjects();
+  });
+  els.objectStatus.addEventListener("change", () => {
+    state.filters.objects.status = els.objectStatus.value || "all";
+    renderObjects();
+  });
+  els.objectSort.addEventListener("change", () => {
+    state.filters.objects.sort = els.objectSort.value || "recent";
+    renderObjects();
+  });
+
+  els.eventSearch.addEventListener("input", () => {
+    state.filters.events.search = els.eventSearch.value || "";
+    renderEvents();
+  });
+  els.eventKind.addEventListener("change", () => {
+    state.filters.events.kind = els.eventKind.value || "all";
+    renderEvents();
+  });
+  els.eventSort.addEventListener("change", () => {
+    state.filters.events.sort = els.eventSort.value || "newest";
+    renderEvents();
   });
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !state.liveBusy) {
       state.liveBusy = true;
       refreshAll()
-        .catch((err) => {
-          console.error("v2 refresh failed", err);
-        })
+        .catch((err) => renderStatus(String(err)))
         .finally(() => {
           state.liveBusy = false;
         });
@@ -155,53 +170,36 @@ function bindTabs() {
 async function refreshAll() {
   state.options.traceID = (els.traceFilter.value || "").trim();
   state.options.includeInternal = Boolean(els.includeInternal.checked);
-  state.options.keepRules = Boolean(els.renderKeepRules.checked);
 
   const query = buildV2Query();
-  const renderQuery = buildRenderQuery();
+  const [bindingsResp, spansResp, callsResp, mutationsResp, sessionsResp, clientsResp] = await Promise.all([
+    safeFetchJSON(`/api/v2/object-bindings?${query}`),
+    safeFetchJSON(`/api/v2/spans?${query}`),
+    safeFetchJSON(`/api/v2/calls?${query}`),
+    safeFetchJSON(`/api/v2/mutations?${query}`),
+    safeFetchJSON(`/api/v2/sessions?${query}`),
+    safeFetchJSON(`/api/v2/clients?${query}`),
+  ]);
 
-  const [tracesResp, spansResp, callsResp, snapshotsResp, bindingsResp, mutationsResp, sessionsResp, clientsResp, renderResp] =
-    await Promise.all([
-      safeFetchJSON("/api/traces?limit=200"),
-      safeFetchJSON(`/api/v2/spans?${query}`),
-      safeFetchJSON(`/api/v2/calls?${query}`),
-      safeFetchJSON(`/api/v2/object-snapshots?${query}`),
-      safeFetchJSON(`/api/v2/object-bindings?${query}`),
-      safeFetchJSON(`/api/v2/mutations?${query}`),
-      safeFetchJSON(`/api/v2/sessions?${query}`),
-      safeFetchJSON(`/api/v2/clients?${query}`),
-      renderQuery ? safeFetchJSON(`/api/v2/render?${renderQuery}`) : Promise.resolve({ items: [], nextCursor: "", data: null, error: "" }),
-    ]);
-
-  state.traces = tracesResp.data?.traces || [];
+  state.bindings = normalizeV2Response(bindingsResp.data);
   state.spans = normalizeV2Response(spansResp.data);
   state.calls = normalizeV2Response(callsResp.data);
-  state.snapshots = normalizeV2Response(snapshotsResp.data);
-  state.bindings = normalizeV2Response(bindingsResp.data);
   state.mutations = normalizeV2Response(mutationsResp.data);
   state.sessions = normalizeV2Response(sessionsResp.data);
   state.clients = normalizeV2Response(clientsResp.data);
-  state.render = renderResp.data || null;
 
-  renderSummary(
-    tracesResp.error ||
-      spansResp.error ||
-      callsResp.error ||
-      snapshotsResp.error ||
-      bindingsResp.error ||
-      mutationsResp.error ||
-      sessionsResp.error ||
-      clientsResp.error ||
-      renderResp.error,
-  );
-  renderOverview();
-  renderMutations();
-  renderBindings();
-  renderCalls();
-  renderRenderObjects();
-  renderSessionsAndClients();
-  renderConnectInfo();
-  renderTraceList();
+  const errorMsg =
+    bindingsResp.error ||
+    spansResp.error ||
+    callsResp.error ||
+    mutationsResp.error ||
+    sessionsResp.error ||
+    clientsResp.error;
+
+  renderStatus(errorMsg);
+  renderScopeSummary();
+  renderObjects();
+  renderEvents();
 }
 
 function buildV2Query() {
@@ -218,30 +216,6 @@ function buildV2Query() {
   }
   if (state.options.includeInternal) {
     q.set("includeInternal", "true");
-  }
-  return q.toString();
-}
-
-function buildRenderQuery() {
-  if (!hasScopeSelection()) {
-    return "";
-  }
-  const q = new URLSearchParams();
-  if (state.options.traceID) {
-    q.set("traceID", state.options.traceID);
-  }
-  if (state.options.sessionID) {
-    q.set("sessionID", state.options.sessionID);
-  }
-  if (state.options.clientID) {
-    q.set("clientID", state.options.clientID);
-  }
-  q.set("mode", "global");
-  if (state.options.includeInternal) {
-    q.set("includeInternal", "true");
-  }
-  if (state.options.keepRules) {
-    q.set("keepRules", "default");
   }
   return q.toString();
 }
@@ -266,10 +240,9 @@ async function importTraceFromCloud() {
         org: org || undefined,
       }),
     });
+    clearScope();
     els.traceFilter.value = traceID;
     state.options.traceID = traceID;
-    state.options.sessionID = "";
-    state.options.clientID = "";
     await refreshAll();
   } finally {
     els.importCloudBtn.disabled = false;
@@ -277,405 +250,450 @@ async function importTraceFromCloud() {
   }
 }
 
-function renderSummary(errorMsg) {
-  els.countSpans.textContent = countLabel(state.spans);
-  els.countCalls.textContent = countLabel(state.calls);
-  els.countSnapshots.textContent = countLabel(state.snapshots);
-  els.countBindings.textContent = countLabel(state.bindings);
-  els.countMutations.textContent = countLabel(state.mutations);
-  els.countSessions.textContent = countLabel(state.sessions);
-  els.countClients.textContent = countLabel(state.clients);
-  if (state.render && Array.isArray(state.render.objects)) {
-    els.countRenderObjects.textContent = `${state.render.objects.length}`;
-  } else if (hasScopeSelection()) {
-    els.countRenderObjects.textContent = "0";
-  } else {
-    els.countRenderObjects.textContent = "n/a";
-  }
-
-  const baseMeta = describeScope();
-  const renderMeta =
-    state.render && state.render.context
-      ? `render@${formatRelTime(state.render.context.unixNano, state.render.context.traceStartUnixNano)}`
-      : "no render (set trace, session, or client filter)";
-
-  els.mutationsMeta.textContent = `${baseMeta} | ${cursorLabel(state.mutations)}${errorMsg ? " | warning" : ""}`;
-  els.bindingsMeta.textContent = `${baseMeta} | ${cursorLabel(state.bindings)}`;
-  els.callsMeta.textContent = `${baseMeta} | ${cursorLabel(state.calls)}`;
-  els.sessionsMeta.textContent = `${baseMeta} | ${renderMeta}`;
-  if (els.renderObjectsMeta) {
-    els.renderObjectsMeta.textContent = hasScopeSelection()
-      ? `${baseMeta} | ${state.options.keepRules ? "keep-rules on" : "keep-rules off"}`
-      : "set trace, session, or client filter to load render objects";
-  }
+function renderStatus(errorMsg) {
+  const bindingCount = responseCountLabel(state.bindings);
+  const eventCount = eventCountLabel();
+  const scopeText = describeScope();
+  const base = `${bindingCount} objects, ${eventCount} events, scope: ${scopeText}`;
+  els.statusNote.textContent = errorMsg ? `${base}. Warning: ${errorMsg}` : `${base}.`;
 }
 
-function renderOverview() {
-  const scopeRows = [{ key: "Scope", value: describeScope() }];
+function renderScopeSummary() {
+  const parts = [];
+
+  if (state.options.traceID) {
+    parts.push(scopeSummaryItem("Trace", traceTag(state.options.traceID)));
+  }
+  if (state.options.sessionID) {
+    parts.push(scopeSummaryItem("Session", sessionTag(state.options.sessionID, state.options.traceID)));
+  }
   if (state.options.clientID) {
-    scopeRows.push({ key: "Session", value: state.options.sessionID || "-" });
+    parts.push(scopeSummaryItem("Client", clientTag(state.options.clientID, state.options.traceID, state.options.sessionID)));
   }
-  if (state.options.clientID || state.options.sessionID) {
-    scopeRows.push({ key: "Trace", value: state.options.traceID || "-" });
+  if (parts.length === 0) {
+    parts.push(`<span class="data-note">Showing data across all loaded traces.</span>`);
   }
-  scopeRows.push(
-    { key: "Internal", value: state.options.includeInternal ? "included" : "excluded" },
-    { key: "Keep Rules", value: state.options.keepRules ? "enabled" : "disabled" },
-    { key: "Page Size", value: `${v2Limit}` },
+
+  parts.push(
+    `<span class="data-note">${
+      state.options.includeInternal ? "Internal spans/events are included." : "Internal spans/events are hidden."
+    }</span>`,
   );
-  els.overviewScope.innerHTML = scopeRows.map((row) => overviewKV(row.key, row.value)).join("");
+  parts.push(
+    `<span class="data-note">Run <code>ODAG_SERVER=${escapeHTML(window.location.origin)} odag run -- dagger ...</code> to send more data here.</span>`,
+  );
 
-  const statusCounts = countTraceStatuses(state.traces);
-  const statusRows = [
-    { key: "Traces", value: String(state.traces.length) },
-    { key: "Ingesting", value: String(statusCounts.ingesting) },
-    { key: "Failed", value: String(statusCounts.failed) },
-    { key: "Completed", value: String(statusCounts.completed) },
-  ];
-  els.overviewStatus.innerHTML = statusRows.map((row) => overviewKV(row.key, row.value)).join("");
+  els.scopeSummary.innerHTML = parts.join("");
+  wireScopeLinks(els.scopeSummary);
 }
 
-function renderRenderObjects() {
-  if (!els.renderObjectTable) {
-    return;
-  }
-  if (!hasScopeSelection()) {
-    els.renderObjectTable.innerHTML = `<div class="trace-empty">Set trace, session, or client filter to inspect render objects.</div>`;
-    return;
-  }
-  const objects = state.render?.objects || [];
-  if (objects.length === 0) {
-    els.renderObjectTable.innerHTML = `<div class="trace-empty">No render objects for current filter.</div>`;
-    return;
-  }
+function renderObjects() {
+  const allRows = buildObjectRows();
+  const search = (state.filters.objects.search || "").trim().toLowerCase();
+  const status = state.filters.objects.status || "all";
+  const sort = state.filters.objects.sort || "recent";
 
-  const rows = objects.slice(0, 200).map((obj) => {
-    const current = obj.currentDagqlID ? shortDigest(obj.currentDagqlID) : "-";
-    return `
-      <tr>
-        <td>${escapeHTML(obj.alias || "-")}</td>
-        <td>${escapeHTML(obj.typeName || "-")}</td>
-        <td>${Number(obj.stateCount || 0)}</td>
-        <td>${escapeHTML(current)}</td>
-        <td>${obj.missingState ? "yes" : "no"}</td>
-      </tr>
-    `;
-  });
-
-  els.renderObjectTable.innerHTML = `
-    <table class="v2-table">
-      <thead>
-        <tr><th>Alias</th><th>Type</th><th>States</th><th>Current</th><th>Missing State</th></tr>
-      </thead>
-      <tbody>${rows.join("")}</tbody>
-    </table>
-  `;
-}
-
-function renderConnectInfo() {
-  if (!els.connectInfo) {
-    return;
-  }
-  const serverOrigin = window.location.origin;
-  const otlpEndpoint = `${serverOrigin}/v1/traces`;
-  const rows = [
-    { key: "OTLP HTTP/protobuf", value: otlpEndpoint },
-    { key: "ODAG server", value: serverOrigin },
-    { key: "Cloud import", value: "Use trace ID + optional org on this page" },
-    { key: "CLI wrapper", value: "ODAG_SERVER=<server> odag run -- dagger ..." },
-  ];
-  els.connectInfo.innerHTML = rows.map((row) => overviewKV(row.key, row.value)).join("");
-}
-
-function overviewKV(key, value) {
-  return `
-    <div class="v2-kv-row">
-      <span class="v2-kv-key">${escapeHTML(key)}</span>
-      <span class="v2-kv-value">${escapeHTML(value)}</span>
-    </div>
-  `;
-}
-
-function countTraceStatuses(traces) {
-  const out = { ingesting: 0, failed: 0, completed: 0 };
-  for (const trace of traces || []) {
-    const status = String(trace?.status || "").toLowerCase();
-    if (status === "ingesting") {
-      out.ingesting++;
-      continue;
+  let rows = allRows.filter((row) => {
+    if (status === "live" && row.archived) {
+      return false;
     }
-    if (status === "failed") {
-      out.failed++;
-      continue;
+    if (status === "archived" && !row.archived) {
+      return false;
     }
-    if (status === "completed" || status === "succeeded" || status === "success") {
-      out.completed++;
+    if (!search) {
+      return true;
     }
-  }
-  return out;
-}
+    return row.searchText.includes(search);
+  });
 
-function renderMutations() {
-  const items = state.mutations.items || [];
-  if (items.length === 0) {
-    els.mutationTable.innerHTML = `<div class="trace-empty">No mutation rows.</div>`;
+  rows.sort((a, b) => compareObjectRows(a, b, sort));
+  els.objectMeta.textContent = `${rows.length} shown of ${allRows.length}${state.bindings.nextCursor ? "+" : ""}`;
+
+  if (rows.length === 0) {
+    renderEmpty(els.objectTable, "No objects match the current filters.");
     return;
   }
 
-  const rows = items.slice(0, 160).map((item) => {
-    const visibleText = item.visible ? "yes" : "no";
-    const at = formatAbsoluteRelative(item.startUnixNano);
+  const tableRows = rows.map((row) => {
     return `
       <tr>
-        <td>${escapeHTML(at)}</td>
-        <td>${traceTag(item.traceID)}</td>
-        <td>${escapeHTML((item.kind || "-").toUpperCase())}</td>
-        <td>${escapeHTML(item.bindingID || "-")}</td>
-        <td>${escapeHTML(shortDigest(item.causeCallID || "-"))}</td>
-        <td>${escapeHTML(visibleText)}</td>
+        <td>
+          <div class="data-primary">${escapeHTML(row.alias || "-")}</div>
+          <div class="data-secondary data-mono">${escapeHTML(shortDigest(row.bindingID || "-"))}</div>
+        </td>
+        <td>${escapeHTML(row.typeName || "-")}</td>
+        <td>${traceTag(row.traceID)}</td>
+        <td>${row.sessionHTML}</td>
+        <td>${row.clientHTML}</td>
+        <td>${row.stateCount}</td>
+        <td class="data-mono">${escapeHTML(shortDigest(row.currentDagqlID || "-"))}</td>
+        <td>${statusPill(row.archived ? "archived" : "live")}</td>
+        <td>${escapeHTML(formatAbsoluteRelative(row.lastSeenUnixNano))}</td>
       </tr>
     `;
   });
 
-  els.mutationTable.innerHTML = `
-    <table class="v2-table">
+  els.objectTable.innerHTML = `
+    <table class="data-table">
       <thead>
-        <tr><th>At</th><th>Trace</th><th>Kind</th><th>Binding</th><th>Call</th><th>Visible</th></tr>
-      </thead>
-      <tbody>${rows.join("")}</tbody>
-    </table>
-  `;
-  wireTraceLinks(els.mutationTable);
-}
-
-function renderBindings() {
-  const items = state.bindings.items || [];
-  if (items.length === 0) {
-    els.bindingTable.innerHTML = `<div class="trace-empty">No object bindings.</div>`;
-    return;
-  }
-
-  const rows = items.slice(0, 160).map((item) => {
-    const archived = item.archived ? "archived" : "open";
-    const current = item.currentDagqlID ? shortDigest(item.currentDagqlID) : "-";
-    return `
-      <tr>
-        <td>${escapeHTML(item.alias || "-")}</td>
-        <td>${escapeHTML(item.typeName || "-")}</td>
-        <td>${traceTag(item.traceID)}</td>
-        <td>${Number((item.dagqlHistory || []).length)}</td>
-        <td>${escapeHTML(current)}</td>
-        <td>${escapeHTML(archived)}</td>
-      </tr>
-    `;
-  });
-
-  els.bindingTable.innerHTML = `
-    <table class="v2-table">
-      <thead>
-        <tr><th>Alias</th><th>Type</th><th>Trace</th><th>States</th><th>Current</th><th>Status</th></tr>
-      </thead>
-      <tbody>${rows.join("")}</tbody>
-    </table>
-  `;
-  wireTraceLinks(els.bindingTable);
-}
-
-function renderCalls() {
-  const items = state.calls.items || [];
-  if (items.length === 0) {
-    els.callTable.innerHTML = `<div class="trace-empty">No call rows.</div>`;
-    return;
-  }
-
-  const rows = items.slice(0, 160).map((item) => {
-    const op = item.derivedOperation ? item.derivedOperation.toUpperCase() : "CALL";
-    return `
-      <tr>
-        <td>${escapeHTML(formatAbsoluteRelative(item.startUnixNano))}</td>
-        <td>${traceTag(item.traceID)}</td>
-        <td>${escapeHTML(item.name || "-")}</td>
-        <td>${Number(item.callDepth || 0)}</td>
-        <td>${item.topLevel ? "yes" : "no"}</td>
-        <td>${escapeHTML(op)}</td>
-      </tr>
-    `;
-  });
-
-  els.callTable.innerHTML = `
-    <table class="v2-table">
-      <thead>
-        <tr><th>At</th><th>Trace</th><th>Name</th><th>Depth</th><th>Top</th><th>Derived</th></tr>
-      </thead>
-      <tbody>${rows.join("")}</tbody>
-    </table>
-  `;
-  wireTraceLinks(els.callTable);
-}
-
-function renderSessionsAndClients() {
-  const sessionRows = (state.sessions.items || [])
-    .slice(0, 60)
-    .map((item) => {
-      return `
         <tr>
-          <td>${sessionTag(item.id, item.traceID)}</td>
-          <td>${traceTag(item.traceID)}</td>
-          <td>${escapeHTML(item.status || (item.open ? "open" : "closed"))}</td>
+          <th>Object</th>
+          <th>Type</th>
+          <th>Trace</th>
+          <th>Session</th>
+          <th>Client</th>
+          <th>States</th>
+          <th>Current</th>
+          <th>Status</th>
+          <th>Updated</th>
         </tr>
-      `;
-    })
-    .join("");
-  const clientRows = (state.clients.items || [])
-    .slice(0, 80)
-    .map((item) => {
-      const title = item.name || item.serviceName || shortDigest(item.id || "-");
-      return `
-        <tr>
-          <td>${clientTag(item.id, item.traceID, item.sessionID, title)}</td>
-          <td>${traceTag(item.traceID)}</td>
-          <td>${sessionTag(item.sessionID, item.traceID)}</td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  els.sessionClientTable.innerHTML = `
-    <div class="v2-subtables">
-      <table class="v2-table">
-        <thead><tr><th>Session</th><th>Trace</th><th>Status</th></tr></thead>
-        <tbody>${sessionRows || `<tr><td colspan="3">No sessions.</td></tr>`}</tbody>
-      </table>
-      <table class="v2-table">
-        <thead><tr><th>Client</th><th>Trace</th><th>Session</th></tr></thead>
-        <tbody>${clientRows || `<tr><td colspan="3">No clients.</td></tr>`}</tbody>
-      </table>
-    </div>
+      </thead>
+      <tbody>${tableRows.join("")}</tbody>
+    </table>
   `;
-  wireTraceLinks(els.sessionClientTable);
-  wireSessionLinks(els.sessionClientTable);
-  wireClientLinks(els.sessionClientTable);
+  wireScopeLinks(els.objectTable);
 }
 
-function renderTraceList() {
-  if (state.traces.length === 0) {
-    els.traceList.innerHTML = "<div class='trace-empty'>No traces yet. Run `odag run ...` to capture one.</div>";
+function buildObjectRows() {
+  const clientsByID = new Map((state.clients.items || []).map((client) => [client.id, client]));
+
+  return (state.bindings.items || []).map((item) => {
+    const clientIDs = Array.isArray(item.clientIDs) ? item.clientIDs.filter(Boolean) : [];
+    const clientNames = clientIDs.map((clientID) => clientTitle(clientsByID.get(clientID), clientID));
+    const sessionHTML = item.sessionID ? sessionTag(item.sessionID, item.traceID) : `<span class="data-placeholder">-</span>`;
+    const clientHTML = renderClientList(item.traceID, item.sessionID, clientIDs, clientNames);
+    const stateCount = Array.isArray(item.dagqlHistory) ? item.dagqlHistory.length : 0;
+
+    return {
+      alias: item.alias || "",
+      archived: Boolean(item.archived),
+      bindingID: item.bindingID || "",
+      clientHTML,
+      clientIDs,
+      clientNames,
+      currentDagqlID: item.currentDagqlID || "",
+      lastSeenUnixNano: Number(item.lastSeenUnixNano || 0),
+      searchText: [
+        item.alias,
+        item.typeName,
+        item.traceID,
+        item.sessionID,
+        item.currentDagqlID,
+        ...clientIDs,
+        ...clientNames,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      sessionHTML,
+      sessionID: item.sessionID || "",
+      stateCount,
+      traceID: item.traceID || "",
+      typeName: item.typeName || "",
+    };
+  });
+}
+
+function compareObjectRows(a, b, sort) {
+  switch (sort) {
+    case "alias":
+      return compareString(a.alias, b.alias) || compareString(a.bindingID, b.bindingID);
+    case "type":
+      return compareString(a.typeName, b.typeName) || compareString(a.alias, b.alias);
+    case "states":
+      return compareNumberDesc(a.stateCount, b.stateCount) || compareString(a.alias, b.alias);
+    case "trace":
+      return compareString(a.traceID, b.traceID) || compareString(a.alias, b.alias);
+    case "recent":
+    default:
+      return compareNumberDesc(a.lastSeenUnixNano, b.lastSeenUnixNano) || compareString(a.alias, b.alias);
+  }
+}
+
+function renderEvents() {
+  const allRows = buildEventRows();
+  const search = (state.filters.events.search || "").trim().toLowerCase();
+  const kind = state.filters.events.kind || "all";
+  const sort = state.filters.events.sort || "newest";
+
+  let rows = allRows.filter((row) => {
+    if (kind !== "all" && row.kind !== kind) {
+      return false;
+    }
+    if (!search) {
+      return true;
+    }
+    return row.searchText.includes(search);
+  });
+
+  rows.sort((a, b) => compareEventRows(a, b, sort));
+  els.eventMeta.textContent = `${rows.length} shown of ${allRows.length}${eventHasMorePages() ? "+" : ""}`;
+
+  if (rows.length === 0) {
+    renderEmpty(els.eventTable, "No events match the current filters.");
     return;
   }
 
-  const rows = state.traces.map((trace) => {
-    const created = formatCreatedRelative(trace);
-    const status = String(trace.status || "").toLowerCase();
-    const statusClass = statusClassForTrace(status);
-    const statusLabel = status || "unknown";
+  const tableRows = rows.map((row) => {
     return `
-      <div class="trace-row">
-        <span class="trace-cell trace-cell-id">${traceTag(trace.traceID)}</span>
-        <span class="trace-cell trace-cell-created">${escapeHTML(created)}</span>
-        <span class="trace-cell trace-cell-spans">${Number(trace.spanCount || 0)}</span>
-        <span class="trace-cell trace-cell-status">
-          <span class="status-dot ${statusClass}" title="${escapeHTML(statusLabel)}" aria-label="${escapeHTML(statusLabel)}"></span>
-          <a class="btn btn-inline" href="/traces/${encodeURIComponent(trace.traceID)}">Open</a>
-        </span>
-      </div>
+      <tr>
+        <td>${escapeHTML(formatAbsoluteRelative(row.atUnixNano))}</td>
+        <td>${kindPill(row.kind)}</td>
+        <td>
+          <div class="data-primary">${escapeHTML(row.name)}</div>
+          <div class="data-secondary">${escapeHTML(row.subtitle)}</div>
+        </td>
+        <td>${traceTag(row.traceID)}</td>
+        <td>${row.sessionHTML}</td>
+        <td>${row.clientHTML}</td>
+        <td class="data-mono">${escapeHTML(row.subject)}</td>
+        <td>${escapeHTML(row.details)}</td>
+      </tr>
     `;
   });
 
-  els.traceList.innerHTML = `
-    <div class="trace-table">
-      <div class="trace-head">
-        <span>Trace</span>
-        <span>Created</span>
-        <span>Spans</span>
-        <span>Status</span>
-      </div>
-      <div class="trace-body">
-        ${rows.join("")}
-      </div>
-    </div>
+  els.eventTable.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>At</th>
+          <th>Kind</th>
+          <th>Name</th>
+          <th>Trace</th>
+          <th>Session</th>
+          <th>Client</th>
+          <th>Subject</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows.join("")}</tbody>
+    </table>
   `;
-
-  wireTraceLinks(els.traceList);
+  wireScopeLinks(els.eventTable);
 }
 
-function wireTraceLinks(root) {
-  for (const node of root.querySelectorAll('[data-scope-kind="trace"]')) {
-    node.addEventListener("click", (event) => {
-      event.preventDefault();
-      const traceID = node.getAttribute("data-trace-id");
-      if (!traceID) {
-        return;
-      }
-      els.traceFilter.value = traceID;
-      state.options.traceID = traceID;
-      state.options.sessionID = "";
-      state.options.clientID = "";
-      refreshAll().catch((err) => renderInfo(String(err)));
+function buildEventRows() {
+  const clientsByID = new Map((state.clients.items || []).map((client) => [client.id, client]));
+  const rows = [];
+
+  for (const item of state.calls.items || []) {
+    rows.push({
+      atUnixNano: Number(item.startUnixNano || 0),
+      clientHTML: item.clientID
+        ? clientTag(item.clientID, item.traceID, item.sessionID, clientTitle(clientsByID.get(item.clientID), item.clientID))
+        : `<span class="data-placeholder">-</span>`,
+      details: [item.derivedOperation || "call", item.topLevel ? "top-level" : `depth ${Number(item.callDepth || 0)}`]
+        .filter(Boolean)
+        .join(" | "),
+      kind: "call",
+      name: item.name || "Call",
+      searchText: [
+        "call",
+        item.name,
+        item.traceID,
+        item.sessionID,
+        item.clientID,
+        item.outputDagqlID,
+        item.receiverDagqlID,
+        item.derivedOperation,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      sessionHTML: item.sessionID ? sessionTag(item.sessionID, item.traceID) : `<span class="data-placeholder">-</span>`,
+      subject: shortDigest(item.outputDagqlID || item.receiverDagqlID || item.spanID || "-"),
+      subtitle: item.returnType || "",
+      traceID: item.traceID || "",
     });
   }
+
+  for (const item of state.mutations.items || []) {
+    rows.push({
+      atUnixNano: Number(item.startUnixNano || 0),
+      clientHTML: item.clientID
+        ? clientTag(item.clientID, item.traceID, item.sessionID, clientTitle(clientsByID.get(item.clientID), item.clientID))
+        : `<span class="data-placeholder">-</span>`,
+      details: [`call ${shortDigest(item.causeCallID || "-")}`, item.visible ? "visible" : "hidden"].join(" | "),
+      kind: "mutation",
+      name: item.name || (item.kind ? `${String(item.kind).toUpperCase()} mutation` : "Mutation"),
+      searchText: [
+        "mutation",
+        item.name,
+        item.kind,
+        item.bindingID,
+        item.traceID,
+        item.sessionID,
+        item.clientID,
+        item.causeCallID,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      sessionHTML: item.sessionID ? sessionTag(item.sessionID, item.traceID) : `<span class="data-placeholder">-</span>`,
+      subject: item.bindingID || "-",
+      subtitle: item.kind || "",
+      traceID: item.traceID || "",
+    });
+  }
+
+  for (const item of state.spans.items || []) {
+    rows.push({
+      atUnixNano: Number(item.startUnixNano || 0),
+      clientHTML: item.clientID
+        ? clientTag(item.clientID, item.traceID, item.sessionID, clientTitle(clientsByID.get(item.clientID), item.clientID))
+        : `<span class="data-placeholder">-</span>`,
+      details: [item.statusCode || "", item.internal ? "internal" : ""].filter(Boolean).join(" | "),
+      kind: "span",
+      name: item.name || "Span",
+      searchText: [
+        "span",
+        item.name,
+        item.traceID,
+        item.sessionID,
+        item.clientID,
+        item.spanID,
+        item.statusCode,
+        item.statusMessage,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      sessionHTML: item.sessionID ? sessionTag(item.sessionID, item.traceID) : `<span class="data-placeholder">-</span>`,
+      subject: shortDigest(item.spanID || "-"),
+      subtitle: item.statusMessage || "",
+      traceID: item.traceID || "",
+    });
+  }
+
+  return rows;
 }
 
-function wireSessionLinks(root) {
-  for (const node of root.querySelectorAll('[data-scope-kind="session"]')) {
-    node.addEventListener("click", (event) => {
-      event.preventDefault();
-      const sessionID = node.getAttribute("data-scope-session-id");
-      if (!sessionID) {
-        return;
-      }
-      const traceID = node.getAttribute("data-trace-id") || "";
-      els.traceFilter.value = traceID;
-      state.options.traceID = traceID;
-      state.options.sessionID = sessionID;
-      state.options.clientID = "";
-      refreshAll().catch((err) => renderInfo(String(err)));
-    });
+function compareEventRows(a, b, sort) {
+  switch (sort) {
+    case "oldest":
+      return compareNumberAsc(a.atUnixNano, b.atUnixNano) || compareString(a.name, b.name);
+    case "name":
+      return compareString(a.name, b.name) || compareNumberDesc(a.atUnixNano, b.atUnixNano);
+    case "kind":
+      return compareString(a.kind, b.kind) || compareNumberDesc(a.atUnixNano, b.atUnixNano);
+    case "trace":
+      return compareString(a.traceID, b.traceID) || compareNumberDesc(a.atUnixNano, b.atUnixNano);
+    case "newest":
+    default:
+      return compareNumberDesc(a.atUnixNano, b.atUnixNano) || compareString(a.name, b.name);
   }
 }
 
-function wireClientLinks(root) {
-  for (const node of root.querySelectorAll('[data-scope-kind="client"]')) {
+function renderEmpty(root, msg) {
+  root.innerHTML = `<div class="data-empty">${escapeHTML(msg)}</div>`;
+}
+
+function wireScopeLinks(root) {
+  for (const node of root.querySelectorAll("[data-scope-kind]")) {
     node.addEventListener("click", (event) => {
       event.preventDefault();
-      const clientID = node.getAttribute("data-scope-client-id");
-      if (!clientID) {
+      const kind = node.getAttribute("data-scope-kind");
+      if (kind === "trace") {
+        state.options.traceID = node.getAttribute("data-trace-id") || "";
+        state.options.sessionID = "";
+        state.options.clientID = "";
+      } else if (kind === "session") {
+        state.options.traceID = node.getAttribute("data-trace-id") || "";
+        state.options.sessionID = node.getAttribute("data-scope-session-id") || "";
+        state.options.clientID = "";
+      } else if (kind === "client") {
+        state.options.traceID = node.getAttribute("data-trace-id") || "";
+        state.options.sessionID = node.getAttribute("data-scope-session-id") || "";
+        state.options.clientID = node.getAttribute("data-scope-client-id") || "";
+      } else {
         return;
       }
-      const traceID = node.getAttribute("data-trace-id") || "";
-      const sessionID = node.getAttribute("data-scope-session-id") || "";
-      els.traceFilter.value = traceID;
-      state.options.traceID = traceID;
-      state.options.sessionID = sessionID;
-      state.options.clientID = clientID;
-      refreshAll().catch((err) => renderInfo(String(err)));
+      els.traceFilter.value = state.options.traceID;
+      refreshAll().catch((err) => renderStatus(String(err)));
     });
   }
 }
 
 function traceTag(traceID) {
   if (!traceID) {
-    return "-";
+    return `<span class="data-placeholder">-</span>`;
   }
-  return `<button class="v2-trace-tag" data-scope-kind="trace" data-trace-id="${escapeHTML(traceID)}">${escapeHTML(shortDigest(traceID))}</button>`;
+  return `<button class="scope-chip" data-scope-kind="trace" data-trace-id="${escapeHTML(traceID)}">${escapeHTML(shortDigest(traceID))}</button>`;
 }
 
 function sessionTag(sessionID, traceID) {
   if (!sessionID) {
-    return "-";
+    return `<span class="data-placeholder">-</span>`;
   }
-  return `<button class="v2-trace-tag" data-scope-kind="session" data-scope-session-id="${escapeHTML(sessionID)}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(shortDigest(sessionID))}</button>`;
+  return `<button class="scope-chip" data-scope-kind="session" data-scope-session-id="${escapeHTML(sessionID)}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(shortDigest(sessionID))}</button>`;
 }
 
 function clientTag(clientID, traceID, sessionID, label) {
   if (!clientID) {
-    return escapeHTML(label || "-");
+    return `<span class="data-placeholder">-</span>`;
   }
-  const title = label || shortDigest(clientID);
-  return `<button class="v2-trace-tag" data-scope-kind="client" data-scope-client-id="${escapeHTML(clientID)}" data-scope-session-id="${escapeHTML(sessionID || "")}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(title)}</button>`;
+  const text = label || shortDigest(clientID);
+  return `<button class="scope-chip" data-scope-kind="client" data-scope-client-id="${escapeHTML(clientID)}" data-scope-session-id="${escapeHTML(sessionID || "")}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(text)}</button>`;
 }
 
-function renderInfo(msg) {
-  els.mutationTable.innerHTML = `<div class='trace-empty'>${escapeHTML(msg)}</div>`;
+function renderClientList(traceID, sessionID, clientIDs, clientNames) {
+  if (!clientIDs.length) {
+    return `<span class="data-placeholder">-</span>`;
+  }
+  const tags = [];
+  const visibleCount = Math.min(clientIDs.length, 2);
+  for (let i = 0; i < visibleCount; i++) {
+    tags.push(clientTag(clientIDs[i], traceID, sessionID, clientNames[i]));
+  }
+  if (clientIDs.length > visibleCount) {
+    tags.push(`<span class="data-note">+${clientIDs.length - visibleCount}</span>`);
+  }
+  return `<div class="data-chip-group">${tags.join("")}</div>`;
+}
+
+function scopeSummaryItem(label, valueHTML) {
+  return `
+    <span class="data-scope-item">
+      <span class="data-scope-label">${escapeHTML(label)}</span>
+      ${valueHTML}
+    </span>
+  `;
+}
+
+function responseCountLabel(resp) {
+  return `${Number((resp.items || []).length)}${resp.nextCursor ? "+" : ""}`;
+}
+
+function eventCountLabel() {
+  const total =
+    Number((state.spans.items || []).length) +
+    Number((state.calls.items || []).length) +
+    Number((state.mutations.items || []).length);
+  return `${total}${eventHasMorePages() ? "+" : ""}`;
+}
+
+function eventHasMorePages() {
+  return Boolean(state.spans.nextCursor || state.calls.nextCursor || state.mutations.nextCursor);
+}
+
+function describeScope() {
+  if (state.options.clientID) {
+    return `client ${shortDigest(state.options.clientID)}`;
+  }
+  if (state.options.sessionID) {
+    return `session ${shortDigest(state.options.sessionID)}`;
+  }
+  if (state.options.traceID) {
+    return `trace ${shortDigest(state.options.traceID)}`;
+  }
+  return "all traces";
+}
+
+function clearScope() {
+  state.options.traceID = "";
+  state.options.sessionID = "";
+  state.options.clientID = "";
+  els.traceFilter.value = "";
 }
 
 function normalizeV2Response(data) {
@@ -691,12 +709,8 @@ function normalizeV2Response(data) {
 function normalizePageName(raw) {
   const page = String(raw || "").toLowerCase();
   switch (page) {
-    case "overview":
-    case "activity":
     case "objects":
-    case "sessions":
-    case "traces":
-    case "import":
+    case "events":
       return page;
     default:
       return "";
@@ -704,7 +718,7 @@ function normalizePageName(raw) {
 }
 
 function setActivePage(page, writeHash) {
-  const normalized = normalizePageName(page) || "overview";
+  const normalized = normalizePageName(page) || "objects";
   state.selectedPage = normalized;
 
   for (const button of els.tabButtons) {
@@ -713,8 +727,7 @@ function setActivePage(page, writeHash) {
     button.setAttribute("aria-selected", matches ? "true" : "false");
   }
   for (const section of els.pageSections) {
-    const matches = section.getAttribute("data-page") === normalized;
-    section.classList.toggle("is-active", matches);
+    section.classList.toggle("is-active", section.getAttribute("data-page") === normalized);
   }
 
   if (writeHash) {
@@ -725,32 +738,6 @@ function setActivePage(page, writeHash) {
   }
 }
 
-function countLabel(v2resp) {
-  const count = Number((v2resp?.items || []).length);
-  return `${count}${v2resp?.nextCursor ? "+" : ""}`;
-}
-
-function hasScopeSelection() {
-  return Boolean(state.options.traceID || state.options.sessionID || state.options.clientID);
-}
-
-function describeScope() {
-  if (state.options.clientID) {
-    return `client=${shortDigest(state.options.clientID)}`;
-  }
-  if (state.options.sessionID) {
-    return `session=${shortDigest(state.options.sessionID)}`;
-  }
-  if (state.options.traceID) {
-    return `trace=${shortDigest(state.options.traceID)}`;
-  }
-  return "global (all traces)";
-}
-
-function cursorLabel(v2resp) {
-  return v2resp?.nextCursor ? `page capped (${v2Limit}+)` : `${(v2resp?.items || []).length} rows`;
-}
-
 function startLiveRefresh() {
   stopLiveRefresh();
   state.liveTimer = window.setInterval(() => {
@@ -759,9 +746,7 @@ function startLiveRefresh() {
     }
     state.liveBusy = true;
     refreshAll()
-      .catch((err) => {
-        console.error("v2 refresh failed", err);
-      })
+      .catch((err) => renderStatus(String(err)))
       .finally(() => {
         state.liveBusy = false;
       });
@@ -793,62 +778,45 @@ async function fetchJSON(url, init) {
   return await resp.json();
 }
 
-function formatCreatedRelative(trace) {
-  const createdAt = traceCreatedDate(trace);
-  if (!createdAt) {
-    return "unknown";
+function clientTitle(client, clientID) {
+  if (client?.name) {
+    return client.name;
   }
-  const diffSeconds = Math.round((createdAt.getTime() - Date.now()) / 1000);
-  const abs = Math.abs(diffSeconds);
-  if (abs < 60) {
-    return relativeTimeFormatter.format(diffSeconds, "second");
+  if (client?.serviceName) {
+    return client.serviceName;
   }
-  const diffMinutes = Math.round(diffSeconds / 60);
-  if (Math.abs(diffMinutes) < 60) {
-    return relativeTimeFormatter.format(diffMinutes, "minute");
-  }
-  const diffHours = Math.round(diffMinutes / 60);
-  if (Math.abs(diffHours) < 24) {
-    return relativeTimeFormatter.format(diffHours, "hour");
-  }
-  const diffDays = Math.round(diffHours / 24);
-  if (Math.abs(diffDays) < 30) {
-    return relativeTimeFormatter.format(diffDays, "day");
-  }
-  const diffMonths = Math.round(diffDays / 30);
-  if (Math.abs(diffMonths) < 12) {
-    return relativeTimeFormatter.format(diffMonths, "month");
-  }
-  const diffYears = Math.round(diffDays / 365);
-  return relativeTimeFormatter.format(diffYears, "year");
+  return shortDigest(clientID || "-");
 }
 
-function traceCreatedDate(trace) {
-  const firstSeen = typeof trace?.firstSeen === "string" ? trace.firstSeen : "";
-  if (firstSeen) {
-    const dt = new Date(firstSeen);
-    if (!Number.isNaN(dt.getTime())) {
-      return dt;
-    }
-  }
-  const firstSeenUnixNano = Number(trace?.firstSeenUnixNano || 0);
-  if (firstSeenUnixNano > 0) {
-    const dt = new Date(firstSeenUnixNano / 1e6);
-    if (!Number.isNaN(dt.getTime())) {
-      return dt;
-    }
-  }
-  return null;
+function kindPill(kind) {
+  return `<span class="data-kind-pill is-${escapeHTML(kind)}">${escapeHTML(kind)}</span>`;
+}
+
+function statusPill(label) {
+  const normalized = String(label || "").toLowerCase();
+  return `<span class="data-status-pill is-${escapeHTML(normalized)}">${escapeHTML(label)}</span>`;
+}
+
+function compareString(a, b) {
+  return String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base" });
+}
+
+function compareNumberAsc(a, b) {
+  return Number(a || 0) - Number(b || 0);
+}
+
+function compareNumberDesc(a, b) {
+  return Number(b || 0) - Number(a || 0);
 }
 
 function formatAbsoluteRelative(unixNano) {
   if (!unixNano) {
-    return "0 ms";
+    return "-";
   }
   const ms = unixNano / 1e6;
   const dt = new Date(ms);
   if (Number.isNaN(dt.getTime())) {
-    return "0 ms";
+    return "-";
   }
   return `${dt.toLocaleTimeString()} (${formatRelAge(dt)})`;
 }
@@ -869,29 +837,6 @@ function formatRelAge(dt) {
   }
   const diffDays = Math.round(diffHours / 24);
   return relativeTimeFormatter.format(diffDays, "day");
-}
-
-function formatRelTime(unixNano, startUnixNano) {
-  if (!unixNano || !startUnixNano) {
-    return "0 ms";
-  }
-  const ms = (unixNano - startUnixNano) / 1e6;
-  return `${ms.toFixed(1)} ms`;
-}
-
-function statusClassForTrace(status) {
-  switch (status) {
-    case "ingesting":
-      return "is-ingesting";
-    case "failed":
-      return "is-failed";
-    case "completed":
-    case "succeeded":
-    case "success":
-      return "is-succeeded";
-    default:
-      return "is-neutral";
-  }
 }
 
 function shortDigest(v) {
