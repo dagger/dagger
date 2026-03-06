@@ -16,7 +16,7 @@ type Docusaurus {
 
   pub sites(ws: Workspace!): [Site!]! {
     ws
-      .directory(ws.root, include: [
+      .directory(".", include: [
         "**/docusaurus.config.ts",
         "**/docusaurus.config.js",
       ])
@@ -235,17 +235,6 @@ type Site {
   }
 
   """
-  The Docusaurus site source files.
-  """
-  pub source(ws: Workspace!): Directory! {
-    ws.directory(
-      ".",
-      include: sourceIncludes,
-      exclude: sourceExcludes,
-    )
-  }
-
-  """
   Base container for docusaurus.
   """
   let base: Container! {
@@ -292,7 +281,7 @@ type Site {
   pub sandbox(ws: Workspace!): Container! {
     base
       .withWorkdir("/work")
-      .withMountedDirectory(".", source(ws))
+      .withMountedWorkspace(".", ws, liveRead: true, export: true)
       .withMountedCache(
         "./" + path + "/node_modules",
         cacheVolume(path + "/node_modules"),
