@@ -1127,9 +1127,12 @@ Stage 4 implementation note:
         - links carry the current trace/session/client scope when available
         - explicit row drill-ins default `keepRules=off` so the selected object/call cannot be pruned away before render
     - `/dag` is now a separate object-graph page backed by `/api/v2/render`:
+      - graph defaults to a global object DAG across all traces when opened without scope parameters
+      - global DAG uses `object-bindings` plus `object-snapshots` to synthesize the current object set and current `field_ref` edges
+      - global view defaults to `live objects only`
       - graph defaults to structural `field_ref` edges only
       - containment and provenance remain out of the default view
-      - broad DAG entry keeps `keepRules=default` and `dependencyHops=1`
+      - scoped render entry keeps `keepRules=default` and `dependencyHops=1`
       - if an explicit object/call drill-in still resolves to an empty graph, the page retries once with pruning disabled
       - selected object details appear in a sidebar inspector, and clicking a node also expands that card inline to show its fields
   - navigation polish:

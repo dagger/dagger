@@ -14,7 +14,7 @@
             <p class="data-eyebrow">ODAG</p>
             <h1>Navigate the object DAG</h1>
             <p id="dagSubtitle" class="data-subtitle">
-              A scoped object graph. The default view shows object dependencies only, not call or provenance overlays.
+              A global object graph by default. The view shows object dependencies only, not call or provenance overlays.
             </p>
           </div>
           <div class="data-header-actions">
@@ -43,6 +43,10 @@
                 <option value="2">2</option>
                 <option value="3">3</option>
               </select>
+            </label>
+            <label class="toggle-input data-toggle">
+              <input id="liveOnly" type="checkbox" />
+              Live objects only
             </label>
             <label class="toggle-input data-toggle">
               <input id="keepRules" type="checkbox" />

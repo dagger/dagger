@@ -14,6 +14,7 @@ const state = {
     scopeCallID: "",
     dependencyHops: 1,
     includeInternal: false,
+    liveOnly: true,
     keepRules: true,
   },
 };
@@ -27,6 +28,7 @@ const els = {
   dagSubtitle: document.getElementById("dagSubtitle"),
   modeSelect: document.getElementById("modeSelect"),
   dependencyHops: document.getElementById("dependencyHops"),
+  liveOnly: document.getElementById("liveOnly"),
   includeInternal: document.getElementById("includeInternal"),
   keepRules: document.getElementById("keepRules"),
   clearFocusBtn: document.getElementById("clearFocusBtn"),
@@ -50,10 +52,6 @@ async function init() {
   bindEvents();
   readOptionsFromURL();
   syncControls();
-  if (!hasScope()) {
-    renderNoScope("Open this page from an object row or a call event row.");
-    return;
-  }
   await refreshDag();
   startLiveRefresh();
 }
@@ -87,6 +85,11 @@ function bindEvents() {
 
   els.dependencyHops.addEventListener("change", () => {
     state.options.dependencyHops = clampDependencyHops(els.dependencyHops.value);
+    refreshDag().catch((err) => showError(err));
+  });
+
+  els.liveOnly.addEventListener("change", () => {
+    state.options.liveOnly = Boolean(els.liveOnly.checked);
     refreshDag().catch((err) => showError(err));
   });
 
@@ -142,11 +145,16 @@ function readOptionsFromURL() {
   state.options.focusObjectID = stringOrEmpty(params.get("focusObjectID"));
   state.options.scopeCallID = stringOrEmpty(params.get("scopeCallID"));
   state.options.dependencyHops = clampDependencyHops(params.get("dependencyHops"));
+  if (params.has("liveOnly")) {
+    state.options.liveOnly = parseBoolish(params.get("liveOnly"));
+  } else {
+    state.options.liveOnly = !hasScopeQueryParams(params);
+  }
   state.options.includeInternal = parseBoolish(params.get("includeInternal"));
   if (params.has("keepRules")) {
     state.options.keepRules = parseKeepRules(params.get("keepRules"));
   } else {
-    state.options.keepRules = !(state.options.focusObjectID || state.options.scopeCallID);
+    state.options.keepRules = hasScopeQueryParams(params) && !(state.options.focusObjectID || state.options.scopeCallID);
   }
   state.options.mode = normalizeMode(params.get("mode")) || defaultModeFromOptions();
 }
@@ -154,8 +162,11 @@ function readOptionsFromURL() {
 function syncControls() {
   els.modeSelect.value = state.options.mode;
   els.dependencyHops.value = String(state.options.dependencyHops);
+  els.liveOnly.checked = Boolean(state.options.liveOnly);
   els.includeInternal.checked = Boolean(state.options.includeInternal);
   els.keepRules.checked = Boolean(state.options.keepRules);
+  els.liveOnly.disabled = hasScope();
+  els.keepRules.disabled = !hasScope();
   els.clearFocusBtn.disabled = !state.options.focusObjectID;
   els.clearScopeCallBtn.disabled = !state.options.scopeCallID;
 }
@@ -165,28 +176,28 @@ function hasScope() {
 }
 
 async function refreshDag() {
-  if (!hasScope()) {
-    renderNoScope("Open this page from an object row or a call event row.");
-    return;
-  }
-
   syncControls();
   writeURL();
   state.fallbackNote = "";
   renderStatus("Loading DAG...");
 
   const token = ++state.requestToken;
-  let render = await fetchRender();
-  if (
-    (render?.objects || []).length === 0 &&
-    state.options.keepRules &&
-    (state.options.focusObjectID || state.options.scopeCallID)
-  ) {
-    state.options.keepRules = false;
-    state.fallbackNote = "Keep rules hid the selected drill-in, so pruning was disabled for this view";
-    syncControls();
-    writeURL();
-    render = await fetchRender();
+  let render;
+  if (hasScope()) {
+    render = await fetchScopedRender();
+    if (
+      (render?.objects || []).length === 0 &&
+      state.options.keepRules &&
+      (state.options.focusObjectID || state.options.scopeCallID)
+    ) {
+      state.options.keepRules = false;
+      state.fallbackNote = "Keep rules hid the selected drill-in, so pruning was disabled for this view";
+      syncControls();
+      writeURL();
+      render = await fetchScopedRender();
+    }
+  } else {
+    render = await fetchGlobalRender();
   }
   if (token !== state.requestToken) {
     return;
@@ -217,7 +228,7 @@ function renderAll() {
 
 function renderHeader() {
   const traceTitle = state.render?.context?.traceTitle || "";
-  const titleToken = traceTitle || shortDigest(state.render?.context?.traceID || state.options.traceID || "DAG");
+  const titleToken = traceTitle || shortDigest(state.render?.context?.traceID || state.options.traceID || "Global");
   document.title = `ODAG DAG ${titleToken}`;
 
   const objects = Array.isArray(state.render?.objects) ? state.render.objects.length : 0;
@@ -226,10 +237,17 @@ function renderHeader() {
   const parts = [];
   if (traceTitle) {
     parts.push(traceTitle);
+  } else if (!hasScope()) {
+    parts.push("global object graph");
   }
   parts.push(`${objects} objects`);
   parts.push(`${edges} dependencies`);
-  parts.push(`${calls} calls in lens`);
+  if (calls > 0) {
+    parts.push(`${calls} calls in lens`);
+  }
+  if (!hasScope()) {
+    parts.push(state.options.liveOnly ? "live only" : "live and archived");
+  }
   parts.push(`mode ${state.options.mode}`);
   els.dagSubtitle.textContent = `${parts.join(" | ")}.`;
 
@@ -244,17 +262,15 @@ function renderHeader() {
 }
 
 function renderScopeSummary() {
-  if (!hasScope()) {
-    els.scopeSummary.innerHTML = `<span class="data-note">Choose a trace, session, or client scope to render a DAG.</span>`;
-    return;
-  }
-
   const traceID = state.render?.context?.traceID || state.options.traceID;
   const sessionID = state.render?.context?.sessionID || state.options.sessionID;
   const clientID = state.render?.context?.clientID || state.options.clientID;
   const parts = [];
 
-  if (traceID) {
+  if (!hasScope()) {
+    parts.push(scopeSummaryItem("Scope", staticChip("All traces")));
+    parts.push(scopeSummaryItem("Filter", staticChip(state.options.liveOnly ? "Live objects" : "All objects")));
+  } else if (traceID) {
     parts.push(scopeSummaryItem("Trace", staticChip(shortDigest(traceID))));
   }
   if (sessionID) {
@@ -366,9 +382,11 @@ function renderInspector() {
     <dl class="dag-fact-list">
       <div><dt>Object ID</dt><dd class="data-mono">${escapeHTML(object.objectID)}</dd></div>
       <div><dt>Binding</dt><dd class="data-mono">${escapeHTML(object.bindingID || "-")}</dd></div>
+      <div><dt>Trace</dt><dd class="data-mono">${escapeHTML(object.traceID || "-")}</dd></div>
       <div><dt>DAGQL ID</dt><dd class="data-mono">${escapeHTML(object.currentDagqlID || "-")}</dd></div>
       <div><dt>States</dt><dd>${escapeHTML(String(object.stateCount || 0))}</dd></div>
       <div><dt>Activity calls</dt><dd>${escapeHTML(String((object.activityCallIDs || []).length))}</dd></div>
+      <div><dt>Status</dt><dd>${object.archived ? "archived" : "live"}</dd></div>
       <div><dt>Top referenced</dt><dd>${object.referencedByTop ? "yes" : "no"}</dd></div>
     </dl>
   `;
@@ -766,13 +784,13 @@ function compareObjectSummary(a, b) {
 function renderNoScope(msg) {
   state.render = null;
   document.title = "ODAG DAG";
-  els.dagSubtitle.textContent = "Open this page from the explorer to render a scoped object graph.";
-  els.scopeSummary.innerHTML = `<span class="data-note">Choose an object or call as your starting point.</span>`;
+  els.dagSubtitle.textContent = "A global object graph with object-first drill-down.";
+  els.scopeSummary.innerHTML = `<span class="data-note">No objects are available yet.</span>`;
   els.statusNote.textContent = msg;
   els.statGrid.innerHTML = "";
   els.objectListMeta.textContent = "0";
   els.objectList.innerHTML = `<div class="data-empty">${escapeHTML(msg)}</div>`;
-  els.inspector.innerHTML = `<div class="data-empty">Select an object from the explorer first.</div>`;
+  els.inspector.innerHTML = `<div class="data-empty">Select an object to inspect its fields and dependencies.</div>`;
   els.dagCanvas.innerHTML = "";
   els.dagEmpty.textContent = msg;
   els.dagEmpty.style.display = "block";
@@ -832,6 +850,7 @@ function writeURL() {
   params.delete("focusObjectID");
   params.delete("scopeCallID");
   params.delete("dependencyHops");
+  params.delete("liveOnly");
   params.delete("includeInternal");
   params.delete("keepRules");
 
@@ -844,14 +863,19 @@ function writeURL() {
   if (state.options.dependencyHops > 0) {
     params.set("dependencyHops", String(state.options.dependencyHops));
   }
+  if (!hasScope()) {
+    params.set("liveOnly", state.options.liveOnly ? "true" : "false");
+  }
   if (state.options.includeInternal) {
     params.set("includeInternal", "true");
   }
-  params.set("keepRules", state.options.keepRules ? "default" : "off");
+  if (hasScope()) {
+    params.set("keepRules", state.options.keepRules ? "default" : "off");
+  }
   window.history.replaceState({}, "", url);
 }
 
-async function fetchRender() {
+async function fetchScopedRender() {
   const params = new URLSearchParams();
   setSearchParam(params, "traceID", state.options.traceID);
   setSearchParam(params, "sessionID", state.options.sessionID);
@@ -865,6 +889,195 @@ async function fetchRender() {
     params.set("includeInternal", "true");
   }
   return await fetchJSON(`/api/v2/render?${params.toString()}`);
+}
+
+async function fetchGlobalRender() {
+  const [bindings, snapshots] = await Promise.all([
+    fetchAllV2Items("/api/v2/object-bindings"),
+    fetchAllV2Items("/api/v2/object-snapshots"),
+  ]);
+
+  const warnings = [];
+  const snapshotsByDagqlID = new Map((snapshots || []).map((item) => [item.dagqlID, item]));
+  let objects = (bindings || []).map((binding) => {
+    const snapshot = snapshotsByDagqlID.get(binding.currentDagqlID) || null;
+    return {
+      objectID: binding.bindingID,
+      bindingID: binding.bindingID,
+      traceID: binding.traceID || "",
+      sessionID: binding.sessionID || "",
+      clientIDs: Array.isArray(binding.clientIDs) ? binding.clientIDs : [],
+      typeName: binding.typeName || "",
+      alias: binding.alias || "",
+      currentDagqlID: binding.currentDagqlID || "",
+      currentState: snapshot?.outputState || null,
+      dagqlHistory: Array.isArray(binding.dagqlHistory) ? binding.dagqlHistory : [],
+      firstSeenUnixNano: Number(binding.firstSeenUnixNano || 0),
+      lastSeenUnixNano: Number(binding.lastSeenUnixNano || 0),
+      stateCount: Array.isArray(binding.dagqlHistory) ? binding.dagqlHistory.length : 0,
+      missingState: !snapshot || !snapshot.outputState,
+      referencedByTop: false,
+      activityCallIDs: Array.isArray(binding.activityCallIDs) ? binding.activityCallIDs : [],
+      archived: Boolean(binding.archived),
+    };
+  });
+
+  if (state.options.liveOnly) {
+    objects = objects.filter((obj) => !obj.archived);
+  }
+
+  const objectIDsByDagqlID = new Map();
+  for (const object of objects) {
+    if (!object.currentDagqlID) {
+      continue;
+    }
+    const ids = objectIDsByDagqlID.get(object.currentDagqlID) || [];
+    ids.push(object.objectID);
+    objectIDsByDagqlID.set(object.currentDagqlID, ids);
+  }
+
+  let edges = buildGlobalEdges(objects, snapshotsByDagqlID, objectIDsByDagqlID);
+  if (state.options.focusObjectID) {
+    if (!objects.some((obj) => obj.objectID === state.options.focusObjectID)) {
+      warnings.push("Focused object is not present in the global graph.");
+      state.options.focusObjectID = "";
+      state.options.mode = "global";
+    } else {
+      const visibleObjectIDs = new Set([state.options.focusObjectID]);
+      expandVisibleObjectIDs(visibleObjectIDs, edges, state.options.dependencyHops);
+      objects = objects.filter((obj) => visibleObjectIDs.has(obj.objectID));
+      edges = edges.filter((edge) => visibleObjectIDs.has(edge.fromID) && visibleObjectIDs.has(edge.toID));
+    }
+  }
+
+  return {
+    context: {
+      traceID: "",
+      traceTitle: "",
+      mode: state.options.focusObjectID ? "object" : "global",
+      focusObjectID: state.options.focusObjectID,
+      dependencyHopCount: state.options.dependencyHops,
+    },
+    objects,
+    calls: [],
+    edges,
+    warnings,
+  };
+}
+
+function buildGlobalEdges(objects, snapshotsByDagqlID, objectIDsByDagqlID) {
+  const allowedObjectIDs = new Set(objects.map((obj) => obj.objectID));
+  const edgeMap = new Map();
+
+  for (const object of objects) {
+    if (!object.currentDagqlID) {
+      continue;
+    }
+    const snapshot = snapshotsByDagqlID.get(object.currentDagqlID);
+    const refs = Array.isArray(snapshot?.fieldRefs) ? snapshot.fieldRefs : [];
+    for (const ref of refs) {
+      const sourceIDs = objectIDsByDagqlID.get(ref.dagqlID) || [];
+      for (const sourceID of sourceIDs) {
+        if (!allowedObjectIDs.has(sourceID) || sourceID === object.objectID) {
+          continue;
+        }
+        const key = `${sourceID}->${object.objectID}:${ref.path || ""}`;
+        const existing = edgeMap.get(key);
+        if (existing) {
+          existing.evidenceCount += 1;
+          continue;
+        }
+        edgeMap.set(key, {
+          id: `dep:${key}`,
+          kind: "field_ref",
+          fromID: sourceID,
+          toID: object.objectID,
+          label: ref.path || "",
+          evidenceCount: 1,
+        });
+      }
+    }
+  }
+
+  return Array.from(edgeMap.values()).sort((a, b) => {
+    if (a.fromID !== b.fromID) {
+      return a.fromID.localeCompare(b.fromID);
+    }
+    if (a.toID !== b.toID) {
+      return a.toID.localeCompare(b.toID);
+    }
+    return String(a.label || "").localeCompare(String(b.label || ""));
+  });
+}
+
+function expandVisibleObjectIDs(objects, edges, hops) {
+  if (hops <= 0 || !objects.size || !edges.length) {
+    return;
+  }
+  const adjacency = new Map();
+  const addNeighbor = (fromID, toID) => {
+    const set = adjacency.get(fromID) || new Set();
+    set.add(toID);
+    adjacency.set(fromID, set);
+  };
+  for (const edge of edges) {
+    addNeighbor(edge.fromID, edge.toID);
+    addNeighbor(edge.toID, edge.fromID);
+  }
+
+  let frontier = new Set(objects);
+  for (let step = 0; step < hops; step++) {
+    const next = new Set();
+    for (const objectID of frontier) {
+      for (const neighborID of adjacency.get(objectID) || []) {
+        if (objects.has(neighborID)) {
+          continue;
+        }
+        objects.add(neighborID);
+        next.add(neighborID);
+      }
+    }
+    if (!next.size) {
+      break;
+    }
+    frontier = next;
+  }
+}
+
+async function fetchAllV2Items(path) {
+  const items = [];
+  let cursor = "";
+  let pages = 0;
+  while (pages < 100) {
+    const params = new URLSearchParams();
+    params.set("limit", "2000");
+    if (cursor) {
+      params.set("cursor", cursor);
+    }
+    if (state.options.traceID) {
+      params.set("traceID", state.options.traceID);
+    }
+    if (state.options.sessionID) {
+      params.set("sessionID", state.options.sessionID);
+    }
+    if (state.options.clientID) {
+      params.set("clientID", state.options.clientID);
+    }
+    if (state.options.includeInternal) {
+      params.set("includeInternal", "true");
+    }
+
+    const resp = await fetchJSON(`${path}?${params.toString()}`);
+    if (Array.isArray(resp?.items)) {
+      items.push(...resp.items);
+    }
+    cursor = typeof resp?.nextCursor === "string" ? resp.nextCursor : "";
+    if (!cursor) {
+      break;
+    }
+    pages++;
+  }
+  return items;
 }
 
 function startLiveRefresh() {
@@ -954,6 +1167,10 @@ function parseKeepRules(raw) {
     default:
       return true;
   }
+}
+
+function hasScopeQueryParams(params) {
+  return Boolean(stringOrEmpty(params.get("traceID")) || stringOrEmpty(params.get("sessionID")) || stringOrEmpty(params.get("clientID")));
 }
 
 function setSearchParam(params, key, value) {
