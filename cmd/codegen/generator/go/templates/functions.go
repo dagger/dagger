@@ -106,7 +106,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 }
 
 func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {
-	return slices.Contains([]string{"Query", "Binding", "Env"}, t.Name)
+	return slices.Contains(introspection.ExtendableTypes, t.Name)
 }
 
 func (goTemplateFuncs) json(v any) (string, error) {
