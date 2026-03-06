@@ -1,0 +1,12 @@
+{
+  "name": "@fixture/web",
+  "packageManager": "npm@10.9.0",
+  "scripts": {
+    "build": "node server.js --build",
+    "start": "node server.js"
+  },
+  "ports": [
+    3000,
+    3001
+  ]
+}

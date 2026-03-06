@@ -1,0 +1,13 @@
+{
+  "name": "@fixture/admin",
+  "packageManager": "pnpm@9.15.0",
+  "dependencies": {
+    "@fixture/lib": "workspace:*"
+  },
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "ports": [
+    8080
+  ]
+}

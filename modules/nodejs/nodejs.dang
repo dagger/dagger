@@ -1,0 +1,45 @@
+"""
+A Dagger module for discovering and serving Node.js packages from a workspace.
+"""
+type Nodejs {
+  """
+  Discover every package.json in the workspace, excluding node_modules trees.
+  """
+  pub packages(ws: Workspace!): [Package!]! {
+    let workspace = ws.directory(".")
+    let workspaceRoot = ws.root
+    let packageFiles = ws.directory(
+      ".",
+      include: ["package.json", "**/package.json"],
+      exclude: ["node_modules/", "**/node_modules/"],
+    )
+    let packages = [] :: [Package!]!
+    packageFiles.glob("package.json").each { configPath =>
+      packages = packages + [Package(configPath: configPath, configFile: ws.file(configPath), workspace: workspace, workspaceRoot: workspaceRoot)]
+    }
+    packageFiles.glob("**/package.json").each { configPath =>
+      if (configPath != "package.json") {
+        packages = packages + [Package(configPath: configPath, configFile: ws.file(configPath), workspace: workspace, workspaceRoot: workspaceRoot)]
+      }
+    }
+    packages
+  }
+
+  """
+  Return one package by its workspace-relative path.
+  """
+  pub package(ws: Workspace!, path: String!): Package! {
+    let workspace = ws.directory(".")
+    let configPath = if (path == ".") {
+      "package.json"
+    } else {
+      path.trimRight("/") + "/package.json"
+    }
+    Package(
+      configPath: configPath,
+      configFile: ws.file(configPath),
+      workspace: workspace,
+      workspaceRoot: ws.root,
+    )
+  }
+}

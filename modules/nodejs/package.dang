@@ -1,0 +1,246 @@
+"""
+A Node.js package.
+"""
+type Package {
+  let configFile: File!
+  let workspace: Directory!
+  let workspaceRoot: String!
+
+  """
+  Path to the package config file (package.json)
+  """
+  pub configPath: String!
+
+  """
+  Path to the package root directory (parent of package.json)
+  """
+  pub path: String! {
+    let dir = configPath
+      .trimSuffix("package.json")
+      .trimSuffix("/")
+    if (dir == "") {
+      "."
+    } else {
+      dir
+    }
+  }
+
+  """
+  The parsed and validated package configuration
+  """
+  let config: Config! {
+    Config(json: configFile.asJSON)
+  }
+
+  """
+  Package name.
+  """
+  pub name: String! {
+    config.name
+  }
+
+  """
+  Package manager for this package.
+  """
+  pub packageManager: String! {
+    config.packageManager
+  }
+
+  """
+  Ports to expose when serving the package.
+  """
+  pub ports: [Int!]! {
+    config.ports
+  }
+
+  pub hasBuildScript: Boolean! {
+    config.hasBuildScript
+  }
+
+  pub startScript: String! {
+    config.startScript
+  }
+
+  let packageIncludes: [String!]! {
+    if (path == ".") {
+      [
+        "**",
+      ]
+    } else {
+      [
+        path + "/**",
+        "package.json",
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "yarn.lock",
+        ".npmrc",
+        ".yarnrc",
+        ".yarnrc.yml",
+      ]
+    }
+  }
+
+  let installFromWorkspaceRoot: Boolean! {
+    if (path == ".") {
+      true
+    } else {
+      config.hasLocalDependencyRefs or config.hasWorkspaces
+    }
+  }
+
+  let workspaceExcludes: [String!]! {
+    [
+      "node_modules/",
+      "**/node_modules/",
+      ".git/",
+      "**/.git/",
+    ]
+  }
+
+  let workspaceFiles: Directory! {
+    if (installFromWorkspaceRoot) {
+      workspace.filter(exclude: workspaceExcludes)
+    } else {
+      workspace.filter(
+        include: packageIncludes,
+        exclude: workspaceExcludes,
+      )
+    }
+  }
+
+  let workdirPath: String! {
+    if (path == ".") {
+      "/work"
+    } else {
+      "/work/" + path
+    }
+  }
+
+  let installWorkdir: String! {
+    if (installFromWorkspaceRoot) {
+      "/work"
+    } else {
+      workdirPath
+    }
+  }
+
+  let installCmd: [String!]! {
+    if (packageManager == "yarn") {
+      ["yarn", "install", "--frozen-lockfile"]
+    } else if (packageManager == "pnpm") {
+      ["pnpm", "install", "--frozen-lockfile"]
+    } else {
+      ["npm", "install"]
+    }
+  }
+
+  let runScriptCmd(script: String!): [String!]! {
+    if (packageManager == "yarn") {
+      ["yarn", script]
+    } else if (packageManager == "pnpm") {
+      ["pnpm", "run", script]
+    } else {
+      ["npm", "run", script]
+    }
+  }
+
+  let rootNodeModulesCacheKey: String! {
+    "nodejs-root-node-modules-" + workspaceRoot
+  }
+
+  let packageNodeModulesCacheKey: String! {
+    "nodejs-package-node-modules-" + workspaceRoot + "-" + path
+  }
+
+  """
+  Build a container with the workspace mounted and Node package manager caches enabled.
+  """
+  pub sandbox: Container! {
+    let ctr = base
+      .withWorkdir("/work")
+      .withDirectory(".", workspaceFiles)
+    if (installFromWorkspaceRoot) {
+      ctr
+        .withMountedCache(
+          "/work/node_modules",
+          cacheVolume(rootNodeModulesCacheKey),
+          sharing: CacheSharingMode.LOCKED,
+        )
+        .withWorkdir(workdirPath)
+    } else {
+      ctr
+        .withMountedCache(
+          workdirPath + "/node_modules",
+          cacheVolume(packageNodeModulesCacheKey),
+          sharing: CacheSharingMode.LOCKED,
+        )
+        .withWorkdir(workdirPath)
+    }
+  }
+
+  """
+  Install dependencies and optionally run the build script.
+  """
+  pub build: Container! {
+    let ctr = base
+      .withWorkdir("/work")
+      .withDirectory(".", workspaceFiles)
+
+    if (installFromWorkspaceRoot) {
+      ctr = ctr.withMountedCache(
+        "/work/node_modules",
+        cacheVolume(rootNodeModulesCacheKey),
+        sharing: CacheSharingMode.LOCKED,
+      )
+    } else {
+      ctr = ctr.withMountedCache(
+        workdirPath + "/node_modules",
+        cacheVolume(packageNodeModulesCacheKey),
+        sharing: CacheSharingMode.LOCKED,
+      )
+    }
+
+    ctr = ctr
+      .withWorkdir(installWorkdir)
+      .withExec(installCmd)
+      .withWorkdir(workdirPath)
+
+    if (hasBuildScript) {
+      ctr = ctr.withExec(runScriptCmd("build"))
+    }
+
+    ctr
+  }
+
+  """
+  Run the package as a Dagger service.
+  """
+  pub server: Service! {
+    let ctr = build
+    ports.each { port =>
+      ctr = ctr.withExposedPort(port)
+    }
+    ctr.asService(args: runScriptCmd(startScript))
+  }
+
+  let base: Container! {
+    container
+      .from("node:lts-alpine")
+      .withoutEntrypoint
+      .withExec(["corepack", "enable"])
+      .withMountedCache(
+        "/root/.npm/_cacache",
+        cacheVolume("nodejs-npm-cache"),
+      )
+      .withMountedCache(
+        "/usr/local/share/.cache/yarn",
+        cacheVolume("nodejs-yarn-cache"),
+      )
+      .withMountedCache(
+        "/root/.local/share/pnpm/store",
+        cacheVolume("nodejs-pnpm-cache"),
+      )
+  }
+}

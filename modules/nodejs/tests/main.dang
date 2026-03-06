@@ -1,0 +1,106 @@
+type Tests {
+  let fixtureRoot: String! = "modules/nodejs/tests/testdata/workspace"
+
+  let allPackagePaths(ws: Workspace!): [String!]! {
+    nodejs.packages(ws).{path}.map { pkg =>
+      pkg.path
+    }
+  }
+
+  let fixturePackagePaths(ws: Workspace!): [String!]! {
+    let paths = [] :: [String!]!
+    allPackagePaths(ws).each { path =>
+      if (path == fixtureRoot
+        or path == fixtureRoot + "/apps/admin"
+        or path == fixtureRoot + "/apps/web"
+        or path == fixtureRoot + "/shared/lib") {
+        paths = paths + [path]
+      }
+    }
+    paths
+  }
+
+  let hasPath(paths: [String!]!, path: String!): Boolean! {
+    let found = false
+    paths.each { candidate =>
+      if (candidate == path) {
+        found = true
+      }
+    }
+    found
+  }
+
+  let hasPort(pkg: NodejsPackage!, want: Int!): Boolean! {
+    let found = false
+    pkg.ports.each { port =>
+      if (port == want) {
+        found = true
+      }
+    }
+    found
+  }
+
+  """
+  Discover package.json files beneath the fixture workspace.
+  """
+  pub discoversPackages(ws: Workspace!): Void @check {
+    let paths = fixturePackagePaths(ws)
+    if (paths.length != 4) {
+      raise "expected 4 fixture packages"
+    }
+
+    if (hasPath(allPackagePaths(ws), fixtureRoot + "/apps/web/node_modules/ignored")) {
+      raise "package discovery should ignore node_modules"
+    }
+
+    null
+  }
+
+  """
+  Read the custom package.json ports key.
+  """
+  pub readsPorts(ws: Workspace!): Void @check {
+    let web = nodejs.package(ws, fixtureRoot + "/apps/web")
+    if (web.ports.length != 2) {
+      raise "expected 2 ports for apps/web"
+    }
+
+    let has3000 = hasPort(web, 3000)
+    let has3001 = hasPort(web, 3001)
+    if (has3000 == false or has3001 == false) {
+      raise "apps/web ports were not parsed correctly"
+    }
+
+    let admin = nodejs.package(ws, fixtureRoot + "/apps/admin")
+    let has8080 = hasPort(admin, 8080)
+    if (has8080 == false) {
+      raise "apps/admin ports were not parsed correctly"
+    }
+
+    null
+  }
+
+  """
+  Parse the package manager from package.json.
+  """
+  pub readsPackageManager(ws: Workspace!): Void @check {
+    let admin = nodejs.package(ws, fixtureRoot + "/apps/admin")
+    if (admin.packageManager != "pnpm") {
+      raise "expected apps/admin package manager to be pnpm"
+    }
+
+    let web = nodejs.package(ws, fixtureRoot + "/apps/web")
+    if (web.packageManager != "npm") {
+      raise "expected apps/web package manager to be npm"
+    }
+
+    null
+  }
+
+  pub all(ws: Workspace!): Void @check {
+    discoversPackages(ws)
+    readsPorts(ws)
+    readsPackageManager(ws)
+    null
+  }
+}

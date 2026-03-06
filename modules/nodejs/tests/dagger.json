@@ -1,0 +1,14 @@
+{
+  "name": "tests",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk"
+  },
+  "dependencies": [
+    {
+      "name": "nodejs",
+      "source": ".."
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}
