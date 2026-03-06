@@ -36,34 +36,50 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:  "call [options]",
-	Short: "Call one or more functions, interconnected into a pipeline",
+	Name:            "call [options]",
+	Short:           "Call one or more functions, interconnected into a pipeline",
+	ParseTargetArgs: parseCallTargetArgs,
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
 	},
 }
 
 var funcListCmd = &cobra.Command{
-	Use:   "functions [options] [function]...",
+	Use:   "functions [options] [workspace --] [function]...",
 	Short: `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 
 This is similar to ´dagger call --help´, but only focused on showing the
 available functions.
+
+Examples:
+  dagger functions                           # List top-level functions in current workspace
+  dagger functions container                 # List functions on container
+  dagger functions github.com/acme/ws --     # List top-level functions in explicit workspace
+  dagger functions github.com/acme/ws -- container from
 `,
 		"´",
 		"`",
 	),
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
-			mod, err := initializeDefaultModule(ctx, engineClient.Dagger())
+		workspaceRef, functionPath, err := parseFunctionsTargetArgs(args, cmd.Flags().ArgsLenAtDash())
+		if err != nil {
+			return err
+		}
+
+		params := initModuleParams(functionPath)
+		params.Workspace = workspaceRef
+
+		return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+			// -m modules are loaded at engine connect time as extra modules.
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), workspaceRef)
 			if err != nil {
 				return err
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for _, field := range cmd.Flags().Args() {
+			for _, field := range functionPath {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil {
@@ -87,13 +103,65 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout())
+			// Only filter core functions when listing the Query root in
+			// workspace mode (multiple modules as sub-commands). When a
+			// main module is set (single module or -m), or when navigating
+			// into a module type, show all functions.
+			filterCore := len(functionPath) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name == "Query"
+
+			// When the default module is focused (not Query) and we're
+			// at the top level, also show sibling workspace module
+			// entrypoints alongside the default module's functions.
+			var siblingFns []*modFunction
+			if len(functionPath) == 0 &&
+				mod.MainObject.AsObject != nil &&
+				mod.MainObject.AsObject.Name != "Query" {
+				siblingFns = mod.siblingModuleEntrypoints()
+			}
+			return functionListRun(o, cmd.OutOrStdout(), filterCore, siblingFns)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer) error {
+// parseFunctionsTargetArgs parses "functions" args with optional explicit workspace syntax:
+//
+//	dagger functions <workspace> -- <function...>
+//	dagger functions -- <function...>
+func parseFunctionsTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
+	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
+}
+
+// parseCallTargetArgs parses "call" args with optional workspace target.
+//
+// Supported forms:
+//   - dagger call <function...>
+//   - dagger call <workspace> <function...>
+//   - dagger call <workspace> -- <function...>
+func parseCallTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
+	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
+}
+
+func functionListRun(o functionProvider, writer io.Writer, filterCore bool, siblingFns []*modFunction) error {
 	fns, skipped := GetSupportedFunctions(o)
+
+	// At the Query root, filter out core API constructors — only show module
+	// constructors. When navigating into a module type, show all functions.
+	if filterCore {
+		filtered := make([]*modFunction, 0, len(fns))
+		for _, fn := range fns {
+			if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+				filtered = append(filtered, fn)
+			}
+		}
+		fns = filtered
+		skipped = nil // don't show core "skipped" noise either
+	}
+
+	// Append sibling module entrypoints (from workspace peers of the
+	// default module). Conflicts are already filtered out.
+	fns = append(fns, siblingFns...)
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
@@ -105,9 +173,18 @@ func functionListRun(o functionProvider, writer io.Writer) error {
 		return fns[i].Name < fns[j].Name
 	})
 	for _, fn := range fns {
+		desc := fn.Short()
+		// When listing module constructors at the Query root, the constructor
+		// function itself usually has no description. Fall back to the return
+		// type's object description (the module type's doc comment).
+		if desc == "-" && fn.ReturnType != nil && fn.ReturnType.AsObject != nil {
+			if objDesc := shortDescription(fn.ReturnType.AsObject.Description); objDesc != "-" {
+				desc = objDesc
+			}
+		}
 		fmt.Fprintf(tw, "%s\t%s\n",
 			fn.CmdName(),
-			fn.Short(),
+			desc,
 		)
 	}
 	if len(skipped) > 0 {

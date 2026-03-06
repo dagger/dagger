@@ -66,8 +66,14 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	// Load IDs in the source client's metadata context so any cache-miss re-evaluation
 	// (e.g. host.unixSocket post-call side effects) targets the correct source client.
 	srcClientCtx := engine.ContextWithClientMetadata(ctx, srcClient.clientMetadata)
+	// Ensure the query context is set for schema building. The ctx from
+	// initializeDaggerClient may not have it (it's set later), but
+	// lazilyLoadSchema needs it for dag.Select operations like __schemaJSONFile.
+	if srcClient.dagqlRoot != nil {
+		srcClientCtx = core.ContextWithQuery(srcClientCtx, srcClient.dagqlRoot)
+	}
 
-	srcDag, err := srcClient.deps.Schema(srcClientCtx)
+	srcDag, err := srcClient.servedMods.Schema(srcClientCtx)
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}

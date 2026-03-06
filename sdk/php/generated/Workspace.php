@@ -14,6 +14,18 @@ namespace Dagger;
 class Workspace extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Return all checks from modules loaded in the workspace.
+     */
+    public function checks(?array $include = null): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The client ID that owns this workspace's host filesystem.
      */
     public function clientId(): string
@@ -23,9 +35,45 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Path to config.toml relative to root (empty if not initialized).
+     */
+    public function configPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configPath');
+    }
+
+    /**
+     * Read a configuration value from config.toml.
+     *
+     * If key is empty, returns the full config. If key points to a scalar, returns the value. If key points to a table, returns flattened dotted-key output.
+     */
+    public function configRead(?string $key = ''): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configRead');
+        if (null !== $key) {
+        $leafQueryBuilder->setArgument('key', $key);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configRead');
+    }
+
+    /**
+     * Write a configuration value to config.toml.
+     *
+     * Validates the key against the config schema and auto-detects value types.
+     */
+    public function configWrite(string $key, string $value): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configWrite');
+        $leafQueryBuilder->setArgument('key', $key);
+        $leafQueryBuilder->setArgument('value', $value);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configWrite');
+    }
+
+    /**
      * Returns a Directory from the workspace.
      *
-     * Path is relative to workspace root. Use "." for the root directory.
+     * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
      */
     public function directory(
         string $path,
@@ -50,7 +98,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a File from the workspace.
      *
-     * Path is relative to workspace root.
+     * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
      */
     public function file(string $path): File
     {
@@ -77,6 +125,27 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return all generators from modules loaded in the workspace.
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Whether a config.toml file exists in the workspace.
+     */
+    public function hasConfig(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasConfig');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasConfig');
+    }
+
+    /**
      * A unique identifier for this Workspace.
      */
     public function id(): WorkspaceId
@@ -86,11 +155,62 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Absolute path to the workspace root directory.
+     * Initialize a new workspace, creating .dagger/config.toml.
      */
-    public function root(): string
+    public function init(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('root');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'root');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('init');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'init');
+    }
+
+    /**
+     * Whether .dagger/config.toml exists.
+     */
+    public function initialized(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('initialized');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'initialized');
+    }
+
+    /**
+     * Install a module into the workspace, writing config.toml to the host.
+     */
+    public function install(string $ref, ?string $name = '', ?bool $blueprint = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('install');
+        $leafQueryBuilder->setArgument('ref', $ref);
+        if (null !== $name) {
+        $leafQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $blueprint) {
+        $leafQueryBuilder->setArgument('blueprint', $blueprint);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'install');
+    }
+
+    /**
+     * Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
+     */
+    public function moduleInit(string $name, string $sdk, ?string $source = '', ?array $include = null): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
+        $leafQueryBuilder->setArgument('name', $name);
+        $leafQueryBuilder->setArgument('sdk', $sdk);
+        if (null !== $source) {
+        $leafQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $include) {
+        $leafQueryBuilder->setArgument('include', $include);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleInit');
+    }
+
+    /**
+     * Workspace path relative to root.
+     */
+    public function path(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'path');
     }
 }

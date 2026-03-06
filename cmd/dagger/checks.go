@@ -34,7 +34,7 @@ func init() {
 var checksCmd = &cobra.Command{
 	Hidden:  true,
 	Aliases: []string{"checks"},
-	Use:     "check [options] [pattern...]",
+	Use:     "check [options] [workspace --] [pattern...]",
 	Short:   "Check the state of your project by running tests, linters, etc.",
 	Long: `Check the state of your project by running tests, linters, etc.
 
@@ -42,25 +42,31 @@ Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
   dagger check go:lint            # Run the go:lint check and any subchecks
+  dagger check github.com/acme/ws -- go:lint  # Run check(s) against explicit workspace
+  dagger check -- go:lint         # Run check(s) in current workspace (explicit separator)
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		workspaceRef, patterns, err := parseChecksTargetArgs(args, cmd.Flags().ArgsLenAtDash())
+		if err != nil {
+			return err
+		}
+
+		params := client.Params{
+			EnableCloudScaleOut: enableScaleOut,
+			Workspace:           workspaceRef,
+		}
 		return withEngine(
 			cmd.Context(),
-			client.Params{
-				EnableCloudScaleOut: enableScaleOut,
-			},
+			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				mod, err := loadModule(ctx, dag)
-				if err != nil {
-					return err
-				}
+				ws := dag.CurrentWorkspace()
 				var checks *dagger.CheckGroup
-				if len(args) > 0 {
-					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
+				if len(patterns) > 0 {
+					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: patterns})
 				} else {
-					checks = mod.Checks()
+					checks = ws.Checks()
 				}
 				if checksListMode {
 					return listChecks(ctx, dag, checks, cmd)
@@ -72,19 +78,20 @@ Examples:
 	},
 }
 
-func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error) {
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-	ctx, span := Tracer().Start(ctx, "load "+modRef)
-	defer span.End()
-	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
+// parseChecksTargetArgs parses "check" args with optional explicit workspace syntax:
+//
+//	dagger check <workspace> -- <pattern...>
+//	dagger check -- <pattern...>
+func parseChecksTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
+	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
 }
 
 // loadGroupListDetails fetches name+description for every item in a group
-// using a single batch GraphQL query, with tracing suppressed to avoid
-// per-item span noise in list mode.
+// using a single batch GraphQL query.
+//
+// By default, nested spans are suppressed to keep list mode concise.
+// When verbosity is enabled (-v and above), preserve trace context so module
+// loading and selection internals remain visible for debugging.
 func loadGroupListDetails(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -96,9 +103,12 @@ func loadGroupListDetails(
 	ctx, span := Tracer().Start(ctx, spanName)
 	defer span.End()
 
-	noTraceCtx := trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+	queryCtx := ctx
+	if verbose == 0 {
+		queryCtx = trace.ContextWithSpan(ctx, trace.SpanFromContext(context.Background()))
+	}
 
-	id, err := getID(noTraceCtx)
+	id, err := getID(queryCtx)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -110,7 +120,7 @@ func loadGroupListDetails(
 		}
 	}
 
-	err = dag.Do(noTraceCtx, &dagger.Request{
+	err = dag.Do(queryCtx, &dagger.Request{
 		Query:  query,
 		OpName: opName,
 		Variables: map[string]any{

@@ -30,7 +30,7 @@ func init() {
 
 var generateCmd = &cobra.Command{
 	Hidden: true,
-	Use:    "generate [options] [pattern...]",
+	Use:    "generate [options] [workspace --] [pattern...]",
 	Short:  "Generate assets of your project",
 	Long: `Generate assets of your project
 
@@ -38,34 +38,47 @@ Examples:
   dagger generate                            # Generate all assets
   dagger generate -l                         # List all available generators
   dagger generate go:bin                     # Generate by selecting the generator function
+  dagger generate github.com/acme/ws -- go:bin  # Generate against explicit workspace
+  dagger generate -- go:bin                  # Generate in current workspace (explicit separator)
 `,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		workspaceRef, patterns, err := parseGenerateTargetArgs(args, cmd.Flags().ArgsLenAtDash())
+		if err != nil {
+			return err
+		}
+
+		params := client.Params{
+			EnableCloudScaleOut: enableScaleOut,
+			Workspace:           workspaceRef,
+		}
 		return withEngine(
 			cmd.Context(),
-			client.Params{
-				EnableCloudScaleOut: enableScaleOut,
-			},
+			params,
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
-				mod, err := loadModule(ctx, dag)
-				if err != nil {
-					return err
-				}
+				ws := dag.CurrentWorkspace()
 				var generators *dagger.GeneratorGroup
-				if len(args) > 0 {
-					generators = mod.Generators(dagger.ModuleGeneratorsOpts{Include: args})
+				if len(patterns) > 0 {
+					generators = ws.Generators(dagger.WorkspaceGeneratorsOpts{Include: patterns})
 				} else {
-					generators = mod.Generators()
+					generators = ws.Generators()
 				}
 				if generateListMode {
 					return listGenerators(ctx, dag, generators, cmd)
-				} else {
-					return runGenerators(ctx, dag, generators, cmd)
 				}
+				return runGenerators(ctx, dag, generators, cmd)
 			},
 		)
 	},
+}
+
+// parseGenerateTargetArgs parses "generate" args with optional explicit workspace syntax:
+//
+//	dagger generate <workspace> -- <pattern...>
+//	dagger generate -- <pattern...>
+func parseGenerateTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
+	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
 }
 
 func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {

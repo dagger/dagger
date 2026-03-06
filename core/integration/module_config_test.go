@@ -32,9 +32,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		baseWithOldConfig := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/foo").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("/work/main.go", `package main
 			type Test struct {}
 
@@ -78,9 +78,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			return goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/tmp/foo").
-				With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+				With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 				WithWorkdir("/work/dep").
-				With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+				With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 				WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
@@ -93,7 +93,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			`,
 				).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+				With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go"))
 		}
 
 		t.Run("source points out of root", func(ctx context.Context, t *testctx.T) {
@@ -115,7 +115,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `source path ".." contains parent directory components`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `source path ".." contains parent directory components`)
 			})
 
@@ -137,7 +137,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 			})
 
@@ -174,7 +174,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
 				base = base.
@@ -195,7 +195,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 			})
 
@@ -220,7 +220,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
 				base = base.
@@ -241,7 +241,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 
-				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 			})
 
@@ -264,7 +264,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		baseWithOldConfig := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("/work/main.go", `package main
 			type Test struct {}
 
@@ -295,7 +295,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
@@ -324,8 +324,8 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", "--name", "foo", "./dep")).
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "install", "--name", "foo", "./dep")).
 			WithNewFile("/work/main.go", `package main
 
 			import (
@@ -384,7 +384,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
@@ -397,8 +397,8 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", "--name", "foo", "./dep")).
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "install", "--name", "foo", "./dep")).
 			WithNewFile("/work/main.go", `package main
 
 			import "context"
@@ -421,7 +421,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep1").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/dep1/main.go", `package main
 
 			import "context"
@@ -434,7 +434,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work/dep2").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/dep2/main.go", `package main
 
 			import "context"
@@ -447,9 +447,9 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", "--name", "foo", "./dep1")).
-			With(daggerExec("install", "--name", "bar", "./dep2")).
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "install", "--name", "foo", "./dep1")).
+			With(daggerExec("module", "install", "--name", "bar", "./dep2")).
 			WithNewFile("/work/main.go", `package main
 
 			import "context"
@@ -483,7 +483,7 @@ func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go", "test"))
+		With(daggerExec("module", "init", "--name=test", "--sdk=go", "test"))
 
 	for _, tc := range []struct {
 		name       string
@@ -583,7 +583,7 @@ func (ConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+					With(daggerExec("module", "init", "--sdk=go", "--name=foo", "--source=.")).
 					WithNewFile("dagger.json", tc.daggerjson).
 					WithNewFile("main.go", `package main
 
@@ -806,14 +806,14 @@ func (m *Coolsdk) WithConfig(
 				if tc.customSDKSource != "" {
 					ctr = ctr.
 						WithWorkdir("/work/"+tc.sdk).
-						With(daggerExec("init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
+						With(daggerExec("module", "init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
 						WithNewFile("main.go", tc.customSDKSource)
 				}
 
 				// create a module that use the custom sdk
 				ctr = ctr.
 					WithWorkdir("/work").
-					With(daggerExec("init", "--source=.", "--name=foo", "--sdk="+tc.sdk)).
+					With(daggerExec("module", "init", "--source=.", "--name=foo", "--sdk="+tc.sdk)).
 					WithNewFile("dagger.json", tc.daggerjson).
 					WithNewFile(".dagger/main.go", `package main
 
@@ -955,12 +955,12 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 			if tc.customSDKSource != "" {
 				ctr = ctr.
 					WithWorkdir("/work/" + tc.sdk).
-					With(daggerExec("init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
+					With(daggerExec("module", "init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
 					With(sdkSource(tc.customSDKUnderlyingSDK, tc.customSDKSource)).
 					WithWorkdir("/work")
 			}
 
-			ctr = ctr.With(daggerExec("init", "--name=test", "--source=dagger", "--sdk="+tc.sdk))
+			ctr = ctr.With(daggerExec("module", "init", "--name=test", "--source=dagger", "--sdk="+tc.sdk))
 
 			if tc.customSDKSource != "" {
 				// TODO: hardcoding that underlying sdk is go right now, could be generalized
@@ -1052,12 +1052,12 @@ func (m *%[1]s) ContextDirectory() ([]string, error) {
 		c := connect(ctx, t)
 
 		ctr := goGitBase(t, c).
-			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.dagger")).
+			With(daggerExec("module", "init", "--sdk=go", "--name=test", "--source=.dagger")).
 			With(source("Test")).
 			WithNewFile("foo", "").
 			WithNewFile(".dagger/bar", "").
 			WithWorkdir("dep").
-			With(daggerExec("init", "--sdk=go", "--source=.dagger")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.dagger")).
 			With(source("Dep")).
 			WithNewFile("foo", "").
 			WithNewFile(".dagger/bar", "").
@@ -1070,7 +1070,7 @@ func (m *%[1]s) ContextDirectory() ([]string, error) {
 				Source:  ".dagger",
 			})).
 			WithWorkdir("..").
-			With(daggerExec("install", "./dep"))
+			With(daggerExec("module", "install", "./dep"))
 
 		t.Run("dependency filtered", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.
@@ -1101,7 +1101,7 @@ func (ConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testc
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/coolsdk").
-		With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--name=cool-sdk", "--sdk=go")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -1143,7 +1143,7 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 		).
 		WithWorkdir("/work").
 		WithNewFile("random-file", "").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
+		With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=coolsdk")).
 		WithNewFile("main.go", `package main
 
 import "os"
@@ -1466,8 +1466,8 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 				ctr := goGitBase(t, c).
 					With(privateSetup).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--source=.")).
-					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
+					With(daggerExec("module", "init", "--source=.")).
+					With(daggerExec("module", "install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
 
 				out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
 				require.NoError(t, err)
@@ -1510,7 +1510,7 @@ func (ConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
 		WithNewFile("/work/main.go", `package main
 			import (
 				"context"
@@ -1562,7 +1562,7 @@ func (ConfigSuite) TestDepPinsStayPinned(ctx context.Context, t *testctx.T) {
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+		With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go"))
 
 	modCfgContents, err := ctr.
 		File("dagger.json").
@@ -1606,8 +1606,8 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", repo))
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "install", repo))
 
 		modCfgContents, err := ctr.
 			File("dagger.json").
@@ -1636,8 +1636,8 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			With(daggerExec("install", repo+"@"+branch))
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "install", repo+"@"+branch))
 
 		modCfgContents, err := ctr.
 			File("dagger.json").
@@ -1666,7 +1666,7 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+			With(daggerExec("module", "init", "--source=.", "--name=test", "--sdk=go"))
 		modCfgContents, err := ctr.
 			File("dagger.json").
 			Contents(ctx)

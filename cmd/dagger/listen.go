@@ -20,7 +20,6 @@ import (
 
 var (
 	listenAddress string
-	disableHostRW bool
 	allowCORS     bool
 )
 
@@ -34,7 +33,6 @@ var listenCmd = &cobra.Command{
 
 func init() {
 	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", "127.0.0.1:8080", "Listen on network address ADDR")
-	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
 	listenCmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
 }
 

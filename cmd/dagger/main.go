@@ -66,6 +66,7 @@ var (
 	interactive              bool
 	interactiveCommand       string
 	interactiveCommandParsed []string
+	lockMode                 string
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
@@ -142,13 +143,15 @@ func init() {
 		configCmd,
 		checksCmd,
 		generateCmd,
-		moduleInitCmd,
+		workspaceCmd,
+		moduleCmd,
+		workspaceInitCmd,
 		moduleInstallCmd,
+		migrateCmd,
 		moduleUnInstallCmd,
-		moduleUpdateCmd,
+		updateCmd,
 		moduleDevelopCmd,
 		modulePublishCmd,
-		toolchainCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
@@ -222,14 +225,14 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		var err error
-		workdir, err = NormalizeWorkdir(workdir)
+		normalized, err := NormalizeWorkdir(workdir)
 		if err != nil {
 			return err
 		}
-		if err := os.Chdir(workdir); err != nil {
-			return err
+		if err := os.Chdir(normalized); err != nil {
+			return fmt.Errorf("change workdir: %w", err)
 		}
+		workdir = normalized
 
 		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
@@ -327,12 +330,13 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&workdir, "workdir", ".", "Change the working directory")
+	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
+	flags.StringVar(&lockMode, "lock", "", "Lock mode for lookup resolution (strict, auto, update). Defaults to auto.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")

@@ -5211,7 +5211,7 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
 
 	out, err := dockerc.WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "init", "--sdk=go"}).
+		WithExec([]string{"dagger", "module", "init", "--sdk=go", "--source=."}).
 		WithNewFile("main.go", `package main
 
 import "context"

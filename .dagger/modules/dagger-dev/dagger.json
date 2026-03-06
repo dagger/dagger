@@ -1,0 +1,14 @@
+{
+  "name": "dagger-dev",
+  "engineVersion": "v0.19.11",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../../sdk/typescript/runtime/**/*",
+    "../../../engine/distconsts",
+    "../../../go.mod",
+    "../../../go.sum",
+    "../../../util/patchpreview"
+  ]
+}
