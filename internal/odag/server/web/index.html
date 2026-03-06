@@ -12,7 +12,7 @@
         <header class="data-header">
           <div class="data-header-copy">
             <p class="data-eyebrow">ODAG</p>
-            <h1>Browse objects and events</h1>
+            <h1>Browse objects, snapshots, and events</h1>
             <p class="data-subtitle">
               A web-style explorer for ODAG data. Click trace, session, and client chips in any row to narrow the view.
             </p>
@@ -54,6 +54,7 @@
 
         <nav class="data-tabs" aria-label="ODAG explorer pages">
           <button class="data-tab is-active" data-page-tab="objects" type="button">Objects</button>
+          <button class="data-tab" data-page-tab="snapshots" type="button">Snapshots</button>
           <button class="data-tab" data-page-tab="events" type="button">Events</button>
         </nav>
 
@@ -85,6 +86,31 @@
               <div id="objectMeta" class="data-page-meta"></div>
             </div>
             <div id="objectTable" class="data-table-shell"></div>
+          </section>
+
+          <section class="data-page" data-page="snapshots">
+            <div class="data-page-toolbar">
+              <label class="data-field data-field-grow" for="snapshotSearch">
+                <span class="data-field-label">Search</span>
+                <input
+                  id="snapshotSearch"
+                  class="text-input"
+                  placeholder="Snapshot, type, trace, session, client, field ref"
+                />
+              </label>
+              <label class="data-field" for="snapshotSort">
+                <span class="data-field-label">Sort</span>
+                <select id="snapshotSort" class="text-input">
+                  <option value="recent">Recently updated</option>
+                  <option value="type">Type</option>
+                  <option value="refs">Most refs</option>
+                  <option value="calls">Most producers</option>
+                  <option value="trace">Trace</option>
+                </select>
+              </label>
+              <div id="snapshotMeta" class="data-page-meta"></div>
+            </div>
+            <div id="snapshotTable" class="data-table-shell"></div>
           </section>
 
           <section class="data-page" data-page="events">

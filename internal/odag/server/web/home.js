@@ -1,5 +1,6 @@
 const state = {
   bindings: { items: [], nextCursor: "" },
+  snapshots: { items: [], nextCursor: "" },
   spans: { items: [], nextCursor: "" },
   calls: { items: [], nextCursor: "" },
   mutations: { items: [], nextCursor: "" },
@@ -15,6 +16,10 @@ const state = {
     objects: {
       search: "",
       status: "all",
+      sort: "recent",
+    },
+    snapshots: {
+      search: "",
       sort: "recent",
     },
     events: {
@@ -47,6 +52,10 @@ const els = {
   objectSort: document.getElementById("objectSort"),
   objectMeta: document.getElementById("objectMeta"),
   objectTable: document.getElementById("objectTable"),
+  snapshotSearch: document.getElementById("snapshotSearch"),
+  snapshotSort: document.getElementById("snapshotSort"),
+  snapshotMeta: document.getElementById("snapshotMeta"),
+  snapshotTable: document.getElementById("snapshotTable"),
   eventSearch: document.getElementById("eventSearch"),
   eventKind: document.getElementById("eventKind"),
   eventSort: document.getElementById("eventSort"),
@@ -59,6 +68,7 @@ const els = {
 init().catch((err) => {
   renderStatus(String(err));
   renderEmpty(els.objectTable, "Initialization failed.");
+  renderEmpty(els.snapshotTable, "Initialization failed.");
   renderEmpty(els.eventTable, "Initialization failed.");
 });
 
@@ -110,6 +120,15 @@ function bindEvents() {
   els.objectSort.addEventListener("change", () => {
     state.filters.objects.sort = els.objectSort.value || "recent";
     renderObjects();
+  });
+
+  els.snapshotSearch.addEventListener("input", () => {
+    state.filters.snapshots.search = els.snapshotSearch.value || "";
+    renderSnapshots();
+  });
+  els.snapshotSort.addEventListener("change", () => {
+    state.filters.snapshots.sort = els.snapshotSort.value || "recent";
+    renderSnapshots();
   });
 
   els.eventSearch.addEventListener("input", () => {
@@ -172,8 +191,9 @@ async function refreshAll() {
   state.options.includeInternal = Boolean(els.includeInternal.checked);
 
   const query = buildV2Query();
-  const [bindingsResp, spansResp, callsResp, mutationsResp, sessionsResp, clientsResp] = await Promise.all([
+  const [bindingsResp, snapshotsResp, spansResp, callsResp, mutationsResp, sessionsResp, clientsResp] = await Promise.all([
     safeFetchJSON(`/api/v2/object-bindings?${query}`),
+    safeFetchJSON(`/api/v2/object-snapshots?${query}`),
     safeFetchJSON(`/api/v2/spans?${query}`),
     safeFetchJSON(`/api/v2/calls?${query}`),
     safeFetchJSON(`/api/v2/mutations?${query}`),
@@ -182,6 +202,7 @@ async function refreshAll() {
   ]);
 
   state.bindings = normalizeV2Response(bindingsResp.data);
+  state.snapshots = normalizeV2Response(snapshotsResp.data);
   state.spans = normalizeV2Response(spansResp.data);
   state.calls = normalizeV2Response(callsResp.data);
   state.mutations = normalizeV2Response(mutationsResp.data);
@@ -190,6 +211,7 @@ async function refreshAll() {
 
   const errorMsg =
     bindingsResp.error ||
+    snapshotsResp.error ||
     spansResp.error ||
     callsResp.error ||
     mutationsResp.error ||
@@ -199,6 +221,7 @@ async function refreshAll() {
   renderStatus(errorMsg);
   renderScopeSummary();
   renderObjects();
+  renderSnapshots();
   renderEvents();
 }
 
@@ -252,9 +275,10 @@ async function importTraceFromCloud() {
 
 function renderStatus(errorMsg) {
   const bindingCount = responseCountLabel(state.bindings);
+  const snapshotCount = responseCountLabel(state.snapshots);
   const eventCount = eventCountLabel();
   const scopeText = describeScope();
-  const base = `${bindingCount} objects, ${eventCount} events, scope: ${scopeText}`;
+  const base = `${bindingCount} objects, ${snapshotCount} snapshots, ${eventCount} events, scope: ${scopeText}`;
   els.statusNote.textContent = errorMsg ? `${base}. Warning: ${errorMsg}` : `${base}.`;
 }
 
@@ -417,6 +441,125 @@ function compareObjectRows(a, b, sort) {
     case "recent":
     default:
       return compareNumberDesc(a.lastSeenUnixNano, b.lastSeenUnixNano) || compareString(a.alias, b.alias);
+  }
+}
+
+function renderSnapshots() {
+  const allRows = buildSnapshotRows();
+  const search = (state.filters.snapshots.search || "").trim().toLowerCase();
+  const sort = state.filters.snapshots.sort || "recent";
+
+  let rows = allRows.filter((row) => {
+    if (!search) {
+      return true;
+    }
+    return row.searchText.includes(search);
+  });
+
+  rows.sort((a, b) => compareSnapshotRows(a, b, sort));
+  els.snapshotMeta.textContent = `${rows.length} shown of ${allRows.length}${state.snapshots.nextCursor ? "+" : ""}`;
+
+  if (rows.length === 0) {
+    renderEmpty(els.snapshotTable, "No snapshots match the current filters.");
+    return;
+  }
+
+  const tableRows = rows.map((row) => {
+    return `
+      <tr>
+        <td>
+          <div class="data-primary data-mono" title="${escapeHTML(row.dagqlID || "-")}">${escapeHTML(shortDigest(row.dagqlID || "-"))}</div>
+          <div class="data-secondary">${escapeHTML(row.stateSummary)}</div>
+        </td>
+        <td>${escapeHTML(row.typeName || "-")}</td>
+        <td>${row.traceHTML}</td>
+        <td>${row.sessionHTML}</td>
+        <td>${row.clientHTML}</td>
+        <td>${row.producedByCount}</td>
+        <td>${row.fieldRefCount}</td>
+        <td>${escapeHTML(formatAbsoluteRelative(row.lastSeenUnixNano))}</td>
+      </tr>
+    `;
+  });
+
+  els.snapshotTable.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Snapshot</th>
+          <th>Type</th>
+          <th>Trace</th>
+          <th>Session</th>
+          <th>Client</th>
+          <th>Calls</th>
+          <th>Refs</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows.join("")}</tbody>
+    </table>
+  `;
+  wireScopeLinks(els.snapshotTable);
+}
+
+function buildSnapshotRows() {
+  const clientsByID = new Map((state.clients.items || []).map((client) => [client.id, client]));
+
+  return (state.snapshots.items || []).map((item) => {
+    const traceIDs = asStringArray(item.traceIDs);
+    const sessionIDs = asStringArray(item.sessionIDs);
+    const clientIDs = asStringArray(item.clientIDs);
+    const clientNames = clientIDs.map((clientID) => clientTitle(clientsByID.get(clientID), clientID));
+    const fieldRefs = Array.isArray(item.fieldRefs) ? item.fieldRefs : [];
+    const producedByCallIDs = asStringArray(item.producedByCallIDs);
+    const outputState = item.outputState && typeof item.outputState === "object" ? item.outputState : null;
+    const stateKeyCount = outputState ? Object.keys(outputState).length : 0;
+    const singleTraceID = traceIDs.length === 1 ? traceIDs[0] : "";
+    const singleSessionID = sessionIDs.length === 1 ? sessionIDs[0] : "";
+
+    return {
+      clientHTML: renderTagGroup(clientIDs, (clientID, idx) =>
+        clientTag(clientID, singleTraceID, singleSessionID, clientNames[idx]),
+      ),
+      dagqlID: item.dagqlID || "",
+      fieldRefCount: fieldRefs.length,
+      lastSeenUnixNano: Number(item.lastSeenUnixNano || 0),
+      producedByCount: producedByCallIDs.length,
+      searchText: [
+        item.dagqlID,
+        item.typeName,
+        ...traceIDs,
+        ...sessionIDs,
+        ...clientIDs,
+        ...clientNames,
+        ...fieldRefs.flatMap((ref) => [ref?.path, ref?.dagqlID]),
+        ...producedByCallIDs,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      sessionHTML: renderTagGroup(sessionIDs, (sessionID) => sessionTag(sessionID, singleTraceID)),
+      stateSummary: outputState ? `${stateKeyCount} state field(s)` : "state unavailable",
+      traceHTML: renderTagGroup(traceIDs, (traceID) => traceTag(traceID)),
+      traceKey: traceIDs[0] || "",
+      typeName: item.typeName || "",
+    };
+  });
+}
+
+function compareSnapshotRows(a, b, sort) {
+  switch (sort) {
+    case "type":
+      return compareString(a.typeName, b.typeName) || compareString(a.dagqlID, b.dagqlID);
+    case "refs":
+      return compareNumberDesc(a.fieldRefCount, b.fieldRefCount) || compareString(a.dagqlID, b.dagqlID);
+    case "calls":
+      return compareNumberDesc(a.producedByCount, b.producedByCount) || compareString(a.dagqlID, b.dagqlID);
+    case "trace":
+      return compareString(a.traceKey, b.traceKey) || compareString(a.dagqlID, b.dagqlID);
+    case "recent":
+    default:
+      return compareNumberDesc(a.lastSeenUnixNano, b.lastSeenUnixNano) || compareString(a.dagqlID, b.dagqlID);
   }
 }
 
@@ -663,19 +806,24 @@ function clientTag(clientID, traceID, sessionID, label) {
   return `<button class="scope-chip" data-scope-kind="client" data-scope-client-id="${escapeHTML(clientID)}" data-scope-session-id="${escapeHTML(sessionID || "")}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(text)}</button>`;
 }
 
-function renderClientList(traceID, sessionID, clientIDs, clientNames) {
-  if (!clientIDs.length) {
+function renderTagGroup(values, renderValue) {
+  const items = asStringArray(values);
+  if (!items.length) {
     return `<span class="data-placeholder">-</span>`;
   }
   const tags = [];
-  const visibleCount = Math.min(clientIDs.length, 2);
+  const visibleCount = Math.min(items.length, 2);
   for (let i = 0; i < visibleCount; i++) {
-    tags.push(clientTag(clientIDs[i], traceID, sessionID, clientNames[i]));
+    tags.push(renderValue(items[i], i));
   }
-  if (clientIDs.length > visibleCount) {
-    tags.push(`<span class="data-note">+${clientIDs.length - visibleCount}</span>`);
+  if (items.length > visibleCount) {
+    tags.push(`<span class="data-note">+${items.length - visibleCount}</span>`);
   }
   return `<div class="data-chip-group">${tags.join("")}</div>`;
+}
+
+function renderClientList(traceID, sessionID, clientIDs, clientNames) {
+  return renderTagGroup(clientIDs, (clientID, idx) => clientTag(clientID, traceID, sessionID, clientNames[idx]));
 }
 
 function buildDagURL({ traceID, sessionID, clientID, mode, focusObjectID, scopeCallID }) {
@@ -770,6 +918,7 @@ function normalizePageName(raw) {
   const page = String(raw || "").toLowerCase();
   switch (page) {
     case "objects":
+    case "snapshots":
     case "events":
       return page;
     default:
@@ -855,6 +1004,13 @@ function kindPill(kind) {
 function statusPill(label) {
   const normalized = String(label || "").toLowerCase();
   return `<span class="data-status-pill is-${escapeHTML(normalized)}">${escapeHTML(label)}</span>`;
+}
+
+function asStringArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.filter((value) => typeof value === "string" && value);
 }
 
 function compareString(a, b) {
