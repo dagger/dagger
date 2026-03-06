@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/internal/odag/derive"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -289,6 +291,266 @@ func TestTraceAPIProjection(t *testing.T) {
 	}
 }
 
+func TestV2DerivesSessionsClientsAndCallOwnership(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "abababababababababababababababab"
+	rootConnectHex := "1111111111111111"
+	rootWorkHex := "2222222222222222"
+	rootCallHex := "3333333333333333"
+	childConnectHex := "4444444444444444"
+	childCallHex := "5555555555555555"
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootConnectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/http"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootWorkHex),
+								Name:              "POST /query",
+								StartTimeUnixNano: 5,
+								EndTimeUnixNano:   30,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootCallHex),
+								Name:              "Query.container",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   11,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-root"),
+									kvString(t, telemetry.DagOutputAttr, "state-root"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-root",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "module-client"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childConnectHex),
+								ParentSpanId:      mustDecodeHex(t, rootWorkHex),
+								Name:              "connect",
+								StartTimeUnixNano: 12,
+								EndTimeUnixNano:   13,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childCallHex),
+								Name:              "Container.withExec",
+								StartTimeUnixNano: 15,
+								EndTimeUnixNano:   16,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-child"),
+									kvString(t, telemetry.DagOutputAttr, "state-child"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-child",
+										ReceiverDigest: "state-root",
+										Field:          "withExec",
+										Type:           &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	rootClientID := derive.ClientID(traceIDHex, rootConnectHex)
+	childClientID := derive.ClientID(traceIDHex, childConnectHex)
+	sessionID := derive.SessionID(rootClientID)
+
+	sessionsReq := httptest.NewRequest(http.MethodGet, "/api/v2/sessions?traceID="+traceIDHex, nil)
+	sessionsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(sessionsRec, sessionsReq)
+	if sessionsRec.Code != http.StatusOK {
+		t.Fatalf("v2 sessions failed: status=%d body=%s", sessionsRec.Code, sessionsRec.Body.String())
+	}
+	var sessionsResp struct {
+		Items []struct {
+			ID           string `json:"id"`
+			RootClientID string `json:"rootClientID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(sessionsRec.Body.Bytes(), &sessionsResp); err != nil {
+		t.Fatalf("decode v2 sessions: %v", err)
+	}
+	if len(sessionsResp.Items) != 1 || sessionsResp.Items[0].ID != sessionID || sessionsResp.Items[0].RootClientID != rootClientID {
+		t.Fatalf("unexpected sessions response: %#v", sessionsResp.Items)
+	}
+
+	clientsReq := httptest.NewRequest(http.MethodGet, "/api/v2/clients?traceID="+traceIDHex, nil)
+	clientsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(clientsRec, clientsReq)
+	if clientsRec.Code != http.StatusOK {
+		t.Fatalf("v2 clients failed: status=%d body=%s", clientsRec.Code, clientsRec.Body.String())
+	}
+	var clientsResp struct {
+		Items []struct {
+			ID             string `json:"id"`
+			SessionID      string `json:"sessionID"`
+			ParentClientID string `json:"parentClientID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(clientsRec.Body.Bytes(), &clientsResp); err != nil {
+		t.Fatalf("decode v2 clients: %v", err)
+	}
+	if len(clientsResp.Items) != 2 {
+		t.Fatalf("expected 2 clients, got %#v", clientsResp.Items)
+	}
+	byID := map[string]struct {
+		SessionID      string
+		ParentClientID string
+	}{}
+	for _, item := range clientsResp.Items {
+		byID[item.ID] = struct {
+			SessionID      string
+			ParentClientID string
+		}{
+			SessionID:      item.SessionID,
+			ParentClientID: item.ParentClientID,
+		}
+	}
+	if byID[rootClientID].SessionID != sessionID || byID[rootClientID].ParentClientID != "" {
+		t.Fatalf("unexpected root client row: %#v", byID[rootClientID])
+	}
+	if byID[childClientID].SessionID != sessionID || byID[childClientID].ParentClientID != rootClientID {
+		t.Fatalf("unexpected child client row: %#v", byID[childClientID])
+	}
+
+	callsReq := httptest.NewRequest(http.MethodGet, "/api/v2/calls?traceID="+traceIDHex, nil)
+	callsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(callsRec, callsReq)
+	if callsRec.Code != http.StatusOK {
+		t.Fatalf("v2 calls failed: status=%d body=%s", callsRec.Code, callsRec.Body.String())
+	}
+	var callsResp struct {
+		Items []struct {
+			SpanID    string `json:"spanID"`
+			SessionID string `json:"sessionID"`
+			ClientID  string `json:"clientID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(callsRec.Body.Bytes(), &callsResp); err != nil {
+		t.Fatalf("decode v2 calls: %v", err)
+	}
+	if len(callsResp.Items) != 2 {
+		t.Fatalf("expected 2 calls, got %#v", callsResp.Items)
+	}
+	callOwners := map[string]struct {
+		SessionID string
+		ClientID  string
+	}{}
+	for _, item := range callsResp.Items {
+		callOwners[item.SpanID] = struct {
+			SessionID string
+			ClientID  string
+		}{
+			SessionID: item.SessionID,
+			ClientID:  item.ClientID,
+		}
+	}
+	if callOwners[rootCallHex].ClientID != rootClientID || callOwners[rootCallHex].SessionID != sessionID {
+		t.Fatalf("unexpected root call owner: %#v", callOwners[rootCallHex])
+	}
+	if callOwners[childCallHex].ClientID != childClientID || callOwners[childCallHex].SessionID != sessionID {
+		t.Fatalf("unexpected child call owner: %#v", callOwners[childCallHex])
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v2/calls?clientID="+childClientID, nil)
+	filteredRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(filteredRec, filteredReq)
+	if filteredRec.Code != http.StatusOK {
+		t.Fatalf("filtered v2 calls failed: status=%d body=%s", filteredRec.Code, filteredRec.Body.String())
+	}
+	var filteredResp struct {
+		Items []struct {
+			SpanID string `json:"spanID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(filteredRec.Body.Bytes(), &filteredResp); err != nil {
+		t.Fatalf("decode filtered calls: %v", err)
+	}
+	if len(filteredResp.Items) != 1 || filteredResp.Items[0].SpanID != childCallHex {
+		t.Fatalf("unexpected filtered calls: %#v", filteredResp.Items)
+	}
+}
+
 func TestV2RenderEndpoints(t *testing.T) {
 	t.Parallel()
 
@@ -325,6 +587,7 @@ func TestV2RenderEndpoints(t *testing.T) {
 				"name":  "mounted",
 				"type":  "Directory",
 				"value": "state-a",
+				"refs":  []any{"state-a"},
 			},
 		},
 	}
@@ -347,7 +610,7 @@ func TestV2RenderEndpoints(t *testing.T) {
 									kvString(t, telemetry.DagDigestAttr, "call-a"),
 									kvString(t, telemetry.DagOutputAttr, "state-a"),
 									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, call1State)),
-									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
 									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
 										Digest: "call-a",
 										Field:  "directory",
@@ -367,7 +630,7 @@ func TestV2RenderEndpoints(t *testing.T) {
 									kvString(t, telemetry.DagDigestAttr, "call-b"),
 									kvString(t, telemetry.DagOutputAttr, "state-b"),
 									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, containerState)),
-									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
 									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
 										Digest: "call-b",
 										Field:  "container",
@@ -387,7 +650,7 @@ func TestV2RenderEndpoints(t *testing.T) {
 									kvString(t, telemetry.DagDigestAttr, "call-c"),
 									kvString(t, telemetry.DagOutputAttr, "state-c"),
 									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, containerState)),
-									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
 									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
 										Digest:         "call-c",
 										ReceiverDigest: "state-b",
@@ -556,6 +819,238 @@ func TestV2RenderEndpoints(t *testing.T) {
 	}
 }
 
+func TestV2RenderScopeFiltering(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "efefefefefefefefefefefefefefefef"
+	rootConnectHex := "1111111111111111"
+	rootWorkHex := "2222222222222222"
+	rootCallHex := "3333333333333333"
+	childConnectHex := "4444444444444444"
+	childCallHex := "5555555555555555"
+
+	rootState := map[string]any{
+		"type": "Directory",
+		"fields": map[string]any{
+			"path": map[string]any{
+				"name":  "path",
+				"type":  "String",
+				"value": "/root",
+			},
+		},
+	}
+	childState := map[string]any{
+		"type": "Container",
+		"fields": map[string]any{
+			"image": map[string]any{
+				"name":  "image",
+				"type":  "String",
+				"value": "alpine:latest",
+			},
+		},
+	}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootConnectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/http"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootWorkHex),
+								Name:              "POST /query",
+								StartTimeUnixNano: 3,
+								EndTimeUnixNano:   30,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootCallHex),
+								Name:              "Query.directory",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   11,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-root"),
+									kvString(t, telemetry.DagOutputAttr, "state-root"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, rootState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-root",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "module-client"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childConnectHex),
+								ParentSpanId:      mustDecodeHex(t, rootWorkHex),
+								Name:              "connect",
+								StartTimeUnixNano: 12,
+								EndTimeUnixNano:   13,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childCallHex),
+								Name:              "Query.container",
+								StartTimeUnixNano: 15,
+								EndTimeUnixNano:   16,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.DagDigestAttr, "call-child"),
+									kvString(t, telemetry.DagOutputAttr, "state-child"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, childState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-child",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	rootClientID := derive.ClientID(traceIDHex, rootConnectHex)
+	childClientID := derive.ClientID(traceIDHex, childConnectHex)
+	sessionID := derive.SessionID(rootClientID)
+
+	sessionReq := httptest.NewRequest(http.MethodGet, "/api/v2/render?sessionID="+sessionID, nil)
+	sessionRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(sessionRec, sessionReq)
+	if sessionRec.Code != http.StatusOK {
+		t.Fatalf("session render failed: status=%d body=%s", sessionRec.Code, sessionRec.Body.String())
+	}
+	var sessionResp struct {
+		Context struct {
+			TraceID   string `json:"traceID"`
+			SessionID string `json:"sessionID"`
+			ClientID  string `json:"clientID"`
+		} `json:"context"`
+		Objects []struct {
+			TypeName string `json:"typeName"`
+		} `json:"objects"`
+		Calls []struct {
+			CallID   string `json:"callID"`
+			ClientID string `json:"clientID"`
+		} `json:"calls"`
+	}
+	if err := json.Unmarshal(sessionRec.Body.Bytes(), &sessionResp); err != nil {
+		t.Fatalf("decode session render response: %v", err)
+	}
+	if sessionResp.Context.TraceID != traceIDHex || sessionResp.Context.SessionID != sessionID || sessionResp.Context.ClientID != "" {
+		t.Fatalf("unexpected session render context: %#v", sessionResp.Context)
+	}
+	if len(sessionResp.Objects) != 2 || len(sessionResp.Calls) != 2 {
+		t.Fatalf("unexpected session render payload: objects=%#v calls=%#v", sessionResp.Objects, sessionResp.Calls)
+	}
+
+	clientReq := httptest.NewRequest(http.MethodGet, "/api/v2/render?clientID="+childClientID, nil)
+	clientRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(clientRec, clientReq)
+	if clientRec.Code != http.StatusOK {
+		t.Fatalf("client render failed: status=%d body=%s", clientRec.Code, clientRec.Body.String())
+	}
+	var clientResp struct {
+		Context struct {
+			TraceID   string `json:"traceID"`
+			SessionID string `json:"sessionID"`
+			ClientID  string `json:"clientID"`
+		} `json:"context"`
+		Objects []struct {
+			TypeName string `json:"typeName"`
+		} `json:"objects"`
+		Calls []struct {
+			CallID   string `json:"callID"`
+			ClientID string `json:"clientID"`
+		} `json:"calls"`
+	}
+	if err := json.Unmarshal(clientRec.Body.Bytes(), &clientResp); err != nil {
+		t.Fatalf("decode client render response: %v", err)
+	}
+	if clientResp.Context.TraceID != traceIDHex || clientResp.Context.SessionID != sessionID || clientResp.Context.ClientID != childClientID {
+		t.Fatalf("unexpected client render context: %#v", clientResp.Context)
+	}
+	if len(clientResp.Objects) != 1 || clientResp.Objects[0].TypeName != "Container" {
+		t.Fatalf("unexpected client render objects: %#v", clientResp.Objects)
+	}
+	if len(clientResp.Calls) != 1 || clientResp.Calls[0].CallID != childCallHex || clientResp.Calls[0].ClientID != childClientID {
+		t.Fatalf("unexpected client render calls: %#v", clientResp.Calls)
+	}
+}
+
 func TestOpenTraceValidation(t *testing.T) {
 	t.Parallel()
 
@@ -684,11 +1179,108 @@ func encodeCallB64(t *testing.T, call *callpbv1.Call) string {
 
 func encodeOutputStateB64(t *testing.T, payload map[string]any) string {
 	t.Helper()
-	b, err := json.Marshal(payload)
+	state := outputStateProtoFromMap(t, payload)
+	b, err := proto.Marshal(state)
 	if err != nil {
 		t.Fatalf("marshal output state: %v", err)
 	}
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+func outputStateProtoFromMap(t *testing.T, payload map[string]any) *callpbv1.OutputState {
+	t.Helper()
+	fieldsRaw, _ := payload["fields"].(map[string]any)
+	fieldNames := make([]string, 0, len(fieldsRaw))
+	for name := range fieldsRaw {
+		fieldNames = append(fieldNames, name)
+	}
+	sort.Strings(fieldNames)
+	fields := make([]*callpbv1.OutputStateField, 0, len(fieldNames))
+	for _, fallbackName := range fieldNames {
+		rawField, ok := fieldsRaw[fallbackName].(map[string]any)
+		if !ok {
+			continue
+		}
+		name := fallbackName
+		if v, ok := rawField["name"].(string); ok && v != "" {
+			name = v
+		}
+		field := &callpbv1.OutputStateField{
+			Name:  name,
+			Type:  stringValue(rawField["type"]),
+			Value: literalFromAnyForTest(t, rawField["value"]),
+			Refs:  stringSliceValue(rawField["refs"]),
+		}
+		fields = append(fields, field)
+	}
+	return &callpbv1.OutputState{
+		Type:   stringValue(payload["type"]),
+		Fields: fields,
+	}
+}
+
+func literalFromAnyForTest(t *testing.T, value any) *callpbv1.Literal {
+	t.Helper()
+	switch v := value.(type) {
+	case nil:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Null{Null: true}}
+	case bool:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Bool{Bool: v}}
+	case string:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: v}}
+	case int:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Int{Int: int64(v)}}
+	case int64:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Int{Int: v}}
+	case float64:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Float{Float: v}}
+	case []any:
+		items := make([]*callpbv1.Literal, 0, len(v))
+		for _, item := range v {
+			items = append(items, literalFromAnyForTest(t, item))
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{Values: items}}}
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		args := make([]*callpbv1.Argument, 0, len(keys))
+		for _, key := range keys {
+			args = append(args, &callpbv1.Argument{
+				Name:  key,
+				Value: literalFromAnyForTest(t, v[key]),
+			})
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Object{Object: &callpbv1.Object{Values: args}}}
+	default:
+		t.Fatalf("unsupported output state test literal type %T", value)
+		return nil
+	}
+}
+
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func stringSliceValue(v any) []string {
+	switch vals := v.(type) {
+	case []string:
+		return vals
+	case []any:
+		out := make([]string, 0, len(vals))
+		for _, item := range vals {
+			s, ok := item.(string)
+			if ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func mustDecodeHex(t *testing.T, v string) []byte {

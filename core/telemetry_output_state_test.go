@@ -3,12 +3,14 @@ package core
 import (
 	"encoding/base64"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
 type outputStateTestRef struct {
@@ -102,37 +104,45 @@ func TestBuildOutputStatePayloadFromTyped(t *testing.T) {
 	if payload.Type != "OutputStateTest" {
 		t.Fatalf("unexpected payload type: %q", payload.Type)
 	}
-	if _, ok := payload.Fields["SkippedVal"]; ok {
+	fields := outputStateFieldsByName(payload.Fields)
+	if _, ok := fields["SkippedVal"]; ok {
 		t.Fatalf("skipped json field should not be present")
 	}
 
-	refField, ok := payload.Fields["ref"]
+	refField, ok := fields["ref"]
 	if !ok {
 		t.Fatalf("missing ref field: %#v", payload.Fields)
 	}
-	if got, ok := refField.Value.(string); !ok || got != refID.Digest().String() {
-		t.Fatalf("unexpected ref field value: %#v", refField.Value)
+	if got := refField.GetValue().GetCallDigest(); got != refID.Digest().String() {
+		t.Fatalf("unexpected ref field value: %#v", refField.GetValue())
+	}
+	if !slices.Equal(refField.GetRefs(), []string{refID.Digest().String()}) {
+		t.Fatalf("unexpected ref field refs: %#v", refField.GetRefs())
 	}
 
-	rawField, ok := payload.Fields["raw"]
+	rawField, ok := fields["raw"]
 	if !ok {
 		t.Fatalf("missing raw field")
 	}
 	wantRaw := base64.StdEncoding.EncodeToString([]byte("abc"))
-	if got, ok := rawField.Value.(string); !ok || got != wantRaw {
-		t.Fatalf("unexpected raw field value: %#v", rawField.Value)
+	if got := rawField.GetValue().GetString_(); got != wantRaw {
+		t.Fatalf("unexpected raw field value: %#v", rawField.GetValue())
 	}
 
-	nestedField, ok := payload.Fields["nested"]
+	nestedField, ok := fields["nested"]
 	if !ok {
 		t.Fatalf("missing nested field")
 	}
-	nestedMap, ok := nestedField.Value.(map[string]any)
-	if !ok {
-		t.Fatalf("expected nested map, got %#v", nestedField.Value)
+	nestedObj := nestedField.GetValue().GetObject()
+	if nestedObj == nil {
+		t.Fatalf("expected nested object value, got %#v", nestedField.GetValue())
 	}
-	if nestedMap["enabled"] != true || nestedMap["label"] != "nested" {
-		t.Fatalf("unexpected nested payload: %#v", nestedMap)
+	nestedVals := map[string]*callpbv1.Literal{}
+	for _, arg := range nestedObj.GetValues() {
+		nestedVals[arg.GetName()] = arg.GetValue()
+	}
+	if nestedVals["enabled"].GetBool() != true || nestedVals["label"].GetString_() != "nested" {
+		t.Fatalf("unexpected nested payload: %#v", nestedObj)
 	}
 }
 
@@ -167,28 +177,28 @@ func TestToOutputStateValueNilIDablePointer(t *testing.T) {
 	t.Parallel()
 
 	var nilRef *outputStatePanickyIDable
-	got, err := toOutputStateValue(reflect.ValueOf(nilRef), 0, map[visitKey]struct{}{})
+	got, refs, err := toOutputStateLiteral(reflect.ValueOf(nilRef), 0, map[visitKey]struct{}{})
 	if err != nil {
-		t.Fatalf("toOutputStateValue returned error: %v", err)
+		t.Fatalf("toOutputStateLiteral returned error: %v", err)
 	}
-	if got != nil {
-		t.Fatalf("expected nil value, got %#v", got)
+	if got.GetNull() != true || len(refs) != 0 {
+		t.Fatalf("expected null literal with no refs, got %#v refs=%#v", got, refs)
 	}
 }
 
 func TestToOutputStateValuePanickingIDMethod(t *testing.T) {
 	t.Parallel()
 
-	got, err := toOutputStateValue(reflect.ValueOf(outputStatePanicMethodIDable{}), 0, map[visitKey]struct{}{})
+	got, refs, err := toOutputStateLiteral(reflect.ValueOf(outputStatePanicMethodIDable{}), 0, map[visitKey]struct{}{})
 	if err != nil {
-		t.Fatalf("toOutputStateValue returned error: %v", err)
+		t.Fatalf("toOutputStateLiteral returned error: %v", err)
 	}
-	asMap, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("expected struct to serialize as map, got %#v", got)
+	obj := got.GetObject()
+	if obj == nil {
+		t.Fatalf("expected struct to serialize as object, got %#v", got)
 	}
-	if len(asMap) != 0 {
-		t.Fatalf("expected empty struct map, got %#v", asMap)
+	if len(obj.GetValues()) != 0 || len(refs) != 0 {
+		t.Fatalf("expected empty struct object, got %#v refs=%#v", obj, refs)
 	}
 }
 
@@ -201,7 +211,8 @@ func TestBuildOutputStatePayloadFromTypedTypeNameEdgeCases(t *testing.T) {
 		t.Fatalf("build payload: %v", err)
 	}
 
-	nilTyped, ok := payload.Fields["nilTyped"]
+	fields := outputStateFieldsByName(payload.Fields)
+	nilTyped, ok := fields["nilTyped"]
 	if !ok {
 		t.Fatalf("missing nilTyped field")
 	}
@@ -209,11 +220,22 @@ func TestBuildOutputStatePayloadFromTypedTypeNameEdgeCases(t *testing.T) {
 		t.Fatalf("expected non-empty type fallback for nilTyped field")
 	}
 
-	panicTyped, ok := payload.Fields["panicTyped"]
+	panicTyped, ok := fields["panicTyped"]
 	if !ok {
 		t.Fatalf("missing panicTyped field")
 	}
 	if panicTyped.Type == "" {
 		t.Fatalf("expected non-empty type fallback for panicTyped field")
 	}
+}
+
+func outputStateFieldsByName(fields []*callpbv1.OutputStateField) map[string]*callpbv1.OutputStateField {
+	out := make(map[string]*callpbv1.OutputStateField, len(fields))
+	for _, field := range fields {
+		if field == nil {
+			continue
+		}
+		out[field.GetName()] = field
+	}
+	return out
 }

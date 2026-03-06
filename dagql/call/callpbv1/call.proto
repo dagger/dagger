@@ -137,3 +137,27 @@ message Type {
   Type elem = 2;
   bool nonNull = 3;
 }
+
+// Serialized object state emitted on telemetry spans for ODAG consumers.
+message OutputState {
+  // The GraphQL type of the produced object.
+  string type = 1;
+
+  // The top-level fields materialized for this object.
+  repeated OutputStateField fields = 2;
+}
+
+message OutputStateField {
+  // The field name as presented in the serialized state payload.
+  string name = 1;
+
+  // The GraphQL/runtime type name associated with this field.
+  string type = 2;
+
+  // JSON-encodable nested value for this field.
+  Literal value = 3;
+
+  // Authoritative immutable object IDs referenced by this field value, directly
+  // or anywhere beneath it.
+  repeated string refs = 4;
+}

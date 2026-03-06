@@ -42,6 +42,7 @@ const (
 	// Version tag for DagOutputStateAttr payload encoding.
 	DagOutputStateVersionAttr = "dagger.io/dag.output.state.version"
 	DagOutputStateVersionV1   = "v1"
+	DagOutputStateVersionV2   = "v2"
 
 	// Indicates that this span is "internal" and can be hidden by default.
 	//

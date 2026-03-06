@@ -16,23 +16,14 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
 	maxOutputStateDepth  = 8
 	maxOutputStateTraces = 1024
 )
-
-type outputStatePayloadV1 struct {
-	Type   string                        `json:"type"`
-	Fields map[string]outputStateFieldV1 `json:"fields"`
-}
-
-type outputStateFieldV1 struct {
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Value any    `json:"value"`
-}
 
 var outputStateEmitter = newOutputStateEmitter(maxOutputStateTraces)
 
@@ -120,19 +111,19 @@ func (c *outputStateEmitterCache) evictOldestLocked() {
 }
 
 func encodeOutputStatePayload(obj dagql.AnyResult) (string, error) {
-	state, err := buildOutputStatePayloadV1(obj)
+	state, err := buildOutputStatePayload(obj)
 	if err != nil {
 		return "", err
 	}
 
-	payload, err := json.Marshal(state)
+	payload, err := proto.Marshal(state)
 	if err != nil {
 		return "", fmt.Errorf("marshal output state payload: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(payload), nil
 }
 
-func buildOutputStatePayloadV1(obj dagql.AnyResult) (*outputStatePayloadV1, error) {
+func buildOutputStatePayload(obj dagql.AnyResult) (*callpbv1.OutputState, error) {
 	if obj == nil {
 		return nil, fmt.Errorf("nil object result")
 	}
@@ -145,7 +136,7 @@ func buildOutputStatePayloadV1(obj dagql.AnyResult) (*outputStatePayloadV1, erro
 	return buildOutputStatePayloadFromTyped(typed, obj.Type())
 }
 
-func buildOutputStatePayloadFromTyped(typed dagql.Typed, resultType *ast.Type) (*outputStatePayloadV1, error) {
+func buildOutputStatePayloadFromTyped(typed dagql.Typed, resultType *ast.Type) (*callpbv1.OutputState, error) {
 	if typed == nil {
 		return nil, fmt.Errorf("nil object payload")
 	}
@@ -156,32 +147,33 @@ func buildOutputStatePayloadFromTyped(typed dagql.Typed, resultType *ast.Type) (
 		return nil, err
 	}
 
-	return &outputStatePayloadV1{
+	return &callpbv1.OutputState{
 		Type:   gqlTypeName(resultType),
 		Fields: fields,
 	}, nil
 }
 
-func collectOutputStateFields(v reflect.Value) (map[string]outputStateFieldV1, error) {
+func collectOutputStateFields(v reflect.Value) ([]*callpbv1.OutputStateField, error) {
 	v = derefValue(v)
 	if !v.IsValid() {
-		return map[string]outputStateFieldV1{}, nil
+		return nil, nil
 	}
 	if v.Kind() != reflect.Struct {
-		value, err := toOutputStateValue(v, 0, map[visitKey]struct{}{})
+		value, refs, err := toOutputStateLiteral(v, 0, map[visitKey]struct{}{})
 		if err != nil {
 			return nil, err
 		}
-		return map[string]outputStateFieldV1{
-			"value": {
+		return []*callpbv1.OutputStateField{
+			{
 				Name:  "value",
 				Type:  v.Type().String(),
 				Value: value,
+				Refs:  refs,
 			},
 		}, nil
 	}
 
-	fields := map[string]outputStateFieldV1{}
+	fields := make([]*callpbv1.OutputStateField, 0, v.Type().NumField())
 	typ := v.Type()
 	for i := 0; i < typ.NumField(); i++ {
 		structField := typ.Field(i)
@@ -191,19 +183,22 @@ func collectOutputStateFields(v reflect.Value) (map[string]outputStateFieldV1, e
 		}
 
 		fieldValue := v.Field(i)
-		value, err := toOutputStateValue(fieldValue, 0, map[visitKey]struct{}{})
+		value, refs, err := toOutputStateLiteral(fieldValue, 0, map[visitKey]struct{}{})
 		if err != nil {
-			value = map[string]any{
-				"error": err.Error(),
-			}
+			value = literalObject(map[string]any{"error": err.Error()})
+			refs = nil
 		}
 
-		fields[name] = outputStateFieldV1{
+		fields = append(fields, &callpbv1.OutputStateField{
 			Name:  name,
 			Type:  outputStateTypeName(structField, fieldValue),
 			Value: value,
-		}
+			Refs:  refs,
+		})
 	}
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].GetName() < fields[j].GetName()
+	})
 
 	return fields, nil
 }
@@ -241,124 +236,138 @@ type visitKey struct {
 	ptr uintptr
 }
 
-func toOutputStateValue(v reflect.Value, depth int, seen map[visitKey]struct{}) (any, error) {
+func toOutputStateLiteral(v reflect.Value, depth int, seen map[visitKey]struct{}) (*callpbv1.Literal, []string, error) {
 	if depth > maxOutputStateDepth {
-		return "<max-depth>", nil
+		return literalString("<max-depth>"), nil, nil
 	}
 
 	for v.IsValid() && v.Kind() == reflect.Interface {
 		if v.IsNil() {
-			return nil, nil
+			return literalNull(), nil, nil
 		}
 		v = v.Elem()
 	}
 	if !v.IsValid() {
-		return nil, nil
+		return literalNull(), nil, nil
 	}
 
 	if v.CanInterface() {
 		if idDigest, ok := digestFromIDable(v.Interface()); ok {
-			return idDigest, nil
+			return literalCallDigest(idDigest), []string{idDigest}, nil
 		}
 		if id, ok := v.Interface().(*call.ID); ok {
 			if id == nil {
-				return nil, nil
+				return literalNull(), nil, nil
 			}
-			return id.Digest().String(), nil
+			digest := id.Digest().String()
+			return literalCallDigest(digest), []string{digest}, nil
 		}
 	}
 
 	switch v.Kind() {
 	case reflect.Pointer:
 		if v.IsNil() {
-			return nil, nil
+			return literalNull(), nil, nil
 		}
 
 		key := visitKey{typ: v.Type(), ptr: v.Pointer()}
 		if _, ok := seen[key]; ok {
-			return "<cycle>", nil
+			return literalString("<cycle>"), nil, nil
 		}
 		seen[key] = struct{}{}
 		defer delete(seen, key)
 
-		return toOutputStateValue(v.Elem(), depth+1, seen)
+		return toOutputStateLiteral(v.Elem(), depth+1, seen)
 
 	case reflect.Bool:
-		return v.Bool(), nil
+		return literalBool(v.Bool()), nil, nil
 	case reflect.String:
-		return v.String(), nil
+		return literalString(v.String()), nil, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return v.Int(), nil
+		return literalInt(v.Int()), nil, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		u := v.Uint()
 		if u <= math.MaxInt64 {
-			return int64(u), nil
+			return literalInt(int64(u)), nil, nil
 		}
-		return strconv.FormatUint(u, 10), nil
+		return literalString(strconv.FormatUint(u, 10)), nil, nil
 	case reflect.Float32, reflect.Float64:
-		return v.Float(), nil
+		return literalFloat(v.Float()), nil, nil
 
 	case reflect.Slice:
 		if v.Type().Elem().Kind() == reflect.Uint8 {
 			// Avoid leaking raw bytes while preserving JSON encodability.
-			return base64.StdEncoding.EncodeToString(v.Bytes()), nil
+			return literalString(base64.StdEncoding.EncodeToString(v.Bytes())), nil, nil
 		}
 		fallthrough
 	case reflect.Array:
-		out := make([]any, 0, v.Len())
+		out := make([]*callpbv1.Literal, 0, v.Len())
+		refs := make([]string, 0)
 		for i := 0; i < v.Len(); i++ {
-			val, err := toOutputStateValue(v.Index(i), depth+1, seen)
+			val, valRefs, err := toOutputStateLiteral(v.Index(i), depth+1, seen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			out = append(out, val)
+			refs = append(refs, valRefs...)
 		}
-		return out, nil
+		return literalList(out...), dedupeSortedStrings(refs), nil
 
 	case reflect.Map:
 		if v.Type().Key().Kind() != reflect.String {
 			if v.CanInterface() {
-				return fmt.Sprintf("%v", v.Interface()), nil
+				return literalString(fmt.Sprintf("%v", v.Interface())), nil, nil
 			}
-			return "<map>", nil
+			return literalString("<map>"), nil, nil
 		}
 
-		out := map[string]any{}
+		out := make([]*callpbv1.Argument, 0, v.Len())
+		refs := make([]string, 0)
 		keys := v.MapKeys()
 		sort.Slice(keys, func(i, j int) bool {
 			return keys[i].String() < keys[j].String()
 		})
 		for _, key := range keys {
-			val, err := toOutputStateValue(v.MapIndex(key), depth+1, seen)
+			val, valRefs, err := toOutputStateLiteral(v.MapIndex(key), depth+1, seen)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			out[key.String()] = val
+			out = append(out, &callpbv1.Argument{Name: key.String(), Value: val})
+			refs = append(refs, valRefs...)
 		}
-		return out, nil
+		return literalObjectArgs(out...), dedupeSortedStrings(refs), nil
 
 	case reflect.Struct:
 		if v.CanInterface() {
 			if ts, ok := v.Interface().(time.Time); ok {
-				return ts.UTC().Format(time.RFC3339Nano), nil
+				return literalString(ts.UTC().Format(time.RFC3339Nano)), nil, nil
 			}
 		}
 
-		out := map[string]any{}
+		out := make([]*callpbv1.Argument, 0, v.NumField())
+		refs := make([]string, 0)
 		typ := v.Type()
+		names := make([]string, 0, typ.NumField())
+		fieldsByName := map[string]reflect.Value{}
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			name, ok := outputStateFieldName(field)
 			if !ok {
 				continue
 			}
-			val, err := toOutputStateValue(v.Field(i), depth+1, seen)
-			if err != nil {
-				return nil, err
-			}
-			out[name] = val
+			names = append(names, name)
+			fieldsByName[name] = v.Field(i)
 		}
-		return out, nil
+		sort.Strings(names)
+		for _, name := range names {
+			val, valRefs, err := toOutputStateLiteral(fieldsByName[name], depth+1, seen)
+			if err != nil {
+				return nil, nil, err
+			}
+			out = append(out, &callpbv1.Argument{Name: name, Value: val})
+			refs = append(refs, valRefs...)
+		}
+		return literalObjectArgs(out...), dedupeSortedStrings(refs), nil
 
 	default:
 		if v.CanInterface() {
@@ -367,13 +376,128 @@ func toOutputStateValue(v reflect.Value, depth int, seen map[visitKey]struct{}) 
 				if err == nil {
 					var decoded any
 					if err := json.Unmarshal(b, &decoded); err == nil {
-						return decoded, nil
+						return literalObject(decoded), nil, nil
 					}
 				}
 			}
-			return fmt.Sprintf("%v", v.Interface()), nil
+			return literalString(fmt.Sprintf("%v", v.Interface())), nil, nil
 		}
-		return nil, nil
+		return literalNull(), nil, nil
+	}
+}
+
+func dedupeSortedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func literalNull() *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_Null{Null: true}}
+}
+
+func literalBool(v bool) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_Bool{Bool: v}}
+}
+
+func literalString(v string) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: v}}
+}
+
+func literalInt(v int64) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_Int{Int: v}}
+}
+
+func literalFloat(v float64) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_Float{Float: v}}
+}
+
+func literalCallDigest(v string) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: v}}
+}
+
+func literalList(values ...*callpbv1.Literal) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{Values: values}}}
+}
+
+func literalObjectArgs(values ...*callpbv1.Argument) *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_Object{Object: &callpbv1.Object{Values: values}}}
+}
+
+func literalObject(v any) *callpbv1.Literal {
+	switch x := v.(type) {
+	case nil:
+		return literalNull()
+	case bool:
+		return literalBool(x)
+	case string:
+		return literalString(x)
+	case int:
+		return literalInt(int64(x))
+	case int8:
+		return literalInt(int64(x))
+	case int16:
+		return literalInt(int64(x))
+	case int32:
+		return literalInt(int64(x))
+	case int64:
+		return literalInt(x)
+	case uint:
+		if x <= math.MaxInt64 {
+			return literalInt(int64(x))
+		}
+		return literalString(strconv.FormatUint(uint64(x), 10))
+	case uint8:
+		return literalInt(int64(x))
+	case uint16:
+		return literalInt(int64(x))
+	case uint32:
+		return literalInt(int64(x))
+	case uint64:
+		if x <= math.MaxInt64 {
+			return literalInt(int64(x))
+		}
+		return literalString(strconv.FormatUint(x, 10))
+	case float32:
+		return literalFloat(float64(x))
+	case float64:
+		return literalFloat(x)
+	case []any:
+		items := make([]*callpbv1.Literal, 0, len(x))
+		for _, item := range x {
+			items = append(items, literalObject(item))
+		}
+		return literalList(items...)
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for key := range x {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		args := make([]*callpbv1.Argument, 0, len(keys))
+		for _, key := range keys {
+			args = append(args, &callpbv1.Argument{
+				Name:  key,
+				Value: literalObject(x[key]),
+			})
+		}
+		return literalObjectArgs(args...)
+	default:
+		return literalString(fmt.Sprintf("%v", x))
 	}
 }
 

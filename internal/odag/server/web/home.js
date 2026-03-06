@@ -10,6 +10,8 @@ const state = {
   render: null,
   options: {
     traceID: "",
+    sessionID: "",
+    clientID: "",
     includeInternal: false,
     keepRules: true,
   },
@@ -77,6 +79,8 @@ function bindEvents() {
   els.clearTraceFilterBtn.addEventListener("click", () => {
     els.traceFilter.value = "";
     state.options.traceID = "";
+    state.options.sessionID = "";
+    state.options.clientID = "";
     refreshAll().catch((err) => renderInfo(String(err)));
   });
 
@@ -89,6 +93,8 @@ function bindEvents() {
       return;
     }
     state.options.traceID = (els.traceFilter.value || "").trim();
+    state.options.sessionID = "";
+    state.options.clientID = "";
     refreshAll().catch((err) => renderInfo(String(err)));
   });
 
@@ -204,6 +210,12 @@ function buildV2Query() {
   if (state.options.traceID) {
     q.set("traceID", state.options.traceID);
   }
+  if (state.options.sessionID) {
+    q.set("sessionID", state.options.sessionID);
+  }
+  if (state.options.clientID) {
+    q.set("clientID", state.options.clientID);
+  }
   if (state.options.includeInternal) {
     q.set("includeInternal", "true");
   }
@@ -211,11 +223,19 @@ function buildV2Query() {
 }
 
 function buildRenderQuery() {
-  if (!state.options.traceID) {
+  if (!hasScopeSelection()) {
     return "";
   }
   const q = new URLSearchParams();
-  q.set("traceID", state.options.traceID);
+  if (state.options.traceID) {
+    q.set("traceID", state.options.traceID);
+  }
+  if (state.options.sessionID) {
+    q.set("sessionID", state.options.sessionID);
+  }
+  if (state.options.clientID) {
+    q.set("clientID", state.options.clientID);
+  }
   q.set("mode", "global");
   if (state.options.includeInternal) {
     q.set("includeInternal", "true");
@@ -248,6 +268,8 @@ async function importTraceFromCloud() {
     });
     els.traceFilter.value = traceID;
     state.options.traceID = traceID;
+    state.options.sessionID = "";
+    state.options.clientID = "";
     await refreshAll();
   } finally {
     els.importCloudBtn.disabled = false;
@@ -265,38 +287,42 @@ function renderSummary(errorMsg) {
   els.countClients.textContent = countLabel(state.clients);
   if (state.render && Array.isArray(state.render.objects)) {
     els.countRenderObjects.textContent = `${state.render.objects.length}`;
-  } else if (state.options.traceID) {
+  } else if (hasScopeSelection()) {
     els.countRenderObjects.textContent = "0";
   } else {
     els.countRenderObjects.textContent = "n/a";
   }
 
-  const baseMeta = state.options.traceID
-    ? `trace=${state.options.traceID}`
-    : `global (all traces)`;
+  const baseMeta = describeScope();
   const renderMeta =
     state.render && state.render.context
       ? `render@${formatRelTime(state.render.context.unixNano, state.render.context.traceStartUnixNano)}`
-      : "no render (set trace filter)";
+      : "no render (set trace, session, or client filter)";
 
   els.mutationsMeta.textContent = `${baseMeta} | ${cursorLabel(state.mutations)}${errorMsg ? " | warning" : ""}`;
   els.bindingsMeta.textContent = `${baseMeta} | ${cursorLabel(state.bindings)}`;
   els.callsMeta.textContent = `${baseMeta} | ${cursorLabel(state.calls)}`;
   els.sessionsMeta.textContent = `${baseMeta} | ${renderMeta}`;
   if (els.renderObjectsMeta) {
-    els.renderObjectsMeta.textContent = state.options.traceID
+    els.renderObjectsMeta.textContent = hasScopeSelection()
       ? `${baseMeta} | ${state.options.keepRules ? "keep-rules on" : "keep-rules off"}`
-      : "set trace filter to load render objects";
+      : "set trace, session, or client filter to load render objects";
   }
 }
 
 function renderOverview() {
-  const scopeRows = [
-    { key: "Scope", value: state.options.traceID ? `trace ${state.options.traceID}` : "global (all traces)" },
+  const scopeRows = [{ key: "Scope", value: describeScope() }];
+  if (state.options.clientID) {
+    scopeRows.push({ key: "Session", value: state.options.sessionID || "-" });
+  }
+  if (state.options.clientID || state.options.sessionID) {
+    scopeRows.push({ key: "Trace", value: state.options.traceID || "-" });
+  }
+  scopeRows.push(
     { key: "Internal", value: state.options.includeInternal ? "included" : "excluded" },
     { key: "Keep Rules", value: state.options.keepRules ? "enabled" : "disabled" },
     { key: "Page Size", value: `${v2Limit}` },
-  ];
+  );
   els.overviewScope.innerHTML = scopeRows.map((row) => overviewKV(row.key, row.value)).join("");
 
   const statusCounts = countTraceStatuses(state.traces);
@@ -313,8 +339,8 @@ function renderRenderObjects() {
   if (!els.renderObjectTable) {
     return;
   }
-  if (!state.options.traceID) {
-    els.renderObjectTable.innerHTML = `<div class="trace-empty">Set trace filter to inspect render objects.</div>`;
+  if (!hasScopeSelection()) {
+    els.renderObjectTable.innerHTML = `<div class="trace-empty">Set trace, session, or client filter to inspect render objects.</div>`;
     return;
   }
   const objects = state.render?.objects || [];
@@ -493,7 +519,7 @@ function renderSessionsAndClients() {
     .map((item) => {
       return `
         <tr>
-          <td>${escapeHTML(shortDigest(item.id || "-"))}</td>
+          <td>${sessionTag(item.id, item.traceID)}</td>
           <td>${traceTag(item.traceID)}</td>
           <td>${escapeHTML(item.status || (item.open ? "open" : "closed"))}</td>
         </tr>
@@ -506,9 +532,9 @@ function renderSessionsAndClients() {
       const title = item.name || item.serviceName || shortDigest(item.id || "-");
       return `
         <tr>
-          <td>${escapeHTML(title)}</td>
+          <td>${clientTag(item.id, item.traceID, item.sessionID, title)}</td>
           <td>${traceTag(item.traceID)}</td>
-          <td>${escapeHTML(shortDigest(item.sessionID || "-"))}</td>
+          <td>${sessionTag(item.sessionID, item.traceID)}</td>
         </tr>
       `;
     })
@@ -527,6 +553,8 @@ function renderSessionsAndClients() {
     </div>
   `;
   wireTraceLinks(els.sessionClientTable);
+  wireSessionLinks(els.sessionClientTable);
+  wireClientLinks(els.sessionClientTable);
 }
 
 function renderTraceList() {
@@ -571,7 +599,7 @@ function renderTraceList() {
 }
 
 function wireTraceLinks(root) {
-  for (const node of root.querySelectorAll("[data-trace-id]")) {
+  for (const node of root.querySelectorAll('[data-scope-kind="trace"]')) {
     node.addEventListener("click", (event) => {
       event.preventDefault();
       const traceID = node.getAttribute("data-trace-id");
@@ -580,6 +608,45 @@ function wireTraceLinks(root) {
       }
       els.traceFilter.value = traceID;
       state.options.traceID = traceID;
+      state.options.sessionID = "";
+      state.options.clientID = "";
+      refreshAll().catch((err) => renderInfo(String(err)));
+    });
+  }
+}
+
+function wireSessionLinks(root) {
+  for (const node of root.querySelectorAll('[data-scope-kind="session"]')) {
+    node.addEventListener("click", (event) => {
+      event.preventDefault();
+      const sessionID = node.getAttribute("data-scope-session-id");
+      if (!sessionID) {
+        return;
+      }
+      const traceID = node.getAttribute("data-trace-id") || "";
+      els.traceFilter.value = traceID;
+      state.options.traceID = traceID;
+      state.options.sessionID = sessionID;
+      state.options.clientID = "";
+      refreshAll().catch((err) => renderInfo(String(err)));
+    });
+  }
+}
+
+function wireClientLinks(root) {
+  for (const node of root.querySelectorAll('[data-scope-kind="client"]')) {
+    node.addEventListener("click", (event) => {
+      event.preventDefault();
+      const clientID = node.getAttribute("data-scope-client-id");
+      if (!clientID) {
+        return;
+      }
+      const traceID = node.getAttribute("data-trace-id") || "";
+      const sessionID = node.getAttribute("data-scope-session-id") || "";
+      els.traceFilter.value = traceID;
+      state.options.traceID = traceID;
+      state.options.sessionID = sessionID;
+      state.options.clientID = clientID;
       refreshAll().catch((err) => renderInfo(String(err)));
     });
   }
@@ -589,7 +656,22 @@ function traceTag(traceID) {
   if (!traceID) {
     return "-";
   }
-  return `<button class="v2-trace-tag" data-trace-id="${escapeHTML(traceID)}">${escapeHTML(shortDigest(traceID))}</button>`;
+  return `<button class="v2-trace-tag" data-scope-kind="trace" data-trace-id="${escapeHTML(traceID)}">${escapeHTML(shortDigest(traceID))}</button>`;
+}
+
+function sessionTag(sessionID, traceID) {
+  if (!sessionID) {
+    return "-";
+  }
+  return `<button class="v2-trace-tag" data-scope-kind="session" data-scope-session-id="${escapeHTML(sessionID)}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(shortDigest(sessionID))}</button>`;
+}
+
+function clientTag(clientID, traceID, sessionID, label) {
+  if (!clientID) {
+    return escapeHTML(label || "-");
+  }
+  const title = label || shortDigest(clientID);
+  return `<button class="v2-trace-tag" data-scope-kind="client" data-scope-client-id="${escapeHTML(clientID)}" data-scope-session-id="${escapeHTML(sessionID || "")}" data-trace-id="${escapeHTML(traceID || "")}">${escapeHTML(title)}</button>`;
 }
 
 function renderInfo(msg) {
@@ -646,6 +728,23 @@ function setActivePage(page, writeHash) {
 function countLabel(v2resp) {
   const count = Number((v2resp?.items || []).length);
   return `${count}${v2resp?.nextCursor ? "+" : ""}`;
+}
+
+function hasScopeSelection() {
+  return Boolean(state.options.traceID || state.options.sessionID || state.options.clientID);
+}
+
+function describeScope() {
+  if (state.options.clientID) {
+    return `client=${shortDigest(state.options.clientID)}`;
+  }
+  if (state.options.sessionID) {
+    return `session=${shortDigest(state.options.sessionID)}`;
+  }
+  if (state.options.traceID) {
+    return `trace=${shortDigest(state.options.traceID)}`;
+  }
+  return "global (all traces)";
 }
 
 function cursorLabel(v2resp) {

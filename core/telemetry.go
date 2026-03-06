@@ -264,7 +264,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 					slog.WarnContext(ctx, "failed to encode dag output state", "outputDigest", outputDigest, "err", err)
 				} else {
 					span.SetAttributes(
-						attribute.String(telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV1),
+						attribute.String(telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
 						attribute.String(telemetry.DagOutputStateAttr, statePayload),
 					)
 				}

@@ -609,18 +609,102 @@ func decodeOutputStatePayload(attrs map[string]any) (map[string]any, error) {
 		return nil, nil
 	}
 
-	// Current experimental parser expects base64(json). If/when the state payload
-	// moves to protobuf, this parser can branch on dagger.io/dag.output.state.version.
-	_, _ = getString(attrs, telemetry.DagOutputStateVersionAttr)
+	version, _ := getString(attrs, telemetry.DagOutputStateVersionAttr)
 	raw, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
 		return nil, fmt.Errorf("base64 decode: %w", err)
 	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("json decode: %w", err)
+	switch version {
+	case "", telemetry.DagOutputStateVersionV1:
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("json decode: %w", err)
+		}
+		return out, nil
+	case telemetry.DagOutputStateVersionV2:
+		var out callpbv1.OutputState
+		if err := proto.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("protobuf decode: %w", err)
+		}
+		return outputStateProtoToMap(&out), nil
+	default:
+		return nil, fmt.Errorf("unsupported output state version: %s", version)
 	}
-	return out, nil
+}
+
+func outputStateProtoToMap(state *callpbv1.OutputState) map[string]any {
+	if state == nil {
+		return nil
+	}
+	fields := make(map[string]any, len(state.GetFields()))
+	for _, field := range state.GetFields() {
+		if field == nil || field.GetName() == "" {
+			continue
+		}
+		item := map[string]any{
+			"name":  field.GetName(),
+			"type":  field.GetType(),
+			"value": outputStateLiteralToJSON(field.GetValue()),
+		}
+		if refs := stringSliceToAny(field.GetRefs()); len(refs) > 0 {
+			item["refs"] = refs
+		}
+		fields[field.GetName()] = item
+	}
+	return map[string]any{
+		"type":   state.GetType(),
+		"fields": fields,
+	}
+}
+
+func outputStateLiteralToJSON(lit *callpbv1.Literal) any {
+	if lit == nil {
+		return nil
+	}
+	switch v := lit.GetValue().(type) {
+	case *callpbv1.Literal_CallDigest:
+		return v.CallDigest
+	case *callpbv1.Literal_Null:
+		return nil
+	case *callpbv1.Literal_Bool:
+		return v.Bool
+	case *callpbv1.Literal_Enum:
+		return v.Enum
+	case *callpbv1.Literal_Int:
+		return v.Int
+	case *callpbv1.Literal_Float:
+		return v.Float
+	case *callpbv1.Literal_String_:
+		return v.String_
+	case *callpbv1.Literal_List:
+		values := make([]any, 0, len(v.List.GetValues()))
+		for _, item := range v.List.GetValues() {
+			values = append(values, outputStateLiteralToJSON(item))
+		}
+		return values
+	case *callpbv1.Literal_Object:
+		out := make(map[string]any, len(v.Object.GetValues()))
+		for _, arg := range v.Object.GetValues() {
+			if arg == nil || arg.GetName() == "" {
+				continue
+			}
+			out[arg.GetName()] = outputStateLiteralToJSON(arg.GetValue())
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func stringSliceToAny(values []string) []any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	return out
 }
 
 func collectArgRefs(args []*callpbv1.Argument) []InputRef {
@@ -988,43 +1072,20 @@ func collectStateFieldRefs(state map[string]any) []stateFieldRef {
 		if name, ok := field["name"].(string); ok && name != "" {
 			path = name
 		}
-		walkStateValueRefs(field["value"], path, 0, &refs)
+		refsRaw, ok := field["refs"].([]any)
+		if !ok || len(refsRaw) == 0 {
+			continue
+		}
+		for _, rawRef := range refsRaw {
+			ref, ok := rawRef.(string)
+			if !ok || ref == "" {
+				continue
+			}
+			refs = append(refs, stateFieldRef{
+				Path:        path,
+				StateDigest: ref,
+			})
+		}
 	}
 	return refs
-}
-
-func walkStateValueRefs(v any, path string, depth int, refs *[]stateFieldRef) {
-	const maxDepth = 8
-	if depth > maxDepth {
-		return
-	}
-
-	switch x := v.(type) {
-	case string:
-		if x == "" {
-			return
-		}
-		*refs = append(*refs, stateFieldRef{
-			Path:        path,
-			StateDigest: x,
-		})
-	case []any:
-		for i, item := range x {
-			childPath := path + "[" + strconv.Itoa(i) + "]"
-			walkStateValueRefs(item, childPath, depth+1, refs)
-		}
-	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for key := range x {
-			keys = append(keys, key)
-		}
-		slices.Sort(keys)
-		for _, key := range keys {
-			childPath := key
-			if path != "" {
-				childPath = path + "." + key
-			}
-			walkStateValueRefs(x[key], childPath, depth+1, refs)
-		}
-	}
 }

@@ -11,12 +11,13 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/internal/odag/derive"
 	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
 )
 
 const (
-	derivationVersionV2 = "odag-v2alpha1"
+	derivationVersionV2 = "odag-v2alpha2"
 	v2DefaultLimit      = 200
 	v2MaxLimit          = 2000
 	v2TraceScanLimit    = 10000
@@ -24,6 +25,8 @@ const (
 
 type v2Query struct {
 	TraceID         string
+	SessionID       string
+	ClientID        string
 	FromUnixNano    int64
 	ToUnixNano      int64
 	IncludeInternal bool
@@ -34,6 +37,8 @@ type v2Query struct {
 type v2Span struct {
 	ID            string           `json:"id"`
 	TraceID       string           `json:"traceID"`
+	SessionID     string           `json:"sessionID,omitempty"`
+	ClientID      string           `json:"clientID,omitempty"`
 	SpanID        string           `json:"spanID"`
 	ParentSpanID  string           `json:"parentSpanID,omitempty"`
 	Name          string           `json:"name"`
@@ -51,6 +56,7 @@ type v2Span struct {
 type v2Call struct {
 	ID                    string   `json:"id"`
 	TraceID               string   `json:"traceID"`
+	SessionID             string   `json:"sessionID,omitempty"`
 	SpanID                string   `json:"spanID"`
 	ParentCallID          string   `json:"parentCallID,omitempty"`
 	ClientID              string   `json:"clientID,omitempty"`
@@ -79,6 +85,8 @@ type v2ObjectSnapshot struct {
 	TypeName          string         `json:"typeName,omitempty"`
 	OutputState       map[string]any `json:"outputState,omitempty"`
 	FieldRefs         []v2FieldRef   `json:"fieldRefs,omitempty"`
+	SessionIDs        []string       `json:"sessionIDs,omitempty"`
+	ClientIDs         []string       `json:"clientIDs,omitempty"`
 	FirstSeenUnixNano int64          `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64          `json:"lastSeenUnixNano"`
 	TraceIDs          []string       `json:"traceIDs,omitempty"`
@@ -88,6 +96,8 @@ type v2ObjectSnapshot struct {
 type v2ObjectBinding struct {
 	BindingID         string   `json:"bindingID"`
 	TraceID           string   `json:"traceID"`
+	SessionID         string   `json:"sessionID,omitempty"`
+	ClientIDs         []string `json:"clientIDs,omitempty"`
 	TypeName          string   `json:"typeName"`
 	Alias             string   `json:"alias"`
 	ScopeSpanID       string   `json:"scopeSpanID,omitempty"`
@@ -102,6 +112,8 @@ type v2ObjectBinding struct {
 type v2Mutation struct {
 	ID             string `json:"id"`
 	TraceID        string `json:"traceID"`
+	SessionID      string `json:"sessionID,omitempty"`
+	ClientID       string `json:"clientID,omitempty"`
 	BindingID      string `json:"bindingID"`
 	CauseCallID    string `json:"causeCallID"`
 	ScopeSpanID    string `json:"scopeSpanID,omitempty"`
@@ -119,6 +131,8 @@ type v2Mutation struct {
 type v2Session struct {
 	ID                string `json:"id"`
 	TraceID           string `json:"traceID"`
+	RootClientID      string `json:"rootClientID,omitempty"`
+	Fallback          bool   `json:"fallback,omitempty"`
 	Status            string `json:"status"`
 	Open              bool   `json:"open"`
 	FirstSeenUnixNano int64  `json:"firstSeenUnixNano"`
@@ -129,11 +143,18 @@ type v2Client struct {
 	ID                string   `json:"id"`
 	TraceID           string   `json:"traceID"`
 	SessionID         string   `json:"sessionID"`
+	ParentClientID    string   `json:"parentClientID,omitempty"`
+	RootClientID      string   `json:"rootClientID,omitempty"`
 	SpanID            string   `json:"spanID,omitempty"`
 	Name              string   `json:"name,omitempty"`
 	CommandArgs       []string `json:"commandArgs,omitempty"`
 	ServiceName       string   `json:"serviceName,omitempty"`
+	ServiceVersion    string   `json:"serviceVersion,omitempty"`
 	ScopeName         string   `json:"scopeName,omitempty"`
+	ClientVersion     string   `json:"clientVersion,omitempty"`
+	ClientOS          string   `json:"clientOS,omitempty"`
+	ClientArch        string   `json:"clientArch,omitempty"`
+	ClientMachineID   string   `json:"clientMachineID,omitempty"`
 	FirstSeenUnixNano int64    `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64    `json:"lastSeenUnixNano"`
 }
@@ -152,7 +173,7 @@ func (s *Server) handleV2Spans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -164,9 +185,9 @@ func (s *Server) handleV2Spans(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]v2Span, 0)
 	for _, traceID := range traceIDs {
-		spans, err := s.store.ListTraceSpans(r.Context(), traceID)
+		spans, _, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("list spans for trace %s: %v", traceID, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
 		for _, sp := range spans {
@@ -181,9 +202,16 @@ func (s *Server) handleV2Spans(w http.ResponseWriter, r *http.Request) {
 			if !q.IncludeInternal && internal {
 				continue
 			}
+			sessionID := scopeIdx.SessionIDForSpan(sp.SpanID)
+			clientID := scopeIdx.ClientIDForSpan(sp.SpanID)
+			if !matchesV2Scope(q, traceID, sessionID, clientID) {
+				continue
+			}
 			items = append(items, v2Span{
 				ID:            spanKey(traceID, sp.SpanID),
 				TraceID:       traceID,
+				SessionID:     sessionID,
+				ClientID:      clientID,
 				SpanID:        sp.SpanID,
 				ParentSpanID:  sp.ParentSpanID,
 				Name:          sp.Name,
@@ -225,7 +253,7 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -237,20 +265,24 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]v2Call, 0)
 	for _, traceID := range traceIDs {
-		proj, err := s.projectTraceWithOptions(r.Context(), traceID, transform.ProjectOptions{
-			IncludeInternal: q.IncludeInternal,
-			ApplyKeepRules:  false,
-		})
+		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("project trace %s: %v", traceID, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		clientID := deriveTraceClientID(traceID, proj)
 		for _, event := range proj.Events {
 			if event.RawKind != "call" {
 				continue
 			}
+			if !q.IncludeInternal && event.Internal {
+				continue
+			}
 			if !intersectsTime(event.StartUnixNano, event.EndUnixNano, q.FromUnixNano, q.ToUnixNano) {
+				continue
+			}
+			clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+			sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
+			if !matchesV2Scope(q, traceID, sessionID, clientID) {
 				continue
 			}
 			argSet := map[string]struct{}{}
@@ -265,11 +297,17 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 				argSnapshotIDs = append(argSnapshotIDs, digest)
 			}
 			sort.Strings(argSnapshotIDs)
+			callID := spanKey(traceID, event.SpanID)
+			parentCallID := ""
+			if event.ParentCallSpanID != "" {
+				parentCallID = spanKey(traceID, event.ParentCallSpanID)
+			}
 			items = append(items, v2Call{
-				ID:                    event.SpanID,
+				ID:                    callID,
 				TraceID:               traceID,
+				SessionID:             sessionID,
 				SpanID:                event.SpanID,
-				ParentCallID:          event.ParentCallSpanID,
+				ParentCallID:          parentCallID,
 				ClientID:              clientID,
 				Name:                  event.Name,
 				StartUnixNano:         event.StartUnixNano,
@@ -313,7 +351,7 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -327,17 +365,16 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 		item        v2ObjectSnapshot
 		traceIDs    map[string]struct{}
 		callIDs     map[string]struct{}
+		sessionIDs  map[string]struct{}
+		clientIDs   map[string]struct{}
 		fieldRefSet map[string]struct{}
 	}
 	byID := map[string]*snapshotAgg{}
 
 	for _, traceID := range traceIDs {
-		proj, err := s.projectTraceWithOptions(r.Context(), traceID, transform.ProjectOptions{
-			IncludeInternal: q.IncludeInternal,
-			ApplyKeepRules:  false,
-		})
+		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("project trace %s: %v", traceID, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
 		for _, obj := range proj.Objects {
@@ -345,7 +382,17 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 				if st.StateDigest == "" {
 					continue
 				}
+				if !q.IncludeInternal {
+					if event := findProjectionEvent(proj, st.SpanID); event != nil && event.Internal {
+						continue
+					}
+				}
 				if !intersectsTime(st.StartUnixNano, st.EndUnixNano, q.FromUnixNano, q.ToUnixNano) {
+					continue
+				}
+				sessionID := scopeIdx.SessionIDForSpan(st.SpanID)
+				clientID := scopeIdx.ClientIDForSpan(st.SpanID)
+				if !matchesV2Scope(q, traceID, sessionID, clientID) {
 					continue
 				}
 				agg := byID[st.StateDigest]
@@ -360,6 +407,8 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 						},
 						traceIDs:    map[string]struct{}{},
 						callIDs:     map[string]struct{}{},
+						sessionIDs:  map[string]struct{}{},
+						clientIDs:   map[string]struct{}{},
 						fieldRefSet: map[string]struct{}{},
 					}
 					if agg.item.TypeName == "" {
@@ -380,8 +429,14 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 					agg.item.LastSeenUnixNano = st.EndUnixNano
 				}
 				agg.traceIDs[traceID] = struct{}{}
-				if st.CallDigest != "" {
-					agg.callIDs[st.CallDigest] = struct{}{}
+				if callID := spanKey(traceID, st.SpanID); st.SpanID != "" {
+					agg.callIDs[callID] = struct{}{}
+				}
+				if sessionID != "" {
+					agg.sessionIDs[sessionID] = struct{}{}
+				}
+				if clientID != "" {
+					agg.clientIDs[clientID] = struct{}{}
 				}
 				for _, ref := range extractFieldRefs(st.OutputStateJSON) {
 					key := ref.Path + "|" + ref.SnapshotID
@@ -399,6 +454,8 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 	for _, agg := range byID {
 		agg.item.TraceIDs = setToSortedSlice(agg.traceIDs)
 		agg.item.ProducedByCallIDs = setToSortedSlice(agg.callIDs)
+		agg.item.SessionIDs = setToSortedSlice(agg.sessionIDs)
+		agg.item.ClientIDs = setToSortedSlice(agg.clientIDs)
 		sort.Slice(agg.item.FieldRefs, func(i, j int) bool {
 			if agg.item.FieldRefs[i].Path != agg.item.FieldRefs[j].Path {
 				return agg.item.FieldRefs[i].Path < agg.item.FieldRefs[j].Path
@@ -430,7 +487,7 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -447,12 +504,9 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, fmt.Sprintf("get trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		proj, err := s.projectTraceWithOptions(r.Context(), traceID, transform.ProjectOptions{
-			IncludeInternal: q.IncludeInternal,
-			ApplyKeepRules:  false,
-		})
+		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("project trace %s: %v", traceID, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
 		for _, obj := range proj.Objects {
@@ -465,18 +519,43 @@ func (s *Server) handleV2ObjectBindings(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 			callSet := map[string]struct{}{}
+			clientSet := map[string]struct{}{}
+			sessionSet := map[string]struct{}{}
 			snapshotHistory := make([]string, 0, len(obj.StateHistory))
+			matchedScope := !hasV2ScopeFilter(q)
 			for _, st := range obj.StateHistory {
+				if !q.IncludeInternal {
+					if event := findProjectionEvent(proj, st.SpanID); event != nil && event.Internal {
+						continue
+					}
+				}
 				if st.StateDigest != "" {
 					snapshotHistory = append(snapshotHistory, st.StateDigest)
 				}
-				if st.CallDigest != "" {
-					callSet[st.CallDigest] = struct{}{}
+				if st.SpanID != "" {
+					callSet[spanKey(traceID, st.SpanID)] = struct{}{}
+				}
+				sessionID := scopeIdx.SessionIDForSpan(st.SpanID)
+				clientID := scopeIdx.ClientIDForSpan(st.SpanID)
+				if sessionID != "" {
+					sessionSet[sessionID] = struct{}{}
+				}
+				if clientID != "" {
+					clientSet[clientID] = struct{}{}
+				}
+				if matchesV2Scope(q, traceID, sessionID, clientID) {
+					matchedScope = true
 				}
 			}
+			if !matchedScope {
+				continue
+			}
+			sessionIDs := setToSortedSlice(sessionSet)
 			items = append(items, v2ObjectBinding{
 				BindingID:         objectBindingID(traceID, obj.ID),
 				TraceID:           traceID,
+				SessionID:         firstSortedValue(sessionIDs),
+				ClientIDs:         setToSortedSlice(clientSet),
 				TypeName:          obj.TypeName,
 				Alias:             obj.Alias,
 				ScopeSpanID:       first.SpanID,
@@ -512,7 +591,7 @@ func (s *Server) handleV2Mutations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -524,22 +603,27 @@ func (s *Server) handleV2Mutations(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]v2Mutation, 0)
 	for _, traceID := range traceIDs {
-		proj, err := s.projectTraceWithOptions(r.Context(), traceID, transform.ProjectOptions{
-			IncludeInternal: q.IncludeInternal,
-			ApplyKeepRules:  false,
-		})
+		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("project trace %s: %v", traceID, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
 		for _, event := range proj.Events {
 			if event.Operation != "create" && event.Operation != "mutate" {
 				continue
 			}
+			if !q.IncludeInternal && event.Internal {
+				continue
+			}
 			if event.ObjectID == "" {
 				continue
 			}
 			if !intersectsTime(event.StartUnixNano, event.EndUnixNano, q.FromUnixNano, q.ToUnixNano) {
+				continue
+			}
+			sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
+			clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+			if !matchesV2Scope(q, traceID, sessionID, clientID) {
 				continue
 			}
 			scopeSpanID := event.ParentCallSpanID
@@ -549,8 +633,10 @@ func (s *Server) handleV2Mutations(w http.ResponseWriter, r *http.Request) {
 			items = append(items, v2Mutation{
 				ID:             spanKey(traceID, event.SpanID),
 				TraceID:        traceID,
+				SessionID:      sessionID,
+				ClientID:       clientID,
 				BindingID:      objectBindingID(traceID, event.ObjectID),
-				CauseCallID:    event.SpanID,
+				CauseCallID:    spanKey(traceID, event.SpanID),
 				ScopeSpanID:    scopeSpanID,
 				Name:           event.Name,
 				Kind:           event.Operation,
@@ -587,7 +673,7 @@ func (s *Server) handleV2Sessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -604,17 +690,32 @@ func (s *Server) handleV2Sessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("get trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		if !intersectsTime(trace.FirstSeenUnixNano, trace.LastSeenUnixNano, q.FromUnixNano, q.ToUnixNano) {
-			continue
+		_, _, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
+			return
 		}
-		items = append(items, v2Session{
-			ID:                trace.TraceID,
-			TraceID:           trace.TraceID,
-			Status:            trace.Status,
-			Open:              trace.Status == "ingesting",
-			FirstSeenUnixNano: trace.FirstSeenUnixNano,
-			LastSeenUnixNano:  trace.LastSeenUnixNano,
-		})
+		for _, session := range scopeIdx.Sessions {
+			if !intersectsTime(session.FirstSeenUnixNano, session.LastSeenUnixNano, q.FromUnixNano, q.ToUnixNano) {
+				continue
+			}
+			if q.SessionID != "" && session.ID != q.SessionID {
+				continue
+			}
+			if q.ClientID != "" && scopeIdx.SessionIDForClient(q.ClientID) != session.ID {
+				continue
+			}
+			items = append(items, v2Session{
+				ID:                session.ID,
+				TraceID:           trace.TraceID,
+				RootClientID:      session.RootClientID,
+				Fallback:          session.Fallback,
+				Status:            trace.Status,
+				Open:              trace.Status == "ingesting",
+				FirstSeenUnixNano: session.FirstSeenUnixNano,
+				LastSeenUnixNano:  session.LastSeenUnixNano,
+			})
+		}
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -639,7 +740,7 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q.TraceID)
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "trace not found", http.StatusNotFound)
@@ -651,39 +752,36 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]v2Client, 0)
 	for _, traceID := range traceIDs {
-		proj, err := s.projectTraceWithOptions(r.Context(), traceID, transform.ProjectOptions{
-			IncludeInternal: q.IncludeInternal,
-			ApplyKeepRules:  false,
-		})
+		_, _, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("project trace %s: %v", traceID, err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		for _, cmd := range proj.Summary.CommandSpans {
-			if !intersectsTime(cmd.StartUnixNano, cmd.EndUnixNano, q.FromUnixNano, q.ToUnixNano) {
+		for _, client := range scopeIdx.Clients {
+			if !intersectsTime(client.FirstSeenUnixNano, client.LastSeenUnixNano, q.FromUnixNano, q.ToUnixNano) {
+				continue
+			}
+			if !matchesV2Scope(q, traceID, client.SessionID, client.ID) {
 				continue
 			}
 			items = append(items, v2Client{
-				ID:                spanKey(traceID, cmd.SpanID),
+				ID:                client.ID,
 				TraceID:           traceID,
-				SessionID:         traceID,
-				SpanID:            cmd.SpanID,
-				Name:              cmd.Name,
-				CommandArgs:       cmd.CommandArgs,
-				ServiceName:       cmd.ServiceName,
-				ScopeName:         cmd.ScopeName,
-				FirstSeenUnixNano: cmd.StartUnixNano,
-				LastSeenUnixNano:  cmd.EndUnixNano,
-			})
-		}
-		if len(proj.Summary.CommandSpans) == 0 {
-			items = append(items, v2Client{
-				ID:                "trace:" + traceID,
-				TraceID:           traceID,
-				SessionID:         traceID,
-				Name:              proj.Summary.Title,
-				FirstSeenUnixNano: proj.StartUnixNano,
-				LastSeenUnixNano:  proj.EndUnixNano,
+				SessionID:         client.SessionID,
+				ParentClientID:    client.ParentClientID,
+				RootClientID:      client.RootClientID,
+				SpanID:            client.SpanID,
+				Name:              client.Name,
+				CommandArgs:       client.CommandArgs,
+				ServiceName:       client.ServiceName,
+				ServiceVersion:    client.ServiceVersion,
+				ScopeName:         client.ScopeName,
+				ClientVersion:     client.ClientVersion,
+				ClientOS:          client.ClientOS,
+				ClientArch:        client.ClientArch,
+				ClientMachineID:   client.ClientMachineID,
+				FirstSeenUnixNano: client.FirstSeenUnixNano,
+				LastSeenUnixNano:  client.LastSeenUnixNano,
 			})
 		}
 	}
@@ -703,9 +801,28 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) resolveV2TraceIDs(ctx context.Context, traceID string) ([]string, error) {
-	traceID = strings.TrimSpace(traceID)
-	if traceID != "" {
+func (s *Server) resolveV2TraceIDs(ctx context.Context, q v2Query) ([]string, error) {
+	traceID := strings.TrimSpace(q.TraceID)
+	switch {
+	case traceID != "":
+		if _, err := s.store.GetTrace(ctx, traceID); err != nil {
+			return nil, err
+		}
+		return []string{traceID}, nil
+	case q.ClientID != "":
+		traceID = derive.TraceIDFromClientID(q.ClientID)
+		if traceID == "" {
+			return nil, store.ErrNotFound
+		}
+		if _, err := s.store.GetTrace(ctx, traceID); err != nil {
+			return nil, err
+		}
+		return []string{traceID}, nil
+	case q.SessionID != "":
+		traceID = derive.TraceIDFromSessionID(q.SessionID)
+		if traceID == "" {
+			return nil, store.ErrNotFound
+		}
 		if _, err := s.store.GetTrace(ctx, traceID); err != nil {
 			return nil, err
 		}
@@ -731,10 +848,27 @@ func (s *Server) projectTraceWithOptions(ctx context.Context, traceID string, op
 	return transform.ProjectTraceWithOptions(traceID, spans, opts)
 }
 
+func (s *Server) loadV2TraceScope(ctx context.Context, traceID string) ([]store.SpanRecord, *transform.TraceProjection, *derive.ScopeIndex, error) {
+	spans, err := s.store.ListTraceSpans(ctx, traceID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	proj, err := transform.ProjectTraceWithOptions(traceID, spans, transform.ProjectOptions{
+		IncludeInternal: true,
+		ApplyKeepRules:  false,
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return spans, proj, derive.BuildScopeIndex(traceID, spans, proj), nil
+}
+
 func parseV2Query(r *http.Request) (v2Query, error) {
 	q := v2Query{
-		TraceID: strings.TrimSpace(r.URL.Query().Get("traceID")),
-		Limit:   v2DefaultLimit,
+		TraceID:   strings.TrimSpace(r.URL.Query().Get("traceID")),
+		SessionID: strings.TrimSpace(r.URL.Query().Get("sessionID")),
+		ClientID:  strings.TrimSpace(r.URL.Query().Get("clientID")),
+		Limit:     v2DefaultLimit,
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -812,13 +946,6 @@ func objectBindingID(traceID, objectID string) string {
 	return traceID + "/" + objectID
 }
 
-func deriveTraceClientID(traceID string, proj *transform.TraceProjection) string {
-	if proj != nil && len(proj.Summary.CommandSpans) > 0 {
-		return spanKey(traceID, proj.Summary.CommandSpans[0].SpanID)
-	}
-	return "trace:" + traceID
-}
-
 func getV2Bool(m map[string]any, key string) (bool, bool) {
 	if m == nil {
 		return false, false
@@ -853,10 +980,6 @@ func getV2String(m map[string]any, key string) (string, bool) {
 	return s, ok
 }
 
-func looksLikeSnapshotDigest(v string) bool {
-	return (strings.HasPrefix(v, "xxh3:") || strings.HasPrefix(v, "sha256:")) && len(v) > 12
-}
-
 func extractFieldRefs(state map[string]any) []v2FieldRef {
 	if state == nil {
 		return nil
@@ -879,38 +1002,22 @@ func extractFieldRefs(state map[string]any) []v2FieldRef {
 		if name, ok := field["name"].(string); ok && name != "" {
 			path = name
 		}
-		walkFieldValueRefs(field["value"], path, &refs)
-	}
-	return refs
-}
-
-func walkFieldValueRefs(v any, path string, refs *[]v2FieldRef) {
-	switch x := v.(type) {
-	case string:
-		if looksLikeSnapshotDigest(x) {
-			*refs = append(*refs, v2FieldRef{
+		values, ok := field["refs"].([]any)
+		if !ok || len(values) == 0 {
+			continue
+		}
+		for _, value := range values {
+			ref, ok := value.(string)
+			if !ok || ref == "" {
+				continue
+			}
+			refs = append(refs, v2FieldRef{
 				Path:       path,
-				SnapshotID: x,
+				SnapshotID: ref,
 			})
 		}
-	case []any:
-		for i, item := range x {
-			walkFieldValueRefs(item, path+"["+strconv.Itoa(i)+"]", refs)
-		}
-	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			nextPath := k
-			if path != "" {
-				nextPath = path + "." + k
-			}
-			walkFieldValueRefs(x[k], nextPath, refs)
-		}
 	}
+	return refs
 }
 
 func setToSortedSlice(set map[string]struct{}) []string {
@@ -923,6 +1030,42 @@ func setToSortedSlice(set map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func hasV2ScopeFilter(q v2Query) bool {
+	return q.SessionID != "" || q.ClientID != ""
+}
+
+func matchesV2Scope(q v2Query, traceID, sessionID, clientID string) bool {
+	if q.TraceID != "" && q.TraceID != traceID {
+		return false
+	}
+	if q.SessionID != "" && q.SessionID != sessionID {
+		return false
+	}
+	if q.ClientID != "" && q.ClientID != clientID {
+		return false
+	}
+	return true
+}
+
+func findProjectionEvent(proj *transform.TraceProjection, spanID string) *transform.MutationEvent {
+	if proj == nil || spanID == "" {
+		return nil
+	}
+	for i := range proj.Events {
+		if proj.Events[i].SpanID == spanID {
+			return &proj.Events[i]
+		}
+	}
+	return nil
+}
+
+func firstSortedValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 func paginate[T any](items []T, offset int, limit int) ([]T, string) {

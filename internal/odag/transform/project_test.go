@@ -3,6 +3,7 @@ package transform
 import (
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"dagger.io/dagger/telemetry"
@@ -627,14 +628,15 @@ func TestProjectTraceRehydratesOutputStateFromDuplicateDigest(t *testing.T) {
 
 	spans := []store.SpanRecord{
 		mustCallSpan(t, callSpanInput{
-			traceID:      "trace7",
-			spanID:       "s1",
-			parentSpanID: "",
-			name:         "Query.container",
-			start:        1,
-			end:          10,
-			output:       "state-a",
-			outputState:  outputState,
+			traceID:            "trace7",
+			spanID:             "s1",
+			parentSpanID:       "",
+			name:               "Query.container",
+			start:              1,
+			end:                10,
+			output:             "state-a",
+			outputState:        outputState,
+			outputStateVersion: telemetry.DagOutputStateVersionV1,
 			call: &callpbv1.Call{
 				Digest: "call-1",
 				Field:  "container",
@@ -718,6 +720,7 @@ func TestProjectTraceBuildsObjectEdgesFromStateFieldRefs(t *testing.T) {
 						"name":  "FS",
 						"type":  "Directory!",
 						"value": "state-dir",
+						"refs":  []any{"state-dir"},
 					},
 					"Mounts": map[string]any{
 						"name": "Mounts",
@@ -727,6 +730,7 @@ func TestProjectTraceBuildsObjectEdgesFromStateFieldRefs(t *testing.T) {
 								"Source": "state-dir",
 							},
 						},
+						"refs": []any{"state-dir"},
 					},
 				},
 			},
@@ -764,9 +768,9 @@ func TestProjectTraceBuildsObjectEdgesFromStateFieldRefs(t *testing.T) {
 	if fsEdge.EvidenceCount != 1 {
 		t.Fatalf("expected FS evidence count=1, got %#v", fsEdge)
 	}
-	mountEdge, ok := labels["Mounts[0].Source"]
+	mountEdge, ok := labels["Mounts"]
 	if !ok {
-		t.Fatalf("expected Mounts[0].Source edge, got %#v", proj.Edges)
+		t.Fatalf("expected Mounts edge, got %#v", proj.Edges)
 	}
 	if mountEdge.EvidenceCount != 1 {
 		t.Fatalf("expected mount edge evidence count=1, got %#v", mountEdge)
@@ -777,18 +781,19 @@ func TestProjectTraceBuildsObjectEdgesFromStateFieldRefs(t *testing.T) {
 }
 
 type callSpanInput struct {
-	traceID      string
-	spanID       string
-	parentSpanID string
-	name         string
-	start        int64
-	end          int64
-	output       string
-	outputState  map[string]any
-	internal     bool
-	resource     map[string]any
-	scope        map[string]any
-	call         *callpbv1.Call
+	traceID            string
+	spanID             string
+	parentSpanID       string
+	name               string
+	start              int64
+	end                int64
+	output             string
+	outputState        map[string]any
+	outputStateVersion string
+	internal           bool
+	resource           map[string]any
+	scope              map[string]any
+	call               *callpbv1.Call
 }
 
 func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
@@ -806,12 +811,12 @@ func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
 		attrs[telemetry.DagOutputAttr] = in.output
 	}
 	if in.outputState != nil {
-		raw, err := json.Marshal(in.outputState)
-		if err != nil {
-			t.Fatalf("marshal output state payload: %v", err)
+		version := in.outputStateVersion
+		if version == "" {
+			version = telemetry.DagOutputStateVersionV2
 		}
-		attrs[telemetry.DagOutputStateAttr] = base64.StdEncoding.EncodeToString(raw)
-		attrs[telemetry.DagOutputStateVersionAttr] = "v1"
+		attrs[telemetry.DagOutputStateAttr] = encodeOutputStateForTest(t, in.outputState, version)
+		attrs[telemetry.DagOutputStateVersionAttr] = version
 	}
 	if in.internal {
 		attrs[telemetry.UIInternalAttr] = true
@@ -838,5 +843,123 @@ func mustCallSpan(t *testing.T, in callSpanInput) store.SpanRecord {
 		StatusMessage:   "",
 		DataJSON:        string(payload),
 		UpdatedUnixNano: in.end,
+	}
+}
+
+func encodeOutputStateForTest(t *testing.T, payload map[string]any, version string) string {
+	t.Helper()
+	switch version {
+	case "", telemetry.DagOutputStateVersionV2:
+		state := outputStateProtoFromMap(t, payload)
+		raw, err := proto.Marshal(state)
+		if err != nil {
+			t.Fatalf("marshal output state payload: %v", err)
+		}
+		return base64.StdEncoding.EncodeToString(raw)
+	case telemetry.DagOutputStateVersionV1:
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal output state payload: %v", err)
+		}
+		return base64.StdEncoding.EncodeToString(raw)
+	default:
+		t.Fatalf("unsupported output state version %q", version)
+		return ""
+	}
+}
+
+func outputStateProtoFromMap(t *testing.T, payload map[string]any) *callpbv1.OutputState {
+	t.Helper()
+	fieldsRaw, _ := payload["fields"].(map[string]any)
+	fieldNames := make([]string, 0, len(fieldsRaw))
+	for name := range fieldsRaw {
+		fieldNames = append(fieldNames, name)
+	}
+	slices.Sort(fieldNames)
+	fields := make([]*callpbv1.OutputStateField, 0, len(fieldNames))
+	for _, fallbackName := range fieldNames {
+		rawField, ok := fieldsRaw[fallbackName].(map[string]any)
+		if !ok {
+			continue
+		}
+		name := fallbackName
+		if v, ok := rawField["name"].(string); ok && v != "" {
+			name = v
+		}
+		field := &callpbv1.OutputStateField{
+			Name:  name,
+			Type:  stringValue(rawField["type"]),
+			Value: literalFromAnyForTest(t, rawField["value"]),
+		}
+		field.Refs = stringSliceValue(rawField["refs"])
+		fields = append(fields, field)
+	}
+	return &callpbv1.OutputState{
+		Type:   stringValue(payload["type"]),
+		Fields: fields,
+	}
+}
+
+func literalFromAnyForTest(t *testing.T, value any) *callpbv1.Literal {
+	t.Helper()
+	switch v := value.(type) {
+	case nil:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Null{Null: true}}
+	case bool:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Bool{Bool: v}}
+	case string:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: v}}
+	case int:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Int{Int: int64(v)}}
+	case int64:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Int{Int: v}}
+	case float64:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Float{Float: v}}
+	case []any:
+		items := make([]*callpbv1.Literal, 0, len(v))
+		for _, item := range v {
+			items = append(items, literalFromAnyForTest(t, item))
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{Values: items}}}
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		args := make([]*callpbv1.Argument, 0, len(keys))
+		for _, key := range keys {
+			args = append(args, &callpbv1.Argument{
+				Name:  key,
+				Value: literalFromAnyForTest(t, v[key]),
+			})
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Object{Object: &callpbv1.Object{Values: args}}}
+	default:
+		t.Fatalf("unsupported output state test literal type %T", value)
+		return nil
+	}
+}
+
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func stringSliceValue(v any) []string {
+	switch vals := v.(type) {
+	case []string:
+		return vals
+	case []any:
+		out := make([]string, 0, len(vals))
+		for _, item := range vals {
+			s, ok := item.(string)
+			if ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
 	}
 }

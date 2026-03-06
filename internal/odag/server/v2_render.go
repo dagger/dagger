@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dagger/dagger/internal/odag/derive"
 	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
 )
@@ -35,6 +36,8 @@ type v2RenderResponse struct {
 
 type v2RenderContext struct {
 	TraceID            string `json:"traceID"`
+	SessionID          string `json:"sessionID,omitempty"`
+	ClientID           string `json:"clientID,omitempty"`
 	TraceTitle         string `json:"traceTitle,omitempty"`
 	TraceStartUnixNano int64  `json:"traceStartUnixNano"`
 	TraceEndUnixNano   int64  `json:"traceEndUnixNano"`
@@ -66,6 +69,8 @@ type v2RenderObject struct {
 
 type v2RenderCall struct {
 	CallID          string   `json:"callID"`
+	SessionID       string   `json:"sessionID,omitempty"`
+	ClientID        string   `json:"clientID,omitempty"`
 	Name            string   `json:"name"`
 	ParentCallID    string   `json:"parentCallID,omitempty"`
 	TopLevel        bool     `json:"topLevel"`
@@ -126,8 +131,8 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(q.TraceID) == "" {
-		http.Error(w, "traceID is required", http.StatusBadRequest)
+	if strings.TrimSpace(q.TraceID) == "" && strings.TrimSpace(q.SessionID) == "" && strings.TrimSpace(q.ClientID) == "" {
+		http.Error(w, "traceID, sessionID, or clientID is required", http.StatusBadRequest)
 		return
 	}
 
@@ -173,7 +178,32 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		unixNano = v
 	}
 
-	proj, err := s.projectTraceWithOptions(r.Context(), q.TraceID, transform.ProjectOptions{
+	traceIDs, err := s.resolveV2TraceIDs(r.Context(), q)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "trace not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("resolve traces: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if len(traceIDs) == 0 {
+		http.Error(w, "trace not found", http.StatusNotFound)
+		return
+	}
+	traceID := traceIDs[0]
+
+	spans, err := s.store.ListTraceSpans(r.Context(), traceID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "trace not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("list spans: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	proj, err := transform.ProjectTraceWithOptions(traceID, spans, transform.ProjectOptions{
 		IncludeInternal: q.IncludeInternal,
 		ApplyKeepRules:  applyKeepRules,
 	})
@@ -185,6 +215,11 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		http.Error(w, fmt.Sprintf("project trace: %v", err), http.StatusInternalServerError)
 		return
 	}
+	scopeIdx := derive.BuildScopeIndex(traceID, spans, proj)
+	resolvedSessionID := q.SessionID
+	if resolvedSessionID == "" && q.ClientID != "" {
+		resolvedSessionID = scopeIdx.SessionIDForClient(q.ClientID)
+	}
 
 	if unixNano <= 0 {
 		unixNano = proj.EndUnixNano
@@ -195,14 +230,16 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 	for _, obj := range snap.Objects {
 		objectByID[obj.ID] = obj
 	}
-	focusObjectID = normalizeRenderObjectID(q.TraceID, focusObjectID)
+	focusObjectID = normalizeRenderObjectID(traceID, focusObjectID)
 	if focusObjectID != "" {
 		if _, ok := objectByID[focusObjectID]; !ok {
 			focusObjectID = ""
 		}
 	}
 
+	scopeFiltered := hasV2ScopeFilter(q)
 	callByID := map[string]*v2RenderCall{}
+	callScopeMatches := map[string]bool{}
 	callOrder := make([]string, 0)
 	for _, event := range snap.Events {
 		if event.RawKind != "call" {
@@ -211,8 +248,13 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		if _, exists := callByID[event.SpanID]; exists {
 			continue
 		}
+		sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
+		clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+		callScopeMatches[event.SpanID] = matchesV2Scope(q, traceID, sessionID, clientID)
 		callByID[event.SpanID] = &v2RenderCall{
 			CallID:        event.SpanID,
+			SessionID:     sessionID,
+			ClientID:      clientID,
 			Name:          event.Name,
 			ParentCallID:  event.ParentCallSpanID,
 			TopLevel:      event.TopLevel,
@@ -228,6 +270,13 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 	directCallObjects := map[string]map[string]struct{}{}
 	subtreeCallObjects := map[string]map[string]struct{}{}
 	objectCalls := map[string]map[string]struct{}{}
+	scopedCallIDs := map[string]struct{}{}
+	scopedObjectIDs := map[string]struct{}{}
+	for callID := range callByID {
+		if !scopeFiltered || callScopeMatches[callID] {
+			scopedCallIDs[callID] = struct{}{}
+		}
+	}
 	for _, event := range snap.Events {
 		if event.ObjectID == "" || (event.Operation != "create" && event.Operation != "mutate") {
 			continue
@@ -235,8 +284,16 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		if _, ok := callByID[event.SpanID]; !ok {
 			continue
 		}
+		if scopeFiltered {
+			sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
+			clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+			if !matchesV2Scope(q, traceID, sessionID, clientID) {
+				continue
+			}
+		}
 		addSetVal(directCallObjects, event.SpanID, event.ObjectID)
 		addSetVal(objectCalls, event.ObjectID, event.SpanID)
+		scopedObjectIDs[event.ObjectID] = struct{}{}
 		cur := event.SpanID
 		for cur != "" {
 			addSetVal(subtreeCallObjects, cur, event.ObjectID)
@@ -285,6 +342,22 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 	for callID := range callByID {
 		allCallIDs[callID] = struct{}{}
 	}
+	baseVisibleObjectIDs := copySet(allObjectIDs)
+	baseVisibleCallIDs := copySet(allCallIDs)
+	if scopeFiltered {
+		baseVisibleObjectIDs = copySet(scopedObjectIDs)
+		baseVisibleCallIDs = copySet(scopedCallIDs)
+	}
+	if focusObjectID != "" && scopeFiltered {
+		if _, ok := baseVisibleObjectIDs[focusObjectID]; !ok {
+			focusObjectID = ""
+		}
+	}
+	if scopeCallID != "" && scopeFiltered {
+		if _, ok := baseVisibleCallIDs[scopeCallID]; !ok {
+			scopeCallID = ""
+		}
+	}
 
 	scopeCallIDs := map[string]struct{}{}
 	scopeObjectIDs := map[string]struct{}{}
@@ -292,6 +365,9 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 	scopeParentID := ""
 	if scopeCallID != "" {
 		scopeCallIDs = collectCallSubtreeIDs(callByID, scopeCallID)
+		if scopeFiltered {
+			scopeCallIDs = intersectSet(scopeCallIDs, baseVisibleCallIDs)
+		}
 		for callID := range scopeCallIDs {
 			for _, objectID := range setToSortedSlice(subtreeCallObjects[callID]) {
 				scopeObjectIDs[objectID] = struct{}{}
@@ -330,8 +406,8 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	visibleObjectIDs := copySet(allObjectIDs)
-	visibleCallIDs := copySet(allCallIDs)
+	visibleObjectIDs := copySet(baseVisibleObjectIDs)
+	visibleCallIDs := copySet(baseVisibleCallIDs)
 	switch mode {
 	case v2RenderModeScope:
 		if len(scopeCallIDs) > 0 {
@@ -363,10 +439,10 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if len(visibleObjectIDs) == 0 {
-		visibleObjectIDs = copySet(allObjectIDs)
+		visibleObjectIDs = copySet(baseVisibleObjectIDs)
 	}
 	if len(visibleCallIDs) == 0 {
-		visibleCallIDs = copySet(allCallIDs)
+		visibleCallIDs = copySet(baseVisibleCallIDs)
 	}
 
 	renderObjects := make([]v2RenderObject, 0, len(visibleObjectIDs))
@@ -388,7 +464,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		}
 		renderObjects = append(renderObjects, v2RenderObject{
 			ObjectID:          obj.ID,
-			BindingID:         objectBindingID(q.TraceID, obj.ID),
+			BindingID:         objectBindingID(traceID, obj.ID),
 			TypeName:          obj.TypeName,
 			Alias:             obj.Alias,
 			CurrentSnapshotID: currentSnapshot,
@@ -399,7 +475,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			StateCount:        len(obj.StateHistory),
 			MissingState:      obj.MissingState,
 			ReferencedByTop:   obj.ReferencedByTop,
-			ActivityCallIDs:   setToSortedSlice(objectCalls[obj.ID]),
+			ActivityCallIDs:   filterSortedIDs(setToSortedSlice(objectCalls[obj.ID]), visibleCallIDs),
 		})
 	}
 	sort.Slice(renderObjects, func(i, j int) bool {
@@ -418,7 +494,11 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		if _, ok := visibleCallIDs[callID]; !ok {
 			continue
 		}
-		renderCalls = append(renderCalls, *call)
+		renderCall := *call
+		renderCall.DirectObjectIDs = filterSortedIDs(call.DirectObjectIDs, visibleObjectIDs)
+		renderCall.ObjectIDs = filterSortedIDs(call.ObjectIDs, visibleObjectIDs)
+		renderCall.ChildCallIDs = filterSortedIDs(call.ChildCallIDs, visibleCallIDs)
+		renderCalls = append(renderCalls, renderCall)
 	}
 	sort.Slice(renderCalls, func(i, j int) bool {
 		if renderCalls[i].StartUnixNano != renderCalls[j].StartUnixNano {
@@ -486,6 +566,13 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 
 	filteredEvents := make([]transform.MutationEvent, 0, len(snap.Events))
 	for _, event := range snap.Events {
+		if scopeFiltered {
+			sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
+			clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+			if !matchesV2Scope(q, traceID, sessionID, clientID) {
+				continue
+			}
+		}
 		if event.RawKind == "call" {
 			if _, ok := visibleCallIDs[event.SpanID]; !ok {
 				continue
@@ -498,11 +585,14 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		}
 		filteredEvents = append(filteredEvents, event)
 	}
+	activeCallIDs := filterSortedIDs(snap.ActiveEventIDs, visibleCallIDs)
 
 	resp := v2RenderResponse{
 		DerivationVersion: derivationVersionV2,
 		Context: v2RenderContext{
-			TraceID:            q.TraceID,
+			TraceID:            traceID,
+			SessionID:          resolvedSessionID,
+			ClientID:           q.ClientID,
 			TraceTitle:         proj.Summary.Title,
 			TraceStartUnixNano: proj.StartUnixNano,
 			TraceEndUnixNano:   proj.EndUnixNano,
@@ -519,12 +609,12 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		Calls:         renderCalls,
 		Edges:         renderEdges,
 		Events:        filteredEvents,
-		ActiveCallIDs: snap.ActiveEventIDs,
+		ActiveCallIDs: activeCallIDs,
 		Navigation: v2RenderNavigation{
 			ScopePath:          scopePath,
 			EnterableCallIDs:   sortedSetKeys(visibleCallIDs),
 			EnterableObjectIDs: sortedSetKeys(visibleObjectIDs),
-			FocusObjectCallIDs: setToSortedSlice(objectCalls[focusObjectID]),
+			FocusObjectCallIDs: filterSortedIDs(setToSortedSlice(objectCalls[focusObjectID]), visibleCallIDs),
 		},
 		Warnings: proj.Warnings,
 	}
@@ -652,6 +742,26 @@ func sortedSetKeys(set map[string]struct{}) []string {
 		out = append(out, k)
 	}
 	sort.Strings(out)
+	return out
+}
+
+func filterSortedIDs(ids []string, allowed map[string]struct{}) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	if len(allowed) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := allowed[id]; !ok {
+			continue
+		}
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
