@@ -73,13 +73,6 @@ func (c *converter) convertExec(exec *buildkit.ExecOp) (*call.ID, error) {
 			}
 		}
 	}
-	if ctrID == nil {
-		ctrID, err = queryContainerID(exec.Platform)
-		if err != nil {
-			return nil, err
-		}
-		ctrID = appendCall(ctrID, containerType(), "withRootfs", argID("directory", rootDirID))
-	}
 
 	addedMountPaths := make([]string, 0, len(exec.Mounts))
 	addedMountPathSet := map[string]struct{}{}
