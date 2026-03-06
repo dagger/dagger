@@ -508,6 +508,10 @@ func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 		fe.Update()
 	})
 	<-ctx.Done()
+	fe.tui.Dispatch(func() {
+		fe.stopShell()
+		fe.Update()
+	})
 }
 
 func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) {
@@ -542,6 +546,24 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.tui.SetFocus(fe.textInput)
 	fe.editlineFocused = true
 	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) stopShell() {
+	if fe.textInput != nil {
+		fe.tui.RemoveChild(fe.textInput)
+		fe.textInput = nil
+	}
+	if fe.notificationOverlay != nil {
+		fe.notificationOverlay.Hide()
+		fe.notificationOverlay = nil
+		fe.notificationContainer = nil
+		fe.notifications = make(map[string]*NotificationBubble)
+	}
+	fe.shell = nil
+	fe.shellCtx = nil
+	fe.completionMenu = nil
+	fe.editlineFocused = false
+	fe.tui.SetShowHardwareCursor(false)
 }
 
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
