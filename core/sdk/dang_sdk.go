@@ -322,7 +322,7 @@ func (r *DangRuntime) Call(
 		}
 	} else {
 		parentModEnv := dang.NewModuleValue(parentModType)
-		parentModEnv.Set("self", parentModEnv)
+		parentModEnv.SetDynamicScope(parentModEnv)
 
 		for name, value := range parentState {
 			scheme, found := parentModType.SchemeOf(name)
@@ -805,6 +805,7 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 			return nil, fmt.Errorf("expected module type, got %T", fieldType)
 		}
 		modVal := dang.NewModuleValue(mod)
+		modVal.SetDynamicScope(modVal)
 		for name, val := range v {
 			expectedT, found := mod.SchemeOf(name)
 			if !found {
@@ -818,8 +819,20 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
 			}
-			mod.Add(name, hm.NewScheme(nil, dangVal.Type()))
 			modVal.Set(name, dangVal)
+		}
+		// For named types, evaluate the class body to set up computed properties and methods
+		if mod.Name() != "" {
+			constructor, ok := env.Get(mod.Name())
+			if ok {
+				if constructorFn, ok := constructor.(*dang.ConstructorFunction); ok {
+					bodyEnv := dang.CreateCompositeEnv(modVal, env)
+					_, err := dang.EvaluateFormsWithPhases(ctx, constructorFn.ClassBodyForms, bodyEnv)
+					if err != nil {
+						return nil, fmt.Errorf("evaluating class body for %s: %w", mod.Name(), err)
+					}
+				}
+			}
 		}
 		return modVal, nil
 	case nil:
