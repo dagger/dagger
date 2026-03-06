@@ -197,7 +197,7 @@ func (r *DangRuntime) Call(
 
 	// Set up the Dagger import config so dang code can use `import Dag` implicitly
 	ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
-		Name:       "Dag",
+		Name:       "Dagger",
 		Client:     gqlClient,
 		Schema:     intro.Schema,
 		AutoImport: true,
