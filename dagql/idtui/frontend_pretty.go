@@ -1507,12 +1507,15 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderConte
 
 	// Truncate content below focus so the focused item stays onscreen.
 	// Everything above renders into terminal scrollback naturally.
+	//
+	// In shell mode, skip truncation: the focused span's inline logs
+	// (command output) appear below the step line and must not be clipped.
 	viewportHeight := ctx.ScreenHeight - chromeHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
 	end := len(allLines)
-	if focusLine >= 0 {
+	if focusLine >= 0 && fe.shell == nil {
 		// Allow some context below focus (half the viewport), but cap
 		// the total so focus doesn't get pushed above the viewport.
 		afterBudget := viewportHeight / 2
@@ -1876,6 +1879,7 @@ func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
 	fe.tui.SetFocus(fe)
+	fe.recalculateViewLocked()
 	fe.keymapBar.Update()
 }
 
@@ -1885,6 +1889,7 @@ func (fe *frontendPretty) enterInsertMode(auto bool) {
 		fe.editlineFocused = true
 		fe.syncPrompt()
 		fe.tui.SetFocus(fe.textInput)
+		fe.recalculateViewLocked()
 		fe.keymapBar.Update()
 	}
 }
