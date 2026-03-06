@@ -851,7 +851,11 @@ Frontend consumes ODAG-domain events/snapshots, not raw OTel.
    - Collects telemetry into local store without requiring manual OTEL env setup.
    - v1 behavior: requires `odag serve` to already be running; if unavailable, fail with a clear message and suggested command.
    - Wrapper remains passthrough-only (no command output capture/summarization).
-3. Persistent store behavior
+3. `odag rebuild`
+   - Global rebuild command for ODAG derived state.
+   - Deletes all derived ODAG data and recomputes it in one pass from source-truth telemetry/span data already stored locally.
+   - This is the default operator workflow after derivation/schema changes; do not rely on piecemeal endpoint-specific repair as the primary rebuild story.
+4. Persistent store behavior
    - Store traces across restarts.
    - List traces with metadata (trace ID, first/last seen, source mode, status).
    - Select a stored trace for replay/visualization in UI.
@@ -1051,18 +1055,22 @@ These are the latest design decisions that should be preserved across handoff.
 
 ### Active Next Tasks
 
-- [ ] Engine telemetry hard cutover: change `dagger.io/dag.output.state` payload to include per-field `refs` and bump payload version.
-- [ ] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
-- [ ] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
-- [ ] Replace current `session == trace` approximation with a client tree derived from `dagger.io/engine.client` `connect` spans, then derive sessions from root clients; keep trace routes as secondary/debug views.
-- [ ] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, including parent-client inference from span ownership plus fallback root-local ordering for unresolved call attribution.
-- [ ] Materialize the edge taxonomy in the backend model:
+- [x] Engine telemetry hard cutover: change `dagger.io/dag.output.state` payload to include per-field `refs` and bump payload version.
+- [x] Backend derivation: consume engine-provided `refs` as authoritative and remove fallback dependency extraction heuristics based on nested path walking.
+- [x] Backend/API naming pass: rename immutable ID fields from `snapshot_id` to `dagql_id` across derived sqlite schema and REST JSON models.
+- [x] Replace current `session == trace` approximation with a client tree derived from `dagger.io/engine.client` `connect` spans, then derive sessions from root clients; keep trace routes as secondary/debug views.
+- [x] Encapsulate session/client heuristics in a dedicated derivation layer with tests and `derivationVersion` coverage, including parent-client inference from span ownership plus fallback root-local ordering for unresolved call attribution.
+- [x] Materialize the edge taxonomy in the backend model:
   - `field_ref` as default object-object dependency
   - call/object containment relations
   - receiver/arg provenance as optional overlays, not default DAG edges
-- [ ] Implement `Query` receiver handling explicitly in backend projection:
+- [x] Implement `Query` receiver handling explicitly in backend projection:
   - default v1 behavior: treat as no receiver binding
   - keep room for later promotion to a root binding/root scope anchor if useful
+- [ ] Add global rebuild workflow for derived data:
+  - `odag rebuild`
+  - delete all derived ODAG data
+  - recompute derived state in one pass from stored source-truth telemetry/span data
 - [ ] Add explicit engine OTEL telemetry for true execution-scope identifiers:
   - session ID on relevant spans
   - client ID on relevant spans
