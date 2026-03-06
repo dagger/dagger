@@ -475,9 +475,45 @@ function renderGraph() {
     return;
   }
 
-  const layout = computeGraphLayout(objects, edges);
-  const positions = layout.positions;
+  const cardW = 268;
+  const baseCardH = 96;
+  const dividerOffset = 86;
+  const fieldStartOffset = 108;
+  const fieldRowHeight = 20;
+  const expandedBottomPad = 18;
   const selectedObjectID = state.selectedObjectID;
+
+  const cards = objects.map((obj) => {
+    const selected = obj.objectID === selectedObjectID;
+    const fields = latestStateFields(obj.currentState);
+    let detailRows = [];
+    if (selected) {
+      if (fields.length > 0) {
+        detailRows = fields.map((field) => ({ kind: "field", field }));
+      } else if (obj.missingState) {
+        detailRows = [
+          { kind: "warn", text: "state unavailable" },
+          { kind: "sub", text: `${obj.stateCount || 0} snapshot(s)` },
+          { kind: "sub", text: `${(obj.activityCallIDs || []).length} call(s)` },
+        ];
+      } else {
+        detailRows = [
+          { kind: "sub", text: "no state fields" },
+          { kind: "sub", text: `${obj.stateCount || 0} snapshot(s)` },
+          { kind: "sub", text: `${(obj.activityCallIDs || []).length} call(s)` },
+        ];
+      }
+    }
+    return {
+      obj,
+      selected,
+      detailRows,
+      cardH: selected ? baseCardH + detailRows.length * fieldRowHeight + expandedBottomPad : baseCardH,
+    };
+  });
+
+  const layout = computeGraphLayout(cards, edges, cardW);
+  const positions = layout.positions;
 
   const edgeMarkup = edges
     .map((edge) => {
@@ -507,13 +543,14 @@ function renderGraph() {
     })
     .join("");
 
-  const nodeMarkup = objects
-    .map((obj) => {
+  const nodeMarkup = cards
+    .map((card) => {
+      const obj = card.obj;
       const pos = positions.get(obj.objectID);
       if (!pos) {
         return "";
       }
-      const selected = obj.objectID === selectedObjectID;
+      const selected = card.selected;
       const focused = obj.objectID === state.options.focusObjectID;
       const topReferenced = obj.referencedByTop;
       const className = [
@@ -534,6 +571,27 @@ function renderGraph() {
         : topReferenced
           ? `<text class="dag-node-badge" x="${pos.x + pos.w - 20}" y="${pos.y + 18}">T</text>`
           : "";
+      const keyX = pos.x + 16;
+      const valX = pos.x + 132;
+      let rowsMarkup = "";
+      if (selected) {
+        rowsMarkup = `
+          <line class="dag-node-divider" x1="${pos.x + 12}" y1="${pos.y + dividerOffset}" x2="${pos.x + pos.w - 12}" y2="${pos.y + dividerOffset}" />
+          ${card.detailRows
+            .map((row, idx) => {
+              const y = pos.y + fieldStartOffset + idx * fieldRowHeight;
+              if (row.kind === "field") {
+                return `<text class="dag-node-prop-key" x="${keyX}" y="${y}">${escapeHTML(row.field.name)}</text>
+          <text class="dag-node-prop-val" x="${valX}" y="${y}">${escapeHTML(row.field.value)}</text>`;
+              }
+              if (row.kind === "warn") {
+                return `<text class="dag-node-warn" x="${keyX}" y="${y}">${escapeHTML(row.text)}</text>`;
+              }
+              return `<text class="dag-node-sub" x="${keyX}" y="${y}">${escapeHTML(row.text)}</text>`;
+            })
+            .join("")}
+        `;
+      }
 
       return `
         <g data-object-id="${escapeHTML(obj.objectID)}">
@@ -542,6 +600,7 @@ function renderGraph() {
           <text class="dag-node-title" x="${pos.x + 16}" y="${pos.y + 34}">${title}</text>
           <text class="dag-node-subtitle" x="${pos.x + 16}" y="${pos.y + 56}">${subtitle}</text>
           <text class="dag-node-meta" x="${pos.x + 16}" y="${pos.y + 78}">${digest} | ${meta}</text>
+          ${rowsMarkup}
         </g>
       `;
     })
@@ -562,7 +621,7 @@ function renderGraph() {
   for (const node of els.dagCanvas.querySelectorAll("[data-object-id]")) {
     node.addEventListener("click", () => {
       const objectID = node.getAttribute("data-object-id") || "";
-      state.selectedObjectID = objectID;
+      state.selectedObjectID = state.selectedObjectID === objectID ? "" : objectID;
       renderObjectList();
       renderInspector();
       renderGraph();
@@ -574,15 +633,13 @@ function renderGraph() {
   }
 }
 
-function computeGraphLayout(objects, edges) {
-  const cardW = 268;
-  const cardH = 96;
+function computeGraphLayout(cards, edges, cardW) {
   const gapX = 110;
   const gapY = 30;
   const padding = 56;
 
-  const byID = new Map(objects.map((obj) => [obj.objectID, obj]));
-  const ids = objects.map((obj) => obj.objectID);
+  const byID = new Map(cards.map((card) => [card.obj.objectID, card]));
+  const ids = cards.map((card) => card.obj.objectID);
   const outgoing = new Map();
   const incoming = new Map();
   for (const id of ids) {
@@ -604,7 +661,7 @@ function computeGraphLayout(objects, edges) {
     incoming.set(edge.toID, (incoming.get(edge.toID) || 0) + 1);
   }
 
-  const compareIDs = (a, b) => compareObjectSummary(byID.get(a), byID.get(b));
+  const compareIDs = (a, b) => compareObjectSummary(byID.get(a)?.obj, byID.get(b)?.obj);
   const queue = ids.filter((id) => (incoming.get(id) || 0) === 0).sort(compareIDs);
   const depth = new Map(ids.map((id) => [id, 0]));
   const processed = [];
@@ -632,33 +689,36 @@ function computeGraphLayout(objects, edges) {
   }
 
   const layers = new Map();
-  for (const obj of objects) {
-    const layer = depth.get(obj.objectID) || 0;
+  for (const card of cards) {
+    const layer = depth.get(card.obj.objectID) || 0;
     const rows = layers.get(layer) || [];
-    rows.push(obj);
+    rows.push(card);
     layers.set(layer, rows);
   }
 
   const orderedLayers = Array.from(layers.keys()).sort((a, b) => a - b);
-  let maxLayerSize = 1;
+  let maxLayerHeight = 96;
   for (const layer of orderedLayers) {
     const rows = layers.get(layer) || [];
-    rows.sort(compareObjectSummary);
-    maxLayerSize = Math.max(maxLayerSize, rows.length);
+    rows.sort((a, b) => compareObjectSummary(a.obj, b.obj));
+    const layerHeight =
+      rows.reduce((sum, card) => sum + card.cardH, 0) + Math.max(0, rows.length - 1) * gapY;
+    maxLayerHeight = Math.max(maxLayerHeight, layerHeight);
   }
 
   const width = padding * 2 + orderedLayers.length * cardW + Math.max(0, orderedLayers.length - 1) * gapX;
-  const height = padding * 2 + maxLayerSize * cardH + Math.max(0, maxLayerSize - 1) * gapY;
+  const height = padding * 2 + maxLayerHeight;
   const positions = new Map();
 
   orderedLayers.forEach((layer, layerIndex) => {
     const rows = layers.get(layer) || [];
-    const layerHeight = rows.length * cardH + Math.max(0, rows.length - 1) * gapY;
+    const layerHeight =
+      rows.reduce((sum, card) => sum + card.cardH, 0) + Math.max(0, rows.length - 1) * gapY;
     let cursorY = padding + Math.max(0, (height - padding * 2 - layerHeight) / 2);
     const x = padding + layerIndex * (cardW + gapX);
-    rows.forEach((obj) => {
-      positions.set(obj.objectID, { x, y: cursorY, w: cardW, h: cardH });
-      cursorY += cardH + gapY;
+    rows.forEach((card) => {
+      positions.set(card.obj.objectID, { x, y: cursorY, w: cardW, h: card.cardH });
+      cursorY += card.cardH + gapY;
     });
   });
 

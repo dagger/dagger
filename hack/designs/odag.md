@@ -1131,7 +1131,7 @@ Stage 4 implementation note:
       - containment and provenance remain out of the default view
       - broad DAG entry keeps `keepRules=default` and `dependencyHops=1`
       - if an explicit object/call drill-in still resolves to an empty graph, the page retries once with pruning disabled
-      - selected object details move into a sidebar inspector instead of expanding every graph node
+      - selected object details appear in a sidebar inspector, and clicking a node also expands that card inline to show its fields
   - navigation polish:
     - trace list "Open" actions now use regular links for native browser-history behavior
     - trace-page top-left back control now prefers `history.back()` (same-origin referrer), with `/` fallback

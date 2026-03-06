@@ -1596,6 +1596,32 @@ body {
   font-family: "IBM Plex Mono", "Menlo", monospace;
 }
 
+.dag-node-divider {
+  stroke: rgba(109, 130, 155, 0.42);
+  stroke-width: 1;
+}
+
+.dag-node-prop-key {
+  fill: #5d6b78;
+  font-size: 11px;
+}
+
+.dag-node-prop-val {
+  fill: #213243;
+  font-size: 11px;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+}
+
+.dag-node-sub {
+  fill: #61707c;
+  font-size: 11.5px;
+}
+
+.dag-node-warn {
+  fill: #8d6025;
+  font-size: 11.5px;
+}
+
 .dag-node-badge {
   fill: #a36b2b;
   font-size: 12px;
