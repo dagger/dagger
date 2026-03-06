@@ -47,6 +47,7 @@ type Client struct {
 	ClientOS          string
 	ClientArch        string
 	ClientMachineID   string
+	ClientKind        string
 	FirstSeenUnixNano int64
 	LastSeenUnixNano  int64
 }
@@ -87,24 +88,20 @@ func BuildScopeIndex(traceID string, spans []store.SpanRecord, proj *transform.T
 		bySpanID[sp.Record.SpanID] = sp
 	}
 
+	if hasExplicitExecutionScope(rawSpans) {
+		return buildExplicitScopeIndex(traceID, rawSpans, bySpanID, proj)
+	}
+
+	return buildHeuristicScopeIndex(traceID, rawSpans, bySpanID, proj)
+}
+
+func buildHeuristicScopeIndex(traceID string, rawSpans []rawSpan, bySpanID map[string]rawSpan, proj *transform.TraceProjection) *ScopeIndex {
 	clientStates := detectClients(traceID, rawSpans)
 	preliminaryOwners := assignPreliminarySpanOwners(rawSpans, clientStates, bySpanID)
 	assignParentClients(clientStates, preliminaryOwners, bySpanID)
 	finalizeSessions(clientStates)
 
-	idx := &ScopeIndex{
-		TraceID:          traceID,
-		Clients:          make([]Client, 0, len(clientStates)),
-		Sessions:         nil,
-		SpanClientIDs:    make(map[string]string, len(rawSpans)),
-		SpanSessionIDs:   make(map[string]string, len(rawSpans)),
-		ClientByID:       make(map[string]Client, len(clientStates)),
-		SessionByID:      map[string]Session{},
-		SessionByClient:  map[string]string{},
-		RootClientByID:   map[string]string{},
-		clientBySpanID:   map[string]Client{},
-		sessionByTraceID: map[string]string{},
-	}
+	idx := newScopeIndex(traceID, len(rawSpans), len(clientStates))
 	for _, cs := range clientStates {
 		idx.Clients = append(idx.Clients, cs.Client)
 		idx.ClientByID[cs.ID] = cs.Client
@@ -114,27 +111,59 @@ func BuildScopeIndex(traceID string, spans []store.SpanRecord, proj *transform.T
 	}
 
 	idx.Sessions = buildSessions(traceID, clientStates)
-	for _, session := range idx.Sessions {
-		idx.SessionByID[session.ID] = session
-		idx.sessionByTraceID[traceID] = session.ID
-	}
+	indexSessions(idx)
 
 	if len(idx.Sessions) == 0 && projectionHasCalls(proj) {
-		idx.FallbackSession = FallbackSessionID(traceID)
-		session := Session{
-			ID:                idx.FallbackSession,
-			TraceID:           traceID,
-			Fallback:          true,
-			FirstSeenUnixNano: proj.StartUnixNano,
-			LastSeenUnixNano:  proj.EndUnixNano,
-		}
-		idx.Sessions = []Session{session}
-		idx.SessionByID[session.ID] = session
-		idx.sessionByTraceID[traceID] = session.ID
+		addFallbackSession(idx, proj)
 	}
 
 	assignFinalSpanOwnership(idx, rawSpans, bySpanID)
 	return idx
+}
+
+func buildExplicitScopeIndex(traceID string, rawSpans []rawSpan, bySpanID map[string]rawSpan, proj *transform.TraceProjection) *ScopeIndex {
+	clientStates := detectExplicitClients(traceID, rawSpans)
+	finalizeExplicitClients(clientStates)
+
+	idx := newScopeIndex(traceID, len(rawSpans), len(clientStates))
+	for _, cs := range clientStates {
+		idx.Clients = append(idx.Clients, cs.Client)
+		idx.ClientByID[cs.ID] = cs.Client
+		idx.clientBySpanID[cs.SpanID] = cs.Client
+		if cs.SessionID != "" {
+			idx.SessionByClient[cs.ID] = cs.SessionID
+		}
+		if cs.RootClientID != "" {
+			idx.RootClientByID[cs.ID] = cs.RootClientID
+		}
+	}
+
+	idx.Sessions = buildSessions(traceID, clientStates)
+	indexSessions(idx)
+	assignExplicitSpanOwnership(idx, rawSpans, bySpanID)
+	mergeSessionsFromSpans(idx, traceID, rawSpans)
+
+	if len(idx.Sessions) == 0 && projectionHasCalls(proj) {
+		addFallbackSession(idx, proj)
+	}
+
+	return idx
+}
+
+func newScopeIndex(traceID string, spanCount, clientCount int) *ScopeIndex {
+	return &ScopeIndex{
+		TraceID:          traceID,
+		Clients:          make([]Client, 0, clientCount),
+		Sessions:         nil,
+		SpanClientIDs:    make(map[string]string, spanCount),
+		SpanSessionIDs:   make(map[string]string, spanCount),
+		ClientByID:       make(map[string]Client, clientCount),
+		SessionByID:      map[string]Session{},
+		SessionByClient:  map[string]string{},
+		RootClientByID:   map[string]string{},
+		clientBySpanID:   map[string]Client{},
+		sessionByTraceID: map[string]string{},
+	}
 }
 
 func ClientID(traceID, spanID string) string {
@@ -262,6 +291,100 @@ func detectClients(traceID string, spans []rawSpan) []*clientState {
 	return clients
 }
 
+func detectExplicitClients(traceID string, spans []rawSpan) []*clientState {
+	byID := map[string]*clientState{}
+	for _, sp := range spans {
+		if !isClientConnectSpan(sp) {
+			continue
+		}
+		clientID := explicitClientID(sp)
+		if clientID == "" {
+			continue
+		}
+		client := byID[clientID]
+		if client == nil {
+			client = &clientState{Client: Client{
+				ID:              clientID,
+				TraceID:         traceID,
+				SessionID:       explicitSessionID(sp),
+				ParentClientID:  explicitParentClientID(sp),
+				SpanID:          sp.Record.SpanID,
+				Name:            clientName(sp),
+				CommandArgs:     getStringSlice(sp.Resource, "process.command_args"),
+				ServiceName:     sp.ServiceName,
+				ServiceVersion:  getStringDefault(sp.Resource, "service.version"),
+				ScopeName:       sp.ScopeName,
+				ClientVersion:   getStringDefault(sp.Resource, "dagger.io/client.version"),
+				ClientOS:        getStringDefault(sp.Resource, "dagger.io/client.os"),
+				ClientArch:      getStringDefault(sp.Resource, "dagger.io/client.arch"),
+				ClientMachineID: getStringDefault(sp.Resource, "dagger.io/client.machine_id"),
+				ClientKind:      explicitClientKind(sp),
+			}}
+			byID[clientID] = client
+		}
+		if client.SessionID == "" {
+			client.SessionID = explicitSessionID(sp)
+		}
+		if client.ParentClientID == "" {
+			client.ParentClientID = explicitParentClientID(sp)
+		}
+		if client.ClientKind == "" {
+			client.ClientKind = explicitClientKind(sp)
+		}
+		if client.SpanID == "" {
+			client.SpanID = sp.Record.SpanID
+		}
+		if client.Name == "" {
+			client.Name = clientName(sp)
+		}
+		if len(client.CommandArgs) == 0 {
+			client.CommandArgs = getStringSlice(sp.Resource, "process.command_args")
+		}
+		if client.ServiceName == "" {
+			client.ServiceName = sp.ServiceName
+		}
+		if client.ServiceVersion == "" {
+			client.ServiceVersion = getStringDefault(sp.Resource, "service.version")
+		}
+		if client.ScopeName == "" {
+			client.ScopeName = sp.ScopeName
+		}
+		if client.ClientVersion == "" {
+			client.ClientVersion = getStringDefault(sp.Resource, "dagger.io/client.version")
+		}
+		if client.ClientOS == "" {
+			client.ClientOS = getStringDefault(sp.Resource, "dagger.io/client.os")
+		}
+		if client.ClientArch == "" {
+			client.ClientArch = getStringDefault(sp.Resource, "dagger.io/client.arch")
+		}
+		if client.ClientMachineID == "" {
+			client.ClientMachineID = getStringDefault(sp.Resource, "dagger.io/client.machine_id")
+		}
+		if client.FirstSeenUnixNano == 0 || sp.Record.StartUnixNano < client.FirstSeenUnixNano {
+			client.FirstSeenUnixNano = sp.Record.StartUnixNano
+		}
+		if endUnixNano := spanEndUnixNano(sp.Record); endUnixNano > client.LastSeenUnixNano {
+			client.LastSeenUnixNano = endUnixNano
+		}
+	}
+
+	clients := make([]*clientState, 0, len(byID))
+	for _, client := range byID {
+		clients = append(clients, client)
+	}
+	slices.SortFunc(clients, func(a, b *clientState) int {
+		if cmp := compareInt64(a.FirstSeenUnixNano, b.FirstSeenUnixNano); cmp != 0 {
+			return cmp
+		}
+		if cmp := compareInt64(b.LastSeenUnixNano, a.LastSeenUnixNano); cmp != 0 {
+			return cmp
+		}
+		return compareString(a.ID, b.ID)
+	})
+	return clients
+}
+
 func assignPreliminarySpanOwners(spans []rawSpan, clients []*clientState, bySpanID map[string]rawSpan) map[string]string {
 	ownerBySpanID := make(map[string]string, len(spans))
 	clientBySpanID := make(map[string]string, len(clients))
@@ -325,6 +448,40 @@ func finalizeSessions(clients []*clientState) {
 		}
 		client.RootClientID = root.ID
 		client.SessionID = SessionID(root.ID)
+	}
+}
+
+func finalizeExplicitClients(clients []*clientState) {
+	if len(clients) == 0 {
+		return
+	}
+	byID := make(map[string]*clientState, len(clients))
+	for _, client := range clients {
+		byID[client.ID] = client
+	}
+	for _, client := range clients {
+		client.RootClientID = explicitRootClientID(client, byID)
+	}
+	sessionByRoot := map[string]string{}
+	for _, client := range clients {
+		if client.RootClientID != "" && client.SessionID != "" {
+			sessionByRoot[client.RootClientID] = client.SessionID
+		}
+	}
+	for _, client := range clients {
+		if client.RootClientID == "" {
+			client.RootClientID = client.ID
+		}
+		if client.SessionID == "" {
+			if sessionID := sessionByRoot[client.RootClientID]; sessionID != "" {
+				client.SessionID = sessionID
+				continue
+			}
+			parent := byID[client.ParentClientID]
+			if parent != nil {
+				client.SessionID = parent.SessionID
+			}
+		}
 	}
 }
 
@@ -394,6 +551,38 @@ func assignFinalSpanOwnership(idx *ScopeIndex, spans []rawSpan, bySpanID map[str
 		}
 		if idx.FallbackSession != "" {
 			idx.SpanSessionIDs[sp.Record.SpanID] = idx.FallbackSession
+		}
+	}
+}
+
+func assignExplicitSpanOwnership(idx *ScopeIndex, spans []rawSpan, bySpanID map[string]rawSpan) {
+	if idx == nil {
+		return
+	}
+	for _, sp := range spans {
+		if clientID := explicitClientID(sp); clientID != "" {
+			idx.SpanClientIDs[sp.Record.SpanID] = clientID
+		}
+		if sessionID := explicitSessionID(sp); sessionID != "" {
+			idx.SpanSessionIDs[sp.Record.SpanID] = sessionID
+		}
+	}
+	for _, sp := range spans {
+		if idx.SpanClientIDs[sp.Record.SpanID] == "" {
+			if owner := nearestAncestorOwner(sp.Record.ParentSpanID, idx.SpanClientIDs, bySpanID); owner != "" {
+				idx.SpanClientIDs[sp.Record.SpanID] = owner
+			}
+		}
+		if idx.SpanSessionIDs[sp.Record.SpanID] == "" {
+			if sessionID := nearestAncestorOwner(sp.Record.ParentSpanID, idx.SpanSessionIDs, bySpanID); sessionID != "" {
+				idx.SpanSessionIDs[sp.Record.SpanID] = sessionID
+				continue
+			}
+			if clientID := idx.SpanClientIDs[sp.Record.SpanID]; clientID != "" {
+				if sessionID := idx.SessionByClient[clientID]; sessionID != "" {
+					idx.SpanSessionIDs[sp.Record.SpanID] = sessionID
+				}
+			}
 		}
 	}
 }
@@ -497,6 +686,130 @@ func projectionHasCalls(proj *transform.TraceProjection) bool {
 		}
 	}
 	return false
+}
+
+func hasExplicitExecutionScope(spans []rawSpan) bool {
+	for _, sp := range spans {
+		if explicitClientID(sp) != "" || explicitSessionID(sp) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func explicitRootClientID(client *clientState, byID map[string]*clientState) string {
+	if client == nil || client.ID == "" {
+		return ""
+	}
+	root := client
+	seen := map[string]struct{}{client.ID: {}}
+	for root.ParentClientID != "" {
+		next := byID[root.ParentClientID]
+		if next == nil {
+			break
+		}
+		if _, ok := seen[next.ID]; ok {
+			break
+		}
+		seen[next.ID] = struct{}{}
+		root = next
+	}
+	return root.ID
+}
+
+func mergeSessionsFromSpans(idx *ScopeIndex, traceID string, spans []rawSpan) {
+	if idx == nil {
+		return
+	}
+	byID := make(map[string]*Session, len(idx.Sessions))
+	for i := range idx.Sessions {
+		session := idx.Sessions[i]
+		byID[session.ID] = &session
+	}
+	for _, sp := range spans {
+		sessionID := idx.SpanSessionIDs[sp.Record.SpanID]
+		if sessionID == "" {
+			continue
+		}
+		session := byID[sessionID]
+		if session == nil {
+			session = &Session{
+				ID:                sessionID,
+				TraceID:           traceID,
+				FirstSeenUnixNano: sp.Record.StartUnixNano,
+				LastSeenUnixNano:  spanEndUnixNano(sp.Record),
+			}
+			byID[sessionID] = session
+		}
+		if session.FirstSeenUnixNano == 0 || (sp.Record.StartUnixNano > 0 && sp.Record.StartUnixNano < session.FirstSeenUnixNano) {
+			session.FirstSeenUnixNano = sp.Record.StartUnixNano
+		}
+		if endUnixNano := spanEndUnixNano(sp.Record); endUnixNano > session.LastSeenUnixNano {
+			session.LastSeenUnixNano = endUnixNano
+		}
+		if session.RootClientID == "" {
+			if clientID := idx.SpanClientIDs[sp.Record.SpanID]; clientID != "" {
+				session.RootClientID = idx.RootClientByID[clientID]
+			}
+		}
+	}
+	sessions := make([]Session, 0, len(byID))
+	for _, session := range byID {
+		sessions = append(sessions, *session)
+	}
+	slices.SortFunc(sessions, func(a, b Session) int {
+		if cmp := compareInt64(a.FirstSeenUnixNano, b.FirstSeenUnixNano); cmp != 0 {
+			return cmp
+		}
+		return compareString(a.ID, b.ID)
+	})
+	idx.Sessions = sessions
+	indexSessions(idx)
+}
+
+func indexSessions(idx *ScopeIndex) {
+	if idx == nil {
+		return
+	}
+	idx.SessionByID = map[string]Session{}
+	for _, session := range idx.Sessions {
+		idx.SessionByID[session.ID] = session
+		if idx.sessionByTraceID[idx.TraceID] == "" {
+			idx.sessionByTraceID[idx.TraceID] = session.ID
+		}
+	}
+}
+
+func addFallbackSession(idx *ScopeIndex, proj *transform.TraceProjection) {
+	if idx == nil || proj == nil {
+		return
+	}
+	idx.FallbackSession = FallbackSessionID(idx.TraceID)
+	session := Session{
+		ID:                idx.FallbackSession,
+		TraceID:           idx.TraceID,
+		Fallback:          true,
+		FirstSeenUnixNano: proj.StartUnixNano,
+		LastSeenUnixNano:  proj.EndUnixNano,
+	}
+	idx.Sessions = []Session{session}
+	indexSessions(idx)
+}
+
+func explicitClientID(sp rawSpan) string {
+	return getStringDefault(sp.Attributes, telemetry.EngineClientIDAttr)
+}
+
+func explicitSessionID(sp rawSpan) string {
+	return getStringDefault(sp.Attributes, telemetry.EngineSessionIDAttr)
+}
+
+func explicitParentClientID(sp rawSpan) string {
+	return getStringDefault(sp.Attributes, telemetry.EngineParentClientIDAttr)
+}
+
+func explicitClientKind(sp rawSpan) string {
+	return getStringDefault(sp.Attributes, telemetry.EngineClientKindAttr)
 }
 
 func compareRawSpanStart(a, b rawSpan) int {

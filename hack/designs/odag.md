@@ -1076,7 +1076,8 @@ These are the latest design decisions that should be preserved across handoff.
   - client ID on relevant spans
   - parent client ID on `dagger.io/engine.client` `connect` spans
   - optional client kind metadata
-- [ ] Once explicit execution-scope telemetry lands, remove or heavily downgrade client/session heuristics and treat emitted IDs as the only source of truth.
+- [x] Once explicit execution-scope telemetry lands, remove or heavily downgrade client/session heuristics and treat emitted IDs as the only source of truth.
+  - Legacy traces without emitted scope IDs may still use the old derivation path as a backward-compatibility fallback.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.

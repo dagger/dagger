@@ -1102,6 +1102,177 @@ func TestV2RenderScopeFiltering(t *testing.T) {
 	}
 }
 
+func TestV2APIUsesExplicitExecutionScopeIDs(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	trace1Hex := "11111111111111111111111111111111"
+	trace2Hex := "22222222222222222222222222222222"
+	connect1Hex := "aaaaaaaaaaaaaaaa"
+	connect2Hex := "bbbbbbbbbbbbbbbb"
+	call1Hex := "cccccccccccccccc"
+	call2Hex := "dddddddddddddddd"
+
+	sessionID := "session-explicit"
+	clientID := "client-explicit"
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, trace1Hex),
+								SpanId:            mustDecodeHex(t, connect1Hex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, trace2Hex),
+								SpanId:            mustDecodeHex(t, connect2Hex),
+								Name:              "connect",
+								StartTimeUnixNano: 101,
+								EndTimeUnixNano:   102,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, trace1Hex),
+								SpanId:            mustDecodeHex(t, call1Hex),
+								ParentSpanId:      mustDecodeHex(t, connect1Hex),
+								Name:              "Query.container",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   20,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-1"),
+									kvString(t, telemetry.DagOutputAttr, "state-1"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-1",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, trace2Hex),
+								SpanId:            mustDecodeHex(t, call2Hex),
+								ParentSpanId:      mustDecodeHex(t, connect2Hex),
+								Name:              "Query.directory",
+								StartTimeUnixNano: 110,
+								EndTimeUnixNano:   120,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-2"),
+									kvString(t, telemetry.DagOutputAttr, "state-2"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-2",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	callsReq := httptest.NewRequest(http.MethodGet, "/api/v2/calls?sessionID="+sessionID, nil)
+	callsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(callsRec, callsReq)
+	if callsRec.Code != http.StatusOK {
+		t.Fatalf("calls by explicit session failed: status=%d body=%s", callsRec.Code, callsRec.Body.String())
+	}
+	var callsResp struct {
+		Items []struct {
+			TraceID   string `json:"traceID"`
+			SessionID string `json:"sessionID"`
+			ClientID  string `json:"clientID"`
+			SpanID    string `json:"spanID"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(callsRec.Body.Bytes(), &callsResp); err != nil {
+		t.Fatalf("decode explicit-session calls: %v", err)
+	}
+	if len(callsResp.Items) != 2 {
+		t.Fatalf("expected 2 calls across explicit-session traces, got %#v", callsResp.Items)
+	}
+	for _, item := range callsResp.Items {
+		if item.SessionID != sessionID || item.ClientID != clientID {
+			t.Fatalf("unexpected explicit-session call item: %#v", item)
+		}
+	}
+
+	clientsReq := httptest.NewRequest(http.MethodGet, "/api/v2/clients?traceID="+trace1Hex, nil)
+	clientsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(clientsRec, clientsReq)
+	if clientsRec.Code != http.StatusOK {
+		t.Fatalf("clients by trace failed: status=%d body=%s", clientsRec.Code, clientsRec.Body.String())
+	}
+	var clientsResp struct {
+		Items []struct {
+			ID         string `json:"id"`
+			SessionID  string `json:"sessionID"`
+			ClientKind string `json:"clientKind"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(clientsRec.Body.Bytes(), &clientsResp); err != nil {
+		t.Fatalf("decode explicit clients: %v", err)
+	}
+	if len(clientsResp.Items) != 1 {
+		t.Fatalf("expected 1 explicit client, got %#v", clientsResp.Items)
+	}
+	if clientsResp.Items[0].ID != clientID || clientsResp.Items[0].SessionID != sessionID || clientsResp.Items[0].ClientKind != "root" {
+		t.Fatalf("unexpected explicit client payload: %#v", clientsResp.Items[0])
+	}
+}
+
 func TestOpenTraceValidation(t *testing.T) {
 	t.Parallel()
 

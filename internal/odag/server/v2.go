@@ -156,6 +156,7 @@ type v2Client struct {
 	ClientOS          string   `json:"clientOS,omitempty"`
 	ClientArch        string   `json:"clientArch,omitempty"`
 	ClientMachineID   string   `json:"clientMachineID,omitempty"`
+	ClientKind        string   `json:"clientKind,omitempty"`
 	FirstSeenUnixNano int64    `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64    `json:"lastSeenUnixNano"`
 }
@@ -782,6 +783,7 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 				ClientOS:          client.ClientOS,
 				ClientArch:        client.ClientArch,
 				ClientMachineID:   client.ClientMachineID,
+				ClientKind:        client.ClientKind,
 				FirstSeenUnixNano: client.FirstSeenUnixNano,
 				LastSeenUnixNano:  client.LastSeenUnixNano,
 			})
@@ -813,31 +815,47 @@ func (s *Server) resolveV2TraceIDs(ctx context.Context, q v2Query) ([]string, er
 		return []string{traceID}, nil
 	case q.ClientID != "":
 		traceID = derive.TraceIDFromClientID(q.ClientID)
-		if traceID == "" {
-			return nil, store.ErrNotFound
+		if traceID != "" {
+			if _, err := s.store.GetTrace(ctx, traceID); err != nil {
+				return nil, err
+			}
+			return []string{traceID}, nil
 		}
-		if _, err := s.store.GetTrace(ctx, traceID); err != nil {
-			return nil, err
-		}
-		return []string{traceID}, nil
 	case q.SessionID != "":
 		traceID = derive.TraceIDFromSessionID(q.SessionID)
-		if traceID == "" {
-			return nil, store.ErrNotFound
+		if traceID != "" {
+			if _, err := s.store.GetTrace(ctx, traceID); err != nil {
+				return nil, err
+			}
+			return []string{traceID}, nil
 		}
-		if _, err := s.store.GetTrace(ctx, traceID); err != nil {
-			return nil, err
-		}
-		return []string{traceID}, nil
 	}
 
 	traces, err := s.store.ListTraces(ctx, v2TraceScanLimit)
 	if err != nil {
 		return nil, err
 	}
+	if q.ClientID == "" && q.SessionID == "" {
+		ids := make([]string, 0, len(traces))
+		for _, tr := range traces {
+			ids = append(ids, tr.TraceID)
+		}
+		return ids, nil
+	}
+
 	ids := make([]string, 0, len(traces))
 	for _, tr := range traces {
+		_, _, scopeIdx, err := s.loadV2TraceScope(ctx, tr.TraceID)
+		if err != nil {
+			return nil, err
+		}
+		if !scopeIndexMatchesV2Query(scopeIdx, q) {
+			continue
+		}
 		ids = append(ids, tr.TraceID)
+	}
+	if len(ids) == 0 {
+		return nil, store.ErrNotFound
 	}
 	return ids, nil
 }
@@ -1036,6 +1054,49 @@ func setToSortedSlice(set map[string]struct{}) []string {
 
 func hasV2ScopeFilter(q v2Query) bool {
 	return q.SessionID != "" || q.ClientID != ""
+}
+
+func scopeIndexMatchesV2Query(idx *derive.ScopeIndex, q v2Query) bool {
+	if idx == nil {
+		return false
+	}
+	if q.ClientID != "" && !scopeIndexHasClient(idx, q.ClientID) {
+		return false
+	}
+	if q.SessionID != "" && !scopeIndexHasSession(idx, q.SessionID) {
+		return false
+	}
+	return true
+}
+
+func scopeIndexHasClient(idx *derive.ScopeIndex, clientID string) bool {
+	if idx == nil || clientID == "" {
+		return false
+	}
+	if _, ok := idx.ClientByID[clientID]; ok {
+		return true
+	}
+	for _, spanClientID := range idx.SpanClientIDs {
+		if spanClientID == clientID {
+			return true
+		}
+	}
+	return false
+}
+
+func scopeIndexHasSession(idx *derive.ScopeIndex, sessionID string) bool {
+	if idx == nil || sessionID == "" {
+		return false
+	}
+	if _, ok := idx.SessionByID[sessionID]; ok {
+		return true
+	}
+	for _, spanSessionID := range idx.SpanSessionIDs {
+		if spanSessionID == sessionID {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesV2Scope(q v2Query, traceID, sessionID, clientID string) bool {
