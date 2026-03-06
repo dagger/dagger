@@ -697,7 +697,7 @@ function snapshotFromRender(render) {
   });
 
   const edges = (render.edges || [])
-    .filter((edge) => edge.kind === "depends-on")
+    .filter((edge) => edge.kind === "field_ref")
     .map((edge) => ({
       fromObjectID: edge.fromID,
       toObjectID: edge.toID,

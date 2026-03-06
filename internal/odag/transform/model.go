@@ -75,6 +75,7 @@ type MutationEvent struct {
 	Name                  string     `json:"name"`
 	CallDigest            string     `json:"callDigest,omitempty"`
 	ReceiverStateDigest   string     `json:"receiverStateDigest,omitempty"`
+	ReceiverIsQuery       bool       `json:"receiverIsQuery,omitempty"`
 	OutputStateDigest     string     `json:"outputStateDigest,omitempty"`
 	ReturnType            string     `json:"returnType,omitempty"`
 	TopLevel              bool       `json:"topLevel"`

@@ -598,13 +598,17 @@ Render-model view parameters:
 
 Render-model payload intent:
 1. `objects`: renderable mutable object nodes with activity links.
-2. `calls`: normalized call nodes with parent/child + direct/subtree object membership.
-3. `edges`: mixed graph relations:
-   - `depends-on` (object field references)
-   - `contains-call` (call hierarchy)
-   - `contains-object` (direct call mutation containment)
-4. `events`: filtered event stream for the selected render lens.
-5. `navigation`: scope path and enterable IDs for drill-down UX.
+2. `calls`: normalized call nodes with parent/child + direct/subtree object membership and call-level DAGQL provenance facts (`receiver_dagql_id`, `arg_dagql_ids`, `output_dagql_id`, `receiver_is_query`).
+3. `edges`: default structural + containment relations:
+   - `field_ref` (object field references)
+   - `contains_call` (call hierarchy)
+   - `contains_object` (direct call mutation containment)
+4. `provenance`: optional overlay relations:
+   - `produced_by`
+   - `derived_from_receiver`
+   - `derived_from_arg`
+5. `events`: filtered event stream for the selected render lens.
+6. `navigation`: scope path and enterable IDs for drill-down UX.
 
 ### Derivation/versioning
 

@@ -28,6 +28,7 @@ type v2RenderResponse struct {
 	Objects           []v2RenderObject          `json:"objects"`
 	Calls             []v2RenderCall            `json:"calls"`
 	Edges             []v2RenderEdge            `json:"edges"`
+	Provenance        []v2RenderProvenance      `json:"provenance,omitempty"`
 	Events            []transform.MutationEvent `json:"events"`
 	ActiveCallIDs     []string                  `json:"activeCallIDs,omitempty"`
 	Navigation        v2RenderNavigation        `json:"navigation"`
@@ -78,6 +79,10 @@ type v2RenderCall struct {
 	StartUnixNano   int64    `json:"startUnixNano"`
 	EndUnixNano     int64    `json:"endUnixNano"`
 	StatusCode      string   `json:"statusCode"`
+	ReceiverDagqlID string   `json:"receiverDagqlID,omitempty"`
+	ReceiverIsQuery bool     `json:"receiverIsQuery,omitempty"`
+	ArgDagqlIDs     []string `json:"argDagqlIDs,omitempty"`
+	OutputDagqlID   string   `json:"outputDagqlID,omitempty"`
 	Operation       string   `json:"operation,omitempty"`
 	ObjectIDs       []string `json:"objectIDs,omitempty"`       // entire subtree
 	DirectObjectIDs []string `json:"directObjectIDs,omitempty"` // direct mutations in this call
@@ -86,11 +91,20 @@ type v2RenderCall struct {
 
 type v2RenderEdge struct {
 	ID            string `json:"id"`
-	Kind          string `json:"kind"` // depends-on, contains-call, contains-object
+	Kind          string `json:"kind"` // field_ref, contains_call, contains_object
 	FromID        string `json:"fromID"`
 	ToID          string `json:"toID"`
 	Label         string `json:"label,omitempty"`
 	EvidenceCount int    `json:"evidenceCount,omitempty"`
+}
+
+type v2RenderProvenance struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"` // produced_by, derived_from_receiver, derived_from_arg
+	FromID string `json:"fromID"`
+	ToID   string `json:"toID"`
+	CallID string `json:"callID,omitempty"`
+	Label  string `json:"label,omitempty"`
 }
 
 type v2RenderNavigation struct {
@@ -250,19 +264,24 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		}
 		sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
 		clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+		argDagqlIDs := eventInputDagqlIDs(event)
 		callScopeMatches[event.SpanID] = matchesV2Scope(q, traceID, sessionID, clientID)
 		callByID[event.SpanID] = &v2RenderCall{
-			CallID:        event.SpanID,
-			SessionID:     sessionID,
-			ClientID:      clientID,
-			Name:          event.Name,
-			ParentCallID:  event.ParentCallSpanID,
-			TopLevel:      event.TopLevel,
-			CallDepth:     event.CallDepth,
-			StartUnixNano: event.StartUnixNano,
-			EndUnixNano:   event.EndUnixNano,
-			StatusCode:    event.StatusCode,
-			Operation:     event.Operation,
+			CallID:          event.SpanID,
+			SessionID:       sessionID,
+			ClientID:        clientID,
+			Name:            event.Name,
+			ParentCallID:    event.ParentCallSpanID,
+			TopLevel:        event.TopLevel,
+			CallDepth:       event.CallDepth,
+			StartUnixNano:   event.StartUnixNano,
+			EndUnixNano:     event.EndUnixNano,
+			StatusCode:      event.StatusCode,
+			ReceiverDagqlID: event.ReceiverStateDigest,
+			ReceiverIsQuery: event.ReceiverIsQuery,
+			ArgDagqlIDs:     argDagqlIDs,
+			OutputDagqlID:   event.OutputStateDigest,
+			Operation:       event.Operation,
 		}
 		callOrder = append(callOrder, event.SpanID)
 	}
@@ -518,7 +537,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		id := "dep:" + edge.FromObjectID + "->" + edge.ToObjectID + ":" + edge.Label
 		renderEdges = append(renderEdges, v2RenderEdge{
 			ID:            id,
-			Kind:          "depends-on",
+			Kind:          edge.Kind,
 			FromID:        edge.FromObjectID,
 			ToID:          edge.ToObjectID,
 			Label:         edge.Label,
@@ -533,7 +552,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			id := "cc:" + call.CallID + "->" + childCallID
 			renderEdges = append(renderEdges, v2RenderEdge{
 				ID:     id,
-				Kind:   "contains-call",
+				Kind:   "contains_call",
 				FromID: call.CallID,
 				ToID:   childCallID,
 			})
@@ -545,7 +564,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 			id := "co:" + call.CallID + "->" + objectID
 			renderEdges = append(renderEdges, v2RenderEdge{
 				ID:     id,
-				Kind:   "contains-object",
+				Kind:   "contains_object",
 				FromID: call.CallID,
 				ToID:   objectID,
 			})
@@ -586,6 +605,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		filteredEvents = append(filteredEvents, event)
 	}
 	activeCallIDs := filterSortedIDs(snap.ActiveEventIDs, visibleCallIDs)
+	provenance := buildRenderProvenance(snap, visibleCallIDs, visibleObjectIDs)
 
 	resp := v2RenderResponse{
 		DerivationVersion: derivationVersionV2,
@@ -608,6 +628,7 @@ func (s *Server) handleV2RenderResolvedMode(w http.ResponseWriter, r *http.Reque
 		Objects:       renderObjects,
 		Calls:         renderCalls,
 		Edges:         renderEdges,
+		Provenance:    provenance,
 		Events:        filteredEvents,
 		ActiveCallIDs: activeCallIDs,
 		Navigation: v2RenderNavigation{
@@ -695,6 +716,124 @@ func collectCallPath(calls map[string]*v2RenderCall, callID string) []string {
 		path[i], path[j] = path[j], path[i]
 	}
 	return path
+}
+
+func eventInputDagqlIDs(event transform.MutationEvent) []string {
+	if len(event.Inputs) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(event.Inputs))
+	for _, input := range event.Inputs {
+		if input.StateDigest == "" {
+			continue
+		}
+		set[input.StateDigest] = struct{}{}
+	}
+	return setToSortedSlice(set)
+}
+
+func buildRenderProvenance(snap transform.Snapshot, visibleCallIDs, visibleObjectIDs map[string]struct{}) []v2RenderProvenance {
+	if len(visibleCallIDs) == 0 || len(visibleObjectIDs) == 0 {
+		return nil
+	}
+
+	stateToObjectID := make(map[string]string, len(snap.Objects))
+	for _, obj := range snap.Objects {
+		if _, ok := visibleObjectIDs[obj.ID]; !ok {
+			continue
+		}
+		for _, st := range obj.StateHistory {
+			if st.StateDigest == "" {
+				continue
+			}
+			stateToObjectID[st.StateDigest] = obj.ID
+		}
+	}
+
+	out := make([]v2RenderProvenance, 0)
+	seen := map[string]struct{}{}
+	add := func(rel v2RenderProvenance) {
+		if rel.ID == "" {
+			return
+		}
+		if _, ok := seen[rel.ID]; ok {
+			return
+		}
+		seen[rel.ID] = struct{}{}
+		out = append(out, rel)
+	}
+
+	for _, event := range snap.Events {
+		if event.ObjectID == "" || (event.Operation != "create" && event.Operation != "mutate") {
+			continue
+		}
+		if _, ok := visibleCallIDs[event.SpanID]; !ok {
+			continue
+		}
+		if _, ok := visibleObjectIDs[event.ObjectID]; !ok {
+			continue
+		}
+
+		add(v2RenderProvenance{
+			ID:     "produced_by:" + event.ObjectID + "->" + event.SpanID,
+			Kind:   "produced_by",
+			FromID: event.ObjectID,
+			ToID:   event.SpanID,
+			CallID: event.SpanID,
+		})
+
+		if !event.ReceiverIsQuery && event.ReceiverStateDigest != "" {
+			if receiverObjectID := stateToObjectID[event.ReceiverStateDigest]; receiverObjectID != "" && receiverObjectID != event.ObjectID {
+				add(v2RenderProvenance{
+					ID:     "derived_from_receiver:" + receiverObjectID + "->" + event.ObjectID + "@" + event.SpanID,
+					Kind:   "derived_from_receiver",
+					FromID: receiverObjectID,
+					ToID:   event.ObjectID,
+					CallID: event.SpanID,
+				})
+			}
+		}
+
+		for _, input := range event.Inputs {
+			if input.StateDigest == "" {
+				continue
+			}
+			inputObjectID := stateToObjectID[input.StateDigest]
+			if inputObjectID == "" || inputObjectID == event.ObjectID {
+				continue
+			}
+			label := input.Path
+			if label == "" {
+				label = input.Name
+			}
+			add(v2RenderProvenance{
+				ID:     "derived_from_arg:" + inputObjectID + "->" + event.ObjectID + "@" + event.SpanID + ":" + label,
+				Kind:   "derived_from_arg",
+				FromID: inputObjectID,
+				ToID:   event.ObjectID,
+				CallID: event.SpanID,
+				Label:  label,
+			})
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		if out[i].FromID != out[j].FromID {
+			return out[i].FromID < out[j].FromID
+		}
+		if out[i].ToID != out[j].ToID {
+			return out[i].ToID < out[j].ToID
+		}
+		if out[i].CallID != out[j].CallID {
+			return out[i].CallID < out[j].CallID
+		}
+		return out[i].Label < out[j].Label
+	})
+
+	return out
 }
 
 func addSetVal(sets map[string]map[string]struct{}, key, val string) {

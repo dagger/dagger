@@ -128,14 +128,26 @@ func TestProjectTraceBuildsMutableObjects(t *testing.T) {
 	if proj.Events[0].Inputs[0].StateDigest != "seed-state" {
 		t.Fatalf("expected first event to contain arg ref, got %#v", proj.Events[0].Inputs)
 	}
+	if !proj.Events[0].ReceiverIsQuery {
+		t.Fatalf("expected first event to be marked receiverIsQuery, got %#v", proj.Events[0])
+	}
 	if proj.Events[1].Kind != "create" || proj.Events[1].SpanID != "s3" || !proj.Events[1].TopLevel {
 		t.Fatalf("unexpected second event: %#v", proj.Events[1])
+	}
+	if !proj.Events[1].ReceiverIsQuery {
+		t.Fatalf("expected second event to be marked receiverIsQuery, got %#v", proj.Events[1])
 	}
 	if proj.Events[2].Kind != "mutate" || proj.Events[2].SpanID != "s2" || proj.Events[2].TopLevel {
 		t.Fatalf("unexpected third event: %#v", proj.Events[2])
 	}
+	if proj.Events[2].ReceiverIsQuery {
+		t.Fatalf("expected object receiver call to keep receiverIsQuery=false, got %#v", proj.Events[2])
+	}
 	if proj.Events[3].Kind != "mutate" || proj.Events[3].SpanID != "s4" || proj.Events[3].TopLevel {
 		t.Fatalf("unexpected fourth event: %#v", proj.Events[3])
+	}
+	if proj.Events[3].ReceiverIsQuery {
+		t.Fatalf("expected object receiver call to keep receiverIsQuery=false, got %#v", proj.Events[3])
 	}
 }
 
@@ -757,7 +769,7 @@ func TestProjectTraceBuildsObjectEdgesFromStateFieldRefs(t *testing.T) {
 	labels := map[string]ObjectEdge{}
 	for _, edge := range proj.Edges {
 		labels[edge.Label] = edge
-		if edge.Kind != "field-ref" {
+		if edge.Kind != "field_ref" {
 			t.Fatalf("unexpected edge kind: %#v", edge)
 		}
 	}

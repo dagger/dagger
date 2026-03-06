@@ -69,6 +69,7 @@ type v2Call struct {
 	CallDepth             int      `json:"callDepth"`
 	ParentChainIncomplete bool     `json:"parentChainIncomplete,omitempty"`
 	ReceiverDagqlID       string   `json:"receiverDagqlID,omitempty"`
+	ReceiverIsQuery       bool     `json:"receiverIsQuery,omitempty"`
 	ArgDagqlIDs           []string `json:"argDagqlIDs,omitempty"`
 	OutputDagqlID         string   `json:"outputDagqlID,omitempty"`
 	DerivedOperation      string   `json:"derivedOperation,omitempty"`
@@ -318,6 +319,7 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 				CallDepth:             event.CallDepth,
 				ParentChainIncomplete: event.ParentChainIncomplete,
 				ReceiverDagqlID:       event.ReceiverStateDigest,
+				ReceiverIsQuery:       event.ReceiverIsQuery,
 				ArgDagqlIDs:           argDagqlIDs,
 				OutputDagqlID:         event.OutputStateDigest,
 				DerivedOperation:      event.Operation,

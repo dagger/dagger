@@ -80,6 +80,7 @@ func ProjectTraceWithOptions(traceID string, spans []store.SpanRecord, opts Proj
 			Name:                  sp.span.Name,
 			CallDigest:            sp.callDigest,
 			ReceiverStateDigest:   sp.receiverStateDigest,
+			ReceiverIsQuery:       sp.receiverIsQuery,
 			OutputStateDigest:     sp.outputStateDigest,
 			ReturnType:            sp.returnType,
 			TopLevel:              sp.isTopLevel,
@@ -105,7 +106,8 @@ func ProjectTraceWithOptions(traceID string, spans []store.SpanRecord, opts Proj
 		}
 
 		objectID := ""
-		if receiverObjectID, ok := stateToObject[sp.receiverStateDigest]; ok &&
+		receiverBindingStateDigest := receiverBindingStateDigest(sp)
+		if receiverObjectID, ok := stateToObject[receiverBindingStateDigest]; ok &&
 			receiverObjectID != "" &&
 			objectsByID[receiverObjectID] != nil &&
 			canMutateReceiver(objectsByID[receiverObjectID].TypeName, sp.returnType) {
@@ -471,6 +473,7 @@ type parsedSpan struct {
 	isObjectOutput        bool
 	callDigest            string
 	receiverStateDigest   string
+	receiverIsQuery       bool
 	outputStateDigest     string
 	outputStatePayload    map[string]any
 	returnType            string
@@ -514,6 +517,7 @@ func parseSpans(spans []store.SpanRecord) ([]parsedSpan, []string) {
 				warnings = append(warnings, fmt.Sprintf("span %s: decode dag.call payload: %v", span.SpanID, err))
 			} else {
 				p.receiverStateDigest = callMsg.GetReceiverDigest()
+				p.receiverIsQuery = p.receiverStateDigest == ""
 				p.returnType = flattenTypeName(callMsg.GetType())
 				p.inputs = collectArgRefs(callMsg.GetArgs())
 				if p.callDigest == "" {
@@ -1020,7 +1024,7 @@ func buildObjectEdges(objectsByID map[string]*ObjectNode, stateToObject map[stri
 						edge: ObjectEdge{
 							FromObjectID:  fromObjectID,
 							ToObjectID:    toObjectID,
-							Kind:          "field-ref",
+							Kind:          "field_ref",
 							Label:         ref.Path,
 							EvidenceCount: 0,
 						},
@@ -1040,6 +1044,13 @@ func buildObjectEdges(objectsByID map[string]*ObjectNode, stateToObject map[stri
 		out = append(out, agg.edge)
 	}
 	return out
+}
+
+func receiverBindingStateDigest(sp parsedSpan) string {
+	if sp.receiverIsQuery {
+		return ""
+	}
+	return sp.receiverStateDigest
 }
 
 func collectStateFieldRefs(state map[string]any) []stateFieldRef {

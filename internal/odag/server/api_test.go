@@ -197,8 +197,12 @@ func TestTraceAPIProjection(t *testing.T) {
 	var v2CallsResp struct {
 		DerivationVersion string `json:"derivationVersion"`
 		Items             []struct {
-			SpanID           string `json:"spanID"`
-			DerivedOperation string `json:"derivedOperation"`
+			SpanID           string   `json:"spanID"`
+			DerivedOperation string   `json:"derivedOperation"`
+			ReceiverDagqlID  string   `json:"receiverDagqlID"`
+			ReceiverIsQuery  bool     `json:"receiverIsQuery"`
+			ArgDagqlIDs      []string `json:"argDagqlIDs"`
+			OutputDagqlID    string   `json:"outputDagqlID"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(v2CallsRec.Body.Bytes(), &v2CallsResp); err != nil {
@@ -209,6 +213,12 @@ func TestTraceAPIProjection(t *testing.T) {
 	}
 	if v2CallsResp.Items[0].DerivedOperation != "create" || v2CallsResp.Items[1].DerivedOperation != "mutate" {
 		t.Fatalf("unexpected v2 call operations: %#v", v2CallsResp.Items)
+	}
+	if !v2CallsResp.Items[0].ReceiverIsQuery || v2CallsResp.Items[0].ReceiverDagqlID != "" || v2CallsResp.Items[0].OutputDagqlID != "state-a" {
+		t.Fatalf("unexpected Query receiver metadata: %#v", v2CallsResp.Items[0])
+	}
+	if v2CallsResp.Items[1].ReceiverIsQuery || v2CallsResp.Items[1].ReceiverDagqlID != "state-a" || v2CallsResp.Items[1].OutputDagqlID != "state-b" {
+		t.Fatalf("unexpected nested receiver metadata: %#v", v2CallsResp.Items[1])
 	}
 
 	v2BindingsReq := httptest.NewRequest(http.MethodGet, "/api/v2/object-bindings?traceID="+traceIDHex, nil)
@@ -656,6 +666,14 @@ func TestV2RenderEndpoints(t *testing.T) {
 										ReceiverDigest: "state-b",
 										Field:          "withMountedDirectory",
 										Type:           &callpbv1.Type{NamedType: "Container"},
+										Args: []*callpbv1.Argument{
+											{
+												Name: "directory",
+												Value: &callpbv1.Literal{
+													Value: &callpbv1.Literal_CallDigest{CallDigest: "state-a"},
+												},
+											},
+										},
 									})),
 								},
 								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
@@ -706,6 +724,13 @@ func TestV2RenderEndpoints(t *testing.T) {
 			ToID          string `json:"toID"`
 			EvidenceCount int    `json:"evidenceCount"`
 		} `json:"edges"`
+		Provenance []struct {
+			Kind   string `json:"kind"`
+			FromID string `json:"fromID"`
+			ToID   string `json:"toID"`
+			CallID string `json:"callID"`
+			Label  string `json:"label"`
+		} `json:"provenance"`
 	}
 	if err := json.Unmarshal(renderRec.Body.Bytes(), &renderResp); err != nil {
 		t.Fatalf("decode render response: %v", err)
@@ -749,7 +774,7 @@ func TestV2RenderEndpoints(t *testing.T) {
 
 	depEdgeFound := false
 	for _, edge := range renderResp.Edges {
-		if edge.Kind != "depends-on" {
+		if edge.Kind != "field_ref" {
 			continue
 		}
 		if edge.FromID == containerID && edge.ToID == directoryID && edge.EvidenceCount >= 1 {
@@ -758,7 +783,33 @@ func TestV2RenderEndpoints(t *testing.T) {
 		}
 	}
 	if !depEdgeFound {
-		t.Fatalf("expected depends-on edge from container to directory, edges=%#v", renderResp.Edges)
+		t.Fatalf("expected field_ref edge from container to directory, edges=%#v", renderResp.Edges)
+	}
+
+	foundProducedBy := false
+	foundDerivedFromArg := false
+	for _, rel := range renderResp.Provenance {
+		switch rel.Kind {
+		case "produced_by":
+			if rel.FromID == containerID && rel.CallID == call3SpanHex {
+				foundProducedBy = true
+			}
+		case "derived_from_receiver":
+			if rel.FromID == containerID && rel.ToID == containerID {
+				t.Fatalf("did not expect collapsed receiver/output provenance edge: %#v", rel)
+			}
+		}
+	}
+	for _, rel := range renderResp.Provenance {
+		if rel.Kind == "derived_from_arg" && rel.FromID == directoryID && rel.ToID == containerID {
+			foundDerivedFromArg = true
+		}
+	}
+	if !foundProducedBy {
+		t.Fatalf("expected produced_by provenance for container, got %#v", renderResp.Provenance)
+	}
+	if !foundDerivedFromArg {
+		t.Fatalf("expected derived_from_arg provenance for mounted directory, got %#v", renderResp.Provenance)
 	}
 
 	viewReq := httptest.NewRequest(http.MethodGet, "/api/v2/views/object/render?traceID="+traceIDHex+"&focusObjectID="+containerID+"&dependencyHops=0", nil)
