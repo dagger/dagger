@@ -157,8 +157,8 @@ require (
 	github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
-	github.com/vito/midterm v0.2.3
-	github.com/vito/tuist v0.0.0-20260305182649-e6d49d27039b
+	github.com/vito/midterm v0.2.4
+	github.com/vito/tuist v0.0.0-20260308014934-94b219ada6a2
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
