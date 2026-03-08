@@ -1841,7 +1841,7 @@ body {
 
 .v3-sidebar {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 18px;
   min-height: 0;
   padding: 22px 18px 18px;
@@ -1849,6 +1849,33 @@ body {
   background:
     linear-gradient(180deg, rgba(10, 11, 14, 0.97) 0%, rgba(7, 8, 10, 0.94) 100%);
   overflow: auto;
+}
+
+.v3-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.v3-brand-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(111, 186, 146, 0.18) 100%);
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+}
+
+.v3-brand-title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .v3-kicker,
