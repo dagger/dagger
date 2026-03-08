@@ -516,7 +516,6 @@ function renderEntityNav() {
           <span class="v3-type-icon">${escapeHTML(entity.code)}</span>
           <span class="v3-type-copy">
             <span class="v3-type-title">${escapeHTML(entity.label)}</span>
-            <span class="v3-type-meta">${escapeHTML(entity.category)} | ${escapeHTML(entityRowMeta(entity))}</span>
           </span>
         </button>
       `;
@@ -1065,16 +1064,6 @@ function describeShellState(entity) {
     source: "Mock Data",
     copy: "Discovery first, specialized views second. The shell starts mocked, then individual domains switch to live data as their heuristics settle.",
   };
-}
-
-function entityRowMeta(entity) {
-  if (entity.id === "cli-runs" && state.live.cliRuns.status === "loaded") {
-    return `${state.live.cliRuns.items.length} live runs`;
-  }
-  if (entity.id === "shells" && state.live.shells.status === "loaded") {
-    return `${state.live.shells.items.length} live shells`;
-  }
-  return `${entity.inventory.length} mock rows`;
 }
 
 function cliRunOutputCell(row) {
