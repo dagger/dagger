@@ -1145,7 +1145,8 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
 - [x] Stage 7: V3 entity-first shell scaffold with mock data
 - [x] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
-- [ ] Stage 9: Capture lessons learned and choose the next domain
+- [x] Stage 9: Capture lessons learned from `CLI Runs` and choose the next domain
+- [ ] Stage 10: Implement `Shells` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1181,7 +1182,11 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] attach terminal output type and CLI post-processing behavior
   - [x] keep follow-up apply/export/prompt spans associated with the same run context in the first read-only API slice
   - [x] wire the V3 shell's `CLI Runs` domain to the real endpoint
-- [ ] Record what did and did not generalize from the first domain before adding a second one.
+- [x] Record what did and did not generalize from the first domain before adding a second one.
+- [ ] Implement the `Shells` domain (`dagger shell` invocation/session) end-to-end:
+  - [ ] derive shell identity from command root plus explicit session and client tree
+  - [ ] attach descendant clients and owned calls/spans to the same shell entity
+  - [ ] wire the V3 shell's `Shells` domain to the real endpoint
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1406,6 +1411,21 @@ Stage 8 implementation note:
    - using client-owned call order instead of existing `TopLevel` semantics was necessary for CLI chain reconstruction
    - same-client follow-up spans are useful, but conservative by design and probably still incomplete
    - the shared shell can host one live domain without forcing the rest of the taxonomy to crystallize too early
+
+Stage 9 implementation note:
+1. What generalized well from the first real domain:
+   - explicit session/client/root-client telemetry is the right substrate for entity discovery
+   - per-entity `evidence` and `relations` payloads are immediately useful in the shell without extra adapter layers
+   - one live domain can coexist with mocked domains inside the same shell, which keeps taxonomy work moving without demanding a full backend cutover
+2. What did not generalize:
+   - object-centric assumptions are still too narrow for execution entities
+   - generic table renderers are not enough on their own; each live domain still needs its own primary cues surfaced first
+   - shell chrome must reflect per-domain live state, otherwise hybrid mode becomes misleading
+3. Next domain choice: `Shells`.
+4. Rationale for `Shells` as the second live slice:
+   - it is adjacent to `CLI Runs` because both start from CLI command identity and explicit execution scope
+   - it forces V3 to handle a session-centric entity that does not have one singular terminal output
+   - it exercises client trees and session continuity directly, which are core V3 substrates we need to validate early
 
 ### Phase 3: Payload evolution (future)
 
