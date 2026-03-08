@@ -1175,7 +1175,8 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 7: V3 entity-first shell scaffold with mock data
 - [x] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
 - [x] Stage 9: Capture lessons learned from `CLI Runs` and choose the next domain
-- [ ] Stage 10: Implement `Shells` end-to-end through derivation, API, and UI
+- [x] Stage 10: Implement `Shells` end-to-end through derivation, API, and UI
+- [ ] Stage 11: Capture lessons learned from `Shells` and choose the next domain
 
 ### Active Next Tasks
 
@@ -1212,10 +1213,7 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] keep follow-up apply/export/prompt spans associated with the same run context in the first read-only API slice
   - [x] wire the V3 shell's `CLI Runs` domain to the real endpoint
 - [x] Record what did and did not generalize from the first domain before adding a second one.
-- [ ] Implement the `Shells` domain (`dagger shell` invocation/session) end-to-end:
-  - [x] derive shell identity from command root plus explicit session and client tree
-  - [x] attach descendant clients and owned calls/spans to the same shell entity
-  - [ ] wire the V3 shell's `Shells` domain to the real endpoint
+- [ ] Record what did and did not generalize from the second live domain before adding a third one.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1472,6 +1470,14 @@ Stage 10 implementation note:
    - one `dagger shell` root client becomes one shell entity
    - descendant module clients stay attached to that entity instead of being misclassified as independent shells
    - shell activity aggregates both DAGQL calls and non-call spans from the same explicit client tree
+5. V3 shell wiring is now live for the `Shells` domain:
+   - selecting `Shells` fetches real data from `/api/v2/shells`
+   - `Overview`, `Inventory`, `Evidence`, and `Relations` now render from real shell payloads
+   - shared shell chrome now reflects multiple live domains rather than assuming only one live slice exists
+6. Current hybrid state after Stage 10:
+   - `CLI Runs` is live end-to-end
+   - `Shells` is live end-to-end
+   - all remaining domains remain mocked
 
 ### Phase 3: Payload evolution (future)
 

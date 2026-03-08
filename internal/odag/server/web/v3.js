@@ -408,12 +408,30 @@ const entities = [
   },
 ];
 
+const liveDomainConfigs = {
+  "cli-runs": {
+    stateKey: "cliRuns",
+    endpoint: "/api/v2/cli-runs?limit=100",
+    label: "CLI Runs",
+  },
+  shells: {
+    stateKey: "shells",
+    endpoint: "/api/v2/shells?limit=100",
+    label: "Shells",
+  },
+};
+
 const state = {
   entityID: "terminals",
   sectionID: "overview",
   query: "",
   live: {
     cliRuns: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    shells: {
       status: "idle",
       items: [],
       error: "",
@@ -499,10 +517,11 @@ function writeURLState() {
 }
 
 async function ensureActiveEntityData() {
-  if (state.entityID !== "cli-runs") {
+  const config = liveDomainConfigs[state.entityID];
+  if (!config) {
     return;
   }
-  const entry = state.live.cliRuns;
+  const entry = state.live[config.stateKey];
   if (entry.status === "loading" || entry.status === "loaded") {
     return;
   }
@@ -510,7 +529,7 @@ async function ensureActiveEntityData() {
   entry.error = "";
   render();
   try {
-    const res = await fetch("/api/v2/cli-runs?limit=100");
+    const res = await fetch(config.endpoint);
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
@@ -582,12 +601,12 @@ function renderSectionNav() {
     })
     .join("");
 
-  const liveLabel =
-    state.live.cliRuns.status === "loaded"
-      ? "1 live domain"
-      : state.live.cliRuns.status === "error"
-        ? "1 degraded live domain"
-        : "0 live domains";
+  const liveCount = Object.values(state.live).filter((entry) => entry.status === "loaded").length;
+  const degradedCount = Object.values(state.live).filter((entry) => entry.status === "error").length;
+  let liveLabel = `${liveCount} live domains`;
+  if (degradedCount > 0) {
+    liveLabel = `${liveCount} live | ${degradedCount} degraded`;
+  }
   els.sectionMeta.textContent = `${entities.length} entity domains | ${sections.length} views | ${liveLabel}`;
 
   for (const node of els.sectionNav.querySelectorAll("[data-section-id]")) {
@@ -703,6 +722,9 @@ function renderTable(model) {
 function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "cli-runs") {
     return cliRunsTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "shells") {
+    return shellsTableModel(entity, sectionID);
   }
   switch (sectionID) {
     case "inventory":
@@ -832,31 +854,101 @@ function cliRunsTableModel(entity, sectionID) {
   }
 }
 
+function shellsTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+      return {
+        eyebrow: "Inventory",
+        title: "Shell Inventory",
+        meta: `${entity.liveItems.length} real shells`,
+        emptyMessage: "No shell sessions detected yet.",
+        columns: [
+          { label: "Shell", render: (row) => primaryCell(row.name, row.command || row.entryLabel) },
+          { label: "Mode", render: (row) => tonePill("neutral", row.mode || "interactive") },
+          { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
+          { label: "Activity", render: (row) => shellActivityCell(row) },
+          { label: "Descendants", render: (row) => shellDescendantCell(row) },
+          { label: "Scope", render: (row) => shellScopeCell(row) },
+        ],
+        rows: entity.liveItems,
+      };
+    case "evidence":
+      return {
+        eyebrow: "Evidence",
+        title: "Shell Discovery Evidence",
+        meta: `${entity.evidence.length} real evidence rows`,
+        emptyMessage: "No shell evidence rows yet.",
+        columns: [
+          { label: "Shell", render: (row) => primaryCell(row.shellName, row.source) },
+          { label: "Kind", key: "kind" },
+          { label: "Confidence", render: (row) => confidencePill(row.confidence) },
+          { label: "Source", key: "source" },
+          { label: "Note", key: "note" },
+        ],
+        rows: entity.evidence,
+      };
+    case "relations":
+      return {
+        eyebrow: "Relations",
+        title: "Shell Relations",
+        meta: `${entity.relations.length} derived relations`,
+        emptyMessage: "No shell relations yet.",
+        columns: [
+          { label: "Shell", key: "source" },
+          { label: "Relation", render: (row) => tonePill("neutral", row.relation) },
+          { label: "Target", render: (row) => primaryCell(row.target, row.targetKind) },
+          { label: "Detail", key: "note" },
+        ],
+        rows: entity.relations,
+      };
+    case "overview":
+    default:
+      return {
+        eyebrow: "Overview",
+        title: "Shell Current Surface",
+        meta: `${Math.min(3, entity.liveItems.length)} of ${entity.liveItems.length} real shells`,
+        emptyMessage: "No shell sessions detected yet.",
+        columns: [
+          { label: "Shell", render: (row) => primaryCell(row.name, row.command || row.entryLabel) },
+          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Activity", render: (row) => shellActivityCell(row) },
+          { label: "Descendants", render: (row) => shellDescendantCell(row) },
+          { label: "Scope", render: (row) => shellScopeCell(row) },
+        ],
+        rows: entity.liveItems.slice(0, 3),
+      };
+  }
+}
+
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
 }
 
 function materializeEntity(entity) {
-  if (!entity || entity.id !== "cli-runs") {
+  if (!entity || (entity.id !== "cli-runs" && entity.id !== "shells")) {
     return entity;
   }
-  const live = state.live.cliRuns;
+  const config = liveDomainConfigs[entity.id];
+  const live = state.live[config.stateKey];
   if (live.status === "loaded") {
-    return buildLiveCLIRunsEntity(entity, live.items);
+    if (entity.id === "cli-runs") {
+      return buildLiveCLIRunsEntity(entity, live.items);
+    }
+    return buildLiveShellsEntity(entity, live.items);
   }
   if (live.status === "loading") {
     return {
       ...entity,
-      dynamicKind: "cli-runs",
+      dynamicKind: entity.id,
       liveItems: [],
-      blurb: "Fetching live CLI runs from /api/v2/cli-runs. Other domains remain mocked while the first real entity slice settles.",
+      blurb: `Fetching live ${config.label.toLowerCase()} from ${config.endpoint}. Other domains remain mocked while the next entity slice settles.`,
       metrics: [
-        { label: "Live fetch", value: "Loading", detail: "Requesting CLI Runs from the real API." },
-        { label: "Entity mode", value: "Hybrid", detail: "CLI Runs are live; everything else is still mocked." },
-        { label: "Next step", value: "Render", detail: "Wire the first domain end-to-end before generalizing." },
+        { label: "Live fetch", value: "Loading", detail: `Requesting ${config.label} from the real API.` },
+        { label: "Entity mode", value: "Hybrid", detail: `${config.label} are switching from mock data to live data.` },
+        { label: "Next step", value: "Render", detail: "Wire the current domain end-to-end before generalizing further." },
       ],
-      highlights: [{ title: "CLI Runs", value: "Loading", note: "Waiting for live entity payload." }],
-      signals: [{ label: "API state", value: "Pending", tone: "neutral", detail: "First live entity domain is still loading." }],
+      highlights: [{ title: config.label, value: "Loading", note: "Waiting for live entity payload." }],
+      signals: [{ label: "API state", value: "Pending", tone: "neutral", detail: `${config.label} are still loading.` }],
       evidence: [],
       relations: [],
       inventory: [],
@@ -865,16 +957,16 @@ function materializeEntity(entity) {
   if (live.status === "error") {
     return {
       ...entity,
-      dynamicKind: "cli-runs",
+      dynamicKind: entity.id,
       liveItems: [],
-      blurb: `Live CLI run fetch failed (${live.error}). Falling back to the entity shell while the API connection is unavailable.`,
+      blurb: `Live ${config.label.toLowerCase()} fetch failed (${live.error}). Falling back to the entity shell while the API connection is unavailable.`,
       metrics: [
         { label: "Live fetch", value: "Error", detail: live.error || "Unknown failure" },
-        { label: "Fallback", value: "Mock shell", detail: "CLI Runs stayed isolated; other domains were not affected." },
+        { label: "Fallback", value: "Mock shell", detail: `${config.label} stayed isolated; other domains were not affected.` },
         { label: "Recovery", value: "Retry", detail: "Reload the page after the server/API is healthy." },
       ],
-      highlights: [{ title: "CLI Runs", value: "Error", note: live.error || "Unknown failure" }],
-      signals: [{ label: "API state", value: "Unavailable", tone: "warn", detail: "The shell could not reach /api/v2/cli-runs." }],
+      highlights: [{ title: config.label, value: "Error", note: live.error || "Unknown failure" }],
+      signals: [{ label: "API state", value: "Unavailable", tone: "warn", detail: `The shell could not reach ${config.endpoint}.` }],
       evidence: [],
       relations: [],
       inventory: [],
@@ -970,49 +1062,144 @@ function buildLiveCLIRunsEntity(base, items) {
   };
 }
 
+function buildLiveShellsEntity(base, items) {
+  const liveItems = items.slice().sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const durations = liveItems.map((item) => Math.max(0, Number(item.endUnixNano || 0) - Number(item.startUnixNano || 0)));
+  const failedCount = liveItems.filter((item) => item.status === "failed").length;
+  const runningCount = liveItems.filter((item) => item.status === "running").length;
+  const childClientTotal = liveItems.reduce((sum, item) => sum + Number(item.childClientCount || 0), 0);
+  const callTotal = liveItems.reduce((sum, item) => sum + Number(item.callCount || 0), 0);
+  const inlineCount = liveItems.filter((item) => item.mode === "inline").length;
+  const evidence = [];
+  const relations = [];
+
+  for (const item of liveItems) {
+    for (const row of item.evidence || []) {
+      evidence.push({
+        shellName: item.name,
+        kind: row.kind,
+        confidence: row.confidence,
+        source: row.source,
+        note: row.note,
+      });
+    }
+    for (const rel of item.relations || []) {
+      relations.push({
+        source: item.name,
+        relation: rel.relation,
+        target: rel.target,
+        targetKind: rel.targetKind,
+        note: rel.note || rel.targetKind || "",
+      });
+    }
+  }
+
+  return {
+    ...base,
+    dynamicKind: "shells",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one derived `dagger shell` session, anchored on a shell root client plus its descendant client tree rather than on one singular output value.",
+    metrics: [
+      {
+        label: "Detected shells",
+        value: String(liveItems.length),
+        detail: `${failedCount} failed | ${runningCount} running`,
+      },
+      {
+        label: "Median duration",
+        value: formatDuration(median(durations)),
+        detail: "Based on real shell root sessions.",
+      },
+      {
+        label: "Descendant clients",
+        value: String(childClientTotal),
+        detail: `${callTotal} owned DAGQL calls across all shells`,
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.name,
+      value: String(item.mode || "interactive").toUpperCase(),
+      note: `${item.callCount} calls, ${item.childClientCount} child clients`,
+    })),
+    signals: [
+      {
+        label: "Inline shells",
+        value: `${inlineCount}/${liveItems.length || 0}`,
+        tone: inlineCount > 0 ? "neutral" : "good",
+        detail: "Shell sessions started with `-c` rather than pure interactive mode.",
+      },
+      {
+        label: "Descendant fanout",
+        value: String(childClientTotal),
+        tone: childClientTotal > 0 ? "good" : "neutral",
+        detail: "Nested clients remain attached to their shell roots instead of becoming standalone entities.",
+      },
+      {
+        label: "Activity density",
+        value: String(callTotal),
+        tone: "neutral",
+        detail: "Owned DAGQL calls across all live shell sessions.",
+      },
+    ],
+    evidence,
+    relations,
+    inventory: liveItems,
+  };
+}
+
 function describeShellState(entity) {
-  if (entity.id === "cli-runs") {
-    switch (state.live.cliRuns.status) {
+  const currentConfig = liveDomainConfigs[entity.id];
+  if (currentConfig) {
+    const currentLive = state.live[currentConfig.stateKey];
+    switch (currentLive.status) {
       case "loading":
         return {
           mode: "Activating",
           source: "API Loading",
-          copy: "CLI Runs is the first live domain. The shell is fetching `/api/v2/cli-runs` while the rest of the taxonomy stays mocked.",
+          copy: `${currentConfig.label} is switching to live data. The shell is fetching ${currentConfig.endpoint} while the rest of the taxonomy stays mocked.`,
         };
       case "loaded":
         return {
           mode: "Live Domain",
           source: "Real API",
-          copy: "CLI Runs is live end-to-end. Other domains remain mocked until their own discovery rules and specialized views are ready.",
+          copy: `${currentConfig.label} is live end-to-end. Other domains remain mocked until their own discovery rules and specialized views are ready.`,
         };
       case "error":
         return {
           mode: "Hybrid Degraded",
           source: "API Error",
-          copy: "CLI Runs is the first live domain, but its API fetch failed. The shared shell stays up and the rest of the domains remain mocked.",
+          copy: `${currentConfig.label} is one of the live domains, but its API fetch failed. The shared shell stays up and the rest of the domains remain mocked.`,
         };
       default:
         return {
           mode: "Activating",
           source: "Pending API",
-          copy: "CLI Runs is the first live domain and will switch from mocked shell state to real API data as soon as the initial fetch completes.",
+          copy: `${currentConfig.label} will switch from mocked shell state to real API data as soon as the initial fetch completes.`,
         };
     }
   }
 
-  if (state.live.cliRuns.status === "loaded") {
+  const loadedDomains = Object.entries(liveDomainConfigs)
+    .filter(([, config]) => state.live[config.stateKey].status === "loaded")
+    .map(([, config]) => config.label);
+  const degradedDomains = Object.entries(liveDomainConfigs)
+    .filter(([, config]) => state.live[config.stateKey].status === "error")
+    .map(([, config]) => config.label);
+
+  if (loadedDomains.length > 0) {
     return {
       mode: "Mock Domain",
       source: "Mock Data",
-      copy: "This domain is still mocked. CLI Runs is already live, which lets the shared shell evolve without forcing the rest of the taxonomy to harden too early.",
+      copy: `This domain is still mocked. ${loadedDomains.join(" and ")} ${loadedDomains.length === 1 ? "is" : "are"} already live, which lets the shared shell evolve without forcing the rest of the taxonomy to harden too early.`,
     };
   }
 
-  if (state.live.cliRuns.status === "error") {
+  if (degradedDomains.length > 0) {
     return {
       mode: "Mock Domain",
       source: "Mock Data",
-      copy: "The shell is still mostly mocked. CLI Runs is the first attempted live slice, but it is currently degraded and not masking the rest of the taxonomy work.",
+      copy: `The shell is still mostly mocked. ${degradedDomains.join(" and ")} ${degradedDomains.length === 1 ? "is" : "are"} currently degraded and not masking the rest of the taxonomy work.`,
     };
   }
 
@@ -1026,6 +1213,9 @@ function describeShellState(entity) {
 function entityRowMeta(entity) {
   if (entity.id === "cli-runs" && state.live.cliRuns.status === "loaded") {
     return `${state.live.cliRuns.items.length} live runs`;
+  }
+  if (entity.id === "shells" && state.live.shells.status === "loaded") {
+    return `${state.live.shells.items.length} live shells`;
   }
   return `${entity.inventory.length} mock rows`;
 }
@@ -1050,15 +1240,7 @@ function cliRunScopeCell(row) {
 }
 
 function cliRunDurationLabel(row) {
-  const start = Number(row.startUnixNano || 0);
-  const end = Number(row.endUnixNano || 0);
-  if (!Number.isFinite(start) || start <= 0) {
-    return row.status === "running" ? "Running" : "Unknown";
-  }
-  if (!Number.isFinite(end) || end <= start) {
-    return row.status === "running" ? "Running" : "0 ms";
-  }
-  return formatDuration(end - start);
+  return durationLabel(row.startUnixNano, row.endUnixNano, row.status);
 }
 
 function confidencePill(value) {
@@ -1113,6 +1295,18 @@ function formatDuration(nano) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+function durationLabel(startUnixNano, endUnixNano, status) {
+  const start = Number(startUnixNano || 0);
+  const end = Number(endUnixNano || 0);
+  if (!Number.isFinite(start) || start <= 0) {
+    return status === "running" ? "Running" : "Unknown";
+  }
+  if (!Number.isFinite(end) || end <= start) {
+    return status === "running" ? "Running" : "0 ms";
+  }
+  return formatDuration(end - start);
+}
+
 function median(values) {
   if (!values.length) {
     return 0;
@@ -1131,6 +1325,26 @@ function shortID(raw, width = 12) {
     return text;
   }
   return text.slice(0, width);
+}
+
+function shellActivityCell(row) {
+  const names = Array.isArray(row.activityNames) ? row.activityNames.filter(Boolean) : [];
+  const title = `${row.callCount || 0} calls`;
+  const subtitle = names.length > 0 ? names.slice(0, 2).join(", ") : "No DAGQL calls yet";
+  return primaryCell(title, subtitle);
+}
+
+function shellDescendantCell(row) {
+  const childIDs = Array.isArray(row.childClientIDs) ? row.childClientIDs : [];
+  const title = row.childClientCount > 0 ? `${row.childClientCount} child clients` : "Root only";
+  const subtitle = childIDs.length > 0 ? childIDs.slice(0, 2).map((id) => shortID(id)).join(", ") : "No descendant clients";
+  return primaryCell(title, subtitle);
+}
+
+function shellScopeCell(row) {
+  const title = row.clientName || row.clientID || "unknown client";
+  const detail = row.sessionID ? `session ${shortID(row.sessionID)}` : `trace ${shortID(row.traceID)}`;
+  return primaryCell(title, detail);
 }
 
 function findEntity(entityID) {
