@@ -3,148 +3,103 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ODAG Explorer</title>
+    <title>ODAG V3 Entity Explorer</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body class="data-body">
-    <div class="home-shell data-home-shell">
-      <main class="data-surface">
-        <header class="data-header">
-          <div class="data-header-copy">
-            <p class="data-eyebrow">ODAG</p>
-            <h1>Browse objects, snapshots, and events</h1>
-            <p class="data-subtitle">
-              A web-style explorer for ODAG data. Click trace, session, and client chips in any row to narrow the view.
-            </p>
+  <body class="v3-body">
+    <div class="v3-shell">
+      <aside class="v3-sidebar">
+        <div class="v3-sidebar-head">
+          <p class="v3-kicker">ODAG V3</p>
+          <h1>Entity Explorer</h1>
+          <p id="sidebarCopy" class="v3-sidebar-copy">
+            Discovery first, specialized views second. The shell starts mocked, then individual domains switch to live data as their heuristics settle.
+          </p>
+        </div>
+
+        <label class="v3-search" for="entitySearch">
+          <span class="v3-search-label">Find Entity</span>
+          <input id="entitySearch" class="v3-input" type="search" placeholder="Terminals, Services, Shells..." />
+        </label>
+
+        <nav id="entityNav" class="v3-type-nav" aria-label="Entity domains"></nav>
+
+        <div class="v3-sidebar-foot">
+          <div class="v3-foot-card">
+            <span class="v3-foot-label">Mode</span>
+            <strong id="shellMode">Mock Domain</strong>
           </div>
-          <div class="data-header-actions">
-            <button id="refreshBtn" class="btn" type="button">Refresh</button>
-            <button id="clearScopeBtn" class="btn btn-secondary" type="button">Clear Scope</button>
+          <div class="v3-foot-card">
+            <span class="v3-foot-label">Data Source</span>
+            <strong id="shellSource">Mock Data</strong>
+          </div>
+        </div>
+      </aside>
+
+      <main class="v3-main">
+        <header class="v3-topbar">
+          <div>
+            <p class="v3-topbar-label">Domain</p>
+            <h2 id="pageTitle" class="v3-page-title">Terminals</h2>
+          </div>
+          <div class="v3-topbar-actions">
+            <span id="entityCategory" class="v3-badge v3-badge-muted">Execution-centric</span>
+            <span id="entityMode" class="v3-badge">Mock Domain</span>
+            <span id="entitySource" class="v3-badge v3-badge-muted">Mock Data</span>
+            <span class="v3-badge v3-badge-muted">Discovery First</span>
           </div>
         </header>
 
-        <section class="data-toolbar">
-          <div class="data-toolbar-group">
-            <label class="data-field" for="traceFilter">
-              <span class="data-field-label">Trace</span>
-              <input id="traceFilter" class="text-input" placeholder="Optional trace ID" />
-            </label>
-            <label class="toggle-input data-toggle">
-              <input id="includeInternal" type="checkbox" />
-              Include internal spans/events
-            </label>
-          </div>
-          <div class="data-toolbar-group data-toolbar-group-import">
-            <label class="data-field" for="cloudTraceID">
-              <span class="data-field-label">Import trace</span>
-              <input id="cloudTraceID" class="text-input" placeholder="Cloud trace ID" />
-            </label>
-            <label class="data-field" for="cloudOrg">
-              <span class="data-field-label">Org</span>
-              <input id="cloudOrg" class="text-input" placeholder="Optional org" />
-            </label>
-            <button id="importCloudBtn" class="btn" type="button">Import</button>
-          </div>
+        <section class="v3-subnav-row">
+          <nav id="sectionNav" class="v3-subnav" aria-label="Entity domain sections"></nav>
+          <div id="sectionMeta" class="v3-submeta"></div>
         </section>
 
-        <section class="data-status-bar">
-          <div id="scopeSummary" class="data-scope-summary"></div>
-          <div id="statusNote" class="data-status-note"></div>
-        </section>
-
-        <nav class="data-tabs" aria-label="ODAG explorer pages">
-          <button class="data-tab is-active" data-page-tab="objects" type="button">Objects</button>
-          <button class="data-tab" data-page-tab="snapshots" type="button">Snapshots</button>
-          <button class="data-tab" data-page-tab="events" type="button">Events</button>
-        </nav>
-
-        <section class="data-pages">
-          <section class="data-page is-active" data-page="objects">
-            <div class="data-page-toolbar">
-              <label class="data-field data-field-grow" for="objectSearch">
-                <span class="data-field-label">Search</span>
-                <input id="objectSearch" class="text-input" placeholder="Alias, type, state, trace, session, client" />
-              </label>
-              <label class="data-field" for="objectStatus">
-                <span class="data-field-label">Status</span>
-                <select id="objectStatus" class="text-input">
-                  <option value="all">All</option>
-                  <option value="live">Live</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </label>
-              <label class="data-field" for="objectSort">
-                <span class="data-field-label">Sort</span>
-                <select id="objectSort" class="text-input">
-                  <option value="recent">Recently updated</option>
-                  <option value="alias">Alias</option>
-                  <option value="type">Type</option>
-                  <option value="states">Most states</option>
-                  <option value="trace">Trace</option>
-                </select>
-              </label>
-              <div id="objectMeta" class="data-page-meta"></div>
+        <section class="v3-content">
+          <section class="v3-hero v3-panel">
+            <div>
+              <p id="heroEyebrow" class="v3-panel-eyebrow">Entity Domain</p>
+              <h3 id="heroTitle" class="v3-hero-title">Terminals</h3>
+              <p id="heroCopy" class="v3-hero-copy"></p>
             </div>
-            <div id="objectTable" class="data-table-shell"></div>
+            <div id="heroMetrics" class="v3-metric-grid"></div>
           </section>
 
-          <section class="data-page" data-page="snapshots">
-            <div class="data-page-toolbar">
-              <label class="data-field data-field-grow" for="snapshotSearch">
-                <span class="data-field-label">Search</span>
-                <input
-                  id="snapshotSearch"
-                  class="text-input"
-                  placeholder="Snapshot, type, trace, session, client, field ref"
-                />
-              </label>
-              <label class="data-field" for="snapshotSort">
-                <span class="data-field-label">Sort</span>
-                <select id="snapshotSort" class="text-input">
-                  <option value="recent">Recently updated</option>
-                  <option value="type">Type</option>
-                  <option value="refs">Most refs</option>
-                  <option value="calls">Most producers</option>
-                  <option value="trace">Trace</option>
-                </select>
-              </label>
-              <div id="snapshotMeta" class="data-page-meta"></div>
-            </div>
-            <div id="snapshotTable" class="data-table-shell"></div>
-          </section>
+          <div class="v3-split-grid">
+            <section class="v3-panel">
+              <div class="v3-panel-head">
+                <div>
+                  <p class="v3-panel-eyebrow">Highlights</p>
+                  <h3>Candidate Lenses</h3>
+                </div>
+              </div>
+              <div id="highlightGrid" class="v3-highlight-grid"></div>
+            </section>
 
-          <section class="data-page" data-page="events">
-            <div class="data-page-toolbar">
-              <label class="data-field data-field-grow" for="eventSearch">
-                <span class="data-field-label">Search</span>
-                <input id="eventSearch" class="text-input" placeholder="Name, status, binding, call, trace, session, client" />
-              </label>
-              <label class="data-field" for="eventKind">
-                <span class="data-field-label">Kind</span>
-                <select id="eventKind" class="text-input">
-                  <option value="all">All</option>
-                  <option value="call">Calls</option>
-                  <option value="mutation">Mutations</option>
-                  <option value="span">Spans</option>
-                </select>
-              </label>
-              <label class="data-field" for="eventSort">
-                <span class="data-field-label">Sort</span>
-                <select id="eventSort" class="text-input">
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="name">Name</option>
-                  <option value="kind">Kind</option>
-                  <option value="trace">Trace</option>
-                </select>
-              </label>
-              <div id="eventMeta" class="data-page-meta"></div>
+            <section class="v3-panel">
+              <div class="v3-panel-head">
+                <div>
+                  <p class="v3-panel-eyebrow">Signals</p>
+                  <h3>Discovery Clues</h3>
+                </div>
+              </div>
+              <div id="signalList" class="v3-signal-list"></div>
+            </section>
+          </div>
+
+          <section class="v3-panel">
+            <div class="v3-panel-head">
+              <div>
+                <p id="tableEyebrow" class="v3-panel-eyebrow">Overview</p>
+                <h3 id="tableTitle">Current Surface</h3>
+              </div>
+              <div id="tableMeta" class="v3-submeta"></div>
             </div>
-            <div id="eventTable" class="data-table-shell"></div>
+            <div id="tableShell" class="v3-table-shell"></div>
           </section>
         </section>
       </main>
     </div>
-    <script type="module" src="/home.js"></script>
+    <script type="module" src="/v3.js"></script>
   </body>
 </html>

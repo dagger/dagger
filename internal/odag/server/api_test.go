@@ -1549,7 +1549,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if dagRec.Code != http.StatusOK {
 		t.Fatalf("dag page failed: %d %s", dagRec.Code, dagRec.Body.String())
 	}
-	if !strings.Contains(dagRec.Body.String(), "Mock Only") {
+	if !strings.Contains(dagRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected dag route to serve v3 shell, got %q", dagRec.Body.String())
 	}
 }

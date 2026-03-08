@@ -1144,7 +1144,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 - [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
 - [x] Stage 7: V3 entity-first shell scaffold with mock data
-- [ ] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
+- [x] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
 - [ ] Stage 9: Capture lessons learned and choose the next domain
 
 ### Active Next Tasks
@@ -1180,7 +1180,7 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] derive run identity from command root plus chained DAGQL calls
   - [x] attach terminal output type and CLI post-processing behavior
   - [x] keep follow-up apply/export/prompt spans associated with the same run context in the first read-only API slice
-  - [ ] wire the V3 shell's `CLI Runs` domain to the real endpoint
+  - [x] wire the V3 shell's `CLI Runs` domain to the real endpoint
 - [ ] Record what did and did not generalize from the first domain before adding a second one.
 
 Stage 2 implementation note:
@@ -1393,7 +1393,19 @@ Stage 8 implementation note:
    - explicit execution-scope IDs still work across traces
    - one `dagger call` client becomes one CLI Run
    - Changeset follow-up spans remain attached to that run instead of appearing as unrelated noise
-5. Remaining work in Stage 8 is UI wiring and iteration on whether the current chain/follow-up heuristics are precise enough.
+5. V3 shell wiring is now live for the `CLI Runs` domain only:
+   - the left-nav entry still participates in the shared mock shell
+   - selecting `CLI Runs` fetches real data from `/api/v2/cli-runs`
+   - `Overview`, `Inventory`, `Evidence`, and `Relations` now render from real run payloads
+   - shell chrome reflects the current domain state (`Mock`, `Activating`, `Live Domain`, `Hybrid Degraded`) instead of pretending the entire app is still mocked
+   - `CLI Runs` overview and inventory emphasize command context, terminal output, follow-up spans, and execution scope because those are the first domain-specific cues users need
+6. Current Stage 8 result is intentionally hybrid:
+   - `CLI Runs` is live end-to-end
+   - all other domains remain mocked
+7. Stage 9 should focus on what generalized and what did not:
+   - using client-owned call order instead of existing `TopLevel` semantics was necessary for CLI chain reconstruction
+   - same-client follow-up spans are useful, but conservative by design and probably still incomplete
+   - the shared shell can host one live domain without forcing the rest of the taxonomy to crystallize too early
 
 ### Phase 3: Payload evolution (future)
 

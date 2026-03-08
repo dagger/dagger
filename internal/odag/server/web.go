@@ -66,7 +66,7 @@ func (w *webAssets) serve(wr http.ResponseWriter, r *http.Request) {
 		assetPath = "index.html"
 	}
 
-	data, servedPath, err := w.readRouteAsset(cleanPath, assetPath)
+	data, servedPath, err := w.readRouteAsset(assetPath)
 	if err != nil {
 		http.Error(wr, "web ui unavailable", http.StatusInternalServerError)
 		return
@@ -74,7 +74,7 @@ func (w *webAssets) serve(wr http.ResponseWriter, r *http.Request) {
 
 	if w.devMode {
 		wr.Header().Set("Cache-Control", "no-store")
-	} else if servedPath == "index.html" || servedPath == "trace.html" || servedPath == "dag.html" {
+	} else if isHTMLAsset(servedPath) {
 		wr.Header().Set("Cache-Control", "no-cache")
 	}
 	if contentType := mime.TypeByExtension(filepath.Ext(servedPath)); contentType != "" {
@@ -88,23 +88,17 @@ func (w *webAssets) serve(wr http.ResponseWriter, r *http.Request) {
 	_, _ = wr.Write(data)
 }
 
-func (w *webAssets) readRouteAsset(cleanPath string, assetPath string) ([]byte, string, error) {
+func (w *webAssets) readRouteAsset(assetPath string) ([]byte, string, error) {
 	data, err := w.readFile(assetPath)
 	if err == nil {
 		return data, assetPath, nil
 	}
 
-	fallback := "index.html"
-	if strings.HasPrefix(cleanPath, "/traces/") {
-		fallback = "trace.html"
-	} else if cleanPath == "/dag" || strings.HasPrefix(cleanPath, "/dag/") {
-		fallback = "dag.html"
-	}
-	data, err = w.readFile(fallback)
+	data, err = w.readFile("index.html")
 	if err != nil {
 		return nil, "", err
 	}
-	return data, fallback, nil
+	return data, "index.html", nil
 }
 
 func (w *webAssets) readFile(assetPath string) ([]byte, error) {
