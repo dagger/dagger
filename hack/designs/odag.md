@@ -1177,9 +1177,10 @@ These are the latest design decisions that should be preserved across handoff.
   - secondary nav selects specialized subviews
   - mock data is acceptable while settling taxonomy
 - [ ] Implement the `CLI Run` domain (`dagger call` invocation) end-to-end:
-  - derive run identity from command root plus chained DAGQL calls
-  - attach terminal output type and CLI post-processing behavior
-  - keep follow-up apply/export/prompt spans associated with the same run context
+  - [x] derive run identity from command root plus chained DAGQL calls
+  - [x] attach terminal output type and CLI post-processing behavior
+  - [x] keep follow-up apply/export/prompt spans associated with the same run context in the first read-only API slice
+  - [ ] wire the V3 shell's `CLI Runs` domain to the real endpoint
 - [ ] Record what did and did not generalize from the first domain before adding a second one.
 
 Stage 2 implementation note:
@@ -1374,6 +1375,25 @@ Stage 7 implementation note:
    - `Evidence`
    - `Relations`
 5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and UI rendering.
+
+Stage 8 implementation note:
+1. First real CLI Run API slice is implemented at `GET /api/v2/cli-runs`.
+2. Current derivation rule:
+   - classify a client as a CLI Run when its `process.command_args` parse as `dagger call`
+   - use ordered client-owned DAGQL calls as the run chain
+   - use the latest owned call as the terminal output
+   - attach later non-call spans in the same client scope as follow-up evidence
+3. Current payload includes:
+   - run identity and scope (`runID`, `traceID`, `sessionID`, `clientID`, `rootClientID`)
+   - command summary (`command`, `commandArgs`, `chainLabel`)
+   - terminal output (`terminalCallID`, `terminalCallName`, `terminalReturnType`, `terminalOutputDagqlID`)
+   - follow-up classification (`postProcessKinds`, `followupSpanIDs`)
+   - per-run `evidence` and `relations` lists for direct UI consumption
+4. Validation coverage currently proves:
+   - explicit execution-scope IDs still work across traces
+   - one `dagger call` client becomes one CLI Run
+   - Changeset follow-up spans remain attached to that run instead of appearing as unrelated noise
+5. Remaining work in Stage 8 is UI wiring and iteration on whether the current chain/follow-up heuristics are precise enough.
 
 ### Phase 3: Payload evolution (future)
 

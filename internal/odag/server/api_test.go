@@ -1274,6 +1274,217 @@ func TestV2APIUsesExplicitExecutionScopeIDs(t *testing.T) {
 	}
 }
 
+func TestV2CLIRuns(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "33333333333333333333333333333333"
+	connectHex := "1111111111111111"
+	dirCallHex := "2222222222222222"
+	changesHex := "3333333333333333"
+	analyzeHex := "4444444444444444"
+	applyHex := "5555555555555555"
+
+	sessionID := "session-cli-run"
+	clientID := "client-cli-run"
+	commandArgs := []string{"/usr/local/bin/dagger", "call", "directory", "changes", "--auto-apply"}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, dirCallHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Query.directory",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   20,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-dir"),
+									kvString(t, telemetry.DagOutputAttr, "state-dir"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-dir",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, changesHex),
+								ParentSpanId:      mustDecodeHex(t, dirCallHex),
+								Name:              "Directory.changes",
+								StartTimeUnixNano: 30,
+								EndTimeUnixNano:   40,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-changes"),
+									kvString(t, telemetry.DagOutputAttr, "state-changes"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-changes",
+										ReceiverDigest: "state-dir",
+										Field:          "changes",
+										Type:           &callpbv1.Type{NamedType: "Changeset"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, analyzeHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "analyzing changes",
+								StartTimeUnixNano: 50,
+								EndTimeUnixNano:   60,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, applyHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "applying changes",
+								StartTimeUnixNano: 61,
+								EndTimeUnixNano:   75,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	runsReq := httptest.NewRequest(http.MethodGet, "/api/v2/cli-runs?traceID="+traceIDHex, nil)
+	runsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(runsRec, runsReq)
+	if runsRec.Code != http.StatusOK {
+		t.Fatalf("cli-runs failed: status=%d body=%s", runsRec.Code, runsRec.Body.String())
+	}
+
+	var runsResp struct {
+		DerivationVersion string `json:"derivationVersion"`
+		Items             []struct {
+			ID                    string `json:"id"`
+			TraceID               string `json:"traceID"`
+			SessionID             string `json:"sessionID"`
+			ClientID              string `json:"clientID"`
+			Name                  string `json:"name"`
+			ChainLabel            string `json:"chainLabel"`
+			Status                string `json:"status"`
+			ChainDepth            int    `json:"chainDepth"`
+			CallCount             int    `json:"callCount"`
+			TerminalCallName      string `json:"terminalCallName"`
+			TerminalReturnType    string `json:"terminalReturnType"`
+			TerminalOutputDagqlID string `json:"terminalOutputDagqlID"`
+			FollowupSpanCount     int    `json:"followupSpanCount"`
+			PostProcessKinds      []string `json:"postProcessKinds"`
+			Evidence              []struct {
+				Kind string `json:"kind"`
+				Note string `json:"note"`
+			} `json:"evidence"`
+			Relations []struct {
+				Relation string `json:"relation"`
+				Target   string `json:"target"`
+			} `json:"relations"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(runsRec.Body.Bytes(), &runsResp); err != nil {
+		t.Fatalf("decode cli-runs: %v", err)
+	}
+	if runsResp.DerivationVersion == "" || len(runsResp.Items) != 1 {
+		t.Fatalf("unexpected cli-runs response: %#v", runsResp)
+	}
+
+	run := runsResp.Items[0]
+	if run.TraceID != traceIDHex || run.SessionID != sessionID || run.ClientID != clientID {
+		t.Fatalf("unexpected cli-run scope: %#v", run)
+	}
+	if run.ChainLabel == "" || !strings.Contains(run.ChainLabel, "directory") {
+		t.Fatalf("expected chain label, got %#v", run)
+	}
+	if run.Name == "" || run.TerminalCallName != "Directory.changes" || run.TerminalReturnType != "Changeset" || run.TerminalOutputDagqlID != "state-changes" {
+		t.Fatalf("unexpected terminal run fields: %#v", run)
+	}
+	if run.Status != "ready" || run.ChainDepth != 2 || run.CallCount != 2 || run.FollowupSpanCount != 2 {
+		t.Fatalf("unexpected cli-run counts: %#v", run)
+	}
+	if !sameStrings(run.PostProcessKinds, []string{"changeset-apply", "changeset-auto-apply", "changeset-preview"}) {
+		t.Fatalf("unexpected post-process kinds: %#v", run.PostProcessKinds)
+	}
+	if len(run.Evidence) < 4 {
+		t.Fatalf("expected evidence rows, got %#v", run.Evidence)
+	}
+	if len(run.Relations) < 3 {
+		t.Fatalf("expected relations, got %#v", run.Relations)
+	}
+}
+
 func TestOpenTraceValidation(t *testing.T) {
 	t.Parallel()
 
@@ -1318,8 +1529,8 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("list page failed: %d %s", listRec.Code, listRec.Body.String())
 	}
-	if !strings.Contains(listRec.Body.String(), "home.js") {
-		t.Fatalf("expected traces list page html, got %q", listRec.Body.String())
+	if !strings.Contains(listRec.Body.String(), "v3.js") {
+		t.Fatalf("expected v3 app shell html, got %q", listRec.Body.String())
 	}
 
 	traceReq := httptest.NewRequest(http.MethodGet, "/traces/abc123", nil)
@@ -1328,8 +1539,8 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if traceRec.Code != http.StatusOK {
 		t.Fatalf("trace page failed: %d %s", traceRec.Code, traceRec.Body.String())
 	}
-	if !strings.Contains(traceRec.Body.String(), "backBtn") {
-		t.Fatalf("expected trace page html, got %q", traceRec.Body.String())
+	if !strings.Contains(traceRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected trace route to serve v3 shell, got %q", traceRec.Body.String())
 	}
 
 	dagReq := httptest.NewRequest(http.MethodGet, "/dag?traceID=abc123", nil)
@@ -1338,8 +1549,8 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if dagRec.Code != http.StatusOK {
 		t.Fatalf("dag page failed: %d %s", dagRec.Code, dagRec.Body.String())
 	}
-	if !strings.Contains(dagRec.Body.String(), "dag.js") {
-		t.Fatalf("expected dag page html, got %q", dagRec.Body.String())
+	if !strings.Contains(dagRec.Body.String(), "Mock Only") {
+		t.Fatalf("expected dag route to serve v3 shell, got %q", dagRec.Body.String())
 	}
 }
 
@@ -1399,6 +1610,42 @@ func kvString(t *testing.T, key, val string) *commonpb.KeyValue {
 			},
 		},
 	}
+}
+
+func kvStringList(t *testing.T, key string, vals []string) *commonpb.KeyValue {
+	t.Helper()
+	items := make([]*commonpb.AnyValue, 0, len(vals))
+	for _, val := range vals {
+		items = append(items, &commonpb.AnyValue{
+			Value: &commonpb.AnyValue_StringValue{
+				StringValue: val,
+			},
+		})
+	}
+	return &commonpb.KeyValue{
+		Key: key,
+		Value: &commonpb.AnyValue{
+			Value: &commonpb.AnyValue_ArrayValue{
+				ArrayValue: &commonpb.ArrayValue{Values: items},
+			},
+		},
+	}
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	gotCopy := append([]string(nil), got...)
+	wantCopy := append([]string(nil), want...)
+	sort.Strings(gotCopy)
+	sort.Strings(wantCopy)
+	for i := range gotCopy {
+		if gotCopy[i] != wantCopy[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func encodeCallB64(t *testing.T, call *callpbv1.Call) string {
