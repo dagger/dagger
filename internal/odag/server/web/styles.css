@@ -1848,7 +1848,7 @@ body {
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background:
     linear-gradient(180deg, rgba(10, 11, 14, 0.97) 0%, rgba(7, 8, 10, 0.94) 100%);
-  overflow: auto;
+  overflow: hidden;
 }
 
 .v3-sidebar-brand {
@@ -1939,6 +1939,9 @@ body {
   display: grid;
   gap: 8px;
   align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .v3-type-item {
