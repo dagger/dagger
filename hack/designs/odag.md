@@ -53,7 +53,8 @@
    - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
 11. V3 home information architecture:
    - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, CLI Runs (`dagger call` invocations), Shells, Workspace Ops, Git Remotes, Registries.
-   - each domain gets a specialized main view instead of forcing one generic default object visualization.
+   - while taxonomy is still settling, the right pane should stay inventory-first: click a domain on the left, see that domain's inventory immediately on the right.
+   - deeper specialized views can return later once the base inventory interaction is obviously useful.
 12. Underlying execution/debug hierarchy:
    - `dagql session` -> `dagql client` -> spans/calls -> object bindings
    - trace remains a secondary ingest/debug/import escape hatch, not the primary UI silo.
@@ -1405,12 +1406,11 @@ Stage 7 implementation note:
    - Workspace Ops
    - Git Remotes
    - Registries
-4. Current secondary-nav views are:
-   - `Overview`
-   - `Inventory`
-   - `Evidence`
-   - `Relations`
-5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and UI rendering.
+4. Current V3 shell simplification:
+   - no right-pane secondary nav for now
+   - the selected domain renders directly to its inventory table in the right pane
+   - evidence/relations remain useful API concepts, but are not currently first-class UI tabs
+5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and right-pane inventory rendering.
 
 Stage 8 implementation note:
 1. First real CLI Run API slice is implemented at `GET /api/v2/cli-runs`.
@@ -1432,9 +1432,9 @@ Stage 8 implementation note:
 5. V3 shell wiring is now live for the `CLI Runs` domain only:
    - the left-nav entry still participates in the shared mock shell
    - selecting `CLI Runs` fetches real data from `/api/v2/cli-runs`
-   - `Overview`, `Inventory`, `Evidence`, and `Relations` now render from real run payloads
+   - the right pane now renders the real CLI Run inventory directly
    - shell chrome reflects the current domain state (`Mock`, `Activating`, `Live Domain`, `Hybrid Degraded`) instead of pretending the entire app is still mocked
-   - `CLI Runs` overview and inventory emphasize command context, terminal output, follow-up spans, and execution scope because those are the first domain-specific cues users need
+   - the inventory columns emphasize command context, terminal output, follow-up spans, and execution scope because those are the first domain-specific cues users need
 6. Current Stage 8 result is intentionally hybrid:
    - `CLI Runs` is live end-to-end
    - all other domains remain mocked
@@ -1476,7 +1476,7 @@ Stage 10 implementation note:
    - shell activity aggregates both DAGQL calls and non-call spans from the same explicit client tree
 5. V3 shell wiring is now live for the `Shells` domain:
    - selecting `Shells` fetches real data from `/api/v2/shells`
-   - `Overview`, `Inventory`, `Evidence`, and `Relations` now render from real shell payloads
+   - the right pane now renders the real Shell inventory directly
    - shared shell chrome now reflects multiple live domains rather than assuming only one live slice exists
    - shell layout now constrains the app to a true viewport-height frame so the main pane scrolls correctly instead of trapping long tables below the fold
 6. Current hybrid state after Stage 10:

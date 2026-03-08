@@ -1,10 +1,3 @@
-const sections = [
-  { id: "overview", label: "Overview" },
-  { id: "inventory", label: "Inventory" },
-  { id: "evidence", label: "Evidence" },
-  { id: "relations", label: "Relations" },
-];
-
 const entities = [
   {
     id: "terminals",
@@ -423,7 +416,6 @@ const liveDomainConfigs = {
 
 const state = {
   entityID: "terminals",
-  sectionID: "overview",
   query: "",
   live: {
     cliRuns: {
@@ -447,16 +439,8 @@ const els = {
   entitySource: document.getElementById("entitySource"),
   entitySearch: document.getElementById("entitySearch"),
   entityNav: document.getElementById("entityNav"),
-  sectionNav: document.getElementById("sectionNav"),
-  sectionMeta: document.getElementById("sectionMeta"),
   shellMode: document.getElementById("shellMode"),
   shellSource: document.getElementById("shellSource"),
-  heroEyebrow: document.getElementById("heroEyebrow"),
-  heroTitle: document.getElementById("heroTitle"),
-  heroCopy: document.getElementById("heroCopy"),
-  heroMetrics: document.getElementById("heroMetrics"),
-  highlightGrid: document.getElementById("highlightGrid"),
-  signalList: document.getElementById("signalList"),
   tableEyebrow: document.getElementById("tableEyebrow"),
   tableTitle: document.getElementById("tableTitle"),
   tableMeta: document.getElementById("tableMeta"),
@@ -490,14 +474,10 @@ function bindEvents() {
 function readURLState() {
   const params = new URLSearchParams(window.location.search);
   const entityID = String(params.get("entity") || params.get("type") || "").toLowerCase();
-  const sectionID = String(params.get("section") || "").toLowerCase();
   const query = String(params.get("q") || "");
 
   if (findEntity(entityID)) {
     state.entityID = entityID;
-  }
-  if (findSection(sectionID)) {
-    state.sectionID = sectionID;
   }
   state.query = query;
   if (els.entitySearch) {
@@ -508,7 +488,6 @@ function readURLState() {
 function writeURLState() {
   const params = new URLSearchParams();
   params.set("entity", state.entityID);
-  params.set("section", state.sectionID);
   if (state.query.trim()) {
     params.set("q", state.query.trim());
   }
@@ -546,7 +525,6 @@ async function ensureActiveEntityData() {
 
 function render() {
   renderEntityNav();
-  renderSectionNav();
   renderMain();
   writeURLState();
 }
@@ -589,37 +567,9 @@ function renderEntityNav() {
   }
 }
 
-function renderSectionNav() {
-  els.sectionNav.innerHTML = sections
-    .map((section) => {
-      const active = section.id === state.sectionID;
-      return `
-        <button class="v3-subnav-item${active ? " is-active" : ""}" data-section-id="${escapeHTML(section.id)}" type="button">
-          ${escapeHTML(section.label)}
-        </button>
-      `;
-    })
-    .join("");
-
-  const liveCount = Object.values(state.live).filter((entry) => entry.status === "loaded").length;
-  const degradedCount = Object.values(state.live).filter((entry) => entry.status === "error").length;
-  let liveLabel = `${liveCount} live domains`;
-  if (degradedCount > 0) {
-    liveLabel = `${liveCount} live | ${degradedCount} degraded`;
-  }
-  els.sectionMeta.textContent = `${entities.length} entity domains | ${sections.length} views | ${liveLabel}`;
-
-  for (const node of els.sectionNav.querySelectorAll("[data-section-id]")) {
-    node.addEventListener("click", () => {
-      state.sectionID = node.getAttribute("data-section-id") || "overview";
-      render();
-    });
-  }
-}
-
 function renderMain() {
   const entity = currentEntity();
-  const model = tableModel(entity, state.sectionID);
+  const model = tableModel(entity, "inventory");
   const shellState = describeShellState(entity);
 
   document.title = `ODAG V3 ${entity.label}`;
@@ -630,64 +580,11 @@ function renderMain() {
   els.shellMode.textContent = shellState.mode;
   els.shellSource.textContent = shellState.source;
   els.sidebarCopy.textContent = shellState.copy;
-  els.heroEyebrow.textContent = entity.eyebrow;
-  els.heroTitle.textContent = entity.label;
-  els.heroCopy.textContent = entity.blurb;
   els.tableEyebrow.textContent = model.eyebrow;
   els.tableTitle.textContent = model.title;
   els.tableMeta.textContent = model.meta;
 
-  renderMetrics(entity.metrics);
-  renderHighlights(entity.highlights);
-  renderSignals(entity.signals);
   renderTable(model);
-}
-
-function renderMetrics(metrics) {
-  els.heroMetrics.innerHTML = metrics
-    .map(
-      (metric) => `
-        <article class="v3-metric-card">
-          <p class="v3-metric-label">${escapeHTML(metric.label)}</p>
-          <strong class="v3-metric-value">${escapeHTML(metric.value)}</strong>
-          <p class="v3-metric-detail">${escapeHTML(metric.detail)}</p>
-        </article>
-      `,
-    )
-    .join("");
-}
-
-function renderHighlights(highlights) {
-  els.highlightGrid.innerHTML = highlights
-    .map(
-      (item) => `
-        <article class="v3-highlight-card">
-          <p class="v3-highlight-value">${escapeHTML(item.value)}</p>
-          <h4>${escapeHTML(item.title)}</h4>
-          <p>${escapeHTML(item.note)}</p>
-        </article>
-      `,
-    )
-    .join("");
-}
-
-function renderSignals(signals) {
-  els.signalList.innerHTML = signals
-    .map(
-      (signal) => `
-        <article class="v3-signal-item">
-          <div>
-            <p class="v3-signal-label">${escapeHTML(signal.label)}</p>
-            <p class="v3-signal-detail">${escapeHTML(signal.detail)}</p>
-          </div>
-          <div class="v3-signal-value">
-            <strong>${escapeHTML(signal.value)}</strong>
-            ${tonePill(signal.tone)}
-          </div>
-        </article>
-      `,
-    )
-    .join("");
 }
 
 function renderTable(model) {
@@ -1349,10 +1246,6 @@ function shellScopeCell(row) {
 
 function findEntity(entityID) {
   return entities.find((entity) => entity.id === entityID) || null;
-}
-
-function findSection(sectionID) {
-  return sections.find((section) => section.id === sectionID) || null;
 }
 
 function escapeHTML(raw) {
