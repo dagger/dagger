@@ -1410,6 +1410,7 @@ Stage 7 implementation note:
    - no right-pane secondary nav for now
    - the selected domain renders directly to its inventory table in the right pane
    - evidence/relations remain useful API concepts, but are not currently first-class UI tabs
+   - the right pane avoids redundant `Inventory` labeling and extra top-right status badges; the selected domain name already provides enough context
 5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and right-pane inventory rendering.
 
 Stage 8 implementation note:

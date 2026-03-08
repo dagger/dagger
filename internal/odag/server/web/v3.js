@@ -434,14 +434,10 @@ const state = {
 const els = {
   sidebarCopy: document.getElementById("sidebarCopy"),
   pageTitle: document.getElementById("pageTitle"),
-  entityCategory: document.getElementById("entityCategory"),
-  entityMode: document.getElementById("entityMode"),
-  entitySource: document.getElementById("entitySource"),
   entitySearch: document.getElementById("entitySearch"),
   entityNav: document.getElementById("entityNav"),
   shellMode: document.getElementById("shellMode"),
   shellSource: document.getElementById("shellSource"),
-  tableEyebrow: document.getElementById("tableEyebrow"),
   tableTitle: document.getElementById("tableTitle"),
   tableMeta: document.getElementById("tableMeta"),
   tableShell: document.getElementById("tableShell"),
@@ -574,14 +570,10 @@ function renderMain() {
 
   document.title = `ODAG V3 ${entity.label}`;
   els.pageTitle.textContent = entity.label;
-  els.entityCategory.textContent = entity.category;
-  els.entityMode.textContent = shellState.mode;
-  els.entitySource.textContent = shellState.source;
   els.shellMode.textContent = shellState.mode;
   els.shellSource.textContent = shellState.source;
   els.sidebarCopy.textContent = shellState.copy;
-  els.tableEyebrow.textContent = model.eyebrow;
-  els.tableTitle.textContent = model.title;
+  els.tableTitle.textContent = entity.label;
   els.tableMeta.textContent = model.meta;
 
   renderTable(model);
