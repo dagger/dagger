@@ -1478,6 +1478,7 @@ Stage 10 implementation note:
    - selecting `Shells` fetches real data from `/api/v2/shells`
    - `Overview`, `Inventory`, `Evidence`, and `Relations` now render from real shell payloads
    - shared shell chrome now reflects multiple live domains rather than assuming only one live slice exists
+   - shell layout now constrains the app to a true viewport-height frame so the main pane scrolls correctly instead of trapping long tables below the fold
 6. Current hybrid state after Stage 10:
    - `CLI Runs` is live end-to-end
    - `Shells` is live end-to-end

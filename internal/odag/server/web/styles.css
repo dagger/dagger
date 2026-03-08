@@ -1809,11 +1809,13 @@ body {
 
 html,
 body {
+  height: 100%;
   min-height: 100%;
 }
 
 .v3-body {
   margin: 0;
+  height: 100vh;
   min-height: 100vh;
   background:
     radial-gradient(circle at top left, rgba(179, 158, 109, 0.16), transparent 24%),
@@ -1831,7 +1833,8 @@ body {
 }
 
 .v3-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
 }
@@ -1840,7 +1843,7 @@ body {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 18px;
-  min-height: 100vh;
+  min-height: 0;
   padding: 22px 18px 18px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background:
@@ -1995,7 +1998,7 @@ body {
 
 .v3-main {
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 18px;
@@ -2061,6 +2064,7 @@ body {
 }
 
 .v3-content {
+  min-height: 0;
   display: grid;
   gap: 18px;
 }
