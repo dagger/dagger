@@ -1841,7 +1841,7 @@ body {
 
 .v3-sidebar {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 18px;
   min-height: 0;
   padding: 22px 18px 18px;
@@ -1849,11 +1849,6 @@ body {
   background:
     linear-gradient(180deg, rgba(10, 11, 14, 0.97) 0%, rgba(7, 8, 10, 0.94) 100%);
   overflow: auto;
-}
-
-.v3-sidebar-head {
-  display: grid;
-  gap: 10px;
 }
 
 .v3-kicker,

@@ -416,7 +416,6 @@ const liveDomainConfigs = {
 
 const state = {
   entityID: "terminals",
-  query: "",
   live: {
     cliRuns: {
       status: "idle",
@@ -432,9 +431,7 @@ const state = {
 };
 
 const els = {
-  sidebarCopy: document.getElementById("sidebarCopy"),
   pageTitle: document.getElementById("pageTitle"),
-  entitySearch: document.getElementById("entitySearch"),
   entityNav: document.getElementById("entityNav"),
   shellMode: document.getElementById("shellMode"),
   shellSource: document.getElementById("shellSource"),
@@ -453,13 +450,6 @@ function init() {
 }
 
 function bindEvents() {
-  els.entitySearch.value = state.query;
-  els.entitySearch.addEventListener("input", () => {
-    state.query = String(els.entitySearch.value || "");
-    renderEntityNav();
-    writeURLState();
-  });
-
   window.addEventListener("popstate", () => {
     readURLState();
     render();
@@ -470,23 +460,15 @@ function bindEvents() {
 function readURLState() {
   const params = new URLSearchParams(window.location.search);
   const entityID = String(params.get("entity") || params.get("type") || "").toLowerCase();
-  const query = String(params.get("q") || "");
 
   if (findEntity(entityID)) {
     state.entityID = entityID;
-  }
-  state.query = query;
-  if (els.entitySearch) {
-    els.entitySearch.value = query;
   }
 }
 
 function writeURLState() {
   const params = new URLSearchParams();
   params.set("entity", state.entityID);
-  if (state.query.trim()) {
-    params.set("q", state.query.trim());
-  }
   const next = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, "", next);
 }
@@ -526,20 +508,7 @@ function render() {
 }
 
 function renderEntityNav() {
-  const query = state.query.trim().toLowerCase();
-  const visibleEntities = entities.filter((entity) => {
-    if (entity.id === state.entityID) {
-      return true;
-    }
-    if (!query) {
-      return true;
-    }
-    return `${entity.label} ${entity.category} ${entity.blurb} ${entity.eyebrow}`
-      .toLowerCase()
-      .includes(query);
-  });
-
-  els.entityNav.innerHTML = visibleEntities
+  els.entityNav.innerHTML = entities
     .map((entity) => {
       const active = entity.id === state.entityID;
       return `
@@ -572,7 +541,6 @@ function renderMain() {
   els.pageTitle.textContent = entity.label;
   els.shellMode.textContent = shellState.mode;
   els.shellSource.textContent = shellState.source;
-  els.sidebarCopy.textContent = shellState.copy;
   els.tableTitle.textContent = entity.label;
   els.tableMeta.textContent = model.meta;
 
