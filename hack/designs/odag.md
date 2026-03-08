@@ -51,21 +51,35 @@
 10. Frontend stack:
    - current prototype: embedded HTML/CSS/JS + SVG renderer (no external frontend build)
    - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
-11. Primary navigation hierarchy:
+11. V3 home information architecture:
+   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, CLI Runs (`dagger call` invocations), Shells, Workspace Ops, Git Remotes, Registries.
+   - each domain gets a specialized main view instead of forcing one generic default object visualization.
+12. Underlying execution/debug hierarchy:
    - `dagql session` -> `dagql client` -> spans/calls -> object bindings
    - trace remains a secondary ingest/debug/import escape hatch, not the primary UI silo.
-12. Execution-scope hierarchy:
+13. Entity taxonomy boundary:
+   - `object` keeps its strict ODAG meaning: immutable DAGQL snapshot plus derived mutable binding history.
+   - `entity` is a broader derived UI concept built from the same telemetry facts.
+   - the relationship between an entity and objects is domain-specific and must not be forced into one universal mapping.
+14. Execution-scope hierarchy:
    - clients are the primary derived execution objects
    - sessions are derived from root clients
    - every client maps to one `dagger.io/engine.client` `connect` span.
-13. Reliability boundary:
+15. Reliability boundary:
    - this client-tree model is the target API shape
    - current telemetry does not prove the full hierarchy reliably enough to treat it as protocol truth
    - explicit engine-emitted `session_id` / `client_id` / `parent_client_id` telemetry is the preferred long-term fix.
-14. Edge semantics:
+16. Edge semantics:
    - default object-object edges are field-reference dependencies (`field_ref`)
    - call containment and call-produced-object relationships are separate relations, not the same kind of edge
    - receiver/input lineage is a provenance overlay, not part of the default supply-chain graph.
+17. V3 heuristic order:
+   - discovery/classification comes before specialized visualization.
+   - heuristics should first answer what domain/entity a span or call belongs to, then apply domain-specific rendering rules.
+18. Working method:
+   - scaffold all candidate entity domains with mock data first.
+   - pick one domain and implement it end-to-end through derivation, API, and UI.
+   - record findings and next steps in this design doc after each milestone.
 
 ## Problem
 
@@ -205,6 +219,61 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
 4. **Heuristic policy**:
    - heuristics are acceptable for deriving engine-defined execution scopes such as session/client when telemetry does not yet expose them directly
    - those heuristics must live behind a narrow, versioned derivation boundary so they can be tuned or replaced later without changing the rest of the model.
+
+### V3 entity-centric IA
+
+1. Home UI is organized around discovered entity domains, not raw object bindings alone.
+2. Entities are broader than ODAG objects and currently fall into three rough buckets:
+   - object-centric: domains that can map fairly directly onto bindings/snapshots (`Service`, parts of `Check`)
+   - execution-centric: domains defined primarily by client/session/call continuity (`Terminal`, `Repl`, `dagger call`, `dagger shell`)
+   - external-resource-centric: domains defined by side effects or external endpoints (`Workspace`, git remote, registry, export/import surfaces)
+3. Discovery sequence:
+   - first scan spans/calls/state for evidence and classify candidate entities
+   - then render a specialized view per entity domain
+   - only after that apply domain-specific visualization heuristics
+4. Object bindings and snapshots remain substrate and drill-down layers, not necessarily the home-page primitive.
+5. In the UI and API language, the left nav should be described as entity domains/areas rather than object types.
+
+### First concrete entity definition: CLI Run
+
+1. `CLI Run` is the V3 label for one invocation of `dagger call`.
+2. A `dagger call` invocation is a CLI pipeline of chained DAGQL function calls:
+   - each additional subcommand extends the chain by calling a function on the object returned by the previous step
+   - intermediate steps therefore need to keep returning object-capable values until the terminal step
+3. A CLI Run has one terminal DAGQL output value from the final step in the chain.
+4. The CLI may then perform built-in, type-driven post-processing on that returned value:
+   - `Changeset`: preview, confirm, and optionally apply to the workspace
+   - `Container` / `Directory` / `File`: export convenience when `--output` is used
+   - `LLM`: enter interactive prompt mode
+   - object-valued returns: print object IDs rather than recursively rendering another structure
+5. Those post-processing flows can emit follow-up spans or side effects that are not themselves part of the core DAGQL call chain, but are still part of the same user-facing CLI Run context.
+6. V3 should therefore model CLI Run as an execution entity with:
+   - core evidence: command root + chained DAGQL calls + terminal output
+   - attached follow-up evidence: output handling, apply/export flows, prompt handoff, and other CLI-managed continuations
+7. The renderer should not treat those follow-up spans as unrelated noise merely because they do not look like one more chained DAGQL object mutation.
+8. First implementation heuristic:
+   - derive one CLI Run from each client whose `process.command_args` classify as `dagger call`
+   - use the client scope as the hard execution boundary
+   - collect DAGQL call events owned by that client as the run's core chain
+   - treat the latest call in that owned chain as the terminal call/output
+   - associate later non-call spans in the same client scope as follow-up evidence
+9. This is intentionally conservative:
+   - it is better to under-associate follow-up behavior than to claim unrelated trace noise is part of the run
+   - future explicit client-mode telemetry can tighten classification and follow-up attachment
+10. CLI Run MVP fields:
+   - `runID`, `traceID`, `sessionID`, `clientID`, `rootClientID`
+   - `command`, `commandArgs`, `chainLabel`
+   - `startUnixNano`, `endUnixNano`, `statusCode`
+   - `callIDs`, `terminalCallID`, `terminalCallName`
+   - `terminalReturnType`, `terminalOutputDagqlID`
+   - `postProcessKinds`, `followupSpanIDs`
+   - per-run `evidence` and `relations` lists for direct UI consumption
+11. First endpoint:
+   - `GET /api/v2/cli-runs`
+   - same scope filters as other v2 entity endpoints (`traceID`, `sessionID`, `clientID`, `from`, `to`, pagination)
+12. First UI wiring:
+   - only the `CLI Runs` domain switches from mock data to this endpoint initially
+   - other domains stay mocked until their discovery contracts are defined
 
 ### Proposed types
 
@@ -903,16 +972,22 @@ web/odag/
 
 ### Main view
 
-1. **Primary hierarchy**:
-   - session list
-   - session detail with clients/activity summary
-   - client detail with calls/history/bindings
-2. **Trace page layout**:
+1. **V3 shell**:
+   - left: entity-domain nav
+   - top-right: secondary nav for the active domain
+   - bottom-right: specialized content pane for that domain
+2. **Home route behavior**:
+   - start mock-first while entity discovery is being built
+   - use the shell to settle taxonomy, labels, and per-domain subviews before wiring real backend derivations
+3. **Supporting drill-down hierarchy**:
+   - sessions/clients/calls/object bindings remain important supporting scopes
+   - they are substrate and drill-down tools, not the only top-level home-page taxonomy
+4. **Trace page layout**:
    - left: revision history list (events)
    - right: ODAG graph panel
    - top center: trace title/subtitle context
    - this is a secondary/debug-oriented route, not the default way users should enter the data.
-3. **Trace list page**:
+5. **Trace list page**:
    - table layout (`trace`, `created`, `spans`, `status`)
    - relative creation time and dot-based status signaling
 
@@ -1041,6 +1116,22 @@ These are the latest design decisions that should be preserved across handoff.
 8. **Trace role**
    - trace remains useful as ingest/debug/import boundary
    - it should not become the dominant user-facing silo in the v2 architecture
+9. **V3 home UX**
+   - organize the default shell around discovered entity domains, not only sessions/clients or raw objects
+   - allow each domain to define its own specialized view and heuristics
+10. **`object` vs `entity`**
+   - keep `object` as the strict ODAG substrate term
+   - use `entity` for broader domain-specific derived concepts in the V3 shell
+11. **Discovery before visualization**
+   - first answer what a span/call cluster represents
+   - only then project object relationships and specialized visuals inside that domain
+12. **Design-doc continuity**
+   - keep this document current at every milestone
+   - someone picking up mid-stream should be able to see current mockups, active implementation target, and the next open question here
+13. **CLI Run definition**
+   - `CLI Run` means one `dagger call` invocation, not a generic trace or session
+   - its identity includes the chained DAGQL pipeline and the final return value
+   - CLI output handling triggered by that return type belongs to the same entity context even when the follow-up spans are not part of the DAGQL chain
 
 ## Implementation Plan
 
@@ -1052,6 +1143,9 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 4: Web UI shell + revision history + ODAG canvas
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 - [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
+- [x] Stage 7: V3 entity-first shell scaffold with mock data
+- [ ] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
+- [ ] Stage 9: Capture lessons learned and choose the next domain
 
 ### Active Next Tasks
 
@@ -1078,6 +1172,15 @@ These are the latest design decisions that should be preserved across handoff.
   - optional client kind metadata
 - [x] Once explicit execution-scope telemetry lands, remove or heavily downgrade client/session heuristics and treat emitted IDs as the only source of truth.
   - Legacy traces without emitted scope IDs may still use the old derivation path as a backward-compatibility fallback.
+- [x] Pivot the current web shell from object-type language to entity-domain language:
+  - left nav lists discovered domains
+  - secondary nav selects specialized subviews
+  - mock data is acceptable while settling taxonomy
+- [ ] Implement the `CLI Run` domain (`dagger call` invocation) end-to-end:
+  - derive run identity from command root plus chained DAGQL calls
+  - attach terminal output type and CLI post-processing behavior
+  - keep follow-up apply/export/prompt spans associated with the same run context
+- [ ] Record what did and did not generalize from the first domain before adding a second one.
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1104,6 +1207,7 @@ Stage 3 implementation note:
 - Dependency edges remain empty until `dagger.io/dag.output.state` payloads are emitted by the engine (objects are still shown with `missingState` signaling).
 
 Stage 4 implementation note:
+- Historical note: this v2-first shell was later hard-replaced by the Stage 7 V3 entity shell below.
 - `odag serve` now hosts an embedded web UI with split routes (no external frontend build step required for the local experiment):
   - `/` v2 global explorer page (no required trace silo)
   - `/traces/{traceID}` dedicated trace view page for maximum ODAG canvas space
@@ -1249,6 +1353,27 @@ Phase 2.5 implementation note:
 11. Real smoke run (`odag run -- dagger -c 'container | from alpine | with-exec -- sh -c "echo hi" | stdout'`) validated pruning impact on a 3069-span trace:
    - full pool: 389 objects
    - render with `keepRules=default`: 5 objects
+
+Stage 7 implementation note:
+1. Current root web UI is a hard-cutover V3 shell rather than the earlier v2-first explorer.
+2. The shell is intentionally mock-first while the entity taxonomy settles.
+3. Current left-nav domains are:
+   - Terminals
+   - Services
+   - Repls
+   - Checks
+   - Workspaces
+   - CLI Runs
+   - Shells
+   - Workspace Ops
+   - Git Remotes
+   - Registries
+4. Current secondary-nav views are:
+   - `Overview`
+   - `Inventory`
+   - `Evidence`
+   - `Relations`
+5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and UI rendering.
 
 ### Phase 3: Payload evolution (future)
 
