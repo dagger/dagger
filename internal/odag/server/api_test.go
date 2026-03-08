@@ -1430,19 +1430,19 @@ func TestV2CLIRuns(t *testing.T) {
 	var runsResp struct {
 		DerivationVersion string `json:"derivationVersion"`
 		Items             []struct {
-			ID                    string `json:"id"`
-			TraceID               string `json:"traceID"`
-			SessionID             string `json:"sessionID"`
-			ClientID              string `json:"clientID"`
-			Name                  string `json:"name"`
-			ChainLabel            string `json:"chainLabel"`
-			Status                string `json:"status"`
-			ChainDepth            int    `json:"chainDepth"`
-			CallCount             int    `json:"callCount"`
-			TerminalCallName      string `json:"terminalCallName"`
-			TerminalReturnType    string `json:"terminalReturnType"`
-			TerminalOutputDagqlID string `json:"terminalOutputDagqlID"`
-			FollowupSpanCount     int    `json:"followupSpanCount"`
+			ID                    string   `json:"id"`
+			TraceID               string   `json:"traceID"`
+			SessionID             string   `json:"sessionID"`
+			ClientID              string   `json:"clientID"`
+			Name                  string   `json:"name"`
+			ChainLabel            string   `json:"chainLabel"`
+			Status                string   `json:"status"`
+			ChainDepth            int      `json:"chainDepth"`
+			CallCount             int      `json:"callCount"`
+			TerminalCallName      string   `json:"terminalCallName"`
+			TerminalReturnType    string   `json:"terminalReturnType"`
+			TerminalOutputDagqlID string   `json:"terminalOutputDagqlID"`
+			FollowupSpanCount     int      `json:"followupSpanCount"`
 			PostProcessKinds      []string `json:"postProcessKinds"`
 			Evidence              []struct {
 				Kind string `json:"kind"`
@@ -1482,6 +1482,219 @@ func TestV2CLIRuns(t *testing.T) {
 	}
 	if len(run.Relations) < 3 {
 		t.Fatalf("expected relations, got %#v", run.Relations)
+	}
+}
+
+func TestV2Shells(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "44444444444444444444444444444444"
+	rootConnectHex := "1111111111111111"
+	rootCallHex := "2222222222222222"
+	childConnectHex := "3333333333333333"
+	childCallHex := "4444444444444444"
+	auxSpanHex := "5555555555555555"
+
+	sessionID := "session-shell"
+	rootClientID := "client-shell-root"
+	childClientID := "client-shell-child"
+	commandArgs := []string{"/usr/local/bin/dagger", "shell", "-c", "container | with-exec uname -a"}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootConnectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, rootClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childConnectHex),
+								ParentSpanId:      mustDecodeHex(t, rootCallHex),
+								Name:              "connect",
+								StartTimeUnixNano: 20,
+								EndTimeUnixNano:   21,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, childClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineParentClientIDAttr, rootClientID),
+									kvString(t, telemetry.EngineClientKindAttr, "nested"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootCallHex),
+								ParentSpanId:      mustDecodeHex(t, rootConnectHex),
+								Name:              "Query.container",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   18,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, rootClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-container"),
+									kvString(t, telemetry.DagOutputAttr, "state-container"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-container",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childCallHex),
+								ParentSpanId:      mustDecodeHex(t, childConnectHex),
+								Name:              "Container.withExec",
+								StartTimeUnixNano: 24,
+								EndTimeUnixNano:   40,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, childClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-with-exec"),
+									kvString(t, telemetry.DagOutputAttr, "state-exec"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-with-exec",
+										ReceiverDigest: "state-container",
+										Field:          "withExec",
+										Type:           &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/shell"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, auxSpanHex),
+								ParentSpanId:      mustDecodeHex(t, childCallHex),
+								Name:              "render prompt",
+								StartTimeUnixNano: 41,
+								EndTimeUnixNano:   48,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, childClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	shellsReq := httptest.NewRequest(http.MethodGet, "/api/v2/shells?traceID="+traceIDHex, nil)
+	shellsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(shellsRec, shellsReq)
+	if shellsRec.Code != http.StatusOK {
+		t.Fatalf("shells failed: status=%d body=%s", shellsRec.Code, shellsRec.Body.String())
+	}
+
+	var shellsResp struct {
+		DerivationVersion string `json:"derivationVersion"`
+		Items             []struct {
+			ID               string   `json:"id"`
+			TraceID          string   `json:"traceID"`
+			SessionID        string   `json:"sessionID"`
+			ClientID         string   `json:"clientID"`
+			Name             string   `json:"name"`
+			Mode             string   `json:"mode"`
+			EntryLabel       string   `json:"entryLabel"`
+			Status           string   `json:"status"`
+			ChildClientIDs   []string `json:"childClientIDs"`
+			ChildClientCount int      `json:"childClientCount"`
+			CallCount        int      `json:"callCount"`
+			SpanCount        int      `json:"spanCount"`
+			ActivityNames    []string `json:"activityNames"`
+			Evidence         []struct {
+				Kind string `json:"kind"`
+				Note string `json:"note"`
+			} `json:"evidence"`
+			Relations []struct {
+				Relation string `json:"relation"`
+				Target   string `json:"target"`
+			} `json:"relations"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(shellsRec.Body.Bytes(), &shellsResp); err != nil {
+		t.Fatalf("decode shells: %v", err)
+	}
+	if shellsResp.DerivationVersion == "" || len(shellsResp.Items) != 1 {
+		t.Fatalf("unexpected shells response: %#v", shellsResp)
+	}
+
+	shell := shellsResp.Items[0]
+	if shell.TraceID != traceIDHex || shell.SessionID != sessionID || shell.ClientID != rootClientID {
+		t.Fatalf("unexpected shell scope: %#v", shell)
+	}
+	if shell.Name != "container | with-exec uname -a" || shell.Mode != "inline" || shell.EntryLabel == "" {
+		t.Fatalf("unexpected shell identity: %#v", shell)
+	}
+	if shell.Status != "ready" || shell.ChildClientCount != 1 || shell.CallCount != 2 || shell.SpanCount != 5 {
+		t.Fatalf("unexpected shell counts: %#v", shell)
+	}
+	if !sameStrings(shell.ChildClientIDs, []string{childClientID}) {
+		t.Fatalf("unexpected child clients: %#v", shell.ChildClientIDs)
+	}
+	if !sameStrings(shell.ActivityNames, []string{"Container.withExec", "Query.container"}) {
+		t.Fatalf("unexpected activity names: %#v", shell.ActivityNames)
+	}
+	if len(shell.Evidence) < 4 {
+		t.Fatalf("expected shell evidence rows, got %#v", shell.Evidence)
+	}
+	if len(shell.Relations) < 3 {
+		t.Fatalf("expected shell relations, got %#v", shell.Relations)
 	}
 }
 

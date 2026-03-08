@@ -275,6 +275,35 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
    - only the `CLI Runs` domain switches from mock data to this endpoint initially
    - other domains stay mocked until their discovery contracts are defined
 
+### Second concrete entity definition: Shell
+
+1. `Shell` is the V3 label for one invocation of `dagger shell`.
+2. Unlike `CLI Run`, a Shell is session-centric rather than output-centric:
+   - it can own many DAGQL calls over time
+   - it may spawn descendant clients
+   - it does not have one singular terminal DAGQL output that defines the entity
+3. A Shell should therefore be anchored on execution scope:
+   - command root (`process.command_args` classifies as `dagger shell`)
+   - explicit `sessionID`
+   - explicit client tree (`clientID`, `parentClientID`, `rootClientID`)
+4. First implementation heuristic:
+   - derive one Shell from each client whose `process.command_args` classify as `dagger shell`
+   - use that client as the shell root
+   - include descendant clients that share the same root client
+   - collect calls and non-call spans owned by that root client tree as shell activity
+5. First shell payload should emphasize:
+   - shell identity and scope (`shellID`, `traceID`, `sessionID`, `clientID`, `rootClientID`)
+   - command summary (`command`, `commandArgs`)
+   - session extent (`startUnixNano`, `endUnixNano`, `status`)
+   - descendant activity (`childClientIDs`, `childClientCount`, `callIDs`, `callCount`, `spanCount`)
+   - per-shell `evidence` and `relations`
+6. First endpoint:
+   - `GET /api/v2/shells`
+   - same scope filters as other v2 entity endpoints
+7. First UI wiring:
+   - only the `Shells` domain switches from mock data to this endpoint
+   - its primary cues are session duration, descendant clients, and owned calls, not object outputs
+
 ### Proposed types
 
 ```go
@@ -1184,8 +1213,8 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] wire the V3 shell's `CLI Runs` domain to the real endpoint
 - [x] Record what did and did not generalize from the first domain before adding a second one.
 - [ ] Implement the `Shells` domain (`dagger shell` invocation/session) end-to-end:
-  - [ ] derive shell identity from command root plus explicit session and client tree
-  - [ ] attach descendant clients and owned calls/spans to the same shell entity
+  - [x] derive shell identity from command root plus explicit session and client tree
+  - [x] attach descendant clients and owned calls/spans to the same shell entity
   - [ ] wire the V3 shell's `Shells` domain to the real endpoint
 
 Stage 2 implementation note:
@@ -1426,6 +1455,23 @@ Stage 9 implementation note:
    - it is adjacent to `CLI Runs` because both start from CLI command identity and explicit execution scope
    - it forces V3 to handle a session-centric entity that does not have one singular terminal output
    - it exercises client trees and session continuity directly, which are core V3 substrates we need to validate early
+
+Stage 10 implementation note:
+1. First real Shell API slice is implemented at `GET /api/v2/shells`.
+2. Current derivation rule:
+   - classify a shell root when a root client's `process.command_args` parse as `dagger shell`
+   - do not promote descendant/nested clients into standalone shell entities even if they inherit the same resource-level command args
+   - aggregate descendant clients, calls, and non-call spans under that shell root
+3. Current payload includes:
+   - shell identity and scope (`shellID`, `traceID`, `sessionID`, `clientID`, `rootClientID`)
+   - command summary (`command`, `commandArgs`, `mode`, `entryLabel`)
+   - session extent (`startUnixNano`, `endUnixNano`, `status`)
+   - descendant activity (`childClientIDs`, `callIDs`, `callCount`, `spanCount`, `activityNames`)
+   - per-shell `evidence` and `relations`
+4. Validation coverage currently proves:
+   - one `dagger shell` root client becomes one shell entity
+   - descendant module clients stay attached to that entity instead of being misclassified as independent shells
+   - shell activity aggregates both DAGQL calls and non-call spans from the same explicit client tree
 
 ### Phase 3: Payload evolution (future)
 
