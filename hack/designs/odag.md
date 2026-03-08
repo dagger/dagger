@@ -1176,7 +1176,8 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
 - [x] Stage 9: Capture lessons learned from `CLI Runs` and choose the next domain
 - [x] Stage 10: Implement `Shells` end-to-end through derivation, API, and UI
-- [ ] Stage 11: Capture lessons learned from `Shells` and choose the next domain
+- [x] Stage 11: Capture lessons learned from `Shells` and choose the next domain
+- [ ] Stage 12: Implement `Workspace Ops` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1213,7 +1214,10 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] keep follow-up apply/export/prompt spans associated with the same run context in the first read-only API slice
   - [x] wire the V3 shell's `CLI Runs` domain to the real endpoint
 - [x] Record what did and did not generalize from the first domain before adding a second one.
-- [ ] Record what did and did not generalize from the second live domain before adding a third one.
+- [ ] Implement the `Workspace Ops` domain end-to-end:
+  - [ ] derive workspace-op identity from host-bound call patterns and side-effect spans
+  - [ ] keep exports/imports/host-access attached to workspace roots rather than scattering them as unrelated follow-up noise
+  - [ ] wire the V3 shell's `Workspace Ops` domain to the real endpoint
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1478,6 +1482,20 @@ Stage 10 implementation note:
    - `CLI Runs` is live end-to-end
    - `Shells` is live end-to-end
    - all remaining domains remain mocked
+
+Stage 11 implementation note:
+1. What generalized across both `CLI Runs` and `Shells`:
+   - explicit session/client/root-client telemetry is still the best substrate for execution-centric domains
+   - one shared live-domain shell path in the UI can host multiple real domains without special-casing the overall app structure
+   - entity-local `evidence` and `relations` remain a useful common API contract even when the primary cues differ per domain
+2. What did not generalize:
+   - resource-level `process.command_args` can bleed into descendant clients, so promotion rules must stay domain-specific and root-aware
+   - execution-centric domains can share substrate but still require distinct primary cues (`terminal output` for `CLI Runs`, `client tree continuity` for `Shells`)
+3. Next domain choice: `Workspace Ops`.
+4. Rationale for `Workspace Ops` as the third slice:
+   - it is the first strongly external-resource-centric domain in the V3 sequence
+   - it tests whether V3 can move beyond command/session identity into host-side side effects such as `File.export`, `Directory.export`, and `Host.directory`
+   - it exercises the original problem statement directly: some of the most useful insights come from recognizing that these spans belong to one meaningful workspace operation rather than rendering them as disconnected low-level noise
 
 ### Phase 3: Payload evolution (future)
 
