@@ -1438,7 +1438,7 @@ Stage 8 implementation note:
    - selecting `CLI Runs` fetches real data from `/api/v2/cli-runs`
    - the right pane now renders the real CLI Run inventory directly
    - shell chrome reflects the current domain state (`Mock`, `Activating`, `Live Domain`, `Hybrid Degraded`) instead of pretending the entire app is still mocked
-   - the inventory columns emphasize command context, terminal output, follow-up spans, and execution scope because those are the first domain-specific cues users need
+   - the inventory columns now emphasize full command, relative start time, output type, and execution scope; final-call details stay on the per-run page
 6. Current Stage 8 result is intentionally hybrid:
    - `CLI Runs` is live end-to-end
    - all other domains remain mocked

@@ -952,11 +952,11 @@ function cliRunsTableModel(entity, sectionID) {
         meta: `${entity.liveItems.length} real runs`,
         emptyMessage: "No CLI runs detected yet.",
         columns: [
-          { label: "Run", render: (row) => linkedPrimaryCell(row.name, row.command || row.chainLabel, entityPath(entity.id, row.routeID)) },
+          { label: "Run", render: (row) => linkedPrimaryCell(row.command || row.name, "", entityPath(entity.id, row.routeID)) },
           { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(cliRunDurationLabel(row)) },
-          { label: "Terminal Call", render: (row) => primaryCell(row.terminalCallName || "Unknown", `${row.chainDepth} chain / ${row.callCount} total`) },
-          { label: "Output", render: (row) => cliRunOutputCell(row) },
+          { label: "Output Type", render: (row) => escapeHTML(cliRunOutputTypeLabel(row)) },
           { label: "Scope", render: (row) => cliRunScopeCell(row) },
         ],
         rows: entity.liveItems,
@@ -1393,6 +1393,10 @@ function cliRunOutputCell(row) {
   return primaryCell(title, subtitle);
 }
 
+function cliRunOutputTypeLabel(row) {
+  return row.terminalReturnType || "Plain value";
+}
+
 function cliRunFollowupCell(row) {
   const names = Array.isArray(row.followupSpanNames) ? row.followupSpanNames.filter(Boolean) : [];
   const title = row.followupSpanCount > 0 ? `${row.followupSpanCount} attached spans` : "No attached spans";
@@ -1425,7 +1429,7 @@ function primaryCell(title, subtitle) {
   return `
     <div class="v3-cell-primary">
       <strong>${escapeHTML(title)}</strong>
-      <span>${escapeHTML(subtitle || "")}</span>
+      ${subtitle ? `<span>${escapeHTML(subtitle)}</span>` : ""}
     </div>
   `;
 }
@@ -1471,6 +1475,31 @@ function formatDuration(nano) {
     return `${Math.round(ms)} ms`;
   }
   return `${(ms / 1000).toFixed(1)} s`;
+}
+
+function relativeTimeFromNow(unixNano) {
+  const ts = Number(unixNano || 0);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return "Unknown";
+  }
+  const diffMs = Math.max(0, Date.now() - Math.floor(ts / 1_000_000));
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 10) {
+    return "just now";
+  }
+  if (seconds < 60) {
+    return `${seconds} seconds ago`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function durationLabel(startUnixNano, endUnixNano, status) {
