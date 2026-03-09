@@ -2377,6 +2377,14 @@ body {
   stroke-width: 2;
 }
 
+.v3-graph-edge.is-chain {
+  stroke: rgba(106, 188, 255, 0.58);
+}
+
+.v3-graph-edge.is-ref {
+  stroke-dasharray: 5 4;
+}
+
 .v3-graph-empty {
   min-height: 220px;
   display: grid;
@@ -2431,6 +2439,12 @@ body {
   border-color: rgba(110, 184, 255, 0.56);
   background: linear-gradient(180deg, rgba(19, 31, 52, 0.96), rgba(13, 18, 28, 0.96));
   box-shadow: 0 18px 42px rgba(38, 85, 163, 0.28);
+}
+
+.v3-pipeline-node.is-placeholder:not(.is-output) {
+  border-style: dashed;
+  border-color: rgba(151, 164, 182, 0.34);
+  background: rgba(15, 19, 26, 0.86);
 }
 
 .v3-detail-list {

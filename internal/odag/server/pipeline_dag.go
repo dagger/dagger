@@ -1,13 +1,19 @@
 package server
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/internal/odag/derive"
+	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
+	"google.golang.org/protobuf/proto"
 )
 
 type pipelineObjectDAGResponse struct {
@@ -41,6 +47,8 @@ type pipelineObjectNode struct {
 	FirstSeenUnixNano int64          `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64          `json:"lastSeenUnixNano"`
 	ProducedByCallIDs []string       `json:"producedByCallIDs,omitempty"`
+	Role              string         `json:"role,omitempty"`
+	Placeholder       bool           `json:"placeholder,omitempty"`
 }
 
 type pipelineObjectEdge struct {
@@ -50,6 +58,24 @@ type pipelineObjectEdge struct {
 	ToDagqlID     string `json:"toDagqlID"`
 	Label         string `json:"label,omitempty"`
 	EvidenceCount int    `json:"evidenceCount,omitempty"`
+}
+
+type pipelineCallFact struct {
+	SpanID           string
+	ID               string
+	Name             string
+	StartUnixNano    int64
+	EndUnixNano      int64
+	ClientID         string
+	SessionID        string
+	ParentCallSpanID string
+	TopLevel         bool
+	CallDepth        int
+	ReceiverDagqlID  string
+	OutputDagqlID    string
+	ReturnType       string
+	OutputState      map[string]any
+	Internal         bool
 }
 
 func (s *Server) handlePipelineObjectDAG(w http.ResponseWriter, r *http.Request) {
@@ -69,121 +95,43 @@ func (s *Server) handlePipelineObjectDAG(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), q.TraceID)
+	spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), q.TraceID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("load trace %s: %v", q.TraceID, err), http.StatusInternalServerError)
 		return
 	}
-	terminal := findProjectionEvent(proj, callID)
-	if terminal == nil || terminal.RawKind != "call" {
+	terminalEvent := findProjectionEvent(proj, callID)
+	if terminalEvent == nil || terminalEvent.RawKind != "call" {
 		http.Error(w, "call not found", http.StatusNotFound)
 		return
 	}
 
+	callFacts, err := buildPipelineCallFacts(q.TraceID, spans, proj, scopeIdx, q.IncludeInternal)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("decode pipeline facts: %v", err), http.StatusInternalServerError)
+		return
+	}
+	terminal, ok := callFacts[callID]
+	if !ok {
+		http.Error(w, "call facts not found", http.StatusNotFound)
+		return
+	}
+
 	callSubtreeIDs := collectProjectionCallSubtreeIDs(proj, callID)
-	nodesByID := map[string]*pipelineObjectNode{}
-	producedBy := map[string]map[string]struct{}{}
-	for _, obj := range proj.Objects {
-		for _, st := range obj.StateHistory {
-			if st.StateDigest == "" {
-				continue
-			}
-			if _, ok := callSubtreeIDs[st.SpanID]; !ok {
-				continue
-			}
-			if !q.IncludeInternal {
-				if event := findProjectionEvent(proj, st.SpanID); event != nil && event.Internal {
-					continue
-				}
-			}
-			node := nodesByID[st.StateDigest]
-			if node == nil {
-				node = &pipelineObjectNode{
-					DagqlID:           st.StateDigest,
-					TypeName:          obj.TypeName,
-					OutputState:       st.OutputStateJSON,
-					FirstSeenUnixNano: st.StartUnixNano,
-					LastSeenUnixNano:  st.EndUnixNano,
-				}
-				if node.TypeName == "" {
-					node.TypeName = "Object"
-				}
-				nodesByID[st.StateDigest] = node
-			}
-			if node.OutputState == nil && st.OutputStateJSON != nil {
-				node.OutputState = st.OutputStateJSON
-			}
-			if typ, ok := getV2String(st.OutputStateJSON, "type"); ok && typ != "" {
-				node.TypeName = typ
-			}
-			if node.FirstSeenUnixNano == 0 || (st.StartUnixNano > 0 && st.StartUnixNano < node.FirstSeenUnixNano) {
-				node.FirstSeenUnixNano = st.StartUnixNano
-			}
-			if st.EndUnixNano > node.LastSeenUnixNano {
-				node.LastSeenUnixNano = st.EndUnixNano
-			}
-			if producedBy[st.StateDigest] == nil {
-				producedBy[st.StateDigest] = map[string]struct{}{}
-			}
-			producedBy[st.StateDigest][spanKey(q.TraceID, st.SpanID)] = struct{}{}
-		}
-	}
-
-	nodes := make([]pipelineObjectNode, 0, len(nodesByID))
-	for dagqlID, node := range nodesByID {
-		node.ProducedByCallIDs = setToSortedSlice(producedBy[dagqlID])
-		nodes = append(nodes, *node)
-	}
-	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].FirstSeenUnixNano != nodes[j].FirstSeenUnixNano {
-			return nodes[i].FirstSeenUnixNano < nodes[j].FirstSeenUnixNano
-		}
-		return nodes[i].DagqlID < nodes[j].DagqlID
-	})
-
-	edges := make([]pipelineObjectEdge, 0)
-	seenEdges := map[string]struct{}{}
-	for _, node := range nodes {
-		for _, ref := range extractFieldRefs(node.OutputState) {
-			if _, ok := nodesByID[ref.DagqlID]; !ok {
-				continue
-			}
-			key := node.DagqlID + "\x00" + ref.DagqlID + "\x00" + ref.Path
-			if _, ok := seenEdges[key]; ok {
-				continue
-			}
-			seenEdges[key] = struct{}{}
-			edges = append(edges, pipelineObjectEdge{
-				ID:            "dep:" + node.DagqlID + "->" + ref.DagqlID + ":" + ref.Path,
-				Kind:          "field_ref",
-				FromDagqlID:   node.DagqlID,
-				ToDagqlID:     ref.DagqlID,
-				Label:         ref.Path,
-				EvidenceCount: 1,
-			})
-		}
-	}
-	sort.Slice(edges, func(i, j int) bool {
-		if edges[i].FromDagqlID != edges[j].FromDagqlID {
-			return edges[i].FromDagqlID < edges[j].FromDagqlID
-		}
-		if edges[i].ToDagqlID != edges[j].ToDagqlID {
-			return edges[i].ToDagqlID < edges[j].ToDagqlID
-		}
-		return edges[i].Label < edges[j].Label
-	})
+	chain := reconstructPipelineCallChain(callFacts, terminal)
+	nodes, edges := buildPipelineObjectGraph(terminal, chain, callFacts, callSubtreeIDs)
 
 	resp := pipelineObjectDAGResponse{
 		DerivationVersion: derivationVersionV2,
 		Context: pipelineObjectDAGContext{
 			TraceID:       q.TraceID,
 			CallID:        callID,
-			SessionID:     scopeIdx.SessionIDForSpan(callID),
-			ClientID:      scopeIdx.ClientIDForSpan(callID),
-			OutputDagqlID: terminal.OutputStateDigest,
+			SessionID:     terminal.SessionID,
+			ClientID:      terminal.ClientID,
+			OutputDagqlID: terminal.OutputDagqlID,
 			OutputType:    terminal.ReturnType,
 		},
-		Module:   detectPipelineModuleLoad(q.TraceID, proj, scopeIdx, q.IncludeInternal, *terminal, callSubtreeIDs),
+		Module:   detectPipelineModuleLoad(q.TraceID, proj, scopeIdx, q.IncludeInternal, *terminalEvent, callSubtreeIDs),
 		Objects:  nodes,
 		Edges:    edges,
 		Warnings: proj.Warnings,
@@ -228,6 +176,583 @@ func collectProjectionCallSubtreeIDs(proj *transform.TraceProjection, rootCallID
 				stack = append(stack, candidateID)
 			}
 		}
+	}
+	return out
+}
+
+func buildPipelineCallFacts(
+	traceID string,
+	spans []store.SpanRecord,
+	proj *transform.TraceProjection,
+	scopeIdx *derive.ScopeIndex,
+	includeInternal bool,
+) (map[string]*pipelineCallFact, error) {
+	if proj == nil || scopeIdx == nil {
+		return nil, nil
+	}
+
+	spanOutputState, err := pipelineOutputStatesBySpanID(spans)
+	if err != nil {
+		return nil, err
+	}
+
+	facts := make(map[string]*pipelineCallFact)
+	for _, event := range proj.Events {
+		if event.RawKind != "call" {
+			continue
+		}
+		if !includeInternal && event.Internal {
+			continue
+		}
+		facts[event.SpanID] = &pipelineCallFact{
+			SpanID:           event.SpanID,
+			ID:               spanKey(traceID, event.SpanID),
+			Name:             event.Name,
+			StartUnixNano:    event.StartUnixNano,
+			EndUnixNano:      event.EndUnixNano,
+			ClientID:         scopeIdx.ClientIDForSpan(event.SpanID),
+			SessionID:        scopeIdx.SessionIDForSpan(event.SpanID),
+			ParentCallSpanID: event.ParentCallSpanID,
+			TopLevel:         event.TopLevel,
+			CallDepth:        event.CallDepth,
+			ReceiverDagqlID:  event.ReceiverStateDigest,
+			OutputDagqlID:    event.OutputStateDigest,
+			ReturnType:       event.ReturnType,
+			OutputState:      spanOutputState[event.SpanID],
+			Internal:         event.Internal,
+		}
+	}
+	return facts, nil
+}
+
+func pipelineOutputStatesBySpanID(spans []store.SpanRecord) (map[string]map[string]any, error) {
+	if len(spans) == 0 {
+		return nil, nil
+	}
+
+	ordered := append([]store.SpanRecord(nil), spans...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].StartUnixNano != ordered[j].StartUnixNano {
+			return ordered[i].StartUnixNano < ordered[j].StartUnixNano
+		}
+		if ordered[i].EndUnixNano != ordered[j].EndUnixNano {
+			return ordered[i].EndUnixNano < ordered[j].EndUnixNano
+		}
+		return ordered[i].SpanID < ordered[j].SpanID
+	})
+
+	bySpanID := make(map[string]map[string]any, len(ordered))
+	byDigest := map[string]map[string]any{}
+	for _, sp := range ordered {
+		env, err := decodeV2SpanEnvelope(sp.DataJSON)
+		if err != nil {
+			return nil, err
+		}
+		outputState, err := decodePipelineOutputStatePayload(env.Attributes)
+		if err != nil {
+			return nil, err
+		}
+		dagqlID, _ := getV2String(env.Attributes, telemetry.DagOutputAttr)
+		if outputState != nil && dagqlID != "" {
+			byDigest[dagqlID] = outputState
+		}
+		if outputState == nil && dagqlID != "" {
+			outputState = byDigest[dagqlID]
+		}
+		if outputState != nil {
+			bySpanID[sp.SpanID] = outputState
+		}
+	}
+	return bySpanID, nil
+}
+
+func reconstructPipelineCallChain(callFacts map[string]*pipelineCallFact, terminal *pipelineCallFact) []*pipelineCallFact {
+	if terminal == nil {
+		return nil
+	}
+
+	chain := []*pipelineCallFact{terminal}
+	seen := map[string]struct{}{terminal.SpanID: {}}
+	current := terminal
+	for current != nil && current.ReceiverDagqlID != "" {
+		parent := findPipelineReceiverParent(callFacts, terminal.ClientID, current.ReceiverDagqlID, current.StartUnixNano)
+		if parent == nil {
+			break
+		}
+		if _, dup := seen[parent.SpanID]; dup {
+			break
+		}
+		chain = append(chain, parent)
+		seen[parent.SpanID] = struct{}{}
+		current = parent
+	}
+
+	for left, right := 0, len(chain)-1; left < right; left, right = left+1, right-1 {
+		chain[left], chain[right] = chain[right], chain[left]
+	}
+	return chain
+}
+
+func findPipelineReceiverParent(
+	callFacts map[string]*pipelineCallFact,
+	clientID string,
+	receiverDagqlID string,
+	beforeUnixNano int64,
+) *pipelineCallFact {
+	var best *pipelineCallFact
+	for _, fact := range callFacts {
+		if fact == nil || fact.ClientID != clientID || !fact.TopLevel || fact.OutputDagqlID != receiverDagqlID {
+			continue
+		}
+		if beforeUnixNano > 0 && fact.StartUnixNano > beforeUnixNano {
+			continue
+		}
+		if best == nil {
+			best = fact
+			continue
+		}
+		if fact.StartUnixNano > best.StartUnixNano {
+			best = fact
+			continue
+		}
+		if fact.StartUnixNano == best.StartUnixNano && fact.SpanID > best.SpanID {
+			best = fact
+		}
+	}
+	return best
+}
+
+func buildPipelineObjectGraph(
+	terminal *pipelineCallFact,
+	chain []*pipelineCallFact,
+	callFacts map[string]*pipelineCallFact,
+	callSubtreeIDs map[string]struct{},
+) ([]pipelineObjectNode, []pipelineObjectEdge) {
+	nodesByID := map[string]*pipelineObjectNode{}
+	producedBy := map[string]map[string]struct{}{}
+	factsByOutput := map[string][]*pipelineCallFact{}
+	for _, fact := range callFacts {
+		if fact == nil || fact.OutputDagqlID == "" {
+			continue
+		}
+		factsByOutput[fact.OutputDagqlID] = append(factsByOutput[fact.OutputDagqlID], fact)
+	}
+
+	for _, fact := range chain {
+		if fact == nil || fact.OutputDagqlID == "" {
+			continue
+		}
+		node := ensurePipelineObjectNode(nodesByID, fact.OutputDagqlID)
+		if node.OutputState == nil && fact.OutputState != nil {
+			node.OutputState = fact.OutputState
+		}
+		if node.TypeName == "" {
+			node.TypeName = pipelineNodeTypeName(fact.OutputState, fact.ReturnType)
+		}
+		node.FirstSeenUnixNano = pipelineMinUnixNano(node.FirstSeenUnixNano, fact.StartUnixNano)
+		node.LastSeenUnixNano = pipelineMaxUnixNano(node.LastSeenUnixNano, fact.EndUnixNano)
+		if fact.OutputDagqlID == terminal.OutputDagqlID {
+			node.Role = "output"
+		} else if node.Role == "" {
+			node.Role = "chain"
+		}
+		recordPipelineProducedBy(producedBy, fact.OutputDagqlID, fact.ID)
+	}
+
+	seenEdges := map[string]struct{}{}
+	edges := make([]pipelineObjectEdge, 0)
+	for i := 1; i < len(chain); i++ {
+		from := chain[i-1]
+		to := chain[i]
+		if from == nil || to == nil || from.OutputDagqlID == "" || to.OutputDagqlID == "" || from.OutputDagqlID == to.OutputDagqlID {
+			continue
+		}
+		key := "chain\x00" + from.OutputDagqlID + "\x00" + to.OutputDagqlID + "\x00" + pipelineCallStepLabel(to.Name)
+		if _, ok := seenEdges[key]; ok {
+			continue
+		}
+		seenEdges[key] = struct{}{}
+		edges = append(edges, pipelineObjectEdge{
+			ID:            "chain:" + from.OutputDagqlID + "->" + to.OutputDagqlID + ":" + pipelineCallStepLabel(to.Name),
+			Kind:          "call_chain",
+			FromDagqlID:   from.OutputDagqlID,
+			ToDagqlID:     to.OutputDagqlID,
+			Label:         pipelineCallStepLabel(to.Name),
+			EvidenceCount: 1,
+		})
+	}
+
+	queue := []string{}
+	if terminal != nil && terminal.OutputDagqlID != "" && nodesByID[terminal.OutputDagqlID] != nil {
+		queue = append(queue, terminal.OutputDagqlID)
+	}
+	visitedRefs := map[string]struct{}{}
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+		if _, seen := visitedRefs[currentID]; seen {
+			continue
+		}
+		visitedRefs[currentID] = struct{}{}
+		node := nodesByID[currentID]
+		if node == nil || node.OutputState == nil {
+			continue
+		}
+
+		for _, ref := range extractFieldRefs(node.OutputState) {
+			if ref.DagqlID == "" {
+				continue
+			}
+			target := nodesByID[ref.DagqlID]
+			if target == nil {
+				fact := selectPipelineFactForRef(factsByOutput[ref.DagqlID], callSubtreeIDs)
+				target = ensurePipelineObjectNode(nodesByID, ref.DagqlID)
+				if fact != nil {
+					if fact.OutputState != nil {
+						target.OutputState = fact.OutputState
+					}
+					if target.TypeName == "" {
+						target.TypeName = pipelineNodeTypeName(fact.OutputState, fact.ReturnType)
+					}
+					target.FirstSeenUnixNano = pipelineMinUnixNano(target.FirstSeenUnixNano, fact.StartUnixNano)
+					target.LastSeenUnixNano = pipelineMaxUnixNano(target.LastSeenUnixNano, fact.EndUnixNano)
+					if target.Role == "" {
+						target.Role = "dependency"
+					}
+					recordPipelineProducedBy(producedBy, ref.DagqlID, fact.ID)
+				} else {
+					target.Placeholder = true
+					target.TypeName = pipelineFieldRefType(node.OutputState, ref.Path)
+					if target.TypeName == "" {
+						target.TypeName = "Object"
+					}
+					if target.Role == "" {
+						target.Role = "dependency"
+					}
+				}
+			}
+
+			key := "ref\x00" + currentID + "\x00" + ref.DagqlID + "\x00" + ref.Path
+			if _, ok := seenEdges[key]; ok {
+				continue
+			}
+			seenEdges[key] = struct{}{}
+			edges = append(edges, pipelineObjectEdge{
+				ID:            "dep:" + currentID + "->" + ref.DagqlID + ":" + ref.Path,
+				Kind:          "field_ref",
+				FromDagqlID:   currentID,
+				ToDagqlID:     ref.DagqlID,
+				Label:         ref.Path,
+				EvidenceCount: 1,
+			})
+			if target.OutputState != nil {
+				queue = append(queue, target.DagqlID)
+			}
+		}
+	}
+
+	if terminal != nil && terminal.OutputDagqlID == "" {
+		sinkID := "result:" + terminal.SpanID
+		sink := ensurePipelineObjectNode(nodesByID, sinkID)
+		sink.Role = "output"
+		sink.Placeholder = true
+		sink.TypeName = terminal.ReturnType
+		sink.FirstSeenUnixNano = terminal.StartUnixNano
+		sink.LastSeenUnixNano = terminal.EndUnixNano
+		recordPipelineProducedBy(producedBy, sinkID, terminal.ID)
+		for i := len(chain) - 1; i >= 0; i-- {
+			prev := chain[i]
+			if prev == nil || prev.OutputDagqlID == "" || nodesByID[prev.OutputDagqlID] == nil {
+				continue
+			}
+			key := "chain\x00" + prev.OutputDagqlID + "\x00" + sinkID + "\x00" + pipelineCallStepLabel(terminal.Name)
+			if _, ok := seenEdges[key]; ok {
+				break
+			}
+			seenEdges[key] = struct{}{}
+			edges = append(edges, pipelineObjectEdge{
+				ID:            "chain:" + prev.OutputDagqlID + "->" + sinkID + ":" + pipelineCallStepLabel(terminal.Name),
+				Kind:          "call_chain",
+				FromDagqlID:   prev.OutputDagqlID,
+				ToDagqlID:     sinkID,
+				Label:         pipelineCallStepLabel(terminal.Name),
+				EvidenceCount: 1,
+			})
+			break
+		}
+	}
+
+	nodes := make([]pipelineObjectNode, 0, len(nodesByID))
+	for dagqlID, node := range nodesByID {
+		for _, fact := range factsByOutput[dagqlID] {
+			if fact == nil {
+				continue
+			}
+			if len(callSubtreeIDs) > 0 {
+				if _, ok := callSubtreeIDs[fact.SpanID]; !ok && !fact.TopLevel {
+					continue
+				}
+			}
+			recordPipelineProducedBy(producedBy, dagqlID, fact.ID)
+			node.FirstSeenUnixNano = pipelineMinUnixNano(node.FirstSeenUnixNano, fact.StartUnixNano)
+			node.LastSeenUnixNano = pipelineMaxUnixNano(node.LastSeenUnixNano, fact.EndUnixNano)
+			if node.OutputState == nil && fact.OutputState != nil {
+				node.OutputState = fact.OutputState
+			}
+			if node.TypeName == "" && (fact.OutputState != nil || fact.ReturnType != "") {
+				node.TypeName = pipelineNodeTypeName(fact.OutputState, fact.ReturnType)
+			}
+		}
+		node.ProducedByCallIDs = setToSortedSlice(producedBy[dagqlID])
+		if node.TypeName == "" {
+			node.TypeName = "Object"
+		}
+		nodes = append(nodes, *node)
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].FirstSeenUnixNano != nodes[j].FirstSeenUnixNano {
+			return nodes[i].FirstSeenUnixNano < nodes[j].FirstSeenUnixNano
+		}
+		if nodes[i].Role != nodes[j].Role {
+			return nodes[i].Role < nodes[j].Role
+		}
+		return nodes[i].DagqlID < nodes[j].DagqlID
+	})
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].FromDagqlID != edges[j].FromDagqlID {
+			return edges[i].FromDagqlID < edges[j].FromDagqlID
+		}
+		if edges[i].ToDagqlID != edges[j].ToDagqlID {
+			return edges[i].ToDagqlID < edges[j].ToDagqlID
+		}
+		if edges[i].Kind != edges[j].Kind {
+			return edges[i].Kind < edges[j].Kind
+		}
+		return edges[i].Label < edges[j].Label
+	})
+	return nodes, edges
+}
+
+func ensurePipelineObjectNode(nodesByID map[string]*pipelineObjectNode, dagqlID string) *pipelineObjectNode {
+	node := nodesByID[dagqlID]
+	if node == nil {
+		node = &pipelineObjectNode{DagqlID: dagqlID}
+		nodesByID[dagqlID] = node
+	}
+	return node
+}
+
+func recordPipelineProducedBy(producedBy map[string]map[string]struct{}, dagqlID, callID string) {
+	if dagqlID == "" || callID == "" {
+		return
+	}
+	if producedBy[dagqlID] == nil {
+		producedBy[dagqlID] = map[string]struct{}{}
+	}
+	producedBy[dagqlID][callID] = struct{}{}
+}
+
+func selectPipelineFactForRef(candidates []*pipelineCallFact, callSubtreeIDs map[string]struct{}) *pipelineCallFact {
+	var best *pipelineCallFact
+	for _, fact := range candidates {
+		if fact == nil {
+			continue
+		}
+		if len(callSubtreeIDs) > 0 {
+			if _, ok := callSubtreeIDs[fact.SpanID]; !ok && !fact.TopLevel {
+				continue
+			}
+		}
+		if best == nil {
+			best = fact
+			continue
+		}
+		if fact.OutputState != nil && best.OutputState == nil {
+			best = fact
+			continue
+		}
+		if fact.OutputState == nil && best.OutputState != nil {
+			continue
+		}
+		if fact.CallDepth > best.CallDepth {
+			best = fact
+			continue
+		}
+		if fact.CallDepth == best.CallDepth && fact.EndUnixNano > best.EndUnixNano {
+			best = fact
+		}
+	}
+	return best
+}
+
+func pipelineNodeTypeName(outputState map[string]any, fallback string) string {
+	if typ, ok := getV2String(outputState, "type"); ok && typ != "" {
+		return typ
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "Object"
+}
+
+func pipelineFieldRefType(state map[string]any, path string) string {
+	if state == nil {
+		return ""
+	}
+	fieldsRaw, ok := state["fields"]
+	if !ok {
+		return ""
+	}
+	fields, ok := fieldsRaw.(map[string]any)
+	if !ok {
+		return ""
+	}
+	fieldRaw, ok := fields[path]
+	if !ok {
+		return ""
+	}
+	field, ok := fieldRaw.(map[string]any)
+	if !ok {
+		return ""
+	}
+	typ, _ := field["type"].(string)
+	return pipelineNormalizeTypeName(typ)
+}
+
+func pipelineNormalizeTypeName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	for strings.HasPrefix(raw, "[]") {
+		raw = strings.TrimPrefix(raw, "[]")
+	}
+	raw = strings.TrimSuffix(raw, "!")
+	return raw
+}
+
+func pipelineCallStepLabel(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "step"
+	}
+	if idx := strings.LastIndex(name, "."); idx >= 0 && idx+1 < len(name) {
+		return name[idx+1:]
+	}
+	return name
+}
+
+func pipelineMinUnixNano(current, next int64) int64 {
+	if current == 0 || (next > 0 && next < current) {
+		return next
+	}
+	return current
+}
+
+func pipelineMaxUnixNano(current, next int64) int64 {
+	if next > current {
+		return next
+	}
+	return current
+}
+
+func decodePipelineOutputStatePayload(attrs map[string]any) (map[string]any, error) {
+	payload, ok := getV2String(attrs, telemetry.DagOutputStateAttr)
+	if !ok || payload == "" {
+		return nil, nil
+	}
+
+	version, _ := getV2String(attrs, telemetry.DagOutputStateVersionAttr)
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode: %w", err)
+	}
+	switch version {
+	case "", telemetry.DagOutputStateVersionV1:
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("json decode: %w", err)
+		}
+		return out, nil
+	case telemetry.DagOutputStateVersionV2:
+		var out callpbv1.OutputState
+		if err := proto.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("protobuf decode: %w", err)
+		}
+		return pipelineOutputStateProtoToMap(&out), nil
+	default:
+		return nil, fmt.Errorf("unsupported output state version: %s", version)
+	}
+}
+
+func pipelineOutputStateProtoToMap(state *callpbv1.OutputState) map[string]any {
+	if state == nil {
+		return nil
+	}
+	fields := make(map[string]any, len(state.GetFields()))
+	for _, field := range state.GetFields() {
+		if field == nil || field.GetName() == "" {
+			continue
+		}
+		item := map[string]any{
+			"name":  field.GetName(),
+			"type":  field.GetType(),
+			"value": pipelineLiteralToJSON(field.GetValue()),
+		}
+		if refs := pipelineStringSliceToAny(field.GetRefs()); len(refs) > 0 {
+			item["refs"] = refs
+		}
+		fields[field.GetName()] = item
+	}
+	return map[string]any{
+		"type":   state.GetType(),
+		"fields": fields,
+	}
+}
+
+func pipelineLiteralToJSON(lit *callpbv1.Literal) any {
+	if lit == nil {
+		return nil
+	}
+	switch v := lit.GetValue().(type) {
+	case *callpbv1.Literal_CallDigest:
+		return v.CallDigest
+	case *callpbv1.Literal_Null:
+		return nil
+	case *callpbv1.Literal_Bool:
+		return v.Bool
+	case *callpbv1.Literal_Enum:
+		return v.Enum
+	case *callpbv1.Literal_Int:
+		return v.Int
+	case *callpbv1.Literal_Float:
+		return v.Float
+	case *callpbv1.Literal_String_:
+		return v.String_
+	case *callpbv1.Literal_List:
+		values := make([]any, 0, len(v.List.GetValues()))
+		for _, item := range v.List.GetValues() {
+			values = append(values, pipelineLiteralToJSON(item))
+		}
+		return values
+	case *callpbv1.Literal_Object:
+		out := make(map[string]any, len(v.Object.GetValues()))
+		for _, field := range v.Object.GetValues() {
+			if field == nil || field.GetName() == "" {
+				continue
+			}
+			out[field.GetName()] = pipelineLiteralToJSON(field.GetValue())
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func pipelineStringSliceToAny(values []string) []any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
 	}
 	return out
 }

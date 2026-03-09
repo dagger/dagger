@@ -1544,10 +1544,11 @@ Stage 14 implementation note:
    - a body card rendering the pipeline-scoped object DAG
 4. Current object DAG source:
    - fetch `GET /api/pipelines/object-dag?traceID=<trace>&callID=<terminal-call-span>`
-   - scope object collection to immutable output states produced inside the terminal call subtree
+   - scope graph membership to the pipeline's own call chain plus output-reachable refs, not to V2 mutable-binding activity
    - build dependency edges directly from emitted output-state field `refs`
    - keep `field_ref` edge direction exactly as emitted for now; discuss direction changes separately
    - use the terminal output DAGQL ID only as a layout/highlight focus when one exists
+   - if an authoritative pipeline call has an output DAGQL ID but no emitted output-state payload, keep that immutable node in the graph anyway and type it from the call return type; missing payload only blocks deeper ref expansion
 5. Current output-shape handling:
    - object-valued outputs can highlight a concrete output snapshot node
    - non-object outputs still render the pipeline-scoped object DAG, but there is no concrete output node to focus yet
@@ -1571,6 +1572,13 @@ Stage 14 implementation note:
 10. Cleanup decision:
    - the deprecated generic render-model route (`/api/v2/render` and `/api/v2/views/{view}/render`) is no longer part of the active V3 server surface
    - live V3 domains now speak through canonical `/api/pipelines`, `/api/sessions`, `/api/shells`, and `/api/pipelines/object-dag` routes instead of keeping V2 path names alive
+11. Current pipeline inventory boundary:
+   - when a same-client `parsing command line arguments` span exists, treat its completion as the boundary between CLI/module setup and the submitted pipeline
+   - exclude same-client module-prelude calls before that boundary from pipeline call counts, terminal-call selection, and detail-page DAGs
+   - if parsing fails and no post-parse user calls exist, do not materialize a fake successful pipeline row from prelude calls alone
+12. Live validation checkpoint:
+   - verified on a real `odag run -- dagger call -m github.com/dagger/dagger/modules/wolfi container`
+   - expected pipeline DAG is now the narrow 2-node chain `Wolfi -> Container`, with module loading attached separately as metadata instead of leaked into the main DAG
 
 ### Phase 3: Payload evolution (future)
 

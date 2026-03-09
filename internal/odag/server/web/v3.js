@@ -957,7 +957,11 @@ function buildPipelineGraphModel(row, payload) {
   const objectByID = new Map(objects.map((item) => [item.dagqlID, item]));
   const edges = Array.isArray(payload?.edges)
     ? payload.edges.filter(
-        (edge) => edge && edge.kind === "field_ref" && objectByID.has(edge.fromDagqlID) && objectByID.has(edge.toDagqlID),
+        (edge) =>
+          edge &&
+          (edge.kind === "field_ref" || edge.kind === "call_chain") &&
+          objectByID.has(edge.fromDagqlID) &&
+          objectByID.has(edge.toDagqlID),
       )
     : [];
   const focusObjectID = payload?.context?.outputDagqlID && objectByID.has(payload.context.outputDagqlID) ? payload.context.outputDagqlID : "";
@@ -988,10 +992,11 @@ function buildPipelineGraphModel(row, payload) {
           });
           const title = pipelineNodeTitle(obj, aliases);
           const subtitle = pipelineNodeSubtitle(obj);
-          const focusClass = obj.dagqlID === focusObjectID ? " is-output" : "";
-          const eyebrow = obj.dagqlID === focusObjectID ? "Output" : "Object";
+          const focusClass = obj.role === "output" || obj.dagqlID === focusObjectID ? " is-output" : "";
+          const placeholderClass = obj.placeholder ? " is-placeholder" : "";
+          const eyebrow = pipelineNodeEyebrow(obj, focusObjectID);
           return `
-            <article class="v3-pipeline-node${focusClass}" style="left:${x}px; top:${y}px; width:${nodeW}px; height:${nodeH}px;">
+            <article class="v3-pipeline-node${focusClass}${placeholderClass}" style="left:${x}px; top:${y}px; width:${nodeW}px; height:${nodeH}px;">
               <span class="v3-pipeline-node-label">${escapeHTML(eyebrow)}</span>
               <strong>${escapeHTML(title)}</strong>
               <span>${escapeHTML(subtitle)}</span>
@@ -1013,15 +1018,21 @@ function buildPipelineGraphModel(row, payload) {
       const x2 = to.centerX;
       const y2 = to.centerY;
       const curve = Math.max(32, Math.abs(x2 - x1) * 0.4);
-      const label = edge.label ? `<title>${escapeHTML(edge.label)}</title>` : "";
-      return `<path class="v3-graph-edge" d="M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}">${label}</path>`;
+      const edgeClass = edge.kind === "call_chain" ? " is-chain" : " is-ref";
+      const title = edge.label ? `${edge.kind}: ${edge.label}` : edge.kind;
+      return `<path class="v3-graph-edge${edgeClass}" d="M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}"><title>${escapeHTML(title)}</title></path>`;
     })
     .join("");
+  const chainCount = edges.filter((edge) => edge.kind === "call_chain").length;
+  const refCount = edges.filter((edge) => edge.kind === "field_ref").length;
   const meta = [
     `${objects.length} object${objects.length === 1 ? "" : "s"}`,
-    `${edges.length} ref${edges.length === 1 ? "" : "s"}`,
+    chainCount ? `${chainCount} chain step${chainCount === 1 ? "" : "s"}` : "",
+    refCount ? `${refCount} ref${refCount === 1 ? "" : "s"}` : "",
     focusObjectID ? "output node highlighted" : `${pipelineOutputTypeLabel(row)} output`,
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return {
     nodes: objects,
@@ -1175,11 +1186,39 @@ function pipelineSnapshotAliases(objects) {
 }
 
 function pipelineNodeTitle(obj, aliases) {
+  if (obj.placeholder && String(obj.dagqlID || "").startsWith("result:")) {
+    return obj.typeName || "Result";
+  }
+  if (obj.placeholder) {
+    return `${obj.typeName || "Object"} ref`;
+  }
   return aliases.get(obj.dagqlID) || obj.typeName || shortID(obj.dagqlID);
 }
 
 function pipelineNodeSubtitle(obj) {
+  if (obj.placeholder && String(obj.dagqlID || "").startsWith("result:")) {
+    return "pipeline result";
+  }
+  if (obj.placeholder) {
+    return `unemitted ref · ${shortID(obj.dagqlID, 18)}`;
+  }
   return shortID(obj.dagqlID, 18);
+}
+
+function pipelineNodeEyebrow(obj, focusObjectID) {
+  if (obj.role === "output" || obj.dagqlID === focusObjectID) {
+    return "Output";
+  }
+  if (obj.placeholder && String(obj.dagqlID || "").startsWith("result:")) {
+    return "Result";
+  }
+  if (obj.placeholder) {
+    return "Ref";
+  }
+  if (obj.role === "chain") {
+    return "Pipeline";
+  }
+  return "Object";
 }
 
 function renderSessionDetail(entity, row) {

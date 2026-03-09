@@ -25,36 +25,36 @@ type v2EntityRelation struct {
 }
 
 type v2CLIRun struct {
-	ID                   string             `json:"id"`
-	TraceID              string             `json:"traceID"`
-	SessionID            string             `json:"sessionID,omitempty"`
-	ClientID             string             `json:"clientID,omitempty"`
-	RootClientID         string             `json:"rootClientID,omitempty"`
-	ClientName           string             `json:"clientName,omitempty"`
-	Name                 string             `json:"name"`
-	Command              string             `json:"command,omitempty"`
-	CommandArgs          []string           `json:"commandArgs,omitempty"`
-	ChainLabel           string             `json:"chainLabel,omitempty"`
-	ChainTokens          []string           `json:"chainTokens,omitempty"`
-	Status               string             `json:"status"`
-	StatusCode           string             `json:"statusCode,omitempty"`
-	StartUnixNano        int64              `json:"startUnixNano"`
-	EndUnixNano          int64              `json:"endUnixNano"`
-	CallIDs              []string           `json:"callIDs,omitempty"`
-	ChainCallIDs         []string           `json:"chainCallIDs,omitempty"`
-	CallCount            int                `json:"callCount"`
-	ChainDepth           int                `json:"chainDepth"`
-	TerminalCallID       string             `json:"terminalCallID,omitempty"`
-	TerminalCallName     string             `json:"terminalCallName,omitempty"`
-	TerminalReturnType   string             `json:"terminalReturnType,omitempty"`
-	TerminalOutputDagqlID string            `json:"terminalOutputDagqlID,omitempty"`
-	TerminalObjectID     string             `json:"terminalObjectID,omitempty"`
-	PostProcessKinds     []string           `json:"postProcessKinds,omitempty"`
-	FollowupSpanIDs      []string           `json:"followupSpanIDs,omitempty"`
-	FollowupSpanNames    []string           `json:"followupSpanNames,omitempty"`
-	FollowupSpanCount    int                `json:"followupSpanCount"`
-	Evidence             []v2EntityEvidence `json:"evidence,omitempty"`
-	Relations            []v2EntityRelation `json:"relations,omitempty"`
+	ID                    string             `json:"id"`
+	TraceID               string             `json:"traceID"`
+	SessionID             string             `json:"sessionID,omitempty"`
+	ClientID              string             `json:"clientID,omitempty"`
+	RootClientID          string             `json:"rootClientID,omitempty"`
+	ClientName            string             `json:"clientName,omitempty"`
+	Name                  string             `json:"name"`
+	Command               string             `json:"command,omitempty"`
+	CommandArgs           []string           `json:"commandArgs,omitempty"`
+	ChainLabel            string             `json:"chainLabel,omitempty"`
+	ChainTokens           []string           `json:"chainTokens,omitempty"`
+	Status                string             `json:"status"`
+	StatusCode            string             `json:"statusCode,omitempty"`
+	StartUnixNano         int64              `json:"startUnixNano"`
+	EndUnixNano           int64              `json:"endUnixNano"`
+	CallIDs               []string           `json:"callIDs,omitempty"`
+	ChainCallIDs          []string           `json:"chainCallIDs,omitempty"`
+	CallCount             int                `json:"callCount"`
+	ChainDepth            int                `json:"chainDepth"`
+	TerminalCallID        string             `json:"terminalCallID,omitempty"`
+	TerminalCallName      string             `json:"terminalCallName,omitempty"`
+	TerminalReturnType    string             `json:"terminalReturnType,omitempty"`
+	TerminalOutputDagqlID string             `json:"terminalOutputDagqlID,omitempty"`
+	TerminalObjectID      string             `json:"terminalObjectID,omitempty"`
+	PostProcessKinds      []string           `json:"postProcessKinds,omitempty"`
+	FollowupSpanIDs       []string           `json:"followupSpanIDs,omitempty"`
+	FollowupSpanNames     []string           `json:"followupSpanNames,omitempty"`
+	FollowupSpanCount     int                `json:"followupSpanCount"`
+	Evidence              []v2EntityEvidence `json:"evidence,omitempty"`
+	Relations             []v2EntityRelation `json:"relations,omitempty"`
 }
 
 type v2CLIRunCommand struct {
@@ -155,6 +155,10 @@ func collectV2CLIRuns(traceStatus, traceID string, q v2Query, proj *transform.Tr
 			return callEvents[i].SpanID < callEvents[j].SpanID
 		})
 
+		callEvents = pipelineCallEvents(callEvents, spansByClient[client.ID])
+		if len(callEvents) == 0 {
+			continue
+		}
 		chainEvents := callEvents
 		terminal := terminalCallEvent(chainEvents)
 		if terminal == nil {
@@ -237,6 +241,46 @@ func collectV2CLIRuns(traceStatus, traceID string, q v2Query, proj *transform.Tr
 	}
 
 	return items
+}
+
+func pipelineCallEvents(callEvents, spanEvents []transform.MutationEvent) []transform.MutationEvent {
+	boundary := pipelineCommandParseBoundary(spanEvents)
+	if boundary == nil {
+		return callEvents
+	}
+	filtered := make([]transform.MutationEvent, 0, len(callEvents))
+	for _, event := range callEvents {
+		if event.StartUnixNano < boundary.EndUnixNano {
+			continue
+		}
+		filtered = append(filtered, event)
+	}
+	return filtered
+}
+
+func pipelineCommandParseBoundary(spanEvents []transform.MutationEvent) *transform.MutationEvent {
+	var best *transform.MutationEvent
+	for _, event := range spanEvents {
+		if !isPipelineCommandParseSpan(event.Name) {
+			continue
+		}
+		if best == nil {
+			candidate := event
+			best = &candidate
+			continue
+		}
+		if event.EndUnixNano > best.EndUnixNano ||
+			(event.EndUnixNano == best.EndUnixNano && event.StartUnixNano > best.StartUnixNano) ||
+			(event.EndUnixNano == best.EndUnixNano && event.StartUnixNano == best.StartUnixNano && event.SpanID > best.SpanID) {
+			candidate := event
+			best = &candidate
+		}
+	}
+	return best
+}
+
+func isPipelineCommandParseSpan(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), "parsing command line arguments")
 }
 
 func parseV2DaggerCallCommand(args []string) (v2CLIRunCommand, bool) {
