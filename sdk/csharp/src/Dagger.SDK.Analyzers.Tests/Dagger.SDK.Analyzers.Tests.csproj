@@ -1,0 +1,23 @@
+<Project Sdk="MSTest.Sdk/3.7.0">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <LangVersion>latest</LangVersion>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Project References -->
+    <ProjectReference Include="..\Dagger.SDK\Dagger.SDK.csproj" />
+    <ProjectReference Include="..\Dagger.SDK.Analyzers\Dagger.SDK.Analyzers.csproj" />
+    <ProjectReference Include="..\Dagger.SDK.CodeFixes\Dagger.SDK.CodeFixes.csproj" />
+
+    <!-- Microsoft.CodeAnalysis.Testing packages for analyzer/code fix testing -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing" Version="1.1.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" />
+  </ItemGroup>
+</Project>
