@@ -276,9 +276,8 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
    - `postProcessKinds`, `followupSpanIDs`
    - per-pipeline `evidence` and `relations` lists for direct UI consumption
 13. First endpoint:
-   - `GET /api/v2/cli-runs`
-   - same scope filters as other v2 entity endpoints (`traceID`, `sessionID`, `clientID`, `from`, `to`, pagination)
-   - endpoint naming is still legacy; the V3 shell and design language use `Pipelines`
+   - `GET /api/pipelines`
+   - same scope filters as other entity endpoints (`traceID`, `sessionID`, `clientID`, `from`, `to`, pagination)
 14. First UI wiring:
    - only the `Pipelines` domain switches from mock data to this endpoint initially
    - other domains stay mocked until their discovery contracts are defined
@@ -306,8 +305,8 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
    - descendant activity (`childClientIDs`, `childClientCount`, `callIDs`, `callCount`, `spanCount`)
    - per-shell `evidence` and `relations`
 6. First endpoint:
-   - `GET /api/v2/shells`
-   - same scope filters as other v2 entity endpoints
+   - `GET /api/shells`
+   - same scope filters as other entity endpoints
 7. First UI wiring:
    - only the `Shells` domain switches from mock data to this endpoint
    - its primary cues are session duration, descendant clients, and owned calls, not object outputs
@@ -675,10 +674,11 @@ GET /api/v2/calls
 GET /api/v2/object-snapshots
 GET /api/v2/object-bindings
 GET /api/v2/mutations
-GET /api/v2/sessions
+GET /api/sessions
 GET /api/v2/clients
-GET /api/v2/render
-GET /api/v2/views/{view}/render
+GET /api/pipelines
+GET /api/shells
+GET /api/pipelines/object-dag
 ```
 
 Common query parameters:
@@ -693,28 +693,10 @@ Convenience views (kept for compatibility):
 3. `/api/traces/{id}/snapshot?t=...|step=...`
 4. These remain useful for import, plumbing debug, and exact OTel boundary inspection, but should not dominate the main UX.
 
-Render-model view parameters:
-1. `mode=global|scope|object|hybrid` (for `/api/v2/render`)
-2. `scopeCallID`
-3. `focusObjectID`
-4. `dependencyHops`
-5. `keepRules=default|off` (render-layer pruning toggle; default off for full-pool API parity)
-6. `t` (snapshot unix nano)
-7. `/api/v2/views/{view}/render` enforces mode by route (`global`, `scope`, `object`, `hybrid`) and keeps query parsing shared with `/api/v2/render`.
-
-Render-model payload intent:
-1. `objects`: renderable mutable object nodes with activity links.
-2. `calls`: normalized call nodes with parent/child + direct/subtree object membership and call-level DAGQL provenance facts (`receiver_dagql_id`, `arg_dagql_ids`, `output_dagql_id`, `receiver_is_query`).
-3. `edges`: default structural + containment relations:
-   - `field_ref` (object field references)
-   - `contains_call` (call hierarchy)
-   - `contains_object` (direct call mutation containment)
-4. `provenance`: optional overlay relations:
-   - `produced_by`
-   - `derived_from_receiver`
-   - `derived_from_arg`
-5. `events`: filtered event stream for the selected render lens.
-6. `navigation`: scope path and enterable IDs for drill-down UX.
+Retired render-model routes:
+1. The old generic render-model routes (`/api/v2/render`, `/api/v2/views/{view}/render`) were useful during V2 exploration.
+2. They are no longer part of the active V3 server surface after the pipeline DAG cutover.
+3. Specialized V3 entity views should use dedicated endpoints and authoritative substrate facts instead of reviving that generic render layer.
 
 ### Derivation/versioning
 
@@ -1180,7 +1162,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 3: Backend trace APIs (list/get/events) + ODAG projection model
 - [x] Stage 4: Web UI shell + revision history + ODAG canvas
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
-- [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
+- [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`; later retired from the active V3 surface)
 - [x] Stage 7: V3 entity-first shell scaffold with mock data
 - [x] Stage 8: Implement `Pipeline` end-to-end through derivation, API, and UI
 - [x] Stage 9: Capture lessons learned from `Pipelines` and choose the next domain
@@ -1379,7 +1361,7 @@ Post-MVP projection refinement:
 3. Add derivation-version metadata and migration tests for deterministic behavior.
 
 Phase 2.5 implementation note:
-1. Implemented read-only `/api/v2/*` endpoints:
+1. Implemented initial read-only `/api/v2/*` endpoints:
    - `/api/v2/spans`
    - `/api/v2/calls`
    - `/api/v2/object-snapshots`
@@ -1387,21 +1369,27 @@ Phase 2.5 implementation note:
    - `/api/v2/mutations`
    - `/api/v2/sessions`
    - `/api/v2/clients`
-2. Responses now include `derivationVersion` (`odag-v2alpha1`) and pagination cursor support (`cursor` as offset token + `nextCursor`).
-3. V2 derivation uses `ProjectTraceWithOptions` with keep-rules disabled so object/call pools are not constrained by the trace-view pruning heuristics.
-4. Existing `/api/traces/*` endpoints remain unchanged and continue to serve the current UI.
-5. Added render-model endpoints backed by the same v2 projection core:
+2. Current active V3 entity routes later standardized on:
+   - `/api/sessions`
+   - `/api/pipelines`
+   - `/api/shells`
+   - `/api/pipelines/object-dag`
+3. Responses now include `derivationVersion` (`odag-v2alpha1`) and pagination cursor support (`cursor` as offset token + `nextCursor`).
+4. V2 derivation uses `ProjectTraceWithOptions` with keep-rules disabled so object/call pools are not constrained by the trace-view pruning heuristics.
+5. Existing `/api/traces/*` endpoints remain unchanged and continue to serve the current UI.
+6. Historical note: this phase also added generic render-model endpoints backed by the same v2 projection core:
    - `/api/v2/render` with explicit `mode` query parameter
    - `/api/v2/views/{view}/render` with route-selected rendering universe
-6. Render response now carries precomputed containment + dependency structure (`calls`, `objects`, `edges`, `navigation`) so frontend views can iterate quickly with minimal local derivation logic.
-7. Render response now also carries trace context and object-state details needed for direct UI consumption:
+   - these routes were later removed from the active V3 server surface after specialized entity endpoints replaced them
+7. Render response now carries precomputed containment + dependency structure (`calls`, `objects`, `edges`, `navigation`) so frontend views can iterate quickly with minimal local derivation logic.
+8. Render response now also carries trace context and object-state details needed for direct UI consumption:
    - trace header fields (`traceTitle`, `traceStartUnixNano`, `traceEndUnixNano`)
    - active call IDs at snapshot time
    - object `currentState` and `snapshotHistory`
-8. Trace page data fetch path now uses `/api/v2/render` (global mode) for initial load, revision selection (`t`), and live refresh, reducing reliance on compatibility `/api/traces/{id}/snapshot` shaping.
-9. Trace page now requests `keepRules=default` for artifact-centric readability in large traces while preserving raw full-pool access for API/debug consumers.
-10. History filter defaults were tuned for legibility (`derived=true` by default) so raw-span noise does not dominate first render.
-11. Real smoke run (`odag run -- dagger -c 'container | from alpine | with-exec -- sh -c "echo hi" | stdout'`) validated pruning impact on a 3069-span trace:
+9. At that stage, the trace page data fetch path used `/api/v2/render` (global mode) for initial load, revision selection (`t`), and live refresh, reducing reliance on compatibility `/api/traces/{id}/snapshot` shaping.
+10. Trace page now requests `keepRules=default` for artifact-centric readability in large traces while preserving raw full-pool access for API/debug consumers.
+11. History filter defaults were tuned for legibility (`derived=true` by default) so raw-span noise does not dominate first render.
+12. Real smoke run (`odag run -- dagger -c 'container | from alpine | with-exec -- sh -c "echo hi" | stdout'`) validated pruning impact on a 3069-span trace:
    - full pool: 389 objects
    - render with `keepRules=default`: 5 objects
 
@@ -1431,7 +1419,7 @@ Stage 7 implementation note:
 5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and right-pane inventory rendering.
 
 Stage 8 implementation note:
-1. First real Pipeline API slice is implemented at `GET /api/v2/cli-runs`.
+1. First real Pipeline API slice is implemented at `GET /api/pipelines`.
 2. Current derivation rule:
    - classify a client as a Pipeline when its `process.command_args` parse as `dagger call`
    - use ordered client-owned DAGQL calls as the pipeline chain
@@ -1449,7 +1437,7 @@ Stage 8 implementation note:
    - Changeset follow-up spans remain attached to that run instead of appearing as unrelated noise
 5. V3 shell wiring is now live for the `Pipelines` domain only:
    - the left-nav entry still participates in the shared mock shell
-   - selecting `Pipelines` fetches real data from `/api/v2/cli-runs`
+   - selecting `Pipelines` fetches real data from `/api/pipelines`
    - the right pane now renders the real Pipeline inventory directly
    - shell chrome reflects the current domain state (`Mock`, `Activating`, `Live Domain`, `Hybrid Degraded`) instead of pretending the entire app is still mocked
    - the inventory columns now emphasize full command, session, relative start time, and output type; final-call details stay on the per-pipeline page
@@ -1480,7 +1468,7 @@ Stage 9 implementation note:
    - it exercises client trees and session continuity directly, which are core V3 substrates we need to validate early
 
 Stage 10 implementation note:
-1. First real Shell API slice is implemented at `GET /api/v2/shells`.
+1. First real Shell API slice is implemented at `GET /api/shells`.
 2. Current derivation rule:
    - classify a shell root when a root client's `process.command_args` parse as `dagger shell`
    - do not promote descendant/nested clients into standalone shell entities even if they inherit the same resource-level command args
@@ -1496,7 +1484,7 @@ Stage 10 implementation note:
    - descendant module clients stay attached to that entity instead of being misclassified as independent shells
    - shell activity aggregates both DAGQL calls and non-call spans from the same explicit client tree
 5. V3 shell wiring is now live for the `Shells` domain:
-   - selecting `Shells` fetches real data from `/api/v2/shells`
+   - selecting `Shells` fetches real data from `/api/shells`
    - the right pane now renders the real Shell inventory directly
    - shared shell chrome now reflects multiple live domains rather than assuming only one live slice exists
    - shell layout now constrains the app to a true viewport-height frame so the main pane scrolls correctly instead of trapping long tables below the fold
@@ -1535,7 +1523,7 @@ Stage 12 implementation note:
    - if direct linking/pagination needs hard guarantees later, promote short IDs into the API contract explicitly
 
 Stage 13 implementation note:
-1. V3 now exposes `Sessions` as a first-class left-nav domain backed by `GET /api/v2/sessions`.
+1. V3 now exposes `Sessions` as a first-class left-nav domain backed by `GET /api/sessions`.
 2. Current primitive-first adjustment:
    - `Pipelines` inventory now points directly at the `Session` primitive instead of using a vague `Scope` label
    - `Sessions` is now visible as its own inventory and detail route in the shell
@@ -1580,6 +1568,9 @@ Stage 14 implementation note:
    - scope the graph by work inside the pipeline itself, especially the terminal call subtree and related attached evidence
    - treat CLI module loading (`load module: ...`, `Query.moduleSource`, `ModuleSource.asModule`, `Module.serve`, and similar setup calls) as first-class pipeline metadata when the actual sibling prelude spans show that setup occurred
    - keep those setup calls out of the main pipeline DAG unless the user explicitly ran those low-level functions as the pipeline itself
+10. Cleanup decision:
+   - the deprecated generic render-model route (`/api/v2/render` and `/api/v2/views/{view}/render`) is no longer part of the active V3 server surface
+   - live V3 domains now speak through canonical `/api/pipelines`, `/api/sessions`, `/api/shells`, and `/api/pipelines/object-dag` routes instead of keeping V2 path names alive
 
 ### Phase 3: Payload evolution (future)
 

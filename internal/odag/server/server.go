@@ -81,13 +81,11 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/v2/object-snapshots", srv.handleV2ObjectSnapshots)
 	mux.HandleFunc("GET /api/v2/object-bindings", srv.handleV2ObjectBindings)
 	mux.HandleFunc("GET /api/v2/mutations", srv.handleV2Mutations)
-	mux.HandleFunc("GET /api/v2/sessions", srv.handleV2Sessions)
+	mux.HandleFunc("GET /api/sessions", srv.handleV2Sessions)
 	mux.HandleFunc("GET /api/v2/clients", srv.handleV2Clients)
-	mux.HandleFunc("GET /api/v2/cli-runs", srv.handleV2CLIRuns)
-	mux.HandleFunc("GET /api/v2/shells", srv.handleV2Shells)
+	mux.HandleFunc("GET /api/pipelines", srv.handleV2CLIRuns)
+	mux.HandleFunc("GET /api/shells", srv.handleV2Shells)
 	mux.HandleFunc("GET /api/pipelines/object-dag", srv.handlePipelineObjectDAG)
-	mux.HandleFunc("GET /api/v2/render", srv.handleV2Render)
-	mux.HandleFunc("GET /api/v2/views/{view}/render", srv.handleV2RenderView)
 
 	srv.http = &http.Server{
 		Addr:              cfg.ListenAddr,

@@ -443,19 +443,19 @@ const entities = [
 const liveDomainConfigs = {
   sessions: {
     stateKey: "sessions",
-    endpoint: "/api/v2/sessions?limit=100",
+    endpoint: "/api/sessions?limit=100",
     label: "Sessions",
     singularLabel: "Session",
   },
   pipelines: {
     stateKey: "pipelines",
-    endpoint: "/api/v2/cli-runs?limit=100",
+    endpoint: "/api/pipelines?limit=100",
     label: "Pipelines",
     singularLabel: "Pipeline",
   },
   shells: {
     stateKey: "shells",
-    endpoint: "/api/v2/shells?limit=100",
+    endpoint: "/api/shells?limit=100",
     label: "Shells",
     singularLabel: "Shell",
   },
