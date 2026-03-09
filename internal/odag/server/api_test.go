@@ -1516,6 +1516,205 @@ func TestV2WorkspaceOps(t *testing.T) {
 	}
 }
 
+func TestV2GitRemotes(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "37373737373737373737373737373737"
+	sessionID := "session-git-remote"
+	clientID := "client-git-remote"
+
+	connectHex := "1111111111111111"
+	loadModuleHex := "2222222222222222"
+	parseHex := "3333333333333333"
+	wolfiHex := "4444444444444444"
+	containerHex := "5555555555555555"
+
+	commandArgs := []string{"/usr/local/bin/dagger", "call", "-m", "github.com/dagger/dagger/modules/wolfi", "container"}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, loadModuleHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "load module: github.com/dagger/dagger/modules/wolfi",
+								StartTimeUnixNano: 5,
+								EndTimeUnixNano:   9,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, parseHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "parsing command line arguments",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   12,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, wolfiHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Query.wolfi",
+								StartTimeUnixNano: 20,
+								EndTimeUnixNano:   24,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.ModuleRefAttr, "github.com/dagger/dagger/modules/wolfi@deadbeef"),
+									kvString(t, telemetry.DagDigestAttr, "call-wolfi"),
+									kvString(t, telemetry.DagOutputAttr, "state-wolfi"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-wolfi",
+										Field:  "wolfi",
+										Type:   &callpbv1.Type{NamedType: "Wolfi"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, containerHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Wolfi.container",
+								StartTimeUnixNano: 25,
+								EndTimeUnixNano:   40,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.ModuleRefAttr, "github.com/dagger/dagger/modules/wolfi@deadbeef"),
+									kvString(t, telemetry.DagDigestAttr, "call-container"),
+									kvString(t, telemetry.DagOutputAttr, "state-container"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-container",
+										ReceiverDigest: "state-wolfi",
+										Field:          "container",
+										Type:           &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	remotesReq := httptest.NewRequest(http.MethodGet, "/api/git-remotes?traceID="+traceIDHex, nil)
+	remotesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(remotesRec, remotesReq)
+	if remotesRec.Code != http.StatusOK {
+		t.Fatalf("git remotes failed: status=%d body=%s", remotesRec.Code, remotesRec.Body.String())
+	}
+
+	var remotesResp struct {
+		Items []struct {
+			Ref               string   `json:"ref"`
+			Host              string   `json:"host"`
+			LatestResolvedRef string   `json:"latestResolvedRef"`
+			TraceCount        int      `json:"traceCount"`
+			SessionCount      int      `json:"sessionCount"`
+			PipelineCount     int      `json:"pipelineCount"`
+			SpanCount         int      `json:"spanCount"`
+			SourceKinds       []string `json:"sourceKinds"`
+			Pipelines         []struct {
+				PipelineID string `json:"pipelineID"`
+				Command    string `json:"command"`
+				SessionID  string `json:"sessionID"`
+				ClientID   string `json:"clientID"`
+			} `json:"pipelines"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(remotesRec.Body.Bytes(), &remotesResp); err != nil {
+		t.Fatalf("decode git remotes: %v", err)
+	}
+	if len(remotesResp.Items) != 1 {
+		t.Fatalf("expected 1 git remote, got %#v", remotesResp.Items)
+	}
+
+	remote := remotesResp.Items[0]
+	if remote.Ref != "github.com/dagger/dagger/modules/wolfi" || remote.Host != "github.com" {
+		t.Fatalf("unexpected git remote identity: %#v", remote)
+	}
+	if remote.LatestResolvedRef != "github.com/dagger/dagger/modules/wolfi@deadbeef" {
+		t.Fatalf("unexpected resolved ref: %#v", remote)
+	}
+	if remote.TraceCount != 1 || remote.SessionCount != 1 || remote.PipelineCount != 1 || remote.SpanCount != 3 {
+		t.Fatalf("unexpected git remote counts: %#v", remote)
+	}
+	if !sameStrings(remote.SourceKinds, []string{"load-module", "module-ref"}) {
+		t.Fatalf("unexpected git remote source kinds: %#v", remote.SourceKinds)
+	}
+	if len(remote.Pipelines) != 1 {
+		t.Fatalf("expected attached pipeline, got %#v", remote.Pipelines)
+	}
+	pipeline := remote.Pipelines[0]
+	if pipeline.PipelineID == "" || pipeline.SessionID != sessionID || pipeline.ClientID != clientID || !strings.Contains(pipeline.Command, "wolfi container") {
+		t.Fatalf("unexpected attached pipeline: %#v", pipeline)
+	}
+}
+
 func TestV2Shells(t *testing.T) {
 	t.Parallel()
 
@@ -2655,6 +2854,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(sessionRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected session detail route to serve v3 shell, got %q", sessionRec.Body.String())
+	}
+
+	gitRemotesReq := httptest.NewRequest(http.MethodGet, "/git-remotes", nil)
+	gitRemotesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(gitRemotesRec, gitRemotesReq)
+	if gitRemotesRec.Code != http.StatusOK {
+		t.Fatalf("git remotes page failed: %d %s", gitRemotesRec.Code, gitRemotesRec.Body.String())
+	}
+	if !strings.Contains(gitRemotesRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected git remotes route to serve v3 shell, got %q", gitRemotesRec.Body.String())
+	}
+
+	gitRemoteReq := httptest.NewRequest(http.MethodGet, "/git-remotes/abc123", nil)
+	gitRemoteRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(gitRemoteRec, gitRemoteReq)
+	if gitRemoteRec.Code != http.StatusOK {
+		t.Fatalf("git remote detail page failed: %d %s", gitRemoteRec.Code, gitRemoteRec.Body.String())
+	}
+	if !strings.Contains(gitRemoteRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected git remote detail route to serve v3 shell, got %q", gitRemoteRec.Body.String())
 	}
 }
 

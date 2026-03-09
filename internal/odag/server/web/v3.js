@@ -465,6 +465,12 @@ const liveDomainConfigs = {
     label: "Workspace Ops",
     singularLabel: "Workspace Op",
   },
+  "git-remotes": {
+    stateKey: "gitRemotes",
+    endpoint: "/api/git-remotes?limit=200",
+    label: "Git Remotes",
+    singularLabel: "Git Remote",
+  },
 };
 
 const state = {
@@ -490,6 +496,11 @@ const state = {
       error: "",
     },
     workspaceOps: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    gitRemotes: {
       status: "idle",
       items: [],
       error: "",
@@ -823,6 +834,10 @@ function renderDetail(entity) {
     els.tableShell.innerHTML = renderWorkspaceOpDetail(entity, detailItem);
     return;
   }
+  if (entity.dynamicKind === "git-remotes") {
+    els.tableShell.innerHTML = renderGitRemoteDetail(entity, detailItem);
+    return;
+  }
   if (entity.dynamicKind === "sessions") {
     els.tableShell.innerHTML = renderSessionDetail(entity, detailItem);
     return;
@@ -987,6 +1002,41 @@ function renderWorkspaceOpDetail(entity, row) {
           ${workspaceOpDetailItem("Trace", row.traceID ? detailCode(row.traceID) : "Unknown")}
         </div>
       </section>
+    </div>
+  `;
+}
+
+function renderGitRemoteDetail(entity, row) {
+  const pipelineTable = renderTableHTML({
+    columns: [
+      { label: "Pipeline", render: (item) => gitRemotePipelineSummaryCell(item) },
+      { label: "Session", render: (item) => gitRemotePipelineSessionCell(item) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: row.pipelines || [],
+    emptyMessage: "No attached pipelines yet.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Git remote</p>
+          <strong>${escapeHTML(row.ref || row.name || "Unknown")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Host", row.host ? detailCode(row.host) : "Unknown")}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Latest Ref", row.latestResolvedRef ? detailCode(row.latestResolvedRef) : detailCode(row.ref || "Unknown"))}
+          ${pipelineRecapItem("Pipelines", escapeHTML(String(row.pipelineCount || 0)))}
+          ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
+          ${pipelineRecapItem("Traces", escapeHTML(String(row.traceCount || 0)))}
+          ${pipelineRecapItem("Spans", escapeHTML(String(row.spanCount || 0)))}
+          ${pipelineRecapItem("Sources", detailInlineList(row.sourceKinds, "Unknown"))}
+        </div>
+      </section>
+      ${detailSection("Recent Pipelines", pipelineTable)}
     </div>
   `;
 }
@@ -1430,6 +1480,9 @@ function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "workspace-ops") {
     return workspaceOpsTableModel(entity, sectionID);
   }
+  if (entity.dynamicKind === "git-remotes") {
+    return gitRemotesTableModel(entity, sectionID);
+  }
   switch (sectionID) {
     case "inventory":
       return {
@@ -1668,6 +1721,27 @@ function workspaceOpsTableModel(entity, sectionID) {
   }
 }
 
+function gitRemotesTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Git Remotes",
+        meta: `${entity.liveItems.length} real git remotes`,
+        emptyMessage: "No git remotes detected yet.",
+        columns: [
+          { label: "Remote", render: (row) => linkedPrimaryCell(row.ref || row.name, row.host || "", entityPath(entity.id, row.routeID)) },
+          { label: "Host", render: (row) => row.host ? detailCode(row.host) : "Unknown" },
+          { label: "Pipelines", render: (row) => gitRemotePipelineCountCell(row) },
+          { label: "Sessions", render: (row) => escapeHTML(String(row.sessionCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
 }
@@ -1684,7 +1758,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops")) {
+  if (!entity || (entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -1698,6 +1772,9 @@ function materializeEntity(entity) {
     }
     if (entity.id === "workspace-ops") {
       return buildLiveWorkspaceOpsEntity(entity, live.items);
+    }
+    if (entity.id === "git-remotes") {
+      return buildLiveGitRemotesEntity(entity, live.items);
     }
     return buildLiveShellsEntity(entity, live.items);
   }
@@ -2056,6 +2133,78 @@ function buildLiveWorkspaceOpsEntity(base, items) {
   };
 }
 
+function buildLiveGitRemotesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      name: item.ref,
+      routeID: shortRouteID(item.ref || item.id, item.host || item.ref || item.id),
+    }))
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  const pipelineCount = liveItems.reduce((sum, item) => sum + Number(item.pipelineCount || 0), 0);
+  const sessionCount = liveItems.reduce((sum, item) => sum + Number(item.sessionCount || 0), 0);
+  const hostCount = new Set(liveItems.map((item) => item.host).filter(Boolean)).size;
+  const sourceKinds = new Set();
+  for (const item of liveItems) {
+    for (const kind of item.sourceKinds || []) {
+      sourceKinds.add(kind);
+    }
+  }
+
+  return {
+    ...base,
+    dynamicKind: "git-remotes",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one normalized remote repository identity discovered from authoritative module refs, load-module spans, and explicit git calls, with recent attached pipelines kept alongside it.",
+    metrics: [
+      {
+        label: "Detected remotes",
+        value: String(liveItems.length),
+        detail: `${hostCount} hosts represented`,
+      },
+      {
+        label: "Attached pipelines",
+        value: String(pipelineCount),
+        detail: `${sessionCount} sessions touched these remotes`,
+      },
+      {
+        label: "Source kinds",
+        value: String(sourceKinds.size),
+        detail: Array.from(sourceKinds).sort().join(", ") || "No sources recorded",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.ref,
+      value: String(item.pipelineCount || 0),
+      note: `${item.sessionCount || 0} sessions · ${item.host || "unknown host"}`,
+    })),
+    signals: [
+      {
+        label: "Host spread",
+        value: String(hostCount),
+        tone: hostCount > 1 ? "neutral" : "good",
+        detail: "Distinct remote hosts in the current result set.",
+      },
+      {
+        label: "Pipeline links",
+        value: String(pipelineCount),
+        tone: pipelineCount > 0 ? "good" : "neutral",
+        detail: "Pipelines currently attached to a remote identity.",
+      },
+      {
+        label: "Source diversity",
+        value: String(sourceKinds.size),
+        tone: sourceKinds.size > 1 ? "good" : "neutral",
+        detail: "Different authoritative signals currently contributing to the domain.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
 function describeShellState(entity) {
   const currentConfig = liveDomainConfigs[entity.id];
   if (currentConfig) {
@@ -2137,6 +2286,30 @@ function pipelineFollowupCell(row) {
 
 function pipelineSessionCell(row) {
   if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function gitRemotePipelineCountCell(row) {
+  const count = Number(row.pipelineCount || 0);
+  const latest = Array.isArray(row.pipelines) && row.pipelines.length > 0 ? row.pipelines[0] : null;
+  const title = count === 1 ? "1 pipeline" : `${count} pipelines`;
+  const subtitle = latest?.command || "No attached pipelines";
+  return primaryCell(title, subtitle);
+}
+
+function gitRemotePipelineSummaryCell(row) {
+  if (!row?.pipelineID || !row?.traceID || !row?.clientID) {
+    return primaryCell(row?.command || "Pipeline", "");
+  }
+  const href = entityPath("pipelines", shortRouteID(row.traceID, row.clientID));
+  return linkedPrimaryCell(row.command || "Pipeline", "", href);
+}
+
+function gitRemotePipelineSessionCell(row) {
+  if (!row?.sessionID || !row?.traceID) {
     return "None";
   }
   const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));

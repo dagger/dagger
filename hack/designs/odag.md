@@ -1172,6 +1172,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 13: Expose `Sessions` as a first-class V3 primitive
 - [x] Stage 14: Rename `CLI Runs` to `Pipelines` and focus detail pages on object DAGs
 - [x] Stage 15: Implement `Workspace Ops` end-to-end through derivation, API, and UI
+- [x] Stage 16: Implement `Git Remotes` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1214,6 +1215,10 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] derive workspace-op identity from host-bound call patterns and side-effect spans
   - [x] keep exports/imports/host-access attached to workspace roots rather than scattering them as unrelated follow-up noise
   - [x] wire the V3 shell's `Workspace Ops` domain to the real endpoint
+- [x] Implement the `Git Remotes` domain end-to-end:
+  - [x] derive remote identity from authoritative module refs, load-module spans, and explicit git calls
+  - [x] normalize remote identity at repository/module-ref granularity rather than per revision
+  - [x] wire the V3 shell's `Git Remotes` domain to the real endpoint
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1597,6 +1602,31 @@ Stage 15 implementation note:
 5. Current live validation checkpoint:
    - verified on a real `odag run -- dagger call -m github.com/dagger/dagger/modules/wolfi container`
    - current live workspace-op evidence is the module-load `Host.directory` read against the local workspace, correctly shown without a fake pipeline attachment
+
+Stage 16 implementation note:
+1. First real Git Remotes API slice is implemented at `GET /api/git-remotes`.
+2. Current derivation rule:
+   - classify one git-remote entity per normalized external repository or module ref
+   - authoritative sources currently include:
+     - `dagger.io/module.ref`
+     - `load module: ...` spans
+     - explicit `Query.git` style DAGQL calls decoded from authoritative call payloads
+   - propagate remote identity forward through git-object receiver chains so later `GitRepository.*` or `GitRef.*` calls stay attached to the same normalized remote
+3. Current identity rule:
+   - normalize away revision suffixes such as `@<sha>` and transport suffixes such as `.git`
+   - keep the full latest resolved ref separately as metadata (`latestResolvedRef`)
+   - remote identity is therefore repository-or-module centric rather than revision centric
+4. Current attachment rule:
+   - derive pipelines separately first
+   - attach a remote back to a pipeline when a same-client pipeline window fully contains the remote span, with same-client fallback kept for pre-parse module-load spans that semantically belong to the submitted pipeline
+5. Current V3 shell shape:
+   - `Git Remotes` is now a live left-nav domain at `/git-remotes`
+   - the inventory is a simple list of normalized remotes with host, attached-pipeline count, session count, and last-seen time
+   - each detail page stays thin: recap card plus one recent-pipelines table
+6. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
+   - the Wolfi module remote now appears as one normalized entity (`github.com/dagger/dagger/modules/wolfi`) with three attached `dagger call -m ... container` pipelines
+   - explicit remote git calls also appear as normalized entities such as `github.com/opencontainers/runc` and `github.com/containernetworking/plugins`
 
 ### Phase 3: Payload evolution (future)
 

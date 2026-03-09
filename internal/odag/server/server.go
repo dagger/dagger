@@ -86,6 +86,7 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/pipelines", srv.handleV2CLIRuns)
 	mux.HandleFunc("GET /api/shells", srv.handleV2Shells)
 	mux.HandleFunc("GET /api/workspace-ops", srv.handleV2WorkspaceOps)
+	mux.HandleFunc("GET /api/git-remotes", srv.handleV2GitRemotes)
 	mux.HandleFunc("GET /api/pipelines/object-dag", srv.handlePipelineObjectDAG)
 
 	srv.http = &http.Server{
