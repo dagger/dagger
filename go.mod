@@ -3,8 +3,8 @@ module github.com/dagger/dagger
 go 1.25.0
 
 require (
-	dagger.io/dagger v0.20.0
-	github.com/dagger/dagger/engine/distconsts v0.20.0
+	dagger.io/dagger v0.20.1
+	github.com/dagger/dagger/engine/distconsts v0.20.1
 )
 
 replace (
@@ -59,13 +59,13 @@ require (
 	github.com/containernetworking/plugins v1.8.0
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/creack/pty v1.1.24
-	github.com/dagger/otel-go v1.41.0
-	github.com/dagger/testctx v0.1.0
-	github.com/dagger/testctx/oteltest v0.1.0
+	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/testctx v0.1.1
+	github.com/dagger/testctx/oteltest v0.1.1
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v28.5.1+incompatible
+	github.com/docker/cli v29.2.0+incompatible
 	github.com/docker/docker v28.5.1+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/docker/go-units v0.5.0
