@@ -1766,24 +1766,24 @@ func TestWebRouteFallbacks(t *testing.T) {
 		t.Fatalf("expected dag route to serve v3 shell, got %q", dagRec.Body.String())
 	}
 
-	cliRunsReq := httptest.NewRequest(http.MethodGet, "/cli-runs", nil)
-	cliRunsRec := httptest.NewRecorder()
-	srv.http.Handler.ServeHTTP(cliRunsRec, cliRunsReq)
-	if cliRunsRec.Code != http.StatusOK {
-		t.Fatalf("cli runs page failed: %d %s", cliRunsRec.Code, cliRunsRec.Body.String())
+	pipelinesReq := httptest.NewRequest(http.MethodGet, "/pipelines", nil)
+	pipelinesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(pipelinesRec, pipelinesReq)
+	if pipelinesRec.Code != http.StatusOK {
+		t.Fatalf("pipelines page failed: %d %s", pipelinesRec.Code, pipelinesRec.Body.String())
 	}
-	if !strings.Contains(cliRunsRec.Body.String(), "Entity Explorer") {
-		t.Fatalf("expected cli runs route to serve v3 shell, got %q", cliRunsRec.Body.String())
+	if !strings.Contains(pipelinesRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected pipelines route to serve v3 shell, got %q", pipelinesRec.Body.String())
 	}
 
-	cliRunReq := httptest.NewRequest(http.MethodGet, "/cli-runs/abc123", nil)
-	cliRunRec := httptest.NewRecorder()
-	srv.http.Handler.ServeHTTP(cliRunRec, cliRunReq)
-	if cliRunRec.Code != http.StatusOK {
-		t.Fatalf("cli run detail page failed: %d %s", cliRunRec.Code, cliRunRec.Body.String())
+	pipelineReq := httptest.NewRequest(http.MethodGet, "/pipelines/abc123", nil)
+	pipelineRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(pipelineRec, pipelineReq)
+	if pipelineRec.Code != http.StatusOK {
+		t.Fatalf("pipeline detail page failed: %d %s", pipelineRec.Code, pipelineRec.Body.String())
 	}
-	if !strings.Contains(cliRunRec.Body.String(), "Entity Explorer") {
-		t.Fatalf("expected cli run detail route to serve v3 shell, got %q", cliRunRec.Body.String())
+	if !strings.Contains(pipelineRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected pipeline detail route to serve v3 shell, got %q", pipelineRec.Body.String())
 	}
 
 	sessionsReq := httptest.NewRequest(http.MethodGet, "/sessions", nil)

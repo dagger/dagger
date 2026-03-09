@@ -52,7 +52,7 @@
    - current prototype: embedded HTML/CSS/JS + SVG renderer (no external frontend build)
    - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
 11. V3 home information architecture:
-   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, Sessions, CLI Runs (`dagger call` invocations), Shells, Workspace Ops, Git Remotes, Registries.
+   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, Sessions, Pipelines (`dagger call` style submitted call chains), Shells, Workspace Ops, Git Remotes, Registries.
    - while taxonomy is still settling, the right pane should stay inventory-first: click a domain on the left, see that domain's inventory immediately on the right.
    - deeper specialized views can return later once the base inventory interaction is obviously useful.
 12. Underlying execution/debug hierarchy:
@@ -235,51 +235,58 @@ Persistence and API semantics are modeled from OTel span data first; higher-leve
 4. Object bindings and snapshots remain substrate and drill-down layers, not necessarily the home-page primitive.
 5. In the UI and API language, the left nav should be described as entity domains/areas rather than object types.
 
-### First concrete entity definition: CLI Run
+### First concrete entity definition: Pipeline
 
-1. `CLI Run` is the V3 label for one invocation of `dagger call`.
-2. A `dagger call` invocation is a CLI pipeline of chained DAGQL function calls:
+1. `Pipeline` is the V3 label for one client-submitted, connected DAGQL call chain that aims at one intended result.
+2. Canonical examples:
+   - one invocation of `dagger call`
+   - one top-level interactive command submitted inside `dagger shell`
+3. A `dagger call` pipeline is a CLI chain of DAGQL function calls:
    - each additional subcommand extends the chain by calling a function on the object returned by the previous step
    - intermediate steps therefore need to keep returning object-capable values until the terminal step
-3. A CLI Run has one terminal DAGQL output value from the final step in the chain.
-4. The CLI may then perform built-in, type-driven post-processing on that returned value:
+4. A pipeline currently assumes one terminal DAGQL output value from the final step in the chain.
+5. Ambiguous batch cases such as `dagger -c '...; ...'` or shebang interpreter sessions are intentionally left split per top-level command for now:
+   - they are submitted together, but may contain multiple independent chains and outputs
+   - V3's current page shape is explicitly output-centric, so multi-output batches would blur the entity boundary too early
+6. The CLI may then perform built-in, type-driven post-processing on that returned value:
    - `Changeset`: preview, confirm, and optionally apply to the workspace
    - `Container` / `Directory` / `File`: export convenience when `--output` is used
    - `LLM`: enter interactive prompt mode
    - object-valued returns: print object IDs rather than recursively rendering another structure
-5. Those post-processing flows can emit follow-up spans or side effects that are not themselves part of the core DAGQL call chain, but are still part of the same user-facing CLI Run context.
-6. V3 should therefore model CLI Run as an execution entity with:
+7. Those post-processing flows can emit follow-up spans or side effects that are not themselves part of the core DAGQL call chain, but are still part of the same user-facing pipeline context.
+8. V3 should therefore model Pipeline as an execution entity with:
    - core evidence: command root + chained DAGQL calls + terminal output
    - attached follow-up evidence: output handling, apply/export flows, prompt handoff, and other CLI-managed continuations
-7. The renderer should not treat those follow-up spans as unrelated noise merely because they do not look like one more chained DAGQL object mutation.
-8. First implementation heuristic:
-   - derive one CLI Run from each client whose `process.command_args` classify as `dagger call`
+9. The renderer should not treat those follow-up spans as unrelated noise merely because they do not look like one more chained DAGQL object mutation.
+10. First implementation heuristic:
+   - derive one Pipeline from each client whose `process.command_args` classify as `dagger call`
    - use the client scope as the hard execution boundary
-   - collect DAGQL call events owned by that client as the run's core chain
+   - collect DAGQL call events owned by that client as the pipeline's core chain
    - treat the latest call in that owned chain as the terminal call/output
    - associate later non-call spans in the same client scope as follow-up evidence
-9. This is intentionally conservative:
+11. This is intentionally conservative:
    - it is better to under-associate follow-up behavior than to claim unrelated trace noise is part of the run
-   - future explicit client-mode telemetry can tighten classification and follow-up attachment
-10. CLI Run MVP fields:
+   - future explicit client-mode telemetry can tighten classification, especially for interactive shell commands and multi-command batch cases
+12. Pipeline MVP fields:
    - `runID`, `traceID`, `sessionID`, `clientID`, `rootClientID`
    - `command`, `commandArgs`, `chainLabel`
    - `startUnixNano`, `endUnixNano`, `statusCode`
    - `callIDs`, `terminalCallID`, `terminalCallName`
    - `terminalReturnType`, `terminalOutputDagqlID`
    - `postProcessKinds`, `followupSpanIDs`
-   - per-run `evidence` and `relations` lists for direct UI consumption
-11. First endpoint:
+   - per-pipeline `evidence` and `relations` lists for direct UI consumption
+13. First endpoint:
    - `GET /api/v2/cli-runs`
    - same scope filters as other v2 entity endpoints (`traceID`, `sessionID`, `clientID`, `from`, `to`, pagination)
-12. First UI wiring:
-   - only the `CLI Runs` domain switches from mock data to this endpoint initially
+   - endpoint naming is still legacy; the V3 shell and design language use `Pipelines`
+14. First UI wiring:
+   - only the `Pipelines` domain switches from mock data to this endpoint initially
    - other domains stay mocked until their discovery contracts are defined
 
 ### Second concrete entity definition: Shell
 
 1. `Shell` is the V3 label for one invocation of `dagger shell`.
-2. Unlike `CLI Run`, a Shell is session-centric rather than output-centric:
+2. Unlike `Pipeline`, a Shell is session-centric rather than output-centric:
    - it can own many DAGQL calls over time
    - it may spawn descendant clients
    - it does not have one singular terminal DAGQL output that defines the entity
@@ -1158,10 +1165,11 @@ These are the latest design decisions that should be preserved across handoff.
 12. **Design-doc continuity**
    - keep this document current at every milestone
    - someone picking up mid-stream should be able to see current mockups, active implementation target, and the next open question here
-13. **CLI Run definition**
-   - `CLI Run` means one `dagger call` invocation, not a generic trace or session
-   - its identity includes the chained DAGQL pipeline and the final return value
-   - CLI output handling triggered by that return type belongs to the same entity context even when the follow-up spans are not part of the DAGQL chain
+13. **Pipeline definition**
+   - `Pipeline` means one client-submitted unit of work that executes a connected DAGQL call chain toward one intended result
+   - `dagger call` is a pipeline; one interactive command inside `dagger shell` is also a pipeline
+   - ambiguous multi-command batch cases (`dagger -c`, shebang interpreter flows) stay split per top-level command until V3 has an explicit multi-output model
+   - CLI output handling triggered by that result still belongs to the same pipeline context even when the follow-up spans are not part of the DAGQL chain
 
 ## Implementation Plan
 
@@ -1174,8 +1182,8 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 5: Cloud pull mode + polish (tests, docs, UX refinements)
 - [x] Stage 6: Backend render-model API (`/api/v2/render`, `/api/v2/views/{view}/render`)
 - [x] Stage 7: V3 entity-first shell scaffold with mock data
-- [x] Stage 8: Implement `CLI Run` end-to-end through derivation, API, and UI
-- [x] Stage 9: Capture lessons learned from `CLI Runs` and choose the next domain
+- [x] Stage 8: Implement `Pipeline` end-to-end through derivation, API, and UI
+- [x] Stage 9: Capture lessons learned from `Pipelines` and choose the next domain
 - [x] Stage 10: Implement `Shells` end-to-end through derivation, API, and UI
 - [x] Stage 11: Capture lessons learned from `Shells` and choose the next domain
 - [ ] Stage 12: Implement `Workspace Ops` end-to-end through derivation, API, and UI
@@ -1209,11 +1217,11 @@ These are the latest design decisions that should be preserved across handoff.
   - left nav lists discovered domains
   - secondary nav selects specialized subviews
   - mock data is acceptable while settling taxonomy
-- [ ] Implement the `CLI Run` domain (`dagger call` invocation) end-to-end:
+- [ ] Implement the `Pipeline` domain (`dagger call` style submitted call chain) end-to-end:
   - [x] derive run identity from command root plus chained DAGQL calls
   - [x] attach terminal output type and CLI post-processing behavior
-  - [x] keep follow-up apply/export/prompt spans associated with the same run context in the first read-only API slice
-  - [x] wire the V3 shell's `CLI Runs` domain to the real endpoint
+  - [x] keep follow-up apply/export/prompt spans associated with the same pipeline context in the first read-only API slice
+  - [x] wire the V3 shell's `Pipelines` domain to the real endpoint
 - [x] Record what did and did not generalize from the first domain before adding a second one.
 - [ ] Implement the `Workspace Ops` domain end-to-end:
   - [ ] derive workspace-op identity from host-bound call patterns and side-effect spans
@@ -1402,7 +1410,7 @@ Stage 7 implementation note:
    - Checks
    - Workspaces
    - Sessions
-   - CLI Runs
+   - Pipelines
    - Shells
    - Workspace Ops
    - Git Remotes
@@ -1418,10 +1426,10 @@ Stage 7 implementation note:
 5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and right-pane inventory rendering.
 
 Stage 8 implementation note:
-1. First real CLI Run API slice is implemented at `GET /api/v2/cli-runs`.
+1. First real Pipeline API slice is implemented at `GET /api/v2/cli-runs`.
 2. Current derivation rule:
-   - classify a client as a CLI Run when its `process.command_args` parse as `dagger call`
-   - use ordered client-owned DAGQL calls as the run chain
+   - classify a client as a Pipeline when its `process.command_args` parse as `dagger call`
+   - use ordered client-owned DAGQL calls as the pipeline chain
    - use the latest owned call as the terminal output
    - attach later non-call spans in the same client scope as follow-up evidence
 3. Current payload includes:
@@ -1429,27 +1437,27 @@ Stage 8 implementation note:
    - command summary (`command`, `commandArgs`, `chainLabel`)
    - terminal output (`terminalCallID`, `terminalCallName`, `terminalReturnType`, `terminalOutputDagqlID`)
    - follow-up classification (`postProcessKinds`, `followupSpanIDs`)
-   - per-run `evidence` and `relations` lists for direct UI consumption
+   - per-pipeline `evidence` and `relations` lists for direct UI consumption
 4. Validation coverage currently proves:
    - explicit execution-scope IDs still work across traces
-   - one `dagger call` client becomes one CLI Run
+   - one `dagger call` client becomes one Pipeline
    - Changeset follow-up spans remain attached to that run instead of appearing as unrelated noise
-5. V3 shell wiring is now live for the `CLI Runs` domain only:
+5. V3 shell wiring is now live for the `Pipelines` domain only:
    - the left-nav entry still participates in the shared mock shell
-   - selecting `CLI Runs` fetches real data from `/api/v2/cli-runs`
-   - the right pane now renders the real CLI Run inventory directly
+   - selecting `Pipelines` fetches real data from `/api/v2/cli-runs`
+   - the right pane now renders the real Pipeline inventory directly
    - shell chrome reflects the current domain state (`Mock`, `Activating`, `Live Domain`, `Hybrid Degraded`) instead of pretending the entire app is still mocked
-   - the inventory columns now emphasize full command, session, relative start time, and output type; final-call details stay on the per-run page
+   - the inventory columns now emphasize full command, session, relative start time, and output type; final-call details stay on the per-pipeline page
 6. Current Stage 8 result is intentionally hybrid:
-   - `CLI Runs` is live end-to-end
+   - `Pipelines` is live end-to-end
    - all other domains remain mocked
 7. Stage 9 should focus on what generalized and what did not:
    - using client-owned call order instead of existing `TopLevel` semantics was necessary for CLI chain reconstruction
    - same-client follow-up spans are useful, but conservative by design and probably still incomplete
    - the shared shell can host one live domain without forcing the rest of the taxonomy to crystallize too early
 8. Current status semantics:
-   - `CLI Run` row status is derived from the terminal DAGQL call outcome plus ingesting/not-ingesting state
-   - attached follow-up spans remain evidence on the same entity, but do not by themselves flip a successful run to `failed`
+   - `Pipeline` row status is derived from the terminal DAGQL call outcome plus ingesting/not-ingesting state
+   - attached follow-up spans remain evidence on the same entity, but do not by themselves flip a successful pipeline to `failed`
 
 Stage 9 implementation note:
 1. What generalized well from the first real domain:
@@ -1462,7 +1470,7 @@ Stage 9 implementation note:
    - shell chrome must reflect per-domain live state, otherwise hybrid mode becomes misleading
 3. Next domain choice: `Shells`.
 4. Rationale for `Shells` as the second live slice:
-   - it is adjacent to `CLI Runs` because both start from CLI command identity and explicit execution scope
+   - it is adjacent to `Pipelines` because both start from CLI command identity and explicit execution scope
    - it forces V3 to handle a session-centric entity that does not have one singular terminal output
    - it exercises client trees and session continuity directly, which are core V3 substrates we need to validate early
 
@@ -1488,18 +1496,18 @@ Stage 10 implementation note:
    - shared shell chrome now reflects multiple live domains rather than assuming only one live slice exists
    - shell layout now constrains the app to a true viewport-height frame so the main pane scrolls correctly instead of trapping long tables below the fold
 6. Current hybrid state after Stage 10:
-   - `CLI Runs` is live end-to-end
+   - `Pipelines` is live end-to-end
    - `Shells` is live end-to-end
    - all remaining domains remain mocked
 
 Stage 11 implementation note:
-1. What generalized across both `CLI Runs` and `Shells`:
+1. What generalized across both `Pipelines` and `Shells`:
    - explicit session/client/root-client telemetry is still the best substrate for execution-centric domains
    - one shared live-domain shell path in the UI can host multiple real domains without special-casing the overall app structure
    - entity-local `evidence` and `relations` remain a useful common API contract even when the primary cues differ per domain
 2. What did not generalize:
    - resource-level `process.command_args` can bleed into descendant clients, so promotion rules must stay domain-specific and root-aware
-   - execution-centric domains can share substrate but still require distinct primary cues (`terminal output` for `CLI Runs`, `client tree continuity` for `Shells`)
+   - execution-centric domains can share substrate but still require distinct primary cues (`terminal output` for `Pipelines`, `client tree continuity` for `Shells`)
 3. Next domain choice: `Workspace Ops`.
 4. Rationale for `Workspace Ops` as the third slice:
    - it is the first strongly external-resource-centric domain in the V3 sequence
@@ -1509,10 +1517,10 @@ Stage 11 implementation note:
 Stage 12 implementation note:
 1. V3 shell routing now uses clean path-based URLs rather than query-param entity selection.
 2. Current route pattern:
-   - list pages live at `/<entity-domain>` such as `/cli-runs` and `/shells`
+   - list pages live at `/<entity-domain>` such as `/pipelines` and `/shells`
    - live entity detail pages live at `/<entity-domain>/<short-id>`
 3. Current detail-page support:
-   - `CLI Runs` inventory rows navigate to per-run pages at `/cli-runs/<short-id>`
+   - `Pipelines` inventory rows navigate to per-pipeline pages at `/pipelines/<short-id>`
    - `Shells` inventory rows navigate to per-shell pages at `/shells/<short-id>`
 4. Current detail-page content stays inventory-first and fact-oriented:
    - summary and output/activity cards for the selected entity
@@ -1524,7 +1532,7 @@ Stage 12 implementation note:
 Stage 13 implementation note:
 1. V3 now exposes `Sessions` as a first-class left-nav domain backed by `GET /api/v2/sessions`.
 2. Current primitive-first adjustment:
-   - `CLI Runs` inventory now points directly at the `Session` primitive instead of using a vague `Scope` label
+   - `Pipelines` inventory now points directly at the `Session` primitive instead of using a vague `Scope` label
    - `Sessions` is now visible as its own inventory and detail route in the shell
 3. Current session semantics:
    - sessions are derived from root clients

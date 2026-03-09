@@ -239,15 +239,15 @@ const entities = [
     ],
   },
   {
-    id: "cli-runs",
-    label: "CLI Runs",
-    code: "CL",
+    id: "pipelines",
+    label: "Pipelines",
+    code: "PL",
     category: "Execution-centric",
     eyebrow: "One-shot command sessions",
     blurb:
-      "CLI run entities group telemetry around a concrete `dagger call` style invocation. They are execution-scoped first, with objects as outputs and evidence rather than the primary identity.",
+      "Pipeline entities group telemetry around one submitted DAGQL call chain. They are execution-scoped first, with objects as outputs and evidence rather than the primary identity.",
     metrics: [
-      { label: "Recent runs", value: "18", detail: "mostly one-shot module calls" },
+      { label: "Recent pipelines", value: "18", detail: "mostly one-shot module calls" },
       { label: "Median duration", value: "9.4 s", detail: "healthy for the current mock mix" },
       { label: "Failed runs", value: "2", detail: "both tied to remote fetch issues" },
     ],
@@ -258,7 +258,7 @@ const entities = [
     ],
     signals: [
       { label: "Retry pressure", value: "Low", tone: "good", detail: "few re-run attempts in the sample" },
-      { label: "Remote coupling", value: "2 runs", tone: "warn", detail: "latest failures involved remote resources" },
+      { label: "Remote coupling", value: "2 pipelines", tone: "warn", detail: "latest failures involved remote resources" },
       { label: "Output reuse", value: "Moderate", tone: "neutral", detail: "some outputs flow into checks and services" },
     ],
     evidence: [
@@ -447,11 +447,11 @@ const liveDomainConfigs = {
     label: "Sessions",
     singularLabel: "Session",
   },
-  "cli-runs": {
-    stateKey: "cliRuns",
+  pipelines: {
+    stateKey: "pipelines",
     endpoint: "/api/v2/cli-runs?limit=100",
-    label: "CLI Runs",
-    singularLabel: "CLI Run",
+    label: "Pipelines",
+    singularLabel: "Pipeline",
   },
   shells: {
     stateKey: "shells",
@@ -470,7 +470,7 @@ const state = {
       items: [],
       error: "",
     },
-    cliRuns: {
+    pipelines: {
       status: "idle",
       items: [],
       error: "",
@@ -538,7 +538,7 @@ function parseRoute(pathname, search) {
     .split("/")
     .filter(Boolean)
     .map((segment) => decodeURIComponent(segment).toLowerCase());
-  const entityID = findEntity(segments[0] || "") ? segments[0] : legacyEntityID(search);
+  const entityID = resolveEntityID(segments[0] || "") || legacyEntityID(search);
   const detailID = supportsDetailRoute(entityID) && segments[1] ? segments[1] : "";
   return {
     entityID: entityID || entities[0].id,
@@ -548,11 +548,16 @@ function parseRoute(pathname, search) {
 
 function legacyEntityID(search) {
   const params = new URLSearchParams(search);
-  const entityID = String(params.get("entity") || params.get("type") || "").toLowerCase();
-  if (findEntity(entityID)) {
-    return entityID;
-  }
-  return entities[0].id;
+  return resolveEntityID(String(params.get("entity") || params.get("type") || "").toLowerCase()) || entities[0].id;
+}
+
+function resolveEntityID(raw) {
+  const entityID = String(raw || "").toLowerCase();
+  const aliases = {
+    "cli-runs": "pipelines",
+  };
+  const normalized = aliases[entityID] || entityID;
+  return findEntity(normalized) ? normalized : "";
 }
 
 function navigateTo(nextPath, replace = false) {
@@ -731,8 +736,8 @@ function renderDetail(entity) {
   els.pageTitle.textContent = detailItem.name;
   els.tableMeta.textContent = detailItem.routeID;
 
-  if (entity.dynamicKind === "cli-runs") {
-    els.tableShell.innerHTML = renderCLIRunDetail(entity, detailItem);
+  if (entity.dynamicKind === "pipelines") {
+    els.tableShell.innerHTML = renderPipelineDetail(entity, detailItem);
     return;
   }
   if (entity.dynamicKind === "sessions") {
@@ -764,7 +769,7 @@ function renderDetailState(entity, label, kind) {
   `;
 }
 
-function renderCLIRunDetail(entity, row) {
+function renderPipelineDetail(entity, row) {
   const evidenceTable = renderTableHTML({
     columns: [
       { label: "Kind", key: "kind" },
@@ -773,7 +778,7 @@ function renderCLIRunDetail(entity, row) {
       { label: "Note", key: "note" },
     ],
     rows: row.evidence || [],
-    emptyMessage: "No CLI run evidence recorded.",
+    emptyMessage: "No pipeline evidence recorded.",
   });
   const relationTable = renderTableHTML({
     columns: [
@@ -782,7 +787,7 @@ function renderCLIRunDetail(entity, row) {
       { label: "Detail", key: "note" },
     ],
     rows: row.relations || [],
-    emptyMessage: "No CLI run relations recorded.",
+    emptyMessage: "No pipeline relations recorded.",
   });
 
   return `
@@ -793,7 +798,7 @@ function renderCLIRunDetail(entity, row) {
           "Summary",
           detailList([
             ["Status", statusPill(row.status)],
-            ["Duration", escapeHTML(cliRunDurationLabel(row))],
+            ["Duration", escapeHTML(pipelineDurationLabel(row))],
             ["Command", detailCode(row.command || row.name)],
             ["Chain", detailCode(row.chainLabel || (row.chainTokens || []).join(" | ") || row.name)],
             ["Trace", detailCode(row.traceID)],
@@ -961,8 +966,8 @@ function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "sessions") {
     return sessionsTableModel(entity, sectionID);
   }
-  if (entity.dynamicKind === "cli-runs") {
-    return cliRunsTableModel(entity, sectionID);
+  if (entity.dynamicKind === "pipelines") {
+    return pipelinesTableModel(entity, sectionID);
   }
   if (entity.dynamicKind === "shells") {
     return shellsTableModel(entity, sectionID);
@@ -1051,32 +1056,32 @@ function sessionsTableModel(entity, sectionID) {
   }
 }
 
-function cliRunsTableModel(entity, sectionID) {
+function pipelinesTableModel(entity, sectionID) {
   switch (sectionID) {
     case "inventory":
       return {
         eyebrow: "Inventory",
-        title: "CLI Run Inventory",
-        meta: `${entity.liveItems.length} real runs`,
-        emptyMessage: "No CLI runs detected yet.",
+        title: "Pipelines",
+        meta: `${entity.liveItems.length} real pipelines`,
+        emptyMessage: "No pipelines detected yet.",
         columns: [
-          { label: "Run", render: (row) => linkedPrimaryCell(row.command || row.name, "", entityPath(entity.id, row.routeID)) },
+          { label: "Pipeline", render: (row) => linkedPrimaryCell(row.command || row.name, "", entityPath(entity.id, row.routeID)) },
           { label: "Status", render: (row) => statusPill(row.status) },
-          { label: "Session", render: (row) => cliRunSessionCell(row) },
+          { label: "Session", render: (row) => pipelineSessionCell(row) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
-          { label: "Duration", render: (row) => escapeHTML(cliRunDurationLabel(row)) },
-          { label: "Output Type", render: (row) => escapeHTML(cliRunOutputTypeLabel(row)) },
+          { label: "Duration", render: (row) => escapeHTML(pipelineDurationLabel(row)) },
+          { label: "Output Type", render: (row) => escapeHTML(pipelineOutputTypeLabel(row)) },
         ],
         rows: entity.liveItems,
       };
     case "evidence":
       return {
         eyebrow: "Evidence",
-        title: "CLI Run Discovery Evidence",
+        title: "Pipeline Discovery Evidence",
         meta: `${entity.evidence.length} real evidence rows`,
-        emptyMessage: "No CLI run evidence rows yet.",
+        emptyMessage: "No pipeline evidence rows yet.",
         columns: [
-          { label: "Run", render: (row) => primaryCell(row.runName, row.source) },
+          { label: "Pipeline", render: (row) => primaryCell(row.runName, row.source) },
           { label: "Kind", key: "kind" },
           { label: "Confidence", render: (row) => confidencePill(row.confidence) },
           { label: "Source", key: "source" },
@@ -1087,11 +1092,11 @@ function cliRunsTableModel(entity, sectionID) {
     case "relations":
       return {
         eyebrow: "Relations",
-        title: "CLI Run Relations",
+        title: "Pipeline Relations",
         meta: `${entity.relations.length} derived relations`,
-        emptyMessage: "No CLI run relations yet.",
+        emptyMessage: "No pipeline relations yet.",
         columns: [
-          { label: "Run", key: "source" },
+          { label: "Pipeline", key: "source" },
           { label: "Relation", render: (row) => tonePill("neutral", row.relation) },
           { label: "Target", render: (row) => primaryCell(row.target, row.targetKind) },
           { label: "Detail", key: "note" },
@@ -1102,15 +1107,15 @@ function cliRunsTableModel(entity, sectionID) {
     default:
       return {
         eyebrow: "Overview",
-        title: "CLI Run Current Surface",
-        meta: `${Math.min(3, entity.liveItems.length)} of ${entity.liveItems.length} real runs`,
-        emptyMessage: "No CLI runs detected yet.",
+        title: "Pipeline Current Surface",
+        meta: `${Math.min(3, entity.liveItems.length)} of ${entity.liveItems.length} real pipelines`,
+        emptyMessage: "No pipelines detected yet.",
         columns: [
-          { label: "Run", render: (row) => primaryCell(row.name, row.command || row.chainLabel) },
+          { label: "Pipeline", render: (row) => primaryCell(row.name, row.command || row.chainLabel) },
           { label: "Status", render: (row) => statusPill(row.status) },
-          { label: "Output", render: (row) => cliRunOutputCell(row) },
-          { label: "Follow-up", render: (row) => cliRunFollowupCell(row) },
-          { label: "Scope", render: (row) => cliRunScopeCell(row) },
+          { label: "Output", render: (row) => pipelineOutputCell(row) },
+          { label: "Follow-up", render: (row) => pipelineFollowupCell(row) },
+          { label: "Session", render: (row) => pipelineSessionCell(row) },
         ],
         rows: entity.liveItems.slice(0, 3),
       };
@@ -1199,7 +1204,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "sessions" && entity.id !== "cli-runs" && entity.id !== "shells")) {
+  if (!entity || (entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -1208,8 +1213,8 @@ function materializeEntity(entity) {
     if (entity.id === "sessions") {
       return buildLiveSessionsEntity(entity, live.items);
     }
-    if (entity.id === "cli-runs") {
-      return buildLiveCLIRunsEntity(entity, live.items);
+    if (entity.id === "pipelines") {
+      return buildLivePipelinesEntity(entity, live.items);
     }
     return buildLiveShellsEntity(entity, live.items);
   }
@@ -1253,7 +1258,7 @@ function materializeEntity(entity) {
   return entity;
 }
 
-function buildLiveCLIRunsEntity(base, items) {
+function buildLivePipelinesEntity(base, items) {
   const liveItems = items
     .map((item) => ({
       ...item,
@@ -1293,13 +1298,13 @@ function buildLiveCLIRunsEntity(base, items) {
 
   return {
     ...base,
-    dynamicKind: "cli-runs",
+    dynamicKind: "pipelines",
     liveItems,
     blurb:
-      "This domain is now live. Each row is one derived `dagger call` invocation, with the command chain, terminal output, and CLI-managed follow-up behavior kept together in one execution entity.",
+      "This domain is now live. Each row is one submitted DAGQL call chain, with the command, terminal output, and CLI-managed follow-up behavior kept together in one execution entity.",
     metrics: [
       {
-        label: "Detected runs",
+        label: "Detected pipelines",
         value: String(liveItems.length),
         detail: `${failedCount} failed | ${runningCount} running`,
       },
@@ -1311,7 +1316,7 @@ function buildLiveCLIRunsEntity(base, items) {
       {
         label: "Follow-up spans",
         value: String(followupTotal),
-        detail: `${attachedCount} runs with attached CLI follow-up`,
+        detail: `${attachedCount} pipelines with attached CLI follow-up`,
       },
     ],
     highlights: liveItems.slice(0, 3).map((item) => ({
@@ -1564,24 +1569,24 @@ function describeShellState(entity) {
   };
 }
 
-function cliRunOutputCell(row) {
+function pipelineOutputCell(row) {
   const title = row.terminalReturnType || "Unknown";
   const subtitle = row.terminalOutputDagqlID || row.terminalObjectID || row.terminalCallName || "Plain value";
   return primaryCell(title, subtitle);
 }
 
-function cliRunOutputTypeLabel(row) {
+function pipelineOutputTypeLabel(row) {
   return row.terminalReturnType || "Plain value";
 }
 
-function cliRunFollowupCell(row) {
+function pipelineFollowupCell(row) {
   const names = Array.isArray(row.followupSpanNames) ? row.followupSpanNames.filter(Boolean) : [];
   const title = row.followupSpanCount > 0 ? `${row.followupSpanCount} attached spans` : "No attached spans";
   const subtitle = names.length > 0 ? names.slice(0, 2).join(", ") : summarizeKinds(row.postProcessKinds);
   return primaryCell(title, subtitle);
 }
 
-function cliRunSessionCell(row) {
+function pipelineSessionCell(row) {
   if (!row.sessionID) {
     return "None";
   }
@@ -1589,7 +1594,7 @@ function cliRunSessionCell(row) {
   return linkedPrimaryCell(shortID(row.sessionID), "", href);
 }
 
-function cliRunDurationLabel(row) {
+function pipelineDurationLabel(row) {
   return durationLabel(row.startUnixNano, row.endUnixNano, row.status);
 }
 
