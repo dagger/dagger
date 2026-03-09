@@ -511,11 +511,17 @@ function renderEntityNav() {
   els.entityNav.innerHTML = entities
     .map((entity) => {
       const active = entity.id === state.entityID;
+      const mockBadge = isMockEntity(entity)
+        ? `<span class="v3-type-badge" aria-label="Mock domain">mock</span>`
+        : "";
       return `
         <button class="v3-type-item${active ? " is-active" : ""}" data-entity-id="${escapeHTML(entity.id)}" type="button">
           <span class="v3-type-icon">${escapeHTML(entity.code)}</span>
           <span class="v3-type-copy">
-            <span class="v3-type-title">${escapeHTML(entity.label)}</span>
+            <span class="v3-type-line">
+              <span class="v3-type-title">${escapeHTML(entity.label)}</span>
+              ${mockBadge}
+            </span>
           </span>
         </button>
       `;
@@ -529,6 +535,10 @@ function renderEntityNav() {
       void ensureActiveEntityData();
     });
   }
+}
+
+function isMockEntity(entity) {
+  return !liveDomainConfigs[entity.id];
 }
 
 function renderMain() {

@@ -1412,6 +1412,7 @@ Stage 7 implementation note:
    - evidence/relations remain useful API concepts, but are not currently first-class UI tabs
    - the right pane avoids redundant `Inventory` labeling and extra top-right status badges; the selected domain name already provides enough context
    - the top-left sidebar now keeps only a tiny brand block (`icon + product title`) above the domain list; no explanatory copy and no search/filter field until those prove necessary
+   - mocked domains are labeled directly in the left nav with a small `mock` badge so unwired taxonomy areas are visible at a glance
    - the sidebar footer remains pinned below the domain list; the domain list itself owns scrolling so long inventories do not overlap footer cards
 5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and right-pane inventory rendering.
 

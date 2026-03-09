@@ -1995,9 +1995,30 @@ body {
   min-width: 0;
 }
 
+.v3-type-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .v3-type-title {
   font-size: 1rem;
   font-weight: 600;
+}
+
+.v3-type-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 102, 102, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 82, 82, 0.12);
+  color: #ff9a9a;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .v3-submeta,
