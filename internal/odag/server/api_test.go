@@ -1785,6 +1785,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if !strings.Contains(cliRunRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected cli run detail route to serve v3 shell, got %q", cliRunRec.Body.String())
 	}
+
+	sessionsReq := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	sessionsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(sessionsRec, sessionsReq)
+	if sessionsRec.Code != http.StatusOK {
+		t.Fatalf("sessions page failed: %d %s", sessionsRec.Code, sessionsRec.Body.String())
+	}
+	if !strings.Contains(sessionsRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected sessions route to serve v3 shell, got %q", sessionsRec.Body.String())
+	}
+
+	sessionReq := httptest.NewRequest(http.MethodGet, "/sessions/abc123", nil)
+	sessionRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(sessionRec, sessionReq)
+	if sessionRec.Code != http.StatusOK {
+		t.Fatalf("session detail page failed: %d %s", sessionRec.Code, sessionRec.Body.String())
+	}
+	if !strings.Contains(sessionRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected session detail route to serve v3 shell, got %q", sessionRec.Body.String())
+	}
 }
 
 func TestDevModeWebHashAndInjection(t *testing.T) {

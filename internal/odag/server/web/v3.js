@@ -200,6 +200,45 @@ const entities = [
     ],
   },
   {
+    id: "sessions",
+    label: "Sessions",
+    code: "SE",
+    category: "Execution-centric",
+    eyebrow: "Root client execution containers",
+    blurb:
+      "Sessions are the primitive execution lanes derived from root clients. They are broader than one CLI run and narrower than a whole trace.",
+    metrics: [
+      { label: "Detected sessions", value: "6", detail: "mixed interactive and one-shot command roots" },
+      { label: "Open sessions", value: "2", detail: "still ingesting in the current mock window" },
+      { label: "Fallback sessions", value: "0", detail: "all current samples have real root-client derivation" },
+    ],
+    highlights: [
+      { title: "session-release-main", value: "Stable", note: "One release-oriented root client with several downstream commands." },
+      { title: "session-preview-shell", value: "Open", note: "Interactive root session still collecting child activity." },
+      { title: "session-lab-scratch", value: "Short", note: "Ephemeral experimental lane with little downstream fanout." },
+    ],
+    signals: [
+      { label: "Root clarity", value: "High", tone: "good", detail: "sessions currently map cleanly to root clients" },
+      { label: "Open pressure", value: "2 sessions", tone: "neutral", detail: "long-lived sessions still deserve direct visibility" },
+      { label: "Fallback use", value: "None", tone: "good", detail: "no trace-only session fallback in the current sample" },
+    ],
+    evidence: [
+      { kind: "Root client", confidence: "high", source: "connect span ancestry", note: "Sessions are derived from root clients rather than from raw traces." },
+      { kind: "Client tree", confidence: "high", source: "parent-client graph", note: "Each descendant client stays attached to exactly one session." },
+      { kind: "Trace boundary", confidence: "medium", source: "ingest container", note: "Trace still matters, but only as a container around the execution tree." },
+    ],
+    inventory: [
+      { name: "session-release-main", status: "completed", owner: "release", scope: "root-client release-main", updated: "4m ago" },
+      { name: "session-preview-shell", status: "open", owner: "design", scope: "root-client preview-shell", updated: "9m ago" },
+      { name: "session-lab-scratch", status: "completed", owner: "solo", scope: "root-client lab-scratch", updated: "18m ago" },
+    ],
+    relations: [
+      { source: "session-release-main", relation: "owns", target: "call-release-91", note: "one-shot command lane" },
+      { source: "session-preview-shell", relation: "contains", target: "shell-preview-main", note: "interactive shell root" },
+      { source: "session-lab-scratch", relation: "contains", target: "repl-scratch-9", note: "experimental lane" },
+    ],
+  },
+  {
     id: "cli-runs",
     label: "CLI Runs",
     code: "CL",
@@ -402,6 +441,12 @@ const entities = [
 ];
 
 const liveDomainConfigs = {
+  sessions: {
+    stateKey: "sessions",
+    endpoint: "/api/v2/sessions?limit=100",
+    label: "Sessions",
+    singularLabel: "Session",
+  },
   "cli-runs": {
     stateKey: "cliRuns",
     endpoint: "/api/v2/cli-runs?limit=100",
@@ -420,6 +465,11 @@ const state = {
   entityID: "terminals",
   detailID: "",
   live: {
+    sessions: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
     cliRuns: {
       status: "idle",
       items: [],
@@ -685,6 +735,10 @@ function renderDetail(entity) {
     els.tableShell.innerHTML = renderCLIRunDetail(entity, detailItem);
     return;
   }
+  if (entity.dynamicKind === "sessions") {
+    els.tableShell.innerHTML = renderSessionDetail(entity, detailItem);
+    return;
+  }
   if (entity.dynamicKind === "shells") {
     els.tableShell.innerHTML = renderShellDetail(entity, detailItem);
     return;
@@ -761,6 +815,35 @@ function renderCLIRunDetail(entity, row) {
       </div>
       ${detailSection("Evidence", evidenceTable)}
       ${detailSection("Relations", relationTable)}
+    </div>
+  `;
+}
+
+function renderSessionDetail(entity, row) {
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <div class="v3-detail-grid">
+        ${detailCard(
+          "Summary",
+          detailList([
+            ["Status", statusPill(sessionStatusLabel(row))],
+            ["Started", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano))],
+            ["Duration", escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status))],
+            ["Open", escapeHTML(row.open ? "yes" : "no")],
+            ["Fallback", escapeHTML(row.fallback ? "yes" : "no")],
+          ]),
+        )}
+        ${detailCard(
+          "Identity",
+          detailList([
+            ["Session", detailCode(row.id)],
+            ["Root client", detailCode(row.rootClientID || "Unknown")],
+            ["Trace", detailCode(row.traceID || "Unknown")],
+            ["Last seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano))],
+          ]),
+        )}
+      </div>
     </div>
   `;
 }
@@ -875,6 +958,9 @@ function backLink(entity) {
 }
 
 function tableModel(entity, sectionID) {
+  if (entity.dynamicKind === "sessions") {
+    return sessionsTableModel(entity, sectionID);
+  }
   if (entity.dynamicKind === "cli-runs") {
     return cliRunsTableModel(entity, sectionID);
   }
@@ -943,6 +1029,28 @@ function tableModel(entity, sectionID) {
   }
 }
 
+function sessionsTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Session Inventory",
+        meta: `${entity.liveItems.length} real sessions`,
+        emptyMessage: "No sessions detected yet.",
+        columns: [
+          { label: "Session", render: (row) => linkedPrimaryCell(shortID(row.id), "", entityPath(entity.id, row.routeID)) },
+          { label: "Status", render: (row) => statusPill(sessionStatusLabel(row)) },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)) },
+          { label: "Duration", render: (row) => escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)) },
+          { label: "Root Client", render: (row) => detailCode(row.rootClientID || "Unknown") },
+          { label: "Trace", render: (row) => detailCode(shortID(row.traceID)) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
 function cliRunsTableModel(entity, sectionID) {
   switch (sectionID) {
     case "inventory":
@@ -954,10 +1062,10 @@ function cliRunsTableModel(entity, sectionID) {
         columns: [
           { label: "Run", render: (row) => linkedPrimaryCell(row.command || row.name, "", entityPath(entity.id, row.routeID)) },
           { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Session", render: (row) => cliRunSessionCell(row) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(cliRunDurationLabel(row)) },
           { label: "Output Type", render: (row) => escapeHTML(cliRunOutputTypeLabel(row)) },
-          { label: "Scope", render: (row) => cliRunScopeCell(row) },
         ],
         rows: entity.liveItems,
       };
@@ -1091,12 +1199,15 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "cli-runs" && entity.id !== "shells")) {
+  if (!entity || (entity.id !== "sessions" && entity.id !== "cli-runs" && entity.id !== "shells")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
   const live = state.live[config.stateKey];
   if (live.status === "loaded") {
+    if (entity.id === "sessions") {
+      return buildLiveSessionsEntity(entity, live.items);
+    }
     if (entity.id === "cli-runs") {
       return buildLiveCLIRunsEntity(entity, live.items);
     }
@@ -1230,6 +1341,72 @@ function buildLiveCLIRunsEntity(base, items) {
     ],
     evidence,
     relations,
+    inventory: liveItems,
+  };
+}
+
+function buildLiveSessionsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      name: shortID(item.id),
+      routeID: sessionRouteID(item.traceID, item.id),
+    }))
+    .sort((a, b) => Number(b.firstSeenUnixNano || 0) - Number(a.firstSeenUnixNano || 0));
+  const durations = liveItems.map((item) => Math.max(0, Number(item.lastSeenUnixNano || 0) - Number(item.firstSeenUnixNano || 0)));
+  const openCount = liveItems.filter((item) => item.open).length;
+  const fallbackCount = liveItems.filter((item) => item.fallback).length;
+
+  return {
+    ...base,
+    dynamicKind: "sessions",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one derived execution session rooted at a root client, with trace retained as container context rather than as the primary UI identity.",
+    metrics: [
+      {
+        label: "Detected sessions",
+        value: String(liveItems.length),
+        detail: `${openCount} open | ${fallbackCount} fallback`,
+      },
+      {
+        label: "Median duration",
+        value: formatDuration(median(durations)),
+        detail: "Based on real derived sessions.",
+      },
+      {
+        label: "Open sessions",
+        value: String(openCount),
+        detail: "Sessions still ingesting or otherwise active.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: shortID(item.id),
+      value: String(sessionStatusLabel(item)).toUpperCase(),
+      note: `${shortID(item.rootClientID)} root client in trace ${shortID(item.traceID)}`,
+    })),
+    signals: [
+      {
+        label: "Fallback sessions",
+        value: String(fallbackCount),
+        tone: fallbackCount > 0 ? "warn" : "good",
+        detail: "Fallback sessions appear when root-client derivation is unavailable.",
+      },
+      {
+        label: "Open pressure",
+        value: String(openCount),
+        tone: openCount > 0 ? "neutral" : "good",
+        detail: "Sessions currently still active.",
+      },
+      {
+        label: "Trace spread",
+        value: String(new Set(liveItems.map((item) => item.traceID).filter(Boolean)).size),
+        tone: "neutral",
+        detail: "Distinct traces represented by the current sessions set.",
+      },
+    ],
+    evidence: [],
+    relations: [],
     inventory: liveItems,
   };
 }
@@ -1404,10 +1581,12 @@ function cliRunFollowupCell(row) {
   return primaryCell(title, subtitle);
 }
 
-function cliRunScopeCell(row) {
-  const title = row.clientName || row.clientID || "unknown client";
-  const detail = row.sessionID ? `session ${shortID(row.sessionID)}` : `trace ${shortID(row.traceID)}`;
-  return primaryCell(title, detail);
+function cliRunSessionCell(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), "", href);
 }
 
 function cliRunDurationLabel(row) {
@@ -1449,7 +1628,7 @@ function statusPill(value) {
   const normalized = String(value || "").toLowerCase();
   const good = ["ready", "passing", "loaded", "protected", "warm", "completed"];
   const warn = ["degraded", "flaky", "drifted", "queued", "failed", "idle", "error"];
-  const neutral = ["live", "warming", "ephemeral", "cooldown", "running", "attached", "light", "loading", "hybrid"];
+  const neutral = ["live", "warming", "ephemeral", "cooldown", "running", "attached", "light", "loading", "hybrid", "open", "ingesting"];
   const tone = good.includes(normalized) ? "good" : warn.includes(normalized) ? "warn" : neutral.includes(normalized) ? "neutral" : "neutral";
   return `<span class="v3-pill v3-pill-${tone}">${escapeHTML(value)}</span>`;
 }
@@ -1538,6 +1717,10 @@ function shortRouteID(left, right) {
   return `${routeToken(left)}-${routeToken(right)}`;
 }
 
+function sessionRouteID(traceID, sessionID) {
+  return shortRouteID(traceID, sessionID || traceID);
+}
+
 function routeToken(raw, width = 10) {
   const text = String(raw || "")
     .toLowerCase()
@@ -1546,6 +1729,13 @@ function routeToken(raw, width = 10) {
     return "unknown";
   }
   return text.slice(0, width);
+}
+
+function sessionStatusLabel(row) {
+  if (row.open) {
+    return "open";
+  }
+  return row.status || "unknown";
 }
 
 function shellActivityCell(row) {

@@ -52,7 +52,7 @@
    - current prototype: embedded HTML/CSS/JS + SVG renderer (no external frontend build)
    - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
 11. V3 home information architecture:
-   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, CLI Runs (`dagger call` invocations), Shells, Workspace Ops, Git Remotes, Registries.
+   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, Sessions, CLI Runs (`dagger call` invocations), Shells, Workspace Ops, Git Remotes, Registries.
    - while taxonomy is still settling, the right pane should stay inventory-first: click a domain on the left, see that domain's inventory immediately on the right.
    - deeper specialized views can return later once the base inventory interaction is obviously useful.
 12. Underlying execution/debug hierarchy:
@@ -1401,6 +1401,7 @@ Stage 7 implementation note:
    - Repls
    - Checks
    - Workspaces
+   - Sessions
    - CLI Runs
    - Shells
    - Workspace Ops
@@ -1438,7 +1439,7 @@ Stage 8 implementation note:
    - selecting `CLI Runs` fetches real data from `/api/v2/cli-runs`
    - the right pane now renders the real CLI Run inventory directly
    - shell chrome reflects the current domain state (`Mock`, `Activating`, `Live Domain`, `Hybrid Degraded`) instead of pretending the entire app is still mocked
-   - the inventory columns now emphasize full command, relative start time, output type, and execution scope; final-call details stay on the per-run page
+   - the inventory columns now emphasize full command, session, relative start time, and output type; final-call details stay on the per-run page
 6. Current Stage 8 result is intentionally hybrid:
    - `CLI Runs` is live end-to-end
    - all other domains remain mocked
@@ -1519,6 +1520,16 @@ Stage 12 implementation note:
 5. Current route identity is UI-derived, not yet backend-native:
    - short IDs are currently deterministic route keys derived from trace plus client identity in the frontend
    - if direct linking/pagination needs hard guarantees later, promote short IDs into the API contract explicitly
+
+Stage 13 implementation note:
+1. V3 now exposes `Sessions` as a first-class left-nav domain backed by `GET /api/v2/sessions`.
+2. Current primitive-first adjustment:
+   - `CLI Runs` inventory now points directly at the `Session` primitive instead of using a vague `Scope` label
+   - `Sessions` is now visible as its own inventory and detail route in the shell
+3. Current session semantics:
+   - sessions are derived from root clients
+   - they sit between trace and client in the execution hierarchy
+   - trace remains container context, not the primary identity of a session row
 
 ### Phase 3: Payload evolution (future)
 
