@@ -1446,6 +1446,9 @@ Stage 8 implementation note:
    - using client-owned call order instead of existing `TopLevel` semantics was necessary for CLI chain reconstruction
    - same-client follow-up spans are useful, but conservative by design and probably still incomplete
    - the shared shell can host one live domain without forcing the rest of the taxonomy to crystallize too early
+8. Current status semantics:
+   - `CLI Run` row status is derived from the terminal DAGQL call outcome plus ingesting/not-ingesting state
+   - attached follow-up spans remain evidence on the same entity, but do not by themselves flip a successful run to `failed`
 
 Stage 9 implementation note:
 1. What generalized well from the first real domain:

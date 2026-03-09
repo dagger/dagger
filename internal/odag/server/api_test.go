@@ -1389,22 +1389,22 @@ func TestV2CLIRuns(t *testing.T) {
 								},
 								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
 							},
-							{
-								TraceId:           mustDecodeHex(t, traceIDHex),
-								SpanId:            mustDecodeHex(t, applyHex),
-								ParentSpanId:      mustDecodeHex(t, connectHex),
-								Name:              "applying changes",
+								{
+									TraceId:           mustDecodeHex(t, traceIDHex),
+									SpanId:            mustDecodeHex(t, applyHex),
+									ParentSpanId:      mustDecodeHex(t, connectHex),
+									Name:              "applying changes",
 								StartTimeUnixNano: 61,
 								EndTimeUnixNano:   75,
-								Attributes: []*commonpb.KeyValue{
-									kvString(t, telemetry.EngineClientIDAttr, clientID),
-									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									Attributes: []*commonpb.KeyValue{
+										kvString(t, telemetry.EngineClientIDAttr, clientID),
+										kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									},
+									Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
 								},
-								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
 							},
 						},
 					},
-				},
 			},
 		},
 	}

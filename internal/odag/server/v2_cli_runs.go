@@ -193,7 +193,7 @@ func collectV2CLIRuns(traceStatus, traceID string, q v2Query, proj *transform.Tr
 		}
 
 		postProcessKinds := classifyV2CLIRunPostProcess(cmd, *terminal, followups)
-		status := deriveV2CLIRunStatus(traceStatus, terminal.StatusCode, followups)
+		status := deriveV2CLIRunStatus(traceStatus, terminal.StatusCode)
 		runID := "cli-run:" + traceID + "/" + client.ID
 		evidence := buildV2CLIRunEvidence(cmd, callEvents, chainEvents, *terminal, followups)
 		relations := buildV2CLIRunRelations(client, *terminal, postProcessKinds)
@@ -383,14 +383,9 @@ func classifyV2CLIRunPostProcess(cmd v2CLIRunCommand, terminal transform.Mutatio
 	return setToSortedSlice(set)
 }
 
-func deriveV2CLIRunStatus(traceStatus, terminalStatus string, followups []transform.MutationEvent) string {
+func deriveV2CLIRunStatus(traceStatus, terminalStatus string) string {
 	if terminalStatus != "" && terminalStatus != "STATUS_CODE_OK" && terminalStatus != "OK" {
 		return "failed"
-	}
-	for _, event := range followups {
-		if event.StatusCode != "" && event.StatusCode != "STATUS_CODE_OK" && event.StatusCode != "OK" {
-			return "failed"
-		}
 	}
 	if traceStatus == "ingesting" {
 		return "running"
