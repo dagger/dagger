@@ -2027,6 +2027,21 @@ body {
   font-size: 0.84rem;
 }
 
+.v3-link,
+.v3-back-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.v3-link {
+  display: block;
+}
+
+.v3-link:hover .v3-cell-primary strong,
+.v3-back-link:hover {
+  color: #f7d79a;
+}
+
 .v3-sidebar-foot {
   display: grid;
   gap: 10px;
@@ -2247,6 +2262,84 @@ body {
   font-size: 0.96rem;
 }
 
+.v3-detail-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.v3-back-link {
+  width: fit-content;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.v3-back-link::before {
+  content: "< ";
+}
+
+.v3-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.v3-detail-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.v3-detail-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.v3-detail-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.5fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.v3-detail-row dt {
+  color: #8f9399;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.v3-detail-row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.v3-detail-code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d7dae0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.v3-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v3-detail-empty {
+  margin: 0;
+  color: #c8ccd2;
+}
+
 .v3-pill {
   min-height: 28px;
   padding: 0 10px;
@@ -2287,7 +2380,8 @@ body {
   }
 
   .v3-split-grid,
-  .v3-metric-grid {
+  .v3-metric-grid,
+  .v3-detail-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -2309,6 +2403,11 @@ body {
   .v3-signal-value {
     justify-items: start;
     text-align: left;
+  }
+
+  .v3-detail-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .v3-table thead {

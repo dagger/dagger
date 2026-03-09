@@ -406,16 +406,19 @@ const liveDomainConfigs = {
     stateKey: "cliRuns",
     endpoint: "/api/v2/cli-runs?limit=100",
     label: "CLI Runs",
+    singularLabel: "CLI Run",
   },
   shells: {
     stateKey: "shells",
     endpoint: "/api/v2/shells?limit=100",
     label: "Shells",
+    singularLabel: "Shell",
   },
 };
 
 const state = {
   entityID: "terminals",
+  detailID: "",
   live: {
     cliRuns: {
       status: "idle",
@@ -431,6 +434,7 @@ const state = {
 };
 
 const els = {
+  pageLabel: document.getElementById("pageLabel"),
   pageTitle: document.getElementById("pageTitle"),
   entityNav: document.getElementById("entityNav"),
   shellMode: document.getElementById("shellMode"),
@@ -455,22 +459,73 @@ function bindEvents() {
     render();
     void ensureActiveEntityData();
   });
+
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    const link = event.target.closest("a[data-route-path]");
+    if (!link || link.target === "_blank" || link.hasAttribute("download")) {
+      return;
+    }
+    const nextPath = link.getAttribute("data-route-path");
+    if (!nextPath) {
+      return;
+    }
+    event.preventDefault();
+    navigateTo(nextPath);
+  });
 }
 
 function readURLState() {
-  const params = new URLSearchParams(window.location.search);
-  const entityID = String(params.get("entity") || params.get("type") || "").toLowerCase();
-
-  if (findEntity(entityID)) {
-    state.entityID = entityID;
-  }
+  const route = parseRoute(window.location.pathname, window.location.search);
+  state.entityID = route.entityID;
+  state.detailID = route.detailID;
 }
 
-function writeURLState() {
-  const params = new URLSearchParams();
-  params.set("entity", state.entityID);
-  const next = `${window.location.pathname}?${params.toString()}`;
-  window.history.replaceState({}, "", next);
+function parseRoute(pathname, search) {
+  const segments = String(pathname || "/")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => decodeURIComponent(segment).toLowerCase());
+  const entityID = findEntity(segments[0] || "") ? segments[0] : legacyEntityID(search);
+  const detailID = supportsDetailRoute(entityID) && segments[1] ? segments[1] : "";
+  return {
+    entityID: entityID || entities[0].id,
+    detailID,
+  };
+}
+
+function legacyEntityID(search) {
+  const params = new URLSearchParams(search);
+  const entityID = String(params.get("entity") || params.get("type") || "").toLowerCase();
+  if (findEntity(entityID)) {
+    return entityID;
+  }
+  return entities[0].id;
+}
+
+function navigateTo(nextPath, replace = false) {
+  const url = new URL(nextPath, window.location.origin);
+  const route = parseRoute(url.pathname, url.search);
+  state.entityID = route.entityID;
+  state.detailID = route.detailID;
+  const nextURL = `${url.pathname}${url.search}`;
+  const currentURL = `${window.location.pathname}${window.location.search}`;
+  if (nextURL !== currentURL) {
+    const writeHistory = replace ? window.history.replaceState.bind(window.history) : window.history.pushState.bind(window.history);
+    writeHistory({}, "", nextURL);
+  }
+  render();
+  void ensureActiveEntityData();
+}
+
+function entityPath(entityID, detailID = "") {
+  const base = `/${encodeURIComponent(entityID || entities[0].id)}`;
+  if (!detailID) {
+    return base;
+  }
+  return `${base}/${encodeURIComponent(detailID)}`;
 }
 
 async function ensureActiveEntityData() {
@@ -504,7 +559,6 @@ async function ensureActiveEntityData() {
 function render() {
   renderEntityNav();
   renderMain();
-  writeURLState();
 }
 
 function renderEntityNav() {
@@ -515,7 +569,12 @@ function renderEntityNav() {
         ? `<span class="v3-type-badge" aria-label="Mock domain">mock</span>`
         : "";
       return `
-        <button class="v3-type-item${active ? " is-active" : ""}" data-entity-id="${escapeHTML(entity.id)}" type="button">
+        <button
+          class="v3-type-item${active ? " is-active" : ""}"
+          data-entity-id="${escapeHTML(entity.id)}"
+          data-route-path="${escapeHTML(entityPath(entity.id))}"
+          type="button"
+        >
           <span class="v3-type-icon">${escapeHTML(entity.code)}</span>
           <span class="v3-type-copy">
             <span class="v3-type-line">
@@ -530,9 +589,7 @@ function renderEntityNav() {
 
   for (const node of els.entityNav.querySelectorAll("[data-entity-id]")) {
     node.addEventListener("click", () => {
-      state.entityID = node.getAttribute("data-entity-id") || entities[0].id;
-      render();
-      void ensureActiveEntityData();
+      navigateTo(node.getAttribute("data-route-path") || entityPath(entities[0].id));
     });
   }
 }
@@ -543,20 +600,30 @@ function isMockEntity(entity) {
 
 function renderMain() {
   const entity = currentEntity();
-  const model = tableModel(entity, "inventory");
   const shellState = describeShellState(entity);
 
-  document.title = `ODAG V3 ${entity.label}`;
-  els.pageTitle.textContent = entity.label;
   els.shellMode.textContent = shellState.mode;
   els.shellSource.textContent = shellState.source;
+
+  if (state.detailID && supportsDetailRoute(entity.id)) {
+    renderDetail(entity);
+    return;
+  }
+
+  const model = tableModel(entity, "inventory");
+  document.title = `ODAG ${entity.label}`;
+  els.pageLabel.textContent = "Domain";
+  els.pageTitle.textContent = entity.label;
   els.tableTitle.textContent = entity.label;
   els.tableMeta.textContent = model.meta;
-
   renderTable(model);
 }
 
 function renderTable(model) {
+  els.tableShell.innerHTML = renderTableHTML(model);
+}
+
+function renderTableHTML(model) {
   const head = model.columns.map((column) => `<th>${escapeHTML(column.label)}</th>`).join("");
   const body = model.rows.length
     ? model.rows
@@ -575,7 +642,7 @@ function renderTable(model) {
         .join("")
     : `<tr><td colspan="${model.columns.length}">${escapeHTML(model.emptyMessage || "No rows yet.")}</td></tr>`;
 
-  els.tableShell.innerHTML = `
+  return `
     <table class="v3-table">
       <thead>
         <tr>${head}</tr>
@@ -583,6 +650,228 @@ function renderTable(model) {
       <tbody>${body}</tbody>
     </table>
   `;
+}
+
+function renderDetail(entity) {
+  const config = liveDomainConfigs[entity.id];
+  const live = config ? state.live[config.stateKey] : null;
+  const detailLabel = config?.singularLabel || entity.label;
+  const detailItem = currentDetailItem(entity);
+
+  els.pageLabel.textContent = detailLabel;
+  els.tableTitle.textContent = `${detailLabel} Details`;
+
+  if (live && live.status !== "loaded") {
+    document.title = `ODAG ${detailLabel}`;
+    els.pageTitle.textContent = detailLabel;
+    els.tableMeta.textContent = live.status === "error" ? "Unavailable" : "Loading";
+    els.tableShell.innerHTML = renderDetailState(entity, detailLabel, live.status === "error" ? "unavailable" : "loading");
+    return;
+  }
+
+  if (!detailItem) {
+    document.title = `ODAG ${detailLabel}`;
+    els.pageTitle.textContent = detailLabel;
+    els.tableMeta.textContent = state.detailID;
+    els.tableShell.innerHTML = renderDetailState(entity, detailLabel, "missing");
+    return;
+  }
+
+  document.title = `ODAG ${detailLabel} ${detailItem.routeID}`;
+  els.pageTitle.textContent = detailItem.name;
+  els.tableMeta.textContent = detailItem.routeID;
+
+  if (entity.dynamicKind === "cli-runs") {
+    els.tableShell.innerHTML = renderCLIRunDetail(entity, detailItem);
+    return;
+  }
+  if (entity.dynamicKind === "shells") {
+    els.tableShell.innerHTML = renderShellDetail(entity, detailItem);
+    return;
+  }
+
+  els.tableShell.innerHTML = renderDetailState(entity, detailLabel, "missing");
+}
+
+function renderDetailState(entity, label, kind) {
+  const copyByKind = {
+    loading: `${label} data is still loading from the live API.`,
+    unavailable: `${label} data could not be loaded from the live API.`,
+    missing: `${label} ${state.detailID} was not found in the current result set.`,
+  };
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <div class="v3-detail-card">
+        <p class="v3-foot-label">${escapeHTML(label)}</p>
+        <p class="v3-detail-empty">${escapeHTML(copyByKind[kind] || "No detail available.")}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderCLIRunDetail(entity, row) {
+  const evidenceTable = renderTableHTML({
+    columns: [
+      { label: "Kind", key: "kind" },
+      { label: "Confidence", render: (item) => confidencePill(item.confidence) },
+      { label: "Source", key: "source" },
+      { label: "Note", key: "note" },
+    ],
+    rows: row.evidence || [],
+    emptyMessage: "No CLI run evidence recorded.",
+  });
+  const relationTable = renderTableHTML({
+    columns: [
+      { label: "Relation", render: (item) => tonePill("neutral", item.relation) },
+      { label: "Target", render: (item) => primaryCell(item.target, item.targetKind) },
+      { label: "Detail", key: "note" },
+    ],
+    rows: row.relations || [],
+    emptyMessage: "No CLI run relations recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <div class="v3-detail-grid">
+        ${detailCard(
+          "Summary",
+          detailList([
+            ["Status", statusPill(row.status)],
+            ["Duration", escapeHTML(cliRunDurationLabel(row))],
+            ["Command", detailCode(row.command || row.name)],
+            ["Chain", detailCode(row.chainLabel || (row.chainTokens || []).join(" | ") || row.name)],
+            ["Trace", detailCode(row.traceID)],
+            ["Session", detailCode(row.sessionID || "Unknown")],
+            ["Client", detailCode(row.clientID || "Unknown")],
+          ]),
+        )}
+        ${detailCard(
+          "Output",
+          detailList([
+            ["Terminal call", detailCode(row.terminalCallName || "Unknown")],
+            ["Return type", detailCode(row.terminalReturnType || "Plain value")],
+            ["Output object", detailCode(row.terminalOutputDagqlID || row.terminalObjectID || "None")],
+            ["Post-process", detailInlineList(row.postProcessKinds, "None")],
+            ["Follow-up spans", detailInlineList(row.followupSpanNames, "None")],
+            ["Call chain", detailInlineList(row.chainCallIDs, "None")],
+          ]),
+        )}
+      </div>
+      ${detailSection("Evidence", evidenceTable)}
+      ${detailSection("Relations", relationTable)}
+    </div>
+  `;
+}
+
+function renderShellDetail(entity, row) {
+  const evidenceTable = renderTableHTML({
+    columns: [
+      { label: "Kind", key: "kind" },
+      { label: "Confidence", render: (item) => confidencePill(item.confidence) },
+      { label: "Source", key: "source" },
+      { label: "Note", key: "note" },
+    ],
+    rows: row.evidence || [],
+    emptyMessage: "No shell evidence recorded.",
+  });
+  const relationTable = renderTableHTML({
+    columns: [
+      { label: "Relation", render: (item) => tonePill("neutral", item.relation) },
+      { label: "Target", render: (item) => primaryCell(item.target, item.targetKind) },
+      { label: "Detail", key: "note" },
+    ],
+    rows: row.relations || [],
+    emptyMessage: "No shell relations recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <div class="v3-detail-grid">
+        ${detailCard(
+          "Summary",
+          detailList([
+            ["Status", statusPill(row.status)],
+            ["Mode", tonePill("neutral", row.mode || "interactive")],
+            ["Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status))],
+            ["Entry", detailCode(row.entryLabel || row.command || row.name)],
+            ["Trace", detailCode(row.traceID)],
+            ["Session", detailCode(row.sessionID || "Unknown")],
+            ["Client", detailCode(row.clientID || "Unknown")],
+          ]),
+        )}
+        ${detailCard(
+          "Activity",
+          detailList([
+            ["Owned calls", escapeHTML(String(row.callCount || 0))],
+            ["Descendant clients", escapeHTML(String(row.childClientCount || 0))],
+            ["Owned spans", escapeHTML(String(row.spanCount || 0))],
+            ["Activities", detailInlineList(row.activityNames, "None")],
+            ["Child clients", detailInlineList(row.childClientIDs, "None")],
+            ["Call IDs", detailInlineList(row.callIDs, "None")],
+          ]),
+        )}
+      </div>
+      ${detailSection("Evidence", evidenceTable)}
+      ${detailSection("Relations", relationTable)}
+    </div>
+  `;
+}
+
+function detailSection(title, body) {
+  return `
+    <section class="v3-detail-card">
+      <p class="v3-foot-label">${escapeHTML(title)}</p>
+      <div class="v3-table-shell">${body}</div>
+    </section>
+  `;
+}
+
+function detailCard(title, body) {
+  return `
+    <section class="v3-detail-card">
+      <p class="v3-foot-label">${escapeHTML(title)}</p>
+      ${body}
+    </section>
+  `;
+}
+
+function detailList(rows) {
+  return `
+    <dl class="v3-detail-list">
+      ${rows
+        .map(
+          ([label, value]) => `
+            <div class="v3-detail-row">
+              <dt>${escapeHTML(label)}</dt>
+              <dd>${value}</dd>
+            </div>`,
+        )
+        .join("")}
+    </dl>
+  `;
+}
+
+function detailCode(value) {
+  return `<code class="v3-detail-code">${escapeHTML(value || "")}</code>`;
+}
+
+function detailInlineList(values, emptyLabel) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return `<span>${escapeHTML(emptyLabel)}</span>`;
+  }
+  return `
+    <div class="v3-detail-tags">
+      ${values.map((value) => `<code class="v3-detail-code">${escapeHTML(value)}</code>`).join("")}
+    </div>
+  `;
+}
+
+function backLink(entity) {
+  const href = entityPath(entity.id);
+  return `<a class="v3-back-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(entity.label)}</a>`;
 }
 
 function tableModel(entity, sectionID) {
@@ -663,7 +952,7 @@ function cliRunsTableModel(entity, sectionID) {
         meta: `${entity.liveItems.length} real runs`,
         emptyMessage: "No CLI runs detected yet.",
         columns: [
-          { label: "Run", render: (row) => primaryCell(row.name, row.command || row.chainLabel) },
+          { label: "Run", render: (row) => linkedPrimaryCell(row.name, row.command || row.chainLabel, entityPath(entity.id, row.routeID)) },
           { label: "Status", render: (row) => statusPill(row.status) },
           { label: "Duration", render: (row) => escapeHTML(cliRunDurationLabel(row)) },
           { label: "Terminal Call", render: (row) => primaryCell(row.terminalCallName || "Unknown", `${row.chainDepth} chain / ${row.callCount} total`) },
@@ -729,7 +1018,7 @@ function shellsTableModel(entity, sectionID) {
         meta: `${entity.liveItems.length} real shells`,
         emptyMessage: "No shell sessions detected yet.",
         columns: [
-          { label: "Shell", render: (row) => primaryCell(row.name, row.command || row.entryLabel) },
+          { label: "Shell", render: (row) => linkedPrimaryCell(row.name, row.command || row.entryLabel, entityPath(entity.id, row.routeID)) },
           { label: "Mode", render: (row) => tonePill("neutral", row.mode || "interactive") },
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Activity", render: (row) => shellActivityCell(row) },
@@ -790,6 +1079,17 @@ function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
 }
 
+function currentDetailItem(entity) {
+  if (!state.detailID || !entity || !Array.isArray(entity.liveItems)) {
+    return null;
+  }
+  return entity.liveItems.find((item) => item.routeID === state.detailID) || null;
+}
+
+function supportsDetailRoute(entityID) {
+  return Boolean(liveDomainConfigs[entityID]);
+}
+
 function materializeEntity(entity) {
   if (!entity || (entity.id !== "cli-runs" && entity.id !== "shells")) {
     return entity;
@@ -802,19 +1102,20 @@ function materializeEntity(entity) {
     }
     return buildLiveShellsEntity(entity, live.items);
   }
-  if (live.status === "loading") {
+  if (live.status === "idle" || live.status === "loading") {
+    const pendingLabel = live.status === "idle" ? "Pending" : "Loading";
     return {
       ...entity,
       dynamicKind: entity.id,
       liveItems: [],
       blurb: `Fetching live ${config.label.toLowerCase()} from ${config.endpoint}. Other domains remain mocked while the next entity slice settles.`,
       metrics: [
-        { label: "Live fetch", value: "Loading", detail: `Requesting ${config.label} from the real API.` },
+        { label: "Live fetch", value: pendingLabel, detail: `Requesting ${config.label} from the real API.` },
         { label: "Entity mode", value: "Hybrid", detail: `${config.label} are switching from mock data to live data.` },
         { label: "Next step", value: "Render", detail: "Wire the current domain end-to-end before generalizing further." },
       ],
-      highlights: [{ title: config.label, value: "Loading", note: "Waiting for live entity payload." }],
-      signals: [{ label: "API state", value: "Pending", tone: "neutral", detail: `${config.label} are still loading.` }],
+      highlights: [{ title: config.label, value: pendingLabel, note: "Waiting for live entity payload." }],
+      signals: [{ label: "API state", value: pendingLabel, tone: "neutral", detail: `${config.label} are still loading.` }],
       evidence: [],
       relations: [],
       inventory: [],
@@ -842,7 +1143,12 @@ function materializeEntity(entity) {
 }
 
 function buildLiveCLIRunsEntity(base, items) {
-  const liveItems = items.slice().sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.traceID, item.clientID || item.id),
+    }))
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
   const durations = liveItems.map((item) => Math.max(0, Number(item.endUnixNano || 0) - Number(item.startUnixNano || 0)));
   const failedCount = liveItems.filter((item) => item.status === "failed").length;
   const runningCount = liveItems.filter((item) => item.status === "running").length;
@@ -929,7 +1235,12 @@ function buildLiveCLIRunsEntity(base, items) {
 }
 
 function buildLiveShellsEntity(base, items) {
-  const liveItems = items.slice().sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.traceID, item.rootClientID || item.clientID || item.id),
+    }))
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
   const durations = liveItems.map((item) => Math.max(0, Number(item.endUnixNano || 0) - Number(item.startUnixNano || 0)));
   const failedCount = liveItems.filter((item) => item.status === "failed").length;
   const runningCount = liveItems.filter((item) => item.status === "running").length;
@@ -1119,6 +1430,17 @@ function primaryCell(title, subtitle) {
   `;
 }
 
+function linkedPrimaryCell(title, subtitle, href) {
+  if (!href) {
+    return primaryCell(title, subtitle);
+  }
+  return `
+    <a class="v3-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">
+      ${primaryCell(title, subtitle)}
+    </a>
+  `;
+}
+
 function statusPill(value) {
   const normalized = String(value || "").toLowerCase();
   const good = ["ready", "passing", "loaded", "protected", "warm", "completed"];
@@ -1179,6 +1501,20 @@ function shortID(raw, width = 12) {
   const text = String(raw || "");
   if (!text || text.length <= width) {
     return text;
+  }
+  return text.slice(0, width);
+}
+
+function shortRouteID(left, right) {
+  return `${routeToken(left)}-${routeToken(right)}`;
+}
+
+function routeToken(raw, width = 10) {
+  const text = String(raw || "")
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "");
+  if (!text) {
+    return "unknown";
   }
   return text.slice(0, width);
 }

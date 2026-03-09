@@ -1502,6 +1502,21 @@ Stage 11 implementation note:
    - it tests whether V3 can move beyond command/session identity into host-side side effects such as `File.export`, `Directory.export`, and `Host.directory`
    - it exercises the original problem statement directly: some of the most useful insights come from recognizing that these spans belong to one meaningful workspace operation rather than rendering them as disconnected low-level noise
 
+Stage 12 implementation note:
+1. V3 shell routing now uses clean path-based URLs rather than query-param entity selection.
+2. Current route pattern:
+   - list pages live at `/<entity-domain>` such as `/cli-runs` and `/shells`
+   - live entity detail pages live at `/<entity-domain>/<short-id>`
+3. Current detail-page support:
+   - `CLI Runs` inventory rows navigate to per-run pages at `/cli-runs/<short-id>`
+   - `Shells` inventory rows navigate to per-shell pages at `/shells/<short-id>`
+4. Current detail-page content stays inventory-first and fact-oriented:
+   - summary and output/activity cards for the selected entity
+   - entity-local `evidence` and `relations` tables below
+5. Current route identity is UI-derived, not yet backend-native:
+   - short IDs are currently deterministic route keys derived from trace plus client identity in the frontend
+   - if direct linking/pagination needs hard guarantees later, promote short IDs into the API contract explicitly
+
 ### Phase 3: Payload evolution (future)
 
 1. Version object-state payload format for compatibility.

@@ -1765,6 +1765,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if !strings.Contains(dagRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected dag route to serve v3 shell, got %q", dagRec.Body.String())
 	}
+
+	cliRunsReq := httptest.NewRequest(http.MethodGet, "/cli-runs", nil)
+	cliRunsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(cliRunsRec, cliRunsReq)
+	if cliRunsRec.Code != http.StatusOK {
+		t.Fatalf("cli runs page failed: %d %s", cliRunsRec.Code, cliRunsRec.Body.String())
+	}
+	if !strings.Contains(cliRunsRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected cli runs route to serve v3 shell, got %q", cliRunsRec.Body.String())
+	}
+
+	cliRunReq := httptest.NewRequest(http.MethodGet, "/cli-runs/abc123", nil)
+	cliRunRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(cliRunRec, cliRunReq)
+	if cliRunRec.Code != http.StatusOK {
+		t.Fatalf("cli run detail page failed: %d %s", cliRunRec.Code, cliRunRec.Body.String())
+	}
+	if !strings.Contains(cliRunRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected cli run detail route to serve v3 shell, got %q", cliRunRec.Body.String())
+	}
 }
 
 func TestDevModeWebHashAndInjection(t *testing.T) {
