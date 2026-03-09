@@ -441,6 +441,12 @@ const entities = [
 ];
 
 const liveDomainConfigs = {
+  services: {
+    stateKey: "services",
+    endpoint: "/api/services?limit=200",
+    label: "Services",
+    singularLabel: "Service",
+  },
   sessions: {
     stateKey: "sessions",
     endpoint: "/api/sessions?limit=100",
@@ -480,6 +486,11 @@ const state = {
     pipelines: {},
   },
   live: {
+    services: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
     sessions: {
       status: "idle",
       items: [],
@@ -834,6 +845,10 @@ function renderDetail(entity) {
     els.tableShell.innerHTML = renderWorkspaceOpDetail(entity, detailItem);
     return;
   }
+  if (entity.dynamicKind === "services") {
+    els.tableShell.innerHTML = renderServiceDetail(entity, detailItem);
+    return;
+  }
   if (entity.dynamicKind === "git-remotes") {
     els.tableShell.innerHTML = renderGitRemoteDetail(entity, detailItem);
     return;
@@ -1037,6 +1052,61 @@ function renderGitRemoteDetail(entity, row) {
         </div>
       </section>
       ${detailSection("Recent Pipelines", pipelineTable)}
+    </div>
+  `;
+}
+
+function renderServiceDetail(entity, row) {
+  const activityTable = renderTableHTML({
+    columns: [
+      { label: "Call", render: (item) => primaryCell(item.name, "") },
+      { label: "Role", render: (item) => tonePill("neutral", item.role || "activity") },
+      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: row.activity || [],
+    emptyMessage: "No service activity recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Service</p>
+          <strong>${escapeHTML(row.name || "Service")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.status))}
+          ${pipelineRecapItem("Kind", tonePill("neutral", row.kind || "service"))}
+          ${pipelineRecapItem("Session", serviceSessionSummary(row))}
+          ${pipelineRecapItem("Last Activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano)))}
+          ${pipelineRecapItem("Created By", detailCode(row.createdByCallName || "Unknown"))}
+          ${pipelineRecapItem("Pipeline", servicePipelineSummary(row))}
+          ${pipelineRecapItem("DAGQL ID", detailCode(row.dagqlID || "Unknown"))}
+        </div>
+      </section>
+      <div class="v3-detail-grid">
+        ${detailCard(
+          "Definition",
+          detailList([
+            ["Image", row.imageRef ? detailCode(row.imageRef) : "Unknown"],
+            ["Hostname", row.customHostname ? detailCode(row.customHostname) : "None"],
+            ["Container", row.containerDagqlID ? detailCode(row.containerDagqlID) : "None"],
+            ["Tunnel Upstream", row.tunnelUpstreamDagqlID ? detailCode(row.tunnelUpstreamDagqlID) : "None"],
+          ]),
+        )}
+        ${detailCard(
+          "Activity",
+          detailList([
+            ["Calls", escapeHTML(String((row.activity || []).length))],
+            ["Started", escapeHTML(relativeTimeFromNow(row.startUnixNano))],
+            ["Last activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano))],
+            ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
+          ]),
+        )}
+      </div>
+      ${detailSection("Activity", activityTable)}
     </div>
   `;
 }
@@ -1468,6 +1538,9 @@ function backLink(entity) {
 }
 
 function tableModel(entity, sectionID) {
+  if (entity.dynamicKind === "services") {
+    return servicesTableModel(entity, sectionID);
+  }
   if (entity.dynamicKind === "sessions") {
     return sessionsTableModel(entity, sectionID);
   }
@@ -1561,6 +1634,28 @@ function sessionsTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)) },
           { label: "Root Client", render: (row) => detailCode(row.rootClientID || "Unknown") },
           { label: "Trace", render: (row) => detailCode(shortID(row.traceID)) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
+function servicesTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Services",
+        meta: `${entity.liveItems.length} real services`,
+        emptyMessage: "No services detected yet.",
+        columns: [
+          { label: "Service", render: (row) => linkedPrimaryCell(row.name || "Service", row.imageRef || "", entityPath(entity.id, row.routeID)) },
+          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Kind", render: (row) => tonePill("neutral", row.kind || "service") },
+          { label: "Created By", render: (row) => serviceCreatedByCell(row) },
+          { label: "Session", render: (row) => serviceSessionCell(row) },
+          { label: "Last Activity", render: (row) => escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano)) },
         ],
         rows: entity.liveItems,
       };
@@ -1758,12 +1853,15 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes")) {
+  if (!entity || (entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
   const live = state.live[config.stateKey];
   if (live.status === "loaded") {
+    if (entity.id === "services") {
+      return buildLiveServicesEntity(entity, live.items);
+    }
     if (entity.id === "sessions") {
       return buildLiveSessionsEntity(entity, live.items);
     }
@@ -1906,6 +2004,71 @@ function buildLivePipelinesEntity(base, items) {
     ],
     evidence,
     relations,
+    inventory: liveItems,
+  };
+}
+
+function buildLiveServicesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.traceID, item.dagqlID || item.id),
+    }))
+    .sort((a, b) => Number(b.lastActivityUnixNano || 0) - Number(a.lastActivityUnixNano || 0));
+  const runningCount = liveItems.filter((item) => item.status === "running").length;
+  const failedCount = liveItems.filter((item) => item.status === "failed").length;
+  const kindCount = new Set(liveItems.map((item) => item.kind).filter(Boolean)).size;
+
+  return {
+    ...base,
+    dynamicKind: "services",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one authoritative Service object snapshot, with service-specific activity layered on top from related DAGQL calls rather than from the deprecated generic render layer.",
+    metrics: [
+      {
+        label: "Detected services",
+        value: String(liveItems.length),
+        detail: `${runningCount} running | ${failedCount} failed`,
+      },
+      {
+        label: "Kinds",
+        value: String(kindCount),
+        detail: "Distinct service shapes in the current result set.",
+      },
+      {
+        label: "Activity rows",
+        value: String(liveItems.reduce((sum, item) => sum + (item.activity || []).length, 0)),
+        detail: "Related service calls currently attached to service detail pages.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.name,
+      value: String(item.status || "created").toUpperCase(),
+      note: `${item.kind || "service"} · ${item.createdByCallName || "unknown creator"}`,
+    })),
+    signals: [
+      {
+        label: "Failures",
+        value: String(failedCount),
+        tone: failedCount > 0 ? "warn" : "good",
+        detail: "Services whose latest lifecycle activity failed.",
+      },
+      {
+        label: "Running",
+        value: String(runningCount),
+        tone: runningCount > 0 ? "neutral" : "good",
+        detail: "Services with open or still-running lifecycle activity.",
+      },
+      {
+        label: "Kinds",
+        value: String(kindCount),
+        tone: "neutral",
+        detail: "Different service shapes currently detected.",
+      },
+    ],
+    evidence: [],
+    relations: [],
     inventory: liveItems,
   };
 }
@@ -2314,6 +2477,34 @@ function gitRemotePipelineSessionCell(row) {
   }
   const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
   return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function serviceCreatedByCell(row) {
+  return primaryCell(row.createdByCallName || "Unknown", row.pipelineCommand || "");
+}
+
+function serviceSessionCell(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function serviceSessionSummary(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+}
+
+function servicePipelineSummary(row) {
+  if (!row.pipelineClientID) {
+    return "None";
+  }
+  const href = entityPath("pipelines", shortRouteID(row.traceID, row.pipelineClientID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(row.pipelineCommand || "Pipeline")}</a>`;
 }
 
 function workspaceOpSessionCell(row) {

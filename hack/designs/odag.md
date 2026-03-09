@@ -1173,6 +1173,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 14: Rename `CLI Runs` to `Pipelines` and focus detail pages on object DAGs
 - [x] Stage 15: Implement `Workspace Ops` end-to-end through derivation, API, and UI
 - [x] Stage 16: Implement `Git Remotes` end-to-end through derivation, API, and UI
+- [x] Stage 17: Implement `Services` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1219,6 +1220,10 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] derive remote identity from authoritative module refs, load-module spans, and explicit git calls
   - [x] normalize remote identity at repository/module-ref granularity rather than per revision
   - [x] wire the V3 shell's `Git Remotes` domain to the real endpoint
+- [x] Implement the `Services` domain end-to-end:
+  - [x] derive service identity from authoritative `Service` output-state objects plus related DAGQL calls
+  - [x] keep service detail focused on definition and activity rather than generic object rendering
+  - [x] wire the V3 shell's `Services` domain to the real endpoint
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1627,6 +1632,33 @@ Stage 16 implementation note:
    - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
    - the Wolfi module remote now appears as one normalized entity (`github.com/dagger/dagger/modules/wolfi`) with three attached `dagger call -m ... container` pipelines
    - explicit remote git calls also appear as normalized entities such as `github.com/opencontainers/runc` and `github.com/containernetworking/plugins`
+
+Stage 17 implementation note:
+1. First real Services API slice is implemented at `GET /api/services`.
+2. Current derivation rule:
+   - classify one service entity per authoritative immutable `Service` output-state object in trace scope
+   - do not depend on the old generic mutable-render layer for service discovery
+   - layer related DAGQL activity on top by matching calls that:
+     - produce the service
+     - receive the service
+     - consume the service via input refs
+3. Current service identity rule:
+   - primary identity is `traceID + dagqlID`
+   - display name prefers `CustomHostname`, then container image ref, then a short service ID fallback
+   - service kind is derived conservatively from authoritative fields (`Container`, `TunnelUpstream`, `TunnelPorts`, `HostSockets`)
+4. Current status rule:
+   - use the latest receiver-side lifecycle call when available (`Service.up`, `Service.start`, etc.)
+   - open/unset lifecycle calls render as `running`
+   - failing lifecycle calls render as `failed`
+   - otherwise the service stays `ready` or `created`
+5. Current V3 shell shape:
+   - `Services` is now a live left-nav domain at `/services`
+   - the inventory is a simple list of services with status, kind, creator, session, and last activity
+   - each detail page stays thin: recap card, definition card, and an activity table
+6. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
+   - the current data now renders two real nginx-backed services
+   - one service shows a failed `Service.up`, and another shows an open `Service.up` as `running`
 
 ### Phase 3: Payload evolution (future)
 
