@@ -1555,27 +1555,30 @@ Stage 14 implementation note:
    - a thin recap card repeating the pipeline row's primary facts
    - a body card rendering the pipeline-scoped object DAG
 4. Current object DAG source:
-   - fetch `/api/v2/render?clientID=<pipeline-client>&mode=global&keepRules=off&dependencyHops=0`
-   - keep `field_ref` edges exactly as returned; do not reverse or reinterpret them in this stage
-   - use the terminal output object only as a layout/highlight focus when one exists
+   - fetch `GET /api/pipelines/object-dag?traceID=<trace>&callID=<terminal-call-span>`
+   - scope object collection to immutable output states produced inside the terminal call subtree
+   - build dependency edges directly from emitted output-state field `refs`
+   - keep `field_ref` edge direction exactly as emitted for now; discuss direction changes separately
+   - use the terminal output DAGQL ID only as a layout/highlight focus when one exists
 5. Current output-shape handling:
-   - object-valued outputs can highlight a concrete output object node
+   - object-valued outputs can highlight a concrete output snapshot node
    - non-object outputs still render the pipeline-scoped object DAG, but there is no concrete output node to focus yet
    - list cardinality, especially list-of-objects outputs, is not preserved cleanly enough in the current pipeline payload and should be added explicitly later if V3 wants first-class multi-item output rendering
-6. Current implementation caveat:
-   - the first V3 pipeline DAG page reused `/api/v2/render` as a bootstrap substrate
-   - this is good enough for shell scaffolding, but it is not the right long-term foundation for pipeline rendering
-7. Current investigation result:
-   - V2 render scoping depends on derived `create` / `mutate` classification over mutable object bindings
-   - a pipeline can authoritatively know its terminal output DAGQL ID and object binding, yet V2 render can still drop that output from the graph when the call reuses an already-seen immutable object state
-   - module-load setup calls from `dagger call -m ...` also leak into the pipeline graph because the V2 render layer scopes by execution/client approximation rather than by the pipeline's true semantic boundary
+6. Current implementation detail:
+   - pipeline DAG nodes are immutable output states keyed by DAGQL ID, not V2 mutable bindings
+   - this keeps the page anchored on authoritative pipeline-local facts even before any later collapse heuristics are added
+7. Current module-load heuristic:
+   - detect module setup from sibling prelude work owned by the same client but outside the terminal call subtree
+   - use `load module: ...` spans plus top-level `Query.moduleSource`, `ModuleSource.asModule`, and `Module.serve` calls as evidence
+   - do not infer module context from command-line parsing alone, because the client can also set module context through environment such as `DAGGER_MODULE`
+   - if those low-level module calls occur inside the terminal call subtree itself, treat them as the pipeline, not as detached setup metadata
 8. Design decision:
    - specialized V3 pipeline rendering should be built directly from authoritative DAG call facts plus immutable output-state payloads and refs
    - do not make V3 pipeline DAGs depend on V2's inferred mutation/object-creation layer as their source of truth
    - use V2 render only as a transitional/debug aid where it happens to help, not as the semantic basis of the pipeline view
 9. Consequence for the pipeline page:
    - scope the graph by work inside the pipeline itself, especially the terminal call subtree and related attached evidence
-   - treat CLI module loading (`load module: ...`, `Query.moduleSource`, `ModuleSource.asModule`, `Module.serve`, and similar setup calls) as first-class pipeline metadata when the command mode indicates module-backed CLI behavior
+   - treat CLI module loading (`load module: ...`, `Query.moduleSource`, `ModuleSource.asModule`, `Module.serve`, and similar setup calls) as first-class pipeline metadata when the actual sibling prelude spans show that setup occurred
    - keep those setup calls out of the main pipeline DAG unless the user explicitly ran those low-level functions as the pipeline itself
 
 ### Phase 3: Payload evolution (future)

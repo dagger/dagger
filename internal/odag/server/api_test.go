@@ -1389,22 +1389,22 @@ func TestV2CLIRuns(t *testing.T) {
 								},
 								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
 							},
-								{
-									TraceId:           mustDecodeHex(t, traceIDHex),
-									SpanId:            mustDecodeHex(t, applyHex),
-									ParentSpanId:      mustDecodeHex(t, connectHex),
-									Name:              "applying changes",
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, applyHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "applying changes",
 								StartTimeUnixNano: 61,
 								EndTimeUnixNano:   75,
-									Attributes: []*commonpb.KeyValue{
-										kvString(t, telemetry.EngineClientIDAttr, clientID),
-										kvString(t, telemetry.EngineSessionIDAttr, sessionID),
-									},
-									Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
 								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
 							},
 						},
 					},
+				},
 			},
 		},
 	}
@@ -1695,6 +1695,279 @@ func TestV2Shells(t *testing.T) {
 	}
 	if len(shell.Relations) < 3 {
 		t.Fatalf("expected shell relations, got %#v", shell.Relations)
+	}
+}
+
+func TestPipelineObjectDAG(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "55555555555555555555555555555555"
+	connectHex := "1111111111111111"
+	moduleLoadHex := "1212121212121212"
+	moduleSourceHex := "1313131313131313"
+	asModuleHex := "1414141414141414"
+	terminalHex := "1515151515151515"
+	childHex := "1616161616161616"
+
+	sessionID := "session-pipeline"
+	clientID := "client-pipeline"
+	moduleRef := "github.com/dagger/dagger/modules/wolfi"
+	commandArgs := []string{"/usr/local/bin/dagger", "call", "-m", moduleRef, "container"}
+
+	containerState := map[string]any{
+		"type": "Container",
+		"fields": map[string]any{
+			"rootfs": map[string]any{
+				"name":  "rootfs",
+				"type":  "Directory",
+				"value": nil,
+				"refs":  []any{"state-dir"},
+			},
+		},
+	}
+	dirState := map[string]any{
+		"type":   "Directory",
+		"fields": map[string]any{},
+	}
+	moduleSourceState := map[string]any{
+		"type":   "ModuleSource",
+		"fields": map[string]any{},
+	}
+	moduleState := map[string]any{
+		"type":   "Module",
+		"fields": map[string]any{},
+	}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, moduleLoadHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "load module: " + moduleRef,
+								StartTimeUnixNano: 5,
+								EndTimeUnixNano:   8,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, moduleSourceHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Query.moduleSource",
+								StartTimeUnixNano: 9,
+								EndTimeUnixNano:   15,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-module-source"),
+									kvString(t, telemetry.DagOutputAttr, "state-module-source"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, moduleSourceState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-module-source",
+										Field:  "moduleSource",
+										Type:   &callpbv1.Type{NamedType: "ModuleSource"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, asModuleHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "ModuleSource.asModule",
+								StartTimeUnixNano: 16,
+								EndTimeUnixNano:   22,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-as-module"),
+									kvString(t, telemetry.DagOutputAttr, "state-module"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, moduleState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-as-module",
+										ReceiverDigest: "state-module-source",
+										Field:          "asModule",
+										Type:           &callpbv1.Type{NamedType: "Module"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, terminalHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Wolfi.container",
+								StartTimeUnixNano: 30,
+								EndTimeUnixNano:   40,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-container"),
+									kvString(t, telemetry.DagOutputAttr, "state-container"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, containerState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-container",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, childHex),
+								ParentSpanId:      mustDecodeHex(t, terminalHex),
+								Name:              "Container.directory",
+								StartTimeUnixNano: 33,
+								EndTimeUnixNano:   36,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-directory"),
+									kvString(t, telemetry.DagOutputAttr, "state-dir"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, dirState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-directory",
+										ReceiverDigest: "state-container",
+										Field:          "directory",
+										Type:           &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pipelines/object-dag?traceID="+traceIDHex+"&callID="+terminalHex, nil)
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pipeline object dag failed: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		DerivationVersion string `json:"derivationVersion"`
+		Context           struct {
+			TraceID       string `json:"traceID"`
+			CallID        string `json:"callID"`
+			ClientID      string `json:"clientID"`
+			SessionID     string `json:"sessionID"`
+			OutputDagqlID string `json:"outputDagqlID"`
+			OutputType    string `json:"outputType"`
+		} `json:"context"`
+		Module struct {
+			Ref     string   `json:"ref"`
+			CallIDs []string `json:"callIDs"`
+		} `json:"module"`
+		Objects []struct {
+			DagqlID string `json:"dagqlID"`
+		} `json:"objects"`
+		Edges []struct {
+			FromDagqlID string `json:"fromDagqlID"`
+			ToDagqlID   string `json:"toDagqlID"`
+			Label       string `json:"label"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode pipeline object dag: %v", err)
+	}
+
+	if resp.DerivationVersion == "" {
+		t.Fatalf("missing derivation version: %#v", resp)
+	}
+	if resp.Context.TraceID != traceIDHex || resp.Context.CallID != terminalHex || resp.Context.ClientID != clientID || resp.Context.SessionID != sessionID {
+		t.Fatalf("unexpected pipeline context: %#v", resp.Context)
+	}
+	if resp.Context.OutputDagqlID != "state-container" || resp.Context.OutputType != "Container" {
+		t.Fatalf("unexpected pipeline output context: %#v", resp.Context)
+	}
+	if resp.Module.Ref != moduleRef {
+		t.Fatalf("unexpected module metadata: %#v", resp.Module)
+	}
+	if !sameStrings(resp.Module.CallIDs, []string{
+		traceIDHex + "/" + moduleSourceHex,
+		traceIDHex + "/" + asModuleHex,
+	}) {
+		t.Fatalf("unexpected module call ids: %#v", resp.Module.CallIDs)
+	}
+
+	dagqlIDs := make([]string, 0, len(resp.Objects))
+	for _, obj := range resp.Objects {
+		dagqlIDs = append(dagqlIDs, obj.DagqlID)
+	}
+	if !sameStrings(dagqlIDs, []string{"state-container", "state-dir"}) {
+		t.Fatalf("unexpected pipeline object set: %#v", dagqlIDs)
+	}
+	if len(resp.Edges) != 1 || resp.Edges[0].FromDagqlID != "state-container" || resp.Edges[0].ToDagqlID != "state-dir" || resp.Edges[0].Label != "rootfs" {
+		t.Fatalf("unexpected pipeline edges: %#v", resp.Edges)
 	}
 }
 
