@@ -1186,7 +1186,10 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 9: Capture lessons learned from `Pipelines` and choose the next domain
 - [x] Stage 10: Implement `Shells` end-to-end through derivation, API, and UI
 - [x] Stage 11: Capture lessons learned from `Shells` and choose the next domain
-- [ ] Stage 12: Implement `Workspace Ops` end-to-end through derivation, API, and UI
+- [x] Stage 12: Add clean V3 entity routes and detail-page scaffolding
+- [x] Stage 13: Expose `Sessions` as a first-class V3 primitive
+- [x] Stage 14: Rename `CLI Runs` to `Pipelines` and focus detail pages on object DAGs
+- [ ] Stage 15: Implement `Workspace Ops` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1217,11 +1220,13 @@ These are the latest design decisions that should be preserved across handoff.
   - left nav lists discovered domains
   - secondary nav selects specialized subviews
   - mock data is acceptable while settling taxonomy
-- [ ] Implement the `Pipeline` domain (`dagger call` style submitted call chain) end-to-end:
+- [x] Implement the `Pipeline` domain (`dagger call` style submitted call chain) end-to-end:
   - [x] derive run identity from command root plus chained DAGQL calls
   - [x] attach terminal output type and CLI post-processing behavior
   - [x] keep follow-up apply/export/prompt spans associated with the same pipeline context in the first read-only API slice
   - [x] wire the V3 shell's `Pipelines` domain to the real endpoint
+  - [x] route inventory rows to clean `/pipelines/<short-id>` detail pages
+  - [x] reduce the pipeline detail page to a thin recap plus an object DAG view
 - [x] Record what did and did not generalize from the first domain before adding a second one.
 - [ ] Implement the `Workspace Ops` domain end-to-end:
   - [ ] derive workspace-op identity from host-bound call patterns and side-effect spans
@@ -1522,9 +1527,9 @@ Stage 12 implementation note:
 3. Current detail-page support:
    - `Pipelines` inventory rows navigate to per-pipeline pages at `/pipelines/<short-id>`
    - `Shells` inventory rows navigate to per-shell pages at `/shells/<short-id>`
-4. Current detail-page content stays inventory-first and fact-oriented:
-   - summary and output/activity cards for the selected entity
-   - entity-local `evidence` and `relations` tables below
+4. Current detail-page content is intentionally thin:
+   - route-specific recap in a compact header card
+   - one body card for the entity's primary specialized view
 5. Current route identity is UI-derived, not yet backend-native:
    - short IDs are currently deterministic route keys derived from trace plus client identity in the frontend
    - if direct linking/pagination needs hard guarantees later, promote short IDs into the API contract explicitly
@@ -1538,6 +1543,25 @@ Stage 13 implementation note:
    - sessions are derived from root clients
    - they sit between trace and client in the execution hierarchy
    - trace remains container context, not the primary identity of a session row
+
+Stage 14 implementation note:
+1. V3 now uses `Pipelines` as the UI/domain label instead of `CLI Runs`.
+2. Working definition:
+   - one client-submitted, connected DAGQL call chain aimed at one intended result
+   - `dagger call` is always a pipeline
+   - one top-level interactive command inside `dagger shell` is also a pipeline
+   - ambiguous multi-command batch cases stay split per top-level command until V3 has an explicit multi-output model
+3. Current pipeline detail page shape is intentionally minimal:
+   - a thin recap card repeating the pipeline row's primary facts
+   - a body card rendering the pipeline-scoped object DAG
+4. Current object DAG source:
+   - fetch `/api/v2/render?clientID=<pipeline-client>&mode=global&keepRules=off&dependencyHops=0`
+   - keep `field_ref` edges exactly as returned; do not reverse or reinterpret them in this stage
+   - use the terminal output object only as a layout/highlight focus when one exists
+5. Current output-shape handling:
+   - object-valued outputs can highlight a concrete output object node
+   - non-object outputs still render the pipeline-scoped object DAG, but there is no concrete output node to focus yet
+   - list cardinality, especially list-of-objects outputs, is not preserved cleanly enough in the current pipeline payload and should be added explicitly later if V3 wants first-class multi-item output rendering
 
 ### Phase 3: Payload evolution (future)
 

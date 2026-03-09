@@ -464,6 +464,9 @@ const liveDomainConfigs = {
 const state = {
   entityID: "terminals",
   detailID: "",
+  detailGraphs: {
+    pipelines: {},
+  },
   live: {
     sessions: {
       status: "idle",
@@ -611,6 +614,65 @@ async function ensureActiveEntityData() {
   render();
 }
 
+function pipelineGraphEntry(row) {
+  const key = String(row?.id || row?.routeID || "");
+  if (!key) {
+    return {
+      status: "error",
+      data: null,
+      error: "Pipeline graph key is missing.",
+    };
+  }
+  if (!state.detailGraphs.pipelines[key]) {
+    state.detailGraphs.pipelines[key] = {
+      status: "idle",
+      data: null,
+      error: "",
+    };
+  }
+  return state.detailGraphs.pipelines[key];
+}
+
+function ensurePipelineGraph(row) {
+  const entry = pipelineGraphEntry(row);
+  if (entry.status !== "idle") {
+    return entry;
+  }
+  entry.status = "loading";
+  entry.error = "";
+  render();
+  void fetchPipelineGraph(row, entry);
+  return entry;
+}
+
+async function fetchPipelineGraph(row, entry) {
+  if (!row?.clientID) {
+    entry.status = "error";
+    entry.error = "Client scope is missing for this pipeline.";
+    render();
+    return;
+  }
+  try {
+    const params = new URLSearchParams({
+      clientID: row.clientID,
+      mode: "global",
+      keepRules: "off",
+      dependencyHops: "0",
+    });
+    const res = await fetch(`/api/v2/render?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    entry.data = await res.json();
+    entry.status = "loaded";
+    entry.error = "";
+  } catch (err) {
+    entry.status = "error";
+    entry.error = err instanceof Error ? err.message : String(err || "unknown error");
+  }
+  render();
+}
+
 function render() {
   renderEntityNav();
   renderMain();
@@ -737,7 +799,8 @@ function renderDetail(entity) {
   els.tableMeta.textContent = detailItem.routeID;
 
   if (entity.dynamicKind === "pipelines") {
-    els.tableShell.innerHTML = renderPipelineDetail(entity, detailItem);
+    const graph = ensurePipelineGraph(detailItem);
+    els.tableShell.innerHTML = renderPipelineDetail(entity, detailItem, graph);
     return;
   }
   if (entity.dynamicKind === "sessions") {
@@ -769,59 +832,330 @@ function renderDetailState(entity, label, kind) {
   `;
 }
 
-function renderPipelineDetail(entity, row) {
-  const evidenceTable = renderTableHTML({
-    columns: [
-      { label: "Kind", key: "kind" },
-      { label: "Confidence", render: (item) => confidencePill(item.confidence) },
-      { label: "Source", key: "source" },
-      { label: "Note", key: "note" },
-    ],
-    rows: row.evidence || [],
-    emptyMessage: "No pipeline evidence recorded.",
-  });
-  const relationTable = renderTableHTML({
-    columns: [
-      { label: "Relation", render: (item) => tonePill("neutral", item.relation) },
-      { label: "Target", render: (item) => primaryCell(item.target, item.targetKind) },
-      { label: "Detail", key: "note" },
-    ],
-    rows: row.relations || [],
-    emptyMessage: "No pipeline relations recorded.",
-  });
-
+function renderPipelineDetail(entity, row, graph) {
   return `
     <div class="v3-detail-stack">
       ${backLink(entity)}
-      <div class="v3-detail-grid">
-        ${detailCard(
-          "Summary",
-          detailList([
-            ["Status", statusPill(row.status)],
-            ["Duration", escapeHTML(pipelineDurationLabel(row))],
-            ["Command", detailCode(row.command || row.name)],
-            ["Chain", detailCode(row.chainLabel || (row.chainTokens || []).join(" | ") || row.name)],
-            ["Trace", detailCode(row.traceID)],
-            ["Session", detailCode(row.sessionID || "Unknown")],
-            ["Client", detailCode(row.clientID || "Unknown")],
-          ]),
-        )}
-        ${detailCard(
-          "Output",
-          detailList([
-            ["Terminal call", detailCode(row.terminalCallName || "Unknown")],
-            ["Return type", detailCode(row.terminalReturnType || "Plain value")],
-            ["Output object", detailCode(row.terminalOutputDagqlID || row.terminalObjectID || "None")],
-            ["Post-process", detailInlineList(row.postProcessKinds, "None")],
-            ["Follow-up spans", detailInlineList(row.followupSpanNames, "None")],
-            ["Call chain", detailInlineList(row.chainCallIDs, "None")],
-          ]),
-        )}
-      </div>
-      ${detailSection("Evidence", evidenceTable)}
-      ${detailSection("Relations", relationTable)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Command</p>
+          <strong>${escapeHTML(row.command || row.name)}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.status))}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(pipelineDurationLabel(row)))}
+          ${pipelineRecapItem("Output Type", escapeHTML(pipelineOutputTypeLabel(row)))}
+          ${pipelineRecapItem("Session", pipelineSessionSummary(row))}
+        </div>
+      </section>
+      <section class="v3-detail-card">
+        ${renderPipelineGraph(row, graph)}
+      </section>
     </div>
   `;
+}
+
+function pipelineRecapItem(label, value) {
+  return `
+    <div class="v3-pipeline-recap-item">
+      <span class="v3-foot-label">${escapeHTML(label)}</span>
+      <div class="v3-pipeline-recap-value">${value}</div>
+    </div>
+  `;
+}
+
+function pipelineSessionSummary(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+}
+
+function renderPipelineGraph(row, graph) {
+  const graphStatus = graph?.status || "idle";
+  if (graphStatus === "loading" || graphStatus === "idle") {
+    return renderPipelineGraphState(row, "loading", "Loading the scoped object DAG for this pipeline.");
+  }
+  if (graphStatus === "error") {
+    return renderPipelineGraphState(row, "error", graph?.error || "Pipeline graph could not be loaded.");
+  }
+  const model = buildPipelineGraphModel(row, graph?.data);
+  if (!model.nodes.length) {
+    return renderPipelineGraphState(
+      row,
+      "empty",
+      `No object DAG is available for this pipeline yet. Output type: ${pipelineOutputTypeLabel(row)}.`,
+    );
+  }
+  return `
+    <div class="v3-graph-panel">
+      <div class="v3-graph-head">
+        <div>
+          <p class="v3-foot-label">Object DAG</p>
+          <p class="v3-graph-meta">${escapeHTML(model.meta)}</p>
+        </div>
+      </div>
+      <div class="v3-graph-scroll">
+        <div class="v3-graph-canvas" style="width:${model.width}px; height:${model.height}px;">
+          <svg class="v3-graph-svg" viewBox="0 0 ${model.width} ${model.height}" aria-hidden="true" focusable="false">
+            ${model.edgeMarkup}
+          </svg>
+          ${model.nodeMarkup}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPipelineGraphState(row, tone, message) {
+  const toneClass = tone === "error" ? " is-error" : "";
+  const output = pipelineOutputTypeLabel(row);
+  return `
+    <div class="v3-graph-panel">
+      <div class="v3-graph-head">
+        <div>
+          <p class="v3-foot-label">Object DAG</p>
+          <p class="v3-graph-meta">${escapeHTML(output)} output</p>
+        </div>
+      </div>
+      <div class="v3-graph-empty${toneClass}">
+        <p>${escapeHTML(message)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function buildPipelineGraphModel(row, payload) {
+  const objects = Array.isArray(payload?.objects)
+    ? payload.objects
+        .filter((item) => item && item.objectID)
+        .slice()
+        .sort((a, b) => {
+          if (Number(a.firstSeenUnixNano || 0) !== Number(b.firstSeenUnixNano || 0)) {
+            return Number(a.firstSeenUnixNano || 0) - Number(b.firstSeenUnixNano || 0);
+          }
+          return String(a.objectID).localeCompare(String(b.objectID));
+        })
+    : [];
+  const objectByID = new Map(objects.map((item) => [item.objectID, item]));
+  const edges = Array.isArray(payload?.edges)
+    ? payload.edges.filter((edge) => edge && edge.kind === "field_ref" && objectByID.has(edge.fromID) && objectByID.has(edge.toID))
+    : [];
+  const focusObjectID = row.terminalObjectID && objectByID.has(row.terminalObjectID) ? row.terminalObjectID : "";
+  const layout = layoutPipelineGraph(objects, edges, focusObjectID);
+  const nodeW = 212;
+  const nodeH = 84;
+  const colGap = 44;
+  const rowGap = 18;
+  const padX = 24;
+  const padY = 24;
+  const totalColumns = layout.columns.length || 1;
+  const maxRows = Math.max(1, ...layout.columns.map((column) => column.length));
+  const width = padX * 2 + totalColumns * nodeW + Math.max(0, totalColumns - 1) * colGap;
+  const height = padY * 2 + maxRows * nodeH + Math.max(0, maxRows - 1) * rowGap;
+  const nodePositions = new Map();
+  const nodeMarkup = layout.columns
+    .map((column, colIndex) =>
+      column
+        .map((obj, rowIndex) => {
+          const x = padX + colIndex * (nodeW + colGap);
+          const y = padY + rowIndex * (nodeH + rowGap);
+          nodePositions.set(obj.objectID, {
+            x,
+            y,
+            centerX: x + nodeW / 2,
+            centerY: y + nodeH / 2,
+          });
+          const title = pipelineNodeTitle(obj);
+          const subtitle = pipelineNodeSubtitle(obj);
+          const focusClass = obj.objectID === focusObjectID ? " is-output" : "";
+          const eyebrow = obj.objectID === focusObjectID ? "Output" : "Object";
+          return `
+            <article class="v3-pipeline-node${focusClass}" style="left:${x}px; top:${y}px; width:${nodeW}px; height:${nodeH}px;">
+              <span class="v3-pipeline-node-label">${escapeHTML(eyebrow)}</span>
+              <strong>${escapeHTML(title)}</strong>
+              <span>${escapeHTML(subtitle)}</span>
+            </article>
+          `;
+        })
+        .join(""),
+    )
+    .join("");
+  const edgeMarkup = edges
+    .map((edge) => {
+      const from = nodePositions.get(edge.fromID);
+      const to = nodePositions.get(edge.toID);
+      if (!from || !to) {
+        return "";
+      }
+      const x1 = from.centerX;
+      const y1 = from.centerY;
+      const x2 = to.centerX;
+      const y2 = to.centerY;
+      const curve = Math.max(32, Math.abs(x2 - x1) * 0.4);
+      const label = edge.label ? `<title>${escapeHTML(edge.label)}</title>` : "";
+      return `<path class="v3-graph-edge" d="M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}">${label}</path>`;
+    })
+    .join("");
+  const meta = [
+    `${objects.length} object${objects.length === 1 ? "" : "s"}`,
+    `${edges.length} ref${edges.length === 1 ? "" : "s"}`,
+    focusObjectID ? "output node highlighted" : `${pipelineOutputTypeLabel(row)} output`,
+  ].join(" · ");
+
+  return {
+    nodes: objects,
+    edges,
+    width,
+    height,
+    meta,
+    edgeMarkup,
+    nodeMarkup,
+  };
+}
+
+function layoutPipelineGraph(objects, edges, focusObjectID) {
+  const objectIDs = objects.map((item) => item.objectID);
+  const adjacency = new Map(objectIDs.map((id) => [id, new Set()]));
+  for (const edge of edges) {
+    adjacency.get(edge.fromID)?.add(edge.toID);
+    adjacency.get(edge.toID)?.add(edge.fromID);
+  }
+  const objectByID = new Map(objects.map((item) => [item.objectID, item]));
+  const components = collectPipelineGraphComponents(objectIDs, adjacency);
+  const sortedComponents = components.slice().sort((left, right) => {
+    const leftHasFocus = left.includes(focusObjectID);
+    const rightHasFocus = right.includes(focusObjectID);
+    if (leftHasFocus !== rightHasFocus) {
+      return leftHasFocus ? 1 : -1;
+    }
+    return pipelineComponentFirstSeen(left, objectByID) - pipelineComponentFirstSeen(right, objectByID);
+  });
+
+  const columns = [];
+  for (const component of sortedComponents) {
+    const levels = component.includes(focusObjectID)
+      ? levelsFromFocus(component, adjacency, focusObjectID)
+      : levelsFromSeed(component, adjacency, component[0]);
+    const maxLevel = Math.max(0, ...levels.values());
+    const localColumns = Array.from({ length: maxLevel + 1 }, () => []);
+    const orderedComponent = component
+      .map((id) => objectByID.get(id))
+      .filter(Boolean)
+      .sort((a, b) => {
+        const levelDiff = Number(levels.get(a.objectID) || 0) - Number(levels.get(b.objectID) || 0);
+        if (levelDiff !== 0) {
+          return levelDiff;
+        }
+        if (Number(a.firstSeenUnixNano || 0) !== Number(b.firstSeenUnixNano || 0)) {
+          return Number(a.firstSeenUnixNano || 0) - Number(b.firstSeenUnixNano || 0);
+        }
+        return String(a.objectID).localeCompare(String(b.objectID));
+      });
+    for (const obj of orderedComponent) {
+      const level = Number(levels.get(obj.objectID) || 0);
+      localColumns[level].push(obj);
+    }
+    if (columns.length > 0) {
+      columns.push([]);
+    }
+    columns.push(...localColumns);
+  }
+
+  return {
+    columns: columns.length ? columns : [objects],
+  };
+}
+
+function collectPipelineGraphComponents(objectIDs, adjacency) {
+  const seen = new Set();
+  const components = [];
+  for (const startID of objectIDs) {
+    if (seen.has(startID)) {
+      continue;
+    }
+    const queue = [startID];
+    const component = [];
+    seen.add(startID);
+    while (queue.length) {
+      const current = queue.shift();
+      component.push(current);
+      for (const next of adjacency.get(current) || []) {
+        if (seen.has(next)) {
+          continue;
+        }
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+    components.push(component);
+  }
+  return components;
+}
+
+function levelsFromFocus(component, adjacency, focusObjectID) {
+  const distance = bfsDistances(component, adjacency, focusObjectID);
+  const maxDistance = Math.max(0, ...distance.values());
+  const levels = new Map();
+  for (const objectID of component) {
+    levels.set(objectID, maxDistance - Number(distance.get(objectID) || 0));
+  }
+  return levels;
+}
+
+function levelsFromSeed(component, adjacency, seedID) {
+  return bfsDistances(component, adjacency, seedID);
+}
+
+function bfsDistances(component, adjacency, seedID) {
+  const allowed = new Set(component);
+  const distance = new Map();
+  const queue = [seedID];
+  distance.set(seedID, 0);
+  while (queue.length) {
+    const current = queue.shift();
+    const currentDistance = Number(distance.get(current) || 0);
+    for (const next of adjacency.get(current) || []) {
+      if (!allowed.has(next) || distance.has(next)) {
+        continue;
+      }
+      distance.set(next, currentDistance + 1);
+      queue.push(next);
+    }
+  }
+  for (const objectID of component) {
+    if (!distance.has(objectID)) {
+      distance.set(objectID, 0);
+    }
+  }
+  return distance;
+}
+
+function pipelineComponentFirstSeen(component, objectByID) {
+  let best = Number.POSITIVE_INFINITY;
+  for (const objectID of component) {
+    const ts = Number(objectByID.get(objectID)?.firstSeenUnixNano || 0);
+    if (ts > 0 && ts < best) {
+      best = ts;
+    }
+  }
+  return Number.isFinite(best) ? best : 0;
+}
+
+function pipelineNodeTitle(obj) {
+  return obj.alias || obj.typeName || shortID(obj.objectID);
+}
+
+function pipelineNodeSubtitle(obj) {
+  if (obj.alias && obj.typeName) {
+    return obj.typeName;
+  }
+  if (obj.currentDagqlID) {
+    return shortID(obj.currentDagqlID, 18);
+  }
+  return shortID(obj.objectID, 18);
 }
 
 function renderSessionDetail(entity, row) {
