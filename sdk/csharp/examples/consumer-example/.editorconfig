@@ -1,0 +1,188 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# This file configures code style and analyzer severity settings for your Dagger module.
+# It's automatically created when you run 'dagger init --sdk=csharp'
+
+# Top-most EditorConfig file
+root = true
+
+# All files
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# ========================================
+# Generated SDK Files (DO NOT MODIFY)
+# ========================================
+# The sdk/ folder is automatically generated during 'dagger develop'
+# These files should never be manually edited
+[sdk/**]
+generated_code = true
+dotnet_diagnostic.CS8669.severity = none
+dotnet_diagnostic.CS1591.severity = none
+
+# C# files
+[*.cs]
+indent_style = space
+indent_size = 4
+
+# ========================================
+# Dagger SDK Analyzer Configuration
+# ========================================
+# You can customize the severity of Dagger analyzer rules here.
+#
+# Severity levels:
+#   - none       : Rule is completely disabled
+#   - silent     : Rule runs but doesn't show in IDE (still runs code fixes)
+#   - suggestion : Shows as gray dots/underlines in IDE
+#   - warning    : Shows as warnings (green squiggles)
+#   - error      : Shows as errors (red squiggles) and blocks build
+#
+# Example: To disable a specific analyzer, set its severity to 'none':
+#   dotnet_diagnostic.DAGGER001.severity = none
+#
+# Example: To make all Dagger analyzers warnings instead of their defaults:
+#   dotnet_analyzer_diagnostic.category-Dagger.severity = warning
+
+# DAGGER001: Public method in Dagger Object should have [Function] attribute
+# Default: Info
+# dotnet_diagnostic.DAGGER001.severity = suggestion
+
+# DAGGER002: Dagger function should have XML documentation
+# Default: Info
+# dotnet_diagnostic.DAGGER002.severity = suggestion
+
+# DAGGER003: Dagger function parameter should have XML documentation
+# Default: Info
+# dotnet_diagnostic.DAGGER003.severity = suggestion
+
+# DAGGER004: Directory parameter should consider [DefaultPath] attribute
+# Default: Info
+# dotnet_diagnostic.DAGGER004.severity = suggestion
+
+# DAGGER005: Directory parameter should consider [Ignore] attribute
+# Default: Info
+# dotnet_diagnostic.DAGGER005.severity = suggestion
+
+# DAGGER006: Dagger Object should have XML documentation
+# Default: Info
+# dotnet_diagnostic.DAGGER006.severity = suggestion
+
+# DAGGER007: Dagger field should have XML documentation
+# Default: Info
+# dotnet_diagnostic.DAGGER007.severity = suggestion
+
+# DAGGER008: Invalid Cache value in Function attribute
+# Default: Warning
+# dotnet_diagnostic.DAGGER008.severity = warning
+
+# DAGGER009: [Ignore] attribute can only be applied to Directory parameters
+# Default: Error
+# dotnet_diagnostic.DAGGER009.severity = error
+
+# DAGGER010: [DefaultPath] attribute can only be applied to Directory or File parameters
+# Default: Error
+# dotnet_diagnostic.DAGGER010.severity = error
+
+# DAGGER011: Dagger module requires dagger.json configuration file
+# Default: Warning
+# dotnet_diagnostic.DAGGER011.severity = warning
+
+# DAGGER012: Module class name should match dagger.json module name
+# Default: Error
+# dotnet_diagnostic.DAGGER012.severity = error
+
+# DAGGER013: Project file name should match dagger.json module name
+# Default: Warning
+# dotnet_diagnostic.DAGGER013.severity = warning
+
+# DAGGER022: Field property must have a setter for serialization
+# Default: Error
+# Fields marked with [Field] require a setter (can be private) for Dagger's
+# serialization to work when objects are passed between function calls.
+# Without a setter, you'll get "Property set method not found" runtime errors.
+# dotnet_diagnostic.DAGGER022.severity = error
+
+# ========================================
+# Configure all Dagger analyzers at once
+# ========================================
+# Uncomment to change severity for ALL Dagger analyzers
+# (Individual rule settings above take precedence)
+# dotnet_analyzer_diagnostic.category-Dagger.severity = suggestion
+
+# ========================================
+# Disable specific analyzers
+# ========================================
+# Uncomment to disable specific analyzers you don't want:
+# dotnet_diagnostic.DAGGER002.severity = none  # Disable XML doc requirement for functions
+# dotnet_diagnostic.DAGGER003.severity = none  # Disable XML doc requirement for parameters
+# dotnet_diagnostic.DAGGER006.severity = none  # Disable XML doc requirement for classes
+
+# ========================================
+# Standard .NET Code Style Rules
+# ========================================
+# You can also configure standard .NET analyzers here
+# For full list, see: https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/
+
+# Require 'this.' prefix for instance members
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+
+# Use language keywords (int, string) instead of framework types (Int32, String)
+dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
+dotnet_style_predefined_type_for_member_access = true:suggestion
+
+# Require accessibility modifiers
+dotnet_style_require_accessibility_modifiers = always:suggestion
+
+# Prefer auto properties over properties with backing fields
+dotnet_style_prefer_auto_properties = true:suggestion
+
+# Prefer object/collection initializers
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+
+# C# specific preferences
+csharp_prefer_braces = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_style_prefer_method_group_conversion = true:silent
+csharp_style_prefer_top_level_statements = true:silent
+csharp_style_expression_bodied_methods = false:silent
+csharp_style_expression_bodied_constructors = false:silent
+csharp_style_expression_bodied_operators = false:silent
+csharp_style_expression_bodied_properties = true:silent
+csharp_style_expression_bodied_indexers = true:silent
+csharp_style_expression_bodied_accessors = true:silent
+csharp_style_expression_bodied_lambdas = true:silent
+csharp_style_expression_bodied_local_functions = false:silent
+
+# Newline preferences
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+
+# Indentation preferences
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_indent_labels = no_change
+
+# Space preferences
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_parentheses = false
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_around_binary_operators = before_and_after
+csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
+csharp_space_between_method_call_name_and_opening_parenthesis = false
+csharp_space_between_method_call_empty_parameter_list_parentheses = false
