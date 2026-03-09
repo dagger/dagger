@@ -1562,6 +1562,21 @@ Stage 14 implementation note:
    - object-valued outputs can highlight a concrete output object node
    - non-object outputs still render the pipeline-scoped object DAG, but there is no concrete output node to focus yet
    - list cardinality, especially list-of-objects outputs, is not preserved cleanly enough in the current pipeline payload and should be added explicitly later if V3 wants first-class multi-item output rendering
+6. Current implementation caveat:
+   - the first V3 pipeline DAG page reused `/api/v2/render` as a bootstrap substrate
+   - this is good enough for shell scaffolding, but it is not the right long-term foundation for pipeline rendering
+7. Current investigation result:
+   - V2 render scoping depends on derived `create` / `mutate` classification over mutable object bindings
+   - a pipeline can authoritatively know its terminal output DAGQL ID and object binding, yet V2 render can still drop that output from the graph when the call reuses an already-seen immutable object state
+   - module-load setup calls from `dagger call -m ...` also leak into the pipeline graph because the V2 render layer scopes by execution/client approximation rather than by the pipeline's true semantic boundary
+8. Design decision:
+   - specialized V3 pipeline rendering should be built directly from authoritative DAG call facts plus immutable output-state payloads and refs
+   - do not make V3 pipeline DAGs depend on V2's inferred mutation/object-creation layer as their source of truth
+   - use V2 render only as a transitional/debug aid where it happens to help, not as the semantic basis of the pipeline view
+9. Consequence for the pipeline page:
+   - scope the graph by work inside the pipeline itself, especially the terminal call subtree and related attached evidence
+   - treat CLI module loading (`load module: ...`, `Query.moduleSource`, `ModuleSource.asModule`, `Module.serve`, and similar setup calls) as first-class pipeline metadata when the command mode indicates module-backed CLI behavior
+   - keep those setup calls out of the main pipeline DAG unless the user explicitly ran those low-level functions as the pipeline itself
 
 ### Phase 3: Payload evolution (future)
 
