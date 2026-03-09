@@ -459,6 +459,12 @@ const liveDomainConfigs = {
     label: "Shells",
     singularLabel: "Shell",
   },
+  "workspace-ops": {
+    stateKey: "workspaceOps",
+    endpoint: "/api/workspace-ops?limit=200",
+    label: "Workspace Ops",
+    singularLabel: "Workspace Op",
+  },
 };
 
 const state = {
@@ -479,6 +485,11 @@ const state = {
       error: "",
     },
     shells: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    workspaceOps: {
       status: "idle",
       items: [],
       error: "",
@@ -808,6 +819,10 @@ function renderDetail(entity) {
     els.tableShell.innerHTML = renderPipelineDetail(entity, detailItem, graph);
     return;
   }
+  if (entity.dynamicKind === "workspace-ops") {
+    els.tableShell.innerHTML = renderWorkspaceOpDetail(entity, detailItem);
+    return;
+  }
   if (entity.dynamicKind === "sessions") {
     els.tableShell.innerHTML = renderSessionDetail(entity, detailItem);
     return;
@@ -938,6 +953,49 @@ function renderPipelineGraphState(row, tone, message) {
       <div class="v3-graph-empty${toneClass}">
         <p>${escapeHTML(message)}</p>
       </div>
+    </div>
+  `;
+}
+
+function renderWorkspaceOpDetail(entity, row) {
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Workspace op</p>
+          <strong>${escapeHTML(row.name || row.callName || row.kind)}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.status))}
+          ${pipelineRecapItem("Direction", escapeHTML(row.direction || "unknown"))}
+          ${pipelineRecapItem("Call", detailCode(row.callName || "Unknown"))}
+          ${pipelineRecapItem("Path", row.path ? detailCode(row.path) : "Unknown")}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)))}
+          ${pipelineRecapItem("Session", workspaceOpSessionSummary(row))}
+          ${pipelineRecapItem("Pipeline", workspaceOpPipelineSummary(row))}
+        </div>
+      </section>
+      <section class="v3-detail-card">
+        <div class="v3-detail-list">
+          ${workspaceOpDetailItem("Kind", escapeHTML(row.kind || "unknown"))}
+          ${workspaceOpDetailItem("Target Type", escapeHTML(row.targetType || "Unknown"))}
+          ${workspaceOpDetailItem("Receiver", row.receiverDagqlID ? detailCode(row.receiverDagqlID) : "None")}
+          ${workspaceOpDetailItem("Output", row.outputDagqlID ? detailCode(row.outputDagqlID) : "None")}
+          ${workspaceOpDetailItem("Client", row.clientID ? detailCode(row.clientID) : "Unknown")}
+          ${workspaceOpDetailItem("Trace", row.traceID ? detailCode(row.traceID) : "Unknown")}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function workspaceOpDetailItem(label, value) {
+  return `
+    <div class="v3-pipeline-recap-item">
+      <span class="v3-foot-label">${escapeHTML(label)}</span>
+      <div class="v3-pipeline-recap-value">${value}</div>
     </div>
   `;
 }
@@ -1369,6 +1427,9 @@ function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "shells") {
     return shellsTableModel(entity, sectionID);
   }
+  if (entity.dynamicKind === "workspace-ops") {
+    return workspaceOpsTableModel(entity, sectionID);
+  }
   switch (sectionID) {
     case "inventory":
       return {
@@ -1585,6 +1646,28 @@ function shellsTableModel(entity, sectionID) {
   }
 }
 
+function workspaceOpsTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Workspace Ops",
+        meta: `${entity.liveItems.length} real workspace ops`,
+        emptyMessage: "No workspace ops detected yet.",
+        columns: [
+          { label: "Operation", render: (row) => linkedPrimaryCell(row.name, row.callName, entityPath(entity.id, row.routeID)) },
+          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Path", render: (row) => row.path ? detailCode(row.path) : "Unknown" },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
+          { label: "Pipeline", render: (row) => workspaceOpPipelineCell(row) },
+          { label: "Session", render: (row) => workspaceOpSessionCell(row) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
 }
@@ -1601,7 +1684,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells")) {
+  if (!entity || (entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -1612,6 +1695,9 @@ function materializeEntity(entity) {
     }
     if (entity.id === "pipelines") {
       return buildLivePipelinesEntity(entity, live.items);
+    }
+    if (entity.id === "workspace-ops") {
+      return buildLiveWorkspaceOpsEntity(entity, live.items);
     }
     return buildLiveShellsEntity(entity, live.items);
   }
@@ -1904,6 +1990,72 @@ function buildLiveShellsEntity(base, items) {
   };
 }
 
+function buildLiveWorkspaceOpsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.traceID, item.spanID || item.id),
+    }))
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const durations = liveItems.map((item) => Math.max(0, Number(item.endUnixNano || 0) - Number(item.startUnixNano || 0)));
+  const writeCount = liveItems.filter((item) => item.direction === "write").length;
+  const attachedCount = liveItems.filter((item) => item.pipelineClientID).length;
+  const pathCount = new Set(liveItems.map((item) => item.path).filter(Boolean)).size;
+
+  return {
+    ...base,
+    dynamicKind: "workspace-ops",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one explicit host/export call derived from authoritative call spans, with pipeline attachment added only when the timing and client context make that association unambiguous.",
+    metrics: [
+      {
+        label: "Detected ops",
+        value: String(liveItems.length),
+        detail: `${writeCount} writes | ${liveItems.length - writeCount} reads`,
+      },
+      {
+        label: "Median duration",
+        value: formatDuration(median(durations)),
+        detail: "Based on real host/export calls.",
+      },
+      {
+        label: "Pipeline attachment",
+        value: `${attachedCount}/${liveItems.length || 0}`,
+        detail: `${pathCount} distinct paths in the current result set`,
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.callName,
+      value: String(item.direction || "op").toUpperCase(),
+      note: item.path || item.kind,
+    })),
+    signals: [
+      {
+        label: "Write pressure",
+        value: String(writeCount),
+        tone: writeCount > 0 ? "warn" : "good",
+        detail: "Export-style calls that materialize local changes.",
+      },
+      {
+        label: "Path spread",
+        value: String(pathCount),
+        tone: "neutral",
+        detail: "Distinct host paths referenced by current workspace ops.",
+      },
+      {
+        label: "Pipeline links",
+        value: String(attachedCount),
+        tone: attachedCount > 0 ? "good" : "neutral",
+        detail: "Workspace ops attached to a proven pipeline context.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
 function describeShellState(entity) {
   const currentConfig = liveDomainConfigs[entity.id];
   if (currentConfig) {
@@ -1989,6 +2141,38 @@ function pipelineSessionCell(row) {
   }
   const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
   return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function workspaceOpSessionCell(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function workspaceOpSessionSummary(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+}
+
+function workspaceOpPipelineCell(row) {
+  if (!row.pipelineClientID) {
+    return "None";
+  }
+  const href = entityPath("pipelines", shortRouteID(row.traceID, row.pipelineClientID));
+  return linkedPrimaryCell(row.pipelineCommand || "Pipeline", "", href);
+}
+
+function workspaceOpPipelineSummary(row) {
+  if (!row.pipelineClientID) {
+    return "None";
+  }
+  const href = entityPath("pipelines", shortRouteID(row.traceID, row.pipelineClientID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(row.pipelineCommand || "Pipeline")}</a>`;
 }
 
 function pipelineDurationLabel(row) {

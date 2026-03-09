@@ -1171,7 +1171,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 12: Add clean V3 entity routes and detail-page scaffolding
 - [x] Stage 13: Expose `Sessions` as a first-class V3 primitive
 - [x] Stage 14: Rename `CLI Runs` to `Pipelines` and focus detail pages on object DAGs
-- [ ] Stage 15: Implement `Workspace Ops` end-to-end through derivation, API, and UI
+- [x] Stage 15: Implement `Workspace Ops` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1210,10 +1210,10 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] route inventory rows to clean `/pipelines/<short-id>` detail pages
   - [x] reduce the pipeline detail page to a thin recap plus an object DAG view
 - [x] Record what did and did not generalize from the first domain before adding a second one.
-- [ ] Implement the `Workspace Ops` domain end-to-end:
-  - [ ] derive workspace-op identity from host-bound call patterns and side-effect spans
-  - [ ] keep exports/imports/host-access attached to workspace roots rather than scattering them as unrelated follow-up noise
-  - [ ] wire the V3 shell's `Workspace Ops` domain to the real endpoint
+- [x] Implement the `Workspace Ops` domain end-to-end:
+  - [x] derive workspace-op identity from host-bound call patterns and side-effect spans
+  - [x] keep exports/imports/host-access attached to workspace roots rather than scattering them as unrelated follow-up noise
+  - [x] wire the V3 shell's `Workspace Ops` domain to the real endpoint
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1579,6 +1579,24 @@ Stage 14 implementation note:
 12. Live validation checkpoint:
    - verified on a real `odag run -- dagger call -m github.com/dagger/dagger/modules/wolfi container`
    - expected pipeline DAG is now the narrow 2-node chain `Wolfi -> Container`, with module loading attached separately as metadata instead of leaked into the main DAG
+
+Stage 15 implementation note:
+1. First real Workspace Ops API slice is implemented at `GET /api/workspace-ops`.
+2. Current derivation rule:
+   - classify one workspace-op entity per explicit `Host.directory`, `Host.file`, `Directory.export`, or `File.export` call
+   - decode the authoritative call payload and lift the host/export path directly from call arguments (`path`, with conservative fallback names)
+   - keep the entity boundary at the explicit call itself; do not yet collapse multiple ops into inferred workspace roots
+3. Current attachment rule:
+   - derive pipelines separately first
+   - attach a workspace op back to a pipeline only when the op's client and timing fit inside one proven pipeline window
+   - prelude host-access before CLI parse remains visible as a workspace op, but stays detached from the pipeline instead of being misattributed
+4. Current V3 shell shape:
+   - `Workspace Ops` is now a live left-nav domain at `/workspace-ops`
+   - the inventory is a simple list of real operations with status, path, started time, and optional pipeline/session links
+   - each detail page stays thin: recap card plus one facts card
+5. Current live validation checkpoint:
+   - verified on a real `odag run -- dagger call -m github.com/dagger/dagger/modules/wolfi container`
+   - current live workspace-op evidence is the module-load `Host.directory` read against the local workspace, correctly shown without a fake pipeline attachment
 
 ### Phase 3: Payload evolution (future)
 

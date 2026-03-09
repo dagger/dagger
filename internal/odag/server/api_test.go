@@ -1305,6 +1305,217 @@ func TestV2CLIRunsSkipFailedParseWithoutUserCalls(t *testing.T) {
 	}
 }
 
+func TestV2WorkspaceOps(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "36363636363636363636363636363636"
+	sessionID := "session-workspace-ops"
+	clientID := "client-workspace-ops"
+
+	connectHex := "1111111111111111"
+	hostDirHex := "2222222222222222"
+	parseHex := "3333333333333333"
+	dirCallHex := "4444444444444444"
+	exportHex := "5555555555555555"
+
+	commandArgs := []string{"/usr/local/bin/dagger", "call", "directory", "export", "--path", "./out"}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, hostDirHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Host.directory",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   18,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-host-directory"),
+									kvString(t, telemetry.DagOutputAttr, "state-host-directory"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-host-directory",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/tmp/ws"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, dirCallHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Query.directory",
+								StartTimeUnixNano: 30,
+								EndTimeUnixNano:   35,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-directory"),
+									kvString(t, telemetry.DagOutputAttr, "state-directory"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-directory",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, exportHex),
+								ParentSpanId:      mustDecodeHex(t, dirCallHex),
+								Name:              "Directory.export",
+								StartTimeUnixNano: 36,
+								EndTimeUnixNano:   48,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-export"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-export",
+										ReceiverDigest: "state-directory",
+										Field:          "export",
+										Type:           &callpbv1.Type{NamedType: "Void"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "./out"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, parseHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "parsing command line arguments",
+								StartTimeUnixNano: 20,
+								EndTimeUnixNano:   25,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	opsReq := httptest.NewRequest(http.MethodGet, "/api/workspace-ops?traceID="+traceIDHex, nil)
+	opsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(opsRec, opsReq)
+	if opsRec.Code != http.StatusOK {
+		t.Fatalf("workspace ops failed: status=%d body=%s", opsRec.Code, opsRec.Body.String())
+	}
+
+	var opsResp struct {
+		Items []struct {
+			Kind             string `json:"kind"`
+			Direction        string `json:"direction"`
+			CallName         string `json:"callName"`
+			Path             string `json:"path"`
+			SessionID        string `json:"sessionID"`
+			PipelineID       string `json:"pipelineID"`
+			PipelineClientID string `json:"pipelineClientID"`
+			PipelineCommand  string `json:"pipelineCommand"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(opsRec.Body.Bytes(), &opsResp); err != nil {
+		t.Fatalf("decode workspace ops: %v", err)
+	}
+	if len(opsResp.Items) != 2 {
+		t.Fatalf("expected 2 workspace ops, got %#v", opsResp.Items)
+	}
+
+	hostOp := opsResp.Items[0]
+	if hostOp.Kind != "host-directory" || hostOp.Direction != "read" || hostOp.CallName != "Host.directory" || hostOp.Path != "/tmp/ws" {
+		t.Fatalf("unexpected host workspace op: %#v", hostOp)
+	}
+	if hostOp.PipelineID != "" || hostOp.PipelineCommand != "" {
+		t.Fatalf("expected pre-parse host op to stay detached from pipeline: %#v", hostOp)
+	}
+
+	exportOp := opsResp.Items[1]
+	if exportOp.Kind != "directory-export" || exportOp.Direction != "write" || exportOp.CallName != "Directory.export" || exportOp.Path != "./out" {
+		t.Fatalf("unexpected export workspace op: %#v", exportOp)
+	}
+	if exportOp.SessionID != sessionID || exportOp.PipelineClientID != clientID {
+		t.Fatalf("unexpected export op scope: %#v", exportOp)
+	}
+	if exportOp.PipelineID == "" || !strings.Contains(exportOp.PipelineCommand, "directory export") {
+		t.Fatalf("expected export op to attach to pipeline: %#v", exportOp)
+	}
+}
+
 func TestV2Shells(t *testing.T) {
 	t.Parallel()
 
