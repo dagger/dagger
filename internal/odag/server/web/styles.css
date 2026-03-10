@@ -2042,20 +2042,6 @@ body {
   color: #f7d79a;
 }
 
-.v3-sidebar-foot {
-  display: grid;
-  gap: 10px;
-}
-
-.v3-foot-card {
-  display: grid;
-  gap: 4px;
-  padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
 .v3-main {
   min-width: 0;
   min-height: 0;

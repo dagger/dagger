@@ -578,8 +578,6 @@ const els = {
   pageLabel: document.getElementById("pageLabel"),
   pageTitle: document.getElementById("pageTitle"),
   entityNav: document.getElementById("entityNav"),
-  shellMode: document.getElementById("shellMode"),
-  shellSource: document.getElementById("shellSource"),
   tableTitle: document.getElementById("tableTitle"),
   tableMeta: document.getElementById("tableMeta"),
   tableShell: document.getElementById("tableShell"),
@@ -810,10 +808,6 @@ function isMockEntity(entity) {
 
 function renderMain() {
   const entity = currentEntity();
-  const shellState = describeShellState(entity);
-
-  els.shellMode.textContent = shellState.mode;
-  els.shellSource.textContent = shellState.source;
 
   if (state.detailID && supportsDetailRoute(entity.id)) {
     renderDetail(entity);
@@ -3082,68 +3076,6 @@ function buildLiveRegistriesEntity(base, items) {
     evidence: [],
     relations: [],
     inventory: liveItems,
-  };
-}
-
-function describeShellState(entity) {
-  const currentConfig = liveDomainConfigs[entity.id];
-  if (currentConfig) {
-    const currentLive = state.live[currentConfig.stateKey];
-    switch (currentLive.status) {
-      case "loading":
-        return {
-          mode: "Activating",
-          source: "API Loading",
-          copy: `${currentConfig.label} is loading from ${currentConfig.endpoint}.`,
-        };
-      case "loaded":
-        return {
-          mode: "Live Domain",
-          source: "Real API",
-          copy: `${currentConfig.label} is live end-to-end from the current ODAG dataset.`,
-        };
-      case "error":
-        return {
-          mode: "Hybrid Degraded",
-          source: "API Error",
-          copy: `${currentConfig.label} failed to load, but the shared shell is still available.`,
-        };
-      default:
-        return {
-          mode: "Activating",
-          source: "Pending API",
-          copy: `${currentConfig.label} will render as soon as the first API payload arrives.`,
-        };
-    }
-  }
-
-  const loadedDomains = Object.entries(liveDomainConfigs)
-    .filter(([, config]) => state.live[config.stateKey].status === "loaded")
-    .map(([, config]) => config.label);
-  const degradedDomains = Object.entries(liveDomainConfigs)
-    .filter(([, config]) => state.live[config.stateKey].status === "error")
-    .map(([, config]) => config.label);
-
-  if (loadedDomains.length > 0) {
-    return {
-      mode: "Live Shell",
-      source: "Real API",
-      copy: `${loadedDomains.join(" and ")} ${loadedDomains.length === 1 ? "is" : "are"} currently loaded from live API data.`,
-    };
-  }
-
-  if (degradedDomains.length > 0) {
-    return {
-      mode: "Degraded Shell",
-      source: "API Error",
-      copy: `${degradedDomains.join(" and ")} ${degradedDomains.length === 1 ? "is" : "are"} currently degraded.`,
-    };
-  }
-
-  return {
-    mode: "Live Shell",
-    source: "Real API",
-    copy: "All current entity domains render from live API data.",
   };
 }
 
