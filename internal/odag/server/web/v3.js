@@ -787,24 +787,32 @@ function entityPath(entityID, detailID = "") {
 }
 
 async function ensureActiveEntityData() {
-  await Promise.all([
-    ensureLiveDomainData(liveDomainConfigs.sessions),
-    ensureLiveDomainData(liveDomainConfigs.workspaces),
-    ensureLiveDomainData(liveDomainConfigs.clients),
-  ]);
+  const shellHydration = ensureShellHydration();
   if (isOverviewRoute()) {
     await ensureOverviewData();
+    void shellHydration;
     return;
   }
   if (state.entityID === "sessions" && state.detailID) {
     await ensureSessionDetailData();
+    void shellHydration;
     return;
   }
   const config = liveDomainConfigs[state.entityID];
   if (!config) {
+    void shellHydration;
     return;
   }
   await ensureLiveDomainData(config);
+  void shellHydration;
+}
+
+function ensureShellHydration() {
+  return Promise.allSettled([
+    ensureLiveDomainData(liveDomainConfigs.sessions),
+    ensureLiveDomainData(liveDomainConfigs.workspaces),
+    ensureLiveDomainData(liveDomainConfigs.clients),
+  ]);
 }
 
 async function ensureSessionDetailData() {
@@ -880,7 +888,7 @@ function renderWorkspaceFilter() {
   }
   els.workspaceFilter.innerHTML = options.join("");
   els.workspaceFilter.value = rows.some((row) => row.routeID === selected) ? selected : "";
-  els.workspaceFilter.disabled = status !== "loaded" && rows.length === 0;
+  els.workspaceFilter.disabled = false;
 }
 
 function renderImportTraceControl() {

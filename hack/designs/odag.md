@@ -1948,7 +1948,7 @@ Stage 29 implementation note:
    - global `Workspace` selector is populated from live `Workspaces`
    - a discrete topbar `Import Trace` action restores the old cloud-trace pull flow through `POST /api/traces/open`, using a lightweight popover with trace id plus optional org rather than a dedicated page
    - `Session` filter is a searchable popover fed from live `Sessions`
-   - the topbar hydrates `Sessions`, `Workspaces`, and `Clients` in parallel; selector feeds must not block each other sequentially
+   - the topbar hydrates `Sessions`, `Workspaces`, and `Clients` independently in the background; slow selector feeds must never block current-page inventories or overview cards
    - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name
    - local workspace labels may append a compact `@host` qualifier derived from short `dagger.io/client.machine_id` when attached client telemetry makes that identity available
    - `Workspaces` is no longer shown as a left-nav domain; workspace context is entered through the selector and direct workspace routes instead
