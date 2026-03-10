@@ -1993,6 +1993,224 @@ func TestV2Registries(t *testing.T) {
 	}
 }
 
+func TestV2Terminals(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "48484848484848484848484848484848"
+	sessionID := "session-terminal"
+	clientID := "client-terminal"
+
+	connectHex := "1111111111111111"
+	rootHex := "2222222222222222"
+	callHex := "3333333333333333"
+	queryHex := "4444444444444444"
+	entrypointHex := "5555555555555555"
+	shHex := "6666666666666666"
+
+	terminalState := map[string]any{
+		"type":   "Container",
+		"fields": map[string]any{},
+	}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "engine-dev playground terminal",
+								StartTimeUnixNano: 5,
+								EndTimeUnixNano:   100,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, callHex),
+								ParentSpanId:      mustDecodeHex(t, queryHex),
+								Name:              "Container.terminal",
+								StartTimeUnixNano: 20,
+								EndTimeUnixNano:   90,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-terminal"),
+									kvString(t, telemetry.DagOutputAttr, "state-terminal"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, terminalState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-terminal",
+										ReceiverDigest: "state-terminal",
+										Field:          "terminal",
+										Type:           &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "buildkit"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, queryHex),
+								ParentSpanId:      mustDecodeHex(t, rootHex),
+								Name:              "POST /query",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   91,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, entrypointHex),
+								ParentSpanId:      mustDecodeHex(t, callHex),
+								Name:              "exec dagger-entrypoint.sh --addr tcp://0.0.0.0:1234",
+								StartTimeUnixNano: 30,
+								EndTimeUnixNano:   95,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, shHex),
+								ParentSpanId:      mustDecodeHex(t, callHex),
+								Name:              "exec sh",
+								StartTimeUnixNano: 35,
+								EndTimeUnixNano:   89,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	terminalsReq := httptest.NewRequest(http.MethodGet, "/api/terminals?traceID="+traceIDHex, nil)
+	terminalsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(terminalsRec, terminalsReq)
+	if terminalsRec.Code != http.StatusOK {
+		t.Fatalf("terminals failed: status=%d body=%s", terminalsRec.Code, terminalsRec.Body.String())
+	}
+
+	var terminalsResp struct {
+		Items []struct {
+			Name            string   `json:"name"`
+			CallName        string   `json:"callName"`
+			Status          string   `json:"status"`
+			SessionID       string   `json:"sessionID"`
+			ClientID        string   `json:"clientID"`
+			ReceiverDagqlID string   `json:"receiverDagqlID"`
+			OutputDagqlID   string   `json:"outputDagqlID"`
+			ActivityCount   int      `json:"activityCount"`
+			ExecCount       int      `json:"execCount"`
+			ActivityNames   []string `json:"activityNames"`
+			Activities      []struct {
+				Name   string `json:"name"`
+				Kind   string `json:"kind"`
+				Status string `json:"status"`
+			} `json:"activities"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(terminalsRec.Body.Bytes(), &terminalsResp); err != nil {
+		t.Fatalf("decode terminals response: %v", err)
+	}
+	if len(terminalsResp.Items) != 1 {
+		t.Fatalf("expected one terminal item, got %#v", terminalsResp.Items)
+	}
+
+	item := terminalsResp.Items[0]
+	if item.Name != "engine-dev playground terminal" || item.CallName != "Container.terminal" {
+		t.Fatalf("unexpected terminal identity: %#v", item)
+	}
+	if item.Status != "failed" || item.SessionID != sessionID || item.ClientID != clientID {
+		t.Fatalf("unexpected terminal scope/status: %#v", item)
+	}
+	if item.ReceiverDagqlID != "state-terminal" || item.OutputDagqlID != "state-terminal" {
+		t.Fatalf("unexpected terminal dagql ids: %#v", item)
+	}
+	if item.ActivityCount != 2 || item.ExecCount != 2 {
+		t.Fatalf("expected only exec activity rows, got %#v", item)
+	}
+	if !sameStrings(item.ActivityNames, []string{
+		"exec dagger-entrypoint.sh --addr tcp://0.0.0.0:1234",
+		"exec sh",
+	}) {
+		t.Fatalf("unexpected terminal activity names: %#v", item.ActivityNames)
+	}
+	for _, activity := range item.Activities {
+		if activity.Kind != "exec" {
+			t.Fatalf("unexpected activity kind: %#v", item.Activities)
+		}
+	}
+}
+
 func TestV2Services(t *testing.T) {
 	t.Parallel()
 
@@ -3346,6 +3564,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(sessionRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected session detail route to serve v3 shell, got %q", sessionRec.Body.String())
+	}
+
+	terminalsReq := httptest.NewRequest(http.MethodGet, "/terminals", nil)
+	terminalsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(terminalsRec, terminalsReq)
+	if terminalsRec.Code != http.StatusOK {
+		t.Fatalf("terminals page failed: %d %s", terminalsRec.Code, terminalsRec.Body.String())
+	}
+	if !strings.Contains(terminalsRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected terminals route to serve v3 shell, got %q", terminalsRec.Body.String())
+	}
+
+	terminalReq := httptest.NewRequest(http.MethodGet, "/terminals/abc123", nil)
+	terminalRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(terminalRec, terminalReq)
+	if terminalRec.Code != http.StatusOK {
+		t.Fatalf("terminal detail page failed: %d %s", terminalRec.Code, terminalRec.Body.String())
+	}
+	if !strings.Contains(terminalRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected terminal detail route to serve v3 shell, got %q", terminalRec.Body.String())
 	}
 
 	gitRemotesReq := httptest.NewRequest(http.MethodGet, "/git-remotes", nil)

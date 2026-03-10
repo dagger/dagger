@@ -1175,6 +1175,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 16: Implement `Git Remotes` end-to-end through derivation, API, and UI
 - [x] Stage 17: Implement `Services` end-to-end through derivation, API, and UI
 - [x] Stage 18: Implement `Registries` end-to-end through derivation, API, and UI
+- [x] Stage 19: Implement `Terminals` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1693,6 +1694,32 @@ Stage 18 implementation note:
    - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
    - the current data now renders real repositories such as `docker.io/library/nginx`, `docker.io/library/golang`, `docker.io/alpine/git`, `docker.io/tonistiigi/xx`, and `ghcr.io/astral-sh/uv`
    - Docker Hub auth and manifest traffic collapse onto the same canonical repository entities instead of splitting into separate auth/request rows
+
+Stage 19 implementation note:
+1. First real Terminals API slice is implemented at `GET /api/terminals`.
+2. Current derivation rule:
+   - classify one terminal entity per explicit `Container.terminal` call
+   - use the terminal call itself as the authoritative entity boundary rather than a broader same-session approximation
+3. Current label rule:
+   - prefer the nearest ancestor span in the raw span tree whose name contains `terminal`
+   - fall back to same-scope containing spans only when the ancestor chain does not provide a label
+   - this keeps user-facing labels such as `engine-dev playground terminal` even when the enclosing CLI span does not carry explicit engine client/session attrs
+4. Current activity rule:
+   - prefer descendant spans of the `Container.terminal` call in the raw span tree
+   - classify `exec ...` descendants as terminal exec activity and keep other terminal-named descendants available as terminal activity
+   - only fall back to same-scope temporal matching when parent/child structure is insufficient
+   - this avoids dropping real exec spans just because their end time runs slightly past the parent call end
+5. Current status rule:
+   - a failing descendant terminal activity can mark the terminal `failed`
+   - otherwise the row falls back to the terminal call status plus trace ingest state
+6. Current V3 shell shape:
+   - `Terminals` is now a live left-nav domain at `/terminals`
+   - the inventory is a simple list of real terminal sessions with status, started time, session link, and condensed activity summary
+   - each detail page stays thin: recap card plus one activity table
+7. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
+   - the current data now renders real terminals such as `engine-dev playground terminal` and `dagger core container from --address=alpine terminal`
+   - the `engine-dev playground terminal` entity now correctly includes both descendant exec spans (`exec dagger-entrypoint.sh ...` and `exec sh`) instead of dropping the longer-lived entrypoint child
 
 ### Phase 3: Payload evolution (future)
 

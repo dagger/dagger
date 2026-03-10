@@ -441,6 +441,12 @@ const entities = [
 ];
 
 const liveDomainConfigs = {
+  terminals: {
+    stateKey: "terminals",
+    endpoint: "/api/terminals?limit=100",
+    label: "Terminals",
+    singularLabel: "Terminal",
+  },
   services: {
     stateKey: "services",
     endpoint: "/api/services?limit=200",
@@ -492,6 +498,11 @@ const state = {
     pipelines: {},
   },
   live: {
+    terminals: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
     services: {
       status: "idle",
       items: [],
@@ -858,6 +869,10 @@ function renderDetail(entity) {
   }
   if (entity.dynamicKind === "services") {
     els.tableShell.innerHTML = renderServiceDetail(entity, detailItem);
+    return;
+  }
+  if (entity.dynamicKind === "terminals") {
+    els.tableShell.innerHTML = renderTerminalDetail(entity, detailItem);
     return;
   }
   if (entity.dynamicKind === "git-remotes") {
@@ -1480,6 +1495,42 @@ function renderSessionDetail(entity, row) {
   `;
 }
 
+function renderTerminalDetail(entity, row) {
+  const activityTable = renderTableHTML({
+    columns: [
+      { label: "Activity", render: (item) => primaryCell(item.name, item.kind || "activity") },
+      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+      { label: "Duration", render: (item) => escapeHTML(durationLabel(item.startUnixNano, item.endUnixNano, item.status)) },
+    ],
+    rows: row.activities || [],
+    emptyMessage: "No terminal activity recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Terminal</p>
+          <strong>${escapeHTML(row.name || row.entryLabel || "Terminal")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.status))}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)))}
+          ${pipelineRecapItem("Session", terminalSessionSummary(row))}
+          ${pipelineRecapItem("Call", detailCode(row.callName || "Container.terminal"))}
+          ${pipelineRecapItem("Activities", escapeHTML(String(row.activityCount || 0)))}
+          ${pipelineRecapItem("Input Container", row.receiverDagqlID ? detailCode(row.receiverDagqlID) : "Unknown")}
+          ${pipelineRecapItem("Output Container", row.outputDagqlID ? detailCode(row.outputDagqlID) : "Unknown")}
+        </div>
+      </section>
+      ${detailSection("Activity", activityTable)}
+    </div>
+  `;
+}
+
 function renderShellDetail(entity, row) {
   const evidenceTable = renderTableHTML({
     columns: [
@@ -1590,6 +1641,9 @@ function backLink(entity) {
 }
 
 function tableModel(entity, sectionID) {
+  if (entity.dynamicKind === "terminals") {
+    return terminalsTableModel(entity, sectionID);
+  }
   if (entity.dynamicKind === "services") {
     return servicesTableModel(entity, sectionID);
   }
@@ -1689,6 +1743,28 @@ function sessionsTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)) },
           { label: "Root Client", render: (row) => detailCode(row.rootClientID || "Unknown") },
           { label: "Trace", render: (row) => detailCode(shortID(row.traceID)) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
+function terminalsTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Terminals",
+        meta: `${entity.liveItems.length} real terminals`,
+        emptyMessage: "No terminal sessions detected yet.",
+        columns: [
+          { label: "Terminal", render: (row) => linkedPrimaryCell(row.name || row.entryLabel || "Terminal", row.callName || "Container.terminal", entityPath(entity.id, row.routeID)) },
+          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
+          { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
+          { label: "Session", render: (row) => terminalSessionCell(row) },
+          { label: "Activity", render: (row) => terminalActivityCell(row) },
         ],
         rows: entity.liveItems,
       };
@@ -1929,12 +2005,15 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
+  if (!entity || (entity.id !== "terminals" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
   const live = state.live[config.stateKey];
   if (live.status === "loaded") {
+    if (entity.id === "terminals") {
+      return buildLiveTerminalsEntity(entity, live.items);
+    }
     if (entity.id === "services") {
       return buildLiveServicesEntity(entity, live.items);
     }
@@ -1993,6 +2072,71 @@ function materializeEntity(entity) {
     };
   }
   return entity;
+}
+
+function buildLiveTerminalsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.traceID, item.callID || item.id),
+    }))
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const failedCount = liveItems.filter((item) => item.status === "failed").length;
+  const execCount = liveItems.reduce((sum, item) => sum + Number(item.execCount || 0), 0);
+  const activityCount = liveItems.reduce((sum, item) => sum + Number(item.activityCount || 0), 0);
+
+  return {
+    ...base,
+    dynamicKind: "terminals",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one explicit Container.terminal call, with contained exec activity attached directly to the terminal instead of being flattened into generic span noise.",
+    metrics: [
+      {
+        label: "Detected terminals",
+        value: String(liveItems.length),
+        detail: `${failedCount} with failed contained activity`,
+      },
+      {
+        label: "Exec activity",
+        value: String(execCount),
+        detail: `${activityCount} total attached terminal activity spans`,
+      },
+      {
+        label: "Sessions",
+        value: String(new Set(liveItems.map((item) => item.sessionID).filter(Boolean)).size),
+        detail: "Distinct sessions currently represented by terminal entities.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.name || item.entryLabel || "Terminal",
+      value: String(item.status || "ready").toUpperCase(),
+      note: `${item.execCount || 0} exec spans · ${item.callName || "Container.terminal"}`,
+    })),
+    signals: [
+      {
+        label: "Failures",
+        value: String(failedCount),
+        tone: failedCount > 0 ? "warn" : "good",
+        detail: "Terminal entities with failing contained activity.",
+      },
+      {
+        label: "Exec spans",
+        value: String(execCount),
+        tone: execCount > 0 ? "neutral" : "good",
+        detail: "Descendant exec spans captured inside terminal windows.",
+      },
+      {
+        label: "Container reuse",
+        value: String(liveItems.filter((item) => item.receiverDagqlID && item.receiverDagqlID === item.outputDagqlID).length),
+        tone: "neutral",
+        detail: "Terminal calls whose output container identity stayed the same.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
 }
 
 function buildLivePipelinesEntity(base, items) {
@@ -2647,6 +2791,30 @@ function registryActivityPipelineCell(row) {
   }
   const href = entityPath("pipelines", shortRouteID(row.pipelineTraceID, row.pipelineClientID));
   return linkedPrimaryCell(row.pipelineCommand || "Pipeline", "", href);
+}
+
+function terminalSessionCell(row) {
+  if (!row?.sessionID) {
+    return "Unknown";
+  }
+  const href = entityPath("sessions", shortRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function terminalSessionSummary(row) {
+  if (!row?.sessionID) {
+    return "Unknown";
+  }
+  const href = entityPath("sessions", shortRouteID(row.traceID, row.sessionID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+}
+
+function terminalActivityCell(row) {
+  const execCount = Number(row.execCount || 0);
+  const count = Number(row.activityCount || 0);
+  const title = execCount === 1 ? "1 exec" : `${execCount} execs`;
+  const subtitle = count === execCount ? `${count} activity spans` : `${count} spans total`;
+  return primaryCell(title, subtitle);
 }
 
 function serviceCreatedByCell(row) {
