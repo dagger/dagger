@@ -239,7 +239,7 @@ var (
 )
 
 // OnMount starts a tick goroutine. ctx.Done() fires on dismount.
-func (s *SpinnerView) OnMount(ctx tuist.EventContext) {
+func (s *SpinnerView) OnMount(ctx tuist.Context) {
 	go func() {
 		ticker := time.NewTicker(33 * time.Millisecond)
 		defer ticker.Stop()
@@ -257,7 +257,7 @@ func (s *SpinnerView) OnMount(ctx tuist.EventContext) {
 	}()
 }
 
-func (s *SpinnerView) Render(ctx tuist.RenderContext) tuist.RenderResult {
+func (s *SpinnerView) Render(ctx tuist.Context) tuist.RenderResult {
 	return tuist.RenderResult{Lines: []string{s.rave.ViewFancy(s.now)}}
 }
 
@@ -269,16 +269,16 @@ func (s *SpinnerView) ViewFancy() string {
 // Render produces the lines for this span tree node and its children.
 // This method is stateless — all component state (prefix, children,
 // focus, spinner) is synced by syncSpanTreeState() before Render runs.
-func (s *SpanTreeView) Render(ctx tuist.RenderContext) tuist.RenderResult {
+func (s *SpanTreeView) Render(ctx tuist.Context) tuist.RenderResult {
 	row := s.fe.rows.BySpan[s.spanID]
 	if row == nil {
-		return tuist.RenderResult{Lines: ctx.Recycle}
+		return tuist.RenderResult{}
 	}
 
 	// Render the spinner as a child so tuist manages its lifecycle
 	// (OnMount starts the tick goroutine, dismount stops it).
 	if s.spinner != nil {
-		s.RenderChild(s.spinner, ctx)
+		s.RenderChild(ctx, s.spinner)
 	}
 
 	buf := new(strings.Builder)
@@ -291,7 +291,7 @@ func (s *SpanTreeView) Render(ctx tuist.RenderContext) tuist.RenderResult {
 	s.fe.renderRowContent(out, r, row, "")
 
 	text := buf.String()
-	lines := ctx.Recycle
+	lines := ctx.Recycle()
 	if text != "" {
 		lines = append(lines, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
 	}
@@ -314,7 +314,7 @@ func (s *SpanTreeView) Render(ctx tuist.RenderContext) tuist.RenderResult {
 
 		childCtx := ctx
 		childCtx.Width = ctx.Width - child.prefix.contWidth
-		result := s.RenderChild(child, childCtx)
+		result := s.RenderChild(childCtx, child)
 		lines = append(lines, result.Lines...)
 
 		s.childGapCounts = append(s.childGapCounts, gapCount)
@@ -452,7 +452,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
-		tui:           tuist.New(tuist.NewProcessTerminal()),
+		tui:           tuist.New(tuist.NewStdTerminal()),
 		window:        windowSize{Width: -1, Height: -1}, // be clear that it's not set
 		spinner:       NewRave(),
 		profile:       profile,
@@ -677,7 +677,7 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 // blankLine is a trivial component that renders a single empty line.
 type blankLine struct{ tuist.Compo }
 
-func (*blankLine) Render(tuist.RenderContext) tuist.RenderResult {
+func (*blankLine) Render(tuist.Context) tuist.RenderResult {
 	return tuist.RenderResult{Lines: []string{""}}
 }
 
@@ -819,7 +819,7 @@ func (fe *frontendPretty) startTUI() {
 
 // OnMount is called by tuist when the component is mounted into the TUI tree.
 // It starts the frame ticker and, on the first mount, spawns the run function.
-func (fe *frontendPretty) OnMount(ctx tuist.EventContext) {
+func (fe *frontendPretty) OnMount(ctx tuist.Context) {
 	if !fe.spawned {
 		fe.spawned = true
 		// Spawn the run function
@@ -1180,18 +1180,18 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 // ---------- tuist.Component -------------------------------------------------
 
 // Render implements tuist.Component. It produces the full TUI output as lines.
-func (fe *frontendPretty) Render(ctx tuist.RenderContext) tuist.RenderResult {
+func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	if fe.backgrounded || fe.quitting {
 		return tuist.RenderResult{}
 	}
 
 	// Update window dimensions from tuist
-	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight}
+	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()}
 	fe.setWindowSizeLocked(fe.window)
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, false)
 
-	lines := ctx.Recycle
+	lines := ctx.Recycle()
 
 	// Zoom header
 	var progPrefix string
@@ -1477,7 +1477,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 // renderProgressLines renders progress using the tree-based SpanTreeView
 // components and returns the output as lines. Truncates below the focused
 // item so it stays onscreen.
-func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderContext, chromeHeight int) []string {
+func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, chromeHeight int) []string {
 	if fe.rowsView == nil {
 		return nil
 	}
@@ -1490,11 +1490,9 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderConte
 	var allLines []string
 	topGapCounts := make([]int, len(fe.topTrees))
 	for i, treeView := range fe.topTrees {
-		childCtx := tuist.RenderContext{
-			Width:        fe.contentWidth,
-			ScreenHeight: ctx.ScreenHeight,
-		}
-		result := fe.RenderChild(treeView, childCtx)
+		childCtx := ctx
+		ctx.Width = fe.contentWidth
+		result := fe.RenderChild(childCtx, treeView)
 
 		// Gap between top-level trees
 		if i > 0 && len(result.Lines) > 0 {
@@ -1532,7 +1530,7 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.RenderConte
 	//
 	// In shell mode, skip truncation: the focused span's inline logs
 	// (command output) appear below the step line and must not be clipped.
-	viewportHeight := ctx.ScreenHeight - chromeHeight
+	viewportHeight := ctx.ScreenHeight() - chromeHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
@@ -1628,7 +1626,7 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 // HandleKeyPress implements tuist.Interactive. It dispatches key events to the
 // nav handler. When the TextInput or formWrap is focused, keys go directly to
 // them via tuist's focus routing.
-func (fe *frontendPretty) HandleKeyPress(_ tuist.EventContext, ev uv.KeyPressEvent) bool {
+func (fe *frontendPretty) HandleKeyPress(_ tuist.Context, ev uv.KeyPressEvent) bool {
 	fe.handleNavKeyUV(ev)
 
 	// Schedule a re-render after the keypress highlight fades
@@ -1640,7 +1638,7 @@ func (fe *frontendPretty) HandleKeyPress(_ tuist.EventContext, ev uv.KeyPressEve
 
 // interceptEditlineKey is the TextInput's KeyInterceptor. It handles
 // special keys before TextInput processes them. Returns true if consumed.
-func (fe *frontendPretty) interceptEditlineKey(ctx tuist.EventContext, ev uv.KeyPressEvent) bool {
+func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
 	keyStr := k.String()
 	fe.recordKeyPress(keyStr)
@@ -2048,7 +2046,7 @@ func (fe *frontendPretty) setHistoryEntry(idx int) {
 
 func (fe *frontendPretty) initTextInput() {
 	fe.textInput = tuist.NewTextInput("")
-	fe.textInput.OnSubmit = func(ctx tuist.EventContext, value string) bool {
+	fe.textInput.OnSubmit = func(ctx tuist.Context, value string) bool {
 		// Check if the shell considers this a complete command.
 		// If not, insert a newline for multiline editing.
 		if fe.shell != nil && !fe.shell.IsComplete(value) {
