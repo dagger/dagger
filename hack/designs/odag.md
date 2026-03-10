@@ -1554,7 +1554,7 @@ Stage 13 implementation note:
    - trace remains container context, not the primary identity of a session row
 4. Current session detail-page shape:
    - session pages now act as navigation hubs, not generic summary cards
-   - the page starts with one thin recap card, then one card per related live domain with direct entity links
+   - the page starts with one thin recap card, then one card per related live domain rendered as a compact mini-table of linked entities
    - no explanatory copy is shown on the page body
 5. Current session attachment rule for hub navigation:
    - prefer explicit `sessionID` matches whenever the target domain exposes one

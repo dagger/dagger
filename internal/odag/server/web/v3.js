@@ -1770,24 +1770,38 @@ function renderSessionDomainCard(entity, items) {
           <strong class="v3-overview-count">${escapeHTML(String(items.length))}</strong>
         </div>
       </div>
-      <ul class="v3-overview-list">
+      <table class="v3-session-hub-table">
+        <thead>
+          <tr>
+            <th>Entity</th>
+            <th>Status</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
         ${items
           .map((item) => {
             const href = overviewItemHref(entity, item);
             const status = sessionDomainItemStatus(entity, item);
             const time = overviewItemUnixNano(item) > 0 ? relativeTimeFromNow(overviewItemUnixNano(item)) : "";
+            const subtitle = sessionDomainItemSubtitle(entity, item);
             return `
-              <li class="v3-overview-item">
-                <a class="v3-overview-item-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(sessionDomainItemLabel(entity, item))}</a>
-                <div class="v3-overview-item-meta">
-                  ${status ? `<span class="v3-overview-item-status">${statusPill(status)}</span>` : ""}
-                  ${time ? `<span class="v3-overview-item-time">${escapeHTML(time)}</span>` : ""}
-                </div>
-              </li>
+              <tr>
+                <td>
+                  ${linkedPrimaryCell(sessionDomainItemLabel(entity, item), subtitle, href)}
+                </td>
+                <td class="v3-session-hub-status">
+                  ${status ? statusPill(status) : `<span class="v3-session-hub-empty">-</span>`}
+                </td>
+                <td class="v3-session-hub-time">
+                  ${time ? escapeHTML(time) : `<span class="v3-session-hub-empty">-</span>`}
+                </td>
+              </tr>
             `;
           })
           .join("")}
-      </ul>
+        </tbody>
+      </table>
     </section>
   `;
 }
@@ -1883,6 +1897,33 @@ function sessionDomainItemStatus(entity, row) {
     return sessionStatusLabel(row);
   }
   return row.status || "";
+}
+
+function sessionDomainItemSubtitle(entity, row) {
+  switch (entity.id) {
+    case "pipelines":
+      return row.terminalReturnType || "";
+    case "repls":
+      return row.commandCount ? `${row.commandCount} commands` : "";
+    case "shells":
+      return row.mode || row.clientName || "";
+    case "terminals":
+      return row.callName || row.entryLabel || "";
+    case "services":
+      return row.kind || row.createdByCallName || "";
+    case "checks":
+      return row.spanName || "";
+    case "workspaces":
+      return row.root || "";
+    case "workspace-ops":
+      return row.path || row.kind || "";
+    case "git-remotes":
+      return row.host || "";
+    case "registries":
+      return row.host || row.lastOperation || "";
+    default:
+      return "";
+  }
 }
 
 function renderTerminalDetail(entity, row) {
