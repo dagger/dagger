@@ -567,7 +567,7 @@ func (fe *frontendPretty) stopShell() {
 		fe.textInput = nil
 	}
 	if fe.notificationOverlay != nil {
-		fe.notificationOverlay.Hide()
+		fe.notificationOverlay.Remove()
 		fe.notificationOverlay = nil
 		fe.notificationContainer = nil
 		fe.notifications = make(map[string]*NotificationBubble)
