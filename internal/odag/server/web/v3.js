@@ -1161,6 +1161,7 @@ function renderPipelineGraph(row, graph) {
       <div class="v3-graph-scroll">
         <div class="v3-graph-canvas" style="width:${model.width}px; height:${model.height}px;">
           <svg class="v3-graph-svg" viewBox="0 0 ${model.width} ${model.height}" aria-hidden="true" focusable="false">
+            ${model.defsMarkup}
             ${model.edgeMarkup}
           </svg>
           ${model.nodeMarkup}
@@ -1383,8 +1384,8 @@ function buildPipelineGraphModel(row, payload) {
   const focusObjectID = payload?.context?.outputDagqlID && objectByID.has(payload.context.outputDagqlID) ? payload.context.outputDagqlID : "";
   const layout = layoutPipelineGraph(objects, edges, focusObjectID);
   const aliases = pipelineSnapshotAliases(objects);
-  const nodeW = 212;
-  const nodeH = 84;
+  const nodeW = 246;
+  const nodeH = 114;
   const colGap = objects.length <= 2 ? 88 : 60;
   const rowGap = 18;
   const padX = 24;
@@ -1440,7 +1441,8 @@ function buildPipelineGraphModel(row, payload) {
       const curve = Math.max(32, Math.abs(x2 - x1) * 0.4);
       const edgeClass = edge.kind === "call_chain" ? " is-chain" : " is-ref";
       const title = edge.label ? `${edge.kind}: ${edge.label}` : edge.kind;
-      return `<path class="v3-graph-edge${edgeClass}" d="M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}"><title>${escapeHTML(title)}</title></path>`;
+      const markerID = edge.kind === "call_chain" ? "v3-graph-arrow-chain" : "v3-graph-arrow-ref";
+      return `<path class="v3-graph-edge${edgeClass}" marker-end="url(#${markerID})" d="M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}"><title>${escapeHTML(title)}</title></path>`;
     })
     .join("");
   const chainCount = edges.filter((edge) => edge.kind === "call_chain").length;
@@ -1460,9 +1462,23 @@ function buildPipelineGraphModel(row, payload) {
     width,
     height,
     meta,
+    defsMarkup: pipelineGraphDefs(),
     edgeMarkup,
     nodeMarkup,
   };
+}
+
+function pipelineGraphDefs() {
+  return `
+    <defs>
+      <marker id="v3-graph-arrow-chain" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(106, 188, 255, 0.9)"></path>
+      </marker>
+      <marker id="v3-graph-arrow-ref" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(124, 146, 182, 0.82)"></path>
+      </marker>
+    </defs>
+  `;
 }
 
 function graphNodeBorderPoint(node, targetX, targetY) {

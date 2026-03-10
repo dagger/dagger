@@ -1863,6 +1863,9 @@ Stage 26 implementation note:
 4. Current readability refinement:
    - tiny DAGs need visual breathing room, so two-node pipeline graphs use a wider inter-column gap than denser layouts
    - node shadows are kept tighter so they do not visually erase the connector near the card borders
+5. Current geometry correction:
+   - the renderer now uses card dimensions that match the actual rendered box size, and pipeline nodes use `border-box` sizing so SVG anchors and DOM boxes stay aligned
+   - chain and ref edges now terminate with explicit arrowheads rather than relying on bare strokes
 
 ### Phase 3: Payload evolution (future)
 

@@ -2490,6 +2490,7 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
 .v3-graph-edge {
@@ -2529,6 +2530,7 @@ body {
 
 .v3-pipeline-node {
   position: absolute;
+  box-sizing: border-box;
   display: grid;
   gap: 6px;
   padding: 14px 16px;
