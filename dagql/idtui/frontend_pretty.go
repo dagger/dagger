@@ -152,6 +152,11 @@ type frontendPretty struct {
 	topTrees            []*SpanTreeView // top-level tree views, ordered
 	renderVersion       uint64          // bumped on global render config changes (verbosity, zoom)
 	lastRenderedVersion uint64          // renderVersion at last Render, for detecting changes
+
+	// viewDirty is set when DB data changes (ExportSpans, LogExport) and
+	// cleared by recalculateViewLocked in Render. This coalesces multiple
+	// data updates into a single recalculate per render frame.
+	viewDirty bool
 }
 
 // Verify interface compliance at compile time.
@@ -957,6 +962,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
+	fe.viewDirty = false
 	fe.recalculateViewLocked()
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
@@ -1016,7 +1022,9 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 				sr.Update()
 			}
 		}
-		fe.recalculateViewLocked()
+		// Don't recalculate here — set dirty flag so Render coalesces
+		// multiple ExportSpans batches into one recalculate per frame.
+		fe.viewDirty = true
 		fe.Update()
 	})
 	return nil
@@ -1209,6 +1217,13 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 		return tuist.RenderResult{}
 	}
 
+	// Coalesce deferred view updates. Multiple ExportSpans batches may
+	// have set viewDirty since the last frame — recalculate once now.
+	if fe.viewDirty {
+		fe.viewDirty = false
+		fe.recalculateViewLocked()
+	}
+
 	// Update window dimensions from tuist
 	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()}
 	fe.setWindowSizeLocked(fe.window)
@@ -1309,6 +1324,7 @@ func (fe *frontendPretty) formHeight() int {
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
+	fe.viewDirty = false // clear in case called directly from event handlers
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
