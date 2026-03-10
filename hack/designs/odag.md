@@ -856,6 +856,9 @@ Session derivation:
 2. `Session.ID` is synthetic and stable within a derivation version: `session:<root_client_id>`.
 3. A non-root client inherits the session of its nearest root-client ancestor.
 4. Fallback: if a trace has calls but no client connect span, synthesize one root session for that trace and attach orphan calls/spans directly to it.
+5. Source-of-truth rule:
+   - current ODAG source of truth for sessions is the root-client derivation pass over `dagger.io/engine.client` `connect` spans
+   - future source of truth should be explicit engine-emitted session/client identifiers, at which point this derivation layer should collapse to a thin compatibility shim rather than remain a product model in its own right
 
 Call/span attribution:
 
@@ -1911,7 +1914,8 @@ Stage 28 design note:
 1. Workspace is not a simple child of session.
 2. Correct hierarchy for the emerging first-class Workspace concept:
    - one session has one root client and any number of descendant clients
-   - each client may load or operate against one or more workspaces over time
+   - each non-nested client has exactly one workspace context, chosen at client start
+   - nested clients are the exception and may diverge from their parent's workspace context
    - therefore the useful ownership chain is `Session -> Client -> WorkspaceContext`, not `Workspace -> Session`
 3. UX consequence:
    - `Workspace` can still be the top-level durable grouping dimension because it behaves like a project-level lens over time
@@ -1920,6 +1924,7 @@ Stage 28 design note:
    - a session page should remain the authoritative execution hub and may legitimately show multiple workspace contexts if different clients inside that session loaded different workspaces
 4. Shim requirement for current telemetry:
    - until the engine emits authoritative first-class Workspace entities everywhere, ODAG should derive a `client -> workspace` attachment layer from the best available signals (for example main-module load context, workspace root detection, and workspace-op evidence)
+   - that shim should prefer one primary workspace attachment per non-nested client rather than allowing many-workspace ambiguity too early
    - all workspace-centric views should consume that attachment layer rather than assuming a single workspace per session
 5. Navigation implication:
    - top-level global selector should move toward `Workspace`
