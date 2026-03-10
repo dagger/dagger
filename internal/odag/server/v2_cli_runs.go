@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/odag/derive"
+	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
 )
 
@@ -85,12 +86,12 @@ func (s *Server) handleV2CLIRuns(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("get trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		items = append(items, collectV2CLIRuns(traceMeta.Status, traceID, q, proj, scopeIdx)...)
+		items = append(items, collectV2CLIRuns(traceMeta.Status, traceID, q, spans, proj, scopeIdx)...)
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -108,7 +109,13 @@ func (s *Server) handleV2CLIRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func collectV2CLIRuns(traceStatus, traceID string, q v2Query, proj *transform.TraceProjection, scopeIdx *derive.ScopeIndex) []v2CLIRun {
+func collectV2CLIRuns(
+	traceStatus, traceID string,
+	q v2Query,
+	spans []store.SpanRecord,
+	proj *transform.TraceProjection,
+	scopeIdx *derive.ScopeIndex,
+) []v2CLIRun {
 	if proj == nil || scopeIdx == nil {
 		return nil
 	}
@@ -155,7 +162,7 @@ func collectV2CLIRuns(traceStatus, traceID string, q v2Query, proj *transform.Tr
 			return callEvents[i].SpanID < callEvents[j].SpanID
 		})
 
-		callEvents = pipelineCallEvents(callEvents, spansByClient[client.ID])
+		callEvents = pipelineCallEvents(callEvents, spans, scopeIdx, client)
 		if len(callEvents) == 0 {
 			continue
 		}
@@ -243,8 +250,17 @@ func collectV2CLIRuns(traceStatus, traceID string, q v2Query, proj *transform.Tr
 	return items
 }
 
-func pipelineCallEvents(callEvents, spanEvents []transform.MutationEvent) []transform.MutationEvent {
-	boundary := pipelineCommandParseBoundary(spanEvents)
+func pipelineCallEvents(
+	callEvents []transform.MutationEvent,
+	spans []store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+	client derive.Client,
+) []transform.MutationEvent {
+	var cutoffUnixNano int64
+	if len(callEvents) > 0 {
+		cutoffUnixNano = callEvents[len(callEvents)-1].StartUnixNano
+	}
+	boundary := pipelineCommandParseBoundary(spans, scopeIdx, client, cutoffUnixNano)
 	if boundary == nil {
 		return callEvents
 	}
@@ -258,25 +274,90 @@ func pipelineCallEvents(callEvents, spanEvents []transform.MutationEvent) []tran
 	return filtered
 }
 
-func pipelineCommandParseBoundary(spanEvents []transform.MutationEvent) *transform.MutationEvent {
-	var best *transform.MutationEvent
-	for _, event := range spanEvents {
-		if !isPipelineCommandParseSpan(event.Name) {
+func pipelineCommandParseBoundary(
+	spans []store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+	client derive.Client,
+	cutoffUnixNano int64,
+) *store.SpanRecord {
+	var sameClient *store.SpanRecord
+	var sameSession *store.SpanRecord
+	var traceWide *store.SpanRecord
+	var sameClientAny *store.SpanRecord
+	var sameSessionAny *store.SpanRecord
+	var traceWideAny *store.SpanRecord
+	for _, sp := range spans {
+		if !isPipelineCommandParseSpan(sp.Name) {
 			continue
 		}
-		if best == nil {
-			candidate := event
-			best = &candidate
-			continue
+		if pipelineSpanRecordLater(traceWideAny, sp) {
+			candidate := sp
+			traceWideAny = &candidate
 		}
-		if event.EndUnixNano > best.EndUnixNano ||
-			(event.EndUnixNano == best.EndUnixNano && event.StartUnixNano > best.StartUnixNano) ||
-			(event.EndUnixNano == best.EndUnixNano && event.StartUnixNano == best.StartUnixNano && event.SpanID > best.SpanID) {
-			candidate := event
-			best = &candidate
+		switch {
+		case client.ID != "" && scopeIdx != nil && scopeIdx.ClientIDForSpan(sp.SpanID) == client.ID:
+			if pipelineSpanRecordLater(sameClientAny, sp) {
+				candidate := sp
+				sameClientAny = &candidate
+			}
+			if cutoffUnixNano > 0 && sp.EndUnixNano > cutoffUnixNano {
+				continue
+			}
+			if pipelineSpanRecordLater(sameClient, sp) {
+				candidate := sp
+				sameClient = &candidate
+			}
+		case client.SessionID != "" && scopeIdx != nil && scopeIdx.SessionIDForSpan(sp.SpanID) == client.SessionID:
+			if pipelineSpanRecordLater(sameSessionAny, sp) {
+				candidate := sp
+				sameSessionAny = &candidate
+			}
+			if cutoffUnixNano > 0 && sp.EndUnixNano > cutoffUnixNano {
+				continue
+			}
+			if pipelineSpanRecordLater(sameSession, sp) {
+				candidate := sp
+				sameSession = &candidate
+			}
+		default:
+			if cutoffUnixNano > 0 && sp.EndUnixNano > cutoffUnixNano {
+				continue
+			}
+			if pipelineSpanRecordLater(traceWide, sp) {
+				candidate := sp
+				traceWide = &candidate
+			}
 		}
 	}
-	return best
+	if sameClient != nil {
+		return sameClient
+	}
+	if sameSession != nil {
+		return sameSession
+	}
+	if sameClientAny != nil {
+		return sameClientAny
+	}
+	if sameSessionAny != nil {
+		return sameSessionAny
+	}
+	if traceWide != nil {
+		return traceWide
+	}
+	return traceWideAny
+}
+
+func pipelineSpanRecordLater(best *store.SpanRecord, candidate store.SpanRecord) bool {
+	if best == nil {
+		return true
+	}
+	if candidate.EndUnixNano != best.EndUnixNano {
+		return candidate.EndUnixNano > best.EndUnixNano
+	}
+	if candidate.StartUnixNano != best.StartUnixNano {
+		return candidate.StartUnixNano > best.StartUnixNano
+	}
+	return candidate.SpanID > best.SpanID
 }
 
 func isPipelineCommandParseSpan(name string) bool {

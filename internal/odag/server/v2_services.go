@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/odag/derive"
+	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
 )
 
@@ -65,12 +66,12 @@ func (s *Server) handleV2Services(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("get trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		items = append(items, collectV2Services(traceMeta.Status, traceID, q, proj, scopeIdx)...)
+		items = append(items, collectV2Services(traceMeta.Status, traceID, q, spans, proj, scopeIdx)...)
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -88,13 +89,13 @@ func (s *Server) handleV2Services(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func collectV2Services(traceStatus, traceID string, q v2Query, proj *transform.TraceProjection, scopeIdx *derive.ScopeIndex) []v2Service {
+func collectV2Services(traceStatus, traceID string, q v2Query, spans []store.SpanRecord, proj *transform.TraceProjection, scopeIdx *derive.ScopeIndex) []v2Service {
 	if proj == nil || scopeIdx == nil {
 		return nil
 	}
 
 	pipelinesByClient := map[string][]v2CLIRun{}
-	for _, pipeline := range collectV2CLIRuns(traceStatus, traceID, q, proj, scopeIdx) {
+	for _, pipeline := range collectV2CLIRuns(traceStatus, traceID, q, spans, proj, scopeIdx) {
 		if pipeline.ClientID == "" {
 			continue
 		}

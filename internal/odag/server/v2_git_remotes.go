@@ -109,7 +109,7 @@ func collectV2GitRemotes(
 	}
 
 	pipelinesByClient := map[string][]v2CLIRun{}
-	for _, pipeline := range collectV2CLIRuns(traceStatus, traceID, q, proj, scopeIdx) {
+	for _, pipeline := range collectV2CLIRuns(traceStatus, traceID, q, spans, proj, scopeIdx) {
 		if pipeline.ClientID == "" {
 			continue
 		}

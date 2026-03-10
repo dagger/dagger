@@ -100,11 +100,19 @@ func (s *Server) handlePipelineObjectDAG(w http.ResponseWriter, r *http.Request)
 		http.Error(w, fmt.Sprintf("load trace %s: %v", q.TraceID, err), http.StatusInternalServerError)
 		return
 	}
+	traceMeta, err := s.store.GetTrace(r.Context(), q.TraceID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("get trace %s: %v", q.TraceID, err), http.StatusInternalServerError)
+		return
+	}
 	terminalEvent := findProjectionEvent(proj, callID)
 	if terminalEvent == nil || terminalEvent.RawKind != "call" {
 		http.Error(w, "call not found", http.StatusNotFound)
 		return
 	}
+
+	pipelines := collectV2CLIRuns(traceMeta.Status, q.TraceID, q, spans, proj, scopeIdx)
+	pipeline := pipelineByTerminalCallID(pipelines, q.TraceID, callID)
 
 	callFacts, err := buildPipelineCallFacts(q.TraceID, spans, proj, scopeIdx, q.IncludeInternal)
 	if err != nil {
@@ -118,8 +126,12 @@ func (s *Server) handlePipelineObjectDAG(w http.ResponseWriter, r *http.Request)
 	}
 
 	callSubtreeIDs := collectProjectionCallSubtreeIDs(proj, callID)
-	chain := reconstructPipelineCallChain(callFacts, terminal)
-	nodes, edges := buildPipelineObjectGraph(terminal, chain, callFacts, callSubtreeIDs)
+	allowedCallIDs := map[string]struct{}{}
+	if pipeline != nil {
+		allowedCallIDs = pipelineSpanIDSet(pipeline.CallIDs)
+	}
+	chain := reconstructPipelineCallChain(callFacts, terminal, allowedCallIDs)
+	nodes, edges := buildPipelineObjectGraph(terminal, chain, callFacts, allowedCallIDs, callSubtreeIDs)
 
 	resp := pipelineObjectDAGResponse{
 		DerivationVersion: derivationVersionV2,
@@ -148,6 +160,28 @@ func normalizePipelineCallID(raw string) string {
 		return spanID
 	}
 	return raw
+}
+
+func pipelineByTerminalCallID(items []v2CLIRun, traceID, callID string) *v2CLIRun {
+	want := spanKey(traceID, callID)
+	for i := range items {
+		if items[i].TerminalCallID == want {
+			return &items[i]
+		}
+	}
+	return nil
+}
+
+func pipelineSpanIDSet(callIDs []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(callIDs))
+	for _, callID := range callIDs {
+		callID = normalizePipelineCallID(callID)
+		if callID == "" {
+			continue
+		}
+		out[callID] = struct{}{}
+	}
+	return out
 }
 
 func collectProjectionCallSubtreeIDs(proj *transform.TraceProjection, rootCallID string) map[string]struct{} {
@@ -266,7 +300,11 @@ func pipelineOutputStatesBySpanID(spans []store.SpanRecord) (map[string]map[stri
 	return bySpanID, nil
 }
 
-func reconstructPipelineCallChain(callFacts map[string]*pipelineCallFact, terminal *pipelineCallFact) []*pipelineCallFact {
+func reconstructPipelineCallChain(
+	callFacts map[string]*pipelineCallFact,
+	terminal *pipelineCallFact,
+	allowedCallIDs map[string]struct{},
+) []*pipelineCallFact {
 	if terminal == nil {
 		return nil
 	}
@@ -275,7 +313,7 @@ func reconstructPipelineCallChain(callFacts map[string]*pipelineCallFact, termin
 	seen := map[string]struct{}{terminal.SpanID: {}}
 	current := terminal
 	for current != nil && current.ReceiverDagqlID != "" {
-		parent := findPipelineReceiverParent(callFacts, terminal.ClientID, current.ReceiverDagqlID, current.StartUnixNano)
+		parent := findPipelineReceiverParent(callFacts, terminal.ClientID, current.ReceiverDagqlID, current.StartUnixNano, allowedCallIDs)
 		if parent == nil {
 			break
 		}
@@ -298,11 +336,17 @@ func findPipelineReceiverParent(
 	clientID string,
 	receiverDagqlID string,
 	beforeUnixNano int64,
+	allowedCallIDs map[string]struct{},
 ) *pipelineCallFact {
 	var best *pipelineCallFact
 	for _, fact := range callFacts {
 		if fact == nil || fact.ClientID != clientID || !fact.TopLevel || fact.OutputDagqlID != receiverDagqlID {
 			continue
+		}
+		if len(allowedCallIDs) > 0 {
+			if _, ok := allowedCallIDs[fact.SpanID]; !ok {
+				continue
+			}
 		}
 		if beforeUnixNano > 0 && fact.StartUnixNano > beforeUnixNano {
 			continue
@@ -326,6 +370,7 @@ func buildPipelineObjectGraph(
 	terminal *pipelineCallFact,
 	chain []*pipelineCallFact,
 	callFacts map[string]*pipelineCallFact,
+	allowedCallIDs map[string]struct{},
 	callSubtreeIDs map[string]struct{},
 ) ([]pipelineObjectNode, []pipelineObjectEdge) {
 	nodesByID := map[string]*pipelineObjectNode{}
@@ -338,8 +383,9 @@ func buildPipelineObjectGraph(
 		factsByOutput[fact.OutputDagqlID] = append(factsByOutput[fact.OutputDagqlID], fact)
 	}
 
+	chainNodes := make([]*pipelineCallFact, 0, len(chain))
 	for _, fact := range chain {
-		if fact == nil || fact.OutputDagqlID == "" {
+		if !pipelineFactRendersObjectNode(fact, terminal) {
 			continue
 		}
 		node := ensurePipelineObjectNode(nodesByID, fact.OutputDagqlID)
@@ -357,13 +403,14 @@ func buildPipelineObjectGraph(
 			node.Role = "chain"
 		}
 		recordPipelineProducedBy(producedBy, fact.OutputDagqlID, fact.ID)
+		chainNodes = append(chainNodes, fact)
 	}
 
 	seenEdges := map[string]struct{}{}
 	edges := make([]pipelineObjectEdge, 0)
-	for i := 1; i < len(chain); i++ {
-		from := chain[i-1]
-		to := chain[i]
+	for i := 1; i < len(chainNodes); i++ {
+		from := chainNodes[i-1]
+		to := chainNodes[i]
 		if from == nil || to == nil || from.OutputDagqlID == "" || to.OutputDagqlID == "" || from.OutputDagqlID == to.OutputDagqlID {
 			continue
 		}
@@ -382,76 +429,38 @@ func buildPipelineObjectGraph(
 		})
 	}
 
-	queue := []string{}
-	if terminal != nil && terminal.OutputDagqlID != "" && nodesByID[terminal.OutputDagqlID] != nil {
-		queue = append(queue, terminal.OutputDagqlID)
-	}
-	visitedRefs := map[string]struct{}{}
-	for len(queue) > 0 {
-		currentID := queue[0]
-		queue = queue[1:]
-		if _, seen := visitedRefs[currentID]; seen {
+	for _, fact := range chainNodes {
+		if fact == nil || fact.OutputDagqlID == "" {
 			continue
 		}
-		visitedRefs[currentID] = struct{}{}
-		node := nodesByID[currentID]
+		node := nodesByID[fact.OutputDagqlID]
 		if node == nil || node.OutputState == nil {
 			continue
 		}
-
 		for _, ref := range extractFieldRefs(node.OutputState) {
 			if ref.DagqlID == "" {
 				continue
 			}
-			target := nodesByID[ref.DagqlID]
-			if target == nil {
-				fact := selectPipelineFactForRef(factsByOutput[ref.DagqlID], callSubtreeIDs)
-				target = ensurePipelineObjectNode(nodesByID, ref.DagqlID)
-				if fact != nil {
-					if fact.OutputState != nil {
-						target.OutputState = fact.OutputState
-					}
-					if target.TypeName == "" {
-						target.TypeName = pipelineNodeTypeName(fact.OutputState, fact.ReturnType)
-					}
-					target.FirstSeenUnixNano = pipelineMinUnixNano(target.FirstSeenUnixNano, fact.StartUnixNano)
-					target.LastSeenUnixNano = pipelineMaxUnixNano(target.LastSeenUnixNano, fact.EndUnixNano)
-					if target.Role == "" {
-						target.Role = "dependency"
-					}
-					recordPipelineProducedBy(producedBy, ref.DagqlID, fact.ID)
-				} else {
-					target.Placeholder = true
-					target.TypeName = pipelineFieldRefType(node.OutputState, ref.Path)
-					if target.TypeName == "" {
-						target.TypeName = "Object"
-					}
-					if target.Role == "" {
-						target.Role = "dependency"
-					}
-				}
+			if _, ok := nodesByID[ref.DagqlID]; !ok {
+				continue
 			}
-
-			key := "ref\x00" + currentID + "\x00" + ref.DagqlID + "\x00" + ref.Path
+			key := "ref\x00" + fact.OutputDagqlID + "\x00" + ref.DagqlID + "\x00" + ref.Path
 			if _, ok := seenEdges[key]; ok {
 				continue
 			}
 			seenEdges[key] = struct{}{}
 			edges = append(edges, pipelineObjectEdge{
-				ID:            "dep:" + currentID + "->" + ref.DagqlID + ":" + ref.Path,
+				ID:            "dep:" + fact.OutputDagqlID + "->" + ref.DagqlID + ":" + ref.Path,
 				Kind:          "field_ref",
-				FromDagqlID:   currentID,
+				FromDagqlID:   fact.OutputDagqlID,
 				ToDagqlID:     ref.DagqlID,
 				Label:         ref.Path,
 				EvidenceCount: 1,
 			})
-			if target.OutputState != nil {
-				queue = append(queue, target.DagqlID)
-			}
 		}
 	}
 
-	if terminal != nil && terminal.OutputDagqlID == "" {
+	if terminal != nil && pipelineTerminalNeedsResultSink(terminal) {
 		sinkID := "result:" + terminal.SpanID
 		sink := ensurePipelineObjectNode(nodesByID, sinkID)
 		sink.Role = "output"
@@ -460,8 +469,8 @@ func buildPipelineObjectGraph(
 		sink.FirstSeenUnixNano = terminal.StartUnixNano
 		sink.LastSeenUnixNano = terminal.EndUnixNano
 		recordPipelineProducedBy(producedBy, sinkID, terminal.ID)
-		for i := len(chain) - 1; i >= 0; i-- {
-			prev := chain[i]
+		for i := len(chainNodes) - 1; i >= 0; i-- {
+			prev := chainNodes[i]
 			if prev == nil || prev.OutputDagqlID == "" || nodesByID[prev.OutputDagqlID] == nil {
 				continue
 			}
@@ -489,7 +498,13 @@ func buildPipelineObjectGraph(
 				continue
 			}
 			if len(callSubtreeIDs) > 0 {
-				if _, ok := callSubtreeIDs[fact.SpanID]; !ok && !fact.TopLevel {
+				if _, ok := callSubtreeIDs[fact.SpanID]; !ok {
+					if _, allowed := allowedCallIDs[fact.SpanID]; !allowed {
+						continue
+					}
+				}
+			} else if len(allowedCallIDs) > 0 {
+				if _, allowed := allowedCallIDs[fact.SpanID]; !allowed {
 					continue
 				}
 			}
@@ -531,6 +546,42 @@ func buildPipelineObjectGraph(
 		return edges[i].Label < edges[j].Label
 	})
 	return nodes, edges
+}
+
+func pipelineFactRendersObjectNode(fact, terminal *pipelineCallFact) bool {
+	if fact == nil || fact.OutputDagqlID == "" {
+		return false
+	}
+	if terminal != nil && fact.SpanID == terminal.SpanID && pipelineTerminalNeedsResultSink(terminal) {
+		return false
+	}
+	return true
+}
+
+func pipelineTerminalNeedsResultSink(terminal *pipelineCallFact) bool {
+	if terminal == nil {
+		return false
+	}
+	return pipelineReturnNeedsResultSink(terminal.ReturnType, terminal.OutputState)
+}
+
+func pipelineReturnNeedsResultSink(returnType string, outputState map[string]any) bool {
+	rawType := strings.TrimSpace(returnType)
+	if strings.HasPrefix(rawType, "[]") {
+		return true
+	}
+	normalized := pipelineNormalizeTypeName(rawType)
+	if normalized == "" {
+		if typ, ok := getV2String(outputState, "type"); ok {
+			normalized = pipelineNormalizeTypeName(typ)
+		}
+	}
+	switch normalized {
+	case "", "Boolean", "Float", "ID", "Int", "Integer", "JSON", "String", "Void":
+		return true
+	default:
+		return false
+	}
 }
 
 func ensurePipelineObjectNode(nodesByID map[string]*pipelineObjectNode, dagqlID string) *pipelineObjectNode {
