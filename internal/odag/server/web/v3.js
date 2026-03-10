@@ -1162,7 +1162,7 @@ function renderOverviewHTML(model) {
       const items = card.items.length
         ? `<ul class="v3-overview-list">${card.items
             .map((item) => {
-              const status = item.status ? `<span class="v3-overview-item-status">${statusPill(item.status)}</span>` : "";
+              const status = item.status ? `<span class="v3-overview-item-status">${statusOrb(item.status)}</span>` : "";
               const time = item.timeLabel ? `<span class="v3-overview-item-time">${escapeHTML(item.timeLabel)}</span>` : "";
               return `
                 <li class="v3-overview-item">
@@ -1473,7 +1473,7 @@ function renderRegistryDetail(entity, row) {
     columns: [
       { label: "Activity", render: (item) => primaryCell(item.operation || item.name, item.path || item.url || item.name) },
       { label: "Source", render: (item) => tonePill("neutral", item.sourceKind || "unknown") },
-      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Status", render: (item) => statusOrbCell(item.status) },
       { label: "Pipeline", render: (item) => registryActivityPipelineCell(item) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
     ],
@@ -1510,7 +1510,7 @@ function renderServiceDetail(entity, row) {
     columns: [
       { label: "Call", render: (item) => primaryCell(item.name, "") },
       { label: "Role", render: (item) => tonePill("neutral", item.role || "activity") },
-      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Status", render: (item) => statusOrbCell(item.status) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
     ],
     rows: row.activity || [],
@@ -2269,30 +2269,41 @@ function sessionReplPipelineCount(row) {
   return ids.size;
 }
 
-function sessionStatusOrb(status) {
-  const tone = sessionStatusTone(status);
-  return `<span class="v3-status-orb v3-status-orb-${escapeHTML(tone)}" aria-label="${escapeHTML(String(status || tone))}"></span>`;
-}
-
-function sessionStatusTone(status) {
+function statusTone(status) {
   const normalized = String(status || "").toLowerCase();
-  if (["ready", "passing", "completed", "open"].includes(normalized)) {
+  if (["ready", "passing", "loaded", "protected", "warm", "completed", "success", "healthy"].includes(normalized)) {
     return "good";
   }
-  if (["failed", "error", "degraded"].includes(normalized)) {
+  if (["failed", "error", "degraded", "flaky", "drifted"].includes(normalized)) {
     return "bad";
   }
-  if (["running", "loading", "ingesting", "warming"].includes(normalized)) {
+  if (["running", "loading", "ingesting", "warming", "live", "open"].includes(normalized)) {
     return "active";
   }
   return "muted";
+}
+
+function statusOrb(status) {
+  const tone = statusTone(status);
+  return `<span class="v3-status-orb v3-status-orb-${escapeHTML(tone)}" aria-label="${escapeHTML(String(status || tone))}" title="${escapeHTML(String(status || tone))}"></span>`;
+}
+
+function statusOrbCell(status) {
+  if (!status) {
+    return "";
+  }
+  return `<span class="v3-status-cell">${statusOrb(status)}</span>`;
+}
+
+function sessionStatusOrb(status) {
+  return statusOrb(status);
 }
 
 function renderTerminalDetail(entity, row) {
   const activityTable = renderTableHTML({
     columns: [
       { label: "Activity", render: (item) => primaryCell(item.name, item.kind || "activity") },
-      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Status", render: (item) => statusOrbCell(item.status) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
       { label: "Duration", render: (item) => escapeHTML(durationLabel(item.startUnixNano, item.endUnixNano, item.status)) },
     ],
@@ -2328,7 +2339,7 @@ function renderReplDetail(entity, row) {
   const commandTable = renderTableHTML({
     columns: [
       { label: "Command", render: (item) => replPipelineCell(item) },
-      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Status", render: (item) => statusOrbCell(item.status) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
       { label: "Duration", render: (item) => escapeHTML(durationLabel(item.startUnixNano, item.endUnixNano, item.status)) },
     ],
@@ -2576,7 +2587,7 @@ function tableModel(entity, sectionID) {
         emptyMessage: "No inventory rows yet.",
         columns: [
           { label: "Entity", render: (row) => primaryCell(row.name, row.scope) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Owner", key: "owner" },
           { label: "Scope", key: "scope" },
           { label: "Updated", key: "updated" },
@@ -2620,7 +2631,7 @@ function tableModel(entity, sectionID) {
         emptyMessage: "No overview rows yet.",
         columns: [
           { label: "Entity", render: (row) => primaryCell(row.name, row.owner) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Scope", key: "scope" },
           { label: "Updated", key: "updated" },
         ],
@@ -2641,7 +2652,7 @@ function sessionsTableModel(entity, sectionID) {
         emptyMessage: "No sessions detected yet.",
         columns: [
           { label: "Session", render: (row) => linkedPrimaryCell(shortID(row.id), "", entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(sessionStatusLabel(row)) },
+          { label: "Status", render: (row) => statusOrbCell(sessionStatusLabel(row)) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)) },
           { label: "Root Client", render: (row) => detailCode(row.rootClientID || "Unknown") },
@@ -2664,7 +2675,7 @@ function terminalsTableModel(entity, sectionID) {
         emptyMessage: "No terminal sessions detected yet.",
         columns: [
           { label: "Terminal", render: (row) => linkedPrimaryCell(row.name || row.entryLabel || "Terminal", row.callName || "Container.terminal", entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => terminalSessionCell(row) },
@@ -2687,7 +2698,7 @@ function replsTableModel(entity, sectionID) {
         emptyMessage: "No repl history detected yet.",
         columns: [
           { label: "Repl", render: (row) => linkedPrimaryCell(row.command || row.name, row.mode || row.firstCommand || "", entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => replSessionCell(row) },
@@ -2710,7 +2721,7 @@ function checksTableModel(entity, sectionID) {
         emptyMessage: "No checks detected in the current dataset.",
         columns: [
           { label: "Check", render: (row) => linkedPrimaryCell(row.name || "Check", row.spanName || "", entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => checkSessionCell(row) },
@@ -2754,7 +2765,7 @@ function servicesTableModel(entity, sectionID) {
         emptyMessage: "No services detected yet.",
         columns: [
           { label: "Service", render: (row) => linkedPrimaryCell(row.name || "Service", row.imageRef || "", entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Kind", render: (row) => tonePill("neutral", row.kind || "service") },
           { label: "Created By", render: (row) => serviceCreatedByCell(row) },
           { label: "Session", render: (row) => serviceSessionCell(row) },
@@ -2776,7 +2787,7 @@ function pipelinesTableModel(entity, sectionID) {
         emptyMessage: "No pipelines detected yet.",
         columns: [
           { label: "Pipeline", render: (row) => linkedPrimaryCell(row.command || row.name, "", entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Session", render: (row) => pipelineSessionCell(row) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(pipelineDurationLabel(row)) },
@@ -2822,7 +2833,7 @@ function pipelinesTableModel(entity, sectionID) {
         emptyMessage: "No pipelines detected yet.",
         columns: [
           { label: "Pipeline", render: (row) => primaryCell(row.name, row.command || row.chainLabel) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Output", render: (row) => pipelineOutputCell(row) },
           { label: "Follow-up", render: (row) => pipelineFollowupCell(row) },
           { label: "Session", render: (row) => pipelineSessionCell(row) },
@@ -2889,7 +2900,7 @@ function shellsTableModel(entity, sectionID) {
         emptyMessage: "No shell sessions detected yet.",
         columns: [
           { label: "Shell", render: (row) => primaryCell(row.name, row.command || row.entryLabel) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Activity", render: (row) => shellActivityCell(row) },
           { label: "Descendants", render: (row) => shellDescendantCell(row) },
           { label: "Scope", render: (row) => shellScopeCell(row) },
@@ -2911,7 +2922,7 @@ function workspaceOpsTableModel(entity, sectionID) {
         emptyMessage: "No workspace ops detected yet.",
         columns: [
           { label: "Operation", render: (row) => linkedPrimaryCell(row.name, row.callName, entityPath(entity.id, row.routeID)) },
-          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Path", render: (row) => row.path ? detailCode(row.path) : "Unknown" },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
           { label: "Pipeline", render: (row) => workspaceOpPipelineCell(row) },
@@ -3154,11 +3165,11 @@ function overviewEmptyCopy(label, live) {
 function overviewDomainStatePill(card) {
   switch (card.state) {
     case "loaded":
-      return tonePill("good", "live");
+      return `<span class="v3-overview-card-state">${statusOrb("live")}</span>`;
     case "error":
-      return tonePill("warn", "error");
+      return `<span class="v3-overview-card-state">${statusOrb("error")}</span>`;
     default:
-      return tonePill("neutral", "loading");
+      return `<span class="v3-overview-card-state">${statusOrb("loading")}</span>`;
   }
 }
 

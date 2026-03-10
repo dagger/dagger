@@ -1950,6 +1950,15 @@ Stage 29 implementation note:
    - workspace/session qualifiers primarily filter overview and inventory pages
    - a session detail page remains an execution hub and may still show entities across all workspaces present in that session
 
+Stage 30 implementation note:
+1. List-state convention is now normalized across the V3 shell.
+2. Any list/inventory/mini-table/activity-table status signal should render as a colored orb rather than a text badge.
+3. This applies to:
+   - overview recent-item lists
+   - domain inventory tables
+   - list-style detail tables such as service activity, terminal activity, repl command history, registry activity, and workspace-op inventories
+4. Non-list recap cards may still use explicit text labels where the page is summarizing one selected entity rather than scanning many rows.
+
 ### Phase 3: Payload evolution (future)
 
 1. Version object-state payload format for compatibility.

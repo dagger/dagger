@@ -2385,9 +2385,12 @@ body {
   flex-wrap: wrap;
 }
 
-.v3-overview-item-status .v3-pill {
-  padding: 3px 8px;
-  font-size: 0.68rem;
+.v3-overview-item-status,
+.v3-overview-card-state,
+.v3-status-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .v3-session-hub-grid {
@@ -2728,6 +2731,10 @@ body {
   padding: 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   vertical-align: top;
+}
+
+.v3-table tbody td:has(.v3-status-cell) {
+  vertical-align: middle;
 }
 
 .v3-cell-primary {
