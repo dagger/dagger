@@ -1889,6 +1889,24 @@ Stage 26 implementation note:
    - pipeline pages intentionally suppress the inner `Pipeline Details` panel header and the back-link row
    - the object DAG card also suppresses its extra `Object DAG` title/meta chrome; the page should read as recap card plus graph, not recap card plus another labeled sub-panel
 
+Stage 27 implementation note:
+1. V3 shell chrome is now treated as its own product surface rather than leftover scaffolding around entity pages.
+2. Current left-rail rule:
+   - the sidebar is denser and calmer: icon-first rows, smaller typography, lighter weights, and no extra boxed copy around each domain label
+   - mock domains keep only a tiny `mock` badge as an explicit affordance
+   - the visual direction is intentionally closer to the Vercel reference: compact spacing, minimalist icons, and sharper typography
+3. Current topbar rule:
+   - the left side is a global `Sessions` selector that acts as a qualifier across all live domains
+   - the middle is a centered breadcrumb showing either the current domain (`Pipelines`) or domain plus entity (`Pipelines / <short-id>`)
+   - the route shape stays clean (`/pipelines`, `/pipelines/<short-id>`, `/sessions/<short-id>`); the session qualifier is UI state, not path noise
+4. Current session-filter behavior:
+   - selecting a session filters overview cards and live inventory tables to only entities owned by that session
+   - entering a session detail page automatically syncs the global session selector to that session
+   - leaving the session page preserves the qualifier so the rest of the shell reads as "this session's pipelines/services/workspaces/etc"
+5. Current typography/layout direction:
+   - the shell now prefers smaller, more restrained text in navigation and table cells to reduce wrapping and dashboard heaviness
+   - `Geist` is used as the primary UI font for the Vercel-inspired shell pass, while mono labels remain reserved for precise secondary metadata
+
 ### Phase 3: Payload evolution (future)
 
 1. Version object-state payload format for compatibility.

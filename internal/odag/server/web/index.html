@@ -3,14 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ODAG V3 Entity Explorer</title>
+    <title>ODAG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="v3-body">
     <div class="v3-shell">
       <aside class="v3-sidebar">
         <a id="sidebarBrand" class="v3-sidebar-brand" href="/" data-route-path="/" aria-label="ODAG overview">
-          <span class="v3-brand-icon">O</span>
+          <span class="v3-brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" role="presentation" focusable="false">
+              <rect x="2" y="2" width="4" height="4" rx="0.8"></rect>
+              <rect x="10" y="2" width="4" height="4" rx="0.8"></rect>
+              <rect x="2" y="10" width="4" height="4" rx="0.8"></rect>
+              <rect x="10" y="10" width="4" height="4" rx="0.8"></rect>
+            </svg>
+          </span>
           <span class="v3-brand-title">ODAG</span>
         </a>
 
@@ -19,10 +29,13 @@
 
       <main class="v3-main">
         <header class="v3-topbar">
-          <div>
-            <p id="pageLabel" class="v3-topbar-label">Domain</p>
-            <h2 id="pageTitle" class="v3-page-title">Terminals</h2>
+          <div class="v3-topbar-start">
+            <select id="sessionFilter" class="v3-session-select" aria-label="Session filter">
+              <option value="">All Sessions</option>
+            </select>
           </div>
+          <nav id="pageCrumb" class="v3-breadcrumb" aria-label="Breadcrumb">Overview</nav>
+          <div class="v3-topbar-end" aria-hidden="true"></div>
         </header>
 
         <section class="v3-content">

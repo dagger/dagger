@@ -4555,7 +4555,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if traceRec.Code != http.StatusOK {
 		t.Fatalf("trace page failed: %d %s", traceRec.Code, traceRec.Body.String())
 	}
-	if !strings.Contains(traceRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(traceRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected trace route to serve v3 shell, got %q", traceRec.Body.String())
 	}
 
@@ -4565,7 +4565,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if dagRec.Code != http.StatusOK {
 		t.Fatalf("dag page failed: %d %s", dagRec.Code, dagRec.Body.String())
 	}
-	if !strings.Contains(dagRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(dagRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected dag route to serve v3 shell, got %q", dagRec.Body.String())
 	}
 
@@ -4575,7 +4575,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if pipelinesRec.Code != http.StatusOK {
 		t.Fatalf("pipelines page failed: %d %s", pipelinesRec.Code, pipelinesRec.Body.String())
 	}
-	if !strings.Contains(pipelinesRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(pipelinesRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected pipelines route to serve v3 shell, got %q", pipelinesRec.Body.String())
 	}
 
@@ -4585,7 +4585,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if overviewRec.Code != http.StatusOK {
 		t.Fatalf("overview page failed: %d %s", overviewRec.Code, overviewRec.Body.String())
 	}
-	if !strings.Contains(overviewRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(overviewRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected overview route to serve v3 shell, got %q", overviewRec.Body.String())
 	}
 
@@ -4595,7 +4595,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if pipelineRec.Code != http.StatusOK {
 		t.Fatalf("pipeline detail page failed: %d %s", pipelineRec.Code, pipelineRec.Body.String())
 	}
-	if !strings.Contains(pipelineRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(pipelineRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected pipeline detail route to serve v3 shell, got %q", pipelineRec.Body.String())
 	}
 
@@ -4605,7 +4605,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if sessionsRec.Code != http.StatusOK {
 		t.Fatalf("sessions page failed: %d %s", sessionsRec.Code, sessionsRec.Body.String())
 	}
-	if !strings.Contains(sessionsRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(sessionsRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected sessions route to serve v3 shell, got %q", sessionsRec.Body.String())
 	}
 
@@ -4615,7 +4615,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if sessionRec.Code != http.StatusOK {
 		t.Fatalf("session detail page failed: %d %s", sessionRec.Code, sessionRec.Body.String())
 	}
-	if !strings.Contains(sessionRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(sessionRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected session detail route to serve v3 shell, got %q", sessionRec.Body.String())
 	}
 
@@ -4625,7 +4625,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if terminalsRec.Code != http.StatusOK {
 		t.Fatalf("terminals page failed: %d %s", terminalsRec.Code, terminalsRec.Body.String())
 	}
-	if !strings.Contains(terminalsRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(terminalsRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected terminals route to serve v3 shell, got %q", terminalsRec.Body.String())
 	}
 
@@ -4635,7 +4635,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if terminalRec.Code != http.StatusOK {
 		t.Fatalf("terminal detail page failed: %d %s", terminalRec.Code, terminalRec.Body.String())
 	}
-	if !strings.Contains(terminalRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(terminalRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected terminal detail route to serve v3 shell, got %q", terminalRec.Body.String())
 	}
 
@@ -4645,7 +4645,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if replsRec.Code != http.StatusOK {
 		t.Fatalf("repls page failed: %d %s", replsRec.Code, replsRec.Body.String())
 	}
-	if !strings.Contains(replsRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(replsRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected repls route to serve v3 shell, got %q", replsRec.Body.String())
 	}
 
@@ -4655,7 +4655,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if replRec.Code != http.StatusOK {
 		t.Fatalf("repl detail page failed: %d %s", replRec.Code, replRec.Body.String())
 	}
-	if !strings.Contains(replRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(replRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected repl detail route to serve v3 shell, got %q", replRec.Body.String())
 	}
 
@@ -4665,7 +4665,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if checksRec.Code != http.StatusOK {
 		t.Fatalf("checks page failed: %d %s", checksRec.Code, checksRec.Body.String())
 	}
-	if !strings.Contains(checksRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(checksRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected checks route to serve v3 shell, got %q", checksRec.Body.String())
 	}
 
@@ -4675,7 +4675,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if checkRec.Code != http.StatusOK {
 		t.Fatalf("check detail page failed: %d %s", checkRec.Code, checkRec.Body.String())
 	}
-	if !strings.Contains(checkRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(checkRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected check detail route to serve v3 shell, got %q", checkRec.Body.String())
 	}
 
@@ -4685,7 +4685,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if workspacesRec.Code != http.StatusOK {
 		t.Fatalf("workspaces page failed: %d %s", workspacesRec.Code, workspacesRec.Body.String())
 	}
-	if !strings.Contains(workspacesRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(workspacesRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected workspaces route to serve v3 shell, got %q", workspacesRec.Body.String())
 	}
 
@@ -4695,7 +4695,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if workspaceRec.Code != http.StatusOK {
 		t.Fatalf("workspace detail page failed: %d %s", workspaceRec.Code, workspaceRec.Body.String())
 	}
-	if !strings.Contains(workspaceRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(workspaceRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected workspace detail route to serve v3 shell, got %q", workspaceRec.Body.String())
 	}
 
@@ -4705,7 +4705,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if gitRemotesRec.Code != http.StatusOK {
 		t.Fatalf("git remotes page failed: %d %s", gitRemotesRec.Code, gitRemotesRec.Body.String())
 	}
-	if !strings.Contains(gitRemotesRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(gitRemotesRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected git remotes route to serve v3 shell, got %q", gitRemotesRec.Body.String())
 	}
 
@@ -4715,7 +4715,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if gitRemoteRec.Code != http.StatusOK {
 		t.Fatalf("git remote detail page failed: %d %s", gitRemoteRec.Code, gitRemoteRec.Body.String())
 	}
-	if !strings.Contains(gitRemoteRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(gitRemoteRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected git remote detail route to serve v3 shell, got %q", gitRemoteRec.Body.String())
 	}
 
@@ -4725,7 +4725,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if servicesRec.Code != http.StatusOK {
 		t.Fatalf("services page failed: %d %s", servicesRec.Code, servicesRec.Body.String())
 	}
-	if !strings.Contains(servicesRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(servicesRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected services route to serve v3 shell, got %q", servicesRec.Body.String())
 	}
 
@@ -4735,7 +4735,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if serviceRec.Code != http.StatusOK {
 		t.Fatalf("service detail page failed: %d %s", serviceRec.Code, serviceRec.Body.String())
 	}
-	if !strings.Contains(serviceRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(serviceRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected service detail route to serve v3 shell, got %q", serviceRec.Body.String())
 	}
 
@@ -4745,7 +4745,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if registriesRec.Code != http.StatusOK {
 		t.Fatalf("registries page failed: %d %s", registriesRec.Code, registriesRec.Body.String())
 	}
-	if !strings.Contains(registriesRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(registriesRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected registries route to serve v3 shell, got %q", registriesRec.Body.String())
 	}
 
@@ -4755,7 +4755,7 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if registryRec.Code != http.StatusOK {
 		t.Fatalf("registry detail page failed: %d %s", registryRec.Code, registryRec.Body.String())
 	}
-	if !strings.Contains(registryRec.Body.String(), "Entity Explorer") {
+	if !strings.Contains(registryRec.Body.String(), "id=\"pageCrumb\"") {
 		t.Fatalf("expected registry detail route to serve v3 shell, got %q", registryRec.Body.String())
 	}
 }

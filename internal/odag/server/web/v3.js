@@ -531,6 +531,7 @@ const sessionHubEntityIDs = [
 const state = {
   entityID: OVERVIEW_ROUTE_ID,
   detailID: "",
+  sessionFilterID: "",
   detailGraphs: {
     pipelines: {},
   },
@@ -595,8 +596,8 @@ const state = {
 
 const els = {
   sidebarBrand: document.getElementById("sidebarBrand"),
-  pageLabel: document.getElementById("pageLabel"),
-  pageTitle: document.getElementById("pageTitle"),
+  sessionFilter: document.getElementById("sessionFilter"),
+  pageCrumb: document.getElementById("pageCrumb"),
   entityNav: document.getElementById("entityNav"),
   panelHead: document.querySelector(".v3-panel-head"),
   tableTitle: document.getElementById("tableTitle"),
@@ -608,14 +609,21 @@ init();
 
 function init() {
   readURLState();
+  syncSessionFilterFromRoute();
   bindEvents();
   render();
   void ensureActiveEntityData();
 }
 
 function bindEvents() {
+  els.sessionFilter?.addEventListener("change", () => {
+    state.sessionFilterID = String(els.sessionFilter.value || "");
+    render();
+  });
+
   window.addEventListener("popstate", () => {
     readURLState();
+    syncSessionFilterFromRoute();
     render();
     void ensureActiveEntityData();
   });
@@ -688,6 +696,7 @@ function navigateTo(nextPath, replace = false) {
   const route = parseRoute(url.pathname, url.search);
   state.entityID = route.entityID;
   state.detailID = route.detailID;
+  syncSessionFilterFromRoute();
   const nextURL = `${url.pathname}${url.search}`;
   const currentURL = `${window.location.pathname}${window.location.search}`;
   if (nextURL !== currentURL) {
@@ -707,6 +716,7 @@ function entityPath(entityID, detailID = "") {
 }
 
 async function ensureActiveEntityData() {
+  await ensureLiveDomainData(liveDomainConfigs.sessions);
   if (isOverviewRoute()) {
     await ensureOverviewData();
     return;
@@ -763,6 +773,61 @@ async function ensureLiveDomainData(config) {
     entry.error = err instanceof Error ? err.message : String(err || "unknown error");
   }
   render();
+}
+
+function syncSessionFilterFromRoute() {
+  if (state.entityID === "sessions" && state.detailID) {
+    state.sessionFilterID = state.detailID;
+  }
+}
+
+function renderSessionFilter() {
+  if (!els.sessionFilter) {
+    return;
+  }
+  const sessions = materializedEntityByID("sessions");
+  const rows = Array.isArray(sessions?.liveItems)
+    ? sessions.liveItems.slice().sort((a, b) => Number(b.firstSeenUnixNano || 0) - Number(a.firstSeenUnixNano || 0))
+    : [];
+  const selected = currentSessionFilterID();
+  const status = state.live.sessions.status;
+  const options = [];
+  const allLabel = status === "error" ? "Sessions unavailable" : status === "loaded" ? "All Sessions" : "Loading Sessions...";
+  options.push(`<option value="">${escapeHTML(allLabel)}</option>`);
+  for (const row of rows) {
+    options.push(
+      `<option value="${escapeHTML(row.routeID)}">${escapeHTML(sessionFilterOptionLabel(row))}</option>`,
+    );
+  }
+  els.sessionFilter.innerHTML = options.join("");
+  els.sessionFilter.value = rows.some((row) => row.routeID === selected) ? selected : "";
+  els.sessionFilter.disabled = status !== "loaded" && rows.length === 0;
+}
+
+function renderBreadcrumb(entity = null, detailItem = null) {
+  if (!els.pageCrumb) {
+    return;
+  }
+  if (isOverviewRoute()) {
+    els.pageCrumb.innerHTML = `<span class="v3-breadcrumb-current">Overview</span>`;
+    return;
+  }
+  const current = entity || currentEntity();
+  if (!current) {
+    els.pageCrumb.textContent = "";
+    return;
+  }
+  const resolvedDetail = detailItem || (state.detailID && supportsDetailRoute(current.id) ? currentDetailItem(current) : null);
+  if (!resolvedDetail) {
+    els.pageCrumb.innerHTML = `<span class="v3-breadcrumb-current">${escapeHTML(current.label)}</span>`;
+    return;
+  }
+  const basePath = entityPath(current.id);
+  els.pageCrumb.innerHTML = [
+    `<a class="v3-breadcrumb-link" href="${escapeHTML(basePath)}" data-route-path="${escapeHTML(basePath)}">${escapeHTML(current.label)}</a>`,
+    `<span class="v3-breadcrumb-sep">/</span>`,
+    `<span class="v3-breadcrumb-current">${escapeHTML(resolvedDetail.name)}</span>`,
+  ].join("");
 }
 
 function pipelineGraphEntry(row) {
@@ -830,6 +895,7 @@ async function fetchPipelineGraph(row, entry) {
 }
 
 function render() {
+  renderSessionFilter();
   renderEntityNav();
   renderMain();
 }
@@ -852,13 +918,9 @@ function renderEntityNav() {
           data-route-path="${escapeHTML(entityPath(entity.id))}"
           type="button"
         >
-          <span class="v3-type-icon">${escapeHTML(entity.code)}</span>
-          <span class="v3-type-copy">
-            <span class="v3-type-line">
-              <span class="v3-type-title">${escapeHTML(entity.label)}</span>
-              ${mockBadge}
-            </span>
-          </span>
+          <span class="v3-type-icon" aria-hidden="true">${navIcon(entity.id)}</span>
+          <span class="v3-type-title">${escapeHTML(entity.label)}</span>
+          ${mockBadge}
         </button>
       `;
     })
@@ -876,12 +938,15 @@ function isMockEntity(entity) {
 }
 
 function renderMain() {
-  setPanelHeadHidden(false);
+  setPanelHeadHidden(true);
   if (isOverviewRoute()) {
+    renderBreadcrumb();
     renderOverview();
     return;
   }
   const entity = currentEntity();
+  const detailItem = state.detailID && supportsDetailRoute(entity.id) ? currentDetailItem(entity) : null;
+  renderBreadcrumb(entity, detailItem);
 
   if (state.detailID && supportsDetailRoute(entity.id)) {
     renderDetail(entity);
@@ -890,8 +955,6 @@ function renderMain() {
 
   const model = tableModel(entity, "inventory");
   document.title = `ODAG ${entity.label}`;
-  els.pageLabel.textContent = "Domain";
-  els.pageTitle.textContent = entity.label;
   els.tableTitle.textContent = entity.label;
   els.tableMeta.textContent = model.meta;
   renderTable(model);
@@ -905,8 +968,6 @@ function renderOverview() {
   const totalEntities = cards.reduce((sum, card) => sum + card.count, 0);
 
   document.title = "ODAG Overview";
-  els.pageLabel.textContent = "Overview";
-  els.pageTitle.textContent = "Live Entities";
   els.tableTitle.textContent = "Live Domains";
   els.tableMeta.textContent = `${totalEntities} entities across ${cards.length} domains`;
   els.tableShell.innerHTML = renderOverviewHTML({
@@ -1020,16 +1081,11 @@ function renderDetail(entity) {
   const live = config ? state.live[config.stateKey] : null;
   const detailLabel = config?.singularLabel || entity.label;
   const detailItem = currentDetailItem(entity);
-  const compactDetail = entity.dynamicKind === "pipelines" || entity.dynamicKind === "sessions";
-  const minimalPanelTitle = entity.dynamicKind === "sessions";
-
-  els.pageLabel.textContent = minimalPanelTitle ? "" : detailLabel;
-  els.tableTitle.textContent = minimalPanelTitle && detailItem ? detailItem.name : `${detailLabel} Details`;
-  setPanelHeadHidden(compactDetail);
+  els.tableTitle.textContent = entity.dynamicKind === "sessions" && detailItem ? detailItem.name : `${detailLabel} Details`;
+  setPanelHeadHidden(true);
 
   if (live && live.status !== "loaded") {
     document.title = `ODAG ${detailLabel}`;
-    els.pageTitle.textContent = detailLabel;
     els.tableMeta.textContent = live.status === "error" ? "Unavailable" : "Loading";
     els.tableShell.innerHTML = renderDetailState(entity, detailLabel, live.status === "error" ? "unavailable" : "loading");
     return;
@@ -1037,15 +1093,13 @@ function renderDetail(entity) {
 
   if (!detailItem) {
     document.title = `ODAG ${detailLabel}`;
-    els.pageTitle.textContent = detailLabel;
     els.tableMeta.textContent = state.detailID;
     els.tableShell.innerHTML = renderDetailState(entity, detailLabel, "missing");
     return;
   }
 
   document.title = `ODAG ${detailLabel} ${detailItem.routeID}`;
-  els.pageTitle.textContent = detailItem.name;
-  els.tableMeta.textContent = minimalPanelTitle ? "" : detailItem.routeID;
+  els.tableMeta.textContent = detailItem.routeID;
 
   if (entity.dynamicKind === "pipelines") {
     const graph = ensurePipelineGraph(detailItem);
@@ -2344,13 +2398,14 @@ function tableModel(entity, sectionID) {
 }
 
 function sessionsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Session Inventory",
-        meta: `${entity.liveItems.length} real sessions`,
+        meta: `${rows.length} real sessions`,
         emptyMessage: "No sessions detected yet.",
         columns: [
           { label: "Session", render: (row) => linkedPrimaryCell(shortID(row.id), "", entityPath(entity.id, row.routeID)) },
@@ -2360,19 +2415,20 @@ function sessionsTableModel(entity, sectionID) {
           { label: "Root Client", render: (row) => detailCode(row.rootClientID || "Unknown") },
           { label: "Trace", render: (row) => detailCode(shortID(row.traceID)) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function terminalsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Terminals",
-        meta: `${entity.liveItems.length} real terminals`,
+        meta: `${rows.length} real terminals`,
         emptyMessage: "No terminal sessions detected yet.",
         columns: [
           { label: "Terminal", render: (row) => linkedPrimaryCell(row.name || row.entryLabel || "Terminal", row.callName || "Container.terminal", entityPath(entity.id, row.routeID)) },
@@ -2382,19 +2438,20 @@ function terminalsTableModel(entity, sectionID) {
           { label: "Session", render: (row) => terminalSessionCell(row) },
           { label: "Activity", render: (row) => terminalActivityCell(row) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function replsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Repls",
-        meta: `${entity.liveItems.length} real repls`,
+        meta: `${rows.length} real repls`,
         emptyMessage: "No repl history detected yet.",
         columns: [
           { label: "Repl", render: (row) => linkedPrimaryCell(row.command || row.name, row.mode || row.firstCommand || "", entityPath(entity.id, row.routeID)) },
@@ -2404,19 +2461,20 @@ function replsTableModel(entity, sectionID) {
           { label: "Session", render: (row) => replSessionCell(row) },
           { label: "Commands", render: (row) => replCommandHistoryCell(row) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function checksTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Checks",
-        meta: `${entity.liveItems.length} real checks`,
+        meta: `${rows.length} real checks`,
         emptyMessage: "No checks detected in the current dataset.",
         columns: [
           { label: "Check", render: (row) => linkedPrimaryCell(row.name || "Check", row.spanName || "", entityPath(entity.id, row.routeID)) },
@@ -2425,19 +2483,20 @@ function checksTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => checkSessionCell(row) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function workspacesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Workspaces",
-        meta: `${entity.liveItems.length} real workspaces`,
+        meta: `${rows.length} real workspaces`,
         emptyMessage: "No observed workspaces detected yet.",
         columns: [
           { label: "Workspace", render: (row) => linkedPrimaryCell(row.name || row.root || "Workspace", row.root || "", entityPath(entity.id, row.routeID)) },
@@ -2446,19 +2505,20 @@ function workspacesTableModel(entity, sectionID) {
           { label: "Pipelines", render: (row) => escapeHTML(String(row.pipelineCount || 0)) },
           { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function servicesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Services",
-        meta: `${entity.liveItems.length} real services`,
+        meta: `${rows.length} real services`,
         emptyMessage: "No services detected yet.",
         columns: [
           { label: "Service", render: (row) => linkedPrimaryCell(row.name || "Service", row.imageRef || "", entityPath(entity.id, row.routeID)) },
@@ -2468,18 +2528,19 @@ function servicesTableModel(entity, sectionID) {
           { label: "Session", render: (row) => serviceSessionCell(row) },
           { label: "Last Activity", render: (row) => escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano)) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function pipelinesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
       return {
         eyebrow: "Inventory",
         title: "Pipelines",
-        meta: `${entity.liveItems.length} real pipelines`,
+        meta: `${rows.length} real pipelines`,
         emptyMessage: "No pipelines detected yet.",
         columns: [
           { label: "Pipeline", render: (row) => linkedPrimaryCell(row.command || row.name, "", entityPath(entity.id, row.routeID)) },
@@ -2489,7 +2550,7 @@ function pipelinesTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(pipelineDurationLabel(row)) },
           { label: "Output Type", render: (row) => escapeHTML(pipelineOutputTypeLabel(row)) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
     case "evidence":
       return {
@@ -2525,7 +2586,7 @@ function pipelinesTableModel(entity, sectionID) {
       return {
         eyebrow: "Overview",
         title: "Pipeline Current Surface",
-        meta: `${Math.min(3, entity.liveItems.length)} of ${entity.liveItems.length} real pipelines`,
+        meta: `${Math.min(3, rows.length)} of ${rows.length} real pipelines`,
         emptyMessage: "No pipelines detected yet.",
         columns: [
           { label: "Pipeline", render: (row) => primaryCell(row.name, row.command || row.chainLabel) },
@@ -2534,18 +2595,19 @@ function pipelinesTableModel(entity, sectionID) {
           { label: "Follow-up", render: (row) => pipelineFollowupCell(row) },
           { label: "Session", render: (row) => pipelineSessionCell(row) },
         ],
-        rows: entity.liveItems.slice(0, 3),
+        rows: rows.slice(0, 3),
       };
   }
 }
 
 function shellsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
       return {
         eyebrow: "Inventory",
         title: "Shell Inventory",
-        meta: `${entity.liveItems.length} real shells`,
+        meta: `${rows.length} real shells`,
         emptyMessage: "No shell sessions detected yet.",
         columns: [
           { label: "Shell", render: (row) => linkedPrimaryCell(row.name, row.command || row.entryLabel, entityPath(entity.id, row.routeID)) },
@@ -2555,7 +2617,7 @@ function shellsTableModel(entity, sectionID) {
           { label: "Descendants", render: (row) => shellDescendantCell(row) },
           { label: "Scope", render: (row) => shellScopeCell(row) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
     case "evidence":
       return {
@@ -2591,7 +2653,7 @@ function shellsTableModel(entity, sectionID) {
       return {
         eyebrow: "Overview",
         title: "Shell Current Surface",
-        meta: `${Math.min(3, entity.liveItems.length)} of ${entity.liveItems.length} real shells`,
+        meta: `${Math.min(3, rows.length)} of ${rows.length} real shells`,
         emptyMessage: "No shell sessions detected yet.",
         columns: [
           { label: "Shell", render: (row) => primaryCell(row.name, row.command || row.entryLabel) },
@@ -2600,19 +2662,20 @@ function shellsTableModel(entity, sectionID) {
           { label: "Descendants", render: (row) => shellDescendantCell(row) },
           { label: "Scope", render: (row) => shellScopeCell(row) },
         ],
-        rows: entity.liveItems.slice(0, 3),
+        rows: rows.slice(0, 3),
       };
   }
 }
 
 function workspaceOpsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Workspace Ops",
-        meta: `${entity.liveItems.length} real workspace ops`,
+        meta: `${rows.length} real workspace ops`,
         emptyMessage: "No workspace ops detected yet.",
         columns: [
           { label: "Operation", render: (row) => linkedPrimaryCell(row.name, row.callName, entityPath(entity.id, row.routeID)) },
@@ -2622,19 +2685,20 @@ function workspaceOpsTableModel(entity, sectionID) {
           { label: "Pipeline", render: (row) => workspaceOpPipelineCell(row) },
           { label: "Session", render: (row) => workspaceOpSessionCell(row) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function gitRemotesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Git Remotes",
-        meta: `${entity.liveItems.length} real git remotes`,
+        meta: `${rows.length} real git remotes`,
         emptyMessage: "No git remotes detected yet.",
         columns: [
           { label: "Remote", render: (row) => linkedPrimaryCell(row.ref || row.name, row.host || "", entityPath(entity.id, row.routeID)) },
@@ -2643,19 +2707,20 @@ function gitRemotesTableModel(entity, sectionID) {
           { label: "Sessions", render: (row) => escapeHTML(String(row.sessionCount || 0)) },
           { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
 
 function registriesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
   switch (sectionID) {
     case "inventory":
     default:
       return {
         eyebrow: "Inventory",
         title: "Registries",
-        meta: `${entity.liveItems.length} real registries`,
+        meta: `${rows.length} real registries`,
         emptyMessage: "No registries detected yet.",
         columns: [
           { label: "Registry", render: (row) => linkedPrimaryCell(row.ref || row.name, row.latestRef || "", entityPath(entity.id, row.routeID)) },
@@ -2664,7 +2729,7 @@ function registriesTableModel(entity, sectionID) {
           { label: "Requests", render: (row) => escapeHTML(String(row.activityCount || 0)) },
           { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
         ],
-        rows: entity.liveItems,
+        rows,
       };
   }
 }
@@ -2699,6 +2764,40 @@ function isOverviewRoute(entityID = state.entityID) {
   return entityID === OVERVIEW_ROUTE_ID;
 }
 
+function currentSessionFilterID() {
+  return String(state.sessionFilterID || "");
+}
+
+function currentSessionFilterRow() {
+  const filterID = currentSessionFilterID();
+  if (!filterID) {
+    return null;
+  }
+  const sessions = materializedEntityByID("sessions");
+  if (!sessions || !Array.isArray(sessions.liveItems)) {
+    return null;
+  }
+  return sessions.liveItems.find((row) => row.routeID === filterID) || null;
+}
+
+function visibleEntityRows(entity, rows = entity?.liveItems) {
+  if (!entity || !Array.isArray(rows)) {
+    return [];
+  }
+  const sessionRow = currentSessionFilterRow();
+  if (!sessionRow) {
+    return rows;
+  }
+  if (entity.id === "sessions") {
+    return rows.filter((row) => row.routeID === sessionRow.routeID);
+  }
+  return rows.filter((row) => sessionOwnsEntity(sessionRow, entity.id, row));
+}
+
+function sessionFilterOptionLabel(row) {
+  return shortID(row.id) || "Session";
+}
+
 function overviewEntities() {
   return entities.filter((entity) => !entity.navHidden && Boolean(liveDomainConfigs[entity.id]));
 }
@@ -2708,10 +2807,11 @@ function overviewCards() {
     const materialized = materializeEntity(entity);
     const config = liveDomainConfigs[entity.id];
     const live = state.live[config.stateKey];
-    const items = Array.isArray(materialized.liveItems) ? materialized.liveItems : [];
+    const items = visibleEntityRows(materialized)
+      .slice()
+      .sort((left, right) => overviewItemUnixNano(right) - overviewItemUnixNano(left));
     const recentItems = items
       .slice()
-      .sort((left, right) => overviewItemUnixNano(right) - overviewItemUnixNano(left))
       .slice(0, 3)
       .map((row) => ({
         href: overviewItemHref(materialized, row),
@@ -4081,6 +4181,30 @@ function shellScopeCell(row) {
   const title = row.clientName || row.clientID || "unknown client";
   const detail = row.sessionID ? `session ${shortID(row.sessionID)}` : `trace ${shortID(row.traceID)}`;
   return primaryCell(title, detail);
+}
+
+function navIcon(entityID) {
+  const icons = {
+    terminals:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 3.5h11v9h-11z"></path><path d="M4.5 6 6.5 8 4.5 10"></path><path d="M8 10h2.5"></path></svg>',
+    services:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M8 2.5 12.5 5v6L8 13.5 3.5 11V5z"></path><path d="M8 2.5V8m4.5-3L8 8 3.5 5"></path></svg>',
+    repls:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 3.5h11v9h-11z"></path><path d="M4.5 6.5 6.5 8 4.5 9.5"></path><path d="M8 9.5h3"></path></svg>',
+    checks:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M3.5 8.5 6.5 11 12.5 5"></path><path d="M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"></path></svg>',
+    workspaces:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 5.5h4l1 1h6v5.5h-11z"></path><path d="M2.5 5.5V4.5h4l1 1"></path></svg>',
+    sessions:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="5" cy="8" r="2.5"></circle><circle cx="11" cy="8" r="2.5"></circle><path d="M7.5 8h1"></path></svg>',
+    pipelines:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="3.5" cy="4" r="1.5"></circle><circle cx="8" cy="8" r="1.5"></circle><circle cx="12.5" cy="12" r="1.5"></circle><path d="M4.7 5.2 6.8 7.1M9.2 8.9l2.1 1.9"></path></svg>',
+    "git-remotes":
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="4" cy="4" r="1.5"></circle><circle cx="12" cy="4" r="1.5"></circle><circle cx="8" cy="12" r="1.5"></circle><path d="M5.5 4h5M8 5.5V10.5"></path></svg>',
+    registries:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><ellipse cx="8" cy="4" rx="4.5" ry="1.8"></ellipse><path d="M3.5 4v6c0 1 2 1.8 4.5 1.8s4.5-.8 4.5-1.8V4"></path><path d="M3.5 7c0 1 2 1.8 4.5 1.8s4.5-.8 4.5-1.8"></path></svg>',
+  };
+  return icons[entityID] || '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="8" cy="8" r="5"></circle></svg>';
 }
 
 function findEntity(entityID) {
