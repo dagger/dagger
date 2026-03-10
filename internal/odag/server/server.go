@@ -83,6 +83,7 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/v2/mutations", srv.handleV2Mutations)
 	mux.HandleFunc("GET /api/terminals", srv.handleV2Terminals)
 	mux.HandleFunc("GET /api/repls", srv.handleV2Repls)
+	mux.HandleFunc("GET /api/workspaces", srv.handleV2Workspaces)
 	mux.HandleFunc("GET /api/sessions", srv.handleV2Sessions)
 	mux.HandleFunc("GET /api/v2/clients", srv.handleV2Clients)
 	mux.HandleFunc("GET /api/services", srv.handleV2Services)

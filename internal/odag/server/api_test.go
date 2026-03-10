@@ -1516,6 +1516,277 @@ func TestV2WorkspaceOps(t *testing.T) {
 	}
 }
 
+func TestV2Workspaces(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "38383838383838383838383838383838"
+	sessionID := "session-workspaces"
+	clientID := "client-workspaces"
+
+	connectHex := "1111111111111111"
+	hostRootAHex := "2222222222222222"
+	hostRootBHex := "3333333333333333"
+	hostChangesHex := "4444444444444444"
+	parseHex := "5555555555555555"
+	dirCallHex := "6666666666666666"
+	exportHex := "7777777777777777"
+
+	commandArgs := []string{"/usr/local/bin/dagger", "call", "directory", "export", "--path", "./out"}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, hostRootAHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Host.directory",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   18,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvBool(t, telemetry.UIInternalAttr, true),
+									kvString(t, telemetry.DagDigestAttr, "call-host-directory-a"),
+									kvString(t, telemetry.DagOutputAttr, "state-host-directory-a"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-host-directory-a",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/tmp/ws"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, hostRootBHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Host.directory",
+								StartTimeUnixNano: 19,
+								EndTimeUnixNano:   27,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvBool(t, telemetry.UIInternalAttr, true),
+									kvString(t, telemetry.DagDigestAttr, "call-host-directory-b"),
+									kvString(t, telemetry.DagOutputAttr, "state-host-directory-b"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-host-directory-b",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/tmp/ws"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, hostChangesHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Host.directory",
+								StartTimeUnixNano: 28,
+								EndTimeUnixNano:   35,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvBool(t, telemetry.UIInternalAttr, true),
+									kvString(t, telemetry.DagDigestAttr, "call-host-directory-c"),
+									kvString(t, telemetry.DagOutputAttr, "state-host-directory-c"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-host-directory-c",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/tmp/ws/.changes"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, dirCallHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Query.directory",
+								StartTimeUnixNano: 50,
+								EndTimeUnixNano:   55,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-directory"),
+									kvString(t, telemetry.DagOutputAttr, "state-directory"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-directory",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, exportHex),
+								ParentSpanId:      mustDecodeHex(t, dirCallHex),
+								Name:              "Directory.export",
+								StartTimeUnixNano: 56,
+								EndTimeUnixNano:   70,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-export"),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-export",
+										ReceiverDigest: "state-directory",
+										Field:          "export",
+										Type:           &callpbv1.Type{NamedType: "Void"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "./out"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, parseHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "parsing command line arguments",
+								StartTimeUnixNano: 40,
+								EndTimeUnixNano:   45,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	workspacesReq := httptest.NewRequest(http.MethodGet, "/api/workspaces?traceID="+traceIDHex, nil)
+	workspacesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(workspacesRec, workspacesReq)
+	if workspacesRec.Code != http.StatusOK {
+		t.Fatalf("workspaces failed: status=%d body=%s", workspacesRec.Code, workspacesRec.Body.String())
+	}
+
+	var workspacesResp struct {
+		Items []struct {
+			Root          string `json:"root"`
+			Name          string `json:"name"`
+			OpCount       int    `json:"opCount"`
+			ReadCount     int    `json:"readCount"`
+			WriteCount    int    `json:"writeCount"`
+			SessionCount  int    `json:"sessionCount"`
+			TraceCount    int    `json:"traceCount"`
+			PipelineCount int    `json:"pipelineCount"`
+			Ops           []struct {
+				Path             string `json:"path"`
+				CallName         string `json:"callName"`
+				PipelineClientID string `json:"pipelineClientID"`
+			} `json:"ops"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(workspacesRec.Body.Bytes(), &workspacesResp); err != nil {
+		t.Fatalf("decode workspaces response: %v", err)
+	}
+	if len(workspacesResp.Items) != 1 {
+		t.Fatalf("expected one workspace, got %#v", workspacesResp.Items)
+	}
+
+	item := workspacesResp.Items[0]
+	if item.Root != "/tmp/ws" || item.Name != "ws" {
+		t.Fatalf("unexpected workspace identity: %#v", item)
+	}
+	if item.OpCount != 4 || item.ReadCount != 3 || item.WriteCount != 1 {
+		t.Fatalf("unexpected workspace op counts: %#v", item)
+	}
+	if item.SessionCount != 1 || item.TraceCount != 1 || item.PipelineCount != 1 {
+		t.Fatalf("unexpected workspace scope counts: %#v", item)
+	}
+	if len(item.Ops) != 4 {
+		t.Fatalf("expected attached workspace ops, got %#v", item.Ops)
+	}
+	if item.Ops[0].CallName != "Directory.export" || item.Ops[0].Path != "./out" || item.Ops[0].PipelineClientID != clientID {
+		t.Fatalf("expected relative export to attach to observed root: %#v", item.Ops[0])
+	}
+}
+
 func TestV2GitRemotes(t *testing.T) {
 	t.Parallel()
 
@@ -3798,6 +4069,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 		t.Fatalf("expected repl detail route to serve v3 shell, got %q", replRec.Body.String())
 	}
 
+	workspacesReq := httptest.NewRequest(http.MethodGet, "/workspaces", nil)
+	workspacesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(workspacesRec, workspacesReq)
+	if workspacesRec.Code != http.StatusOK {
+		t.Fatalf("workspaces page failed: %d %s", workspacesRec.Code, workspacesRec.Body.String())
+	}
+	if !strings.Contains(workspacesRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected workspaces route to serve v3 shell, got %q", workspacesRec.Body.String())
+	}
+
+	workspaceReq := httptest.NewRequest(http.MethodGet, "/workspaces/abc123", nil)
+	workspaceRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace detail page failed: %d %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+	if !strings.Contains(workspaceRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected workspace detail route to serve v3 shell, got %q", workspaceRec.Body.String())
+	}
+
 	gitRemotesReq := httptest.NewRequest(http.MethodGet, "/git-remotes", nil)
 	gitRemotesRec := httptest.NewRecorder()
 	srv.http.Handler.ServeHTTP(gitRemotesRec, gitRemotesReq)
@@ -3912,6 +4203,18 @@ func kvString(t *testing.T, key, val string) *commonpb.KeyValue {
 		Value: &commonpb.AnyValue{
 			Value: &commonpb.AnyValue_StringValue{
 				StringValue: val,
+			},
+		},
+	}
+}
+
+func kvBool(t *testing.T, key string, val bool) *commonpb.KeyValue {
+	t.Helper()
+	return &commonpb.KeyValue{
+		Key: key,
+		Value: &commonpb.AnyValue{
+			Value: &commonpb.AnyValue_BoolValue{
+				BoolValue: val,
 			},
 		},
 	}

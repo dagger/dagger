@@ -453,6 +453,12 @@ const liveDomainConfigs = {
     label: "Repls",
     singularLabel: "Repl",
   },
+  workspaces: {
+    stateKey: "workspaces",
+    endpoint: "/api/workspaces?limit=200",
+    label: "Workspaces",
+    singularLabel: "Workspace",
+  },
   services: {
     stateKey: "services",
     endpoint: "/api/services?limit=200",
@@ -510,6 +516,11 @@ const state = {
       error: "",
     },
     repls: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    workspaces: {
       status: "idle",
       items: [],
       error: "",
@@ -876,6 +887,10 @@ function renderDetail(entity) {
   }
   if (entity.dynamicKind === "repls") {
     els.tableShell.innerHTML = renderReplDetail(entity, detailItem);
+    return;
+  }
+  if (entity.dynamicKind === "workspaces") {
+    els.tableShell.innerHTML = renderWorkspaceDetail(entity, detailItem);
     return;
   }
   if (entity.dynamicKind === "workspace-ops") {
@@ -1582,6 +1597,42 @@ function renderReplDetail(entity, row) {
   `;
 }
 
+function renderWorkspaceDetail(entity, row) {
+  const opsTable = renderTableHTML({
+    columns: [
+      { label: "Op", render: (item) => primaryCell(item.callName || item.name, item.path || item.kind || "") },
+      { label: "Direction", render: (item) => tonePill("neutral", item.direction || "op") },
+      { label: "Session", render: (item) => workspaceOpSessionCell(item) },
+      { label: "Pipeline", render: (item) => workspaceOpPipelineCell(item) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: row.ops || [],
+    emptyMessage: "No workspace ops recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Workspace</p>
+          <strong>${escapeHTML(row.root || row.name || "Workspace")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
+          ${pipelineRecapItem("Ops", escapeHTML(String(row.opCount || 0)))}
+          ${pipelineRecapItem("Reads", escapeHTML(String(row.readCount || 0)))}
+          ${pipelineRecapItem("Writes", escapeHTML(String(row.writeCount || 0)))}
+          ${pipelineRecapItem("Pipelines", escapeHTML(String(row.pipelineCount || 0)))}
+          ${pipelineRecapItem("First Seen", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)))}
+        </div>
+      </section>
+      ${detailSection("Recent Ops", opsTable)}
+    </div>
+  `;
+}
+
 function renderShellDetail(entity, row) {
   const evidenceTable = renderTableHTML({
     columns: [
@@ -1697,6 +1748,9 @@ function tableModel(entity, sectionID) {
   }
   if (entity.dynamicKind === "repls") {
     return replsTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "workspaces") {
+    return workspacesTableModel(entity, sectionID);
   }
   if (entity.dynamicKind === "services") {
     return servicesTableModel(entity, sectionID);
@@ -1841,6 +1895,27 @@ function replsTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => replSessionCell(row) },
           { label: "Commands", render: (row) => replCommandHistoryCell(row) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
+function workspacesTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Workspaces",
+        meta: `${entity.liveItems.length} real workspaces`,
+        emptyMessage: "No observed workspaces detected yet.",
+        columns: [
+          { label: "Workspace", render: (row) => linkedPrimaryCell(row.name || row.root || "Workspace", row.root || "", entityPath(entity.id, row.routeID)) },
+          { label: "Sessions", render: (row) => escapeHTML(String(row.sessionCount || 0)) },
+          { label: "Ops", render: (row) => workspaceCountsCell(row) },
+          { label: "Pipelines", render: (row) => escapeHTML(String(row.pipelineCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
         ],
         rows: entity.liveItems,
       };
@@ -2081,7 +2156,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
+  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "workspaces" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -2092,6 +2167,9 @@ function materializeEntity(entity) {
     }
     if (entity.id === "repls") {
       return buildLiveReplsEntity(entity, live.items);
+    }
+    if (entity.id === "workspaces") {
+      return buildLiveWorkspacesEntity(entity, live.items);
     }
     if (entity.id === "services") {
       return buildLiveServicesEntity(entity, live.items);
@@ -2368,6 +2446,71 @@ function buildLiveReplsEntity(base, items) {
         value: String(sessionCount || liveItems.length),
         tone: "neutral",
         detail: "Derived sessions represented by these REPL histories.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveWorkspacesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.root, item.id || item.root),
+    }))
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  const pipelineCount = liveItems.reduce((sum, item) => sum + Number(item.pipelineCount || 0), 0);
+  const opCount = liveItems.reduce((sum, item) => sum + Number(item.opCount || 0), 0);
+  const sessionCount = liveItems.reduce((sum, item) => sum + Number(item.sessionCount || 0), 0);
+
+  return {
+    ...base,
+    dynamicKind: "workspaces",
+    liveItems,
+    blurb:
+      "This domain is now live as observed workspace roots. Each row is one absolute host root repeatedly touched by authoritative workspace-op calls, with relative exports attached only when one root is unambiguous.",
+    metrics: [
+      {
+        label: "Observed roots",
+        value: String(liveItems.length),
+        detail: `${opCount} attached ops across ${sessionCount} sessions`,
+      },
+      {
+        label: "Pipelines",
+        value: String(pipelineCount),
+        detail: "Pipelines attached through workspace ops.",
+      },
+      {
+        label: "Last activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].lastSeenUnixNano) : "none",
+        detail: "Most recently observed workspace root.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.name || item.root,
+      value: String(item.opCount || 0),
+      note: item.root,
+    })),
+    signals: [
+      {
+        label: "Write pressure",
+        value: String(liveItems.reduce((sum, item) => sum + Number(item.writeCount || 0), 0)),
+        tone: "neutral",
+        detail: "Export-style operations attached to observed workspace roots.",
+      },
+      {
+        label: "Session spread",
+        value: String(sessionCount),
+        tone: "neutral",
+        detail: "Sessions represented by current workspace roots.",
+      },
+      {
+        label: "Observed only",
+        value: "Yes",
+        tone: "warn",
+        detail: "These are observed roots derived from ops, not canonical Workspace objects yet.",
       },
     ],
     evidence: [],
@@ -3199,6 +3342,10 @@ function replSessionSummary(row) {
 function replCommandHistoryCell(row) {
   const count = Number(row.commandCount || 0);
   return primaryCell(`${count} commands`, row.lastCommand || row.firstCommand || "No command history");
+}
+
+function workspaceCountsCell(row) {
+  return primaryCell(String(row.opCount || 0), `${row.readCount || 0} reads · ${row.writeCount || 0} writes`);
 }
 
 function shellActivityCell(row) {

@@ -1177,6 +1177,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 18: Implement `Registries` end-to-end through derivation, API, and UI
 - [x] Stage 19: Implement `Terminals` end-to-end through derivation, API, and UI
 - [x] Stage 20: Implement `Repls` end-to-end through derivation, API, and UI
+- [x] Stage 21: Implement `Workspaces` as observed roots through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1749,6 +1750,34 @@ Stage 20 implementation note:
 7. Current deliberate limitation:
    - repl history rows are not yet linked back to `Pipelines` one-to-one
    - V3 still needs a follow-up pass to ensure individual shell submissions that semantically behave like pipelines also materialize as first-class pipeline entities
+
+Stage 21 implementation note:
+1. First real Workspaces API slice is implemented at `GET /api/workspaces`.
+2. Current entity semantics are intentionally narrow:
+   - `Workspaces` is not yet a canonical `Workspace` object view
+   - it is an observed-root view derived from authoritative workspace-op calls, primarily `Host.directory` plus attached exports/files
+3. Current root-selection rule:
+   - group workspace ops by derived session
+   - count absolute `Host.directory` reads inside each session
+   - accept only repeated absolute roots (`count >= 2`)
+   - if a candidate root is nested under an already-accepted higher-signal root in the same session, collapse it into the parent instead of materializing a second workspace row
+4. Current attachment rule:
+   - absolute descendant paths attach to the nearest accepted root
+   - relative ops such as `Directory.export ./out` attach only when that session has exactly one accepted observed root
+   - this keeps export/write activity visible without pretending relative paths are workspace identities on their own
+5. Current V3 shell shape:
+   - `Workspaces` is now a live left-nav domain at `/workspaces`
+   - the inventory is a simple list of observed roots with session count, op counts, pipeline count, and last-seen time
+   - each detail page stays thin: recap card plus one recent-ops table
+6. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
+   - the current data now renders two observed roots:
+     - `/Users/shykes/git/github.com/dagger/dagger_odag`
+     - `/home/sipsma/repo/github.com/sipsma/dagger`
+   - descendant internal reads such as `/home/sipsma/repo/github.com/sipsma/dagger/.changes/` are collapsed under the parent workspace rather than rendered as their own workspace row
+7. Current deliberate limitation:
+   - this domain still depends on repeated observed roots from workspace ops because the current live dataset does not yet contain authoritative `Query.currentWorkspace` / `Workspace.*` activity
+   - once those object-level spans appear reliably, promote `Workspaces` from observed roots to canonical workspace objects and keep the observed-root fallback only for older traces
 
 ### Phase 3: Payload evolution (future)
 
