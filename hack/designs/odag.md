@@ -1899,13 +1899,17 @@ Stage 27 implementation note:
    - mock domains keep only a tiny `mock` badge as an explicit affordance
    - the visual direction is intentionally closer to the Vercel reference: compact spacing, minimalist icons, and sharper typography
 3. Current topbar rule:
-   - the left side is a global `Sessions` selector that acts as a qualifier across all live domains
-   - the middle is a centered breadcrumb showing either the current domain (`Pipelines`) or domain plus entity (`Pipelines / <short-id>`)
-   - the route shape stays clean (`/pipelines`, `/pipelines/<short-id>`, `/sessions/<short-id>`); the session qualifier is UI state, not path noise
-4. Current session-filter behavior:
-   - selecting a session filters overview cards and live inventory tables to only entities owned by that session
-   - entering a session detail page automatically syncs the global session selector to that session
-   - leaving the session page preserves the qualifier so the rest of the shell reads as "this session's pipelines/services/workspaces/etc"
+   - the left side is now a global `Workspaces` selector that acts as the durable project-like qualifier across live domains
+   - the middle remains a centered breadcrumb showing either the current domain (`Pipelines`) or domain plus entity (`Pipelines / <short-id>`)
+   - the right side is a separate searchable `Sessions` filter, not a top-level selector
+   - the route shape stays clean (`/pipelines`, `/pipelines/<short-id>`, `/sessions/<short-id>`, `/workspaces/<short-id>`); workspace/session qualifiers remain UI state, not path noise
+4. Current qualifier behavior:
+   - selecting a workspace filters overview cards and live inventory tables through a workspace attachment shim derived from authoritative workspace ops
+   - that shim matches by attached client IDs and pipeline IDs first; it does not collapse a whole multi-workspace session into one workspace just because the session touched that workspace
+   - selecting a session further narrows overview cards and live inventory tables to entities owned by that session inside the current workspace scope
+   - entering a workspace detail page automatically syncs the global workspace selector to that workspace
+   - entering a session detail page automatically syncs the session filter to that session
+   - leaving either detail page preserves the current qualifiers so the rest of the shell reads as "this workspace's pipelines/services/..." and, when narrowed further, "this session within that workspace"
 5. Current typography/layout direction:
    - the shell now prefers smaller, more restrained text in navigation and table cells to reduce wrapping and dashboard heaviness
    - `Geist` is used as the primary UI font for the Vercel-inspired shell pass, while mono labels remain reserved for precise secondary metadata
@@ -1931,6 +1935,19 @@ Stage 28 design note:
 5. Navigation implication:
    - top-level global selector should move toward `Workspace`
    - `Session` remains a high-cardinality scoped filter and drill-down surface, not the long-term top-level selector
+
+Stage 29 implementation note:
+1. The V3 shell now implements the workspace-first topbar directly.
+2. Current UI wiring:
+   - global `Workspace` selector is populated from live `Workspaces`
+   - `Session` filter is a searchable popover fed from live `Sessions`
+3. Current workspace filter source of truth:
+   - use live `Workspace.ops` as the compatibility shim until first-class workspace attachments exist in telemetry
+   - derive workspace ownership from attached client IDs and pipeline IDs visible in those ops
+   - allow a session row to appear under a workspace if that workspace observed at least one client inside the session, but do not use bare session membership to smear all other entity rows onto that workspace
+4. Detail-page rule:
+   - workspace/session qualifiers primarily filter overview and inventory pages
+   - a session detail page remains an execution hub and may still show entities across all workspaces present in that session
 
 ### Phase 3: Payload evolution (future)
 

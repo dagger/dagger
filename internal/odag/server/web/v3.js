@@ -515,6 +515,8 @@ const liveDomainConfigs = {
   },
 };
 
+const workspaceScopeCache = new WeakMap();
+
 const sessionHubEntityIDs = [
   "pipelines",
   "repls",
@@ -531,7 +533,10 @@ const sessionHubEntityIDs = [
 const state = {
   entityID: OVERVIEW_ROUTE_ID,
   detailID: "",
+  workspaceFilterID: "",
   sessionFilterID: "",
+  sessionFilterOpen: false,
+  sessionFilterQuery: "",
   detailGraphs: {
     pipelines: {},
   },
@@ -596,7 +601,8 @@ const state = {
 
 const els = {
   sidebarBrand: document.getElementById("sidebarBrand"),
-  sessionFilter: document.getElementById("sessionFilter"),
+  workspaceFilter: document.getElementById("workspaceFilter"),
+  sessionFilterShell: document.getElementById("sessionFilterShell"),
   pageCrumb: document.getElementById("pageCrumb"),
   entityNav: document.getElementById("entityNav"),
   panelHead: document.querySelector(".v3-panel-head"),
@@ -609,6 +615,7 @@ init();
 
 function init() {
   readURLState();
+  syncWorkspaceFilterFromRoute();
   syncSessionFilterFromRoute();
   bindEvents();
   render();
@@ -616,16 +623,32 @@ function init() {
 }
 
 function bindEvents() {
-  els.sessionFilter?.addEventListener("change", () => {
-    state.sessionFilterID = String(els.sessionFilter.value || "");
+  els.workspaceFilter?.addEventListener("change", () => {
+    state.workspaceFilterID = String(els.workspaceFilter.value || "");
+    state.sessionFilterOpen = false;
+    state.sessionFilterQuery = "";
+    sanitizeSessionFilterSelection();
     render();
   });
 
   window.addEventListener("popstate", () => {
     readURLState();
+    syncWorkspaceFilterFromRoute();
     syncSessionFilterFromRoute();
     render();
     void ensureActiveEntityData();
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!state.sessionFilterOpen || !els.sessionFilterShell) {
+      return;
+    }
+    if (els.sessionFilterShell.contains(event.target)) {
+      return;
+    }
+    state.sessionFilterOpen = false;
+    state.sessionFilterQuery = "";
+    render();
   });
 
   document.addEventListener("click", (event) => {
@@ -696,6 +719,7 @@ function navigateTo(nextPath, replace = false) {
   const route = parseRoute(url.pathname, url.search);
   state.entityID = route.entityID;
   state.detailID = route.detailID;
+  syncWorkspaceFilterFromRoute();
   syncSessionFilterFromRoute();
   const nextURL = `${url.pathname}${url.search}`;
   const currentURL = `${window.location.pathname}${window.location.search}`;
@@ -717,6 +741,7 @@ function entityPath(entityID, detailID = "") {
 
 async function ensureActiveEntityData() {
   await ensureLiveDomainData(liveDomainConfigs.sessions);
+  await ensureLiveDomainData(liveDomainConfigs.workspaces);
   if (isOverviewRoute()) {
     await ensureOverviewData();
     return;
@@ -781,27 +806,140 @@ function syncSessionFilterFromRoute() {
   }
 }
 
-function renderSessionFilter() {
-  if (!els.sessionFilter) {
+function syncWorkspaceFilterFromRoute() {
+  if (state.entityID === "workspaces" && state.detailID) {
+    state.workspaceFilterID = state.detailID;
+  }
+}
+
+function renderWorkspaceFilter() {
+  if (!els.workspaceFilter) {
     return;
   }
-  const sessions = materializedEntityByID("sessions");
-  const rows = Array.isArray(sessions?.liveItems)
-    ? sessions.liveItems.slice().sort((a, b) => Number(b.firstSeenUnixNano || 0) - Number(a.firstSeenUnixNano || 0))
+  const workspaces = materializedEntityByID("workspaces");
+  const rows = Array.isArray(workspaces?.liveItems)
+    ? workspaces.liveItems.slice().sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0))
     : [];
-  const selected = currentSessionFilterID();
-  const status = state.live.sessions.status;
+  const selected = currentWorkspaceFilterID();
+  const status = state.live.workspaces.status;
   const options = [];
-  const allLabel = status === "error" ? "Sessions unavailable" : status === "loaded" ? "All Sessions" : "Loading Sessions...";
+  const allLabel = status === "error" ? "Workspaces unavailable" : status === "loaded" ? "All Workspaces" : "Loading Workspaces...";
   options.push(`<option value="">${escapeHTML(allLabel)}</option>`);
   for (const row of rows) {
-    options.push(
-      `<option value="${escapeHTML(row.routeID)}">${escapeHTML(sessionFilterOptionLabel(row))}</option>`,
-    );
+    options.push(`<option value="${escapeHTML(row.routeID)}">${escapeHTML(workspaceFilterOptionLabel(row))}</option>`);
   }
-  els.sessionFilter.innerHTML = options.join("");
-  els.sessionFilter.value = rows.some((row) => row.routeID === selected) ? selected : "";
-  els.sessionFilter.disabled = status !== "loaded" && rows.length === 0;
+  els.workspaceFilter.innerHTML = options.join("");
+  els.workspaceFilter.value = rows.some((row) => row.routeID === selected) ? selected : "";
+  els.workspaceFilter.disabled = status !== "loaded" && rows.length === 0;
+}
+
+function renderSessionFilter() {
+  if (!els.sessionFilterShell) {
+    return;
+  }
+  const rows = availableSessionRows();
+  const selected = currentSessionFilterRow();
+  const status = state.live.sessions.status;
+  const query = String(state.sessionFilterQuery || "").trim().toLowerCase();
+  const matches = rows.filter((row) => sessionFilterMatches(row, query)).slice(0, 24);
+  const label =
+    status === "error"
+      ? "Sessions unavailable"
+      : selected
+        ? sessionFilterOptionLabel(selected)
+        : "All Sessions";
+  const emptyCopy =
+    status === "error"
+      ? escapeHTML(state.live.sessions.error || "Sessions unavailable")
+      : status !== "loaded"
+        ? "Loading sessions..."
+        : query
+          ? "No matching sessions"
+          : "No sessions in scope";
+
+  els.sessionFilterShell.innerHTML = `
+    <div class="v3-session-filter${state.sessionFilterOpen ? " is-open" : ""}">
+      <button
+        id="sessionFilterTrigger"
+        class="v3-session-trigger"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded="${state.sessionFilterOpen ? "true" : "false"}"
+      >
+        <span class="v3-session-trigger-label">${escapeHTML(label)}</span>
+      </button>
+      <div class="v3-session-popover${state.sessionFilterOpen ? " is-open" : ""}">
+        <div class="v3-session-search">
+          <input
+            id="sessionFilterInput"
+            class="v3-session-input"
+            type="search"
+            placeholder="Filter sessions"
+            value="${escapeHTML(state.sessionFilterQuery || "")}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <div class="v3-session-options" role="listbox" aria-label="Sessions">
+          <button class="v3-session-option${selected ? "" : " is-selected"}" type="button" data-session-filter="">
+            <span class="v3-session-option-main">All Sessions</span>
+          </button>
+          ${
+            matches.length
+              ? matches
+                  .map((row) => {
+                    const isSelected = selected && row.routeID === selected.routeID;
+                    return `
+                      <button class="v3-session-option${isSelected ? " is-selected" : ""}" type="button" data-session-filter="${escapeHTML(row.routeID)}">
+                        <span class="v3-session-option-main">${escapeHTML(sessionFilterOptionLabel(row))}</span>
+                        <span class="v3-session-option-meta">${escapeHTML(sessionFilterOptionMeta(row))}</span>
+                        <span class="v3-session-option-orb">${sessionStatusOrb(sessionStatusLabel(row))}</span>
+                      </button>
+                    `;
+                  })
+                  .join("")
+              : `<div class="v3-session-empty">${emptyCopy}</div>`
+          }
+        </div>
+      </div>
+    </div>
+  `;
+
+  const trigger = document.getElementById("sessionFilterTrigger");
+  trigger?.addEventListener("click", () => {
+    state.sessionFilterOpen = !state.sessionFilterOpen;
+    state.sessionFilterQuery = "";
+    render();
+  });
+
+  const input = document.getElementById("sessionFilterInput");
+  input?.addEventListener("input", () => {
+    state.sessionFilterQuery = input.value || "";
+    renderSessionFilter();
+  });
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      state.sessionFilterOpen = false;
+      state.sessionFilterQuery = "";
+      render();
+    }
+  });
+
+  for (const node of els.sessionFilterShell.querySelectorAll("[data-session-filter]")) {
+    node.addEventListener("click", () => {
+      state.sessionFilterID = String(node.getAttribute("data-session-filter") || "");
+      state.sessionFilterOpen = false;
+      state.sessionFilterQuery = "";
+      render();
+    });
+  }
+
+  if (state.sessionFilterOpen && input && document.activeElement !== input) {
+    queueMicrotask(() => {
+      input.focus();
+      input.select();
+    });
+  }
 }
 
 function renderBreadcrumb(entity = null, detailItem = null) {
@@ -895,6 +1033,8 @@ async function fetchPipelineGraph(row, entry) {
 }
 
 function render() {
+  sanitizeSessionFilterSelection();
+  renderWorkspaceFilter();
   renderSessionFilter();
   renderEntityNav();
   renderMain();
@@ -1879,6 +2019,98 @@ function sessionDomainItems(sessionRow, entity) {
   return entity.liveItems.filter((item) => sessionOwnsEntity(sessionRow, entity.id, item));
 }
 
+function availableSessionRows() {
+  const sessions = materializedEntityByID("sessions");
+  const rows = Array.isArray(sessions?.liveItems) ? sessions.liveItems.slice() : [];
+  const workspaceRow = currentWorkspaceFilterRow();
+  const visible = workspaceRow ? rows.filter((row) => workspaceOwnsEntity(workspaceRow, "sessions", row)) : rows;
+  return visible.sort((a, b) => Number(b.firstSeenUnixNano || 0) - Number(a.firstSeenUnixNano || 0));
+}
+
+function sanitizeSessionFilterSelection() {
+  const selected = currentSessionFilterID();
+  if (!selected) {
+    return;
+  }
+  if (state.entityID === "sessions" && state.detailID === selected) {
+    return;
+  }
+  if (!availableSessionRows().some((row) => row.routeID === selected)) {
+    state.sessionFilterID = "";
+  }
+}
+
+function workspaceOwnsEntity(workspaceRow, entityID, row) {
+  if (!workspaceRow || !row) {
+    return false;
+  }
+  switch (entityID) {
+    case "workspaces":
+      return workspaceRow.routeID === row.routeID;
+    case "sessions":
+      return workspaceScopeData(workspaceRow).sessionIDs.has(String(row.id || ""));
+    case "git-remotes":
+      return Array.isArray(row?.pipelines) && row.pipelines.some((pipeline) => workspaceOwnsDirectRow(workspaceRow, pipeline));
+    case "registries":
+      return Array.isArray(row?.activities) && row.activities.some((activity) => workspaceOwnsDirectRow(workspaceRow, activity));
+    default:
+      return workspaceOwnsDirectRow(workspaceRow, row);
+  }
+}
+
+function workspaceOwnsDirectRow(workspaceRow, row) {
+  if (!workspaceRow || !row) {
+    return false;
+  }
+  const scope = workspaceScopeData(workspaceRow);
+  const pipelineIDs = [row.id, row.pipelineID]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+  if (pipelineIDs.some((value) => scope.pipelineIDs.has(value))) {
+    return true;
+  }
+
+  const clientIDs = [row.clientID, row.rootClientID, row.pipelineClientID]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+  if (clientIDs.some((value) => scope.clientIDs.has(value))) {
+    return true;
+  }
+
+  return false;
+}
+
+function workspaceScopeData(workspaceRow) {
+  if (workspaceScopeCache.has(workspaceRow)) {
+    return workspaceScopeCache.get(workspaceRow);
+  }
+  const data = {
+    sessionIDs: new Set(),
+    clientIDs: new Set(),
+    pipelineIDs: new Set(),
+  };
+  for (const op of Array.isArray(workspaceRow?.ops) ? workspaceRow.ops : []) {
+    const sessionID = String(op?.sessionID || "");
+    const clientID = String(op?.clientID || "");
+    const pipelineClientID = String(op?.pipelineClientID || "");
+    const pipelineID = String(op?.pipelineID || "");
+    if (sessionID) {
+      data.sessionIDs.add(sessionID);
+    }
+    if (clientID) {
+      data.clientIDs.add(clientID);
+    }
+    if (pipelineClientID) {
+      data.clientIDs.add(pipelineClientID);
+    }
+    if (pipelineID) {
+      data.pipelineIDs.add(pipelineID);
+    }
+  }
+  workspaceScopeCache.set(workspaceRow, data);
+  return data;
+}
+
 function sessionOwnsEntity(sessionRow, entityID, row) {
   switch (entityID) {
     case "workspaces":
@@ -2764,6 +2996,22 @@ function isOverviewRoute(entityID = state.entityID) {
   return entityID === OVERVIEW_ROUTE_ID;
 }
 
+function currentWorkspaceFilterID() {
+  return String(state.workspaceFilterID || "");
+}
+
+function currentWorkspaceFilterRow() {
+  const filterID = currentWorkspaceFilterID();
+  if (!filterID) {
+    return null;
+  }
+  const workspaces = materializedEntityByID("workspaces");
+  if (!workspaces || !Array.isArray(workspaces.liveItems)) {
+    return null;
+  }
+  return workspaces.liveItems.find((row) => row.routeID === filterID) || null;
+}
+
 function currentSessionFilterID() {
   return String(state.sessionFilterID || "");
 }
@@ -2773,29 +3021,92 @@ function currentSessionFilterRow() {
   if (!filterID) {
     return null;
   }
-  const sessions = materializedEntityByID("sessions");
-  if (!sessions || !Array.isArray(sessions.liveItems)) {
-    return null;
+  const scoped = availableSessionRows().find((row) => row.routeID === filterID);
+  if (scoped) {
+    return scoped;
   }
-  return sessions.liveItems.find((row) => row.routeID === filterID) || null;
+  if (state.entityID === "sessions" && state.detailID === filterID) {
+    const sessions = materializedEntityByID("sessions");
+    if (!sessions || !Array.isArray(sessions.liveItems)) {
+      return null;
+    }
+    return sessions.liveItems.find((row) => row.routeID === filterID) || null;
+  }
+  return null;
 }
 
 function visibleEntityRows(entity, rows = entity?.liveItems) {
   if (!entity || !Array.isArray(rows)) {
     return [];
   }
+  const workspaceRow = currentWorkspaceFilterRow();
+  let visible = rows;
+  if (workspaceRow) {
+    visible = visible.filter((row) => workspaceOwnsEntity(workspaceRow, entity.id, row));
+  }
   const sessionRow = currentSessionFilterRow();
   if (!sessionRow) {
-    return rows;
+    return visible;
   }
   if (entity.id === "sessions") {
-    return rows.filter((row) => row.routeID === sessionRow.routeID);
+    return visible.filter((row) => row.routeID === sessionRow.routeID);
   }
-  return rows.filter((row) => sessionOwnsEntity(sessionRow, entity.id, row));
+  return visible.filter((row) => sessionOwnsEntity(sessionRow, entity.id, row));
 }
 
 function sessionFilterOptionLabel(row) {
   return shortID(row.id) || "Session";
+}
+
+function sessionFilterOptionMeta(row) {
+  const pieces = [];
+  const timeLabel = relativeTimeFromNow(Number(row.lastSeenUnixNano || row.firstSeenUnixNano || 0));
+  if (timeLabel) {
+    pieces.push(timeLabel);
+  }
+  if (row.rootClientID) {
+    pieces.push(`root ${shortID(row.rootClientID)}`);
+  } else if (row.traceID) {
+    pieces.push(`trace ${shortID(row.traceID)}`);
+  }
+  return pieces.join(" · ");
+}
+
+function workspaceFilterOptionLabel(row) {
+  const name = String(row?.name || row?.root || "Workspace").trim();
+  const suffix = shortWorkspacePath(row?.root);
+  if (!suffix || suffix === name) {
+    return name;
+  }
+  return `${name} · ${suffix}`;
+}
+
+function sessionFilterMatches(row, query) {
+  if (!query) {
+    return true;
+  }
+  const haystack = [
+    shortID(row?.id),
+    row?.id,
+    shortID(row?.traceID),
+    row?.traceID,
+    shortID(row?.rootClientID),
+    row?.rootClientID,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  return haystack.includes(query);
+}
+
+function shortWorkspacePath(root) {
+  const parts = String(root || "")
+    .split("/")
+    .filter(Boolean);
+  if (!parts.length) {
+    return "";
+  }
+  return parts.slice(-3).join("/");
 }
 
 function overviewEntities() {

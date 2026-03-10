@@ -2079,10 +2079,10 @@ body {
   justify-content: flex-end;
 }
 
-.v3-session-select {
+.v3-topbar-select {
   min-height: 34px;
-  min-width: 164px;
-  max-width: 220px;
+  min-width: 196px;
+  max-width: 320px;
   padding: 0 32px 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
@@ -2104,8 +2104,140 @@ body {
   background-repeat: no-repeat;
 }
 
-.v3-session-select:focus {
+.v3-topbar-select:focus {
   border-color: rgba(163, 174, 190, 0.32);
+}
+
+.v3-session-filter {
+  position: relative;
+}
+
+.v3-session-trigger {
+  min-height: 34px;
+  min-width: 172px;
+  max-width: 260px;
+  padding: 0 32px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(17, 19, 22, 0.94) 0%, rgba(10, 12, 15, 0.94) 100%);
+  color: #d6d9df;
+  font-family: "Geist", "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 0.84rem;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+}
+
+.v3-session-trigger::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+  border-right: 1.5px solid rgba(214, 217, 223, 0.84);
+  border-bottom: 1.5px solid rgba(214, 217, 223, 0.84);
+  transform: rotate(45deg);
+}
+
+.v3-session-trigger-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-session-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(340px, 84vw);
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(10, 12, 15, 0.98);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+  display: none;
+}
+
+.v3-session-popover.is-open {
+  display: block;
+}
+
+.v3-session-search {
+  padding-bottom: 8px;
+}
+
+.v3-session-input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #dfe3e9;
+  padding: 0 11px;
+  font-family: "Geist", "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.v3-session-input:focus {
+  border-color: rgba(163, 174, 190, 0.32);
+}
+
+.v3-session-options {
+  display: grid;
+  gap: 4px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.v3-session-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #d9dde4;
+  cursor: pointer;
+  text-align: left;
+}
+
+.v3-session-option:hover,
+.v3-session-option.is-selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.v3-session-option-main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.v3-session-option-meta {
+  color: #858b94;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.v3-session-option-orb {
+  display: inline-flex;
+}
+
+.v3-session-empty {
+  padding: 8px 9px 6px;
+  color: #858b94;
+  font-size: 0.78rem;
 }
 
 .v3-breadcrumb {
@@ -2952,6 +3084,13 @@ body {
   .v3-topbar-start,
   .v3-topbar-end {
     justify-content: flex-start;
+  }
+
+  .v3-topbar-select,
+  .v3-session-trigger,
+  .v3-session-popover {
+    width: 100%;
+    max-width: none;
   }
 
   .v3-breadcrumb {
