@@ -1020,10 +1020,10 @@ function renderDetail(entity) {
   const live = config ? state.live[config.stateKey] : null;
   const detailLabel = config?.singularLabel || entity.label;
   const detailItem = currentDetailItem(entity);
-  const compactDetail = entity.dynamicKind === "pipelines";
+  const compactDetail = entity.dynamicKind === "pipelines" || entity.dynamicKind === "sessions";
   const minimalPanelTitle = entity.dynamicKind === "sessions";
 
-  els.pageLabel.textContent = detailLabel;
+  els.pageLabel.textContent = minimalPanelTitle ? "" : detailLabel;
   els.tableTitle.textContent = minimalPanelTitle && detailItem ? detailItem.name : `${detailLabel} Details`;
   setPanelHeadHidden(compactDetail);
 
@@ -1724,11 +1724,7 @@ function renderSessionDetail(entity, row) {
   const cards = renderSessionDomainCards(row);
   return `
     <div class="v3-detail-stack">
-      <section class="v3-detail-card v3-pipeline-recap">
-        <div class="v3-pipeline-recap-command">
-          <p class="v3-foot-label">Session</p>
-          <strong>${escapeHTML(shortID(row.id))}</strong>
-        </div>
+      <section class="v3-detail-card v3-session-recap">
         <div class="v3-pipeline-recap-grid">
           ${pipelineRecapItem("Status", statusPill(sessionStatusLabel(row)))}
           ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)))}
@@ -1764,46 +1760,62 @@ function renderSessionDomainCards(sessionRow) {
 function renderSessionDomainCard(entity, items) {
   return `
     <section class="v3-detail-card v3-session-hub-card">
-      <div class="v3-overview-card-head">
-        <a class="v3-overview-card-title" href="${escapeHTML(entityPath(entity.id))}" data-route-path="${escapeHTML(entityPath(entity.id))}">${escapeHTML(entity.label)}</a>
-        <div class="v3-overview-card-side">
-          <strong class="v3-overview-count">${escapeHTML(String(items.length))}</strong>
-        </div>
+      <div class="v3-session-hub-card-head">
+        <a class="v3-session-hub-card-title" href="${escapeHTML(entityPath(entity.id))}" data-route-path="${escapeHTML(entityPath(entity.id))}">${escapeHTML(entity.label)}</a>
+        <span class="v3-session-hub-card-count">${escapeHTML(String(items.length))}</span>
       </div>
-      <table class="v3-session-hub-table">
-        <thead>
-          <tr>
-            <th>Entity</th>
-            <th>Status</th>
-            <th>Time</th>
-          </tr>
-        </thead>
-        <tbody>
-        ${items
-          .map((item) => {
-            const href = overviewItemHref(entity, item);
-            const status = sessionDomainItemStatus(entity, item);
-            const time = overviewItemUnixNano(item) > 0 ? relativeTimeFromNow(overviewItemUnixNano(item)) : "";
-            const subtitle = sessionDomainItemSubtitle(entity, item);
-            return `
-              <tr>
-                <td>
-                  ${linkedPrimaryCell(sessionDomainItemLabel(entity, item), subtitle, href)}
-                </td>
-                <td class="v3-session-hub-status">
-                  ${status ? statusPill(status) : `<span class="v3-session-hub-empty">-</span>`}
-                </td>
-                <td class="v3-session-hub-time">
-                  ${time ? escapeHTML(time) : `<span class="v3-session-hub-empty">-</span>`}
-                </td>
-              </tr>
-            `;
-          })
-          .join("")}
-        </tbody>
-      </table>
+      <div class="v3-session-hub-list v3-session-hub-list-${escapeHTML(entity.id)}">
+        ${items.map((item) => renderSessionDomainRow(entity, item)).join("")}
+      </div>
     </section>
   `;
+}
+
+function renderSessionDomainRow(entity, item) {
+  const href = overviewItemHref(entity, item);
+  if (entity.id === "repls") {
+    return sessionHubRow(
+      href,
+      "v3-session-hub-row v3-session-hub-row-repls",
+      `
+        <span class="v3-session-hub-main">${escapeHTML(sessionReplModuleLabel(item))}</span>
+        <span class="v3-session-hub-time">${escapeHTML(sessionDomainItemTime(item))}</span>
+        <span class="v3-session-hub-number">${escapeHTML(String(sessionReplPipelineCount(item)))}</span>
+        <span class="v3-session-hub-orb-cell">${sessionStatusOrb(item.status)}</span>
+      `,
+    );
+  }
+  if (entity.id === "pipelines") {
+    return sessionHubRow(
+      href,
+      "v3-session-hub-row v3-session-hub-row-pipelines",
+      `
+        <span class="v3-session-hub-main">
+          <span class="v3-session-hub-label">${escapeHTML(sessionDomainItemLabel(entity, item))}</span>
+          ${sessionDomainItemSubtitle(entity, item) ? `<span class="v3-session-hub-subtle">${escapeHTML(sessionDomainItemSubtitle(entity, item))}</span>` : ""}
+        </span>
+        <span class="v3-session-hub-time">${escapeHTML(sessionDomainItemTime(item))}</span>
+        <span class="v3-session-hub-orb-cell">${sessionStatusOrb(item.status)}</span>
+      `,
+    );
+  }
+  return sessionHubRow(
+    href,
+    "v3-session-hub-row",
+    `
+      <span class="v3-session-hub-main">
+        <span class="v3-session-hub-label">${escapeHTML(sessionDomainItemLabel(entity, item))}</span>
+        ${sessionDomainItemSubtitle(entity, item) ? `<span class="v3-session-hub-subtle">${escapeHTML(sessionDomainItemSubtitle(entity, item))}</span>` : ""}
+      </span>
+      <span class="v3-session-hub-time">${escapeHTML(sessionDomainItemTime(item))}</span>
+      <span class="v3-session-hub-orb-cell">${sessionDomainItemStatus(entity, item) ? sessionStatusOrb(sessionDomainItemStatus(entity, item)) : ""}</span>
+    `,
+  );
+}
+
+function sessionHubRow(href, className, inner) {
+  const attrs = href ? ` href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}"` : "";
+  return `<a class="${className}"${attrs}>${inner}</a>`;
 }
 
 function sessionDomainItems(sessionRow, entity) {
@@ -1924,6 +1936,70 @@ function sessionDomainItemSubtitle(entity, row) {
     default:
       return "";
   }
+}
+
+function sessionDomainItemTime(row) {
+  const ts = overviewItemUnixNano(row);
+  if (ts <= 0) {
+    return "";
+  }
+  return relativeTimeFromNow(ts);
+}
+
+function sessionReplModuleLabel(row) {
+  const candidates = [row?.command, row?.firstCommand, row?.lastCommand];
+  for (const candidate of candidates) {
+    const label = extractModuleLabel(candidate);
+    if (label) {
+      return label;
+    }
+  }
+  return row?.command || row?.name || "Repl";
+}
+
+function extractModuleLabel(text) {
+  const raw = String(text || "");
+  if (!raw) {
+    return "";
+  }
+  let match = raw.match(/(?:^|\s)(?:-m|--module)\s+(\S+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  match = raw.match(/DAGGER_MODULE=(\S+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return "";
+}
+
+function sessionReplPipelineCount(row) {
+  const ids = new Set();
+  for (const command of row?.commands || []) {
+    if (command?.pipelineID) {
+      ids.add(command.pipelineID);
+    }
+  }
+  return ids.size;
+}
+
+function sessionStatusOrb(status) {
+  const tone = sessionStatusTone(status);
+  return `<span class="v3-status-orb v3-status-orb-${escapeHTML(tone)}" aria-label="${escapeHTML(String(status || tone))}"></span>`;
+}
+
+function sessionStatusTone(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["ready", "passing", "completed", "open"].includes(normalized)) {
+    return "good";
+  }
+  if (["failed", "error", "degraded"].includes(normalized)) {
+    return "bad";
+  }
+  if (["running", "loading", "ingesting", "warming"].includes(normalized)) {
+    return "active";
+  }
+  return "muted";
 }
 
 function renderTerminalDetail(entity, row) {

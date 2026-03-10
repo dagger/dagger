@@ -1554,8 +1554,11 @@ Stage 13 implementation note:
    - trace remains container context, not the primary identity of a session row
 4. Current session detail-page shape:
    - session pages now act as navigation hubs, not generic summary cards
-   - the page starts with one thin recap card, then one card per related live domain rendered as a compact mini-table of linked entities
-   - those mini-table cards use a wider dedicated grid than the overview dashboard so status/time columns stay readable
+   - the page starts with one thin recap strip, then one card per related live domain rendered as compact hub rows without redundant table headers
+   - the session identity itself is shown only once in the top title; the recap strip does not repeat the session name
+   - pipeline and repl rows now use a very light hub treatment: small non-bold labels, time on the right, and a status orb instead of badge text
+   - repl rows surface module, time, attached-pipeline count, and status orb as the primary navigation cues
+   - those cards still use a wider dedicated grid than the overview dashboard so the hub rows stay readable
    - no explanatory copy is shown on the page body
 5. Current session attachment rule for hub navigation:
    - prefer explicit `sessionID` matches whenever the target domain exposes one

@@ -2189,12 +2189,6 @@ body {
   font-size: 0.68rem;
 }
 
-.v3-session-hub-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
 .v3-session-hub-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -2202,65 +2196,144 @@ body {
 }
 
 .v3-session-hub-card {
-  gap: 16px;
+  gap: 12px;
+  padding: 14px 16px;
 }
 
-.v3-session-hub-table th {
-  padding: 0 0 10px;
-  color: #8f9399;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-align: left;
-  text-transform: uppercase;
+.v3-session-recap {
+  padding: 14px 16px;
 }
 
-.v3-session-hub-table th:nth-child(2),
-.v3-session-hub-table td:nth-child(2) {
-  width: 108px;
-  white-space: nowrap;
+.v3-session-hub-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.v3-session-hub-table th:nth-child(3),
-.v3-session-hub-table td:nth-child(3) {
-  width: 124px;
-  white-space: nowrap;
+.v3-session-hub-card-title {
+  color: inherit;
+  font-size: 0.92rem;
+  font-weight: 400;
+  text-decoration: none;
 }
 
-.v3-session-hub-table tbody tr + tr td {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+.v3-session-hub-card-title:hover {
+  color: #f7d79a;
 }
 
-.v3-session-hub-table td {
-  padding: 12px 0;
-  vertical-align: top;
-}
-
-.v3-session-hub-table td:first-child {
-  padding-right: 14px;
-}
-
-.v3-session-hub-table .v3-link {
-  min-width: 0;
-}
-
-.v3-session-hub-table .v3-cell-primary strong,
-.v3-session-hub-table .v3-cell-primary span {
-  overflow-wrap: anywhere;
-}
-
-.v3-session-hub-status,
-.v3-session-hub-time {
-  padding-left: 12px;
-}
-
-.v3-session-hub-time {
-  color: #9ea3aa;
+.v3-session-hub-card-count {
+  color: #7d848d;
   font-size: 0.82rem;
 }
 
-.v3-session-hub-empty {
-  color: #727983;
+.v3-session-hub-list {
+  display: grid;
+}
+
+.v3-session-hub-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 18px;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.v3-session-hub-row + .v3-session-hub-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.v3-session-hub-row:hover .v3-session-hub-label {
+  color: #f7d79a;
+}
+
+.v3-session-hub-row-repls {
+  grid-template-columns: minmax(0, 1fr) 110px 34px 18px;
+}
+
+.v3-session-hub-row-pipelines {
+  grid-template-columns: minmax(0, 1fr) 110px 18px;
+}
+
+.v3-session-hub-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.v3-session-hub-label {
+  color: #d7dae0;
+  font-size: 0.82rem;
+  font-weight: 400;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.v3-session-hub-subtle {
+  color: #8f9399;
+  font-size: 0.74rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.v3-session-hub-number,
+.v3-session-hub-time {
+  color: #8f9399;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.v3-session-hub-number {
+  text-align: right;
+}
+
+.v3-session-hub-orb-cell {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.v3-status-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #727983;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.v3-status-orb-good {
+  background: #3bd179;
+  box-shadow: 0 0 0 1px rgba(59, 209, 121, 0.18), 0 0 10px rgba(59, 209, 121, 0.3);
+}
+
+.v3-status-orb-bad {
+  background: #f05b66;
+  box-shadow: 0 0 0 1px rgba(240, 91, 102, 0.18), 0 0 10px rgba(240, 91, 102, 0.24);
+}
+
+.v3-status-orb-active {
+  background: #f3c14e;
+  box-shadow: 0 0 0 1px rgba(243, 193, 78, 0.18), 0 0 10px rgba(243, 193, 78, 0.26);
+  animation: v3-status-orb-pulse 1.4s ease-in-out infinite;
+}
+
+.v3-status-orb-muted {
+  background: #727983;
+}
+
+@keyframes v3-status-orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 920px) {
@@ -2270,6 +2343,16 @@ body {
 
   .v3-session-hub-grid {
     grid-template-columns: 1fr;
+  }
+
+  .v3-session-hub-row,
+  .v3-session-hub-row-repls,
+  .v3-session-hub-row-pipelines {
+    grid-template-columns: minmax(0, 1fr) 88px 18px;
+  }
+
+  .v3-session-hub-row-repls .v3-session-hub-number {
+    display: none;
   }
 }
 
