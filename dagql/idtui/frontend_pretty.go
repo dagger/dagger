@@ -423,8 +423,8 @@ func (fe *frontendPretty) getOrCreateSpanTree(spanID dagui.SpanID) *SpanTreeView
 // (firing OnMount to start the tick goroutine) and auto-dismounts it
 // when the SpanTreeView stops rendering it.
 func (fe *frontendPretty) syncSpinnerTree(st *SpanTreeView) {
-	row := fe.rows.BySpan[st.spanID]
-	running := row != nil && row.Span.IsRunningOrEffectsRunning()
+	tree := fe.rowsView.BySpan[st.spanID]
+	running := tree != nil && tree.Span.IsRunningOrEffectsRunning()
 	if running && st.spinner == nil {
 		st.spinner = &SpinnerView{
 			rave: fe.spinner,
@@ -1399,9 +1399,8 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	}
 
 	// Sync children for expanded nodes
-	row := fe.rows.BySpan[st.spanID]
 	tree := fe.rowsView.BySpan[st.spanID]
-	if row == nil || tree == nil || !row.Expanded {
+	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
 		// Collapsed: clear children so they get dismounted on next render
 		if len(st.children) > 0 {
 			st.children = nil
@@ -1426,7 +1425,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	// This is the ancestor bars + this node's own bar column (always
 	// shown, since we're between children that both exist).
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	span := row.Span
+	span := tree.Span
 	color := restrainedStatusColor(span)
 	if !span.Reveal && len(span.RevealedSpans.Order) == 0 {
 		st.childrenGapPrefix = st.prefix.forChildren + out.String(VertBar+" ").Foreground(color).Faint().String()
@@ -2178,43 +2177,31 @@ func (fe *frontendPretty) goIn() {
 }
 
 func (fe *frontendPretty) closeOrGoOut() {
-	// Only toggle if we have a valid focused span
-	if fe.FocusedSpan.IsValid() {
-		// Get the either explicitly set or defaulted value
-		var isExpanded bool
-		if row, ok := fe.rows.BySpan[fe.FocusedSpan]; ok {
-			isExpanded = row.Expanded
-		}
-		if !isExpanded {
-			// already closed; move up
-			fe.goOut()
-			return
-		}
-		// Toggle the expanded state for the focused span
-		fe.setExpanded(fe.FocusedSpan, !isExpanded)
-		// Recalculate view to reflect changes
-		fe.recalculateViewLocked()
+	if !fe.FocusedSpan.IsValid() {
+		return
 	}
+	tree := fe.rowsView.BySpan[fe.FocusedSpan]
+	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
+		// already closed; move up
+		fe.goOut()
+		return
+	}
+	fe.setExpanded(fe.FocusedSpan, false)
+	fe.syncAfterExpandToggle(fe.FocusedSpan)
 }
 
 func (fe *frontendPretty) openOrGoIn() {
-	// Only toggle if we have a valid focused span
-	if fe.FocusedSpan.IsValid() {
-		// Get the either explicitly set or defaulted value
-		var isExpanded bool
-		if row, ok := fe.rows.BySpan[fe.FocusedSpan]; ok {
-			isExpanded = row.Expanded
-		}
-		if isExpanded {
-			// already expanded; go in
-			fe.goIn()
-			return
-		}
-		// Toggle the expanded state for the focused span
-		fe.setExpanded(fe.FocusedSpan, true)
-		// Recalculate view to reflect changes
-		fe.recalculateViewLocked()
+	if !fe.FocusedSpan.IsValid() {
+		return
 	}
+	tree := fe.rowsView.BySpan[fe.FocusedSpan]
+	if tree != nil && tree.IsExpanded(fe.FrontendOpts) {
+		// already expanded; go in
+		fe.goIn()
+		return
+	}
+	fe.setExpanded(fe.FocusedSpan, true)
+	fe.syncAfterExpandToggle(fe.FocusedSpan)
 }
 
 func (fe *frontendPretty) goErrorOrigin() {
@@ -2258,7 +2245,22 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 		fe.SpanExpanded = make(map[dagui.SpanID]bool)
 	}
 	fe.SpanExpanded[id] = expanded
-	fe.recalculateViewLocked()
+}
+
+// syncAfterExpandToggle rebuilds the flat row list from the existing
+// rowsView (cheap — no RowsView rebuild) and syncs the affected subtree.
+// Use this after setExpanded for local expand/collapse operations.
+func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
+	// Rebuild flat rows from existing tree. This is O(visible nodes)
+	// and skips the expensive RowsView rebuild (WalkSpans + ShouldShow).
+	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
+		fe.focusedIdx = row.Index
+	}
+	// Sync just the affected subtree's SpanTreeView children.
+	if st, ok := fe.spanTrees[id]; ok {
+		fe.syncTreeNode(st, st.prefix)
+	}
 }
 
 // renderProgressFinal renders all rows using the tree-based SpanTreeView
