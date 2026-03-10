@@ -1907,6 +1907,24 @@ Stage 27 implementation note:
    - the shell now prefers smaller, more restrained text in navigation and table cells to reduce wrapping and dashboard heaviness
    - `Geist` is used as the primary UI font for the Vercel-inspired shell pass, while mono labels remain reserved for precise secondary metadata
 
+Stage 28 design note:
+1. Workspace is not a simple child of session.
+2. Correct hierarchy for the emerging first-class Workspace concept:
+   - one session has one root client and any number of descendant clients
+   - each client may load or operate against one or more workspaces over time
+   - therefore the useful ownership chain is `Session -> Client -> WorkspaceContext`, not `Workspace -> Session`
+3. UX consequence:
+   - `Workspace` can still be the top-level durable grouping dimension because it behaves like a project-level lens over time
+   - but that grouping must be implemented as a projection/index, not as a literal containment tree
+   - a workspace page should aggregate all sessions, clients, pipelines, services, remotes, and registries associated with that workspace context over time
+   - a session page should remain the authoritative execution hub and may legitimately show multiple workspace contexts if different clients inside that session loaded different workspaces
+4. Shim requirement for current telemetry:
+   - until the engine emits authoritative first-class Workspace entities everywhere, ODAG should derive a `client -> workspace` attachment layer from the best available signals (for example main-module load context, workspace root detection, and workspace-op evidence)
+   - all workspace-centric views should consume that attachment layer rather than assuming a single workspace per session
+5. Navigation implication:
+   - top-level global selector should move toward `Workspace`
+   - `Session` remains a high-cardinality scoped filter and drill-down surface, not the long-term top-level selector
+
 ### Phase 3: Payload evolution (future)
 
 1. Version object-state payload format for compatibility.
