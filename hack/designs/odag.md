@@ -1866,6 +1866,9 @@ Stage 26 implementation note:
 5. Current geometry correction:
    - the renderer now uses card dimensions that match the actual rendered box size, and pipeline nodes use `border-box` sizing so SVG anchors and DOM boxes stay aligned
    - chain and ref edges now terminate with explicit arrowheads rather than relying on bare strokes
+6. Current detail-page simplification:
+   - pipeline pages intentionally suppress the inner `Pipeline Details` panel header and the back-link row
+   - the object DAG card also suppresses its extra `Object DAG` title/meta chrome; the page should read as recap card plus graph, not recap card plus another labeled sub-panel
 
 ### Phase 3: Payload evolution (future)
 

@@ -585,6 +585,7 @@ const els = {
   pageLabel: document.getElementById("pageLabel"),
   pageTitle: document.getElementById("pageTitle"),
   entityNav: document.getElementById("entityNav"),
+  panelHead: document.querySelector(".v3-panel-head"),
   tableTitle: document.getElementById("tableTitle"),
   tableMeta: document.getElementById("tableMeta"),
   tableShell: document.getElementById("tableShell"),
@@ -850,6 +851,7 @@ function isMockEntity(entity) {
 }
 
 function renderMain() {
+  setPanelHeadHidden(false);
   if (isOverviewRoute()) {
     renderOverview();
     return;
@@ -993,9 +995,11 @@ function renderDetail(entity) {
   const live = config ? state.live[config.stateKey] : null;
   const detailLabel = config?.singularLabel || entity.label;
   const detailItem = currentDetailItem(entity);
+  const compactDetail = entity.dynamicKind === "pipelines";
 
   els.pageLabel.textContent = detailLabel;
   els.tableTitle.textContent = `${detailLabel} Details`;
+  setPanelHeadHidden(compactDetail);
 
   if (live && live.status !== "loaded") {
     document.title = `ODAG ${detailLabel}`;
@@ -1087,7 +1091,6 @@ function renderPipelineDetail(entity, row, graph) {
   const moduleItem = pipelineModuleRecapItem(graph?.data);
   return `
     <div class="v3-detail-stack">
-      ${backLink(entity)}
       <section class="v3-detail-card v3-pipeline-recap">
         <div class="v3-pipeline-recap-command">
           <p class="v3-foot-label">Command</p>
@@ -1152,12 +1155,6 @@ function renderPipelineGraph(row, graph) {
   }
   return `
     <div class="v3-graph-panel">
-      <div class="v3-graph-head">
-        <div>
-          <p class="v3-foot-label">Object DAG</p>
-          <p class="v3-graph-meta">${escapeHTML(model.meta)}</p>
-        </div>
-      </div>
       <div class="v3-graph-scroll">
         <div class="v3-graph-canvas" style="width:${model.width}px; height:${model.height}px;">
           <svg class="v3-graph-svg" viewBox="0 0 ${model.width} ${model.height}" aria-hidden="true" focusable="false">
@@ -1173,15 +1170,8 @@ function renderPipelineGraph(row, graph) {
 
 function renderPipelineGraphState(row, tone, message) {
   const toneClass = tone === "error" ? " is-error" : "";
-  const output = pipelineOutputTypeLabel(row);
   return `
     <div class="v3-graph-panel">
-      <div class="v3-graph-head">
-        <div>
-          <p class="v3-foot-label">Object DAG</p>
-          <p class="v3-graph-meta">${escapeHTML(output)} output</p>
-        </div>
-      </div>
       <div class="v3-graph-empty${toneClass}">
         <p>${escapeHTML(message)}</p>
       </div>
@@ -2372,6 +2362,12 @@ function registriesTableModel(entity, sectionID) {
 
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
+}
+
+function setPanelHeadHidden(hidden) {
+  if (els.panelHead) {
+    els.panelHead.style.display = hidden ? "none" : "";
+  }
 }
 
 function currentNavEntityID() {
