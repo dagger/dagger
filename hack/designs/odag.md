@@ -1179,6 +1179,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 20: Implement `Repls` end-to-end through derivation, API, and UI
 - [x] Stage 21: Implement `Workspaces` as observed roots through derivation, API, and UI
 - [x] Stage 22: Implement `Checks` as an explicit-telemetry live domain
+- [x] Stage 23: Materialize shell-submitted commands as first-class `Pipelines`
 
 ### Active Next Tasks
 
@@ -1800,6 +1801,36 @@ Stage 22 implementation note:
 6. Current V3 shell consequence:
    - all left-nav domains are now backed by live APIs or live-empty APIs
    - the shell no longer depends on mocked domain placeholders to cover the main entity taxonomy
+
+Stage 23 implementation note:
+1. `Pipelines` no longer means only `dagger call`.
+2. Current derivation rule now has two authoritative paths:
+   - `dagger call` root clients still materialize one pipeline per submitted call chain
+   - shell-submitted command lines materialize one pipeline per submitted shell line/span when that line owns at least one non-module-prelude DAGQL call
+3. Current shell-command batching rule:
+   - use the shell handler telemetry (`dagger.io/shell.handler.args`) to find submitted commands
+   - batch handler spans under the shell command/root span that submitted them
+   - attach DAGQL calls by raw span ancestry first, then fall back to same-session time windows when child client spans detach from the shell span tree
+4. Current prelude suppression rule:
+   - module-prelude-only activity (`Query.moduleSource`, `ModuleSource.asModule`, `Module.serve`) does not materialize a pipeline row on its own
+   - if a `dagger call -m ...` trace never reaches a user function call beyond module load, V3 now omits that misleading pseudo-pipeline instead of pretending `Query.moduleSource` was the terminal user call
+5. Current identity/routing rule:
+   - pipeline identity is now pipeline-specific, not client-specific
+   - the canonical pipeline ID is keyed by the terminal call span, which allows multiple pipelines inside one session/root client without route collisions
+   - V3 routes and cross-entity links now follow pipeline IDs rather than assuming one pipeline per client
+6. Current REPL linkage rule:
+   - REPL command history now links back to the owning pipeline whenever a command batch materializes one
+   - this makes `Repls` the session/history view and `Pipelines` the submitted-job view over the same underlying telemetry
+7. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against the working sqlite DB
+   - `GET /api/pipelines` now surfaces both:
+     - inline shell pipelines such as `dagger -M -c container | from nginx | as-service | up`
+     - `dagger call -m github.com/dagger/dagger/modules/wolfi container`
+   - the previously missing open-ended inline service-up case (`with-exposed-port 80 | as-service | up`) now materializes correctly as a five-call pipeline
+   - `GET /api/repls` now attaches those inline command histories back to their pipeline IDs
+8. Current deliberate limitation:
+   - interactive shell traces can still produce very large pipelines when one submitted shell line contains a long pipe chain or long-running command tree
+   - the current V3 detail view shows the real pipeline and its object DAG rather than trying to further summarize those large interactive jobs yet
 
 ### Phase 3: Payload evolution (future)
 

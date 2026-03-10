@@ -1579,7 +1579,7 @@ function renderTerminalDetail(entity, row) {
 function renderReplDetail(entity, row) {
   const commandTable = renderTableHTML({
     columns: [
-      { label: "Command", render: (item) => primaryCell(item.command || item.name, "") },
+      { label: "Command", render: (item) => replPipelineCell(item) },
       { label: "Status", render: (item) => statusPill(item.status) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
       { label: "Duration", render: (item) => escapeHTML(durationLabel(item.startUnixNano, item.endUnixNano, item.status)) },
@@ -2267,10 +2267,10 @@ function materializeEntity(entity) {
       ...entity,
       dynamicKind: entity.id,
       liveItems: [],
-      blurb: `Fetching live ${config.label.toLowerCase()} from ${config.endpoint}. Other domains remain mocked while the next entity slice settles.`,
+      blurb: `Fetching live ${config.label.toLowerCase()} from ${config.endpoint}. The shell stays entity-first while this domain hydrates from real API data.`,
       metrics: [
         { label: "Live fetch", value: pendingLabel, detail: `Requesting ${config.label} from the real API.` },
-        { label: "Entity mode", value: "Hybrid", detail: `${config.label} are switching from mock data to live data.` },
+        { label: "Entity mode", value: "Loading", detail: `${config.label} are hydrating from real data.` },
         { label: "Next step", value: "Render", detail: "Wire the current domain end-to-end before generalizing further." },
       ],
       highlights: [{ title: config.label, value: pendingLabel, note: "Waiting for live entity payload." }],
@@ -2288,7 +2288,7 @@ function materializeEntity(entity) {
       blurb: `Live ${config.label.toLowerCase()} fetch failed (${live.error}). Falling back to the entity shell while the API connection is unavailable.`,
       metrics: [
         { label: "Live fetch", value: "Error", detail: live.error || "Unknown failure" },
-        { label: "Fallback", value: "Mock shell", detail: `${config.label} stayed isolated; other domains were not affected.` },
+        { label: "Fallback", value: "Inventory shell", detail: `${config.label} stayed isolated while the rest of the shell remained usable.` },
         { label: "Recovery", value: "Retry", detail: "Reload the page after the server/API is healthy." },
       ],
       highlights: [{ title: config.label, value: "Error", note: live.error || "Unknown failure" }],
@@ -2370,7 +2370,7 @@ function buildLivePipelinesEntity(base, items) {
   const liveItems = items
     .map((item) => ({
       ...item,
-      routeID: shortRouteID(item.traceID, item.clientID || item.id),
+      routeID: shortRouteID("", item.id || "") || shortRouteID(item.traceID, item.terminalCallID || item.clientID),
     }))
     .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
   const durations = liveItems.map((item) => Math.max(0, Number(item.endUnixNano || 0) - Number(item.startUnixNano || 0)));
@@ -2409,7 +2409,7 @@ function buildLivePipelinesEntity(base, items) {
     dynamicKind: "pipelines",
     liveItems,
     blurb:
-      "This domain is now live. Each row is one submitted DAGQL call chain, with the command, terminal output, and CLI-managed follow-up behavior kept together in one execution entity.",
+      "This domain is now live. Each row is one submitted pipeline: either a `dagger call` chain or one shell-submitted command line, with terminal output and attached follow-up behavior kept together.",
     metrics: [
       {
         label: "Detected pipelines",
@@ -3094,25 +3094,25 @@ function describeShellState(entity) {
         return {
           mode: "Activating",
           source: "API Loading",
-          copy: `${currentConfig.label} is switching to live data. The shell is fetching ${currentConfig.endpoint} while the rest of the taxonomy stays mocked.`,
+          copy: `${currentConfig.label} is loading from ${currentConfig.endpoint}.`,
         };
       case "loaded":
         return {
           mode: "Live Domain",
           source: "Real API",
-          copy: `${currentConfig.label} is live end-to-end. Other domains remain mocked until their own discovery rules and specialized views are ready.`,
+          copy: `${currentConfig.label} is live end-to-end from the current ODAG dataset.`,
         };
       case "error":
         return {
           mode: "Hybrid Degraded",
           source: "API Error",
-          copy: `${currentConfig.label} is one of the live domains, but its API fetch failed. The shared shell stays up and the rest of the domains remain mocked.`,
+          copy: `${currentConfig.label} failed to load, but the shared shell is still available.`,
         };
       default:
         return {
           mode: "Activating",
           source: "Pending API",
-          copy: `${currentConfig.label} will switch from mocked shell state to real API data as soon as the initial fetch completes.`,
+          copy: `${currentConfig.label} will render as soon as the first API payload arrives.`,
         };
     }
   }
@@ -3126,24 +3126,24 @@ function describeShellState(entity) {
 
   if (loadedDomains.length > 0) {
     return {
-      mode: "Mock Domain",
-      source: "Mock Data",
-      copy: `This domain is still mocked. ${loadedDomains.join(" and ")} ${loadedDomains.length === 1 ? "is" : "are"} already live, which lets the shared shell evolve without forcing the rest of the taxonomy to harden too early.`,
+      mode: "Live Shell",
+      source: "Real API",
+      copy: `${loadedDomains.join(" and ")} ${loadedDomains.length === 1 ? "is" : "are"} currently loaded from live API data.`,
     };
   }
 
   if (degradedDomains.length > 0) {
     return {
-      mode: "Mock Domain",
-      source: "Mock Data",
-      copy: `The shell is still mostly mocked. ${degradedDomains.join(" and ")} ${degradedDomains.length === 1 ? "is" : "are"} currently degraded and not masking the rest of the taxonomy work.`,
+      mode: "Degraded Shell",
+      source: "API Error",
+      copy: `${degradedDomains.join(" and ")} ${degradedDomains.length === 1 ? "is" : "are"} currently degraded.`,
     };
   }
 
   return {
-    mode: "Mock Domain",
-    source: "Mock Data",
-    copy: "Discovery first, specialized views second. The shell starts mocked, then individual domains switch to live data as their heuristics settle.",
+    mode: "Live Shell",
+    source: "Real API",
+    copy: "All current entity domains render from live API data.",
   };
 }
 
@@ -3181,10 +3181,10 @@ function gitRemotePipelineCountCell(row) {
 }
 
 function gitRemotePipelineSummaryCell(row) {
-  if (!row?.pipelineID || !row?.traceID || !row?.clientID) {
+  const href = pipelineEntityHref(row?.traceID, row?.pipelineID, row?.clientID);
+  if (!href) {
     return primaryCell(row?.command || "Pipeline", "");
   }
-  const href = entityPath("pipelines", shortRouteID(row.traceID, row.clientID));
   return linkedPrimaryCell(row.command || "Pipeline", "", href);
 }
 
@@ -3207,10 +3207,10 @@ function registryPipelineCountCell(row) {
 }
 
 function registryActivityPipelineCell(row) {
-  if (!row?.pipelineTraceID || !row?.pipelineClientID) {
+  const href = pipelineEntityHref(row?.pipelineTraceID, row?.pipelineID, row?.pipelineClientID);
+  if (!href) {
     return "None";
   }
-  const href = entityPath("pipelines", shortRouteID(row.pipelineTraceID, row.pipelineClientID));
   return linkedPrimaryCell(row.pipelineCommand || "Pipeline", "", href);
 }
 
@@ -3275,10 +3275,10 @@ function checkSessionSummary(row) {
 }
 
 function servicePipelineSummary(row) {
-  if (!row.pipelineClientID) {
+  const href = pipelineEntityHref(row.traceID, row.pipelineID, row.pipelineClientID);
+  if (!href) {
     return "None";
   }
-  const href = entityPath("pipelines", shortRouteID(row.traceID, row.pipelineClientID));
   return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(row.pipelineCommand || "Pipeline")}</a>`;
 }
 
@@ -3299,18 +3299,18 @@ function workspaceOpSessionSummary(row) {
 }
 
 function workspaceOpPipelineCell(row) {
-  if (!row.pipelineClientID) {
+  const href = pipelineEntityHref(row.traceID, row.pipelineID, row.pipelineClientID);
+  if (!href) {
     return "None";
   }
-  const href = entityPath("pipelines", shortRouteID(row.traceID, row.pipelineClientID));
   return linkedPrimaryCell(row.pipelineCommand || "Pipeline", "", href);
 }
 
 function workspaceOpPipelineSummary(row) {
-  if (!row.pipelineClientID) {
+  const href = pipelineEntityHref(row.traceID, row.pipelineID, row.pipelineClientID);
+  if (!href) {
     return "None";
   }
-  const href = entityPath("pipelines", shortRouteID(row.traceID, row.pipelineClientID));
   return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(row.pipelineCommand || "Pipeline")}</a>`;
 }
 
@@ -3493,6 +3493,14 @@ function replCommandHistoryCell(row) {
   return primaryCell(`${count} commands`, row.lastCommand || row.firstCommand || "No command history");
 }
 
+function replPipelineCell(row) {
+  const href = pipelineEntityHref("", row?.pipelineID);
+  if (!href) {
+    return primaryCell(row?.command || row?.name || "Command", "");
+  }
+  return linkedPrimaryCell(row.command || row.name || "Command", row.pipelineCommand || "", href);
+}
+
 function workspaceCountsCell(row) {
   return primaryCell(String(row.opCount || 0), `${row.readCount || 0} reads · ${row.writeCount || 0} writes`);
 }
@@ -3502,6 +3510,14 @@ function shellActivityCell(row) {
   const title = `${row.callCount || 0} calls`;
   const subtitle = names.length > 0 ? names.slice(0, 2).join(", ") : "No DAGQL calls yet";
   return primaryCell(title, subtitle);
+}
+
+function pipelineEntityHref(traceID, pipelineID, fallbackKey) {
+  const routeID = shortRouteID("", pipelineID || "") || shortRouteID(traceID, fallbackKey || "");
+  if (!routeID) {
+    return "";
+  }
+  return entityPath("pipelines", routeID);
 }
 
 function shellDescendantCell(row) {

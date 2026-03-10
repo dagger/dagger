@@ -31,6 +31,7 @@ type v2CLIRun struct {
 	SessionID             string             `json:"sessionID,omitempty"`
 	ClientID              string             `json:"clientID,omitempty"`
 	RootClientID          string             `json:"rootClientID,omitempty"`
+	SubmittedSpanID       string             `json:"submittedSpanID,omitempty"`
 	ClientName            string             `json:"clientName,omitempty"`
 	Name                  string             `json:"name"`
 	Command               string             `json:"command,omitempty"`
@@ -121,7 +122,9 @@ func collectV2CLIRuns(
 	}
 
 	callsByClient := map[string][]transform.MutationEvent{}
+	callsBySession := map[string][]transform.MutationEvent{}
 	spansByClient := map[string][]transform.MutationEvent{}
+	spansBySession := map[string][]transform.MutationEvent{}
 	for _, event := range proj.Events {
 		clientID := scopeIdx.ClientIDForSpan(event.SpanID)
 		sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
@@ -134,8 +137,10 @@ func collectV2CLIRuns(
 		switch event.RawKind {
 		case "call":
 			callsByClient[clientID] = append(callsByClient[clientID], event)
+			callsBySession[sessionID] = append(callsBySession[sessionID], event)
 		default:
 			spansByClient[clientID] = append(spansByClient[clientID], event)
+			spansBySession[sessionID] = append(spansBySession[sessionID], event)
 		}
 	}
 
@@ -163,6 +168,7 @@ func collectV2CLIRuns(
 		})
 
 		callEvents = pipelineCallEvents(callEvents, spans, scopeIdx, client)
+		callEvents = pipelineUserCallEvents(callEvents)
 		if len(callEvents) == 0 {
 			continue
 		}
@@ -205,7 +211,7 @@ func collectV2CLIRuns(
 
 		postProcessKinds := classifyV2CLIRunPostProcess(cmd, *terminal, followups)
 		status := deriveV2CLIRunStatus(traceStatus, terminal.StatusCode)
-		runID := "cli-run:" + traceID + "/" + client.ID
+		runID := pipelineRunID(traceID, terminal.SpanID)
 		evidence := buildV2CLIRunEvidence(cmd, callEvents, chainEvents, *terminal, followups)
 		relations := buildV2CLIRunRelations(client, *terminal, postProcessKinds)
 		name := cmd.ChainLabel
@@ -219,6 +225,7 @@ func collectV2CLIRuns(
 			SessionID:             client.SessionID,
 			ClientID:              client.ID,
 			RootClientID:          client.RootClientID,
+			SubmittedSpanID:       spanKey(traceID, client.SpanID),
 			ClientName:            client.Name,
 			Name:                  name,
 			Command:               cmd.Command,
@@ -247,7 +254,13 @@ func collectV2CLIRuns(
 		})
 	}
 
+	items = append(items, collectV2ShellPipelines(traceStatus, traceID, q, spans, scopeIdx, callsBySession, spansBySession)...)
+
 	return items
+}
+
+func pipelineRunID(traceID, terminalSpanID string) string {
+	return "pipeline:" + traceID + "/" + terminalSpanID
 }
 
 func pipelineCallEvents(
@@ -272,6 +285,279 @@ func pipelineCallEvents(
 		filtered = append(filtered, event)
 	}
 	return filtered
+}
+
+func pipelineUserCallEvents(callEvents []transform.MutationEvent) []transform.MutationEvent {
+	filtered := make([]transform.MutationEvent, 0, len(callEvents))
+	for _, event := range callEvents {
+		if isModulePreludeCall(event.Name) {
+			continue
+		}
+		filtered = append(filtered, event)
+	}
+	return filtered
+}
+
+type v2ShellPipelineBatch struct {
+	traceID       string
+	rootSpanID    string
+	sessionID     string
+	rootClientID  string
+	command       string
+	startUnixNano int64
+	endUnixNano   int64
+}
+
+func collectV2ShellPipelines(
+	traceStatus, traceID string,
+	q v2Query,
+	spans []store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+	callsBySession map[string][]transform.MutationEvent,
+	spansBySession map[string][]transform.MutationEvent,
+) []v2CLIRun {
+	if scopeIdx == nil {
+		return nil
+	}
+
+	ordered := append([]store.SpanRecord(nil), spans...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].StartUnixNano != ordered[j].StartUnixNano {
+			return ordered[i].StartUnixNano < ordered[j].StartUnixNano
+		}
+		return ordered[i].SpanID < ordered[j].SpanID
+	})
+	spanByID := v2SpanByID(ordered)
+	batches := collectV2ShellPipelineBatches(traceID, q, ordered, scopeIdx, spanByID)
+	if len(batches) == 0 {
+		return nil
+	}
+
+	items := make([]v2CLIRun, 0, len(batches))
+	for _, batch := range batches {
+		callEvents := shellPipelineCallEvents(batch, callsBySession[batch.sessionID], spanByID, scopeIdx)
+		callEvents = pipelineUserCallEvents(callEvents)
+		if len(callEvents) == 0 {
+			continue
+		}
+		sort.Slice(callEvents, func(i, j int) bool {
+			if callEvents[i].StartUnixNano != callEvents[j].StartUnixNano {
+				return callEvents[i].StartUnixNano < callEvents[j].StartUnixNano
+			}
+			if callEvents[i].EndUnixNano != callEvents[j].EndUnixNano {
+				return callEvents[i].EndUnixNano < callEvents[j].EndUnixNano
+			}
+			return callEvents[i].SpanID < callEvents[j].SpanID
+		})
+
+		terminal := terminalCallEvent(callEvents)
+		if terminal == nil {
+			continue
+		}
+
+		followups := shellPipelineFollowupSpans(batch, spansBySession[batch.sessionID], spanByID, scopeIdx, terminal.EndUnixNano)
+		startUnixNano := batch.startUnixNano
+		endUnixNano := batch.endUnixNano
+		if startUnixNano == 0 || (callEvents[0].StartUnixNano > 0 && callEvents[0].StartUnixNano < startUnixNano) {
+			startUnixNano = callEvents[0].StartUnixNano
+		}
+		if endUnixNano == 0 || terminal.EndUnixNano > endUnixNano {
+			endUnixNano = terminal.EndUnixNano
+		}
+		if len(followups) > 0 {
+			lastFollowup := followups[len(followups)-1]
+			if lastFollowup.EndUnixNano > endUnixNano {
+				endUnixNano = lastFollowup.EndUnixNano
+			}
+		}
+		if !intersectsTime(startUnixNano, endUnixNano, q.FromUnixNano, q.ToUnixNano) {
+			continue
+		}
+
+		callIDs := make([]string, 0, len(callEvents))
+		for _, event := range callEvents {
+			callIDs = append(callIDs, spanKey(traceID, event.SpanID))
+		}
+		followupSpanIDs := make([]string, 0, len(followups))
+		followupSpanNames := make([]string, 0, len(followups))
+		for _, event := range followups {
+			followupSpanIDs = append(followupSpanIDs, spanKey(traceID, event.SpanID))
+			followupSpanNames = append(followupSpanNames, event.Name)
+		}
+
+		clientID := nonEmpty(scopeIdx.ClientIDForSpan(terminal.SpanID), batch.rootClientID)
+		sessionID := nonEmpty(scopeIdx.SessionIDForSpan(terminal.SpanID), batch.sessionID)
+		rootClientID, _ := replRootClient(scopeIdx, sessionID, clientID)
+		if rootClientID == "" {
+			rootClientID = nonEmpty(batch.rootClientID, clientID)
+		}
+		postProcessKinds := classifyV2CLIRunPostProcess(v2CLIRunCommand{Command: batch.command, ChainLabel: batch.command}, *terminal, followups)
+		status := deriveV2CLIRunStatus(traceStatus, terminal.StatusCode)
+
+		items = append(items, v2CLIRun{
+			ID:                    pipelineRunID(traceID, terminal.SpanID),
+			TraceID:               traceID,
+			SessionID:             sessionID,
+			ClientID:              clientID,
+			RootClientID:          rootClientID,
+			SubmittedSpanID:       spanKey(traceID, batch.rootSpanID),
+			Name:                  batch.command,
+			Command:               batch.command,
+			ChainLabel:            batch.command,
+			Status:                status,
+			StatusCode:            terminal.StatusCode,
+			StartUnixNano:         startUnixNano,
+			EndUnixNano:           endUnixNano,
+			CallIDs:               callIDs,
+			ChainCallIDs:          append([]string(nil), callIDs...),
+			CallCount:             len(callEvents),
+			ChainDepth:            len(callEvents),
+			TerminalCallID:        spanKey(traceID, terminal.SpanID),
+			TerminalCallName:      terminal.Name,
+			TerminalReturnType:    terminal.ReturnType,
+			TerminalOutputDagqlID: terminal.OutputStateDigest,
+			TerminalObjectID:      terminal.ObjectID,
+			PostProcessKinds:      postProcessKinds,
+			FollowupSpanIDs:       followupSpanIDs,
+			FollowupSpanNames:     followupSpanNames,
+			FollowupSpanCount:     len(followups),
+			Evidence:              buildV2CLIRunEvidence(v2CLIRunCommand{Command: batch.command, ChainLabel: batch.command}, callEvents, callEvents, *terminal, followups),
+			Relations:             buildV2CLIRunRelations(derive.Client{ID: clientID, Name: batch.command}, *terminal, postProcessKinds),
+		})
+	}
+
+	return items
+}
+
+func collectV2ShellPipelineBatches(
+	traceID string,
+	q v2Query,
+	spans []store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+	spanByID map[string]store.SpanRecord,
+) []v2ShellPipelineBatch {
+	batches := make([]v2ShellPipelineBatch, 0)
+	seen := map[string]int{}
+	for _, sp := range spans {
+		if !intersectsTime(sp.StartUnixNano, spanLastSeen(sp), q.FromUnixNano, q.ToUnixNano) {
+			continue
+		}
+		env, err := decodeV2SpanEnvelope(sp.DataJSON)
+		if err != nil {
+			continue
+		}
+		if len(getV2StringList(env.Attributes, "dagger.io/shell.handler.args")) == 0 {
+			continue
+		}
+		rootSpanID := shellPipelineRootSpanID(spanByID, sp)
+		if rootSpanID == "" {
+			continue
+		}
+		root, ok := spanByID[rootSpanID]
+		if !ok {
+			continue
+		}
+		sessionID := scopeIdx.SessionIDForSpan(sp.SpanID)
+		clientID := scopeIdx.ClientIDForSpan(sp.SpanID)
+		rootClientID, _ := replRootClient(scopeIdx, sessionID, clientID)
+		if sessionID == "" && len(scopeIdx.Sessions) == 1 {
+			sessionID = scopeIdx.Sessions[0].ID
+		}
+		if !matchesV2Scope(q, traceID, sessionID, nonEmpty(clientID, rootClientID)) {
+			continue
+		}
+		if idx, ok := seen[rootSpanID]; ok {
+			if batches[idx].sessionID == "" {
+				batches[idx].sessionID = sessionID
+			}
+			if batches[idx].rootClientID == "" {
+				batches[idx].rootClientID = rootClientID
+			}
+			continue
+		}
+		seen[rootSpanID] = len(batches)
+		batches = append(batches, v2ShellPipelineBatch{
+			traceID:       traceID,
+			rootSpanID:    rootSpanID,
+			sessionID:     sessionID,
+			rootClientID:  rootClientID,
+			command:       strings.TrimSpace(root.Name),
+			startUnixNano: root.StartUnixNano,
+			endUnixNano:   root.EndUnixNano,
+		})
+	}
+	return batches
+}
+
+func shellPipelineRootSpanID(spanByID map[string]store.SpanRecord, sp store.SpanRecord) string {
+	if sp.ParentSpanID == "" {
+		return ""
+	}
+	return sp.ParentSpanID
+}
+
+func shellPipelineCallEvents(
+	batch v2ShellPipelineBatch,
+	callEvents []transform.MutationEvent,
+	spanByID map[string]store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+) []transform.MutationEvent {
+	filtered := make([]transform.MutationEvent, 0, len(callEvents))
+	for _, event := range callEvents {
+		if shellPipelineOwnsEvent(batch, event, spanByID, scopeIdx) {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
+}
+
+func shellPipelineFollowupSpans(
+	batch v2ShellPipelineBatch,
+	events []transform.MutationEvent,
+	spanByID map[string]store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+	terminalEndUnixNano int64,
+) []transform.MutationEvent {
+	filtered := make([]transform.MutationEvent, 0, len(events))
+	for _, event := range events {
+		if event.StartUnixNano < terminalEndUnixNano {
+			continue
+		}
+		if shellPipelineOwnsEvent(batch, event, spanByID, scopeIdx) {
+			filtered = append(filtered, event)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].StartUnixNano != filtered[j].StartUnixNano {
+			return filtered[i].StartUnixNano < filtered[j].StartUnixNano
+		}
+		return filtered[i].SpanID < filtered[j].SpanID
+	})
+	return filtered
+}
+
+func shellPipelineOwnsEvent(
+	batch v2ShellPipelineBatch,
+	event transform.MutationEvent,
+	spanByID map[string]store.SpanRecord,
+	scopeIdx *derive.ScopeIndex,
+) bool {
+	if event.StartUnixNano < batch.startUnixNano {
+		return false
+	}
+	if batch.endUnixNano > 0 && event.StartUnixNano > batch.endUnixNano {
+		return false
+	}
+	if terminalDescendsFrom(spanByID, event.SpanID, batch.rootSpanID) || event.ParentSpanID == batch.rootSpanID {
+		return true
+	}
+	if batch.sessionID == "" || scopeIdx == nil {
+		return false
+	}
+	if scopeIdx.SessionIDForSpan(event.SpanID) != batch.sessionID {
+		return false
+	}
+	return event.EndUnixNano == 0 || event.EndUnixNano >= batch.startUnixNano
 }
 
 func pipelineCommandParseBoundary(
@@ -450,9 +736,24 @@ func terminalCallEvent(events []transform.MutationEvent) *transform.MutationEven
 	}
 	best := events[0]
 	for _, event := range events[1:] {
-		if event.EndUnixNano > best.EndUnixNano ||
-			(event.EndUnixNano == best.EndUnixNano && event.StartUnixNano > best.StartUnixNano) ||
-			(event.EndUnixNano == best.EndUnixNano && event.StartUnixNano == best.StartUnixNano && event.SpanID > best.SpanID) {
+		bestEnd := best.EndUnixNano
+		if bestEnd <= 0 {
+			bestEnd = best.StartUnixNano
+		}
+		eventEnd := event.EndUnixNano
+		if eventEnd <= 0 {
+			eventEnd = event.StartUnixNano
+		}
+		if best.EndUnixNano <= 0 && event.EndUnixNano > 0 {
+			continue
+		}
+		if event.EndUnixNano <= 0 && best.EndUnixNano > 0 {
+			best = event
+			continue
+		}
+		if eventEnd > bestEnd ||
+			(eventEnd == bestEnd && event.StartUnixNano > best.StartUnixNano) ||
+			(eventEnd == bestEnd && event.StartUnixNano == best.StartUnixNano && event.SpanID > best.SpanID) {
 			best = event
 		}
 	}

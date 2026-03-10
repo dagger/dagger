@@ -32,13 +32,15 @@ type v2Repl struct {
 }
 
 type v2ReplCommand struct {
-	SpanID        string   `json:"spanID"`
-	Name          string   `json:"name"`
-	Command       string   `json:"command"`
-	Args          []string `json:"args,omitempty"`
-	Status        string   `json:"status"`
-	StartUnixNano int64    `json:"startUnixNano"`
-	EndUnixNano   int64    `json:"endUnixNano"`
+	SpanID          string   `json:"spanID"`
+	Name            string   `json:"name"`
+	Command         string   `json:"command"`
+	Args            []string `json:"args,omitempty"`
+	PipelineID      string   `json:"pipelineID,omitempty"`
+	PipelineCommand string   `json:"pipelineCommand,omitempty"`
+	Status          string   `json:"status"`
+	StartUnixNano   int64    `json:"startUnixNano"`
+	EndUnixNano     int64    `json:"endUnixNano"`
 }
 
 type v2ReplGroup struct {
@@ -72,12 +74,19 @@ func (s *Server) handleV2Repls(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("get trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		spans, _, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
-		items = append(items, collectV2Repls(traceMeta.Status, traceID, q, spans, scopeIdx)...)
+		pipelinesBySubmittedSpan := map[string]v2CLIRun{}
+		for _, pipeline := range collectV2CLIRuns(traceMeta.Status, traceID, q, spans, proj, scopeIdx) {
+			if pipeline.SubmittedSpanID == "" {
+				continue
+			}
+			pipelinesBySubmittedSpan[pipeline.SubmittedSpanID] = pipeline
+		}
+		items = append(items, collectV2Repls(traceMeta.Status, traceID, q, spans, scopeIdx, pipelinesBySubmittedSpan)...)
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -95,7 +104,7 @@ func (s *Server) handleV2Repls(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func collectV2Repls(traceStatus, traceID string, q v2Query, spans []store.SpanRecord, scopeIdx *derive.ScopeIndex) []v2Repl {
+func collectV2Repls(traceStatus, traceID string, q v2Query, spans []store.SpanRecord, scopeIdx *derive.ScopeIndex, pipelinesBySubmittedSpan map[string]v2CLIRun) []v2Repl {
 	if scopeIdx == nil {
 		return nil
 	}
@@ -165,14 +174,18 @@ func collectV2Repls(traceStatus, traceID string, q v2Query, spans []store.SpanRe
 			keys = append(keys, key)
 		}
 
+		rootSpanID := shellPipelineRootSpanID(spanByID, sp)
+		pipeline := pipelinesBySubmittedSpan[spanKey(traceID, rootSpanID)]
 		group.commands = append(group.commands, v2ReplCommand{
-			SpanID:        spanKey(traceID, sp.SpanID),
-			Name:          sp.Name,
-			Command:       replCommandLabel(args, sp.Name),
-			Args:          args,
-			Status:        deriveV2RegistryActivityStatus(traceStatus, sp.StatusCode),
-			StartUnixNano: sp.StartUnixNano,
-			EndUnixNano:   spanLastSeen(sp),
+			SpanID:          spanKey(traceID, sp.SpanID),
+			Name:            sp.Name,
+			Command:         replCommandLabel(args, sp.Name),
+			Args:            args,
+			PipelineID:      pipeline.ID,
+			PipelineCommand: pipeline.Command,
+			Status:          deriveV2RegistryActivityStatus(traceStatus, sp.StatusCode),
+			StartUnixNano:   sp.StartUnixNano,
+			EndUnixNano:     spanLastSeen(sp),
 		})
 	}
 
