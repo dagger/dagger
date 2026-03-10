@@ -1668,8 +1668,15 @@ Stage 17 implementation note:
 5. Current V3 shell shape:
    - `Services` is now a live left-nav domain at `/services`
    - the inventory is a simple list of services with status, kind, creator, session, and last activity
-   - each detail page stays thin: recap card, definition card, and an activity table
-6. Current live validation checkpoint:
+   - each detail page stays thin: recap card, definition card, a logs section, and an activity table
+6. Current service-log rule:
+   - service detail pages now print conservative service logs derived from the service activity subtree, not from the deprecated generic render layer
+   - include:
+     - descendant non-DAG spans such as `exec ...` process spans
+     - error/exception span events inside the service lifecycle subtree
+     - explicit span status messages such as `Service.up` failure text
+   - do not claim stdout/stderr fidelity when the trace only contains span names, status text, and exception events
+7. Current live validation checkpoint:
    - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
    - the current data now renders two real nginx-backed services
    - one service shows a failed `Service.up`, and another shows an open `Service.up` as `running`

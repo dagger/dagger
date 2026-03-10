@@ -1335,9 +1335,39 @@ function renderServiceDetail(entity, row) {
           ]),
         )}
       </div>
+      ${detailSection("Logs", renderServiceLogs(row.logs || []))}
       ${detailSection("Activity", activityTable)}
     </div>
   `;
+}
+
+function renderServiceLogs(logs) {
+  if (!Array.isArray(logs) || logs.length === 0) {
+    return `<p class="v3-detail-empty">No service log lines observed in the service lifecycle subtree.</p>`;
+  }
+  return `
+    <div class="v3-service-log-list">
+      ${logs
+        .map(
+          (item) => `
+            <div class="v3-service-log-line">
+              <span class="v3-service-log-time">${escapeHTML(relativeTimeFromNow(item.timeUnixNano))}</span>
+              <span class="v3-service-log-level">${serviceLogLevelPill(item.level)}</span>
+              <span class="v3-service-log-source">${escapeHTML(item.source || item.kind || "log")}</span>
+              <span class="v3-service-log-message">${escapeHTML(item.message || "")}</span>
+            </div>`,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function serviceLogLevelPill(level) {
+  const normalized = String(level || "").toLowerCase();
+  if (normalized === "error" || normalized === "failed") {
+    return tonePill("warn", "error");
+  }
+  return tonePill("neutral", normalized || "info");
 }
 
 function workspaceOpDetailItem(label, value) {

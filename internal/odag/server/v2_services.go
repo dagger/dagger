@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/internal/odag/derive"
 	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
@@ -32,6 +33,7 @@ type v2Service struct {
 	PipelineClientID      string              `json:"pipelineClientID,omitempty"`
 	PipelineCommand       string              `json:"pipelineCommand,omitempty"`
 	Activity              []v2ServiceActivity `json:"activity,omitempty"`
+	Logs                  []v2ServiceLog      `json:"logs,omitempty"`
 }
 
 type v2ServiceActivity struct {
@@ -44,6 +46,16 @@ type v2ServiceActivity struct {
 	EndUnixNano   int64  `json:"endUnixNano"`
 	SessionID     string `json:"sessionID,omitempty"`
 	ClientID      string `json:"clientID,omitempty"`
+}
+
+type v2ServiceLog struct {
+	ID           string `json:"id"`
+	SpanID       string `json:"spanID,omitempty"`
+	TimeUnixNano int64  `json:"timeUnixNano"`
+	Level        string `json:"level,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Message      string `json:"message"`
+	Kind         string `json:"kind,omitempty"`
 }
 
 func (s *Server) handleV2Services(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +104,15 @@ func (s *Server) handleV2Services(w http.ResponseWriter, r *http.Request) {
 func collectV2Services(traceStatus, traceID string, q v2Query, spans []store.SpanRecord, proj *transform.TraceProjection, scopeIdx *derive.ScopeIndex) []v2Service {
 	if proj == nil || scopeIdx == nil {
 		return nil
+	}
+
+	spanByID := make(map[string]store.SpanRecord, len(spans))
+	childSpanIDs := make(map[string][]string, len(spans))
+	for _, sp := range spans {
+		spanByID[sp.SpanID] = sp
+		if sp.ParentSpanID != "" {
+			childSpanIDs[sp.ParentSpanID] = append(childSpanIDs[sp.ParentSpanID], sp.SpanID)
+		}
 	}
 
 	pipelinesByClient := map[string][]v2CLIRun{}
@@ -223,6 +244,7 @@ func collectV2Services(traceStatus, traceID string, q v2Query, spans []store.Spa
 				ContainerDagqlID:      containerDagqlID,
 				TunnelUpstreamDagqlID: tunnelUpstreamDagqlID,
 				Activity:              activities,
+				Logs:                  collectV2ServiceLogs(traceID, q, spanByID, childSpanIDs, activities),
 			}
 			if pipeline != nil {
 				item.PipelineID = pipeline.ID
@@ -424,4 +446,213 @@ func servicePipelineForActivities(
 		}
 	}
 	return nil
+}
+
+func collectV2ServiceLogs(
+	traceID string,
+	q v2Query,
+	spanByID map[string]store.SpanRecord,
+	childSpanIDs map[string][]string,
+	activities []v2ServiceActivity,
+) []v2ServiceLog {
+	if len(activities) == 0 {
+		return nil
+	}
+
+	visited := map[string]struct{}{}
+	logs := make([]v2ServiceLog, 0)
+	logKeys := map[string]struct{}{}
+	for _, activity := range activities {
+		spanID := serviceActivitySpanID(traceID, activity.CallID)
+		if spanID == "" {
+			continue
+		}
+		stack := []string{spanID}
+		for len(stack) > 0 {
+			current := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if current == "" {
+				continue
+			}
+			if _, seen := visited[current]; seen {
+				continue
+			}
+			visited[current] = struct{}{}
+
+			sp, ok := spanByID[current]
+			if !ok {
+				continue
+			}
+			env, err := decodeV2SpanEnvelope(sp.DataJSON)
+			if err == nil {
+				for _, line := range serviceSpanLogEntries(sp, env, q.IncludeInternal) {
+					key := fmt.Sprintf("%s|%d|%s|%s|%s", line.Kind, line.TimeUnixNano, line.Source, line.Level, line.Message)
+					if _, exists := logKeys[key]; exists {
+						continue
+					}
+					logKeys[key] = struct{}{}
+					logs = append(logs, line)
+				}
+			}
+			children := childSpanIDs[current]
+			for i := len(children) - 1; i >= 0; i-- {
+				stack = append(stack, children[i])
+			}
+		}
+	}
+
+	sort.Slice(logs, func(i, j int) bool {
+		if logs[i].TimeUnixNano != logs[j].TimeUnixNano {
+			return logs[i].TimeUnixNano < logs[j].TimeUnixNano
+		}
+		if logs[i].SpanID != logs[j].SpanID {
+			return logs[i].SpanID < logs[j].SpanID
+		}
+		return logs[i].ID < logs[j].ID
+	})
+	return logs
+}
+
+func serviceActivitySpanID(traceID, callID string) string {
+	prefix := traceID + "/"
+	if strings.HasPrefix(callID, prefix) {
+		return strings.TrimPrefix(callID, prefix)
+	}
+	return ""
+}
+
+func serviceSpanLogEntries(sp store.SpanRecord, env v2SpanEnvelope, includeInternal bool) []v2ServiceLog {
+	internal, _ := getV2Bool(env.Attributes, telemetry.UIInternalAttr)
+	lines := make([]v2ServiceLog, 0, 3)
+	seenMessages := map[string]struct{}{}
+
+	for idx, event := range env.Events {
+		line, ok := serviceEventLogLine(sp, event, idx)
+		if !ok {
+			continue
+		}
+		if !includeInternal && internal && line.Level != "error" {
+			continue
+		}
+		seenMessages[line.Message] = struct{}{}
+		lines = append(lines, line)
+	}
+
+	if msg := strings.TrimSpace(sp.StatusMessage); msg != "" {
+		if _, exists := seenMessages[msg]; !exists {
+			line := v2ServiceLog{
+				ID:           fmt.Sprintf("%s/status", sp.SpanID),
+				SpanID:       sp.SpanID,
+				TimeUnixNano: serviceLogTime(sp.EndUnixNano, sp.StartUnixNano),
+				Level:        serviceStatusLevel(sp.StatusCode),
+				Source:       sp.Name,
+				Message:      msg,
+				Kind:         "status",
+			}
+			if includeInternal || !internal || line.Level == "error" {
+				lines = append(lines, line)
+			}
+		}
+	}
+
+	if !serviceSpanIsDagCall(env.Attributes) && serviceSpanLooksLikeProcessLog(sp.Name) {
+		if msg := strings.TrimSpace(sp.Name); msg != "" {
+			line := v2ServiceLog{
+				ID:           fmt.Sprintf("%s/span", sp.SpanID),
+				SpanID:       sp.SpanID,
+				TimeUnixNano: serviceLogTime(sp.StartUnixNano, sp.EndUnixNano),
+				Level:        "info",
+				Source:       serviceSpanLogSource(sp.Name),
+				Message:      msg,
+				Kind:         "span",
+			}
+			if includeInternal || !internal {
+				lines = append(lines, line)
+			}
+		}
+	}
+
+	return lines
+}
+
+func serviceEventLogLine(sp store.SpanRecord, event map[string]any, idx int) (v2ServiceLog, bool) {
+	name, _ := getV2String(event, "name")
+	if name == "" {
+		return v2ServiceLog{}, false
+	}
+	attrs, _ := event["attributes"].(map[string]any)
+	timeUnixNano, _ := event["time_unix_nano"].(float64)
+	message := ""
+	level := "info"
+	switch {
+	case name == "exception":
+		if text, ok := getV2String(attrs, "exception.message"); ok && strings.TrimSpace(text) != "" {
+			message = strings.TrimSpace(text)
+		} else if text, ok := getV2String(attrs, "exception.type"); ok && strings.TrimSpace(text) != "" {
+			message = strings.TrimSpace(text)
+		} else {
+			message = "exception"
+		}
+		level = "error"
+	case strings.HasPrefix(strings.ToLower(name), "log"):
+		if text, ok := getV2String(attrs, "message"); ok && strings.TrimSpace(text) != "" {
+			message = strings.TrimSpace(text)
+		} else if text, ok := getV2String(attrs, "log.message"); ok && strings.TrimSpace(text) != "" {
+			message = strings.TrimSpace(text)
+		}
+	}
+	if strings.TrimSpace(message) == "" {
+		return v2ServiceLog{}, false
+	}
+	return v2ServiceLog{
+		ID:           fmt.Sprintf("%s/event/%d", sp.SpanID, idx),
+		SpanID:       sp.SpanID,
+		TimeUnixNano: int64(timeUnixNano),
+		Level:        level,
+		Source:       sp.Name,
+		Message:      message,
+		Kind:         "event",
+	}, true
+}
+
+func serviceStatusLevel(statusCode string) string {
+	switch strings.TrimSpace(statusCode) {
+	case "STATUS_CODE_ERROR", "ERROR":
+		return "error"
+	default:
+		return "info"
+	}
+}
+
+func serviceSpanLogSource(name string) string {
+	if strings.HasPrefix(name, "exec ") {
+		return "process"
+	}
+	return "span"
+}
+
+func serviceSpanLooksLikeProcessLog(name string) bool {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return false
+	}
+	if strings.HasPrefix(name, "exec ") {
+		return true
+	}
+	if strings.Contains(name, "stdout") || strings.Contains(name, "stderr") {
+		return true
+	}
+	return false
+}
+
+func serviceSpanIsDagCall(attrs map[string]any) bool {
+	call, ok := getV2String(attrs, telemetry.DagCallAttr)
+	return ok && strings.TrimSpace(call) != ""
+}
+
+func serviceLogTime(primary, fallback int64) int64 {
+	if primary > 0 {
+		return primary
+	}
+	return fallback
 }

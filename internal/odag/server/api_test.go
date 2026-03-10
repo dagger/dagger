@@ -3213,6 +3213,8 @@ func TestV2Services(t *testing.T) {
 	asServiceHex := "2222222222222222"
 	upHex := "3333333333333333"
 	bindHex := "4444444444444444"
+	execHex := "5555555555555555"
+	tunnelHex := "6666666666666666"
 
 	commandArgs := []string{"/usr/local/bin/dagger", "shell", "-c", "container | from nginx | as-service | up"}
 	serviceState := map[string]any{
@@ -3303,7 +3305,10 @@ func TestV2Services(t *testing.T) {
 										Type:           &callpbv1.Type{NamedType: "Void"},
 									})),
 								},
-								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
+								Status: &tracepb.Status{
+									Code:    tracepb.Status_STATUS_CODE_ERROR,
+									Message: "failed to select host service: no ports to forward",
+								},
 							},
 							{
 								TraceId:           mustDecodeHex(t, traceIDHex),
@@ -3331,6 +3336,46 @@ func TestV2Services(t *testing.T) {
 									})),
 								},
 								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, execHex),
+								ParentSpanId:      mustDecodeHex(t, upHex),
+								Name:              "exec /docker-entrypoint.sh nginx -g daemon off;",
+								StartTimeUnixNano: 17,
+								EndTimeUnixNano:   23,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_UNSET},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, tunnelHex),
+								ParentSpanId:      mustDecodeHex(t, upHex),
+								Name:              "Host.tunnel",
+								StartTimeUnixNano: 18,
+								EndTimeUnixNano:   22,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.UIInternalAttr, "true"),
+								},
+								Events: []*tracepb.Span_Event{
+									{
+										TimeUnixNano: 22,
+										Name:         "exception",
+										Attributes: []*commonpb.KeyValue{
+											kvString(t, "exception.message", "no ports to forward"),
+											kvString(t, "exception.type", "*errors.errorString"),
+										},
+									},
+								},
+								Status: &tracepb.Status{
+									Code:    tracepb.Status_STATUS_CODE_ERROR,
+									Message: "no ports to forward",
+								},
 							},
 						},
 					},
@@ -3373,6 +3418,12 @@ func TestV2Services(t *testing.T) {
 				Name string `json:"name"`
 				Role string `json:"role"`
 			} `json:"activity"`
+			Logs []struct {
+				Level   string `json:"level"`
+				Source  string `json:"source"`
+				Message string `json:"message"`
+				Kind    string `json:"kind"`
+			} `json:"logs"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(servicesRec.Body.Bytes(), &servicesResp); err != nil {
@@ -3403,6 +3454,18 @@ func TestV2Services(t *testing.T) {
 	}
 	if service.Activity[2].Name != "Container.asService" || service.Activity[2].Role != "producer" {
 		t.Fatalf("unexpected producer activity: %#v", service.Activity[2])
+	}
+	if len(service.Logs) != 3 {
+		t.Fatalf("expected 3 service log rows, got %#v", service.Logs)
+	}
+	if service.Logs[0].Kind != "span" || service.Logs[0].Source != "process" || service.Logs[0].Message != "exec /docker-entrypoint.sh nginx -g daemon off;" {
+		t.Fatalf("unexpected first service log: %#v", service.Logs[0])
+	}
+	if service.Logs[1].Kind != "event" || service.Logs[1].Level != "error" || service.Logs[1].Message != "no ports to forward" {
+		t.Fatalf("unexpected second service log: %#v", service.Logs[1])
+	}
+	if service.Logs[2].Kind != "status" || service.Logs[2].Source != "Service.up" || service.Logs[2].Message != "failed to select host service: no ports to forward" {
+		t.Fatalf("unexpected final service log: %#v", service.Logs[2])
 	}
 }
 

@@ -2619,6 +2619,47 @@ body {
   color: #c8ccd2;
 }
 
+.v3-service-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v3-service-log-line {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) auto minmax(120px, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(104, 124, 152, 0.28);
+  background: rgba(13, 18, 27, 0.82);
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.8rem;
+}
+
+.v3-service-log-time {
+  color: #8f9399;
+  white-space: nowrap;
+}
+
+.v3-service-log-level {
+  display: inline-flex;
+}
+
+.v3-service-log-source {
+  color: #c7d4e6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v3-service-log-message {
+  color: #e5edf7;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .v3-pill {
   min-height: 28px;
   padding: 0 10px;
