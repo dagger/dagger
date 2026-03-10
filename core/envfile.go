@@ -215,18 +215,14 @@ func (ef *EnvFile) LookupCaseInsensitive(ctx context.Context, name string) (stri
 }
 
 func (ef *EnvFile) add(name, value string) {
-	gotOne := false
 	for i, v := range ef.Environ {
 		k, _, _ := strings.Cut(v, "=")
 		if k == name {
 			ef.Environ[i] = name + "=" + value
-			gotOne = true
-			break
+			return
 		}
 	}
-	if !gotOne {
-		ef.Environ = append(ef.Environ, name+"="+value)
-	}
+	ef.Environ = append(ef.Environ, name+"="+value)
 }
 
 // AsFile converts the EnvFile to a File containing the environment variables

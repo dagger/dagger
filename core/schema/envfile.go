@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
 )
 
@@ -111,7 +112,8 @@ type withVariableArgs struct {
 }
 
 func (s envfileSchema) withVariable(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (*core.EnvFile, error) {
-	return parent.Self().WithVariable(args.Name.String(), args.Value.String()), nil
+	escapedValue := dotenv.Escape(args.Value.String())
+	return parent.Self().WithVariable(args.Name.String(), escapedValue), nil
 }
 
 func (s envfileSchema) withoutVariable(ctx context.Context, parent *core.EnvFile, args struct {

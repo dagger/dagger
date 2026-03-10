@@ -37,7 +37,7 @@ func NewGraphEvaluator(environ []string, systemLookup func(string) string, noUns
 
 	// Parse all entries first (without expansion)
 	for _, line := range environ {
-		line = strings.TrimSpace(line)
+		line = strings.TrimSuffix(line, "\n")
 		if line == "" {
 			continue
 		}
@@ -241,7 +241,6 @@ func All(environ []string, systemLookup func(string) string, noUnset bool) (map[
 func AllRaw(environ []string) map[string]string {
 	vars := make(map[string]string, len(environ))
 	for _, kv := range environ {
-		kv = strings.TrimSpace(kv)
 		if kv == "" {
 			continue // skip empty lines
 		}
