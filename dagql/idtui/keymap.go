@@ -39,7 +39,7 @@ type KeymapBar struct {
 	PressedKeyAt time.Time
 }
 
-func (kb *KeymapBar) Render(ctx tuist.RenderContext) tuist.RenderResult {
+func (kb *KeymapBar) Render(ctx tuist.Context) tuist.RenderResult {
 	if kb.Keys == nil {
 		return tuist.RenderResult{}
 	}
