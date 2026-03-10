@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -11,6 +12,7 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 var traceOrgFlag string
@@ -59,40 +61,66 @@ func Trace(cmd *cobra.Command, args []string) error {
 			return nil, err
 		}
 
-		exp := Frontend.SpanExporter()
+		spanExp := Frontend.SpanExporter()
+		logExp := Frontend.LogExporter()
 
 		noop := func() error { return nil }
 
-		err = client.StreamSpans(ctx, orgID, traceID, func(spanDatas []cloud.SpanData) {
-			slog.Debug("received spans from cloud", "count", len(spanDatas))
+		// We need the root span ID to stream logs with descendants.
+		// Use a sync.Once to start log streaming as soon as we find it.
+		var logStreamOnce sync.Once
+		eg, ctx := errgroup.WithContext(ctx)
 
-			// Convert to OTLP proto, then to OTel SDK ReadOnlySpans,
-			// and feed through the frontend's exporter pipeline so
-			// rendering is triggered correctly.
-			resourceSpans := cloud.SpansToPB(spanDatas)
-			spans := telemetry.SpansFromPB(resourceSpans)
-			if len(spans) == 0 {
-				return
-			}
+		eg.Go(func() error {
+			return client.StreamSpans(ctx, orgID, traceID, func(spanDatas []cloud.SpanData) {
+				slog.Debug("received spans from cloud", "count", len(spanDatas))
 
-			if err := exp.ExportSpans(ctx, spans); err != nil {
-				slog.Warn("error exporting spans", "err", err)
-				return
-			}
-
-			// Find the root span (no parent) and set it as the primary span
-			// so the TUI shows the trace tree rooted there.
-			for _, span := range spans {
-				if !span.Parent().SpanID().IsValid() {
-					spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
-					slog.Debug("setting primary span", "spanID", spanID)
-					Frontend.SetPrimary(spanID)
-					break
+				// Convert to OTLP proto, then to OTel SDK ReadOnlySpans,
+				// and feed through the frontend's exporter pipeline so
+				// rendering is triggered correctly.
+				resourceSpans := cloud.SpansToPB(spanDatas)
+				spans := telemetry.SpansFromPB(resourceSpans)
+				if len(spans) == 0 {
+					return
 				}
-			}
+
+				if err := spanExp.ExportSpans(ctx, spans); err != nil {
+					slog.Warn("error exporting spans", "err", err)
+					return
+				}
+
+				// Find the root span (no parent) and set it as the primary span
+				// so the TUI shows the trace tree rooted there.
+				for _, span := range spans {
+					if !span.Parent().SpanID().IsValid() {
+						spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
+						slog.Debug("setting primary span", "spanID", spanID)
+						Frontend.SetPrimary(spanID)
+
+						// Start streaming logs for the root span and all descendants.
+						rootSpanHex := span.SpanContext().SpanID().String()
+						logStreamOnce.Do(func() {
+							eg.Go(func() error {
+								return client.StreamLogs(ctx, orgID, traceID, rootSpanHex, func(logs []cloud.LogMessage) {
+									slog.Debug("received logs from cloud", "count", len(logs))
+									records := cloud.LogMessagesToRecords(traceID, logs)
+									if len(records) == 0 {
+										return
+									}
+									if err := logExp.Export(ctx, records); err != nil {
+										slog.Warn("error exporting logs", "err", err)
+									}
+								})
+							})
+						})
+						break
+					}
+				}
+			})
 		})
-		if err != nil {
-			return noop, fmt.Errorf("stream spans: %w", err)
+
+		if err := eg.Wait(); err != nil {
+			return noop, fmt.Errorf("stream trace: %w", err)
 		}
 
 		return noop, nil
