@@ -836,7 +836,7 @@ function renderWorkspaceFilter() {
   const selected = currentWorkspaceFilterID();
   const status = state.live.workspaces.status;
   const options = [];
-  const allLabel = status === "error" ? "Workspaces unavailable" : status === "loaded" ? "All Workspaces" : "Loading Workspaces...";
+  const allLabel = status === "error" ? "Workspaces unavailable" : status === "loaded" ? "Workspace" : "Loading Workspaces...";
   options.push(`<option value="">${escapeHTML(allLabel)}</option>`);
   for (const row of rows) {
     options.push(`<option value="${escapeHTML(row.routeID)}">${escapeHTML(workspaceFilterOptionLabel(row))}</option>`);
