@@ -194,6 +194,12 @@ type SpanTreeView struct {
 	fe     *frontendPretty
 	spanID dagui.SpanID
 
+	// parent points to the parent SpanTreeView (nil for top-level nodes).
+	parent *SpanTreeView
+	// indexInParent is this node's position in parent.children (or in
+	// fe.topTrees for top-level nodes).
+	indexInParent int
+
 	// prefix holds the pre-computed indentation from ancestors.
 	// Set by the parent before RenderChild is called.
 	prefix treePrefix
@@ -1360,8 +1366,10 @@ func (fe *frontendPretty) syncSpanTreeState() {
 
 	body := fe.rowsView.Body
 	newTops := make([]*SpanTreeView, 0, len(body))
-	for _, tree := range body {
+	for i, tree := range body {
 		st := fe.getOrCreateSpanTree(tree.Span.ID)
+		st.parent = nil
+		st.indexInParent = i
 
 		// Top-level prefix (zoom indentation if applicable)
 		var newPrefix treePrefix
@@ -1451,6 +1459,8 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 			st.childMap[id] = child
 			fe.spanTrees[id] = child
 		}
+		child.parent = st
+		child.indexInParent = i
 
 		// Compute child prefix
 		hasNext := i < len(childTrees)-1
@@ -1519,18 +1529,10 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		return nil
 	}
 
-	// Find the focused line by walking the tree structure.
+	// Find the focused line by walking up from the focused node.
 	focusLine := -1
 	if fe.FocusedSpan.IsValid() {
-		offset := 0
-		for i, tree := range fe.topTrees {
-			offset += topGapCounts[i]
-			if line := fe.findFocusInSubtree(tree, offset); line >= 0 {
-				focusLine = line
-				break
-			}
-			offset += tree.totalLineCount()
-		}
+		focusLine = fe.findFocusLine(topGapCounts)
 	}
 
 	// Truncate content below focus so the focused item stays onscreen.
@@ -1568,26 +1570,58 @@ func (s *SpanTreeView) totalLineCount() int {
 	return n
 }
 
-// findFocusInSubtree recursively searches for the focused span in the tree,
-// returning its line offset relative to the given base offset, or -1 if not found.
-func (fe *frontendPretty) findFocusInSubtree(st *SpanTreeView, offset int) int {
-	if st.spanID == fe.FocusedSpan {
-		return offset
-	}
-	offset += st.selfLineCount
-	// Guard: metadata slices may not be populated yet if this tree
-	// hasn't been rendered in the current frame.
-	if len(st.childGapCounts) != len(st.children) || len(st.childLineCounts) != len(st.children) {
+// findFocusLine returns the line offset of the focused span within the
+// rendered output, or -1 if not found. Instead of searching top-down
+// through the entire tree (O(nodes)), it walks up from the focused
+// SpanTreeView to the root, accumulating offsets (O(depth × siblings)).
+func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
+	focused, ok := fe.spanTrees[fe.FocusedSpan]
+	if !ok {
 		return -1
 	}
-	for i, child := range st.children {
-		offset += st.childGapCounts[i]
-		if line := fe.findFocusInSubtree(child, offset); line >= 0 {
-			return line
-		}
-		offset += st.childLineCounts[i]
+
+	// Walk up from focused node to root, collecting the path.
+	// We need the path so we can compute offsets top-down.
+	var path []*SpanTreeView
+	for cur := focused; cur != nil; cur = cur.parent {
+		path = append(path, cur)
 	}
-	return -1
+
+	// The last element is a top-level node. Compute its base offset.
+	root := path[len(path)-1]
+	offset := 0
+	for i, tree := range fe.topTrees {
+		if tree == root {
+			offset += topGapCounts[i]
+			break
+		}
+		offset += topGapCounts[i] + tree.totalLineCount()
+	}
+
+	// Walk down the path (reverse order), adding offsets for preceding
+	// siblings at each level.
+	for j := len(path) - 1; j >= 0; j-- {
+		node := path[j]
+		if j < len(path)-1 {
+			// Add self lines of the parent (the node above us in the path).
+			parent := path[j+1]
+			offset += parent.selfLineCount
+
+			// Add lines from siblings before this node.
+			idx := node.indexInParent
+			if len(parent.childGapCounts) != len(parent.children) ||
+				len(parent.childLineCounts) != len(parent.children) {
+				return -1
+			}
+			for s := 0; s < idx; s++ {
+				offset += parent.childGapCounts[s] + parent.childLineCounts[s]
+			}
+			// Add the gap before this node itself.
+			offset += parent.childGapCounts[idx]
+		}
+	}
+
+	return offset
 }
 
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
