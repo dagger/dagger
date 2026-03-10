@@ -752,9 +752,11 @@ function entityPath(entityID, detailID = "") {
 }
 
 async function ensureActiveEntityData() {
-  await ensureLiveDomainData(liveDomainConfigs.sessions);
-  await ensureLiveDomainData(liveDomainConfigs.workspaces);
-  await ensureLiveDomainData(liveDomainConfigs.clients);
+  await Promise.all([
+    ensureLiveDomainData(liveDomainConfigs.sessions),
+    ensureLiveDomainData(liveDomainConfigs.workspaces),
+    ensureLiveDomainData(liveDomainConfigs.clients),
+  ]);
   if (isOverviewRoute()) {
     await ensureOverviewData();
     return;
@@ -836,7 +838,7 @@ function renderWorkspaceFilter() {
   const selected = currentWorkspaceFilterID();
   const status = state.live.workspaces.status;
   const options = [];
-  const allLabel = status === "error" ? "Workspaces unavailable" : status === "loaded" ? "Workspace" : "Loading Workspaces...";
+  const allLabel = status === "error" ? "Workspaces unavailable" : "Workspace";
   options.push(`<option value="">${escapeHTML(allLabel)}</option>`);
   for (const row of rows) {
     options.push(`<option value="${escapeHTML(row.routeID)}">${escapeHTML(workspaceFilterOptionLabel(row))}</option>`);

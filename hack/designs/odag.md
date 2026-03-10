@@ -1947,6 +1947,7 @@ Stage 29 implementation note:
 2. Current UI wiring:
    - global `Workspace` selector is populated from live `Workspaces`
    - `Session` filter is a searchable popover fed from live `Sessions`
+   - the topbar hydrates `Sessions`, `Workspaces`, and `Clients` in parallel; selector feeds must not block each other sequentially
    - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name
    - local workspace labels may append a compact `@host` qualifier derived from short `dagger.io/client.machine_id` when attached client telemetry makes that identity available
    - `Workspaces` is no longer shown as a left-nav domain; workspace context is entered through the selector and direct workspace routes instead
@@ -1956,7 +1957,10 @@ Stage 29 implementation note:
    - use live `Workspace.ops` as the compatibility shim until first-class workspace attachments exist in telemetry
    - derive workspace ownership from attached client IDs and pipeline IDs visible in those ops
    - allow a session row to appear under a workspace if that workspace observed at least one client inside the session, but do not use bare session membership to smear all other entity rows onto that workspace
-4. Detail-page rule:
+4. Current performance rule:
+   - cache per-trace V2 projection/scope results in-memory on the server and invalidate affected traces on ingest
+   - this is still derived-on-read rather than true persistent materialization, but it keeps selector-style feeds from recomputing the same trace scope repeatedly in one browsing session
+5. Detail-page rule:
    - workspace/session qualifiers primarily filter overview and inventory pages
    - a session detail page remains an execution hub and may still show entities across all workspaces present in that session
 

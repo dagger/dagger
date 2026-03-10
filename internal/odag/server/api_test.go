@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -2588,6 +2589,88 @@ func TestV2Terminals(t *testing.T) {
 		if activity.Kind != "exec" {
 			t.Fatalf("unexpected activity kind: %#v", item.Activities)
 		}
+	}
+}
+
+func TestV2TraceScopeCacheInvalidatesOnIngest(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "odag.db")
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     dbPath,
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "11111111111111111111111111111111"
+	rootHex := "aaaaaaaaaaaaaaaa"
+	childHex := "bbbbbbbbbbbbbbbb"
+
+	ingest := func(spans ...*tracepb.Span) {
+		t.Helper()
+		reqPB := &coltracepb.ExportTraceServiceRequest{
+			ResourceSpans: []*tracepb.ResourceSpans{
+				{
+					Resource: &resourcepb.Resource{},
+					ScopeSpans: []*tracepb.ScopeSpans{
+						{
+							Scope: &commonpb.InstrumentationScope{Name: "dagger.io/test"},
+							Spans: spans,
+						},
+					},
+				},
+			},
+		}
+		body, err := proto.Marshal(reqPB)
+		if err != nil {
+			t.Fatalf("marshal ingest payload: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		srv.http.Handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("ingest failed: status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+
+	ingest(&tracepb.Span{
+		TraceId:           mustDecodeHex(t, traceIDHex),
+		SpanId:            mustDecodeHex(t, rootHex),
+		Name:              "root",
+		StartTimeUnixNano: 1,
+		EndTimeUnixNano:   2,
+		Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+	})
+
+	spans, _, _, err := srv.loadV2TraceScope(context.Background(), traceIDHex)
+	if err != nil {
+		t.Fatalf("load trace scope after first ingest: %v", err)
+	}
+	if len(spans) != 1 {
+		t.Fatalf("expected one cached span after first ingest, got %d", len(spans))
+	}
+
+	ingest(&tracepb.Span{
+		TraceId:           mustDecodeHex(t, traceIDHex),
+		SpanId:            mustDecodeHex(t, childHex),
+		ParentSpanId:      mustDecodeHex(t, rootHex),
+		Name:              "child",
+		StartTimeUnixNano: 3,
+		EndTimeUnixNano:   4,
+		Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+	})
+
+	spans, _, _, err = srv.loadV2TraceScope(context.Background(), traceIDHex)
+	if err != nil {
+		t.Fatalf("load trace scope after second ingest: %v", err)
+	}
+	if len(spans) != 2 {
+		t.Fatalf("expected cache invalidation to expose both spans, got %d", len(spans))
 	}
 }
 

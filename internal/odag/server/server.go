@@ -35,10 +35,11 @@ type Config struct {
 }
 
 type Server struct {
-	cfg   Config
-	store *store.Store
-	http  *http.Server
-	web   *webAssets
+	cfg          Config
+	store        *store.Store
+	http         *http.Server
+	web          *webAssets
+	v2ScopeCache *v2TraceScopeCache
 }
 
 func New(cfg Config) (*Server, error) {
@@ -59,9 +60,10 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	srv := &Server{
-		cfg:   cfg,
-		store: st,
-		web:   web,
+		cfg:          cfg,
+		store:        st,
+		web:          web,
+		v2ScopeCache: newV2TraceScopeCache(),
 	}
 
 	mux := http.NewServeMux()
@@ -374,6 +376,7 @@ func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("persist spans: %v", err), http.StatusInternalServerError)
 		return
 	}
+	s.v2ScopeCache.invalidate(sortedTraceIDs(traceCounts)...)
 	for _, traceID := range sortedTraceIDs(traceCounts) {
 		log.Printf("odag: client %s completed trace %s (%d spans)", clientAddr, traceID, traceCounts[traceID])
 	}

@@ -871,18 +871,28 @@ func (s *Server) projectTraceWithOptions(ctx context.Context, traceID string, op
 }
 
 func (s *Server) loadV2TraceScope(ctx context.Context, traceID string) ([]store.SpanRecord, *transform.TraceProjection, *derive.ScopeIndex, error) {
-	spans, err := s.store.ListTraceSpans(ctx, traceID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	proj, err := transform.ProjectTraceWithOptions(traceID, spans, transform.ProjectOptions{
-		IncludeInternal: true,
-		ApplyKeepRules:  false,
+	scope, err := s.v2ScopeCache.loadOrCompute(ctx, traceID, func(ctx context.Context) (v2TraceScope, error) {
+		spans, err := s.store.ListTraceSpans(ctx, traceID)
+		if err != nil {
+			return v2TraceScope{}, err
+		}
+		proj, err := transform.ProjectTraceWithOptions(traceID, spans, transform.ProjectOptions{
+			IncludeInternal: true,
+			ApplyKeepRules:  false,
+		})
+		if err != nil {
+			return v2TraceScope{}, err
+		}
+		return v2TraceScope{
+			spans:    spans,
+			proj:     proj,
+			scopeIdx: derive.BuildScopeIndex(traceID, spans, proj),
+		}, nil
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return spans, proj, derive.BuildScopeIndex(traceID, spans, proj), nil
+	return scope.spans, scope.proj, scope.scopeIdx, nil
 }
 
 func parseV2Query(r *http.Request) (v2Query, error) {
