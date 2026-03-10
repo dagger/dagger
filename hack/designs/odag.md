@@ -54,6 +54,7 @@
 11. V3 home information architecture:
    - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, Sessions, Pipelines (`dagger call` style submitted call chains), Git Remotes, Registries.
    - support views that are too overlapping for top-level placement should stay routable without taking their own sidebar slot; today `Shells` folds under `Repls`, and `Workspace Ops` folds under `Workspaces`.
+   - the brand block (`icon + ODAG`) should link to a concise overview dashboard rather than to another entity domain.
    - while taxonomy is still settling, the right pane should stay inventory-first: click a domain on the left, see that domain's inventory immediately on the right.
    - deeper specialized views can return later once the base inventory interaction is obviously useful.
 12. Underlying execution/debug hierarchy:
@@ -1839,6 +1840,17 @@ Stage 24 implementation note:
    - `Workspace Ops` is no longer a top-level nav item; it remains a routable support view, but `Workspaces` owns host/workspace context in the sidebar
 3. Current navigation rule:
    - when a hidden support view is open directly, the sidebar highlights its parent domain (`Shells` -> `Repls`, `Workspace Ops` -> `Workspaces`) instead of leaving the nav with no active context
+
+Stage 25 implementation note:
+1. V3 now has a dedicated overview route at `/`, with `/overview` as an explicit alias.
+2. Current overview behavior:
+   - the sidebar brand block links to the overview dashboard
+   - entering the overview route triggers live hydration for all top-level live domains rather than only the currently selected domain
+   - the overview dashboard stays concise: one small summary strip plus one card per live top-level domain
+3. Current overview card rule:
+   - each card links to the domain inventory page
+   - each card shows only a count plus a few recent linked entities, not a second full table
+   - support views hidden from the navbar (`Shells`, `Workspace Ops`) stay out of the overview for now to preserve the top-level taxonomy cleanup
 
 ### Phase 3: Payload evolution (future)
 

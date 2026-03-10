@@ -1856,6 +1856,21 @@ body {
   align-items: center;
   gap: 12px;
   min-height: 40px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 14px;
+  transition: color 140ms ease;
+}
+
+.v3-sidebar-brand:hover .v3-brand-title,
+.v3-sidebar-brand.is-active .v3-brand-title {
+  color: #f7f8fa;
+}
+
+.v3-sidebar-brand:hover .v3-brand-icon,
+.v3-sidebar-brand.is-active .v3-brand-icon {
+  border-color: rgba(247, 215, 154, 0.3);
+  box-shadow: 0 0 0 1px rgba(247, 215, 154, 0.08);
 }
 
 .v3-brand-icon {
@@ -2058,6 +2073,126 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.v3-overview-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.v3-overview-stat,
+.v3-overview-card {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.v3-overview-stat {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+}
+
+.v3-overview-stat strong {
+  font-size: 1.3rem;
+  letter-spacing: -0.03em;
+}
+
+.v3-overview-stat span,
+.v3-overview-card-copy,
+.v3-overview-empty,
+.v3-overview-item-time {
+  color: #9ea3aa;
+}
+
+.v3-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.v3-overview-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.v3-overview-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.v3-overview-card-title {
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.v3-overview-card-title:hover,
+.v3-overview-item-link:hover {
+  color: #f7d79a;
+}
+
+.v3-overview-card-copy,
+.v3-overview-empty {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.v3-overview-card-side {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.v3-overview-count {
+  font-size: 1.45rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.v3-overview-list {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.v3-overview-item {
+  display: grid;
+  gap: 6px;
+}
+
+.v3-overview-item-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v3-overview-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v3-overview-item-status .v3-pill {
+  padding: 3px 8px;
+  font-size: 0.68rem;
+}
+
+@media (max-width: 920px) {
+  .v3-overview-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .v3-page-title {

@@ -1,3 +1,5 @@
+const OVERVIEW_ROUTE_ID = "overview";
+
 const entities = [
   {
     id: "terminals",
@@ -514,7 +516,7 @@ const liveDomainConfigs = {
 };
 
 const state = {
-  entityID: "terminals",
+  entityID: OVERVIEW_ROUTE_ID,
   detailID: "",
   detailGraphs: {
     pipelines: {},
@@ -579,6 +581,7 @@ const state = {
 };
 
 const els = {
+  sidebarBrand: document.getElementById("sidebarBrand"),
   pageLabel: document.getElementById("pageLabel"),
   pageTitle: document.getElementById("pageTitle"),
   entityNav: document.getElementById("entityNav"),
@@ -631,7 +634,20 @@ function parseRoute(pathname, search) {
     .split("/")
     .filter(Boolean)
     .map((segment) => decodeURIComponent(segment).toLowerCase());
-  const entityID = resolveEntityID(segments[0] || "") || legacyEntityID(search);
+  const legacyID = legacyEntityID(search);
+  if (!segments.length) {
+    return {
+      entityID: legacyID || OVERVIEW_ROUTE_ID,
+      detailID: "",
+    };
+  }
+  if (segments[0] === OVERVIEW_ROUTE_ID) {
+    return {
+      entityID: OVERVIEW_ROUTE_ID,
+      detailID: "",
+    };
+  }
+  const entityID = resolveEntityID(segments[0] || "") || legacyID;
   const detailID = supportsDetailRoute(entityID) && segments[1] ? segments[1] : "";
   return {
     entityID: entityID || entities[0].id,
@@ -677,7 +693,26 @@ function entityPath(entityID, detailID = "") {
 }
 
 async function ensureActiveEntityData() {
+  if (isOverviewRoute()) {
+    await ensureOverviewData();
+    return;
+  }
   const config = liveDomainConfigs[state.entityID];
+  if (!config) {
+    return;
+  }
+  await ensureLiveDomainData(config);
+}
+
+async function ensureOverviewData() {
+  const jobs = overviewEntities()
+    .map((entity) => liveDomainConfigs[entity.id])
+    .filter(Boolean)
+    .map((config) => ensureLiveDomainData(config));
+  await Promise.all(jobs);
+}
+
+async function ensureLiveDomainData(config) {
   if (!config) {
     return;
   }
@@ -775,6 +810,7 @@ function render() {
 
 function renderEntityNav() {
   const navEntityID = currentNavEntityID();
+  els.sidebarBrand.classList.toggle("is-active", isOverviewRoute());
 
   els.entityNav.innerHTML = entities
     .filter((entity) => !entity.navHidden)
@@ -814,6 +850,10 @@ function isMockEntity(entity) {
 }
 
 function renderMain() {
+  if (isOverviewRoute()) {
+    renderOverview();
+    return;
+  }
   const entity = currentEntity();
 
   if (state.detailID && supportsDetailRoute(entity.id)) {
@@ -828,6 +868,28 @@ function renderMain() {
   els.tableTitle.textContent = entity.label;
   els.tableMeta.textContent = model.meta;
   renderTable(model);
+}
+
+function renderOverview() {
+  const cards = overviewCards();
+  const loadedDomains = cards.filter((card) => card.state === "loaded").length;
+  const loadingDomains = cards.filter((card) => card.state === "loading" || card.state === "idle").length;
+  const errorDomains = cards.filter((card) => card.state === "error").length;
+  const totalEntities = cards.reduce((sum, card) => sum + card.count, 0);
+
+  document.title = "ODAG Overview";
+  els.pageLabel.textContent = "Overview";
+  els.pageTitle.textContent = "Live Entities";
+  els.tableTitle.textContent = "Live Domains";
+  els.tableMeta.textContent = `${totalEntities} entities across ${cards.length} domains`;
+  els.tableShell.innerHTML = renderOverviewHTML({
+    cards,
+    totalDomains: cards.length,
+    loadedDomains,
+    loadingDomains,
+    errorDomains,
+    totalEntities,
+  });
 }
 
 function renderTable(model) {
@@ -860,6 +922,69 @@ function renderTableHTML(model) {
       </thead>
       <tbody>${body}</tbody>
     </table>
+  `;
+}
+
+function renderOverviewHTML(model) {
+  const loadingDetail = model.loadingDomains > 0 ? `${model.loadingDomains} loading` : "All loaded";
+  const errorDetail = model.errorDomains > 0 ? `${model.errorDomains} unavailable` : "Healthy";
+  const cards = model.cards
+    .map((card) => {
+      const statePill = overviewDomainStatePill(card);
+      const items = card.items.length
+        ? `<ul class="v3-overview-list">${card.items
+            .map((item) => {
+              const status = item.status ? `<span class="v3-overview-item-status">${statusPill(item.status)}</span>` : "";
+              const time = item.timeLabel ? `<span class="v3-overview-item-time">${escapeHTML(item.timeLabel)}</span>` : "";
+              return `
+                <li class="v3-overview-item">
+                  <a class="v3-overview-item-link" href="${escapeHTML(item.href)}" data-route-path="${escapeHTML(item.href)}">${escapeHTML(item.label)}</a>
+                  <div class="v3-overview-item-meta">
+                    ${status}
+                    ${time}
+                  </div>
+                </li>
+              `;
+            })
+            .join("")}</ul>`
+        : `<p class="v3-overview-empty">${escapeHTML(card.emptyCopy)}</p>`;
+      return `
+        <section class="v3-overview-card">
+          <div class="v3-overview-card-head">
+            <div>
+              <a class="v3-overview-card-title" href="${escapeHTML(card.href)}" data-route-path="${escapeHTML(card.href)}">${escapeHTML(card.label)}</a>
+              <p class="v3-overview-card-copy">${escapeHTML(card.copy)}</p>
+            </div>
+            <div class="v3-overview-card-side">
+              <strong class="v3-overview-count">${escapeHTML(String(card.count))}</strong>
+              ${statePill}
+            </div>
+          </div>
+          ${items}
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="v3-overview-summary">
+      <article class="v3-overview-stat">
+        <p class="v3-foot-label">Domains</p>
+        <strong>${escapeHTML(String(model.totalDomains))}</strong>
+        <span>${escapeHTML(`${model.loadedDomains} loaded`)}</span>
+      </article>
+      <article class="v3-overview-stat">
+        <p class="v3-foot-label">Entities</p>
+        <strong>${escapeHTML(String(model.totalEntities))}</strong>
+        <span>${escapeHTML(loadingDetail)}</span>
+      </article>
+      <article class="v3-overview-stat">
+        <p class="v3-foot-label">API State</p>
+        <strong>${escapeHTML(errorDetail)}</strong>
+        <span>${escapeHTML(model.errorDomains > 0 ? "Some domains need attention" : "All live domains available")}</span>
+      </article>
+    </div>
+    <div class="v3-overview-grid">${cards}</div>
   `;
 }
 
@@ -2213,8 +2338,139 @@ function currentEntity() {
 }
 
 function currentNavEntityID() {
+  if (isOverviewRoute()) {
+    return "";
+  }
   const entity = findEntity(state.entityID) || entities[0];
   return entity.navOwnerID || entity.id;
+}
+
+function isOverviewRoute(entityID = state.entityID) {
+  return entityID === OVERVIEW_ROUTE_ID;
+}
+
+function overviewEntities() {
+  return entities.filter((entity) => !entity.navHidden && Boolean(liveDomainConfigs[entity.id]));
+}
+
+function overviewCards() {
+  return overviewEntities().map((entity) => {
+    const materialized = materializeEntity(entity);
+    const config = liveDomainConfigs[entity.id];
+    const live = state.live[config.stateKey];
+    const items = Array.isArray(materialized.liveItems) ? materialized.liveItems : [];
+    const recentItems = items
+      .slice()
+      .sort((left, right) => overviewItemUnixNano(right) - overviewItemUnixNano(left))
+      .slice(0, 3)
+      .map((row) => ({
+        href: overviewItemHref(materialized, row),
+        label: overviewItemLabel(materialized, row),
+        status: overviewItemStatus(materialized, row),
+        timeLabel: relativeTimeFromNow(overviewItemUnixNano(row)),
+      }));
+    return {
+      id: entity.id,
+      label: entity.label,
+      href: entityPath(entity.id),
+      state: live.status,
+      count: live.status === "loaded" ? items.length : 0,
+      items: recentItems,
+      emptyCopy: overviewEmptyCopy(entity.label, live),
+      copy: overviewCardCopy(entity.label, live, items.length),
+    };
+  });
+}
+
+function overviewCardCopy(label, live, count) {
+  if (live.status === "error") {
+    return live.error || `${label} failed to load.`;
+  }
+  if (live.status === "idle" || live.status === "loading") {
+    return `Loading live ${label.toLowerCase()} from the API.`;
+  }
+  if (count === 0) {
+    return `No ${label.toLowerCase()} detected in the current dataset.`;
+  }
+  return `${count} live ${label.toLowerCase()} detected.`;
+}
+
+function overviewEmptyCopy(label, live) {
+  if (live.status === "error") {
+    return live.error || `${label} are unavailable right now.`;
+  }
+  if (live.status === "idle" || live.status === "loading") {
+    return `Loading ${label.toLowerCase()}...`;
+  }
+  return `No ${label.toLowerCase()} detected.`;
+}
+
+function overviewDomainStatePill(card) {
+  switch (card.state) {
+    case "loaded":
+      return tonePill("good", "live");
+    case "error":
+      return tonePill("warn", "error");
+    default:
+      return tonePill("neutral", "loading");
+  }
+}
+
+function overviewItemUnixNano(row) {
+  const keys = [
+    "lastActivityUnixNano",
+    "lastSeenUnixNano",
+    "updatedUnixNano",
+    "endUnixNano",
+    "startUnixNano",
+    "firstSeenUnixNano",
+  ];
+  for (const key of keys) {
+    const value = Number(row?.[key] || 0);
+    if (value > 0) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function overviewItemHref(entity, row) {
+  if (row?.routeID && supportsDetailRoute(entity.id)) {
+    return entityPath(entity.id, row.routeID);
+  }
+  return entityPath(entity.id);
+}
+
+function overviewItemLabel(entity, row) {
+  switch (entity.id) {
+    case "pipelines":
+      return row.command || row.name || "Pipeline";
+    case "sessions":
+      return shortID(row.id);
+    case "workspaces":
+      return row.name || row.root || "Workspace";
+    case "git-remotes":
+      return row.ref || row.name || "Git Remote";
+    case "registries":
+      return row.ref || row.name || "Registry";
+    case "terminals":
+      return row.name || row.entryLabel || row.callName || "Terminal";
+    case "repls":
+      return row.command || row.name || "Repl";
+    case "checks":
+      return row.name || row.spanName || "Check";
+    case "services":
+      return row.name || row.imageRef || "Service";
+    default:
+      return row.name || row.id || entity.label;
+  }
+}
+
+function overviewItemStatus(entity, row) {
+  if (entity.id === "sessions") {
+    return sessionStatusLabel(row);
+  }
+  return row.status || "";
 }
 
 function currentDetailItem(entity) {

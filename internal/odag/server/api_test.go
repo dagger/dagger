@@ -4516,6 +4516,16 @@ func TestWebRouteFallbacks(t *testing.T) {
 		t.Fatalf("expected pipelines route to serve v3 shell, got %q", pipelinesRec.Body.String())
 	}
 
+	overviewReq := httptest.NewRequest(http.MethodGet, "/overview", nil)
+	overviewRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(overviewRec, overviewReq)
+	if overviewRec.Code != http.StatusOK {
+		t.Fatalf("overview page failed: %d %s", overviewRec.Code, overviewRec.Body.String())
+	}
+	if !strings.Contains(overviewRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected overview route to serve v3 shell, got %q", overviewRec.Body.String())
+	}
+
 	pipelineReq := httptest.NewRequest(http.MethodGet, "/pipelines/abc123", nil)
 	pipelineRec := httptest.NewRecorder()
 	srv.http.Handler.ServeHTTP(pipelineRec, pipelineReq)
