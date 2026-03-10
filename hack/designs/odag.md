@@ -1914,8 +1914,9 @@ Stage 28 design note:
 1. Workspace is not a simple child of session.
 2. Correct hierarchy for the emerging first-class Workspace concept:
    - one session has one root client and any number of descendant clients
-   - each non-nested client has exactly one workspace context, chosen at client start
-   - nested clients are the exception and may diverge from their parent's workspace context
+   - every client has exactly one workspace context
+   - a nested client may rebind to a different workspace than its parent
+   - that rebinding is local to the child client; the parent client is not considered to own or share the child's workspace context
    - therefore the useful ownership chain is `Session -> Client -> WorkspaceContext`, not `Workspace -> Session`
 3. UX consequence:
    - `Workspace` can still be the top-level durable grouping dimension because it behaves like a project-level lens over time
@@ -1924,7 +1925,8 @@ Stage 28 design note:
    - a session page should remain the authoritative execution hub and may legitimately show multiple workspace contexts if different clients inside that session loaded different workspaces
 4. Shim requirement for current telemetry:
    - until the engine emits authoritative first-class Workspace entities everywhere, ODAG should derive a `client -> workspace` attachment layer from the best available signals (for example main-module load context, workspace root detection, and workspace-op evidence)
-   - that shim should prefer one primary workspace attachment per non-nested client rather than allowing many-workspace ambiguity too early
+   - that shim should enforce exactly one primary workspace attachment per client
+   - nested-client workspace rebinding must stay attached to that child client only; do not smear the child's workspace upward onto the parent session/client context
    - all workspace-centric views should consume that attachment layer rather than assuming a single workspace per session
 5. Navigation implication:
    - top-level global selector should move toward `Workspace`
