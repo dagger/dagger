@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
@@ -119,7 +120,13 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	// Now write the client's go.mod (after directory structure is created)
 	clientGoMod := new(modfile.File)
 	clientGoMod.AddModuleStmt(clientModuleName)
-	clientGoMod.AddGoStmt(goVersion)
+	// Use the Go SDK's minimum version rather than the codegen runtime version,
+	// so the client go.mod stays compatible with the SDK's requirements.
+	clientGoVersion := goVersion
+	if sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil); err == nil && sdkMod.Go != nil {
+		clientGoVersion = sdkMod.Go.Version
+	}
+	clientGoMod.AddGoStmt(clientGoVersion)
 	// Set dagger.io/dagger version to match the engineVersion from dagger.json
 	// Only for released versions (not dev, not empty) - go mod tidy will fail for unreleased versions
 	// (replace directives added by tests/users will override this)
