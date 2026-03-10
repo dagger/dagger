@@ -1385,7 +1385,7 @@ function buildPipelineGraphModel(row, payload) {
   const aliases = pipelineSnapshotAliases(objects);
   const nodeW = 212;
   const nodeH = 84;
-  const colGap = 44;
+  const colGap = objects.length <= 2 ? 88 : 60;
   const rowGap = 18;
   const padX = 24;
   const padY = 24;

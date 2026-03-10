@@ -2496,6 +2496,7 @@ body {
   fill: none;
   stroke: rgba(124, 146, 182, 0.5);
   stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .v3-graph-edge.is-chain {
@@ -2534,7 +2535,7 @@ body {
   border: 1px solid rgba(124, 146, 182, 0.28);
   border-radius: 18px;
   background: rgba(17, 22, 30, 0.94);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 18px 28px -22px rgba(0, 0, 0, 0.72);
 }
 
 .v3-pipeline-node strong {
@@ -2559,7 +2560,7 @@ body {
 .v3-pipeline-node.is-output {
   border-color: rgba(110, 184, 255, 0.56);
   background: linear-gradient(180deg, rgba(19, 31, 52, 0.96), rgba(13, 18, 28, 0.96));
-  box-shadow: 0 18px 42px rgba(38, 85, 163, 0.28);
+  box-shadow: 0 20px 30px -22px rgba(38, 85, 163, 0.52);
 }
 
 .v3-pipeline-node.is-placeholder:not(.is-output) {

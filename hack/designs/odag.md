@@ -1860,6 +1860,9 @@ Stage 26 implementation note:
 3. Current rendering rule:
    - compute the edge endpoint as the rectangle-border intersection in the direction of the target node
    - keep the existing node layout and curve style; only the anchor geometry changes
+4. Current readability refinement:
+   - tiny DAGs need visual breathing room, so two-node pipeline graphs use a wider inter-column gap than denser layouts
+   - node shadows are kept tighter so they do not visually erase the connector near the card borders
 
 ### Phase 3: Payload evolution (future)
 
