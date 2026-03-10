@@ -52,8 +52,9 @@
    - current prototype: embedded HTML/CSS/JS + SVG renderer (no external frontend build)
    - future candidate direction: React + TypeScript + React Flow/ELK if/when editing-scale UX is required.
 11. V3 home information architecture:
-   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Workspaces, Sessions, Pipelines (`dagger call` style submitted call chains), Git Remotes, Registries.
-   - support views that are too overlapping for top-level placement should stay routable without taking their own sidebar slot; today `Shells` folds under `Repls`, and `Workspace Ops` folds under `Workspaces`.
+   - primary nav is entity-first: discovered domains such as Terminals, Services, Repls, Checks, Sessions, Pipelines (`dagger call` style submitted call chains), Git Remotes, Registries.
+   - `Workspace` is now the durable top-level selector rather than a peer sidebar domain.
+   - support views that are too overlapping for top-level placement should stay routable without taking their own sidebar slot; today `Shells` folds under `Repls`, while workspace-specific views stay reachable through workspace routes and the selector rather than through a sidebar item.
    - the brand block (`icon + ODAG`) should link to a concise overview dashboard rather than to another entity domain.
    - while taxonomy is still settling, the right pane should stay inventory-first: click a domain on the left, see that domain's inventory immediately on the right.
    - deeper specialized views can return later once the base inventory interaction is obviously useful.
@@ -1439,7 +1440,7 @@ Stage 7 implementation note:
    - the top-left sidebar now keeps only a tiny brand block (`icon + product title`) above the domain list; no explanatory copy and no search/filter field until those prove necessary
    - mocked domains are labeled directly in the left nav with a small `mock` badge so unwired taxonomy areas are visible at a glance
    - the sidebar is reduced to just the brand block plus the domain list; redundant footer status labels were removed once they stopped adding useful signal
-   - overlapping support views are kept off the top-level nav; `Shells` remains reachable as a focused execution slice under `Repls`, and `Workspace Ops` remains reachable as a focused side-effect slice under `Workspaces`
+   - overlapping support views are kept off the top-level nav; `Shells` remains reachable as a focused execution slice under `Repls`, and workspace-specific support views remain reachable through workspace routes and drill-downs rather than through a dedicated sidebar item
 5. The next implementation milestone is to pick one domain and wire it end-to-end through discovery, API shaping, and right-pane inventory rendering.
 
 Stage 8 implementation note:
@@ -1859,9 +1860,11 @@ Stage 24 implementation note:
 1. The top-level sidebar is now deduplicated around primary domains rather than every live slice.
 2. Current navbar fold rules:
    - `Shells` is no longer a top-level nav item; it remains a routable support view, but `Repls` owns the interactive shell/repl surface in the sidebar
-   - `Workspace Ops` is no longer a top-level nav item; it remains a routable support view, but `Workspaces` owns host/workspace context in the sidebar
+   - `Workspace Ops` is no longer a top-level nav item; it remains a routable support view
+   - `Workspaces` is also no longer a top-level nav item once workspace becomes the shell-level selector; workspace context is entered through the selector and direct routes instead
 3. Current navigation rule:
-   - when a hidden support view is open directly, the sidebar highlights its parent domain (`Shells` -> `Repls`, `Workspace Ops` -> `Workspaces`) instead of leaving the nav with no active context
+   - when a hidden support view is open directly, the sidebar highlights its parent domain where one still exists (`Shells` -> `Repls`)
+   - workspace routes may intentionally leave the sidebar without a peer-domain highlight because workspace is no longer represented as a sidebar peer
 
 Stage 25 implementation note:
 1. V3 now has a dedicated overview route at `/`, with `/overview` as an explicit alias.
@@ -1942,6 +1945,7 @@ Stage 29 implementation note:
    - global `Workspace` selector is populated from live `Workspaces`
    - `Session` filter is a searchable popover fed from live `Sessions`
    - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name
+   - `Workspaces` is no longer shown as a left-nav domain; workspace context is entered through the selector and direct workspace routes instead
 3. Current workspace filter source of truth:
    - use live `Workspace.ops` as the compatibility shim until first-class workspace attachments exist in telemetry
    - derive workspace ownership from attached client IDs and pipeline IDs visible in those ops

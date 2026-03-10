@@ -165,6 +165,7 @@ const entities = [
     id: "workspaces",
     label: "Workspaces",
     code: "WS",
+    navHidden: true,
     category: "External-resource-centric",
     eyebrow: "Host composition roots",
     blurb:
