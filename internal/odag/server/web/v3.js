@@ -515,6 +515,19 @@ const liveDomainConfigs = {
   },
 };
 
+const sessionHubEntityIDs = [
+  "pipelines",
+  "repls",
+  "shells",
+  "terminals",
+  "services",
+  "checks",
+  "workspaces",
+  "workspace-ops",
+  "git-remotes",
+  "registries",
+];
+
 const state = {
   entityID: OVERVIEW_ROUTE_ID,
   detailID: "",
@@ -698,11 +711,23 @@ async function ensureActiveEntityData() {
     await ensureOverviewData();
     return;
   }
+  if (state.entityID === "sessions" && state.detailID) {
+    await ensureSessionDetailData();
+    return;
+  }
   const config = liveDomainConfigs[state.entityID];
   if (!config) {
     return;
   }
   await ensureLiveDomainData(config);
+}
+
+async function ensureSessionDetailData() {
+  const jobs = ["sessions", ...sessionHubEntityIDs]
+    .map((entityID) => liveDomainConfigs[entityID])
+    .filter(Boolean)
+    .map((config) => ensureLiveDomainData(config));
+  await Promise.all(jobs);
 }
 
 async function ensureOverviewData() {
@@ -996,9 +1021,10 @@ function renderDetail(entity) {
   const detailLabel = config?.singularLabel || entity.label;
   const detailItem = currentDetailItem(entity);
   const compactDetail = entity.dynamicKind === "pipelines";
+  const minimalPanelTitle = entity.dynamicKind === "sessions";
 
   els.pageLabel.textContent = detailLabel;
-  els.tableTitle.textContent = `${detailLabel} Details`;
+  els.tableTitle.textContent = minimalPanelTitle && detailItem ? detailItem.name : `${detailLabel} Details`;
   setPanelHeadHidden(compactDetail);
 
   if (live && live.status !== "loaded") {
@@ -1019,7 +1045,7 @@ function renderDetail(entity) {
 
   document.title = `ODAG ${detailLabel} ${detailItem.routeID}`;
   els.pageTitle.textContent = detailItem.name;
-  els.tableMeta.textContent = detailItem.routeID;
+  els.tableMeta.textContent = minimalPanelTitle ? "" : detailItem.routeID;
 
   if (entity.dynamicKind === "pipelines") {
     const graph = ensurePipelineGraph(detailItem);
@@ -1695,32 +1721,168 @@ function pipelineNodeEyebrow(obj, focusObjectID) {
 }
 
 function renderSessionDetail(entity, row) {
+  const cards = renderSessionDomainCards(row);
   return `
     <div class="v3-detail-stack">
-      ${backLink(entity)}
-      <div class="v3-detail-grid">
-        ${detailCard(
-          "Summary",
-          detailList([
-            ["Status", statusPill(sessionStatusLabel(row))],
-            ["Started", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano))],
-            ["Duration", escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status))],
-            ["Open", escapeHTML(row.open ? "yes" : "no")],
-            ["Fallback", escapeHTML(row.fallback ? "yes" : "no")],
-          ]),
-        )}
-        ${detailCard(
-          "Identity",
-          detailList([
-            ["Session", detailCode(row.id)],
-            ["Root client", detailCode(row.rootClientID || "Unknown")],
-            ["Trace", detailCode(row.traceID || "Unknown")],
-            ["Last seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano))],
-          ]),
-        )}
-      </div>
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Session</p>
+          <strong>${escapeHTML(shortID(row.id))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(sessionStatusLabel(row)))}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Root Client", row.rootClientID ? detailCode(shortID(row.rootClientID)) : "Unknown")}
+          ${pipelineRecapItem("Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown")}
+        </div>
+      </section>
+      ${cards}
     </div>
   `;
+}
+
+function renderSessionDomainCards(sessionRow) {
+  const cards = sessionHubEntityIDs
+    .map((entityID) => materializedEntityByID(entityID))
+    .filter(Boolean)
+    .map((domain) => ({
+      domain,
+      items: sessionDomainItems(sessionRow, domain),
+    }))
+    .filter((entry) => entry.items.length > 0)
+    .map(({ domain, items }) => renderSessionDomainCard(domain, items))
+    .join("");
+
+  if (!cards) {
+    return "";
+  }
+  return `<div class="v3-overview-grid">${cards}</div>`;
+}
+
+function renderSessionDomainCard(entity, items) {
+  return `
+    <section class="v3-detail-card">
+      <div class="v3-overview-card-head">
+        <a class="v3-overview-card-title" href="${escapeHTML(entityPath(entity.id))}" data-route-path="${escapeHTML(entityPath(entity.id))}">${escapeHTML(entity.label)}</a>
+        <div class="v3-overview-card-side">
+          <strong class="v3-overview-count">${escapeHTML(String(items.length))}</strong>
+        </div>
+      </div>
+      <ul class="v3-overview-list">
+        ${items
+          .map((item) => {
+            const href = overviewItemHref(entity, item);
+            const status = sessionDomainItemStatus(entity, item);
+            const time = overviewItemUnixNano(item) > 0 ? relativeTimeFromNow(overviewItemUnixNano(item)) : "";
+            return `
+              <li class="v3-overview-item">
+                <a class="v3-overview-item-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(sessionDomainItemLabel(entity, item))}</a>
+                <div class="v3-overview-item-meta">
+                  ${status ? `<span class="v3-overview-item-status">${statusPill(status)}</span>` : ""}
+                  ${time ? `<span class="v3-overview-item-time">${escapeHTML(time)}</span>` : ""}
+                </div>
+              </li>
+            `;
+          })
+          .join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function sessionDomainItems(sessionRow, entity) {
+  if (!entity || !Array.isArray(entity.liveItems)) {
+    return [];
+  }
+  return entity.liveItems.filter((item) => sessionOwnsEntity(sessionRow, entity.id, item));
+}
+
+function sessionOwnsEntity(sessionRow, entityID, row) {
+  switch (entityID) {
+    case "workspaces":
+      return Array.isArray(row?.ops) && row.ops.some((op) => sessionOwnsDirectRow(sessionRow, op));
+    case "git-remotes":
+      return Array.isArray(row?.pipelines) && row.pipelines.some((pipeline) => sessionOwnsDirectRow(sessionRow, pipeline));
+    case "registries":
+      return Array.isArray(row?.activities) && row.activities.some((activity) => sessionOwnsDirectRow(sessionRow, activity));
+    default:
+      return sessionOwnsDirectRow(sessionRow, row);
+  }
+}
+
+function sessionOwnsDirectRow(sessionRow, row) {
+  if (!sessionRow || !row) {
+    return false;
+  }
+  const sessionID = String(sessionRow.id || "");
+  const traceID = String(sessionRow.traceID || "");
+  const rootClientID = String(sessionRow.rootClientID || "");
+
+  if (sessionID) {
+    const directSessionIDs = [
+      row.sessionID,
+      row.pipelineSessionID,
+    ]
+      .map((value) => String(value || ""))
+      .filter(Boolean);
+    if (directSessionIDs.includes(sessionID)) {
+      return true;
+    }
+  }
+
+  if (!traceID || String(row.traceID || "") !== traceID) {
+    return false;
+  }
+
+  if (rootClientID) {
+    const clientIDs = [row.rootClientID, row.clientID, row.pipelineClientID]
+      .map((value) => String(value || ""))
+      .filter(Boolean);
+    if (clientIDs.includes(rootClientID)) {
+      return true;
+    }
+  }
+
+  return !sessionID;
+}
+
+function sessionDomainItemLabel(entity, row) {
+  switch (entity.id) {
+    case "pipelines":
+      return row.command || row.name || "Pipeline";
+    case "repls":
+      return row.command || row.name || "Repl";
+    case "shells":
+      return row.name || row.command || "Shell";
+    case "terminals":
+      return row.name || row.entryLabel || row.callName || "Terminal";
+    case "services":
+      return row.name || row.imageRef || "Service";
+    case "checks":
+      return row.name || row.spanName || "Check";
+    case "workspaces":
+      return row.name || row.root || "Workspace";
+    case "workspace-ops":
+      return row.name || row.callName || "Workspace Op";
+    case "git-remotes":
+      return row.ref || row.name || "Git Remote";
+    case "registries":
+      return row.ref || row.name || "Registry";
+    default:
+      return row.name || row.id || entity.label;
+  }
+}
+
+function sessionDomainItemStatus(entity, row) {
+  if (entity.id === "workspaces" || entity.id === "git-remotes" || entity.id === "registries") {
+    return "";
+  }
+  if (entity.id === "sessions") {
+    return sessionStatusLabel(row);
+  }
+  return row.status || "";
 }
 
 function renderTerminalDetail(entity, row) {
@@ -2392,6 +2554,14 @@ function registriesTableModel(entity, sectionID) {
 
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
+}
+
+function materializedEntityByID(entityID) {
+  const entity = findEntity(entityID);
+  if (!entity) {
+    return null;
+  }
+  return materializeEntity(entity);
 }
 
 function setPanelHeadHidden(hidden) {

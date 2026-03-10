@@ -1552,6 +1552,14 @@ Stage 13 implementation note:
    - sessions are derived from root clients
    - they sit between trace and client in the execution hierarchy
    - trace remains container context, not the primary identity of a session row
+4. Current session detail-page shape:
+   - session pages now act as navigation hubs, not generic summary cards
+   - the page starts with one thin recap card, then one card per related live domain with direct entity links
+   - no explanatory copy is shown on the page body
+5. Current session attachment rule for hub navigation:
+   - prefer explicit `sessionID` matches whenever the target domain exposes one
+   - for aggregate domains such as `Workspaces`, `Git Remotes`, and `Registries`, match through nested authoritative rows (`ops`, `pipelines`, `activities`) scoped to the session
+   - keep hidden support domains (`Shells`, `Workspace Ops`) linkable from the session page even though they are not top-level nav items
 
 Stage 14 implementation note:
 1. V3 now uses `Pipelines` as the UI/domain label instead of `CLI Runs`.
