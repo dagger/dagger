@@ -472,6 +472,12 @@ const liveDomainConfigs = {
     label: "Workspaces",
     singularLabel: "Workspace",
   },
+  clients: {
+    stateKey: "clients",
+    endpoint: "/api/v2/clients?limit=400",
+    label: "Clients",
+    singularLabel: "Client",
+  },
   services: {
     stateKey: "services",
     endpoint: "/api/services?limit=200",
@@ -558,6 +564,11 @@ const state = {
       error: "",
     },
     workspaces: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    clients: {
       status: "idle",
       items: [],
       error: "",
@@ -743,6 +754,7 @@ function entityPath(entityID, detailID = "") {
 async function ensureActiveEntityData() {
   await ensureLiveDomainData(liveDomainConfigs.sessions);
   await ensureLiveDomainData(liveDomainConfigs.workspaces);
+  await ensureLiveDomainData(liveDomainConfigs.clients);
   if (isOverviewRoute()) {
     await ensureOverviewData();
     return;
@@ -3085,7 +3097,12 @@ function sessionFilterOptionMeta(row) {
 }
 
 function workspaceFilterOptionLabel(row) {
-  return String(row?.root || row?.name || "Workspace").trim();
+  const root = String(row?.root || row?.name || "Workspace").trim();
+  const qualifier = String(row?.hostQualifier || "").trim();
+  if (!qualifier) {
+    return root;
+  }
+  return `${root} · ${qualifier}`;
 }
 
 function sessionFilterMatches(row, query) {
@@ -3104,6 +3121,65 @@ function sessionFilterMatches(row, query) {
     .filter(Boolean)
     .join(" ");
   return haystack.includes(query);
+}
+
+function workspaceHostQualifier(workspaceRow) {
+  if (!workspaceRootNeedsHostQualifier(workspaceRow?.root)) {
+    return "";
+  }
+  const clientMap = clientRowsByID();
+  const machineIDs = new Set();
+  for (const op of Array.isArray(workspaceRow?.ops) ? workspaceRow.ops : []) {
+    for (const clientID of [op?.clientID, op?.pipelineClientID]) {
+      const key = String(clientID || "");
+      if (!key) {
+        continue;
+      }
+      const client = clientMap.get(key);
+      const machineID = String(client?.clientMachineID || "").trim();
+      if (machineID) {
+        machineIDs.add(machineID);
+      }
+    }
+  }
+  const ids = Array.from(machineIDs).sort();
+  if (!ids.length) {
+    return "";
+  }
+  const primary = shortMachineID(ids[0]);
+  if (ids.length === 1) {
+    return `@${primary}`;
+  }
+  return `@${primary}+${ids.length - 1}`;
+}
+
+function clientRowsByID() {
+  const rows = state.live.clients?.items;
+  const byID = new Map();
+  if (!Array.isArray(rows)) {
+    return byID;
+  }
+  for (const row of rows) {
+    const id = String(row?.id || "");
+    if (!id) {
+      continue;
+    }
+    byID.set(id, row);
+  }
+  return byID;
+}
+
+function shortMachineID(value, width = 6) {
+  const text = String(value || "").toLowerCase().replaceAll(/[^a-z0-9]+/g, "");
+  if (!text) {
+    return "";
+  }
+  return text.slice(0, width);
+}
+
+function workspaceRootNeedsHostQualifier(root) {
+  const text = String(root || "").trim();
+  return text.startsWith("/") || /^[a-z]:[\\/]/i.test(text);
 }
 
 function overviewEntities() {
@@ -3612,6 +3688,7 @@ function buildLiveWorkspacesEntity(base, items) {
     .map((item) => ({
       ...item,
       routeID: shortRouteID(item.root, item.id || item.root),
+      hostQualifier: workspaceHostQualifier(item),
     }))
     .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
   const pipelineCount = liveItems.reduce((sum, item) => sum + Number(item.pipelineCount || 0), 0);

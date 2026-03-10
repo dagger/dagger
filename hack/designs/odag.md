@@ -1947,6 +1947,7 @@ Stage 29 implementation note:
    - global `Workspace` selector is populated from live `Workspaces`
    - `Session` filter is a searchable popover fed from live `Sessions`
    - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name
+   - local workspace labels may append a compact `@host` qualifier derived from short `dagger.io/client.machine_id` when attached client telemetry makes that identity available
    - `Workspaces` is no longer shown as a left-nav domain; workspace context is entered through the selector and direct workspace routes instead
    - `All Workspaces` is the wrong long-term selector category; aggregate cross-workspace viewing belongs to the overview/home surface rather than to the workspace selector itself
    - a synthetic `No workspace` selector category does make sense, because some clients may not bind any workspace at all
