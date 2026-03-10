@@ -1921,18 +1921,20 @@ Stage 28 design note:
 1. Workspace is not a simple child of session.
 2. Correct hierarchy for the emerging first-class Workspace concept:
    - one session has one root client and any number of descendant clients
-   - every client has exactly one workspace context
+   - a client may bind zero or one workspace context
    - a nested client may rebind to a different workspace than its parent
    - that rebinding is local to the child client; the parent client is not considered to own or share the child's workspace context
-   - therefore the useful ownership chain is `Session -> Client -> WorkspaceContext`, not `Workspace -> Session`
+   - therefore the useful ownership chain is `Session -> Client -> WorkspaceContext?`, not `Workspace -> Session`
 3. UX consequence:
    - `Workspace` can still be the top-level durable grouping dimension because it behaves like a project-level lens over time
    - but that grouping must be implemented as a projection/index, not as a literal containment tree
    - a workspace page should aggregate all sessions, clients, pipelines, services, remotes, and registries associated with that workspace context over time
+   - unbound clients/entities should remain visible through a synthetic `No workspace` lens rather than being forced into a fake workspace
    - a session page should remain the authoritative execution hub and may legitimately show multiple workspace contexts if different clients inside that session loaded different workspaces
 4. Shim requirement for current telemetry:
    - until the engine emits authoritative first-class Workspace entities everywhere, ODAG should derive a `client -> workspace` attachment layer from the best available signals (for example main-module load context, workspace root detection, and workspace-op evidence)
-   - that shim should enforce exactly one primary workspace attachment per client
+   - that shim should enforce at most one primary workspace attachment per client
+   - clients with no evidence of a bound workspace should stay unbound and flow into the synthetic `No workspace` bucket
    - nested-client workspace rebinding must stay attached to that child client only; do not smear the child's workspace upward onto the parent session/client context
    - all workspace-centric views should consume that attachment layer rather than assuming a single workspace per session
 5. Navigation implication:
@@ -1946,6 +1948,8 @@ Stage 29 implementation note:
    - `Session` filter is a searchable popover fed from live `Sessions`
    - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name
    - `Workspaces` is no longer shown as a left-nav domain; workspace context is entered through the selector and direct workspace routes instead
+   - `All Workspaces` is the wrong long-term selector category; aggregate cross-workspace viewing belongs to the overview/home surface rather than to the workspace selector itself
+   - a synthetic `No workspace` selector category does make sense, because some clients may not bind any workspace at all
 3. Current workspace filter source of truth:
    - use live `Workspace.ops` as the compatibility shim until first-class workspace attachments exist in telemetry
    - derive workspace ownership from attached client IDs and pipeline IDs visible in those ops
