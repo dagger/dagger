@@ -282,6 +282,8 @@ const entities = [
     id: "shells",
     label: "Shells",
     code: "SH",
+    navHidden: true,
+    navOwnerID: "repls",
     category: "Execution-centric",
     eyebrow: "Long-lived client command mode",
     blurb:
@@ -322,6 +324,8 @@ const entities = [
     id: "workspace-ops",
     label: "Workspace Ops",
     code: "WO",
+    navHidden: true,
+    navOwnerID: "workspaces",
     category: "External-resource-centric",
     eyebrow: "Host-side movement and export",
     blurb:
@@ -770,9 +774,12 @@ function render() {
 }
 
 function renderEntityNav() {
+  const navEntityID = currentNavEntityID();
+
   els.entityNav.innerHTML = entities
+    .filter((entity) => !entity.navHidden)
     .map((entity) => {
-      const active = entity.id === state.entityID;
+      const active = entity.id === navEntityID;
       const mockBadge = isMockEntity(entity)
         ? `<span class="v3-type-badge" aria-label="Mock domain">mock</span>`
         : "";
@@ -2203,6 +2210,11 @@ function registriesTableModel(entity, sectionID) {
 
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
+}
+
+function currentNavEntityID() {
+  const entity = findEntity(state.entityID) || entities[0];
+  return entity.navOwnerID || entity.id;
 }
 
 function currentDetailItem(entity) {
