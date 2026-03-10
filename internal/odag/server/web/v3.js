@@ -1403,6 +1403,8 @@ function buildPipelineGraphModel(row, payload) {
           nodePositions.set(obj.dagqlID, {
             x,
             y,
+            width: nodeW,
+            height: nodeH,
             centerX: x + nodeW / 2,
             centerY: y + nodeH / 2,
           });
@@ -1429,10 +1431,12 @@ function buildPipelineGraphModel(row, payload) {
       if (!from || !to) {
         return "";
       }
-      const x1 = from.centerX;
-      const y1 = from.centerY;
-      const x2 = to.centerX;
-      const y2 = to.centerY;
+      const start = graphNodeBorderPoint(from, to.centerX, to.centerY);
+      const end = graphNodeBorderPoint(to, from.centerX, from.centerY);
+      const x1 = start.x;
+      const y1 = start.y;
+      const x2 = end.x;
+      const y2 = end.y;
       const curve = Math.max(32, Math.abs(x2 - x1) * 0.4);
       const edgeClass = edge.kind === "call_chain" ? " is-chain" : " is-ref";
       const title = edge.label ? `${edge.kind}: ${edge.label}` : edge.kind;
@@ -1458,6 +1462,23 @@ function buildPipelineGraphModel(row, payload) {
     meta,
     edgeMarkup,
     nodeMarkup,
+  };
+}
+
+function graphNodeBorderPoint(node, targetX, targetY) {
+  const halfW = Number(node?.width || 0) / 2;
+  const halfH = Number(node?.height || 0) / 2;
+  const centerX = Number(node?.centerX || 0);
+  const centerY = Number(node?.centerY || 0);
+  const dx = Number(targetX || 0) - centerX;
+  const dy = Number(targetY || 0) - centerY;
+  if ((!halfW && !halfH) || (!dx && !dy)) {
+    return { x: centerX, y: centerY };
+  }
+  const scale = 1 / Math.max(Math.abs(dx) / Math.max(halfW, 1), Math.abs(dy) / Math.max(halfH, 1));
+  return {
+    x: centerX + dx * scale,
+    y: centerY + dy * scale,
   };
 }
 

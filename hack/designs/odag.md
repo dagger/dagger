@@ -1852,6 +1852,15 @@ Stage 25 implementation note:
    - each card shows only a count plus a few recent linked entities, not a second full table
    - support views hidden from the navbar (`Shells`, `Workspace Ops`) stay out of the overview for now to preserve the top-level taxonomy cleanup
 
+Stage 26 implementation note:
+1. Pipeline DAG edges now anchor to node borders instead of node centers.
+2. Rationale:
+   - the graph renderer draws SVG edges behind the object cards
+   - center-to-center edges looked broken because most of the path disappeared underneath the cards, leaving only a stray visible segment in the gap
+3. Current rendering rule:
+   - compute the edge endpoint as the rectangle-border intersection in the direction of the target node
+   - keep the existing node layout and curve style; only the anchor geometry changes
+
 ### Phase 3: Payload evolution (future)
 
 1. Version object-state payload format for compatibility.
