@@ -1946,6 +1946,7 @@ Stage 29 implementation note:
 1. The V3 shell now implements the workspace-first topbar directly.
 2. Current UI wiring:
    - global `Workspace` selector is populated from live `Workspaces`
+   - a discrete topbar `Import Trace` action restores the old cloud-trace pull flow through `POST /api/traces/open`, using a lightweight popover with trace id plus optional org rather than a dedicated page
    - `Session` filter is a searchable popover fed from live `Sessions`
    - the topbar hydrates `Sessions`, `Workspaces`, and `Clients` in parallel; selector feeds must not block each other sequentially
    - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name

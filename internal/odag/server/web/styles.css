@@ -2077,6 +2077,7 @@ body {
 
 .v3-topbar-end {
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .v3-topbar-select {
@@ -2110,6 +2111,121 @@ body {
 
 .v3-session-filter {
   position: relative;
+}
+
+.v3-import-trace {
+  position: relative;
+}
+
+.v3-import-trigger {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(17, 19, 22, 0.94) 0%, rgba(10, 12, 15, 0.94) 100%);
+  color: #d6d9df;
+  font-family: "Geist", "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 0.84rem;
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.v3-import-trigger-plus {
+  color: rgba(214, 217, 223, 0.72);
+  font-size: 0.96rem;
+  line-height: 1;
+}
+
+.v3-import-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(320px, 84vw);
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(10, 12, 15, 0.98);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+  display: none;
+}
+
+.v3-import-popover.is-open {
+  display: block;
+}
+
+.v3-import-form {
+  display: grid;
+  gap: 10px;
+}
+
+.v3-import-field {
+  display: grid;
+  gap: 6px;
+}
+
+.v3-import-label {
+  color: #7f8b9c;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v3-import-input {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(17, 19, 22, 0.94);
+  color: #d6d9df;
+  padding: 0 12px;
+  font-family: "Geist", "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.v3-import-input:focus {
+  border-color: rgba(163, 174, 190, 0.32);
+}
+
+.v3-import-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.v3-import-submit {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(235, 239, 244, 0.96);
+  color: #0d1117;
+  font-family: "Geist", "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.v3-import-submit:disabled {
+  opacity: 0.68;
+  cursor: default;
+}
+
+.v3-import-note {
+  color: #9cabbd;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.v3-import-note.is-error {
+  color: #f1a5a5;
+}
+
+.v3-import-note.is-success {
+  color: #8ecfae;
 }
 
 .v3-session-trigger {
@@ -3094,6 +3210,8 @@ body {
   }
 
   .v3-topbar-select,
+  .v3-import-trigger,
+  .v3-import-popover,
   .v3-session-trigger,
   .v3-session-popover {
     width: 100%;

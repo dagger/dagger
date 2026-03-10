@@ -4630,6 +4630,9 @@ func TestWebRouteFallbacks(t *testing.T) {
 	if !strings.Contains(listRec.Body.String(), "v3.js") {
 		t.Fatalf("expected v3 app shell html, got %q", listRec.Body.String())
 	}
+	if !strings.Contains(listRec.Body.String(), "id=\"importTraceShell\"") {
+		t.Fatalf("expected v3 shell import control, got %q", listRec.Body.String())
+	}
 
 	traceReq := httptest.NewRequest(http.MethodGet, "/traces/abc123", nil)
 	traceRec := httptest.NewRecorder()

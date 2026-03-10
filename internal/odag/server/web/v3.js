@@ -542,6 +542,12 @@ const state = {
   detailID: "",
   workspaceFilterID: "",
   sessionFilterID: "",
+  importTraceOpen: false,
+  importTraceTraceID: "",
+  importTraceOrg: "",
+  importTraceStatus: "idle",
+  importTraceMessage: "",
+  importTraceImportedID: "",
   sessionFilterOpen: false,
   sessionFilterQuery: "",
   detailGraphs: {
@@ -614,6 +620,7 @@ const state = {
 const els = {
   sidebarBrand: document.getElementById("sidebarBrand"),
   workspaceFilter: document.getElementById("workspaceFilter"),
+  importTraceShell: document.getElementById("importTraceShell"),
   sessionFilterShell: document.getElementById("sessionFilterShell"),
   pageCrumb: document.getElementById("pageCrumb"),
   entityNav: document.getElementById("entityNav"),
@@ -639,6 +646,7 @@ function bindEvents() {
     state.workspaceFilterID = String(els.workspaceFilter.value || "");
     state.sessionFilterOpen = false;
     state.sessionFilterQuery = "";
+    state.importTraceOpen = false;
     sanitizeSessionFilterSelection();
     render();
   });
@@ -652,15 +660,39 @@ function bindEvents() {
   });
 
   document.addEventListener("pointerdown", (event) => {
-    if (!state.sessionFilterOpen || !els.sessionFilterShell) {
+    const target = event.target;
+    let changed = false;
+    if (state.sessionFilterOpen && els.sessionFilterShell && !els.sessionFilterShell.contains(target)) {
+      state.sessionFilterOpen = false;
+      state.sessionFilterQuery = "";
+      changed = true;
+    }
+    if (state.importTraceOpen && els.importTraceShell && !els.importTraceShell.contains(target)) {
+      state.importTraceOpen = false;
+      changed = true;
+    }
+    if (changed) {
+      render();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
       return;
     }
-    if (els.sessionFilterShell.contains(event.target)) {
-      return;
+    let changed = false;
+    if (state.sessionFilterOpen) {
+      state.sessionFilterOpen = false;
+      state.sessionFilterQuery = "";
+      changed = true;
     }
-    state.sessionFilterOpen = false;
-    state.sessionFilterQuery = "";
-    render();
+    if (state.importTraceOpen) {
+      state.importTraceOpen = false;
+      changed = true;
+    }
+    if (changed) {
+      render();
+    }
   });
 
   document.addEventListener("click", (event) => {
@@ -731,6 +763,9 @@ function navigateTo(nextPath, replace = false) {
   const route = parseRoute(url.pathname, url.search);
   state.entityID = route.entityID;
   state.detailID = route.detailID;
+  state.sessionFilterOpen = false;
+  state.sessionFilterQuery = "";
+  state.importTraceOpen = false;
   syncWorkspaceFilterFromRoute();
   syncSessionFilterFromRoute();
   const nextURL = `${url.pathname}${url.search}`;
@@ -848,6 +883,106 @@ function renderWorkspaceFilter() {
   els.workspaceFilter.disabled = status !== "loaded" && rows.length === 0;
 }
 
+function renderImportTraceControl() {
+  if (!els.importTraceShell) {
+    return;
+  }
+  const triggerLabel = state.importTraceStatus === "loading" ? "Importing..." : "Import Trace";
+  const notice =
+    state.importTraceStatus === "error"
+      ? `<div class="v3-import-note is-error">${escapeHTML(state.importTraceMessage || "Import failed.")}</div>`
+      : state.importTraceStatus === "success"
+        ? `<div class="v3-import-note is-success">Imported ${escapeHTML(shortID(state.importTraceImportedID || state.importTraceTraceID || ""))}. <a class="v3-inline-link" href="/" data-route-path="/">Overview</a></div>`
+        : "";
+  els.importTraceShell.innerHTML = `
+    <div class="v3-import-trace${state.importTraceOpen ? " is-open" : ""}">
+      <button
+        id="importTraceTrigger"
+        class="v3-import-trigger"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded="${state.importTraceOpen ? "true" : "false"}"
+      >
+        <span class="v3-import-trigger-plus" aria-hidden="true">+</span>
+        <span>${escapeHTML(triggerLabel)}</span>
+      </button>
+      <div class="v3-import-popover${state.importTraceOpen ? " is-open" : ""}">
+        <form id="importTraceForm" class="v3-import-form">
+          <label class="v3-import-field">
+            <span class="v3-import-label">Trace ID</span>
+            <input
+              id="importTraceIDInput"
+              class="v3-import-input"
+              type="text"
+              name="traceID"
+              placeholder="32-char trace id"
+              value="${escapeHTML(state.importTraceTraceID)}"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <label class="v3-import-field">
+            <span class="v3-import-label">Org</span>
+            <input
+              id="importTraceOrgInput"
+              class="v3-import-input"
+              type="text"
+              name="org"
+              placeholder="Optional"
+              value="${escapeHTML(state.importTraceOrg)}"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <div class="v3-import-actions">
+            <button id="importTraceSubmit" class="v3-import-submit" type="submit"${state.importTraceStatus === "loading" ? " disabled" : ""}>Import</button>
+          </div>
+          ${notice}
+        </form>
+      </div>
+    </div>
+  `;
+
+  const trigger = document.getElementById("importTraceTrigger");
+  trigger?.addEventListener("click", () => {
+    state.importTraceOpen = !state.importTraceOpen;
+    state.sessionFilterOpen = false;
+    state.sessionFilterQuery = "";
+    render();
+    if (state.importTraceOpen) {
+      const input = document.getElementById("importTraceIDInput");
+      input?.focus();
+      input?.select();
+    }
+  });
+
+  const idInput = document.getElementById("importTraceIDInput");
+  idInput?.addEventListener("input", () => {
+    state.importTraceTraceID = idInput.value || "";
+    if (state.importTraceStatus !== "loading") {
+      state.importTraceStatus = "idle";
+      state.importTraceMessage = "";
+      state.importTraceImportedID = "";
+    }
+  });
+
+  const orgInput = document.getElementById("importTraceOrgInput");
+  orgInput?.addEventListener("input", () => {
+    state.importTraceOrg = orgInput.value || "";
+    if (state.importTraceStatus !== "loading") {
+      state.importTraceStatus = "idle";
+      state.importTraceMessage = "";
+      state.importTraceImportedID = "";
+    }
+  });
+
+  const form = document.getElementById("importTraceForm");
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitImportTrace();
+  });
+}
+
 function renderSessionFilter() {
   if (!els.sessionFilterShell) {
     return;
@@ -924,6 +1059,7 @@ function renderSessionFilter() {
   trigger?.addEventListener("click", () => {
     state.sessionFilterOpen = !state.sessionFilterOpen;
     state.sessionFilterQuery = "";
+    state.importTraceOpen = false;
     render();
   });
 
@@ -954,6 +1090,56 @@ function renderSessionFilter() {
       input.focus();
       input.select();
     });
+  }
+}
+
+function resetLiveData() {
+  for (const entry of Object.values(state.live)) {
+    entry.status = "idle";
+    entry.items = [];
+    entry.error = "";
+  }
+  state.detailGraphs.pipelines = {};
+}
+
+async function submitImportTrace() {
+  const traceID = String(state.importTraceTraceID || "").trim();
+  if (!traceID || state.importTraceStatus === "loading") {
+    return;
+  }
+  state.importTraceStatus = "loading";
+  state.importTraceMessage = "";
+  render();
+  try {
+    const body = {
+      traceID,
+      ...(String(state.importTraceOrg || "").trim() ? { org: String(state.importTraceOrg || "").trim() } : {}),
+    };
+    const res = await fetch("/api/traces/open", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const message = (await res.text()).trim();
+      throw new Error(message || `HTTP ${res.status}`);
+    }
+    const payload = await res.json();
+    state.importTraceStatus = "success";
+    state.importTraceMessage = "";
+    state.importTraceImportedID = String(payload?.trace?.traceID || traceID);
+    state.workspaceFilterID = "";
+    state.sessionFilterID = "";
+    state.sessionFilterQuery = "";
+    resetLiveData();
+    render();
+    void ensureActiveEntityData();
+  } catch (err) {
+    state.importTraceStatus = "error";
+    state.importTraceMessage = err instanceof Error ? err.message : String(err || "Import failed.");
+    render();
   }
 }
 
@@ -1050,6 +1236,7 @@ async function fetchPipelineGraph(row, entry) {
 function render() {
   sanitizeSessionFilterSelection();
   renderWorkspaceFilter();
+  renderImportTraceControl();
   renderSessionFilter();
   renderEntityNav();
   renderMain();

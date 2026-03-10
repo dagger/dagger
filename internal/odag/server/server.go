@@ -249,6 +249,7 @@ func (s *Server) handleOpenTrace(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("pull trace: %v", err), http.StatusBadGateway)
 		return
 	}
+	s.v2ScopeCache.invalidate(req.TraceID)
 
 	traceMeta, err := s.store.GetTrace(r.Context(), req.TraceID)
 	if err != nil {
