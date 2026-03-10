@@ -213,7 +213,7 @@ type SpanTreeView struct {
 	childrenGapPrefix string
 
 	// focused tracks whether this span is the currently focused span.
-	// Synced by syncSpanTreeState from fe.FocusedSpan.
+	// Synced by tuist's SetFocus → SetFocused callback.
 	focused bool
 
 	// Render metadata — set during Render() for focus-line lookup.
@@ -224,6 +224,16 @@ type SpanTreeView struct {
 }
 
 var _ tuist.Component = (*SpanTreeView)(nil)
+var _ tuist.Focusable = (*SpanTreeView)(nil)
+
+// SetFocused is called by tuist when this component gains or loses focus.
+// This is O(1) — only the old and new focused components are notified.
+func (s *SpanTreeView) SetFocused(_ tuist.Context, focused bool) {
+	if s.focused != focused {
+		s.focused = focused
+		s.Update()
+	}
+}
 
 // SpinnerView is a self-ticking spinner component. It starts a tick goroutine
 // on mount (via OnMount/ctx.Done()) and stops when dismounted. Only mounted
@@ -936,12 +946,12 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// (so don't show key hints etc.)
 	fe.finalRender = true
 
+	// Unfocus for the final render.
+	fe.focus(nil)
+
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
 	fe.recalculateViewLocked()
-
-	// Unfocus for the final render.
-	fe.FocusedSpan = dagui.SpanID{}
 
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, true)
 
@@ -1297,8 +1307,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
 	if len(fe.rows.Order) == 0 {
-		fe.focusedIdx = -1
-		fe.FocusedSpan = dagui.SpanID{}
+		fe.focus(nil)
 		return
 	}
 	if len(fe.rows.Order) < fe.focusedIdx {
@@ -1306,10 +1315,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.autoFocus = true
 	}
 	if fe.autoFocus {
-		fe.focusedIdx = len(fe.rows.Order) - 1
-		fe.FocusedSpan = fe.rows.Order[fe.focusedIdx].Span.ID
+		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
 	} else if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
-		fe.focusedIdx = row.Index
+		fe.focus(row)
 	} else {
 		// lost focus somehow
 		fe.autoFocus = true
@@ -1380,13 +1388,6 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	// Sync prefix
 	if st.prefix != newPrefix {
 		st.prefix = newPrefix
-		changed = true
-	}
-
-	// Sync focus
-	isFocused := st.spanID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
-	if st.focused != isFocused {
-		st.focused = isFocused
 		changed = true
 	}
 
@@ -1616,17 +1617,16 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	if row == nil {
-		return
+		fe.FocusedSpan = dagui.SpanID{}
+		fe.focusedIdx = -1
+		fe.tui.SetFocus(nil)
+	} else {
+		fe.FocusedSpan = row.Span.ID
+		fe.focusedIdx = row.Index
+		if sr, ok := fe.spanTrees[row.Span.ID]; ok {
+			fe.tui.SetFocus(sr)
+		}
 	}
-	fe.FocusedSpan = row.Span.ID
-	fe.focusedIdx = row.Index
-	// Set tuist-level focus for keyboard event bubbling
-	if sr, ok := fe.spanTrees[row.Span.ID]; ok && fe.tui != nil {
-		fe.tui.SetFocus(sr)
-	}
-	// syncSpanTreeState (called by recalculate) will sync .focused on
-	// all nodes and call Update() on the ones that changed.
-	fe.recalculateViewLocked()
 }
 
 // ---------- tuist.Interactive -----------------------------------------------
@@ -2158,12 +2158,7 @@ func (fe *frontendPretty) goOut() {
 	if focused == nil {
 		return
 	}
-	parent := focused.Parent
-	if parent == nil {
-		return
-	}
-	fe.FocusedSpan = parent.Span.ID
-	fe.recalculateViewLocked()
+	fe.focus(focused.Parent)
 }
 
 func (fe *frontendPretty) goIn() {
@@ -2231,11 +2226,17 @@ func (fe *frontendPretty) goErrorOrigin() {
 	if len(focused.ErrorOrigins.Order) == 0 {
 		return
 	}
-	fe.FocusedSpan = focused.ErrorOrigins.Order[0].ID // TODO which?
-	focusedRow := fe.rowsView.BySpan[fe.FocusedSpan]
+	var earliest *dagui.Span
+	for _, span := range focused.ErrorOrigins.Order {
+		if earliest == nil || span.StartTime.Before(earliest.StartTime) {
+			earliest = span
+		}
+	}
+	focusedRow := fe.rows.BySpan[earliest.ID]
 	if focusedRow == nil {
 		return
 	}
+	fe.focus(focusedRow)
 	for cur := focusedRow.Parent; cur != nil; cur = cur.Parent {
 		// expand parents of target span
 		fe.setExpanded(cur.Span.ID, true)
