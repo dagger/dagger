@@ -2576,11 +2576,10 @@ func TestV2Terminals(t *testing.T) {
 	if item.ReceiverDagqlID != "state-terminal" || item.OutputDagqlID != "state-terminal" {
 		t.Fatalf("unexpected terminal dagql ids: %#v", item)
 	}
-	if item.ActivityCount != 2 || item.ExecCount != 2 {
-		t.Fatalf("expected only exec activity rows, got %#v", item)
+	if item.ActivityCount != 1 || item.ExecCount != 1 {
+		t.Fatalf("expected only user-visible terminal exec rows, got %#v", item)
 	}
 	if !sameStrings(item.ActivityNames, []string{
-		"exec dagger-entrypoint.sh --addr tcp://0.0.0.0:1234",
 		"exec sh",
 	}) {
 		t.Fatalf("unexpected terminal activity names: %#v", item.ActivityNames)

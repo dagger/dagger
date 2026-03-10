@@ -1735,6 +1735,7 @@ Stage 19 implementation note:
 4. Current activity rule:
    - prefer descendant spans of the `Container.terminal` call in the raw span tree
    - classify `exec ...` descendants as terminal exec activity and keep other terminal-named descendants available as terminal activity
+   - exclude container bootstrap entrypoint execs such as `exec dagger-entrypoint.sh ...`, because they reflect terminal startup plumbing rather than user-visible interactive activity
    - only fall back to same-scope temporal matching when parent/child structure is insufficient
    - this avoids dropping real exec spans just because their end time runs slightly past the parent call end
 5. Current status rule:
@@ -1747,7 +1748,7 @@ Stage 19 implementation note:
 7. Current live validation checkpoint:
    - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
    - the current data now renders real terminals such as `engine-dev playground terminal` and `dagger core container from --address=alpine terminal`
-   - the `engine-dev playground terminal` entity now correctly includes both descendant exec spans (`exec dagger-entrypoint.sh ...` and `exec sh`) instead of dropping the longer-lived entrypoint child
+   - the `engine-dev playground terminal` entity keeps the user shell exec (`exec sh`) while suppressing the internal `exec dagger-entrypoint.sh ...` bootstrap row
 
 Stage 20 implementation note:
 1. First real Repls API slice is implemented at `GET /api/repls`.

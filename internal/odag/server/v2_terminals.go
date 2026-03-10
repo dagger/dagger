@@ -221,6 +221,9 @@ func collectV2TerminalActivities(
 		if kind == "" {
 			continue
 		}
+		if ignoreV2TerminalActivity(sp.Name) {
+			continue
+		}
 		items = append(items, v2TerminalActivity{
 			SpanID:        spanKey(traceID, sp.SpanID),
 			Name:          sp.Name,
@@ -301,6 +304,11 @@ func classifyV2TerminalActivity(name string) string {
 	default:
 		return ""
 	}
+}
+
+func ignoreV2TerminalActivity(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return strings.HasPrefix(lower, "exec dagger-entrypoint.sh ")
 }
 
 func deriveV2TerminalStatus(traceStatus, callStatus string, activities []v2TerminalActivity) (string, string) {
