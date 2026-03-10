@@ -453,6 +453,12 @@ const liveDomainConfigs = {
     label: "Repls",
     singularLabel: "Repl",
   },
+  checks: {
+    stateKey: "checks",
+    endpoint: "/api/checks?limit=200",
+    label: "Checks",
+    singularLabel: "Check",
+  },
   workspaces: {
     stateKey: "workspaces",
     endpoint: "/api/workspaces?limit=200",
@@ -516,6 +522,11 @@ const state = {
       error: "",
     },
     repls: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    checks: {
       status: "idle",
       items: [],
       error: "",
@@ -887,6 +898,10 @@ function renderDetail(entity) {
   }
   if (entity.dynamicKind === "repls") {
     els.tableShell.innerHTML = renderReplDetail(entity, detailItem);
+    return;
+  }
+  if (entity.dynamicKind === "checks") {
+    els.tableShell.innerHTML = renderCheckDetail(entity, detailItem);
     return;
   }
   if (entity.dynamicKind === "workspaces") {
@@ -1597,6 +1612,34 @@ function renderReplDetail(entity, row) {
   `;
 }
 
+function renderCheckDetail(entity, row) {
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Check</p>
+          <strong>${escapeHTML(row.name || "Check")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.status))}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)))}
+          ${pipelineRecapItem("Session", checkSessionSummary(row))}
+          ${pipelineRecapItem("Span", row.spanName ? detailCode(row.spanName) : "Unknown")}
+          ${pipelineRecapItem("Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown")}
+        </div>
+      </section>
+      <section class="v3-detail-card">
+        ${detailList([
+          ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
+          ["Span ID", row.spanID ? detailCode(row.spanID) : "Unknown"],
+        ])}
+      </section>
+    </div>
+  `;
+}
+
 function renderWorkspaceDetail(entity, row) {
   const opsTable = renderTableHTML({
     columns: [
@@ -1749,6 +1792,9 @@ function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "repls") {
     return replsTableModel(entity, sectionID);
   }
+  if (entity.dynamicKind === "checks") {
+    return checksTableModel(entity, sectionID);
+  }
   if (entity.dynamicKind === "workspaces") {
     return workspacesTableModel(entity, sectionID);
   }
@@ -1895,6 +1941,27 @@ function replsTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => replSessionCell(row) },
           { label: "Commands", render: (row) => replCommandHistoryCell(row) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
+function checksTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Checks",
+        meta: `${entity.liveItems.length} real checks`,
+        emptyMessage: "No checks detected in the current dataset.",
+        columns: [
+          { label: "Check", render: (row) => linkedPrimaryCell(row.name || "Check", row.spanName || "", entityPath(entity.id, row.routeID)) },
+          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
+          { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
+          { label: "Session", render: (row) => checkSessionCell(row) },
         ],
         rows: entity.liveItems,
       };
@@ -2156,7 +2223,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "workspaces" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
+  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "checks" && entity.id !== "workspaces" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -2167,6 +2234,9 @@ function materializeEntity(entity) {
     }
     if (entity.id === "repls") {
       return buildLiveReplsEntity(entity, live.items);
+    }
+    if (entity.id === "checks") {
+      return buildLiveChecksEntity(entity, live.items);
     }
     if (entity.id === "workspaces") {
       return buildLiveWorkspacesEntity(entity, live.items);
@@ -2446,6 +2516,69 @@ function buildLiveReplsEntity(base, items) {
         value: String(sessionCount || liveItems.length),
         tone: "neutral",
         detail: "Derived sessions represented by these REPL histories.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveChecksEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: shortRouteID(item.traceID, item.spanID || item.id),
+    }))
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const failedCount = liveItems.filter((item) => item.status === "failed").length;
+
+  return {
+    ...base,
+    dynamicKind: "checks",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one authoritative check span surfaced only when telemetry explicitly sets `dagger.io/check.name`.",
+    metrics: [
+      {
+        label: "Detected checks",
+        value: String(liveItems.length),
+        detail: `${failedCount} failed`,
+      },
+      {
+        label: "Sessions",
+        value: String(new Set(liveItems.map((item) => item.sessionID).filter(Boolean)).size),
+        detail: "Derived sessions represented by explicit check spans.",
+      },
+      {
+        label: "Signal source",
+        value: "Explicit attrs",
+        detail: "No name-only heuristics are used for checks.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.name,
+      value: String(item.status || "ready").toUpperCase(),
+      note: item.spanName || item.name,
+    })),
+    signals: [
+      {
+        label: "Failures",
+        value: String(failedCount),
+        tone: failedCount > 0 ? "warn" : "good",
+        detail: "Explicit check spans reporting failure.",
+      },
+      {
+        label: "Empty is honest",
+        value: liveItems.length === 0 ? "Yes" : "No",
+        tone: liveItems.length === 0 ? "neutral" : "good",
+        detail: "Checks stay empty when the dataset contains no explicit check telemetry.",
+      },
+      {
+        label: "Heuristic drift",
+        value: "None",
+        tone: "good",
+        detail: "Checks are only derived from explicit check attrs.",
       },
     ],
     evidence: [],
@@ -3118,6 +3251,22 @@ function serviceSessionCell(row) {
 }
 
 function serviceSessionSummary(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+}
+
+function checkSessionCell(row) {
+  if (!row.sessionID) {
+    return "None";
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function checkSessionSummary(row) {
   if (!row.sessionID) {
     return "None";
   }

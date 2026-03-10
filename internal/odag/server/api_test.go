@@ -2674,6 +2674,121 @@ func TestV2Repls(t *testing.T) {
 	}
 }
 
+func TestV2Checks(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "dededededededededededededededede"
+	connectHex := "1111111111111111"
+	checkHex := "2222222222222222"
+	sessionID := "session-checks"
+	clientID := "client-checks"
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/checks"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, checkHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "test:lint",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   20,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, "dagger.io/check.name", "test:lint"),
+									kvBool(t, "dagger.io/check.passed", false),
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	checksReq := httptest.NewRequest(http.MethodGet, "/api/checks?traceID="+traceIDHex, nil)
+	checksRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(checksRec, checksReq)
+	if checksRec.Code != http.StatusOK {
+		t.Fatalf("checks failed: status=%d body=%s", checksRec.Code, checksRec.Body.String())
+	}
+
+	var checksResp struct {
+		Items []struct {
+			Name      string `json:"name"`
+			Status    string `json:"status"`
+			SessionID string `json:"sessionID"`
+			ClientID  string `json:"clientID"`
+			SpanName  string `json:"spanName"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(checksRec.Body.Bytes(), &checksResp); err != nil {
+		t.Fatalf("decode checks response: %v", err)
+	}
+	if len(checksResp.Items) != 1 {
+		t.Fatalf("expected one check item, got %#v", checksResp.Items)
+	}
+
+	item := checksResp.Items[0]
+	if item.Name != "test:lint" || item.SpanName != "test:lint" {
+		t.Fatalf("unexpected check identity: %#v", item)
+	}
+	if item.Status != "failed" || item.SessionID != sessionID || item.ClientID != clientID {
+		t.Fatalf("unexpected check scope/status: %#v", item)
+	}
+}
+
 func TestV2Services(t *testing.T) {
 	t.Parallel()
 
@@ -4067,6 +4182,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(replRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected repl detail route to serve v3 shell, got %q", replRec.Body.String())
+	}
+
+	checksReq := httptest.NewRequest(http.MethodGet, "/checks", nil)
+	checksRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(checksRec, checksReq)
+	if checksRec.Code != http.StatusOK {
+		t.Fatalf("checks page failed: %d %s", checksRec.Code, checksRec.Body.String())
+	}
+	if !strings.Contains(checksRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected checks route to serve v3 shell, got %q", checksRec.Body.String())
+	}
+
+	checkReq := httptest.NewRequest(http.MethodGet, "/checks/abc123", nil)
+	checkRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(checkRec, checkReq)
+	if checkRec.Code != http.StatusOK {
+		t.Fatalf("check detail page failed: %d %s", checkRec.Code, checkRec.Body.String())
+	}
+	if !strings.Contains(checkRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected check detail route to serve v3 shell, got %q", checkRec.Body.String())
 	}
 
 	workspacesReq := httptest.NewRequest(http.MethodGet, "/workspaces", nil)

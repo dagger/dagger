@@ -1178,6 +1178,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 19: Implement `Terminals` end-to-end through derivation, API, and UI
 - [x] Stage 20: Implement `Repls` end-to-end through derivation, API, and UI
 - [x] Stage 21: Implement `Workspaces` as observed roots through derivation, API, and UI
+- [x] Stage 22: Implement `Checks` as an explicit-telemetry live domain
 
 ### Active Next Tasks
 
@@ -1778,6 +1779,27 @@ Stage 21 implementation note:
 7. Current deliberate limitation:
    - this domain still depends on repeated observed roots from workspace ops because the current live dataset does not yet contain authoritative `Query.currentWorkspace` / `Workspace.*` activity
    - once those object-level spans appear reliably, promote `Workspaces` from observed roots to canonical workspace objects and keep the observed-root fallback only for older traces
+
+Stage 22 implementation note:
+1. First real Checks API slice is implemented at `GET /api/checks`.
+2. Current derivation rule is intentionally strict:
+   - materialize one check entity only when telemetry explicitly sets `dagger.io/check.name`
+   - use `dagger.io/check.passed` when present to derive pass/fail directly
+   - otherwise fall back to the span status code plus ingest state
+3. Current V3 shell shape:
+   - `Checks` is now a live left-nav domain at `/checks`
+   - the inventory stays minimal: check name, status, started time, duration, and session link
+   - each detail page stays thin: recap card plus raw execution facts
+4. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against the working sqlite DB
+   - the current dataset returns an honest empty list from `GET /api/checks`
+   - this is expected because the dataset currently contains no explicit `dagger.io/check.name` spans
+5. Current deliberate limitation:
+   - `Checks` does not yet infer entities from naming conventions, module layout, or repeated gate behavior
+   - if the dataset has no explicit check telemetry, the domain remains empty rather than guessing
+6. Current V3 shell consequence:
+   - all left-nav domains are now backed by live APIs or live-empty APIs
+   - the shell no longer depends on mocked domain placeholders to cover the main entity taxonomy
 
 ### Phase 3: Payload evolution (future)
 
