@@ -31,7 +31,7 @@ func newNotificationBubble(fe *frontendPretty, section SidebarSection) *Notifica
 	}
 }
 
-func (n *NotificationBubble) Render(ctx tuist.RenderContext) tuist.RenderResult {
+func (n *NotificationBubble) Render(ctx tuist.Context) tuist.RenderResult {
 	width := ctx.Width
 	if width < 10 {
 		width = 30
