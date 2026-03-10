@@ -1715,6 +1715,284 @@ func TestV2GitRemotes(t *testing.T) {
 	}
 }
 
+func TestV2Registries(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     filepath.Join(t.TempDir(), "odag.db"),
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "47474747474747474747474747474747"
+	sessionID := "session-registry"
+	clientID := "client-registry"
+
+	connectHex := "1111111111111111"
+	parseHex := "2222222222222222"
+	queryContainerHex := "3333333333333333"
+	fromHex := "4444444444444444"
+	resolveHex := "5555555555555555"
+	tokenHex := "6666666666666666"
+	headHex := "7777777777777777"
+
+	commandArgs := []string{"/usr/local/bin/dagger", "call", "container", "from", "--address", "docker.io/library/nginx:latest"}
+	queryContainerState := map[string]any{
+		"type":   "Container",
+		"fields": map[string]any{},
+	}
+	fromState := map[string]any{
+		"type":   "Container",
+		"fields": map[string]any{},
+	}
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", commandArgs),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, parseHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "parsing command line arguments",
+								StartTimeUnixNano: 10,
+								EndTimeUnixNano:   12,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/dagql"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, queryContainerHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Query.container",
+								StartTimeUnixNano: 20,
+								EndTimeUnixNano:   24,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-query-container"),
+									kvString(t, telemetry.DagOutputAttr, "state-query-container"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, queryContainerState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-query-container",
+										Field:  "container",
+										Type:   &callpbv1.Type{NamedType: "Container"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, fromHex),
+								ParentSpanId:      mustDecodeHex(t, connectHex),
+								Name:              "Container.from",
+								StartTimeUnixNano: 25,
+								EndTimeUnixNano:   60,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-from"),
+									kvString(t, telemetry.DagOutputAttr, "state-from"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, fromState)),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest:         "call-from",
+										ReceiverDigest: "state-query-container",
+										Field:          "from",
+										Type:           &callpbv1.Type{NamedType: "Container"},
+										Args: []*callpbv1.Argument{
+											{
+												Name: "address",
+												Value: &callpbv1.Literal{
+													Value: &callpbv1.Literal_String_{String_: "docker.io/library/nginx:latest"},
+												},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "buildkit"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, resolveHex),
+								ParentSpanId:      mustDecodeHex(t, fromHex),
+								Name:              "resolving docker.io/library/nginx:latest",
+								StartTimeUnixNano: 26,
+								EndTimeUnixNano:   28,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_UNSET},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, tokenHex),
+								ParentSpanId:      mustDecodeHex(t, fromHex),
+								Name:              "remotes.docker.resolver.FetchToken",
+								StartTimeUnixNano: 30,
+								EndTimeUnixNano:   35,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, "url.full", "https://auth.docker.io/token?scope=repository%3Alibrary%2Fnginx%3Apull&service=registry.docker.io"),
+									kvString(t, "server.address", "auth.docker.io"),
+									kvString(t, "http.request.method", "GET"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_UNSET},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, headHex),
+								ParentSpanId:      mustDecodeHex(t, fromHex),
+								Name:              "HTTP HEAD",
+								StartTimeUnixNano: 36,
+								EndTimeUnixNano:   42,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, "url.full", "https://registry-1.docker.io/v2/library/nginx/manifests/latest"),
+									kvString(t, "server.address", "registry-1.docker.io"),
+									kvString(t, "http.request.method", "HEAD"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	registriesReq := httptest.NewRequest(http.MethodGet, "/api/registries?traceID="+traceIDHex, nil)
+	registriesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(registriesRec, registriesReq)
+	if registriesRec.Code != http.StatusOK {
+		t.Fatalf("registries failed: status=%d body=%s", registriesRec.Code, registriesRec.Body.String())
+	}
+
+	var registriesResp struct {
+		Items []struct {
+			Ref           string   `json:"ref"`
+			Host          string   `json:"host"`
+			Repository    string   `json:"repository"`
+			LatestRef     string   `json:"latestRef"`
+			TraceCount    int      `json:"traceCount"`
+			SessionCount  int      `json:"sessionCount"`
+			PipelineCount int      `json:"pipelineCount"`
+			ActivityCount int      `json:"activityCount"`
+			LastOperation string   `json:"lastOperation"`
+			SourceKinds   []string `json:"sourceKinds"`
+			Activities    []struct {
+				Operation        string `json:"operation"`
+				SourceKind       string `json:"sourceKind"`
+				PipelineID       string `json:"pipelineID"`
+				PipelineCommand  string `json:"pipelineCommand"`
+				PipelineClientID string `json:"pipelineClientID"`
+			} `json:"activities"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(registriesRec.Body.Bytes(), &registriesResp); err != nil {
+		t.Fatalf("decode registries response: %v", err)
+	}
+	if len(registriesResp.Items) != 1 {
+		t.Fatalf("expected one registry item, got %#v", registriesResp.Items)
+	}
+
+	item := registriesResp.Items[0]
+	if item.Ref != "docker.io/library/nginx" || item.Host != "docker.io" || item.Repository != "library/nginx" {
+		t.Fatalf("unexpected registry identity: %#v", item)
+	}
+	if item.TraceCount != 1 || item.SessionCount != 1 || item.PipelineCount != 1 {
+		t.Fatalf("unexpected registry aggregate counts: %#v", item)
+	}
+	if item.ActivityCount < 4 {
+		t.Fatalf("expected multiple registry activities, got %#v", item)
+	}
+	if item.LastOperation == "" {
+		t.Fatalf("expected last operation summary, got %#v", item)
+	}
+
+	sourceKinds := map[string]struct{}{}
+	attached := 0
+	for _, kind := range item.SourceKinds {
+		sourceKinds[kind] = struct{}{}
+	}
+	for _, activity := range item.Activities {
+		if activity.PipelineID != "" {
+			attached++
+			if activity.PipelineCommand == "" || activity.PipelineClientID != clientID {
+				t.Fatalf("unexpected attached pipeline activity: %#v", activity)
+			}
+		}
+	}
+	for _, expected := range []string{"resolve", "auth", "http"} {
+		if _, ok := sourceKinds[expected]; !ok {
+			t.Fatalf("missing source kind %q in %#v", expected, item.SourceKinds)
+		}
+	}
+	if attached == 0 {
+		t.Fatalf("expected at least one registry activity to attach back to the pipeline: %#v", item.Activities)
+	}
+}
+
 func TestV2Services(t *testing.T) {
 	t.Parallel()
 
@@ -2408,15 +2686,15 @@ func TestPipelineObjectDAG(t *testing.T) {
 	for _, obj := range resp.Objects {
 		dagqlIDs = append(dagqlIDs, obj.DagqlID)
 	}
-	if !sameStrings(dagqlIDs, []string{"state-container", "state-dir"}) {
+	if !sameStrings(dagqlIDs, []string{"state-container"}) {
 		t.Fatalf("unexpected pipeline object set: %#v", dagqlIDs)
 	}
-	if len(resp.Edges) != 1 || resp.Edges[0].FromDagqlID != "state-container" || resp.Edges[0].ToDagqlID != "state-dir" || resp.Edges[0].Label != "rootfs" {
+	if len(resp.Edges) != 0 {
 		t.Fatalf("unexpected pipeline edges: %#v", resp.Edges)
 	}
 }
 
-func TestPipelineObjectDAGUsesReceiverChainAndReachableRefs(t *testing.T) {
+func TestPipelineObjectDAGNarrowsToPipelineChainObjects(t *testing.T) {
 	t.Parallel()
 
 	srv, err := New(Config{
@@ -2775,9 +3053,8 @@ func TestPipelineObjectDAGUsesReceiverChainAndReachableRefs(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected output produced-by calls: %#v", containerObj.ProducedByCallIDs)
 	}
-	rootfsObj, ok := objectsByID["state-rootfs"]
-	if !ok || rootfsObj.TypeName != "Directory" || !rootfsObj.Placeholder {
-		t.Fatalf("expected unresolved rootfs placeholder: %#v", objectsByID)
+	if _, ok := objectsByID["state-rootfs"]; ok {
+		t.Fatalf("unexpected out-of-scope field-ref dependency in dag: %#v", objectsByID)
 	}
 
 	edgeSet := map[string]struct{}{}
@@ -2787,8 +3064,8 @@ func TestPipelineObjectDAGUsesReceiverChainAndReachableRefs(t *testing.T) {
 	if _, ok := edgeSet["call_chain|state-wolfi|state-container|container"]; !ok {
 		t.Fatalf("missing receiver-chain edge: %#v", resp.Edges)
 	}
-	if _, ok := edgeSet["field_ref|state-container|state-rootfs|FS"]; !ok {
-		t.Fatalf("missing output-ref edge: %#v", resp.Edges)
+	if len(edgeSet) != 1 {
+		t.Fatalf("unexpected extra pipeline edges: %#v", resp.Edges)
 	}
 }
 
@@ -3109,6 +3386,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(serviceRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected service detail route to serve v3 shell, got %q", serviceRec.Body.String())
+	}
+
+	registriesReq := httptest.NewRequest(http.MethodGet, "/registries", nil)
+	registriesRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(registriesRec, registriesReq)
+	if registriesRec.Code != http.StatusOK {
+		t.Fatalf("registries page failed: %d %s", registriesRec.Code, registriesRec.Body.String())
+	}
+	if !strings.Contains(registriesRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected registries route to serve v3 shell, got %q", registriesRec.Body.String())
+	}
+
+	registryReq := httptest.NewRequest(http.MethodGet, "/registries/abc123", nil)
+	registryRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(registryRec, registryReq)
+	if registryRec.Code != http.StatusOK {
+		t.Fatalf("registry detail page failed: %d %s", registryRec.Code, registryRec.Body.String())
+	}
+	if !strings.Contains(registryRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected registry detail route to serve v3 shell, got %q", registryRec.Body.String())
 	}
 }
 

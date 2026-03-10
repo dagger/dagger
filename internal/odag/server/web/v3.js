@@ -477,6 +477,12 @@ const liveDomainConfigs = {
     label: "Git Remotes",
     singularLabel: "Git Remote",
   },
+  registries: {
+    stateKey: "registries",
+    endpoint: "/api/registries?limit=200",
+    label: "Registries",
+    singularLabel: "Registry",
+  },
 };
 
 const state = {
@@ -512,6 +518,11 @@ const state = {
       error: "",
     },
     gitRemotes: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    registries: {
       status: "idle",
       items: [],
       error: "",
@@ -853,6 +864,10 @@ function renderDetail(entity) {
     els.tableShell.innerHTML = renderGitRemoteDetail(entity, detailItem);
     return;
   }
+  if (entity.dynamicKind === "registries") {
+    els.tableShell.innerHTML = renderRegistryDetail(entity, detailItem);
+    return;
+  }
   if (entity.dynamicKind === "sessions") {
     els.tableShell.innerHTML = renderSessionDetail(entity, detailItem);
     return;
@@ -1052,6 +1067,43 @@ function renderGitRemoteDetail(entity, row) {
         </div>
       </section>
       ${detailSection("Recent Pipelines", pipelineTable)}
+    </div>
+  `;
+}
+
+function renderRegistryDetail(entity, row) {
+  const activityTable = renderTableHTML({
+    columns: [
+      { label: "Activity", render: (item) => primaryCell(item.operation || item.name, item.path || item.url || item.name) },
+      { label: "Source", render: (item) => tonePill("neutral", item.sourceKind || "unknown") },
+      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Pipeline", render: (item) => registryActivityPipelineCell(item) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: row.activities || [],
+    emptyMessage: "No registry activity recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Registry</p>
+          <strong>${escapeHTML(row.ref || row.name || "Unknown")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Host", row.host ? detailCode(row.host) : "Unknown")}
+          ${pipelineRecapItem("Repository", row.repository ? detailCode(row.repository) : "Unknown")}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Latest Ref", row.latestRef ? detailCode(row.latestRef) : detailCode(row.ref || "Unknown"))}
+          ${pipelineRecapItem("Pipelines", escapeHTML(String(row.pipelineCount || 0)))}
+          ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
+          ${pipelineRecapItem("Requests", escapeHTML(String(row.activityCount || 0)))}
+          ${pipelineRecapItem("Sources", detailInlineList(row.sourceKinds, "Unknown"))}
+        </div>
+      </section>
+      ${detailSection("Recent Activity", activityTable)}
     </div>
   `;
 }
@@ -1556,6 +1608,9 @@ function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "git-remotes") {
     return gitRemotesTableModel(entity, sectionID);
   }
+  if (entity.dynamicKind === "registries") {
+    return registriesTableModel(entity, sectionID);
+  }
   switch (sectionID) {
     case "inventory":
       return {
@@ -1837,6 +1892,27 @@ function gitRemotesTableModel(entity, sectionID) {
   }
 }
 
+function registriesTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Registries",
+        meta: `${entity.liveItems.length} real registries`,
+        emptyMessage: "No registries detected yet.",
+        columns: [
+          { label: "Registry", render: (row) => linkedPrimaryCell(row.ref || row.name, row.latestRef || "", entityPath(entity.id, row.routeID)) },
+          { label: "Host", render: (row) => row.host ? detailCode(row.host) : "Unknown" },
+          { label: "Pipelines", render: (row) => registryPipelineCountCell(row) },
+          { label: "Requests", render: (row) => escapeHTML(String(row.activityCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
 function currentEntity() {
   return materializeEntity(findEntity(state.entityID) || entities[0]);
 }
@@ -1853,7 +1929,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes")) {
+  if (!entity || (entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -1873,6 +1949,9 @@ function materializeEntity(entity) {
     }
     if (entity.id === "git-remotes") {
       return buildLiveGitRemotesEntity(entity, live.items);
+    }
+    if (entity.id === "registries") {
+      return buildLiveRegistriesEntity(entity, live.items);
     }
     return buildLiveShellsEntity(entity, live.items);
   }
@@ -2368,6 +2447,79 @@ function buildLiveGitRemotesEntity(base, items) {
   };
 }
 
+function buildLiveRegistriesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      name: item.ref,
+      routeID: shortRouteID(item.ref || item.id, item.host || item.ref || item.id),
+    }))
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  const pipelineCount = liveItems.reduce((sum, item) => sum + Number(item.pipelineCount || 0), 0);
+  const sessionCount = liveItems.reduce((sum, item) => sum + Number(item.sessionCount || 0), 0);
+  const requestCount = liveItems.reduce((sum, item) => sum + Number(item.activityCount || 0), 0);
+  const hostCount = new Set(liveItems.map((item) => item.host).filter(Boolean)).size;
+  const sourceKinds = new Set();
+  for (const item of liveItems) {
+    for (const kind of item.sourceKinds || []) {
+      sourceKinds.add(kind);
+    }
+  }
+
+  return {
+    ...base,
+    dynamicKind: "registries",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one canonical registry repository identity derived from authoritative resolve spans, registry/auth requests, and explicit address-bearing calls, with activity kept attached rather than hidden behind generic object heuristics.",
+    metrics: [
+      {
+        label: "Detected registries",
+        value: String(liveItems.length),
+        detail: `${hostCount} hosts represented`,
+      },
+      {
+        label: "Attached pipelines",
+        value: String(pipelineCount),
+        detail: `${sessionCount} sessions touched these registries`,
+      },
+      {
+        label: "Requests",
+        value: String(requestCount),
+        detail: `${sourceKinds.size} source kinds contributed to the current result set`,
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.ref,
+      value: String(item.activityCount || 0),
+      note: `${item.pipelineCount || 0} pipelines · ${item.lastOperation || "activity"}`,
+    })),
+    signals: [
+      {
+        label: "Host spread",
+        value: String(hostCount),
+        tone: hostCount > 1 ? "neutral" : "good",
+        detail: "Distinct registry hosts represented in the current result set.",
+      },
+      {
+        label: "Pipeline links",
+        value: String(pipelineCount),
+        tone: pipelineCount > 0 ? "good" : "neutral",
+        detail: "Registry entities with at least one attached pipeline.",
+      },
+      {
+        label: "Request volume",
+        value: String(requestCount),
+        tone: "neutral",
+        detail: "Resolve, auth, and request activity currently attached to registry entities.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
 function describeShellState(entity) {
   const currentConfig = liveDomainConfigs[entity.id];
   if (currentConfig) {
@@ -2477,6 +2629,24 @@ function gitRemotePipelineSessionCell(row) {
   }
   const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
   return linkedPrimaryCell(shortID(row.sessionID), "", href);
+}
+
+function registryPipelineCountCell(row) {
+  const count = Number(row.pipelineCount || 0);
+  const latest = Array.isArray(row.activities)
+    ? row.activities.find((item) => item?.pipelineCommand)
+    : null;
+  const title = count === 1 ? "1 pipeline" : `${count} pipelines`;
+  const subtitle = latest?.pipelineCommand || "No attached pipelines";
+  return primaryCell(title, subtitle);
+}
+
+function registryActivityPipelineCell(row) {
+  if (!row?.pipelineTraceID || !row?.pipelineClientID) {
+    return "None";
+  }
+  const href = entityPath("pipelines", shortRouteID(row.pipelineTraceID, row.pipelineClientID));
+  return linkedPrimaryCell(row.pipelineCommand || "Pipeline", "", href);
 }
 
 function serviceCreatedByCell(row) {

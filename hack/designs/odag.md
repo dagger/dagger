@@ -1174,6 +1174,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 15: Implement `Workspace Ops` end-to-end through derivation, API, and UI
 - [x] Stage 16: Implement `Git Remotes` end-to-end through derivation, API, and UI
 - [x] Stage 17: Implement `Services` end-to-end through derivation, API, and UI
+- [x] Stage 18: Implement `Registries` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1224,6 +1225,10 @@ These are the latest design decisions that should be preserved across handoff.
   - [x] derive service identity from authoritative `Service` output-state objects plus related DAGQL calls
   - [x] keep service detail focused on definition and activity rather than generic object rendering
   - [x] wire the V3 shell's `Services` domain to the real endpoint
+- [x] Implement the `Registries` domain end-to-end:
+  - [x] derive registry identity from authoritative resolve spans, registry/auth requests, and explicit address-bearing calls
+  - [x] normalize registry identity at canonical repository granularity rather than per individual request URL
+  - [x] wire the V3 shell's `Registries` domain to the real endpoint
 
 Stage 2 implementation note:
 - `/v1/traces` now decodes OTLP HTTP/protobuf and upserts trace/span records in sqlite.
@@ -1584,11 +1589,14 @@ Stage 14 implementation note:
    - live V3 domains now speak through canonical `/api/pipelines`, `/api/sessions`, `/api/shells`, and `/api/pipelines/object-dag` routes instead of keeping V2 path names alive
 11. Current pipeline inventory boundary:
    - when a same-client `parsing command line arguments` span exists, treat its completion as the boundary between CLI/module setup and the submitted pipeline
+   - if explicit same-client ownership is missing on that parse span, fall back to same-session, then bounded trace-local latest-parse selection before the terminal call; if only a later parse span exists, let it zero out the prelude instead of fabricating a fake pipeline
    - exclude same-client module-prelude calls before that boundary from pipeline call counts, terminal-call selection, and detail-page DAGs
    - if parsing fails and no post-parse user calls exist, do not materialize a fake successful pipeline row from prelude calls alone
 12. Live validation checkpoint:
    - verified on a real `odag run -- dagger call -m github.com/dagger/dagger/modules/wolfi container`
+   - pipeline inventory row is now the actual submitted chain (`callCount=2`, `chainDepth=2`) instead of the 21-call CLI/module prelude
    - expected pipeline DAG is now the narrow 2-node chain `Wolfi -> Container`, with module loading attached separately as metadata instead of leaked into the main DAG
+   - out-of-scope descendant container/file outputs are no longer expanded into the main graph just because the terminal output's field refs can reach them
 
 Stage 15 implementation note:
 1. First real Workspace Ops API slice is implemented at `GET /api/workspace-ops`.
@@ -1659,6 +1667,32 @@ Stage 17 implementation note:
    - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
    - the current data now renders two real nginx-backed services
    - one service shows a failed `Service.up`, and another shows an open `Service.up` as `running`
+
+Stage 18 implementation note:
+1. First real Registries API slice is implemented at `GET /api/registries`.
+2. Current derivation rule:
+   - classify one registry entity per canonical image repository identity such as `docker.io/library/nginx`
+   - start from authoritative external telemetry rather than object heuristics:
+     - `resolving <image-ref>` spans
+     - registry HTTP request spans with `url.full`
+     - auth token spans carrying repository scope
+     - explicit address-bearing calls such as `Container.from`, `Container.publish`, and registry-auth helpers
+3. Current normalization rule:
+   - collapse raw request hosts and auth hosts into a canonical registry host when they are the same logical registry
+   - Docker Hub host variants (`registry-1.docker.io`, `auth.docker.io`, `registry.docker.io`, `index.docker.io`) normalize to `docker.io`
+   - keep the entity boundary at repository granularity, not per tag, digest, or individual request URL
+4. Current pipeline attachment rule:
+   - derive pipelines separately first
+   - attach registry activity back to a pipeline only when the same-client pipeline window fully contains the registry span
+   - do not use a loose same-client fallback here, because registry traffic is common enough that false positives would be noisy
+5. Current V3 shell shape:
+   - `Registries` is now a live left-nav domain at `/registries`
+   - the inventory is a simple list of canonical repositories with host, attached-pipeline count, request count, and last-seen time
+   - each detail page stays thin: recap card plus one recent-activity table
+6. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
+   - the current data now renders real repositories such as `docker.io/library/nginx`, `docker.io/library/golang`, `docker.io/alpine/git`, `docker.io/tonistiigi/xx`, and `ghcr.io/astral-sh/uv`
+   - Docker Hub auth and manifest traffic collapse onto the same canonical repository entities instead of splitting into separate auth/request rows
 
 ### Phase 3: Payload evolution (future)
 
