@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/creack/pty"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )

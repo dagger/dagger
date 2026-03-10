@@ -89,7 +89,7 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 	return engine.Version, nil
 }
 
-func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]byte, error) {
+func getSchemaJSON(hiddenTypes []string, scrubModuleHiddenTypes bool, view call.View, srv *dagql.Server) ([]byte, error) {
 	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
@@ -118,9 +118,11 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 		introspectionResponse.Schema.Directives = append(introspectionResponse.Schema.Directives, dd)
 	}
 
-	for _, typed := range core.TypesHiddenFromModuleSDKs {
-		introspectionResponse.Schema.ScrubType(typed.Type().Name())
-		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameFor(typed))
+	if scrubModuleHiddenTypes {
+		for _, typed := range core.TypesHiddenFromModuleSDKs {
+			introspectionResponse.Schema.ScrubType(typed.Type().Name())
+			introspectionResponse.Schema.ScrubType(dagql.IDTypeNameFor(typed))
+		}
 	}
 	for _, rawType := range hiddenTypes {
 		introspectionResponse.Schema.ScrubType(rawType)
@@ -135,8 +137,9 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 }
 
 type schemaJSONArgs struct {
-	HiddenTypes []string `default:"[]"`
-	Schema      string   `internal:"true" default:"" name:"schema"`
+	HiddenTypes            []string      `default:"[]"`
+	ScrubModuleHiddenTypes dagql.Boolean `default:"true" doc:"If true, types hidden from module SDKs (like Engine) will be scrubbed from the schema. Set to false for standalone clients."`
+	Schema                 string        `internal:"true" default:"" name:"schema"`
 	RawDagOpInternalArgs
 }
 
@@ -157,7 +160,11 @@ func (s *querySchema) schemaJSONFile(
 		return dagql.NewObjectResultForCurrentID(ctx, s.srv, f)
 	}
 
-	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, s.srv.View, s.srv)
+	// By default, scrub types hidden from module SDKs (like Engine).
+	// This can be overridden by setting ScrubModuleHiddenTypes arg to false for standalone clients.
+	scrubModuleHiddenTypes := args.ScrubModuleHiddenTypes.Bool()
+
+	moduleSchemaJSON, err := getSchemaJSON(args.HiddenTypes, scrubModuleHiddenTypes, s.srv.View, s.srv)
 	if err != nil {
 		return inst, err
 	}

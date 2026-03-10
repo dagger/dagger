@@ -1,12 +1,11 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
-	"context"
-
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"
@@ -15,6 +14,8 @@ import (
 type JavaSuite struct{}
 
 func TestJava(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(JavaSuite{})
 }
 
@@ -379,7 +380,7 @@ func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
 
 func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
-	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))
+	modSrc, err := filepath.Abs(filepath.Join("testdata/modules/java", moduleName))
 	require.NoError(t, err)
 
 	sdkSrc, err := filepath.Abs("../../sdk/java")

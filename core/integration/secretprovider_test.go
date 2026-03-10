@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -19,6 +19,8 @@ import (
 type SecretProvider struct{}
 
 func TestSecretProvider(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(SecretProvider{})
 }
 

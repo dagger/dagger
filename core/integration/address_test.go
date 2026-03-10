@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -17,6 +17,8 @@ import (
 type AddressSuite struct{}
 
 func TestAddress(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(AddressSuite{})
 }
 

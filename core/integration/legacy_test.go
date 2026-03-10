@@ -19,6 +19,8 @@ import (
 type LegacySuite struct{}
 
 func TestLegacy(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(LegacySuite{})
 }
 

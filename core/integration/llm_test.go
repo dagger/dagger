@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -28,6 +28,8 @@ dagger call test update --pkg=./core/integration --run="TestLLM" --env-file=file
 type LLMSuite struct{}
 
 func TestLLM(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(LLMSuite{})
 }
 

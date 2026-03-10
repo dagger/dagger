@@ -6,8 +6,8 @@
   },
   "dependencies": [
     {
-      "name": "engine-dev",
-      "source": "../engine-dev"
+      "name": "go",
+      "source": "../go"
     }
   ]
 }

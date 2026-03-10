@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
+
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,8 @@ import (
 type CLISuite struct{}
 
 func TestCLI(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(CLISuite{})
 }
 

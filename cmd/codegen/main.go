@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,13 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	// Suppress INFO-level codegen operational logs (creating directories,
+	// writing files, running post-commands, etc.) so they don't pollute
+	// the TUI output rendered on module-loading errors.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+
 	rootCmd.AddCommand(introspectCmd)
 	rootCmd.AddCommand(generateClientCmd)
 	rootCmd.AddCommand(generateModuleCmd)

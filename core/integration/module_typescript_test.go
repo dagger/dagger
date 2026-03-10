@@ -16,6 +16,8 @@ import (
 type TypescriptSuite struct{}
 
 func TestTypescript(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(TypescriptSuite{})
 }
 

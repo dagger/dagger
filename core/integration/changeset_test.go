@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -13,6 +13,8 @@ import (
 type ChangesetSuite struct{}
 
 func TestChangeset(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ChangesetSuite{})
 }
 

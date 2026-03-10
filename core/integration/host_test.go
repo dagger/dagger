@@ -13,12 +13,14 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 )
 
 type HostSuite struct{}
 
 func TestHost(t *testing.T) {
+	ctx := context.Background()
+	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(HostSuite{})
 }
 
