@@ -1758,12 +1758,12 @@ function renderSessionDomainCards(sessionRow) {
   if (!cards) {
     return "";
   }
-  return `<div class="v3-overview-grid">${cards}</div>`;
+  return `<div class="v3-session-hub-grid">${cards}</div>`;
 }
 
 function renderSessionDomainCard(entity, items) {
   return `
-    <section class="v3-detail-card">
+    <section class="v3-detail-card v3-session-hub-card">
       <div class="v3-overview-card-head">
         <a class="v3-overview-card-title" href="${escapeHTML(entityPath(entity.id))}" data-route-path="${escapeHTML(entityPath(entity.id))}">${escapeHTML(entity.label)}</a>
         <div class="v3-overview-card-side">

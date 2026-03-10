@@ -2192,6 +2192,17 @@ body {
 .v3-session-hub-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.v3-session-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+}
+
+.v3-session-hub-card {
+  gap: 16px;
 }
 
 .v3-session-hub-table th {
@@ -2205,10 +2216,14 @@ body {
 }
 
 .v3-session-hub-table th:nth-child(2),
+.v3-session-hub-table td:nth-child(2) {
+  width: 108px;
+  white-space: nowrap;
+}
+
 .v3-session-hub-table th:nth-child(3),
-.v3-session-hub-table td:nth-child(2),
 .v3-session-hub-table td:nth-child(3) {
-  width: 1%;
+  width: 124px;
   white-space: nowrap;
 }
 
@@ -2219,6 +2234,19 @@ body {
 .v3-session-hub-table td {
   padding: 12px 0;
   vertical-align: top;
+}
+
+.v3-session-hub-table td:first-child {
+  padding-right: 14px;
+}
+
+.v3-session-hub-table .v3-link {
+  min-width: 0;
+}
+
+.v3-session-hub-table .v3-cell-primary strong,
+.v3-session-hub-table .v3-cell-primary span {
+  overflow-wrap: anywhere;
 }
 
 .v3-session-hub-status,
@@ -2237,6 +2265,10 @@ body {
 
 @media (max-width: 920px) {
   .v3-overview-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .v3-session-hub-grid {
     grid-template-columns: 1fr;
   }
 }
