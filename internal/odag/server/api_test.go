@@ -2211,6 +2211,198 @@ func TestV2Terminals(t *testing.T) {
 	}
 }
 
+func TestV2Repls(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "odag.db")
+	srv, err := New(Config{
+		ListenAddr: "127.0.0.1:0",
+		DBPath:     dbPath,
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = srv.store.Close()
+	})
+
+	traceIDHex := "c9c10b4a0fb67ed7f6166b5f5eae9b01"
+	connectHex := "c7d60e2bb5226f41"
+	rootHex := "2197e7b3c7412172"
+	containerHex := "1e724ac0cafe7196"
+	fromHex := "516e4c32d230b10b"
+	asServiceHex := "053dab7fdb31673c"
+	upHex := "98b246f2436c4ea9"
+	clientID := "repl-client"
+	sessionID := "repl-session"
+	commandArgs := []string{"dagger", "-M", "-c", "container | from nginx | as-service | up"}
+	rootCommand := strings.Join(commandArgs, " ")
+
+	reqPB := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{
+			{
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvStringList(t, "process.command_args", commandArgs),
+						kvString(t, "service.name", "dagger-cli"),
+					},
+				},
+				ScopeSpans: []*tracepb.ScopeSpans{
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, connectHex),
+								Name:              "connect",
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   2,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, clientID),
+									kvString(t, telemetry.EngineSessionIDAttr, sessionID),
+									kvString(t, telemetry.EngineClientKindAttr, "root"),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/cli"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, rootHex),
+								Name:              rootCommand,
+								StartTimeUnixNano: 1,
+								EndTimeUnixNano:   100,
+								Status:            &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+						},
+					},
+					{
+						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/shell"},
+						Spans: []*tracepb.Span{
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, containerHex),
+								ParentSpanId:      mustDecodeHex(t, rootHex),
+								Name:              "container",
+								StartTimeUnixNano: 20,
+								EndTimeUnixNano:   30,
+								Attributes: []*commonpb.KeyValue{
+									kvStringList(t, "dagger.io/shell.handler.args", []string{"container"}),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, fromHex),
+								ParentSpanId:      mustDecodeHex(t, rootHex),
+								Name:              "from",
+								StartTimeUnixNano: 31,
+								EndTimeUnixNano:   40,
+								Attributes: []*commonpb.KeyValue{
+									kvStringList(t, "dagger.io/shell.handler.args", []string{"from", "nginx"}),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, asServiceHex),
+								ParentSpanId:      mustDecodeHex(t, rootHex),
+								Name:              "as-service",
+								StartTimeUnixNano: 41,
+								EndTimeUnixNano:   50,
+								Attributes: []*commonpb.KeyValue{
+									kvStringList(t, "dagger.io/shell.handler.args", []string{"as-service"}),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, traceIDHex),
+								SpanId:            mustDecodeHex(t, upHex),
+								ParentSpanId:      mustDecodeHex(t, rootHex),
+								Name:              "up",
+								StartTimeUnixNano: 51,
+								EndTimeUnixNano:   60,
+								Attributes: []*commonpb.KeyValue{
+									kvStringList(t, "dagger.io/shell.handler.args", []string{"up"}),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ingestBody, err := proto.Marshal(reqPB)
+	if err != nil {
+		t.Fatalf("marshal ingest payload: %v", err)
+	}
+	ingestReq := httptest.NewRequest(http.MethodPost, "/v1/traces", bytes.NewReader(ingestBody))
+	ingestRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(ingestRec, ingestReq)
+	if ingestRec.Code != http.StatusCreated {
+		t.Fatalf("ingest failed: status=%d body=%s", ingestRec.Code, ingestRec.Body.String())
+	}
+
+	replsReq := httptest.NewRequest(http.MethodGet, "/api/repls?traceID="+traceIDHex, nil)
+	replsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(replsRec, replsReq)
+	if replsRec.Code != http.StatusOK {
+		t.Fatalf("repls failed: status=%d body=%s", replsRec.Code, replsRec.Body.String())
+	}
+
+	var replsResp struct {
+		Items []struct {
+			Name         string `json:"name"`
+			Command      string `json:"command"`
+			Mode         string `json:"mode"`
+			Status       string `json:"status"`
+			SessionID    string `json:"sessionID"`
+			ClientID     string `json:"clientID"`
+			RootClientID string `json:"rootClientID"`
+			CommandCount int    `json:"commandCount"`
+			FirstCommand string `json:"firstCommand"`
+			LastCommand  string `json:"lastCommand"`
+			Commands     []struct {
+				Command string `json:"command"`
+				Status  string `json:"status"`
+			} `json:"commands"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(replsRec.Body.Bytes(), &replsResp); err != nil {
+		t.Fatalf("decode repls response: %v", err)
+	}
+	if len(replsResp.Items) != 1 {
+		t.Fatalf("expected one repl item, got %#v", replsResp.Items)
+	}
+
+	item := replsResp.Items[0]
+	if item.Name != rootCommand || item.Command != rootCommand {
+		t.Fatalf("unexpected repl identity: %#v", item)
+	}
+	if item.Mode != "inline" {
+		t.Fatalf("unexpected repl mode: %#v", item)
+	}
+	if item.Status != "failed" || item.SessionID != sessionID || item.ClientID != clientID || item.RootClientID != clientID {
+		t.Fatalf("unexpected repl scope/status: %#v", item)
+	}
+	if item.CommandCount != 4 || item.FirstCommand != "container" || item.LastCommand != "up" {
+		t.Fatalf("unexpected repl command summary: %#v", item)
+	}
+	if got := []string{
+		item.Commands[0].Command,
+		item.Commands[1].Command,
+		item.Commands[2].Command,
+		item.Commands[3].Command,
+	}; !sameStrings(got, []string{"container", "from nginx", "as-service", "up"}) {
+		t.Fatalf("unexpected repl commands: %#v", item.Commands)
+	}
+}
+
 func TestV2Services(t *testing.T) {
 	t.Parallel()
 
@@ -3584,6 +3776,26 @@ func TestWebRouteFallbacks(t *testing.T) {
 	}
 	if !strings.Contains(terminalRec.Body.String(), "Entity Explorer") {
 		t.Fatalf("expected terminal detail route to serve v3 shell, got %q", terminalRec.Body.String())
+	}
+
+	replsReq := httptest.NewRequest(http.MethodGet, "/repls", nil)
+	replsRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(replsRec, replsReq)
+	if replsRec.Code != http.StatusOK {
+		t.Fatalf("repls page failed: %d %s", replsRec.Code, replsRec.Body.String())
+	}
+	if !strings.Contains(replsRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected repls route to serve v3 shell, got %q", replsRec.Body.String())
+	}
+
+	replReq := httptest.NewRequest(http.MethodGet, "/repls/abc123", nil)
+	replRec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(replRec, replReq)
+	if replRec.Code != http.StatusOK {
+		t.Fatalf("repl detail page failed: %d %s", replRec.Code, replRec.Body.String())
+	}
+	if !strings.Contains(replRec.Body.String(), "Entity Explorer") {
+		t.Fatalf("expected repl detail route to serve v3 shell, got %q", replRec.Body.String())
 	}
 
 	gitRemotesReq := httptest.NewRequest(http.MethodGet, "/git-remotes", nil)

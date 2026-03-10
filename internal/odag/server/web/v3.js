@@ -447,6 +447,12 @@ const liveDomainConfigs = {
     label: "Terminals",
     singularLabel: "Terminal",
   },
+  repls: {
+    stateKey: "repls",
+    endpoint: "/api/repls?limit=100",
+    label: "Repls",
+    singularLabel: "Repl",
+  },
   services: {
     stateKey: "services",
     endpoint: "/api/services?limit=200",
@@ -499,6 +505,11 @@ const state = {
   },
   live: {
     terminals: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    repls: {
       status: "idle",
       items: [],
       error: "",
@@ -861,6 +872,10 @@ function renderDetail(entity) {
   if (entity.dynamicKind === "pipelines") {
     const graph = ensurePipelineGraph(detailItem);
     els.tableShell.innerHTML = renderPipelineDetail(entity, detailItem, graph);
+    return;
+  }
+  if (entity.dynamicKind === "repls") {
+    els.tableShell.innerHTML = renderReplDetail(entity, detailItem);
     return;
   }
   if (entity.dynamicKind === "workspace-ops") {
@@ -1531,6 +1546,42 @@ function renderTerminalDetail(entity, row) {
   `;
 }
 
+function renderReplDetail(entity, row) {
+  const commandTable = renderTableHTML({
+    columns: [
+      { label: "Command", render: (item) => primaryCell(item.command || item.name, "") },
+      { label: "Status", render: (item) => statusPill(item.status) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+      { label: "Duration", render: (item) => escapeHTML(durationLabel(item.startUnixNano, item.endUnixNano, item.status)) },
+    ],
+    rows: row.commands || [],
+    emptyMessage: "No REPL commands recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Repl</p>
+          <strong>${escapeHTML(row.command || row.name || "REPL")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.status))}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)))}
+          ${pipelineRecapItem("Session", replSessionSummary(row))}
+          ${pipelineRecapItem("Mode", tonePill("neutral", row.mode || "history"))}
+          ${pipelineRecapItem("Commands", escapeHTML(String(row.commandCount || 0)))}
+          ${pipelineRecapItem("First", row.firstCommand ? detailCode(row.firstCommand) : "Unknown")}
+          ${pipelineRecapItem("Last", row.lastCommand ? detailCode(row.lastCommand) : "Unknown")}
+        </div>
+      </section>
+      ${detailSection("Command History", commandTable)}
+    </div>
+  `;
+}
+
 function renderShellDetail(entity, row) {
   const evidenceTable = renderTableHTML({
     columns: [
@@ -1643,6 +1694,9 @@ function backLink(entity) {
 function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "terminals") {
     return terminalsTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "repls") {
+    return replsTableModel(entity, sectionID);
   }
   if (entity.dynamicKind === "services") {
     return servicesTableModel(entity, sectionID);
@@ -1765,6 +1819,28 @@ function terminalsTableModel(entity, sectionID) {
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
           { label: "Session", render: (row) => terminalSessionCell(row) },
           { label: "Activity", render: (row) => terminalActivityCell(row) },
+        ],
+        rows: entity.liveItems,
+      };
+  }
+}
+
+function replsTableModel(entity, sectionID) {
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Repls",
+        meta: `${entity.liveItems.length} real repls`,
+        emptyMessage: "No repl history detected yet.",
+        columns: [
+          { label: "Repl", render: (row) => linkedPrimaryCell(row.command || row.name, row.mode || row.firstCommand || "", entityPath(entity.id, row.routeID)) },
+          { label: "Status", render: (row) => statusPill(row.status) },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
+          { label: "Duration", render: (row) => escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)) },
+          { label: "Session", render: (row) => replSessionCell(row) },
+          { label: "Commands", render: (row) => replCommandHistoryCell(row) },
         ],
         rows: entity.liveItems,
       };
@@ -2005,7 +2081,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "terminals" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
+  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -2013,6 +2089,9 @@ function materializeEntity(entity) {
   if (live.status === "loaded") {
     if (entity.id === "terminals") {
       return buildLiveTerminalsEntity(entity, live.items);
+    }
+    if (entity.id === "repls") {
+      return buildLiveReplsEntity(entity, live.items);
     }
     if (entity.id === "services") {
       return buildLiveServicesEntity(entity, live.items);
@@ -2227,6 +2306,72 @@ function buildLivePipelinesEntity(base, items) {
     ],
     evidence,
     relations,
+    inventory: liveItems,
+  };
+}
+
+function buildLiveReplsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: sessionRouteID(item.traceID, item.sessionID || item.rootClientID || item.clientID || item.id),
+    }))
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const failedCount = liveItems.filter((item) => item.status === "failed").length;
+  const commandTotal = liveItems.reduce((sum, item) => sum + Number(item.commandCount || 0), 0);
+  const sessionCount = new Set(liveItems.map((item) => item.sessionID).filter(Boolean)).size;
+  const durations = liveItems.map((item) => Math.max(0, Number(item.endUnixNano || 0) - Number(item.startUnixNano || 0)));
+
+  return {
+    ...base,
+    dynamicKind: "repls",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one shell-command history surface, discovered directly from `dagger.io/shell.handler.args` spans grouped into one derived session.",
+    metrics: [
+      {
+        label: "Detected repls",
+        value: String(liveItems.length),
+        detail: `${failedCount} failed | ${commandTotal} commands`,
+      },
+      {
+        label: "Sessions",
+        value: String(sessionCount || liveItems.length),
+        detail: "Derived execution sessions represented by the current REPL set.",
+      },
+      {
+        label: "Median duration",
+        value: formatDuration(median(durations)),
+        detail: "Based on real shell handler history windows.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.command || item.name,
+      value: String(item.commandCount || 0),
+      note: item.lastCommand || item.firstCommand || "No commands",
+    })),
+    signals: [
+      {
+        label: "Failures",
+        value: String(failedCount),
+        tone: failedCount > 0 ? "warn" : "good",
+        detail: "REPL histories containing a failed submitted command.",
+      },
+      {
+        label: "Command volume",
+        value: String(commandTotal),
+        tone: "neutral",
+        detail: "Submitted shell handler commands in the current result set.",
+      },
+      {
+        label: "Session spread",
+        value: String(sessionCount || liveItems.length),
+        tone: "neutral",
+        detail: "Derived sessions represented by these REPL histories.",
+      },
+    ],
+    evidence: [],
+    relations: [],
     inventory: liveItems,
   };
 }
@@ -3033,6 +3178,27 @@ function sessionStatusLabel(row) {
     return "open";
   }
   return row.status || "unknown";
+}
+
+function replSessionCell(row) {
+  if (!row.sessionID) {
+    return primaryCell("Trace-local", shortID(row.traceID));
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return linkedPrimaryCell(shortID(row.sessionID), row.rootClientID ? shortID(row.rootClientID) : "", href);
+}
+
+function replSessionSummary(row) {
+  if (!row.sessionID) {
+    return detailCode(shortID(row.traceID) || "Unknown");
+  }
+  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+}
+
+function replCommandHistoryCell(row) {
+  const count = Number(row.commandCount || 0);
+  return primaryCell(`${count} commands`, row.lastCommand || row.firstCommand || "No command history");
 }
 
 function shellActivityCell(row) {

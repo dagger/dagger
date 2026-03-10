@@ -1176,6 +1176,7 @@ These are the latest design decisions that should be preserved across handoff.
 - [x] Stage 17: Implement `Services` end-to-end through derivation, API, and UI
 - [x] Stage 18: Implement `Registries` end-to-end through derivation, API, and UI
 - [x] Stage 19: Implement `Terminals` end-to-end through derivation, API, and UI
+- [x] Stage 20: Implement `Repls` end-to-end through derivation, API, and UI
 
 ### Active Next Tasks
 
@@ -1720,6 +1721,34 @@ Stage 19 implementation note:
    - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
    - the current data now renders real terminals such as `engine-dev playground terminal` and `dagger core container from --address=alpine terminal`
    - the `engine-dev playground terminal` entity now correctly includes both descendant exec spans (`exec dagger-entrypoint.sh ...` and `exec sh`) instead of dropping the longer-lived entrypoint child
+
+Stage 20 implementation note:
+1. First real Repls API slice is implemented at `GET /api/repls`.
+2. Current derivation rule:
+   - classify one repl entity per derived execution session that contains real `dagger.io/shell.handler.args` spans
+   - do not try to infer a broader mutable interactive workspace/object model yet; the entity is currently just authoritative shell command history plus session attachment
+3. Current grouping rule:
+   - use the derived session when handler spans already inherit one
+   - if handler spans are siblings of the `connect` span under one command root and therefore lack explicit execution attrs, fall back to the trace's single derived session when that fallback is unambiguous
+   - this keeps inline shell traces such as `dagger -M -c ...` linkable to `Sessions` without inventing multi-session ownership
+4. Current label rule:
+   - prefer the nearest useful ancestor command label in the raw span tree, especially top-level `dagger ...` spans
+   - use that ancestor command as the repl inventory label and recap header
+   - fall back to joined root-client command args or the first handler command only when the ancestor chain does not provide a user-facing command root
+5. Current detail shape:
+   - `Repls` is now a live left-nav domain at `/repls`
+   - the inventory is a simple list with root command, status, started time, session link, and command count
+   - each detail page stays thin: recap card plus one command-history table
+6. Current live validation checkpoint:
+   - verified on the real local ODAG dataset by serving this branch on a fresh port against a copied sqlite DB
+   - the current data now renders real histories such as:
+     - `dagger -M -c container | from nginx | as-service | up`
+     - `dagger -M -c container | from nginx | with-exposed-port 80 | as-service | up`
+     - `dagger shell --no-mod /home/sipsma/repo/github.com/sipsma/dagger/hack/build`
+   - command history is taken directly from `dagger.io/shell.handler.args`, preserving ordered shell submissions like `container`, `from nginx`, `as-service`, `up`, and longer build-style histories from interactive shell usage
+7. Current deliberate limitation:
+   - repl history rows are not yet linked back to `Pipelines` one-to-one
+   - V3 still needs a follow-up pass to ensure individual shell submissions that semantically behave like pipelines also materialize as first-class pipeline entities
 
 ### Phase 3: Payload evolution (future)
 
