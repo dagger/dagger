@@ -71,6 +71,7 @@ type frontendPretty struct {
 
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
+	reportMu   sync.Mutex // protects state in reportOnly mode (no TUI event loop)
 
 	// updated by Run
 	tui         *tuist.TUI
@@ -425,7 +426,7 @@ func (fe *frontendPretty) syncSpinnerTree(st *SpanTreeView) {
 }
 
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.dag = client
 	})
 }
@@ -438,6 +439,18 @@ func NewReporter(w io.Writer) Frontend {
 	fe := NewWithDB(w, dagui.NewDB())
 	fe.reportOnly = true
 	return fe
+}
+
+// dispatch runs fn on the TUI event loop goroutine (when the TUI is running)
+// or directly under a mutex (in reportOnly mode where there is no event loop).
+func (fe *frontendPretty) dispatch(fn func()) {
+	if fe.reportOnly {
+		fe.reportMu.Lock()
+		defer fe.reportMu.Unlock()
+		fn()
+	} else {
+		fe.tui.Dispatch(fn)
+	}
 }
 
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
@@ -464,7 +477,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 }
 
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		title := section.Title
 
 		if bubble, ok := fe.notifications[title]; ok {
@@ -503,12 +516,12 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 }
 
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.startShell(ctx, handler)
 		fe.Update()
 	})
 	<-ctx.Done()
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.stopShell()
 		fe.Update()
 	})
@@ -572,7 +585,7 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 			slog.Warn("failed to open URL", "url", url, "err", err)
 		}
 	}
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.cloudURL = url
 		if msg != "" {
 			slog.Warn(msg)
@@ -659,7 +672,7 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
 	done := make(chan struct{}, 1)
 
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.handlePromptForm(form, func(f *huh.Form) {
 			close(done)
 		})
@@ -709,14 +722,14 @@ func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 }
 
 func (fe *frontendPretty) SetVerbosity(n int) {
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.Opts().Verbosity = n
 		fe.Update()
 	})
 }
 
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.db.SetPrimarySpan(spanID)
 		fe.ZoomedSpan = spanID
 		fe.FocusedSpan = spanID
@@ -726,7 +739,7 @@ func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 }
 
 func (fe *frontendPretty) RevealAllSpans() {
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.ZoomedSpan = dagui.SpanID{}
 		fe.Update()
 	})
@@ -845,7 +858,7 @@ func (fe *frontendPretty) recordKeyPress(keyStr string) {
 func (fe *frontendPretty) scheduleKeypressClear() {
 	go func() {
 		time.Sleep(keypressDuration + 50*time.Millisecond)
-		fe.tui.Dispatch(func() {
+		fe.dispatch(func() {
 			if fe.keymapBar != nil {
 				fe.keymapBar.Update()
 			}
@@ -855,14 +868,14 @@ func (fe *frontendPretty) scheduleKeypressClear() {
 
 func (fe *frontendPretty) spawnRun() {
 	cleanup, err := fe.run(fe.runCtx)
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		if !fe.NoExit || fe.interrupted {
 			if cleanup != nil {
 				go func() {
 					if cleanErr := cleanup(); cleanErr != nil {
 						slog.Error("cleanup failed", "err", cleanErr)
 					}
-					fe.tui.Dispatch(func() {
+					fe.dispatch(func() {
 						fe.handleDone(err)
 					})
 				}()
@@ -980,7 +993,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	for i, s := range spans {
 		spanIDs[i] = dagui.SpanID{SpanID: s.SpanContext().SpanID()}
 	}
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.db.ExportSpans(context.Background(), spansCopy)
 		for _, id := range spanIDs {
 			if sr, ok := fe.spanTrees[id]; ok {
@@ -1012,7 +1025,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	// Copy the slice — the OTel SDK reuses it after Export returns.
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		for _, log := range logsCopy {
 			if log.SpanID().IsValid() {
 				spanID := dagui.SpanID{SpanID: log.SpanID()}
@@ -1053,7 +1066,7 @@ func (fe *frontendPretty) ForceFlush(context.Context) error {
 
 func (fe *frontendPretty) Close() error {
 	if fe.tui != nil {
-		fe.tui.Dispatch(func() {
+		fe.dispatch(func() {
 			fe.handleEOF()
 		})
 	}
@@ -1069,15 +1082,10 @@ type FrontendMetricExporter struct {
 }
 
 func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
-	// Synchronous dispatch — the metrics SDK reuses the ResourceMetrics struct,
-	// and deep-copying it is impractical. Wait for the UI goroutine to consume it.
-	done := make(chan struct{})
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.db.MetricExporter().Export(ctx, resourceMetrics)
 		fe.Update()
-		close(done)
 	})
-	<-done
 	return nil
 }
 
@@ -1870,7 +1878,7 @@ func (fe *frontendPretty) handleInputComplete() {
 			fe.shellLock.Lock()
 			defer fe.shellLock.Unlock()
 			err := fe.shell.Handle(ctx, value)
-			fe.tui.Dispatch(func() {
+			fe.dispatch(func() {
 				fe.handleShellDone(err)
 				fe.Update()
 			})
@@ -2082,7 +2090,7 @@ func (fe *frontendPretty) runShellAsync(work func()) {
 	fe.syncPrompt()
 	go func() {
 		work()
-		fe.tui.Dispatch(func() {
+		fe.dispatch(func() {
 			fe.syncPrompt()
 			fe.Update()
 		})
@@ -2095,7 +2103,7 @@ func (fe *frontendPretty) quitAction(interruptErr error) {
 		fe.cleanup = nil // prevent double cleanup
 		go func() {
 			cleanup()
-			fe.tui.Dispatch(func() {
+			fe.dispatch(func() {
 				fe.quitting = true
 				fe.doQuit()
 			})
@@ -3135,7 +3143,7 @@ type TermOutput interface {
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
 	done := make(chan struct{})
 
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.handlePromptForm(
 			NewForm(
 				huh.NewGroup(
@@ -3164,7 +3172,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message s
 func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
 	done := make(chan struct{})
 
-	fe.tui.Dispatch(func() {
+	fe.dispatch(func() {
 		fe.handlePromptForm(
 			NewForm(
 				huh.NewGroup(
