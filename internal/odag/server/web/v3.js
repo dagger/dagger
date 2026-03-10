@@ -3073,12 +3073,7 @@ function sessionFilterOptionMeta(row) {
 }
 
 function workspaceFilterOptionLabel(row) {
-  const name = String(row?.name || row?.root || "Workspace").trim();
-  const suffix = shortWorkspacePath(row?.root);
-  if (!suffix || suffix === name) {
-    return name;
-  }
-  return `${name} · ${suffix}`;
+  return String(row?.root || row?.name || "Workspace").trim();
 }
 
 function sessionFilterMatches(row, query) {
@@ -3097,16 +3092,6 @@ function sessionFilterMatches(row, query) {
     .filter(Boolean)
     .join(" ");
   return haystack.includes(query);
-}
-
-function shortWorkspacePath(root) {
-  const parts = String(root || "")
-    .split("/")
-    .filter(Boolean);
-  if (!parts.length) {
-    return "";
-  }
-  return parts.slice(-3).join("/");
 }
 
 function overviewEntities() {

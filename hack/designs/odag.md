@@ -1941,6 +1941,7 @@ Stage 29 implementation note:
 2. Current UI wiring:
    - global `Workspace` selector is populated from live `Workspaces`
    - `Session` filter is a searchable popover fed from live `Sessions`
+   - workspace selector labels should use the canonical long workspace identifier (`root` today), without prepending a redundant short display name
 3. Current workspace filter source of truth:
    - use live `Workspace.ops` as the compatibility shim until first-class workspace attachments exist in telemetry
    - derive workspace ownership from attached client IDs and pipeline IDs visible in those ops
