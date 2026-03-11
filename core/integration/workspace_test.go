@@ -437,6 +437,80 @@ type Globber {
 	})
 }
 
+// TestWorkspaceSearch verifies that Workspace.search runs ripgrep (or grep)
+// on the host filesystem and returns structured results.
+func (WorkspaceSuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("hello.txt", "Hello World\nGoodbye World\n").
+		WithNewFile("src/main.go", "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n").
+		WithNewFile("src/util.go", "package main\n\nfunc helper() string {\n\treturn \"hello\"\n}\n").
+		WithNewFile("docs/readme.md", "# Hello\n\nThis is a hello world project.\n").
+		With(initDangModule("searcher", `
+type Searcher {
+  pub file_paths: [String!]!
+
+  new(ws: Workspace!, pattern: String!) {
+    results := ws.search(pattern: pattern)
+    self.file_paths = []
+    for result in results {
+      self.file_paths = self.file_paths + [result.filePath + ":" + "\(result.lineNumber)"]
+    }
+    self
+  }
+}
+
+type FilesSearcher {
+  pub files: [String!]!
+
+  new(ws: Workspace!, pattern: String!, globs: [String!]) {
+    results := ws.search(pattern: pattern, filesOnly: true, globs: globs)
+    self.files = []
+    for result in results {
+      self.files = self.files + [result.filePath]
+    }
+    self
+  }
+}
+`))
+
+	t.Run("basic search", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("searcher", "--pattern=hello", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "hello.txt:1")
+		require.Contains(t, lines, "src/main.go:4")
+		require.Contains(t, lines, "src/util.go:4")
+	})
+
+	t.Run("files only", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "hello.txt")
+		require.Contains(t, lines, "src/main.go")
+		require.Contains(t, lines, "src/util.go")
+		require.Contains(t, lines, "docs/readme.md")
+	})
+
+	t.Run("files only with glob filter", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "--globs=*.go", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "src/main.go")
+		require.Contains(t, lines, "src/util.go")
+		require.NotContains(t, lines, "hello.txt")
+		require.NotContains(t, lines, "readme.md")
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("searcher", "--pattern=nonexistent_pattern_xyz", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+}
+
 // TestWorkspaceSubdirectory verifies that Workspace.directory can access
 // a subdirectory of the workspace.
 func (WorkspaceSuite) TestWorkspaceSubdirectory(ctx context.Context, t *testctx.T) {

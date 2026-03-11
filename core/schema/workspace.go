@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type workspaceSchema struct{}
@@ -57,6 +59,20 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
+		dagql.NodeFuncWithCacheKey("search", s.search, dagql.CachePerClient).
+			Doc(
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+				`Runs ripgrep on the client host, falling back to grep if unavailable.`,
+			).
+			Args((func() []dagql.Argument {
+				args := []dagql.Argument{
+					dagql.Arg("paths").Doc("Directory or file paths to search"),
+					dagql.Arg("globs").Doc("Glob patterns to match (e.g., \"*.md\")"),
+				}
+				args = append(args, (core.SearchOpts{}).Args()...)
+				return args
+			})()...),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
@@ -235,6 +251,85 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+type workspaceSearchArgs struct {
+	core.SearchOpts
+	Paths []string `default:"[]"`
+	Globs []string `default:"[]"`
+}
+
+func (workspaceSearchArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceSearchArgs) (dagql.Array[*core.SearchResult], error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	localResults, err := bk.SearchCallerHostPath(ctx, ws.Root, &engine.LocalSearchOpts{
+		Pattern:     args.Pattern,
+		Literal:     args.Literal,
+		Multiline:   args.Multiline,
+		Dotall:      args.Dotall,
+		Insensitive: args.Insensitive,
+		SkipIgnored: args.SkipIgnored,
+		SkipHidden:  args.SkipHidden,
+		FilesOnly:   args.FilesOnly,
+		Limit:       args.Limit,
+		Paths:       args.Paths,
+		Globs:       args.Globs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+
+	// Convert engine.LocalSearchResult to core.SearchResult and emit OTel logs
+	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+	defer stdio.Close()
+
+	results := make([]*core.SearchResult, len(localResults))
+	for i, lr := range localResults {
+		result := &core.SearchResult{
+			FilePath:       lr.FilePath,
+			LineNumber:     lr.LineNumber,
+			AbsoluteOffset: lr.AbsoluteOffset,
+			MatchedLines:   lr.MatchedLines,
+		}
+		for _, sm := range lr.Submatches {
+			result.Submatches = append(result.Submatches, &core.SearchSubmatch{
+				Text:  sm.Text,
+				Start: sm.Start,
+				End:   sm.End,
+			})
+		}
+		results[i] = result
+
+		if args.FilesOnly {
+			fmt.Fprintln(stdio.Stdout, result.FilePath)
+		} else {
+			ensureLn := result.MatchedLines
+			if !strings.HasSuffix(ensureLn, "\n") {
+				ensureLn += "\n"
+			}
+			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
+		}
+	}
+
+	return dagql.Array[*core.SearchResult](results), nil
 }
 
 type workspaceGlobArgs struct {

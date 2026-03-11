@@ -165,6 +165,7 @@ type LocalImportOpts struct {
 	StatFollowSymlinks   bool     `json:"stat_follow_symlinks"`
 	GetAbsPathOnly       bool     `json:"get_abs_path_only"`
 	GlobPattern          string   `json:"glob_pattern"`
+	SearchOpts           *LocalSearchOpts `json:"search_opts,omitempty"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
@@ -226,6 +227,37 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 		return nil, err
 	}
 	return opts, nil
+}
+
+// LocalSearchResult is a search match returned from a client-side search.
+type LocalSearchResult struct {
+	FilePath       string              `json:"file_path"`
+	LineNumber     int                 `json:"line_number"`
+	AbsoluteOffset int                 `json:"absolute_offset"`
+	MatchedLines   string              `json:"matched_lines"`
+	Submatches     []LocalSearchSubmatch `json:"submatches,omitempty"`
+}
+
+// LocalSearchSubmatch is a sub-match within a search result.
+type LocalSearchSubmatch struct {
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// LocalSearchOpts configures a client-side search (ripgrep/grep).
+type LocalSearchOpts struct {
+	Pattern     string   `json:"pattern"`
+	Literal     bool     `json:"literal,omitempty"`
+	Multiline   bool     `json:"multiline,omitempty"`
+	Dotall      bool     `json:"dotall,omitempty"`
+	Insensitive bool     `json:"insensitive,omitempty"`
+	SkipIgnored bool     `json:"skip_ignored,omitempty"`
+	SkipHidden  bool     `json:"skip_hidden,omitempty"`
+	FilesOnly   bool     `json:"files_only,omitempty"`
+	Limit       *int     `json:"limit,omitempty"`
+	Paths       []string `json:"paths,omitempty"`
+	Globs       []string `json:"globs,omitempty"`
 }
 
 type LocalExportOpts struct {

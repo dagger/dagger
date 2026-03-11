@@ -15,9 +15,49 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
+	telemetry "github.com/dagger/otel-go"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/engine"
 )
+
+// injectTraceContext adds W3C trace context to the gRPC outgoing metadata,
+// so that client-side session attachables can create child spans.
+func injectTraceContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	} else {
+		md = md.Copy()
+	}
+	telemetry.Propagator.Inject(ctx, metadataCarrier(md))
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+// metadataCarrier adapts gRPC metadata.MD to propagation.TextMapCarrier.
+// Unlike propagation.HeaderCarrier (which wraps http.Header and title-cases
+// keys), this keeps keys lowercase as required by gRPC metadata.
+type metadataCarrier metadata.MD
+
+func (mc metadataCarrier) Get(key string) string {
+	vals := metadata.MD(mc).Get(key)
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
+func (mc metadataCarrier) Set(key, value string) {
+	metadata.MD(mc).Set(key, value)
+}
+
+func (mc metadataCarrier) Keys() []string {
+	keys := make([]string, 0, len(mc))
+	for k := range mc {
+		keys = append(keys, k)
+	}
+	return keys
+}
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -27,6 +67,9 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 	defer cancel(errors.New("diff copy done"))
 
 	ctx = opts.AppendToOutgoingContext(ctx)
+
+	// Propagate OTel trace context to the client via gRPC metadata
+	ctx = injectTraceContext(ctx)
 
 	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
@@ -87,6 +130,22 @@ func (c *Client) StatCallerHostPathFollow(ctx context.Context, path string, retu
 		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 	return &msg, nil
+}
+
+func (c *Client) SearchCallerHostPath(ctx context.Context, dir string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:       dir,
+		SearchOpts: opts,
+	}, &msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search path: %w", err)
+	}
+	var results []engine.LocalSearchResult
+	if err := json.Unmarshal(msg.Data, &results); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal search results: %w", err)
+	}
+	return results, nil
 }
 
 func (c *Client) GlobCallerHostPath(ctx context.Context, dir string, pattern string) ([]string, error) {
