@@ -117,34 +117,18 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
-	// Now write the client's go.mod (after directory structure is created)
-	clientGoMod := new(modfile.File)
-	clientGoMod.AddModuleStmt(clientModuleName)
-	// Use the Go SDK's minimum version rather than the codegen runtime version,
-	// so the client go.mod stays compatible with the SDK's requirements.
-	clientGoVersion := goVersion
-	if sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil); err == nil && sdkMod.Go != nil {
-		clientGoVersion = sdkMod.Go.Version
-	}
-	clientGoMod.AddGoStmt(clientGoVersion)
-	// Set dagger.io/dagger version to match the engineVersion from dagger.json
-	// Only for released versions (not dev, not empty) - go mod tidy will fail for unreleased versions
-	// (replace directives added by tests/users will override this)
-	engineVersion := g.Config.ClientConfig.EngineVersion
-	if engineVersion != "" && !strings.Contains(engineVersion, "-dev") {
-		clientGoMod.AddRequire("dagger.io/dagger", engineVersion)
-	}
-
-	clientModBody, err := clientGoMod.Format()
-	if err != nil {
-		return nil, fmt.Errorf("failed to format client go.mod: %w", err)
-	}
-
 	clientGoModFilePath := filepath.Join(g.Config.ClientConfig.ClientDir, "go.mod")
 	if isInstall {
+		// Now write the client's go.mod (after directory structure is created)
 		clientGoMod := new(modfile.File)
 		clientGoMod.AddModuleStmt(clientModuleName)
-		clientGoMod.AddGoStmt(goVersion)
+		// Use the Go SDK's minimum version rather than the codegen runtime version,
+		// so the client go.mod stays compatible with the SDK's requirements.
+		clientGoVersion := goVersion
+		if sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil); err == nil && sdkMod.Go != nil {
+			clientGoVersion = sdkMod.Go.Version
+		}
+		clientGoMod.AddGoStmt(clientGoVersion)
 		// Set dagger.io/dagger version to match the engineVersion from dagger.json
 		// Only for released versions (not dev, not empty) - go mod tidy will fail for unreleased versions
 		// (replace directives added by tests/users will override this)
