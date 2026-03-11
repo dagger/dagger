@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	telemetry "github.com/dagger/otel-go"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,7 +39,7 @@ func (mcps *MCPClients) Dial(ctx context.Context, cfg *MCPServerConfig) (_ *mcp.
 	if err != nil {
 		// not started yet; start + connect
 		ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+cfg.Name, telemetry.Reveal())
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 		sess, err := mcp.NewClient(&mcp.Implementation{
 			Title:   "Dagger",
 			Version: engine.Version,
