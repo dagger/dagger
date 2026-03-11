@@ -1653,6 +1653,10 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 		if row.Depth == 0 && row.Previous != nil {
 			return []string{""}
 		}
+		// Gap above each LLM response to visually group RTTT sequences.
+		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
+			return []string{gapPrefix}
+		}
 		return nil
 	}
 	if row.PreviousVisual != nil &&
