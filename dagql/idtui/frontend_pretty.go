@@ -1561,7 +1561,7 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		viewportHeight = 1
 	}
 	end := len(allLines)
-	if focusLine >= 0 && fe.shell == nil {
+	if focusLine >= 0 {
 		// Allow some context below focus (half the viewport), but cap
 		// the total so focus doesn't get pushed above the viewport.
 		afterBudget := viewportHeight / 2
