@@ -255,39 +255,43 @@ func (s *workspaceSchema) exists(ctx context.Context, parent dagql.ObjectResult[
 		return false, err
 	}
 
-	// Load the workspace directory and delegate to Directory.Exists which
-	// handles expectedType and doNotFollowSymlinks correctly.
-	srv, err := core.CurrentDagqlServer(ctx)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return false, err
 	}
-
-	dirPath, fileName := path.Split(absPath)
-	if fileName == "" {
-		// Path is a directory itself — check parent for the dir name
-		dirPath = path.Dir(path.Clean(absPath))
-		fileName = path.Base(absPath)
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return false, fmt.Errorf("buildkit: %w", err)
 	}
 
-	var dir dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, srv.Root(), &dir,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(dirPath)},
-			},
-		},
-	); err != nil {
-		// Parent directory doesn't exist
+	statFS := core.NewCallerStatFS(bk)
+
+	// Use Lstat (Stat) or follow-symlinks stat depending on the flag.
+	// When checking for symlink type, always use Lstat.
+	followSymlinks := !args.DoNotFollowSymlinks && args.ExpectedType.Value != core.ExistsTypeSymlink
+	var stat *core.Stat
+	if followSymlinks {
+		_, stat, err = statFS.StatFollow(ctx, absPath)
+	} else {
+		_, stat, err = statFS.Stat(ctx, absPath)
+	}
+	if err != nil {
+		// Path does not exist
 		return false, nil
 	}
 
-	exists, err := dir.Self().Exists(ctx, srv, fileName, args.ExpectedType.Value, args.DoNotFollowSymlinks)
-	if err != nil {
-		return false, err
+	if args.ExpectedType.Valid {
+		switch args.ExpectedType.Value {
+		case core.ExistsTypeDirectory:
+			return dagql.NewBoolean(stat.FileType == core.FileTypeDirectory), nil
+		case core.ExistsTypeRegular:
+			return dagql.NewBoolean(stat.FileType == core.FileTypeRegular), nil
+		case core.ExistsTypeSymlink:
+			return dagql.NewBoolean(stat.FileType == core.FileTypeSymlink), nil
+		}
 	}
-	return dagql.NewBoolean(exists), nil
+
+	return true, nil
 }
 
 type workspaceFindUpArgs struct {

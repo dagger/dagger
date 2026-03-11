@@ -1265,7 +1265,15 @@ func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
 }
 
 func (csfs CallerStatFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
-	bkStat, err := csfs.bk.StatCallerHostPath(ctx, path, true)
+	return csfs.stat(ctx, path, false)
+}
+
+func (csfs CallerStatFS) StatFollow(ctx context.Context, path string) (string, *Stat, error) {
+	return csfs.stat(ctx, path, true)
+}
+
+func (csfs CallerStatFS) stat(ctx context.Context, path string, followSymlinks bool) (string, *Stat, error) {
+	bkStat, err := csfs.bk.StatCallerHostPathFollow(ctx, path, true, followSymlinks)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return "", nil, os.ErrNotExist

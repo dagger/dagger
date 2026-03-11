@@ -159,10 +159,11 @@ type LocalImportOpts struct {
 	FollowPaths        []string `json:"follow_paths"`
 	ReadSingleFileOnly bool     `json:"read_single_file_only"`
 	MaxFileSize        int64    `json:"max_file_size"`
-	StatPathOnly       bool     `json:"stat_path_only"`
-	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
-	StatResolvePath    bool     `json:"stat_resolve_path"`
-	GetAbsPathOnly     bool     `json:"get_abs_path_only"`
+	StatPathOnly         bool     `json:"stat_path_only"`
+	StatReturnAbsPath    bool     `json:"stat_return_abs_path"`
+	StatResolvePath      bool     `json:"stat_resolve_path"`
+	StatFollowSymlinks   bool     `json:"stat_follow_symlinks"`
+	GetAbsPathOnly       bool     `json:"get_abs_path_only"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

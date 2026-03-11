@@ -73,12 +73,31 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 			Path: filepath.ToSlash(absPath),
 		})
 	case opts.StatPathOnly:
-		stat, err := fsutil.Stat(absPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return status.Errorf(codes.NotFound, "stat path: %s", err)
+		var stat *fstypes.Stat
+		if opts.StatFollowSymlinks {
+			// Use os.Stat to follow symlinks
+			fi, err := os.Stat(absPath)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return status.Errorf(codes.NotFound, "stat path: %s", err)
+				}
+				return fmt.Errorf("stat path: %w", err)
 			}
-			return fmt.Errorf("stat path: %w", err)
+			stat = &fstypes.Stat{
+				Path:    filepath.Base(absPath),
+				Mode:    uint32(fi.Mode()),
+				Size_:   fi.Size(),
+				ModTime: fi.ModTime().UnixNano(),
+			}
+		} else {
+			var err error
+			stat, err = fsutil.Stat(absPath)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return status.Errorf(codes.NotFound, "stat path: %s", err)
+				}
+				return fmt.Errorf("stat path: %w", err)
+			}
 		}
 
 		if opts.StatReturnAbsPath {

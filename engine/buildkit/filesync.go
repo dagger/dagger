@@ -71,11 +71,16 @@ func (c *Client) AbsPath(ctx context.Context, path string) (string, error) {
 }
 
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
+	return c.StatCallerHostPathFollow(ctx, path, returnAbsPath, false)
+}
+
+func (c *Client) StatCallerHostPathFollow(ctx context.Context, path string, returnAbsPath bool, followSymlinks bool) (*fsutiltypes.Stat, error) {
 	msg := fsutiltypes.Stat{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
-		Path:              path,
-		StatPathOnly:      true,
-		StatReturnAbsPath: returnAbsPath,
+		Path:               path,
+		StatPathOnly:       true,
+		StatReturnAbsPath:  returnAbsPath,
+		StatFollowSymlinks: followSymlinks,
 	}, &msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat path: %w", err)
