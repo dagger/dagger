@@ -78,6 +78,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.`),
 			),
+		dagql.NodeFunc("glob", s.glob).
+			WithInput(dagql.PerClientInput).
+			Doc(`Returns a list of files and directories that match the given pattern.`,
+				`Patterns match paths relative to the workspace root.`).
+			Args(
+				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
+			),
 		dagql.NodeFunc("findUp", s.findUp).
 			WithInput(dagql.PerClientInput).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
@@ -857,6 +864,57 @@ func (s *workspaceSchema) withNewFile(
 		})
 		return updated, err
 	}, nil)
+}
+
+type workspaceGlobArgs struct {
+	Pattern string
+}
+
+func (s *workspaceSchema) glob(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceGlobArgs,
+) (dagql.Array[dagql.String], error) {
+	ws := parent.Self()
+
+	if ws.HostPath() != "" {
+		ctx, err := s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("buildkit: %w", err)
+		}
+		matches, err := bk.GlobCallerHostPath(ctx, ws.HostPath(), args.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("glob: %w", err)
+		}
+		return dagql.NewStringArray(matches...), nil
+	}
+
+	rootfs, err := workspaceRootfs(ws)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var matches dagql.Array[dagql.String]
+	if err := srv.Select(ctx, rootfs, &matches, dagql.Selector{
+		Field: "glob",
+		Args: []dagql.NamedInput{
+			{Name: "pattern", Value: dagql.NewString(args.Pattern)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("glob: %w", err)
+	}
+	return matches, nil
 }
 
 type workspaceWithNewDirectoryArgs struct {
