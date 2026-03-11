@@ -1674,12 +1674,16 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
 		fe.focusedIdx = -1
-		fe.tui.SetFocus(nil)
+		if !fe.editlineFocused {
+			fe.tui.SetFocus(fe)
+		}
 	} else {
 		fe.FocusedSpan = row.Span.ID
 		fe.focusedIdx = row.Index
-		if sr, ok := fe.spanTrees[row.Span.ID]; ok {
-			fe.tui.SetFocus(sr)
+		if !fe.editlineFocused {
+			if sr, ok := fe.spanTrees[row.Span.ID]; ok {
+				fe.tui.SetFocus(sr)
+			}
 		}
 	}
 }
