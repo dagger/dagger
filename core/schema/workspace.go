@@ -45,6 +45,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
 			),
+		dagql.NodeFuncWithCacheKey("exists", s.exists, dagql.CachePerClient).
+			Doc(`Check if a file or directory exists at the given path in the workspace.`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check, relative to the workspace root (e.g., "src/main.go").`),
+			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
@@ -223,6 +228,46 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+type workspaceExistsArgs struct {
+	Path string
+}
+
+func (workspaceExistsArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceExistsArgs) (dagql.Boolean, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return false, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return false, fmt.Errorf("buildkit: %w", err)
+	}
+
+	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
+	if err != nil {
+		return false, err
+	}
+
+	statFS := core.NewCallerStatFS(bk)
+	_, _, err = statFS.Stat(ctx, absPath)
+	if err != nil {
+		// File/directory does not exist
+		return false, nil
+	}
+
+	return true, nil
 }
 
 type workspaceFindUpArgs struct {

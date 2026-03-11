@@ -308,6 +308,44 @@ type Reader {
 	require.Equal(t, "file content here", strings.TrimSpace(out))
 }
 
+// TestWorkspaceExists verifies that Workspace.exists correctly reports
+// the existence of files and directories on the host.
+func (WorkspaceSuite) TestWorkspaceExists(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("existing-file.txt", "hello").
+		WithExec([]string{"mkdir", "-p", "existing-dir"}).
+		With(initDangModule("checker", `
+type Checker {
+  pub result: Boolean!
+
+  new(ws: Workspace!, path: String!) {
+    self.result = ws.exists(path)
+    self
+  }
+}
+`))
+
+	t.Run("existing file", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("checker", "--path=existing-file.txt", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
+
+	t.Run("existing directory", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("checker", "--path=existing-dir", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
+
+	t.Run("non-existent path", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("checker", "--path=no-such-file.txt", "result")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "false", strings.TrimSpace(out))
+	})
+}
+
 // TestWorkspaceSubdirectory verifies that Workspace.directory can access
 // a subdirectory of the workspace.
 func (WorkspaceSuite) TestWorkspaceSubdirectory(ctx context.Context, t *testctx.T) {
