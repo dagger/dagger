@@ -1568,6 +1568,12 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		if focusLine+afterBudget < end {
 			end = focusLine + afterBudget
 		}
+		// Never crop to less than a full viewport — when the focused
+		// line is near the top, keep enough content below to fill the
+		// screen rather than leaving it half-empty.
+		if end < viewportHeight && viewportHeight < len(allLines) {
+			end = viewportHeight
+		}
 	}
 
 	return allLines[:end]
