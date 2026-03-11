@@ -1,6 +1,8 @@
 package client
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -17,9 +20,12 @@ import (
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/patternmatcher"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/sys/user"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -28,6 +34,42 @@ import (
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/dagger/dagger/util/grpcutil"
 )
+
+// extractTraceContext extracts W3C trace context from gRPC incoming metadata,
+// returning a context with the remote span as parent. This allows client-side
+// code to create child spans of engine-side operations.
+func extractTraceContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	return telemetry.Propagator.Extract(ctx, metadataCarrier(md))
+}
+
+// metadataCarrier adapts gRPC metadata.MD to propagation.TextMapCarrier.
+// Unlike propagation.HeaderCarrier (which wraps http.Header and title-cases
+// keys), this keeps keys lowercase as required by gRPC metadata.
+type metadataCarrier metadata.MD
+
+func (mc metadataCarrier) Get(key string) string {
+	vals := metadata.MD(mc).Get(key)
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
+func (mc metadataCarrier) Set(key, value string) {
+	metadata.MD(mc).Set(key, value)
+}
+
+func (mc metadataCarrier) Keys() []string {
+	keys := make([]string, 0, len(mc))
+	for k := range mc {
+		keys = append(keys, k)
+	}
+	return keys
+}
 
 type Filesyncer struct {
 	uid, gid uint32
@@ -61,7 +103,9 @@ func (s FilesyncSource) TarStream(stream filesync.FileSync_TarStreamServer) erro
 }
 
 func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
-	opts, err := engine.LocalImportOptsFromContext(stream.Context())
+	ctx := extractTraceContext(stream.Context())
+
+	opts, err := engine.LocalImportOptsFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("get local import opts: %w", err)
 	}
@@ -91,6 +135,18 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 
 		stat.Path = filepath.ToSlash(stat.Path)
 		return stream.SendMsg(stat)
+
+	case opts.SearchOpts != nil:
+		// Run ripgrep (or grep fallback) on the host
+		results, err := searchHostPath(ctx, absPath, opts.SearchOpts)
+		if err != nil {
+			return fmt.Errorf("search: %w", err)
+		}
+		data, err := json.Marshal(results)
+		if err != nil {
+			return fmt.Errorf("marshal search results: %w", err)
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: data})
 
 	case opts.GlobPattern != "":
 		// Walk the directory and match files against the glob pattern
@@ -355,6 +411,317 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 	}
 
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
+}
+
+// searchHostPath runs ripgrep (or falls back to grep) on the host filesystem
+// and returns structured search results.
+func searchHostPath(ctx context.Context, root string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
+	rgPath, err := exec.LookPath("rg")
+	if err == nil {
+		return searchWithRipgrep(ctx, root, rgPath, opts)
+	}
+	return searchWithGrep(ctx, root, opts)
+}
+
+// ripgrep JSON output types
+type rgJSON struct {
+	Type string `json:"type"`
+	Data struct {
+		Path           rgContent `json:"path"`
+		Lines          rgContent `json:"lines"`
+		LineNumber     int       `json:"line_number"`
+		AbsoluteOffset int       `json:"absolute_offset"`
+		Submatches     []struct {
+			Match rgContent `json:"match"`
+			Start int       `json:"start"`
+			End   int       `json:"end"`
+		} `json:"submatches"`
+	} `json:"data"`
+}
+
+type rgContent struct {
+	Text  string `json:"text,omitempty"`
+	Bytes []byte `json:"bytes,omitempty"`
+}
+
+// ripgrepArgs converts search options into ripgrep CLI arguments.
+func ripgrepArgs(opts *engine.LocalSearchOpts) []string {
+	var args []string
+	if opts.Literal {
+		args = append(args, "--fixed-strings")
+	}
+	if opts.Multiline {
+		args = append(args, "--multiline")
+	}
+	if opts.Dotall {
+		args = append(args, "--multiline-dotall")
+	}
+	if opts.Insensitive {
+		args = append(args, "--ignore-case")
+	}
+	if !opts.SkipIgnored {
+		args = append(args, "--no-ignore")
+	}
+	if !opts.SkipHidden {
+		args = append(args, "--hidden")
+	}
+	if opts.FilesOnly {
+		args = append(args, "--files-with-matches")
+	} else {
+		args = append(args, "--json")
+	}
+	args = append(args, "--regexp="+opts.Pattern)
+	args = append(args, "--no-follow")
+
+	for _, glob := range opts.Globs {
+		args = append(args, "--glob="+glob)
+	}
+	if len(opts.Paths) > 0 {
+		args = append(args, "--")
+		args = append(args, opts.Paths...)
+	}
+	return args
+}
+
+// parseRipgrepFiles reads --files-with-matches output, one path per line. It
+// reports whether it stopped early on reaching limit.
+func parseRipgrepFiles(r io.Reader, limit *int) (results []engine.LocalSearchResult, limitReached bool, err error) {
+	scan := bufio.NewScanner(r)
+	for scan.Scan() {
+		line := scan.Text()
+		if line == "" {
+			continue
+		}
+		results = append(results, engine.LocalSearchResult{FilePath: line})
+		if limit != nil && len(results) >= *limit {
+			return results, true, nil
+		}
+	}
+	return results, false, scan.Err()
+}
+
+// parseRipgrepJSON reads --json output and collects match events. It reports
+// whether it stopped early on reaching limit.
+func parseRipgrepJSON(r io.Reader, limit *int) (results []engine.LocalSearchResult, limitReached bool, err error) {
+	dec := json.NewDecoder(r)
+	for {
+		var match rgJSON
+		if err := dec.Decode(&match); err != nil {
+			if err == io.EOF {
+				return results, false, nil
+			}
+			return results, false, err
+		}
+		if match.Type != "match" {
+			continue
+		}
+		data := match.Data
+		// Skip non-utf8 content
+		if len(data.Path.Bytes) > 0 || len(data.Lines.Bytes) > 0 {
+			continue
+		}
+
+		result := engine.LocalSearchResult{
+			FilePath:       data.Path.Text,
+			LineNumber:     data.LineNumber,
+			AbsoluteOffset: data.AbsoluteOffset,
+			MatchedLines:   data.Lines.Text,
+		}
+		for _, sm := range data.Submatches {
+			result.Submatches = append(result.Submatches, engine.LocalSearchSubmatch{
+				Text:  sm.Match.Text,
+				Start: sm.Start,
+				End:   sm.End,
+			})
+		}
+		results = append(results, result)
+		if limit != nil && len(results) >= *limit {
+			return results, true, nil
+		}
+	}
+}
+
+func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
+	args := ripgrepArgs(opts)
+
+	// Create an OTel span for the command execution
+	ctx, span := otel.Tracer(InstrumentationLibrary).Start(ctx, "exec "+strings.Join(append([]string{rgPath}, args...), " "),
+		telemetry.Encapsulated())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	cmd := exec.CommandContext(ctx, rgPath, args...)
+	cmd.Dir = root
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	var errBuf bytes.Buffer
+	cmd.Stderr = io.MultiWriter(&errBuf, stdio.Stderr)
+
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	// Tee stdout to the span for observability
+	stdoutReader := io.TeeReader(out, stdio.Stdout)
+
+	var parseErr error
+	var limitReached bool
+	if opts.FilesOnly {
+		results, limitReached, parseErr = parseRipgrepFiles(stdoutReader, opts.Limit)
+	} else {
+		results, limitReached, parseErr = parseRipgrepJSON(stdoutReader, opts.Limit)
+	}
+
+	if limitReached {
+		// We stopped reading before EOF. Close the pipe so ripgrep exits on
+		// EPIPE instead of blocking forever once the pipe buffer fills, which
+		// would turn the Wait below into a deadlock.
+		out.Close()
+	}
+
+	waitErr := cmd.Wait()
+	if limitReached {
+		// The exit status only reflects the pipe we closed on it; the
+		// results we collected are complete.
+		return results, nil
+	}
+	if waitErr != nil {
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
+			// Exit code 1 means no matches
+			return []engine.LocalSearchResult{}, nil
+		}
+		if parseErr != nil {
+			return nil, errors.Join(parseErr, waitErr)
+		}
+		if errBuf.Len() > 0 {
+			return nil, fmt.Errorf("ripgrep error: %s", errBuf.String())
+		}
+		return nil, waitErr
+	}
+	if parseErr != nil {
+		return nil, parseErr
+	}
+
+	if results == nil {
+		results = []engine.LocalSearchResult{}
+	}
+	return results, nil
+}
+
+func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOpts) (results []engine.LocalSearchResult, rerr error) {
+	var args []string
+	args = append(args, "-r") // recursive
+	args = append(args, "-n") // line numbers
+	args = append(args, "-b") // byte offset
+
+	if opts.Literal {
+		args = append(args, "-F") // fixed strings
+	} else {
+		args = append(args, "-E") // extended regex
+	}
+	if opts.Insensitive {
+		args = append(args, "-i")
+	}
+	if opts.FilesOnly {
+		args = append(args, "-l") // files only
+	}
+	// Note: grep doesn't support --multiline, --dotall, --hidden, --no-ignore,
+	// or --glob natively. We do our best.
+
+	for _, glob := range opts.Globs {
+		args = append(args, "--include="+glob)
+	}
+
+	args = append(args, "-e", opts.Pattern)
+
+	if len(opts.Paths) > 0 {
+		args = append(args, opts.Paths...)
+	} else {
+		args = append(args, ".")
+	}
+
+	// Create an OTel span for the command execution
+	ctx, span := otel.Tracer(InstrumentationLibrary).Start(ctx, "exec grep "+strings.Join(args, " "),
+		telemetry.Encapsulated())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	cmd := exec.CommandContext(ctx, "grep", args...)
+	cmd.Dir = root
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	var outBuf bytes.Buffer
+	var errBuf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(&outBuf, stdio.Stdout)
+	cmd.Stderr = io.MultiWriter(&errBuf, stdio.Stderr)
+
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			// No matches
+			return []engine.LocalSearchResult{}, nil
+		}
+		return nil, fmt.Errorf("grep error: %w", err)
+	}
+
+	output := outBuf.String()
+
+	if opts.FilesOnly {
+		scan := bufio.NewScanner(strings.NewReader(output))
+		for scan.Scan() {
+			line := scan.Text()
+			if line == "" {
+				continue
+			}
+			// Strip leading "./" if present
+			line = strings.TrimPrefix(line, "./")
+			results = append(results, engine.LocalSearchResult{FilePath: line})
+		}
+	} else {
+		// Parse grep -rnb output: file:line:offset:content
+		scan := bufio.NewScanner(strings.NewReader(output))
+		for scan.Scan() {
+			line := scan.Text()
+			if line == "" {
+				continue
+			}
+			// Format: file:line:byte_offset:matched_line
+			parts := strings.SplitN(line, ":", 4)
+			if len(parts) < 4 {
+				continue
+			}
+			filePath := strings.TrimPrefix(parts[0], "./")
+			lineNum := 0
+			fmt.Sscanf(parts[1], "%d", &lineNum)
+			byteOffset := 0
+			fmt.Sscanf(parts[2], "%d", &byteOffset)
+			matchedLine := parts[3]
+
+			results = append(results, engine.LocalSearchResult{
+				FilePath:       filePath,
+				LineNumber:     lineNum,
+				AbsoluteOffset: byteOffset,
+				MatchedLines:   matchedLine + "\n",
+			})
+			if opts.Limit != nil && len(results) >= *opts.Limit {
+				break
+			}
+		}
+	}
+
+	if results == nil {
+		results = []engine.LocalSearchResult{}
+	}
+	return results, nil
 }
 
 // globHostPath walks the directory at root and returns paths matching the

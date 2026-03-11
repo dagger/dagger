@@ -1,0 +1,8 @@
+type Searcher {
+  pub file_paths: [String!]!
+
+  new(ws: Workspace!, pattern: String!, limit: Int! = 1000) {
+    self.file_paths = ws.search(pattern: pattern, limit: limit).{{filePath, lineNumber}}.map { r => `${r.filePath}:${r.lineNumber}` }
+    self
+  }
+}
