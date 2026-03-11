@@ -49,6 +49,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc(`Check if a file or directory exists at the given path in the workspace.`).
 			Args(
 				dagql.Arg("path").Doc(`Path to check, relative to the workspace root (e.g., "src/main.go").`),
+				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
@@ -231,7 +233,9 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 }
 
 type workspaceExistsArgs struct {
-	Path string
+	Path                string
+	ExpectedType        dagql.Optional[core.ExistsType]
+	DoNotFollowSymlinks bool `default:"false"`
 }
 
 func (workspaceExistsArgs) CacheType() dagql.CacheControlType {
@@ -246,28 +250,44 @@ func (s *workspaceSchema) exists(ctx context.Context, parent dagql.ObjectResult[
 		return false, err
 	}
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return false, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return false, fmt.Errorf("buildkit: %w", err)
-	}
-
 	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
 	if err != nil {
 		return false, err
 	}
 
-	statFS := core.NewCallerStatFS(bk)
-	_, _, err = statFS.Stat(ctx, absPath)
+	// Load the workspace directory and delegate to Directory.Exists which
+	// handles expectedType and doNotFollowSymlinks correctly.
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		// File/directory does not exist
+		return false, err
+	}
+
+	dirPath, fileName := path.Split(absPath)
+	if fileName == "" {
+		// Path is a directory itself — check parent for the dir name
+		dirPath = path.Dir(path.Clean(absPath))
+		fileName = path.Base(absPath)
+	}
+
+	var dir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, srv.Root(), &dir,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(dirPath)},
+			},
+		},
+	); err != nil {
+		// Parent directory doesn't exist
 		return false, nil
 	}
 
-	return true, nil
+	exists, err := dir.Self().Exists(ctx, srv, fileName, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+	if err != nil {
+		return false, err
+	}
+	return dagql.NewBoolean(exists), nil
 }
 
 type workspaceFindUpArgs struct {

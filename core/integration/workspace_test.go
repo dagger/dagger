@@ -309,14 +309,18 @@ type Reader {
 }
 
 // TestWorkspaceExists verifies that Workspace.exists correctly reports
-// the existence of files and directories on the host.
+// the existence of files and directories on the host, including type
+// filtering via expectedType and doNotFollowSymlinks.
 func (WorkspaceSuite) TestWorkspaceExists(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
 		WithNewFile("existing-file.txt", "hello").
 		WithExec([]string{"mkdir", "-p", "existing-dir"}).
-		With(initDangModule("checker", `
+		WithExec([]string{"ln", "-s", "existing-file.txt", "existing-link"})
+
+	t.Run("basic existence", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("checker", `
 type Checker {
   pub result: Boolean!
 
@@ -326,23 +330,54 @@ type Checker {
   }
 }
 `))
-
-	t.Run("existing file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("checker", "--path=existing-file.txt", "result")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "true", strings.TrimSpace(out))
+		t.Run("existing file", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("checker", "--path=existing-file.txt", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", strings.TrimSpace(out))
+		})
+		t.Run("existing directory", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("checker", "--path=existing-dir", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", strings.TrimSpace(out))
+		})
+		t.Run("non-existent path", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("checker", "--path=no-such-file.txt", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "false", strings.TrimSpace(out))
+		})
 	})
 
-	t.Run("existing directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("checker", "--path=existing-dir", "result")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "true", strings.TrimSpace(out))
-	})
+	t.Run("with expectedType", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("typechecker", `
+type Typechecker {
+  pub result: Boolean!
 
-	t.Run("non-existent path", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("checker", "--path=no-such-file.txt", "result")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "false", strings.TrimSpace(out))
+  new(ws: Workspace!, path: String!, expectedType: ExistsType!) {
+    self.result = ws.exists(path, expectedType: expectedType)
+    self
+  }
+}
+`))
+		t.Run("file matches REGULAR_TYPE", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("typechecker", "--path=existing-file.txt", "--expected-type=REGULAR_TYPE", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", strings.TrimSpace(out))
+		})
+		t.Run("file does not match DIRECTORY_TYPE", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("typechecker", "--path=existing-file.txt", "--expected-type=DIRECTORY_TYPE", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "false", strings.TrimSpace(out))
+		})
+		t.Run("directory matches DIRECTORY_TYPE", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("typechecker", "--path=existing-dir", "--expected-type=DIRECTORY_TYPE", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", strings.TrimSpace(out))
+		})
+		t.Run("symlink matches SYMLINK_TYPE", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.With(daggerCall("typechecker", "--path=existing-link", "--expected-type=SYMLINK_TYPE", "result")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "true", strings.TrimSpace(out))
+		})
 	})
 }
 
