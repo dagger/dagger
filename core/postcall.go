@@ -33,7 +33,7 @@ func ResourceTransferPostCall(
 		for _, secretID := range secretIDs {
 			secretsByDgst[SecretIDDigest(secretID.ID())] = secretID
 		}
-		socketIDs := dagql.WalkedIDs[*Socket](walked)
+		socketIDs := dagql.CollectedIDs[*Socket](walked)
 		for _, socketID := range socketIDs {
 			socketsByDgst[SocketIDDigest(socketID.ID())] = socketID
 		}
