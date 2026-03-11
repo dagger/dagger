@@ -248,6 +248,7 @@ type LocalImportOpts struct {
 	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
 	StatResolvePath    bool     `json:"stat_resolve_path"`
 	GetAbsPathOnly     bool     `json:"get_abs_path_only"`
+	GlobPattern        string   `json:"glob_pattern"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

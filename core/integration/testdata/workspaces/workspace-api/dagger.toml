@@ -30,3 +30,6 @@ source = ".dagger/modules/abs-rel"
 
 [modules.finder]
 source = ".dagger/modules/finder"
+
+[modules.globber]
+source = ".dagger/modules/globber"
