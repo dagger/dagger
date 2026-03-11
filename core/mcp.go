@@ -1098,6 +1098,8 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		attribute.String(telemetry.LLMToolAttr, toolName),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
+		attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+		attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 	}
 	if tool.HideSelf {
 		// Hide spans which are better represented by the child spans that they
