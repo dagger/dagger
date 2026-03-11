@@ -575,7 +575,6 @@ func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
 	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
 }
 
-
 // mergeIntervals merges overlapping intervals in the activity.
 func (activity *Activity) mergeIntervals() {
 	// If there are no intervals, there's nothing to merge.
