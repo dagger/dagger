@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/moby/sys/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -106,6 +109,18 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 
 		stat.Path = filepath.ToSlash(stat.Path)
 		return stream.SendMsg(stat)
+
+	case opts.GlobPattern != "":
+		// Walk the directory and match files against the glob pattern
+		matches, err := globHostPath(absPath, opts.GlobPattern)
+		if err != nil {
+			return fmt.Errorf("glob: %w", err)
+		}
+		data, err := json.Marshal(matches)
+		if err != nil {
+			return fmt.Errorf("marshal glob results: %w", err)
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: data})
 
 	case opts.ReadSingleFileOnly:
 		// just stream the file bytes to the caller
@@ -327,6 +342,80 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 	}
 
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
+}
+
+// globHostPath walks the directory at root and returns paths matching the
+// given glob pattern. The returned paths are relative to root and use forward
+// slashes. Directories are suffixed with "/".
+func globHostPath(root string, pattern string) ([]string, error) {
+	pat, err := patternmatcher.NewPattern(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid glob pattern: %w", err)
+	}
+
+	// Optimization: if the pattern has no wildcards, we can skip subtrees
+	// that can't possibly match.
+	patternChars := "*[]?^"
+	if filepath.Separator != '\\' {
+		patternChars += `\`
+	}
+	patStr := pat.String()
+	// Strip trailing ** or * glob
+	for strings.HasSuffix(patStr, string(filepath.Separator)+"**") {
+		patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
+	}
+	patStr = strings.TrimSuffix(patStr, "**")
+	for strings.HasSuffix(patStr, string(filepath.Separator)+"*") {
+		patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
+	}
+	patStr = strings.TrimSuffix(patStr, "*")
+	onlyPrefixIncludes := !strings.ContainsAny(patStr, patternChars)
+
+	var matches []string
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, prevErr error) error {
+		if prevErr != nil {
+			return prevErr
+		}
+
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+
+		match, err := pat.Match(rel)
+		if err != nil {
+			return err
+		}
+
+		if match {
+			result := filepath.ToSlash(rel)
+			if d.IsDir() {
+				result += "/"
+			}
+			matches = append(matches, result)
+		} else if d.IsDir() && onlyPrefixIncludes {
+			dirSlash := rel + string(filepath.Separator)
+			if !pat.Exclusion() {
+				prefixSlash := patStr + string(filepath.Separator)
+				if !strings.HasPrefix(prefixSlash, dirSlash) {
+					return filepath.SkipDir
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if matches == nil {
+		matches = []string{}
+	}
+	return matches, nil
 }
 
 type FilesyncTargetProxy struct {

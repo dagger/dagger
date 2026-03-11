@@ -52,6 +52,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
+		dagql.NodeFuncWithCacheKey("glob", s.glob, dagql.CachePerClient).
+			Doc(`Returns a list of files and directories that match the given pattern.`).
+			Args(
+				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
+			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
@@ -230,6 +235,39 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	return inst, nil
+}
+
+type workspaceGlobArgs struct {
+	Pattern string
+}
+
+func (workspaceGlobArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceGlobArgs) (dagql.Array[dagql.String], error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	matches, err := bk.GlobCallerHostPath(ctx, ws.Root, args.Pattern)
+	if err != nil {
+		return nil, fmt.Errorf("glob: %w", err)
+	}
+
+	return dagql.NewStringArray(matches...), nil
 }
 
 type workspaceExistsArgs struct {

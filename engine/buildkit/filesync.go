@@ -3,6 +3,7 @@ package buildkit
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -86,6 +87,22 @@ func (c *Client) StatCallerHostPathFollow(ctx context.Context, path string, retu
 		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 	return &msg, nil
+}
+
+func (c *Client) GlobCallerHostPath(ctx context.Context, dir string, pattern string) ([]string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:        dir,
+		GlobPattern: pattern,
+	}, &msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to glob path: %w", err)
+	}
+	var matches []string
+	if err := json.Unmarshal(msg.Data, &matches); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal glob results: %w", err)
+	}
+	return matches, nil
 }
 
 func (c *Client) LocalDirExport(

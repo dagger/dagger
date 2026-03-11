@@ -164,6 +164,7 @@ type LocalImportOpts struct {
 	StatResolvePath      bool     `json:"stat_resolve_path"`
 	StatFollowSymlinks   bool     `json:"stat_follow_symlinks"`
 	GetAbsPathOnly       bool     `json:"get_abs_path_only"`
+	GlobPattern          string   `json:"glob_pattern"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

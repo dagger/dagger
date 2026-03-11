@@ -381,6 +381,62 @@ type Typechecker {
 	})
 }
 
+// TestWorkspaceGlob verifies that Workspace.glob matches files and
+// directories on the host filesystem.
+func (WorkspaceSuite) TestWorkspaceGlob(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("README.md", "readme").
+		WithNewFile("CHANGELOG.md", "changelog").
+		WithNewFile("main.go", "package main").
+		WithNewFile("src/app.go", "package src").
+		WithNewFile("src/app_test.go", "package src").
+		With(initDangModule("globber", `
+type Globber {
+  pub results: [String!]!
+
+  new(ws: Workspace!, pattern: String!) {
+    self.results = ws.glob(pattern)
+    self
+  }
+}
+`))
+
+	t.Run("match by extension", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=*.md", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "README.md")
+		require.Contains(t, lines, "CHANGELOG.md")
+		require.NotContains(t, lines, "main.go")
+	})
+
+	t.Run("recursive glob", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=**/*.go", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "main.go")
+		require.Contains(t, lines, "src/app.go")
+		require.Contains(t, lines, "src/app_test.go")
+	})
+
+	t.Run("subdirectory glob", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=src/*.go", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "src/app.go")
+		require.Contains(t, lines, "src/app_test.go")
+		require.NotContains(t, lines, "main.go")
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=*.rs", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+}
+
 // TestWorkspaceSubdirectory verifies that Workspace.directory can access
 // a subdirectory of the workspace.
 func (WorkspaceSuite) TestWorkspaceSubdirectory(ctx context.Context, t *testctx.T) {
