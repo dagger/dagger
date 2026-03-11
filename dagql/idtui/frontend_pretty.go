@@ -1182,7 +1182,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
 			key.WithHelp("home", "first")),
-		key.NewBinding(key.WithKeys("end", " "),
+		key.NewBinding(key.WithKeys("end", "space"),
 			key.WithHelp("end", "last")),
 		key.NewBinding(key.WithKeys("+/-", "+", "-"),
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
@@ -1800,7 +1800,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "home":
 		fe.goStart()
 		return
-	case "end", "G", " ":
+	case "end", "G", "space":
 		fe.goEnd()
 		fe.recordKeyPress("end")
 		return
