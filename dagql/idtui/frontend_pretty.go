@@ -2310,6 +2310,11 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 	// Sync just the affected subtree's SpanTreeView children.
 	if st, ok := fe.spanTrees[id]; ok {
 		fe.syncTreeNode(st, st.prefix)
+		// Always mark the toggled span dirty — even if syncTreeNode
+		// found no structural changes (e.g. no children), the span's
+		// own rendering may change (logs are shown/hidden based on
+		// row.Expanded).
+		st.Update()
 	}
 }
 
