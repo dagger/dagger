@@ -268,6 +268,68 @@ func (WorkspaceAPISuite) TestWorkspaceGlob(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// TestWorkspaceSearch verifies that Workspace.search runs ripgrep (or grep)
+// on the host filesystem and returns structured results.
+func (WorkspaceAPISuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "workspace-api").
+		// The base image only has BusyBox grep; install ripgrep so the
+		// client-side search runs its primary code path.
+		WithExec([]string{"apk", "add", "ripgrep"}).
+		WithNewFile("hello.txt", "hello world\nGoodbye World\n").
+		WithNewFile("src/main.go", "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n").
+		WithNewFile("src/util.go", "package main\n\nfunc helper() string {\n\treturn \"hello\"\n}\n").
+		WithNewFile("docs/readme.md", "# Hello\n\nThis is a hello world project.\n")
+
+	t.Run("basic search", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("searcher", "--pattern=hello", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "hello.txt:1")
+		require.Contains(t, lines, "src/main.go:4")
+		require.Contains(t, lines, "src/util.go:4")
+	})
+
+	t.Run("files only", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "hello.txt")
+		require.Contains(t, lines, "src/main.go")
+		require.Contains(t, lines, "src/util.go")
+		require.Contains(t, lines, "docs/readme.md")
+	})
+
+	t.Run("files only with glob filter", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "--globs=*.go", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "src/main.go")
+		require.Contains(t, lines, "src/util.go")
+		require.NotContains(t, lines, "hello.txt")
+		require.NotContains(t, lines, "readme.md")
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("searcher", "--pattern=nonexistent_pattern_xyz", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+
+	t.Run("limit caps results without hanging", func(ctx context.Context, t *testctx.T) {
+		// Regression test: when matches far exceed the limit, the client-side
+		// search must stop the subprocess instead of deadlocking. The match
+		// output past the limit needs to exceed the OS pipe buffer (64KB) for
+		// the old code to wedge, hence the large file.
+		ctr := base.WithNewFile("many.txt", strings.Repeat("hello, again and again\n", 50000))
+		out, err := ctr.With(daggerCall("searcher", "--pattern=hello", "--limit=5", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		require.Len(t, lines, 5)
+	})
+}
+
 func (WorkspaceAPISuite) TestRootlessCurrentWorkspace(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "workspace.txt"), []byte("workspace"), 0o644))
