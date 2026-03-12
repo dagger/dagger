@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,8 +11,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
@@ -191,6 +194,14 @@ type ModuleSource struct {
 	Local  *LocalModuleSource
 	Git    *GitModuleSource
 	DirSrc *DirModuleSource
+
+	persistedResultID uint64
+}
+
+var moduleSourceSDKLoader func(context.Context, *Query, *SDKConfig, *ModuleSource) (SDK, error)
+
+func SetModuleSourceSDKLoader(loader func(context.Context, *Query, *SDKConfig, *ModuleSource) (SDK, error)) {
+	moduleSourceSDKLoader = loader
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -203,6 +214,23 @@ func (src *ModuleSource) Type() *ast.Type {
 func (src *ModuleSource) TypeDescription() string {
 	return "The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc."
 }
+
+func (src *ModuleSource) PersistedResultID() uint64 {
+	if src == nil {
+		return 0
+	}
+	return src.persistedResultID
+}
+
+func (src *ModuleSource) SetPersistedResultID(resultID uint64) {
+	if src != nil {
+		src.persistedResultID = resultID
+	}
+}
+
+var _ dagql.HasOwnedResults = (*ModuleSource)(nil)
+var _ dagql.PersistedObject = (*ModuleSource)(nil)
+var _ dagql.PersistedObjectDecoder = (*ModuleSource)(nil)
 
 func (src ModuleSource) Clone() *ModuleSource {
 	if src.CodegenConfig != nil {
@@ -255,6 +283,579 @@ func (src *ModuleSource) Evaluate(context.Context) error {
 
 func (src *ModuleSource) Sync(ctx context.Context) error {
 	return src.Evaluate(ctx)
+}
+
+func (src *ModuleSource) AttachOwnedResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if src == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 4+len(src.Dependencies)+len(src.Toolchains))
+
+	if src.ContextDirectory.ID() != nil {
+		attached, err := attach(src.ContextDirectory)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source context directory: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach module source context directory: unexpected result %T", attached)
+		}
+		src.ContextDirectory = typed
+		owned = append(owned, typed)
+	}
+
+	for i, dep := range src.Dependencies {
+		if dep.ID() == nil {
+			continue
+		}
+		attached, err := attach(dep)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source dependency %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source dependency %d: unexpected result %T", i, attached)
+		}
+		src.Dependencies[i] = typed
+		owned = append(owned, typed)
+	}
+
+	if src.Blueprint.ID() != nil {
+		attached, err := attach(src.Blueprint)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source blueprint: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source blueprint: unexpected result %T", attached)
+		}
+		src.Blueprint = typed
+		owned = append(owned, typed)
+	}
+
+	for i, toolchain := range src.Toolchains {
+		if toolchain.ID() == nil {
+			continue
+		}
+		attached, err := attach(toolchain)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source toolchain %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source toolchain %d: unexpected result %T", i, attached)
+		}
+		src.Toolchains[i] = typed
+		owned = append(owned, typed)
+	}
+
+	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.ID() != nil {
+		attached, err := attach(src.ToolchainContextSource.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source toolchain context source: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source toolchain context source: unexpected result %T", attached)
+		}
+		src.ToolchainContextSource = dagql.NonNull(typed)
+	}
+
+	if src.Git != nil && src.Git.UnfilteredContextDir.ID() != nil {
+		attached, err := attach(src.Git.UnfilteredContextDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source git unfiltered context dir: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach module source git unfiltered context dir: unexpected result %T", attached)
+		}
+		src.Git.UnfilteredContextDir = typed
+		owned = append(owned, typed)
+	}
+
+	if src.DirSrc != nil && src.DirSrc.OriginalContextDir.ID() != nil {
+		attached, err := attach(src.DirSrc.OriginalContextDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source dir original context dir: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach module source dir original context dir: unexpected result %T", attached)
+		}
+		src.DirSrc.OriginalContextDir = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
+
+type persistedGitModuleSourcePayload struct {
+	CloneRef     string `json:"cloneRef,omitempty"`
+	Symbolic     string `json:"symbolic,omitempty"`
+	HTMLRepoURL  string `json:"htmlRepoURL,omitempty"`
+	HTMLURL      string `json:"htmlURL,omitempty"`
+	RepoRootPath string `json:"repoRootPath,omitempty"`
+	Version      string `json:"version,omitempty"`
+	Commit       string `json:"commit,omitempty"`
+	Ref          string `json:"ref,omitempty"`
+}
+
+type persistedDirModuleSourcePayload struct {
+	OriginalSourceRootSubpath  string `json:"originalSourceRootSubpath,omitempty"`
+	OriginalContextDirResultID uint64 `json:"originalContextDirResultID,omitempty"`
+}
+
+type persistedModuleSourceSDKCapabilities struct {
+	Runtime         bool `json:"runtime,omitempty"`
+	ModuleTypes     bool `json:"moduleTypes,omitempty"`
+	CodeGenerator   bool `json:"codeGenerator,omitempty"`
+	ClientGenerator bool `json:"clientGenerator,omitempty"`
+}
+
+type persistedModuleSourcePayload struct {
+	ConfigExists                    bool                                  `json:"configExists,omitempty"`
+	ModuleName                      string                                `json:"moduleName,omitempty"`
+	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
+	EngineVersion                   string                                `json:"engineVersion,omitempty"`
+	CodegenConfig                   *modules.ModuleCodegenConfig          `json:"codegenConfig,omitempty"`
+	ModuleConfigUserFields          modules.ModuleConfigUserFields        `json:"moduleConfigUserFields,omitempty"`
+	DisableDefaultFunctionCaching   bool                                  `json:"disableDefaultFunctionCaching,omitempty"`
+	SDK                             *SDKConfig                            `json:"sdk,omitempty"`
+	IncludePaths                    []string                              `json:"includePaths,omitempty"`
+	RebasedIncludePaths             []string                              `json:"rebasedIncludePaths,omitempty"`
+	ConfigDependencies              []*modules.ModuleConfigDependency     `json:"configDependencies,omitempty"`
+	DependencyResultIDs             []uint64                              `json:"dependencyResultIDs,omitempty"`
+	ConfigBlueprint                 *modules.ModuleConfigDependency       `json:"configBlueprint,omitempty"`
+	BlueprintResultID               uint64                                `json:"blueprintResultID,omitempty"`
+	ConfigToolchains                []*modules.ModuleConfigDependency     `json:"configToolchains,omitempty"`
+	ToolchainResultIDs              []uint64                              `json:"toolchainResultIDs,omitempty"`
+	ToolchainContextSourceResultID  uint64                                `json:"toolchainContextSourceResultID,omitempty"`
+	ToolchainConfigIndex            int                                   `json:"toolchainConfigIndex,omitempty"`
+	ToolchainProjection             bool                                  `json:"toolchainProjection,omitempty"`
+	UserDefaults                    *EnvFile                              `json:"userDefaults,omitempty"`
+	ConfigClients                   []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
+	SourceRootSubpath               string                                `json:"sourceRootSubpath,omitempty"`
+	SourceSubpath                   string                                `json:"sourceSubpath,omitempty"`
+	OriginalSubpath                 string                                `json:"originalSubpath,omitempty"`
+	ContextDirectoryResultID        uint64                                `json:"contextDirectoryResultID,omitempty"`
+	Kind                            ModuleSourceKind                      `json:"kind"`
+	Local                           *LocalModuleSource                    `json:"local,omitempty"`
+	Git                             *persistedGitModuleSourcePayload      `json:"git,omitempty"`
+	DirSrc                          *persistedDirModuleSourcePayload      `json:"dirSrc,omitempty"`
+	GitUnfilteredContextDirResultID uint64                                `json:"gitUnfilteredContextDirResultID,omitempty"`
+	SDKCapabilities                 *persistedModuleSourceSDKCapabilities `json:"sdkCapabilities,omitempty"`
+}
+
+type persistedModuleSourceLazySDK struct {
+	config       *SDKConfig
+	src          *ModuleSource
+	capabilities persistedModuleSourceSDKCapabilities
+
+	mu     sync.Mutex
+	loaded SDK
+}
+
+var _ SDK = (*persistedModuleSourceLazySDK)(nil)
+
+func (sdk *persistedModuleSourceLazySDK) ensure(ctx context.Context) (SDK, error) {
+	if sdk == nil || sdk.config == nil {
+		return nil, fmt.Errorf("load persisted module source sdk: missing sdk config")
+	}
+
+	sdk.mu.Lock()
+	loaded := sdk.loaded
+	sdk.mu.Unlock()
+	if loaded != nil {
+		return loaded, nil
+	}
+
+	if moduleSourceSDKLoader == nil {
+		return nil, fmt.Errorf("load persisted module source sdk: sdk loader is not configured")
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted module source sdk query: %w", err)
+	}
+	loaded, err = moduleSourceSDKLoader(ctx, query, sdk.config, sdk.src)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted module source sdk: %w", err)
+	}
+
+	sdk.mu.Lock()
+	if sdk.loaded == nil {
+		sdk.loaded = loaded
+		if sdk.src != nil {
+			sdk.src.SDKImpl = loaded
+		}
+	}
+	loaded = sdk.loaded
+	sdk.mu.Unlock()
+	return loaded, nil
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsRuntime() (Runtime, bool) {
+	if sdk == nil || !sdk.capabilities.Runtime {
+		return nil, false
+	}
+	return persistedModuleSourceLazyRuntime{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsModuleTypes() (ModuleTypes, bool) {
+	if sdk == nil || !sdk.capabilities.ModuleTypes {
+		return nil, false
+	}
+	return persistedModuleSourceLazyModuleTypes{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsCodeGenerator() (CodeGenerator, bool) {
+	if sdk == nil || !sdk.capabilities.CodeGenerator {
+		return nil, false
+	}
+	return persistedModuleSourceLazyCodeGenerator{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsClientGenerator() (ClientGenerator, bool) {
+	if sdk == nil || !sdk.capabilities.ClientGenerator {
+		return nil, false
+	}
+	return persistedModuleSourceLazyClientGenerator{sdk: sdk}, true
+}
+
+type persistedModuleSourceLazyRuntime struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ Runtime = persistedModuleSourceLazyRuntime{}
+
+func (sdk persistedModuleSourceLazyRuntime) Runtime(
+	ctx context.Context,
+	deps *ModDeps,
+	src dagql.ObjectResult[*ModuleSource],
+) (dagql.ObjectResult[*Container], error) {
+	loaded, err := sdk.sdk.ensure(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Container]{}, err
+	}
+	runtimeSDK, ok := loaded.AsRuntime()
+	if !ok {
+		return dagql.ObjectResult[*Container]{}, fmt.Errorf("persisted module source sdk does not implement runtime")
+	}
+	return runtimeSDK.Runtime(ctx, deps, src)
+}
+
+type persistedModuleSourceLazyModuleTypes struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ModuleTypes = persistedModuleSourceLazyModuleTypes{}
+
+func (sdk persistedModuleSourceLazyModuleTypes) ModuleTypes(
+	ctx context.Context,
+	deps *ModDeps,
+	src dagql.ObjectResult[*ModuleSource],
+	mod *Module,
+) (dagql.ObjectResult[*Module], error) {
+	loaded, err := sdk.sdk.ensure(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Module]{}, err
+	}
+	moduleTypesSDK, ok := loaded.AsModuleTypes()
+	if !ok {
+		return dagql.ObjectResult[*Module]{}, fmt.Errorf("persisted module source sdk does not implement module types")
+	}
+	return moduleTypesSDK.ModuleTypes(ctx, deps, src, mod)
+}
+
+type persistedModuleSourceLazyCodeGenerator struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ CodeGenerator = persistedModuleSourceLazyCodeGenerator{}
+
+func (sdk persistedModuleSourceLazyCodeGenerator) Codegen(
+	ctx context.Context,
+	deps *ModDeps,
+	src dagql.ObjectResult[*ModuleSource],
+) (*GeneratedCode, error) {
+	loaded, err := sdk.sdk.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	codegenSDK, ok := loaded.AsCodeGenerator()
+	if !ok {
+		return nil, fmt.Errorf("persisted module source sdk does not implement code generator")
+	}
+	return codegenSDK.Codegen(ctx, deps, src)
+}
+
+type persistedModuleSourceLazyClientGenerator struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ClientGenerator = persistedModuleSourceLazyClientGenerator{}
+
+func (sdk persistedModuleSourceLazyClientGenerator) RequiredClientGenerationFiles(
+	ctx context.Context,
+) (dagql.Array[dagql.String], error) {
+	loaded, err := sdk.sdk.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientSDK, ok := loaded.AsClientGenerator()
+	if !ok {
+		return nil, fmt.Errorf("persisted module source sdk does not implement client generator")
+	}
+	return clientSDK.RequiredClientGenerationFiles(ctx)
+}
+
+func (sdk persistedModuleSourceLazyClientGenerator) GenerateClient(
+	ctx context.Context,
+	modSource dagql.ObjectResult[*ModuleSource],
+	deps *ModDeps,
+	outputDir string,
+) (dagql.ObjectResult[*Directory], error) {
+	loaded, err := sdk.sdk.ensure(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	clientSDK, ok := loaded.AsClientGenerator()
+	if !ok {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("persisted module source sdk does not implement client generator")
+	}
+	return clientSDK.GenerateClient(ctx, modSource, deps, outputDir)
+}
+
+func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if src == nil {
+		return nil, fmt.Errorf("encode persisted module source: nil module source")
+	}
+	payload := persistedModuleSourcePayload{
+		ConfigExists:                  src.ConfigExists,
+		ModuleName:                    src.ModuleName,
+		ModuleOriginalName:            src.ModuleOriginalName,
+		EngineVersion:                 src.EngineVersion,
+		CodegenConfig:                 src.CodegenConfig,
+		ModuleConfigUserFields:        src.ModuleConfigUserFields,
+		DisableDefaultFunctionCaching: src.DisableDefaultFunctionCaching,
+		SDK:                           src.SDK,
+		IncludePaths:                  slices.Clone(src.IncludePaths),
+		RebasedIncludePaths:           slices.Clone(src.RebasedIncludePaths),
+		ConfigDependencies:            slices.Clone(src.ConfigDependencies),
+		ConfigBlueprint:               src.ConfigBlueprint,
+		ConfigToolchains:              slices.Clone(src.ConfigToolchains),
+		ToolchainConfigIndex:          src.ToolchainConfigIndex,
+		ToolchainProjection:           src.ToolchainProjection,
+		UserDefaults:                  src.UserDefaults,
+		ConfigClients:                 slices.Clone(src.ConfigClients),
+		SourceRootSubpath:             src.SourceRootSubpath,
+		SourceSubpath:                 src.SourceSubpath,
+		OriginalSubpath:               src.OriginalSubpath,
+		Kind:                          src.Kind,
+		Local:                         src.Local,
+	}
+	if src.SDK != nil {
+		if src.SDKImpl == nil {
+			return nil, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
+		}
+		_, hasRuntime := src.SDKImpl.AsRuntime()
+		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
+		_, hasCodeGenerator := src.SDKImpl.AsCodeGenerator()
+		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
+		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
+			Runtime:         hasRuntime,
+			ModuleTypes:     hasModuleTypes,
+			CodeGenerator:   hasCodeGenerator,
+			ClientGenerator: hasClientGenerator,
+		}
+	}
+	if src.ContextDirectory.ID() != nil {
+		contextDirID, err := encodePersistedObjectRef(cache, src.ContextDirectory, "module source context directory")
+		if err != nil {
+			return nil, err
+		}
+		payload.ContextDirectoryResultID = contextDirID
+	}
+	payload.DependencyResultIDs = make([]uint64, 0, len(src.Dependencies))
+	for _, dep := range src.Dependencies {
+		if dep.ID() == nil {
+			continue
+		}
+		depID, err := encodePersistedObjectRef(cache, dep, "module source dependency")
+		if err != nil {
+			return nil, err
+		}
+		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
+	}
+	if src.Blueprint.ID() != nil {
+		blueprintID, err := encodePersistedObjectRef(cache, src.Blueprint, "module source blueprint")
+		if err != nil {
+			return nil, err
+		}
+		payload.BlueprintResultID = blueprintID
+	}
+	payload.ToolchainResultIDs = make([]uint64, 0, len(src.Toolchains))
+	for _, toolchain := range src.Toolchains {
+		if toolchain.ID() == nil {
+			continue
+		}
+		toolchainID, err := encodePersistedObjectRef(cache, toolchain, "module source toolchain")
+		if err != nil {
+			return nil, err
+		}
+		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
+	}
+	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.ID() != nil {
+		toolchainContextSourceID, err := encodePersistedObjectRef(cache, src.ToolchainContextSource.Value, "module source toolchain context source")
+		if err != nil {
+			return nil, err
+		}
+		payload.ToolchainContextSourceResultID = toolchainContextSourceID
+	}
+	if src.Git != nil {
+		payload.Git = &persistedGitModuleSourcePayload{
+			CloneRef:     src.Git.CloneRef,
+			Symbolic:     src.Git.Symbolic,
+			HTMLRepoURL:  src.Git.HTMLRepoURL,
+			HTMLURL:      src.Git.HTMLURL,
+			RepoRootPath: src.Git.RepoRootPath,
+			Version:      src.Git.Version,
+			Commit:       src.Git.Commit,
+			Ref:          src.Git.Ref,
+		}
+		if src.Git.UnfilteredContextDir.ID() != nil {
+			unfilteredID, err := encodePersistedObjectRef(cache, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
+			if err != nil {
+				return nil, err
+			}
+			payload.GitUnfilteredContextDirResultID = unfilteredID
+		}
+	}
+	if src.DirSrc != nil {
+		payload.DirSrc = &persistedDirModuleSourcePayload{
+			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
+		}
+		if src.DirSrc.OriginalContextDir.ID() != nil {
+			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
+			if err != nil {
+				return nil, err
+			}
+			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
+		}
+	}
+	return json.Marshal(payload)
+}
+
+func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedModuleSourcePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted module source payload: %w", err)
+	}
+	contextDirectory, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ContextDirectoryResultID, "module source context directory")
+	if err != nil {
+		return nil, err
+	}
+	dependencies := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.DependencyResultIDs))
+	for _, depID := range persisted.DependencyResultIDs {
+		depRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, depID, "module source dependency")
+		if err != nil {
+			return nil, err
+		}
+		dependencies = append(dependencies, depRes)
+	}
+	blueprint, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.BlueprintResultID, "module source blueprint")
+	if err != nil {
+		return nil, err
+	}
+	toolchains := make([]dagql.ObjectResult[*ModuleSource], 0, len(persisted.ToolchainResultIDs))
+	for _, toolchainID := range persisted.ToolchainResultIDs {
+		toolchainRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, toolchainID, "module source toolchain")
+		if err != nil {
+			return nil, err
+		}
+		toolchains = append(toolchains, toolchainRes)
+	}
+	toolchainContextSource, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.ToolchainContextSourceResultID, "module source toolchain context source")
+	if err != nil {
+		return nil, err
+	}
+	src := &ModuleSource{
+		ConfigExists:                  persisted.ConfigExists,
+		ModuleName:                    persisted.ModuleName,
+		ModuleOriginalName:            persisted.ModuleOriginalName,
+		EngineVersion:                 persisted.EngineVersion,
+		CodegenConfig:                 persisted.CodegenConfig,
+		ModuleConfigUserFields:        persisted.ModuleConfigUserFields,
+		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
+		SDK:                           persisted.SDK,
+		IncludePaths:                  slices.Clone(persisted.IncludePaths),
+		RebasedIncludePaths:           slices.Clone(persisted.RebasedIncludePaths),
+		ConfigDependencies:            slices.Clone(persisted.ConfigDependencies),
+		Dependencies:                  dependencies,
+		ConfigBlueprint:               persisted.ConfigBlueprint,
+		Blueprint:                     blueprint,
+		ConfigToolchains:              slices.Clone(persisted.ConfigToolchains),
+		Toolchains:                    toolchains,
+		ToolchainConfigIndex:          persisted.ToolchainConfigIndex,
+		ToolchainProjection:           persisted.ToolchainProjection,
+		UserDefaults:                  persisted.UserDefaults,
+		ConfigClients:                 slices.Clone(persisted.ConfigClients),
+		SourceRootSubpath:             persisted.SourceRootSubpath,
+		SourceSubpath:                 persisted.SourceSubpath,
+		OriginalSubpath:               persisted.OriginalSubpath,
+		ContextDirectory:              contextDirectory,
+		Kind:                          persisted.Kind,
+		Local:                         persisted.Local,
+	}
+	if toolchainContextSource.ID() != nil {
+		src.ToolchainContextSource = dagql.NonNull(toolchainContextSource)
+	}
+	if persisted.Git != nil {
+		src.Git = &GitModuleSource{
+			CloneRef:     persisted.Git.CloneRef,
+			Symbolic:     persisted.Git.Symbolic,
+			HTMLRepoURL:  persisted.Git.HTMLRepoURL,
+			HTMLURL:      persisted.Git.HTMLURL,
+			RepoRootPath: persisted.Git.RepoRootPath,
+			Version:      persisted.Git.Version,
+			Commit:       persisted.Git.Commit,
+			Ref:          persisted.Git.Ref,
+		}
+		if persisted.GitUnfilteredContextDirResultID != 0 {
+			unfilteredContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.GitUnfilteredContextDirResultID, "module source git unfiltered context directory")
+			if err != nil {
+				return nil, err
+			}
+			src.Git.UnfilteredContextDir = unfilteredContextDir
+		}
+	}
+	if persisted.DirSrc != nil {
+		src.DirSrc = &DirModuleSource{
+			OriginalSourceRootSubpath: persisted.DirSrc.OriginalSourceRootSubpath,
+		}
+		if persisted.DirSrc.OriginalContextDirResultID != 0 {
+			originalContextDir, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirSrc.OriginalContextDirResultID, "module source dir original context directory")
+			if err != nil {
+				return nil, err
+			}
+			src.DirSrc.OriginalContextDir = originalContextDir
+		}
+	}
+	if src.SDK != nil {
+		if persisted.SDKCapabilities == nil {
+			return nil, fmt.Errorf("decode persisted module source: missing persisted sdk capabilities")
+		}
+		src.SDKImpl = &persistedModuleSourceLazySDK{
+			config:       src.SDK,
+			src:          src,
+			capabilities: *persisted.SDKCapabilities,
+		}
+	}
+	return src, nil
 }
 
 func (src *ModuleSource) AsString() string {
@@ -473,12 +1074,22 @@ const moduleSourceHashMix = "moduleSource"
 // git commits or local source paths the module was sourced from; things that matter to the implementation but not
 // anything else from the client.
 func (src *ModuleSource) ContentDigestForSDK(ctx context.Context) (digest.Digest, error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	var contextDigest string
+	if err := dag.Select(ctx, src.ContextDirectory, &contextDigest, dagql.Selector{Field: "digest"}); err != nil {
+		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
+	}
+
 	inputs := []string{
 		moduleSourceHashMix,
 		src.ModuleOriginalName,
 		src.SourceRootSubpath,
 		src.SourceSubpath,
-		src.ContextDirectory.ID().ContentDigest().String(),
+		contextDigest,
 	}
 
 	if src.SDK != nil && src.SDK.Debug {
@@ -511,10 +1122,6 @@ func (src *ModuleSource) ContentDigestForSDK(ctx context.Context) (digest.Digest
 	}
 
 	inputs = append(inputs, src.IncludePaths...)
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get dag server: %w", err)
-	}
 
 	for _, dep := range src.Dependencies {
 		if dep.Self() == nil {
@@ -596,6 +1203,12 @@ func (src *ModuleSource) LoadContextDir(
 	if err != nil {
 		return inst, err
 	}
+	if inst.ID() != nil && inst.ID().ContentDigest() == "" {
+		inst, err = MakeDirectoryContentHashed(ctx, inst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
+		}
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -605,7 +1218,7 @@ func (src *ModuleSource) LoadContextDir(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
@@ -913,7 +1526,7 @@ func (src *ModuleSource) LoadContextFile(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 

@@ -489,12 +489,8 @@ func prepareMounts(
 		MountType:   pb.MountType_BIND,
 		ApplyOutput: metaOutput,
 	}
-	if container.Meta != nil {
-		ref, err := container.Meta.getSnapshot(ctx)
-		if err != nil {
-			return materialized, fmt.Errorf("failed to get meta snapshot: %w", err)
-		}
-		metaState.SourceRef = ref
+	if container.MetaSnapshot != nil {
+		metaState.SourceRef = container.MetaSnapshot
 	}
 	if err := materializeState(metaState); err != nil {
 		return materialized, err
@@ -534,6 +530,11 @@ func prepareMounts(
 			cacheSrc := ctrMount.CacheSource
 			if cacheSrc.Volume.Self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil cache volume source", i)
+			}
+			if cacheSrc.Volume.Self().getSnapshot() == nil {
+				if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
+					return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
+				}
 			}
 			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
 			if cacheSnapshot == nil {
@@ -921,6 +922,7 @@ func (container *Container) WithExec(
 	gateRun := func(ctx context.Context) error {
 		return gate.Evaluate(ctx, "container exec")
 	}
+	container.LazyInit = gateRun
 
 	inputRootFS := container.FS
 	inputMounts := slices.Clone(container.Mounts)
@@ -945,33 +947,13 @@ func (container *Container) WithExec(
 	}
 	container.FS = updatedRootFS
 
-	metaOutput := &Directory{
-		Dir:       "/",
-		Platform:  container.Platform,
-		Services:  container.Services,
-		LazyState: NewLazyState(),
-	}
-	metaOutput.LazyInit = gateRun
-	container.Meta = metaOutput
-	container.MetaResult = nil
-	if container.OpID != nil {
-		metaResultID := container.OpID.Append(metaOutput.Type(), "__daggerMetaOutput")
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get dagql server for meta output result: %w", err)
-		}
-		metaOutputResult, err := dagql.NewObjectResultForID(metaOutput, srv, metaResultID)
-		if err != nil {
-			return fmt.Errorf("failed to build meta output result: %w", err)
-		}
-		container.MetaResult = &metaOutputResult
-	}
+	container.MetaSnapshot = nil
 
 	rootOutputBinding := func(ref bkcache.ImmutableRef) {
 		rootfsOutput.setSnapshot(ref)
 	}
 	metaOutputBinding := func(ref bkcache.ImmutableRef) {
-		metaOutput.setSnapshot(ref)
+		container.MetaSnapshot = ref
 	}
 	mountOutputBindings := make([]func(bkcache.ImmutableRef), len(container.Mounts))
 
@@ -1303,6 +1285,11 @@ func (container *Container) WithExec(
 				if cacheSrc.Volume.Self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume source", i))
 				}
+				if cacheSrc.Volume.Self().getSnapshot() == nil {
+					if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
+						return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
+					}
+				}
 				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
 				if cacheSnapshot == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume snapshot", i))
@@ -1611,22 +1598,15 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		return "", err
 	}
 
-	if container.Meta == nil {
+	if container.MetaSnapshot == nil {
 		return "", ErrNoCommand
 	}
 
-	metaSnapshot, err := container.Meta.getSnapshot(ctx)
-	if err != nil {
-		if errors.Is(err, errEmptyResultRef) {
-			return "", ErrNoCommand
-		}
-		return "", err
-	}
 	file := &File{
 		File:     filePath,
 		Platform: container.Platform,
 		Services: container.Services,
-		Snapshot: metaSnapshot,
+		Snapshot: container.MetaSnapshot,
 	}
 
 	content, err := file.Contents(ctx, nil, nil)

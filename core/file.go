@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,9 +28,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	telemetry "github.com/dagger/otel-go"
 )
+
+// fjkdlasfjdkl
 
 // File is a content-addressed file.
 type File struct {
@@ -42,7 +46,8 @@ type File struct {
 	Parent dagql.ObjectResult[*Directory]
 	LazyState
 	// Below is lazily initialized and shoud not be accessed directly
-	Snapshot bkcache.ImmutableRef
+	Snapshot          bkcache.ImmutableRef
+	persistedResultID uint64
 }
 
 func (*File) Type() *ast.Type {
@@ -56,7 +61,21 @@ func (*File) TypeDescription() string {
 	return "A file."
 }
 
+func (file *File) PersistedResultID() uint64 {
+	if file == nil {
+		return 0
+	}
+	return file.persistedResultID
+}
+
+func (file *File) SetPersistedResultID(resultID uint64) {
+	if file != nil {
+		file.persistedResultID = resultID
+	}
+}
+
 var _ dagql.OnReleaser = (*File)(nil)
+var _ dagql.HasOwnedResults = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
 	if file.Snapshot != nil {
@@ -84,6 +103,35 @@ func (file *File) Evaluate(ctx context.Context) error {
 
 func (file *File) Sync(ctx context.Context) error {
 	return file.Evaluate(ctx)
+}
+
+func (file *File) PreparePersistedObject(ctx context.Context) error {
+	if file == nil {
+		return nil
+	}
+	if file.Snapshot != nil {
+		return retainImmutableRefChain(ctx, file.Snapshot)
+	}
+	return nil
+}
+
+func (file *File) AttachOwnedResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if file == nil || file.Parent.ID() == nil {
+		return nil, nil
+	}
+	attached, err := attach(file.Parent)
+	if err != nil {
+		return nil, fmt.Errorf("attach file parent: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return nil, fmt.Errorf("attach file parent: unexpected result %T", attached)
+	}
+	file.Parent = typed
+	return []dagql.AnyResult{typed}, nil
 }
 
 func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
@@ -119,6 +167,92 @@ func (file *File) CacheUsageIdentity() (string, bool) {
 		return "", false
 	}
 	return file.Snapshot.ID(), true
+}
+
+func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if file == nil || file.Snapshot == nil {
+		return nil
+	}
+	return []dagql.PersistedSnapshotRefLink{
+		{
+			RefKey: file.Snapshot.SnapshotID(),
+			Role:   "snapshot",
+		},
+	}
+}
+
+const (
+	persistedFileFormSnapshot   = "snapshot"
+	persistedFileFormParentLazy = "parent_lazy"
+)
+
+type persistedFilePayload struct {
+	Form           string   `json:"form"`
+	File           string   `json:"file,omitempty"`
+	Platform       Platform `json:"platform"`
+	ParentResultID uint64   `json:"parentResultID,omitempty"`
+}
+
+func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if file == nil {
+		return nil, fmt.Errorf("encode persisted file: nil file")
+	}
+	payload := persistedFilePayload{
+		File:     file.File,
+		Platform: file.Platform,
+	}
+	switch {
+	case file.Snapshot != nil:
+		payload.Form = persistedFileFormSnapshot
+	case file.Parent.ID() != nil:
+		parentID, err := encodePersistedObjectRef(cache, file.Parent, "file parent")
+		if err != nil {
+			return nil, err
+		}
+		payload.Form = persistedFileFormParentLazy
+		payload.ParentResultID = parentID
+	default:
+		return nil, fmt.Errorf("%w: encode persisted file: unsupported lazy file state", dagql.ErrPersistStateNotReady)
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted file payload: %w", err)
+	}
+	return payloadJSON, nil
+}
+
+func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedFilePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted file payload: %w", err)
+	}
+
+	file := &File{
+		File:      persisted.File,
+		Platform:  persisted.Platform,
+		LazyState: NewLazyState(),
+	}
+	switch persisted.Form {
+	case persistedFileFormSnapshot:
+		snapshot, _, err := loadPersistedImmutableSnapshot(ctx, dag, id, "snapshot")
+		if err != nil {
+			return nil, err
+		}
+		file.setSnapshot(snapshot)
+		return file, nil
+	case persistedFileFormParentLazy:
+		parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ParentResultID, "file parent")
+		if err != nil {
+			return nil, err
+		}
+		file.Parent = parent
+		if parent.Self() != nil {
+			file.Services = slices.Clone(parent.Self().Services)
+		}
+		return file, nil
+	default:
+		return nil, fmt.Errorf("decode persisted file payload: unsupported form %q", persisted.Form)
+	}
 }
 
 func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {

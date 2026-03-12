@@ -3,6 +3,6 @@ package resource
 import "github.com/dagger/dagger/dagql/call"
 
 type ID struct {
-	call.ID
+	ID       *call.ID
 	Optional bool
 }

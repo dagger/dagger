@@ -222,6 +222,98 @@ func TestSelfDigestAndInputsUseRecipeDigestsForIDInputs(t *testing.T) {
 	}
 }
 
+func TestSelfDigestAndInputRefsPreserveInputKinds(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+
+	receiver := New().Append(typ, "receiver")
+	literalID := New().Append(typ, "literal-id")
+	moduleID := New().Append(typ, "module")
+	module := NewModule(moduleID, "mod", "ref", "pin")
+	digested := digest.FromString("digested-input")
+
+	id := receiver.Append(
+		typ,
+		"field",
+		WithArgs(
+			NewArgument("child", NewLiteralID(literalID), false),
+			NewArgument("opaque", NewLiteralDigestedString("payload", digested), false),
+		),
+		WithModule(module),
+	)
+
+	_, refs, err := id.SelfDigestAndInputRefs()
+	if err != nil {
+		t.Fatalf("self+refs: %v", err)
+	}
+
+	if len(refs) != 4 {
+		t.Fatalf("expected 4 structural input refs, got %d", len(refs))
+	}
+	if refs[0].ID == nil || refs[0].ID.Digest() != receiver.Digest() {
+		t.Fatalf("unexpected receiver ref: %+v", refs[0])
+	}
+	if refs[1].ID == nil || refs[1].ID.Digest() != literalID.Digest() {
+		t.Fatalf("unexpected literal ID ref: %+v", refs[1])
+	}
+	if refs[2].Digest != digested || refs[2].ID != nil {
+		t.Fatalf("unexpected digested-string ref: %+v", refs[2])
+	}
+	if refs[3].ID == nil || refs[3].ID.Digest() != moduleID.Digest() {
+		t.Fatalf("unexpected module ref: %+v", refs[3])
+	}
+}
+
+func TestSelfDigestAndInputsProjectsStructuralInputRefs(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+
+	receiver := New().Append(typ, "receiver")
+	literalID := New().Append(typ, "literal-id")
+	moduleID := New().Append(typ, "module")
+	module := NewModule(moduleID, "mod", "ref", "pin")
+	digested := digest.FromString("digested-input")
+
+	id := receiver.Append(
+		typ,
+		"field",
+		WithArgs(
+			NewArgument("child", NewLiteralID(literalID), false),
+			NewArgument("opaque", NewLiteralDigestedString("payload", digested), false),
+		),
+		WithModule(module),
+	)
+
+	selfA, inputs, err := id.SelfDigestAndInputs()
+	if err != nil {
+		t.Fatalf("self+inputs: %v", err)
+	}
+	selfB, refs, err := id.SelfDigestAndInputRefs()
+	if err != nil {
+		t.Fatalf("self+refs: %v", err)
+	}
+
+	if selfA != selfB {
+		t.Fatalf("self digest mismatch: %s vs %s", selfA, selfB)
+	}
+	if len(inputs) != len(refs) {
+		t.Fatalf("input/ref count mismatch: %d vs %d", len(inputs), len(refs))
+	}
+	for i, ref := range refs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			t.Fatalf("input ref %d digest: %v", i, err)
+		}
+		if inputs[i] != dig {
+			t.Fatalf("input digest mismatch at %d: %s vs %s", i, inputs[i], dig)
+		}
+	}
+}
+
 func TestExtraDigestsFromLegacyUnspecifiedEntries(t *testing.T) {
 	contentDigest := digest.FromString("legacy-content")
 	additionalDigest := digest.FromString("legacy-additional")

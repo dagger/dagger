@@ -480,8 +480,7 @@ func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyRes
 	case dagql.Input:
 		return content.CollectJSONable(x)
 	case dagql.AnyResult:
-		content.CollectID(*x.ID(), false)
-		return nil
+		return content.CollectID(x.ID(), false)
 	default:
 		return content.CollectJSONable(value.Unwrap())
 	}

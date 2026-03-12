@@ -592,6 +592,10 @@ func (r ObjectResult[T]) call(
 	if res == nil {
 		return nil, nil
 	}
+	res, err = s.promoteDerivedObjectResult(ctx, res, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := res.PostCall(ctx); err != nil {
 		return nil, fmt.Errorf("post-call error: %w", err)

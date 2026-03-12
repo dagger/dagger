@@ -160,6 +160,13 @@ func TestSelectArray(t *testing.T) {
 				{X: rando, Y: rando},
 			}, nil
 		}),
+		dagql.Func("listOfFixedObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			return []*points.Point{
+				{X: 101, Y: 201},
+				{X: 102, Y: 202},
+			}, nil
+		}),
 	}.Install(srv)
 
 	dagql.Fields[*points.Point]{
@@ -246,6 +253,9 @@ func TestSelectArray(t *testing.T) {
 
 			return []dagql.Result[*points.Point]{pt0, pt1, pt2, pt3}, nil
 		}),
+		dagql.Func("maybeShiftLeft", func(ctx context.Context, self *points.Point, _ struct{}) (dagql.Nullable[*points.Point], error) {
+			return dagql.NonNull(&points.Point{X: self.X - 1, Y: self.Y}), nil
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	pointSel := dagql.Selector{
@@ -388,6 +398,68 @@ func TestSelectArray(t *testing.T) {
 
 		assert.Equal(t, point1.Self().X, point2.Self().X)
 		assert.Equal(t, point1.Self().Y, point2.Self().Y)
+	})
+
+	t.Run("nth promotion creates cache-backed receiver results", func(t *testing.T) {
+		var pointResults dagql.ResultArray[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &pointResults,
+			dagql.Selector{
+				Field: "listOfFixedObjects",
+			},
+		))
+		assert.Equal(t, 2, len(pointResults))
+
+		nthID := pointResults[0].ID()
+		nthRes, err := srv.LoadType(ctx, nthID)
+		assert.NilError(t, err)
+		assert.Assert(t, nthRes.HitCache())
+
+		pointType := (&points.Point{}).Type()
+		xID := nthID.Append(pointType, "x")
+
+		xRes1, err := srv.LoadType(ctx, xID)
+		assert.NilError(t, err)
+		x1, ok := xRes1.Unwrap().(dagql.Int)
+		assert.Assert(t, ok)
+		assert.Equal(t, int(x1), 101)
+
+		xRes2, err := srv.LoadType(ctx, xID)
+		assert.NilError(t, err)
+		assert.Assert(t, xRes2.HitCache())
+		x2, ok := xRes2.Unwrap().(dagql.Int)
+		assert.Assert(t, ok)
+		assert.Equal(t, int(x2), 101)
+	})
+
+	t.Run("deref promotion creates cache-backed receiver results", func(t *testing.T) {
+		var point dagql.Result[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &point, pointSel))
+
+		shiftedID := point.ID().Append((&points.Point{}).Type(), "maybeShiftLeft")
+		shiftedRes1, err := srv.LoadType(ctx, shiftedID)
+		assert.NilError(t, err)
+		shiftedPoint1, ok := shiftedRes1.Unwrap().(*points.Point)
+		assert.Assert(t, ok)
+		assert.Equal(t, shiftedPoint1.X, 5)
+		assert.Equal(t, shiftedPoint1.Y, 7)
+
+		shiftedRes2, err := srv.LoadType(ctx, shiftedID)
+		assert.NilError(t, err)
+		assert.Assert(t, shiftedRes2.HitCache())
+
+		xID := shiftedID.Append((&points.Point{}).Type(), "x")
+		xRes1, err := srv.LoadType(ctx, xID)
+		assert.NilError(t, err)
+		x1, ok := xRes1.Unwrap().(dagql.Int)
+		assert.Assert(t, ok)
+		assert.Equal(t, int(x1), 5)
+
+		xRes2, err := srv.LoadType(ctx, xID)
+		assert.NilError(t, err)
+		assert.Assert(t, xRes2.HitCache())
+		x2, ok := xRes2.Unwrap().(dagql.Int)
+		assert.Assert(t, ok)
+		assert.Equal(t, int(x2), 5)
 	})
 }
 

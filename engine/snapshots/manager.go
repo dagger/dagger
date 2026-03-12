@@ -44,9 +44,11 @@ type Accessor interface {
 
 	GetByBlob(ctx context.Context, desc ocispecs.Descriptor, parent ImmutableRef, opts ...RefOption) (ImmutableRef, error)
 	Get(ctx context.Context, id string, opts ...RefOption) (ImmutableRef, error)
+	GetBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (ImmutableRef, error)
 
 	New(ctx context.Context, parent ImmutableRef, s session.Group, opts ...RefOption) (MutableRef, error)
 	GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) // Rebase?
+	GetMutableBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (MutableRef, error)
 	IdentityMapping() *idtools.IdentityMapping
 	// TODO: keep Merge/Diff only while core/directory and core/changeset still call them directly.
 	// Once those callers are moved, remove these from snapshots entirely.
@@ -293,6 +295,15 @@ func (cm *snapshotManager) Get(ctx context.Context, id string, opts ...RefOption
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	return cm.get(ctx, id, opts...)
+}
+
+func (cm *snapshotManager) GetBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (ImmutableRef, error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if err := cm.rehydrateSnapshotMetadataLocked(ctx, snapshotID, true); err != nil {
+		return nil, err
+	}
+	return cm.get(ctx, snapshotID, opts...)
 }
 
 // get requires manager lock to be taken
@@ -572,6 +583,79 @@ func (cm *snapshotManager) GetMutable(ctx context.Context, id string, opts ...Re
 	}
 
 	return rec.mref(true, descHandlersOf(opts...)), nil
+}
+
+func (cm *snapshotManager) GetMutableBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (MutableRef, error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if err := cm.rehydrateSnapshotMetadataLocked(ctx, snapshotID, false); err != nil {
+		return nil, err
+	}
+	rec, err := cm.getRecord(ctx, snapshotID, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if !rec.mutable {
+		return nil, errors.Wrapf(errInvalid, "%s is not mutable", snapshotID)
+	}
+	if len(rec.refs) != 0 {
+		return nil, errors.Wrapf(ErrLocked, "%s is locked", snapshotID)
+	}
+	return rec.mref(true, descHandlersOf(opts...)), nil
+}
+
+func (cm *snapshotManager) rehydrateSnapshotMetadataLocked(ctx context.Context, snapshotID string, committed bool) error {
+	if snapshotID == "" {
+		return errors.New("empty snapshot ID")
+	}
+	if _, ok := cm.records[snapshotID]; ok {
+		return nil
+	}
+	if _, ok := cm.getMetadata(snapshotID); ok {
+		return nil
+	}
+	if _, err := cm.Snapshotter.Stat(ctx, snapshotID); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return errors.Wrap(errNotFound, snapshotID)
+		}
+		return errors.Wrapf(err, "stat snapshot %s", snapshotID)
+	}
+	if _, err := cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+		l.ID = snapshotID
+		l.Labels = map[string]string{
+			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return errors.Wrapf(err, "create lease for rehydrated snapshot %s", snapshotID)
+	}
+	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: snapshotID}, leases.Resource{
+		ID:   snapshotID,
+		Type: "snapshots/" + cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return errors.Wrapf(err, "attach rehydrated snapshot %s to lease", snapshotID)
+	}
+
+	md := cm.ensureMetadata(snapshotID)
+	if err := md.queueSnapshotID(snapshotID); err != nil {
+		return err
+	}
+	if err := md.queueCommitted(committed); err != nil {
+		return err
+	}
+	if err := md.SetCachePolicyRetain(); err != nil {
+		return err
+	}
+	if err := md.queueDescription("rehydrated persisted snapshot"); err != nil {
+		return err
+	}
+	if err := md.commitMetadata(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (cm *snapshotManager) Merge(ctx context.Context, inputParents []ImmutableRef, opts ...RefOption) (ir ImmutableRef, rerr error) {

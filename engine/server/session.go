@@ -22,9 +22,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
-	"github.com/dagger/dagger/internal/buildkit/util/progress/progressui"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/koron-go/prefixw"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -428,7 +426,7 @@ func (srv *Server) initializeDaggerClient(
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
+		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: opts.CallID}, opts.CallerClientID, true); err != nil {
 			return fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}

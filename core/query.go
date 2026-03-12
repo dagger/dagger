@@ -202,6 +202,10 @@ func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
 }
 
 func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
+	if srv := dagql.CurrentDagqlServer(ctx); srv != nil && srv.Cache != nil {
+		return srv.Cache, nil
+	}
+
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)

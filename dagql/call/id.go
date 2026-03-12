@@ -60,7 +60,7 @@ type ID struct {
 }
 
 const (
-	extraDigestLabelContent = "content"
+	ExtraDigestLabelContent = "content"
 )
 
 type ExtraDigest struct {
@@ -161,7 +161,7 @@ func (id *ID) ContentDigest() digest.Digest {
 	}
 	var last digest.Digest
 	for _, extra := range id.pb.ExtraDigests {
-		if extra == nil || extra.Label != extraDigestLabelContent || extra.Digest == "" {
+		if extra == nil || extra.Label != ExtraDigestLabelContent || extra.Digest == "" {
 			continue
 		}
 		last = digest.Digest(extra.Digest)
@@ -489,20 +489,20 @@ func WithView(view View) IDOpt {
 func WithContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
 		if dig != "" {
-			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent)
+			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), ExtraDigestLabelContent)
 		} else {
-			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelContent)
+			id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, ExtraDigestLabelContent)
 		}
 	}
 }
 
 func WithReplacedContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
-		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extraDigestLabelContent)
+		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, ExtraDigestLabelContent)
 		if dig == "" {
 			return
 		}
-		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), extraDigestLabelContent)
+		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), ExtraDigestLabelContent)
 	}
 }
 
@@ -906,17 +906,68 @@ func (id *ID) decode(
 // ID literals contribute only their type marker to the self digest; their digest
 // values are returned via the inputs slice.
 func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
+	selfDigest, inputRefs, err := id.SelfDigestAndInputRefs()
+	if err != nil {
+		return "", nil, err
+	}
+	inputs := make([]digest.Digest, 0, len(inputRefs))
+	for _, ref := range inputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return "", nil, err
+		}
+		inputs = append(inputs, dig)
+	}
+	return selfDigest, inputs, nil
+}
+
+// StructuralInputRef is one ordered structural input to a call identity. It is
+// intentionally richer than a raw digest so callers can preserve whether the
+// input came from a real call ID or from a digest-only literal witness.
+type StructuralInputRef struct {
+	ID     *ID
+	Digest digest.Digest
+}
+
+func (ref StructuralInputRef) Validate() error {
+	switch {
+	case ref.ID != nil && ref.Digest != "":
+		return fmt.Errorf("structural input ref cannot have both ID and digest")
+	case ref.ID == nil && ref.Digest == "":
+		return fmt.Errorf("structural input ref must have either ID or digest")
+	default:
+		return nil
+	}
+}
+
+func (ref StructuralInputRef) InputDigest() (digest.Digest, error) {
+	switch {
+	case ref.ID != nil && ref.Digest != "":
+		return "", fmt.Errorf("structural input ref cannot have both ID and digest")
+	case ref.ID != nil:
+		return ref.ID.Digest(), nil
+	case ref.Digest != "":
+		return ref.Digest, nil
+	default:
+		return "", fmt.Errorf("structural input ref must have either ID or digest")
+	}
+}
+
+// SelfDigestAndInputRefs returns the same self digest as SelfDigestAndInputs,
+// but preserves the kind of each ordered structural input instead of flattening
+// them all to bare digests.
+func (id *ID) SelfDigestAndInputRefs() (digest.Digest, []StructuralInputRef, error) {
 	if id == nil {
 		return "", nil, nil
 	}
 
-	var inputs []digest.Digest
+	var inputRefs []StructuralInputRef
 
 	h := hashutil.NewHasher()
 
 	// Receiver contributes to inputs, not the self digest.
 	if id.receiver != nil {
-		inputs = append(inputs, id.receiver.Digest())
+		inputRefs = append(inputRefs, StructuralInputRef{ID: id.receiver})
 	}
 	h = h.WithDelim()
 
@@ -944,7 +995,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 			continue
 		}
 		var err error
-		h, inputs, err = appendArgumentSelfBytes(arg, h, inputs)
+		h, inputRefs, err = appendArgumentSelfRefs(arg, h, inputRefs)
 		if err != nil {
 			h.Close()
 			return "", nil, err
@@ -960,7 +1011,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 			continue
 		}
 		var err error
-		h, inputs, err = appendArgumentSelfBytes(input, h, inputs)
+		h, inputRefs, err = appendArgumentSelfRefs(input, h, inputRefs)
 		if err != nil {
 			h.Close()
 			return "", nil, err
@@ -971,7 +1022,7 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	// module is an input, not part of self; this way multiple digests on the module ID
 	// can contribute to cache checks
 	if id.module != nil {
-		inputs = append(inputs, id.module.ID().Digest())
+		inputRefs = append(inputRefs, StructuralInputRef{ID: id.module.ID()})
 	}
 	// End implicit input section.
 	h = h.WithDelim()
@@ -984,7 +1035,13 @@ func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
 	h = h.WithString(id.pb.View).
 		WithDelim()
 
-	return digest.Digest(h.DigestAndClose()), inputs, nil
+	for _, ref := range inputRefs {
+		if err := ref.Validate(); err != nil {
+			return "", nil, err
+		}
+	}
+
+	return digest.Digest(h.DigestAndClose()), inputRefs, nil
 }
 
 // calcDigest calculates the recipe digest for the ID.
@@ -1084,10 +1141,10 @@ func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, e
 	return h, nil
 }
 
-func appendArgumentSelfBytes(arg *Argument, h *hashutil.Hasher, inputs []digest.Digest) (*hashutil.Hasher, []digest.Digest, error) {
+func appendArgumentSelfRefs(arg *Argument, h *hashutil.Hasher, inputs []StructuralInputRef) (*hashutil.Hasher, []StructuralInputRef, error) {
 	h = h.WithString(arg.pb.Name)
 
-	h, inputs, err := appendLiteralSelfBytes(arg.value, h, inputs)
+	h, inputs, err := appendLiteralSelfRefs(arg.value, h, inputs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
 	}
@@ -1168,16 +1225,16 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 	return h, nil
 }
 
-// appendLiteralSelfBytes appends literal bytes while collecting ID literal
-// digests as explicit inputs instead of including them in the hash.
-func appendLiteralSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Digest) (*hashutil.Hasher, []digest.Digest, error) {
+// appendLiteralSelfRefs appends literal bytes while collecting structural input
+// refs instead of flattening everything to bare digests.
+func appendLiteralSelfRefs(lit Literal, h *hashutil.Hasher, inputs []StructuralInputRef) (*hashutil.Hasher, []StructuralInputRef, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions
 	switch v := lit.(type) {
 	case *LiteralID:
 		const prefix = '0'
 		h = h.WithByte(prefix)
-		inputs = append(inputs, v.id.Digest())
+		inputs = append(inputs, StructuralInputRef{ID: v.id})
 	case *LiteralNull:
 		const prefix = '1'
 		h = h.WithByte(prefix)
@@ -1214,7 +1271,7 @@ func appendLiteralSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Dig
 		const prefix = '7'
 		h = h.WithByte(prefix)
 		for _, elem := range v.values {
-			h, inputs, err = appendLiteralSelfBytes(elem, h, inputs)
+			h, inputs, err = appendLiteralSelfRefs(elem, h, inputs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1223,7 +1280,7 @@ func appendLiteralSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Dig
 		const prefix = '8'
 		h = h.WithByte(prefix)
 		for _, arg := range v.values {
-			h, inputs, err = appendArgumentSelfBytes(arg, h, inputs)
+			h, inputs, err = appendArgumentSelfRefs(arg, h, inputs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1233,7 +1290,7 @@ func appendLiteralSelfBytes(lit Literal, h *hashutil.Hasher, inputs []digest.Dig
 		const prefix = '9'
 		h = h.WithByte(prefix)
 		if v.digest != "" {
-			inputs = append(inputs, v.digest)
+			inputs = append(inputs, StructuralInputRef{Digest: v.digest})
 		}
 	default:
 		return nil, nil, fmt.Errorf("unknown literal type %T", v)

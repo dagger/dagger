@@ -25,191 +25,242 @@
 * Assess whether we really want persistent cache for every schema json file, that's probably a lot of files that are actually kinda sizable!
 * Find a way to enable pruning of filesync mirror snapshots
    * Pretty sure filesync mirrors are currently not accounted for by dagql prune/usage accounting.
+* Persistence follow-up: understand what the full-state mirror should do with `Service` results.
+  * A shutdown flush in the disk-persistence coverage surfaced `persist result ... encode persisted object payload: type "Service" does not implement persisted object encoding`.
+  * We need to decide whether `Service` should get a real persisted representation or be explicitly excluded from mirrored persistence, and then make that behavior intentional.
 * !!! Check if we are losing a lot of parallelism in places, especially seems potentially apparent in the dockerBuild of e.g. TestLoadHostContainerd, which looks hella linear and maybe slower than it used to be
    * Probably time now or in near future to do eager parallel loading of IDs in DAG during ID load and such
 
 ## Notes
-* Big downside to storing ID on Directory/File/Container and re-exec'ing to dagop-flavor is that IDs are really per-caller now, but results are shared. So if we store the ID, what which one is it? Too confusing to think through.
-   * Eh, technically the e-graph equivalence should take care of this, might not matter
-   * HOWEVER it would still mean that if you e.g. select a directory on a container, then the "presentation ID" to the caller should be something it knows. But I guess if the presentation ID is just "...Container.directory", then who cares?
-   * Crucial part to is that Container has a cache dep on its referenced Directories, cannot prune directory unless Container is pruned
-   * It will be a little weird that Container has a ObjectResult[Directory] and an associated ID that's not necessarily relevant in particular anymore (at least, recipe not necessarily relevant in its entirety, just the digests used for equivalence checking). But I'm okay with weird for now, not a big deal at all for this iteration.
-   * So to summarize all of the above: Container storing ObjectResult for Directory (and similar patterns elsewhere) should be a-okay if our understanding is correct
-
-* Approach to replace the convoluted "dag-op self reinvoke in different flavor" approach:
-   * API fields can be marked as "persistable"
-   * They are checked in memory same as any others
-     * If we end up paging out to disk, we'd need an fallback check of on disk, which might be a lil tricky but feasible. 
-       Not needed for now though
-   * On completion, everything is stored in memory still, but we put it in a "persist queue"
-     * In "page to disk" future, stays in-mem until persisted
-   * Part of what is persisted, is the ID! As explicated in later point ("For persistence, ..." below)
-   * On session close, does not leave memory
-   * Then, in terms of lazy evaluation, there is no extra step that has to go through the cache. It's just a lazily evaluated/single-flighted callback. Emphasis on callback I guess, that needs to be set on the object as a field
-   * On engine restart, we load the whole ID. 
-      * Anything in the ID that relied on per-client state must be guaranteed cached too or else we are screwed of course, but that's fine and a given in reality.
-     * This also relies on the fact that anything even slightly expensive stays in the persisted state so we don't recompute it when loading. We can just fly through the id loading and be done with it.
-
 * For persistence, it's basically like an export. Don't try to store in-engine numeric ids or something, it's the whole DAG persisted in single-engine-agnostic manner. When loading from persisted disk, you are importing it (including e-graph union and stuff)
   * But also for now, let's be biased towards keeping everything in memory rather than trying to do fancy page out to disk
 
-* Need to be really careful about .Clone() now
-   * Should the result be cloned? I'm going with no because usually Clone is used to make a new thing
-   * Honestly clone should be re-assessed fundamentally, but just be careful for now
-   * I guess there are cases where perhaps you *DO* want to clone the result because it doesn't change, jsut metadata. I.e. selecting a subdir of a Directory, you want same result but new metadata field 
+* **CRITICAL CACHE MODEL RULE: OVERLAPPING DIGESTS MEAN EQUALITY AND FULL INTERCHANGEABILITY.**
+  * If two values share any digest / end up in the same digest-equivalence set, that is not merely "evidence" or "similarity"; it means they are the same value for dagql cache purposes and may be reused interchangeably.
+  * Design implication: once a lookup lands on an output eq class, any materialized result in that eq class is a valid cache hit, even if it was originally materialized under a different but equivalent term.
+
+* Cache/e-graph design decision: once a structural lookup has identified a term / output eq class, it is acceptable to return any materialized result in that output eq class, even if that result was originally materialized under a different but equivalent term.
+  * In other words, output equivalence is authoritative; we do not require cache hits to stay confined to "results originally attached to this exact term".
 
 * A lot of eval'ing of lazy stuff is just triggered inline now; would be nice if dagql cache scheduler knew about these and could do that in parallel for ya
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
 
-* We should update the worker snapshot manager to be named that, not cache manager. 
+## Persistence Redesign (Current Iteration)
 
-* New rule of thumb for core: if it returns a LazyInitFunc, you should almost certainly not be calling it directly unless you are a dedicated core/schema api wrapping it. If you are not, you should be making a dagql.Select and/or id load to call this. That way, we keep all the ref+cache management in control of the dagql server!
+* **THIS IS A NEW ITERATION OF THE PERSISTENCE DESIGN. PREVIOUS PERSISTENCE DESIGNS IN THIS FILE ARE OUTDATED AND SHOULD BE TREATED AS HISTORICAL CONTEXT ONLY.**
+  * In particular, older designs that avoided engine-local integer IDs in persisted state are no longer the target.
+  * The new goal is to persist a simple, direct reflection of the in-memory dagql cache / e-graph state so startup can reconstruct that state with minimal translation and minimal policy-specific cleverness.
 
-* The current work in moving in the direction of not having the buildkit cache.Manager either (not to be confused with the solver.CacheManager...)
-  * Idea in long run is to just store all the metadata in the objects themselves rather than storing the bkcache.ImmutableRef.
-  * We are setting up bookkeeping and ref-counting (i.e. parent/child pointers) to aim for this future.
+* New direction:
+  * persist engine-local numeric IDs directly for results / terms / eq classes
+  * make the DB schema mirror the in-memory structures as directly as possible
+  * prioritize simple export/import of current in-memory state over hypothetical future cross-engine import portability
+  * keep the lazy envelope/self rehydration wrinkle only where truly required by live server/object decoding
 
+* Design intent:
+  * when the engine shuts down cleanly, persistence should flush enough state that startup can recreate the same in-memory cache / e-graph structure and metadata that existed before shutdown
+  * avoid convoluted alternate identities / translation layers unless they are strictly required by the current in-memory model
 
-# Persistence Epic
+### Clarification
 
-## Persistence Notes
+* Persist the full current in-memory completed cache / e-graph state, not just a retained subset.
+  * During shutdown, clients disconnect and sessions close first.
+  * That session-close path may prune non-retained results before the final flush.
+  * That is fine and desirable: the DB should mirror whatever state is still present after those in-memory retention rules run.
+* There is only one base dagql cache in the engine.
+  * Session caches are wrappers around that one base cache; they are not separate persistence graphs.
+  * Do not invent "different cache" identity checks inside persistence/export logic unless we explicitly redesign around multiple base caches.
+* Pointer equality checks are an extreme code smell and very rarely the right answer.
+  * In particular, using pointer equality as a proxy for semantic identity in cache/persistence code is almost always broken and should be treated with suspicion by default.
+* `IsPersistable` still matters for in-memory retention across session close.
+  * It no longer needs to directly gate whether some surviving state is or is not written to the DB.
+  * The DB mirrors the surviving state; it does not make an independent policy decision.
+* Persist only completed state.
+  * Do not attempt to mirror `ongoingCalls`, `ongoingArbitraryCalls`, or other in-flight state.
+* Hard-cut schema handling:
+  * if the stored schema version does not match the new schema version, wipe the DB and cold-start
+  * do not write migration or backward-compatibility code for the old persistence schema
 
-* Simulated persistence behavior can be misleading for fields whose IDs are still per-session/per-client scoped.
-  * We should eventually avoid persisting results that can never be reused cross-session.
-  * Not a blocker for this experiment.
-* `container.from` needs follow-up on scope behavior.
-  * End goal is that the digest-addressed invocation is persistable/reusable cross-session.
-  * Tag-addressed flows can remain session-scoped where appropriate.
-* Similar follow-up for `http` and any other per-client-scoped APIs that were marked persistable.
-  * They may get pinned in-memory but provide little/no cross-session reuse until ID scoping is adjusted.
-* TODO: function calls are now marked persistable unconditionally.
-  * Optimization follow-up: skip persistable marking for per-session and never-cache function policies.
-* There appears to be a race risk around ref-count reaching zero vs concurrent cache hits/acquires.
-  * Need to verify exact behavior in current egraph lifecycle and ensure retain-on-zero does not make it worse.
-* We need to integrate this with `safeToPersistCache`, but not yet.
-  * Follow-up likely requires flipping default `safeToPersistCache` from false to true, then explicitly opting out where needed.
-* Root cause discovered in `TestContainer/TestFileCaching/use_file_directly` during persistence experiment:
-  * Retaining a persistable vertex (e.g. `Container.withExec`) without retaining its dependency chain allows e-graph equivalence evidence to be pruned.
-  * In practice, dependent non-persistable terms (`Host.file`/`Directory.file`/`Container.withFile`) can be dropped on session close, so the retained term no longer has the bridging structure needed to match equivalent future inputs.
-  * Short-term experiment strategy: retain full dependent results transitively whenever a result is retained/persisted.
-  * Longer-term optimization option: retain only the necessary e-graph proof structure transitively (instead of full result payload retention), but that is explicitly deferred for now.
+### Authoritative In-Memory State To Mirror
 
-## Persistence Tasks
+* Persist only authoritative in-memory state, not reverse/derived indexes.
+* Target authoritative structures:
+  * `resultsByID`
+  * `egraphTerms`
+  * term input eq-class lists + per-slot provenance
+  * eq-class digest membership + digest labels
+  * `resultOutputEqClasses`
+  * explicit `sharedResult.deps`
+  * persisted snapshot links
+  * cache usage / prune metadata that already lives on `sharedResult`
+* Do not persist derived indexes:
+  * `egraphDigestToClass`
+  * `eqClassToDigests` can be rebuilt from persisted eq-class digest rows
+  * `inputEqClassToTerms`
+  * `outputEqClassToTerms`
+  * `egraphResultsByDigest`
+  * `egraphTermsByTermDigest`
+  * union-find parent/rank arrays
 
-### Base implementation for memory-only first pass
+### SharedResult Cleanup
 
-* [x] Add a sticky retain flag on cached call results in dagql cache state (`sharedResult`) for simulation-only persistence.
-* [x] When a persistable field call completes (initializer path), set the retain flag so zero-ref release does not evict it from egraph memory.
-* [x] On cache hit from a persistable field, upgrade the hit result to retained even if original producer field was non-persistable.
-  * Add explicit code comments explaining this ambiguous behavior choice so we revisit it intentionally later.
-* [x] Update release lifecycle: when refcount reaches zero and retain flag is set, skip egraph removal and skip `onRelease`.
-* [x] Add lightweight observability for the experiment (at least counters/logging for retained entries and session-close deltas).
-* [x] Add focused tests for simulation semantics:
-  * persistable result survives session close and is hit by a new session
-  * non-persistable result still drops on zero ref
-  * persistable-hit upgrade path retains entries created by non-persistable producers
-* [x] Implement transitive retention of full dependent results for retained/persisted entries (simple/heavier experiment path).
-  * [x] Rename `retainInMemory` to `depOfPersistedResult` to make intent explicit: this is about dependency liveness for persisted roots, not a generic retention feature.
-  * [x] Add per-result dependency tracking on cached results (`sharedResult` -> dependent `sharedResult`s).
-  * [x] Populate dependency edges during e-graph indexing by mapping each term input eq-class to a live producer result when available.
-  * [x] Add transitive retention propagation helper (DFS/BFS under `egraphMu`) that marks all reachable dependencies as `depOfPersistedResult`.
-  * [x] Apply transitive retention when:
-    * a persistable field call completes
-    * a persistable field cache-hit upgrades an existing non-persistable-produced result
-  * [x] Keep retention sticky for now (no unretain/pruning pass in this experiment).
-  * [x] Validate with:
-    * `TestContainer/TestFileCaching/use_file_directly` (expected to stop re-executing on run #2)
-    * focused dagql persistence tests
-    * session-close retained-count logs still behaving as expected
-* [ ] Deferred optimization follow-up: evaluate retaining only e-graph proof structure transitively (instead of full result payloads).
+* Remove these persistence-era identity fields from in-memory `sharedResult`:
+  * `persistedResultKey`
+  * `idDigest`
+  * `originalRequestID`
+  * `outputDigest`
+  * `outputExtraDigests`
+* Also remove root-export bookkeeping from `sharedResult`:
+  * `pendingPersistExport`
+  * `pendingPersistWatchResults`
+* Keep for now:
+  * `outputEffectIDs`
+  * `persistedEnvelope` / lazy decode wrinkle
+  * `depOfPersistedResult` or whatever we rename that retention bit to during cleanup
+* Important wrinkle:
+  * removing `originalRequestID` does NOT remove the need for one canonical caller-facing ID per result for persistence / lazy rehydration
+  * simplest likely replacement is a separate cache-owned `resultCanonicalIDs map[sharedResultID]*call.ID` (or equivalent)
+  * strongly consider mirroring that directly in the DB as a `canonical_id` column on `results`
+  * current implementation choice: `canonical_id` is the first materializing request ID for a shared result, i.e. the direct replacement for the old `originalRequestID` semantics
 
-### TTL support
+### Schema Target
 
-#### Plan
+* Keep `meta` for schema version / clean shutdown marker.
+* Replace current persistence tables with a schema that mirrors in-memory state directly:
+  * `results`
+    * `id INTEGER PRIMARY KEY`
+    * `canonical_id TEXT NOT NULL`
+    * `self_payload BLOB NOT NULL`
+    * `output_effect_ids_json TEXT NOT NULL DEFAULT '[]'`
+    * `safe_to_persist_cache INTEGER NOT NULL`
+    * `dep_of_persisted_result INTEGER NOT NULL`
+    * `expires_at_unix INTEGER NOT NULL`
+    * `created_at_unix_nano INTEGER NOT NULL`
+    * `last_used_at_unix_nano INTEGER NOT NULL`
+    * `size_estimate_bytes INTEGER NOT NULL`
+    * `usage_identity TEXT NOT NULL`
+    * `record_type TEXT NOT NULL`
+    * `description TEXT NOT NULL`
+  * `terms`
+    * `id INTEGER PRIMARY KEY`
+    * `self_digest TEXT NOT NULL`
+    * `term_digest TEXT NOT NULL`
+    * `output_eq_class_id INTEGER NOT NULL`
+  * `term_inputs`
+    * `term_id INTEGER NOT NULL`
+    * `position INTEGER NOT NULL`
+    * `input_eq_class_id INTEGER NOT NULL`
+    * `provenance_kind TEXT NOT NULL`
+    * primary key `(term_id, position)`
+  * `eq_classes`
+    * `id INTEGER PRIMARY KEY`
+    * no extra metadata required initially, but useful as the authoritative ID anchor and future extension point
+  * `eq_class_digests`
+    * `eq_class_id INTEGER NOT NULL`
+    * `digest TEXT NOT NULL`
+    * `label TEXT NOT NULL DEFAULT ''`
+    * primary key `(eq_class_id, digest, label)`
+  * `result_output_eq_classes`
+    * `result_id INTEGER NOT NULL`
+    * `eq_class_id INTEGER NOT NULL`
+    * primary key `(result_id, eq_class_id)`
+  * `result_deps`
+    * `parent_result_id INTEGER NOT NULL`
+    * `dep_result_id INTEGER NOT NULL`
+    * primary key `(parent_result_id, dep_result_id)`
+  * `result_snapshot_links`
+    * `result_id INTEGER NOT NULL`
+    * `ref_key TEXT NOT NULL`
+    * `role TEXT NOT NULL`
+    * `slot TEXT NOT NULL DEFAULT ''`
+    * primary key `(result_id, ref_key, role, slot)`
+* Remove obsolete tables:
+  * `roots`
+  * `root_members`
+  * old `result_terms` subordinate-row model
+* Note on `eq_classes`:
+  * yes, keep an explicit table even if it initially stores only the ID
+  * that gives us an authoritative source of eq-class IDs, a clean FK anchor, and a simple way to restore `nextEgraphClassID = max(id)+1`
 
-* Goal: re-add TTL enforcement in dagql cache/e-graph with no DB dependency.
-  * TTL should gate cache-hit eligibility, not directly own object lifetime mechanics.
-  * Keep this as an in-memory-only implementation for now.
+### Export / Worker Rewrite
 
-* Core design: store TTL directly on `sharedResult`.
-  * Current lookup paths:
-    * term digest -> term set -> term results
-    * output digest fallback -> result set -> associated term
-  * Lookup already resolves to `sharedResult` objects; expiration checks should happen there.
+* Replace the current root-scoped upsert/tombstone model entirely.
+* Preferred first cut:
+  * worker payload is a full-state persistence snapshot, not a per-root closure batch
+  * mutations still enqueue persistence work, but the queue may coalesce to "latest full snapshot wins"
+  * shutdown does a final synchronous flush of the latest full snapshot
+* New snapshot builder should capture the authoritative in-memory state listed above:
+  * all results
+  * all terms
+  * all term inputs + provenance
+  * all eq classes
+  * all eq-class digests/labels
+  * all result-output-eq-class rows
+  * all result deps
+  * all result snapshot links
+  * all canonical result IDs
+* Worker apply path should run one transaction that:
+  * clears mirror tables
+  * rewrites them from the snapshot
+  * updates clean-shutdown metadata as today
+* Hard cut goals for code deletion:
+  * delete `emitPersistUpsertForRootLocked`
+  * delete `emitPersistTombstonesForRootLocked`
+  * delete `snapshotPersistUpsertForRootLocked`
+  * delete root-member tombstone / closure-member bookkeeping
+  * delete `resultsByPersistKey` and old persist-result-key helpers if no longer needed
 
-* Proposed data model updates:
-  * `ongoingCall` gets `ttlSeconds int64` copied from `CacheKey.TTL`.
-  * Keep `egraphResultsByTermID` as:
-    * `map[egraphTermID]map[sharedResultID]struct{}`
-  * Add expiry on `sharedResult`:
-    * `expiresAtUnix int64`
-  * Expiry semantics:
-    * `0` => never expires
-    * `>0` => unix expiration timestamp
+### Import Rewrite
 
-* Index/write behavior:
-  * On call completion, set `sharedResult.expiresAtUnix` from `ongoingCall.ttlSeconds`:
-    * `expiresAtUnix = now + ttlSeconds` when TTL is set
-    * `expiresAtUnix = 0` when TTL is not set
-  * If a result already exists and a new call with TTL aliases to that same result:
-    * use conservative merge policy for now: `min(non-zero expiries)`; `0` only if all are `0`
-    * add comments noting this is a policy choice and may need refinement.
+* Startup import should read the mirror tables and reconstruct the same in-memory state.
+* Recreate authoritative state first:
+  * allocate results by persisted integer ID
+  * restore canonical IDs
+  * restore envelopes / eager-decoded payloads where possible
+  * restore terms
+  * restore term input eq IDs + provenance
+  * restore result-output-eq-class rows
+  * restore explicit deps
+  * restore snapshot links
+  * restore eq-class digest membership / labels
+* Then rebuild derived indexes:
+  * `egraphDigestToClass`
+  * `eqClassToDigests`
+  * `eqClassExtraDigests`
+  * `inputEqClassToTerms`
+  * `outputEqClassToTerms`
+  * `egraphTermsByTermDigest`
+  * `egraphResultsByDigest`
+* Reinitialize union-find as trivial singleton roots for each persisted eq class ID.
+  * no need to persist parent/rank state
+* Restore next-ID counters as:
+  * `nextSharedResultID = max(result.id)+1`
+  * `nextEgraphTermID = max(term.id)+1`
+  * `nextEgraphClassID = max(eq_class.id)+1`
 
-* Lookup/read behavior:
-  * In both canonical term lookup and output-digest fallback:
-    * for each candidate `sharedResult`, check:
-      * `expiresAtUnix == 0 || now < expiresAtUnix`
-    * skip expired results and continue scanning for another candidate.
-  * If all candidates are expired, treat as cache miss and run initializer.
+### Debug / Introspection / Tests
 
-* Session-scope behavior for unsafe TTL returns:
-  * Previously this piggybacked on `persistToDB != nil`; now that DB path is removed, restore behavior explicitly with TTL.
-  * In `wait` and `initCompletedResult`, use:
-    * `if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache { append sessionID implicit arg }`
-  * This preserves per-session scoping for unsafe values when TTL is active.
+* Update debug snapshot output to mirror the new authoritative structures and remove references to obsolete persisted keys / root closure concepts.
+* Update persistence tests to assert:
+  * restart recreates the same in-memory state shape
+  * integer IDs are restored and next-ID counters advance from max+1
+  * session-close pruning before shutdown results in the DB mirroring only the surviving in-memory state
+  * eq-class digest labels and result-output-eq-class mappings survive restart
+  * lazy envelope decode still works after import
 
-* Expected properties:
-  * TTL works in-memory without storage keys or DB.
-  * Expired entries naturally stop hitting while leaving lifetime/refcount behavior unchanged.
-  * Fits current e-graph/sharedResultID architecture cleanly.
+### Suggested Implementation Order
 
-* Tradeoffs / follow-ups:
-  * No cross-process persistence yet (intentional for this step).
-  * Expired results may linger in maps until normal cleanup or opportunistic prune.
-  * One `sharedResult` can be associated with multiple terms/calls that had different TTL intent.
-    * With `sharedResult.expiresAtUnix`, we lose per-association TTL precision.
-    * Conservative `min` policy avoids over-retention but may expire reusable results earlier than ideal.
-    * Future option: retain at least e-graph proof structure transitively while splitting TTL metadata by association if needed.
-  * `GCLoop` is still DB-oriented and should be no-op-safe when `c.db == nil` (cleanup task).
+1. Introduce the new schema side-by-side in code and bump schema version.
+2. Introduce/settle the in-memory replacement for `originalRequestID` / persisted result identity (likely `resultCanonicalIDs`).
+3. Rewrite import to target the new schema and reconstruct authoritative state + derived indexes.
+4. Rewrite snapshot/export worker to emit a full-state mirror snapshot and apply via replace-all transaction.
+5. Delete roots/root_members/tombstones/root-closure worker code.
+6. Remove old persistence-era fields from `sharedResult` and associated helper/index code.
+7. Update debug/test surfaces and verify restart reproduces pre-shutdown in-memory state.
 
-#### Implementation
+# Pruning support
 
-* [x] Plumb TTL into ongoing call state.
-  * [x] Add `ttlSeconds` to `ongoingCall`.
-  * [x] Set it from `CacheKey.TTL` in `GetOrInitCall`.
-* [x] Store expiry on `sharedResult`.
-  * [x] Add `expiresAtUnix int64` field.
-  * [x] On completed call, compute candidate expiry from `ttlSeconds`.
-  * [x] Merge expiry onto shared result with conservative policy:
-    * [x] `0` only if all writers are `0`.
-    * [x] otherwise earliest non-zero (`min`) wins.
-  * [x] Add code comments explaining policy and why it is intentionally conservative.
-* [x] Enforce TTL in lookup.
-  * [x] Update deterministic result pickers to skip expired results.
-  * [x] Apply this for both term-based lookup and output-digest fallback.
-  * [x] If all candidates are expired, treat as cache miss.
-* [x] Restore session scoping behavior for unsafe TTL values.
-  * [x] Replace existing DB-gated checks with `ttlSeconds > 0 && !safeToPersistCache`.
-  * [x] Apply in both return-ID shaping (`wait`) and index-ID shaping (`initCompletedResult`).
-* [x] Keep e-graph term->result association maps as sets (no map value TTL).
-* [ ] Validation.
-  * [x] Run focused tests around persistable retention.
-  * [x] Run focused tests around output-digest fallback.
-  * [ ] Reconcile `TestCacheTTLNonPersistableEquivalentIDsCanCrossRecipeLookup` with new unsafe TTL session-scoping behavior.
-
-### Pruning support
-
-#### Plan
+## Plan
 
 * Goal: implement cache pruning against dagql cache state (not buildkit), while preserving roughly the existing policy interface shape.
 * Keep current top-level behavior shape:
@@ -228,7 +279,7 @@
 * Keep API return shape (`EngineCacheEntrySet`) but source entries from dagql cache state.
 * Follow-up after first cut: remove or isolate remaining buildkit-coupled pruning hooks once dagql prune is authoritative.
 
-#### NOTES
+## NOTES
 
 * Main prune-related entrypoints in current code:
   * `Server.gc()` in `engine/server/gc.go`
@@ -288,9 +339,9 @@
   * current public-ish behavior shape is “policy-driven prune with optional one-off space overrides,” but concrete enforcement is entirely buildkit-worker.
   * for hard cutover, dagql cache needs first-class policy evaluation + reclaim semantics; current interface can be preserved while swapping the backend implementation.
 
-#### Implementation
+## Implementation
 
-##### Scope and constraints
+### Scope and constraints
 
 * Hard cutover target: pruning decisions and deletions are driven by dagql cache state, not buildkit worker disk-usage/prune APIs.
 * Keep external behavior shape roughly stable:
@@ -305,38 +356,7 @@
 * Cohesion requirement:
   * one policy model used by both automatic gc and explicit prune API.
 
-##### Phase 0: CacheVolume snapshot ownership cutover (prereq for pruning)
-
-* [x] Move cache volume from metadata-only to snapshot-owning model in core.
-  * [x] Extend `core.CacheVolume` with an owned snapshot ref (similar lifecycle to `Directory`/`File` snapshot ownership, but no lazy init).
-  * [x] Add explicit snapshot access/update methods on `CacheVolume` (single place to enforce clone/release/refcount behavior).
-  * [x] Keep cache volume identity keyed by namespaced cache key (`cache.Sum()`-derived identity), but ensure source-influenced variants are represented explicitly (see below).
-* [ ] Preserve current source semantics while removing BuildKit cache-mount indirection.
-  * [ ] Maintain behavior parity (cache mount behavior/result expectations), not strict parity of BuildKit identity internals.
-  * [ ] Today, BuildKit cache mount identity is effectively `cacheID + optional baseRefID`; use this as reference behavior, but allow a different dagql-native identity rule if it is more cohesive and still preserves externally visible behavior.
-  * [ ] Make cache identity derivation explicit in one place so future semantic changes (especially source/base handling) are easy and low-risk.
-  * [ ] Keep owner/source preprocessing behavior coherent with current API expectations (`Owner` applies to source-initialized cache root/entries).
-* [x] Replace `MountType_CACHE` runtime creation path with explicit snapshot mounts.
-  * [x] In container mount-data prep, stop emitting BuildKit cache mounts for `CacheSource`; instead mount concrete snapshots (directory-style input mount behavior).
-  * [x] In `withExec` output handling, capture writable cache mount outputs and write them back to the owning `CacheVolume` snapshot.
-  * [x] Apply the same cutover for service container start path (services also call `PrepareMounts`; not just `withExec`).
-* [ ] Re-home cache sharing-mode behavior away from BuildKit mount manager.
-  * [ ] `SHARED`: default shared snapshot lineage for same cache identity.
-  * [ ] `LOCKED`: serialize writes per cache identity in engine (explicit lock keyed by cache identity).
-  * [ ] `PRIVATE`: follow current BuildKit-ish behavior for now, but isolate that policy decision behind an explicit seam so we can switch to stricter private semantics later without broad rewrites.
-* [ ] Hook CacheVolume into dagql persistence/pruning accounting.
-  * [ ] Ensure cache volume snapshot refs are visible to usage accounting (size + last-used/created metadata source).
-  * [ ] Ensure pruner can reclaim cache-volume-backed snapshots safely when no active dependers.
-* [ ] Validation for Phase 0 (before pruning Phase 1):
-  * [x] `TestWithMountedCache`
-  * [x] `TestWithMountedCacheFromDirectory`
-  * [x] `TestWithMountedCacheOwner`
-  * [ ] service path with mounted cache (`core/integration/services_test.go` cases)
-  * [ ] platform and multi-session cache-mount reuse cases
-  * NOTE: `TestServices/TestServiceTunnelStartsOnceForDifferentClients` currently fails (`expected 1 /cache/svc.txt`, `actual 0 /cache/svc.txt`). Current model writes service cache-mount outputs back on service cleanup; this does not yet provide live shared visibility while service is still running.
-* [ ] REVIEW CHECKPOINT 0: confirm cache volume lifecycle semantics (identity, source/base behavior, sharing mode, write-back timing) before implementing prune metadata/policies.
-
-##### Phase 1: Dagql prune metadata and usage accounting
+### Phase 1: Dagql prune metadata and usage accounting
 
 * [x] Add/validate metadata on cache entries needed for pruning decisions:
   * [x] created timestamp
@@ -354,7 +374,7 @@
 * [x] Add focused unit tests in `dagql/cache_test.go` for usage snapshot correctness.
 * [ ] REVIEW CHECKPOINT 1: stop and validate metadata/usage model before policy engine implementation.
 
-##### Phase 2: Dagql-native prune policy model + option resolution
+### Phase 2: Dagql-native prune policy model + option resolution
 
 * [x] Introduce dagql-native prune policy struct (server-local or core-owned) equivalent to current fields:
   * [x] all
@@ -371,7 +391,7 @@
 * [x] Add/port tests currently in `engine/server/gc_test.go` to validate identical override behavior.
 * [ ] REVIEW CHECKPOINT 2: confirm policy compatibility and override parity before wiring prune execution.
 
-##### Phase 3: Dagql prune execution engine
+### Phase 3: Dagql prune execution engine
 
 * [x] Add a dagql cache API to apply ordered prune policies and return pruned-entry report.
 * [x] Implement policy pass execution:
@@ -421,7 +441,7 @@
   * [x] Add integration assertions around `core/integration/localcache_test.go` scenarios that previously under-counted bytes.
 * [x] REVIEW CHECKPOINT 3: review prune semantics and invariants before server API switch.
 
-##### Phase 4: Server integration and entrypoint cutover
+### Phase 4: Server integration and entrypoint cutover
 
 * [x] Switch `EngineLocalCacheEntries` from buildkit `DiskUsage` to dagql usage snapshot.
 * [x] Switch `PruneEngineLocalCacheEntries` from `baseWorker.Prune` to dagql prune execution.
@@ -433,7 +453,7 @@
 * [x] Keep return type `EngineCacheEntrySet` populated from dagql prune results.
 * [x] REVIEW CHECKPOINT 4: verify server-level behavior (automatic gc + manual prune) before API cleanup.
 
-##### Phase 5: API cleanup and compatibility polish
+### Phase 5: API cleanup and compatibility polish
 
 * [x] Remove buildkit type leakage from query interface where possible:
   * [x] replace `EngineLocalCachePolicy() *bkclient.PruneInfo` with dagql-native/core policy type
@@ -449,7 +469,7 @@
 * [x] Add/adjust tests for `core/schema/engine.go` paths (`localCache`, `entrySet`, `prune`).
 * [x] REVIEW CHECKPOINT 5: ensure interface coherence and no lingering buildkit-prune assumptions.
 
-##### Phase 6: Follow-up tasks (non-blocking for first cut)
+### Phase 6: Follow-up tasks (non-blocking for first cut)
 
 * [ ] Implement richer filter semantics (if needed) against dagql metadata categories.
 * [ ] Improve size accounting precision if first-cut uses approximations.
@@ -463,183 +483,12 @@
 
 # Snapshot Manager Cleanup
 
-## Execution status
-
-* [x] Execute all phases in one continuous pass (0 -> 5), with incremental commits after each phase.
-  * This is intentionally long-running so compactions don't reset scope mid-way.
-
 ## Goals
 
 * Hard-cut the copied BuildKit cache-manager behavior out of `engine/snapshots`.
 * Keep only minimal snapshot lifecycle functionality needed by current engine/core callsites.
 * Move lifecycle/dependency/persistence/pruning responsibility out of snapshot manager and into dagql/core (where we already model object dependencies and retention).
 * End state should look like a purpose-built Dagger snapshot primitive, not a partially-adapted BuildKit cache system.
-
-## Design constraints (explicit)
-
-* No persistence in snapshot manager:
-  * no BoltDB metadata
-  * no on-disk cache record/index bookkeeping
-  * no migration paths for old metadata schema
-* No pruning in snapshot manager:
-  * no `DiskUsage` implementation
-  * no `Prune` implementation
-  * no external ref checker hooks
-* No progress-controller plumbing:
-  * remove `progress.Controller` from snapshot-manager API surface and internals
-* No lazy blob/remote snapshot machinery:
-  * remove `DescHandler`/`NeedsRemoteProviderError`-driven lazy/unlazy flow
-  * remove stargz-specific behavior and remote snapshot label handling
-* No internal parent/dependency retention graph in snapshot manager:
-  * no parent ref graph ownership for lifecycle/refcount retention
-  * no recursive release behavior based on internal ref DAG
-* No `equalMutable` / `equalImmutable` dual representation:
-  * mutable and immutable refs are distinct and permanent states
-  * no metadata fields or conversion shortcuts based on “equal” sibling records
-
-## Current package observations (from code pass)
-
-* Persistence + metadata are deeply embedded today:
-  * `engine/snapshots/metadata.go`
-  * `engine/snapshots/metadata/metadata.go`
-  * `engine/snapshots/migrate_v2.go`
-  * manager init/get/search paths are metadata-index-driven (`chainid`, `blobchainid`, etc.)
-* Prune and disk-usage are still implemented in `manager.go` (buildkit-shaped policy model).
-* Lazy remote/blob stack is broad:
-  * `blobs.go`, `remote.go`, `opts.go`, stargz branches in `refs.go`/`manager.go`
-* Parent/lifecycle graph is currently encoded in snapshot refs:
-  * `parentRefs` + `diffParents` + recursive parent release
-  * metadata parent pointers
-* Equal mutable/immutable compatibility paths still exist:
-  * `equalMutable`, `equalImmutable`, special remove/release branches
-
-## Plan
-
-### Phase 0: Lock minimal required surface
-
-* [x] Inventory current non-test callsites of `engine/snapshots` API and classify by operation:
-  * [x] `Get`
-    * Used by schema/directory loading by ID and generic ref handoff paths.
-  * [x] `GetMutable`
-    * Used by filesync and cache-volume/mount mutation paths.
-  * [x] `New`
-    * Used broadly for creating mutable snapshots in directory/file/container/service/http/git flows.
-  * [x] `Commit`
-    * Used broadly after writes/mutations (directory/file/filesync/service/etc).
-  * [x] `Mount`
-    * Used by filesync/contenthash/git/http/util execution helpers.
-  * [x] `Merge`
-    * Still used by directory/changeset flows.
-  * [x] `Diff`
-    * Still used by directory/changeset flows.
-  * [x] `GetByBlob`
-    * Used by image pull path in `core/containersource/pull.go`.
-  * [x] `GetRemotes` / container image export needs
-    * Used by exporter (`engine/buildkit/exporter/containerimage`, `engine/buildkit/exporter/oci`).
-* [x] Freeze a minimal interface target (`SnapshotManager` + refs) based only on actual callsites.
-  * Keep now: `New`, `Get`, `GetMutable`, `GetByBlob`, `Merge`, `Diff`, ref mount/commit/release/clone/finalize/extract, metadata read/write needed by `core/cacheref`, `engine/filesync`, `engine/contenthash`, and `GetRemotes`.
-  * Drop now: persistence DB requirements, prune controller contract, progress-controller contract, lazy/stargz-specific public option types.
-* [x] Add TODO comments at temporary compatibility seams that survive this phase.
-  * Merge/Diff kept for now due active callsites; revisit once higher-level APIs absorb them.
-  * GetRemotes kept temporarily in snapshots; bias remains to move export-specific remotes construction toward exporter package as cleanup progresses.
-* [x] Checkpoint: confirm we are not preserving API methods solely for legacy internal behavior.
-  * Any method kept in this pass has a current non-test caller in `core`, `engine/filesync`, `engine/contenthash`, or exporter code.
-
-### Phase 1: Remove persistence and metadata DB completely
-
-* [x] Delete metadata store dependency from `SnapshotManagerOpt` and manager state:
-  * [x] remove `MetadataStore *metadata.Store`
-  * [x] remove `root` metadata-db dependent logic (server no longer initializes/closes snapshots metadata DB)
-* [x] Delete metadata persistence implementation files:
-  * [ ] `engine/snapshots/metadata.go`
-  * [x] `engine/snapshots/metadata/metadata.go`
-  * [x] `engine/snapshots/migrate_v2.go`
-  * Note: `engine/snapshots/metadata.go` is retained but rewritten as in-memory metadata/index logic (no BoltDB, no on-disk persistence).
-* [x] Replace record metadata with in-memory fields directly on cache records/refs for values still needed at runtime (description, createdAt, recordType, etc., only if still used by remaining APIs).
-* [x] Remove metadata index search paths (`chainIndex`, `blobchainIndex`) and any retrieval that depends on DB-backed search.
-  * Index lookup is now entirely in-memory (`metadataStore.index`), including blob/chain and external cache-key indexes.
-* [ ] Remove `RefMetadata` API methods that only existed for persisted metadata semantics.
-  * Deferred: kept current methods for active core/filesync/contenthash callsites; trim after downstream callsite cleanup.
-* [x] Checkpoint: snapshot manager can start, create refs, mount, and commit without any BoltDB or migration path.
-
-### Phase 2: Remove pruning and progress plumbing
-
-* [x] Delete prune/disk usage controller behavior from snapshot manager:
-  * [x] remove `Controller` interface members from public `SnapshotManager` contract
-  * [x] remove `DiskUsage` + `Prune` implementation and helpers from `manager.go`
-  * [x] remove prune-related locks/fields (`muPrune`, `PruneRefChecker`, `GarbageCollect`) from manager state/opts
-* [x] Remove progress controller usage from snapshot APIs:
-  * [x] remove `pg progress.Controller` parameters from `Get`/`Merge`/`Diff` internals
-  * [x] remove `progress` field from immutable refs
-  * [x] remove progress-related wrappers in remote pull/unlazy flow
-* [x] Update callsites to the simplified signatures.
-* [x] Checkpoint: `engine/server/gc.go` and all prune-facing behavior are fully decoupled from snapshot manager.
-
-### Phase 3: Remove lazy/stargz/remote-unlazy machinery
-
-* [ ] Delete lazy descriptor handler model from public options:
-  * [ ] remove/replace `DescHandler`, `DescHandlers`
-  * [x] remove `NeedsRemoteProviderError`
-  * [x] remove `Unlazy` marker option type
-* [ ] Delete lazy blob/remote code paths:
-  * [ ] `engine/snapshots/blobs.go`
-  * [ ] `engine/snapshots/blobs_linux.go`
-  * [ ] `engine/snapshots/blobs_nolinux.go`
-  * [ ] `engine/snapshots/remote.go` (or replace with minimal non-lazy remote export utility if still required)
-* [x] Remove stargz-specific branches in refs/manager code (`Snapshotter.Name() == "stargz"` branches and related remote-label prep).
-  * `manager.New`, immutable mount/extract, and mutable mount no longer have stargz-special handling.
-* [~] Simplify `GetRemotes` behavior to only operate on already-materialized snapshots/blobs (or move this responsibility upward if no longer needed).
-  * In progress: lazy-provider error gates were removed and lazy detection now short-circuits false.
-* [ ] Checkpoint: no `unlazy`, no lease-driven lazy pull-on-read, no stargz-specific logic remains.
-
-### Phase 4: Remove internal parent-ref lifecycle graph and equal-ref compatibility
-
-* [~] Delete parent graph ownership from refs:
-  * [~] remove `parentRefs`, `diffParents`, recursive parent `release`/`clone`
-    * Recursive parent release/clone behavior is removed; `parentRefs.release` is now a no-op and `clone` is shallow.
-  * [ ] remove metadata parent encoding (`parent`, `mergeParents`, diff parent keys)
-* [~] Delete dual-representation compatibility fields:
-  * [ ] remove `equalMutable`, `equalImmutable`
-  * [~] remove all paths that special-case them during remove/release/get
-    * Materialization no longer creates mutable<->immutable sibling links.
-    * manager get/getMutable and ref release paths no longer special-case equal mutable/immutable pairing.
-* [x] Enforce simple lifecycle:
-  * [x] mutable ref owns one snapshot id
-  * [x] commit returns immutable ref for that committed snapshot
-  * [x] no new mutable<->immutable “same data sibling” tracking in commit path
-* [ ] Adjust `Merge`/`Diff` implementation strategy to avoid internal parent ownership assumptions:
-  * [ ] either materialize explicit snapshots immediately
-  * [ ] or push these operations upward if unnecessary in new model
-* [~] Checkpoint: ref lifecycle is becoming linear/explicit; remaining equal-field struct cleanup + merge/diff parent metadata cleanup still pending.
-
-### Phase 5: Final package trim and naming cleanup
-
-* [~] Remove now-unused files and options after previous cutovers.
-  * [x] removed snapshots `Root` option/field (leftover from prune path)
-  * [x] removed unused `DescHandlerKey`
-  * [x] removed `engine/snapshots/remotecache/*` package subtree
-* [x] Remove any remaining imports of BuildKit cache-manager-era helpers that are no longer relevant.
-  * direct import grep confirms no non-internal package imports `internal/buildkit/cache`.
-* [~] Ensure package comments and type names describe snapshots only (not cache manager semantics).
-  * in progress: major API surface now snapshot-focused, but some compatibility names/comments still remain (`cacheRecord`, etc.).
-* [x] Re-run direct-import audit:
-  * [x] verify no reintroduced dependency on `internal/buildkit/cache`
-  * [x] verify only required `internal/buildkit/solver/*` subpackages remain (current external usage is in `pb`, `result`, and selected provenance/errdefs paths)
-* [~] Checkpoint: `engine/snapshots` is significantly smaller and more cohesive; final naming/field cleanup remains.
-
-## Validation plan
-
-* [ ] Compile gates after each phase:
-  * [ ] `go test ./engine/snapshots/... -run TestDoesNotExist -count=1`
-  * [ ] `go test ./engine/buildkit/... -run TestDoesNotExist -count=1`
-  * [ ] `go test ./core/... -run TestDoesNotExist -count=1`
-  * [ ] `go test ./engine/server/... -run TestDoesNotExist -count=1`
-* [ ] Integration smoke after major phases:
-  * [ ] `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestDirectory|TestContainer' --count=1`
-* [ ] Explicitly watch for regressions in:
-  * [ ] cache volume mount behavior through `withExec`
-  * [ ] image export paths that still depend on snapshot remotes
-  * [ ] service startup paths using snapshot refs
 
 ## Open questions to resolve during implementation
 
@@ -678,68 +527,6 @@
 * Mutable cache volume sizes must be represented and refreshed when they can change.
 * First cut should prioritize correctness and determinism over micro-optimizations.
 
-## Notes
-
-* Current `dagql` usage entries are fed by `sharedResult.sizeEstimateBytes`, which is currently set from a placeholder.
-* Real size implementation already exists in snapshot manager (`cacheRecord.size`) and persists in-memory metadata size.
-* Persisted/retained graph behavior currently uses `depOfPersistedResult` + transitive `deps`.
-* Prune-relevant candidates are retained results that are not actively used and not required by active retained roots.
-* Cache-volume snapshots are created eagerly in `query.cacheVolume` and mounted into `withExec` as mutable refs; they must be included in size accounting.
-
-## Plan
-
-### Phase 0: Plumbing and interfaces
-
-* [x] Add a small snapshot size access seam in `engine/snapshots` so callers can request real size from refs.
-  * [x] Expose a method callable on immutable and mutable refs that returns the underlying `cacheRecord.size(ctx)`.
-  * [x] Preserve existing internal metadata update behavior (`queueSize` / commit).
-* [x] Add a dagql-side size provider hook for cached payloads.
-  * [x] Introduce an internal interface implemented by cacheable core objects that can report snapshot-backed usage size.
-  * [x] Implement it for `Directory`, `File`, and `CacheVolume`.
-  * [x] `Container` remains aggregate-only (it should not pretend to own a single snapshot size).
-* [x] Replace placeholder callsite in `dagql/cache.go` with provider-based sizing path.
-  * [x] Keep unknown as explicit state until first real measurement.
-
-### Phase 1: Prune-candidate gated measurement + mandatory dedupe
-
-* [x] Define prune-relevant candidate set in dagql cache state.
-  * [x] Candidate must be retained (`depOfPersistedResult` true).
-  * [x] Candidate must not be actively used (`refCount == 0`).
-  * [x] Candidate must not be transitively depended on by any actively used retained result.
-* [x] Add transitive active-dependency closure helper under `egraphMu` to compute exclusion set.
-* [x] Compute real size only for candidates with unknown/stale size.
-* [x] Implement dedupe by snapshot record identity as part of first pass.
-  * [x] For each usage-accounting pass, aggregate bytes by snapshot record ID instead of summing per-result blindly.
-  * [x] If multiple results point at same snapshot record, count it once.
-  * [x] Ensure deterministic tie-break/ownership when mapping deduped bytes back to entries.
-* [x] Ensure `UsageEntries` and prune accounting use the deduped numbers.
-
-### Phase 2: Mutable cache-volume correctness
-
-* [ ] Ensure mutable cache-volume refs refresh/invalidate size when writes can change content.
-  * [ ] Invalidate cached size on write paths where mutable content changes are committed/applied.
-  * [ ] Recompute lazily on next prune-candidate measurement.
-* [ ] Confirm cache-volume entries participate in dedupe with other snapshot-backed entries.
-* [ ] Confirm repeated runs do not leak stale size metadata for frequently-mutated cache volumes.
-
-### Phase 3: Integration and polish
-
-* [x] Remove `estimateSharedResultSizeBytes` placeholder function and dead comments.
-* [x] Add explicit comments near size-gating logic describing why we only size prune-relevant candidates.
-* [x] Add explicit comments near dedupe logic documenting snapshot-record-level accounting choice.
-* [x] Keep behavior deterministic across runs (entry ordering + dedupe ownership stable).
-
-## Validation plan
-
-* [ ] Unit tests in `dagql/cache_test.go`:
-  * [ ] retained entry size is populated from real sizing path (not constant placeholder).
-  * [ ] non-candidate retained entries do not trigger size calculation.
-  * [ ] dedupe test: two retained results sharing one snapshot record report one logical byte budget in prune accounting.
-  * [ ] mutable cache-volume mutation test: size refreshes after content change.
-* [ ] Integration smoke:
-  * [ ] `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestLocalCache|TestContainer/TestWithMountedCache|TestContainer/TestLoadSaveNone' --count=1`
-* [ ] Re-run key cache persistence tests to ensure no regressions from size-path changes.
-
 ## Open questions
 
 * [ ] Best ownership model for mapping deduped snapshot bytes onto per-entry display fields when many entries share one snapshot.
@@ -750,3 +537,934 @@
   * (not required for first pass, but may help explain accounting to users)
 * [ ] Consider measuring all snapshot sizes (including non-prunable) to support accurate engine total disk-usage visibility.
   * Verify first whether this is actually needed and desired as a product/system goal before implementing.
+
+# Persistence Epic
+
+## Persistence Notes (applies across all passes, updated as needed)
+
+* `container.from` needs follow-up on scope behavior.
+  * End goal is that the digest-addressed invocation is persistable/reusable cross-session.
+  * Tag-addressed flows can remain session-scoped where appropriate.
+* Similar follow-up for `http` and any other per-client-scoped APIs that were marked persistable.
+  * They may get pinned in-memory but provide little/no cross-session reuse until ID scoping is adjusted.
+* TODO: function calls are now marked persistable unconditionally.
+  * Optimization follow-up: skip persistable marking for per-session and never-cache function policies.
+* There appears to be a race risk around ref-count reaching zero vs concurrent cache hits/acquires.
+  * Need to verify exact behavior in current egraph lifecycle and ensure retain-on-zero does not make it worse.
+* We need to integrate this with `safeToPersistCache`, but not yet.
+  * Follow-up likely requires flipping default `safeToPersistCache` from false to true, then explicitly opting out where needed.
+
+## Design (first pass)
+
+### Core model
+
+* In-memory dagql cache remains the single source of truth for all cache logic.
+* Persistence is asynchronous and event-driven; cache mutations never synchronously write to disk.
+* Persistence is represented as export/import of a portable DAG/e-graph shape (not engine-process-local numeric IDs).
+* Persisted state is rebuilt into in-memory structures on engine startup before serving requests.
+
+### Runtime architecture
+
+* `PersistenceEmitter` (inside dagql cache mutation paths):
+  * observes cache mutations that affect persistable state.
+  * emits normalized persistence events after in-memory mutation is committed.
+* `PersistenceQueue`:
+  * unbounded queue of persistence events (first cut).
+  * no drop policy in first cut.
+  * feeds a separate persistence worker goroutine.
+* `PersistenceWorker` (initially a goroutine, future remote service candidate):
+  * drains queue.
+  * first cut: no explicit coalescing/compaction optimization.
+  * writes durable records to persistent storage.
+* `PersistenceStore`:
+  * direct insert/upsert/delete/read primitives for persisted cache records.
+  * no append-only event log in first cut.
+  * initial backend target: SQLite (WAL mode).
+  * storage engine can change later without changing in-memory cache behavior.
+
+### Decisions from review
+
+* Graceful shutdown semantics are strict:
+  * on SIGTERM/SIGINT (or any graceful shutdown), queue must be fully drained and worker writes fully synced before process exit.
+* Ungraceful shutdown handling:
+  * startup detects ungraceful previous shutdown.
+  * if detected, persistence store is treated as untrusted and deleted/reset; rebuild from empty state.
+* Startup import behavior:
+  * only full rebuild is supported; no partial/degraded import mode.
+* Tombstones:
+  * prune/removal paths emit tombstones to persistence store.
+* Last-used persistence:
+  * do not persist last-used at all in first cut.
+* Graceful shutdown wait policy:
+  * wait indefinitely for queue drain + worker sync completion.
+* Queue/write optimization:
+  * skip coalescing/compaction optimizations for now; rely on direct SQLite upsert/delete behavior.
+* Ungraceful-shutdown marker choice (tentative implementation direction):
+  * store marker in SQLite metadata table (single source of truth, no extra sidecar file).
+* Startup import robustness (tentative implementation direction):
+  * load via one consistent SQLite read transaction/snapshot and rebuild in-memory from that.
+* Persisted scope:
+  * persist roots produced by persistable fields.
+  * also persist all direct/transitive dependencies required to materialize those roots.
+  * function-call result persistence must include anything referenced by the function-call result.
+* `sharedResult` persistence must include `self` payload/state (not just graph metadata).
+* Persistable type requirement:
+  * each persistable type (directory/file/cachevolume/container/function-returnable objects, etc.) must implement serialize/deserialize support.
+  * serialization must include enough snapshot metadata to restore mutable/immutable refs (snapshotter/content-store/lease integration shape).
+* E-graph rebuild strategy:
+  * avoid depending on engine-local numeric IDs as durable keys.
+* Unsafe dependency policy:
+  * if a persisted closure includes unsafe deps, persist anyway for now and emit warnings.
+* Import failure policy:
+  * if import is malformed/corrupt, wipe persistence store and continue startup from empty state.
+* `self` persistence interface:
+  * use one shared interface for all persistable `self` payloads.
+* `self` payload storage format:
+  * use opaque payload bytes + type discriminator in first cut.
+* Worker write strategy:
+  * allow batched writes with sane size/time defaults (tunable), while preserving graceful-shutdown full-drain guarantee.
+* Ungraceful marker implementation:
+  * strict/simple SQLite metadata row toggle.
+
+## Persistence Cleanup Feedback (feedback from reviewing first implementation)
+
+* Reassess the DB model entirely.
+  * It is not necessarily true that the goal should be a byte-for-byte / field-for-field persisted form of the exact in-memory e-graph.
+  * There is a legitimate longer-term goal of having a persisted/exported cache format that is engine-independent enough that one engine could export and another engine could import into its own cache.
+  * That means process-local/runtime-specific identifiers like incrementing in-memory int IDs are probably not the right long-term persisted identity surface.
+  * However, that does **not** excuse the current weirdness; if anything it raises the bar for the persisted model being coherent and self-sufficient.
+  * Right now the design feels stuck in an awkward middle ground:
+    * we are not persisting the in-memory e-graph directly
+    * but we are also not persisting one especially clean engine-independent model either
+  * Current weirdness to revisit as part of that DB-model reassessment:
+    * we persist a mix of symbolic fragments (`terms`, `term_results`, `eq_facts`), materialized rows (`results`), explicit edges (`deps`), and snapshot links, then replay merge/index logic on import
+    * `terms.input_digests_json` stores representative digests for input eq classes rather than persisting a true eq-class / union-find state
+    * `eq_facts` is owner-scoped and closure-filtered, which is a strange middle ground instead of a clean statement of equivalence state
+    * `results` is overloaded with durable request identity, output identity, payload serialization, retention flags, TTL, and prune metadata all in one table
+    * import/export is asymmetrical: export writes a self payload, but import only partially reconstructs state and still leaves object payloads in lazy `persistedEnvelope` form
+    * `snapshot_refs` currently looks under-modeled / placeholder-ish, with the key being the only obviously meaningful part
+    * export writes explicit `deps`, but import still recomputes more dependency edges from term inputs, which suggests the persisted representation is not actually self-sufficient
+    * `buildPersistUpsertBatchForRootLocked(...)` has become the real persistence brain, which concentrates too much semantics in one confusing place
+  * Cleanup target: decide what the durable model actually is supposed to mean first, then make both export and import faithfully implement *that* model rather than accreting more special-case reconstruction logic.
+
+* Runtime cache hits should not lazily load persisted payloads.
+  * `ensurePersistedHitValueLoaded(...)` being called from the steady-state cache-hit path is the wrong model.
+  * Import happens at engine startup; by the time normal runtime cache lookup is serving hits, persisted state should already be fully imported/reconstructed.
+  * Cleanup target: remove the runtime hit-time "load persisted value now" behavior and make startup import own the whole rehydration boundary explicitly.
+  * Important caveat for staging: making import fully eager is trickier than it sounds because many persisted decoders currently depend on having a dagql server available.
+  * Module-object-shaped persisted values are especially awkward because decoding them may require module-specific schema already being installed on the server, which creates a real bootstrap/catch-22 problem.
+  * So "full eager import at startup" is still the goal, but it likely requires an explicit import-time bootstrap/server/schema plan rather than just moving the current lazy decode call to an earlier place.
+* The cache completion + persistence setup flow in `dagql/cache.go` around the indexing/export path is far too convoluted.
+  * Persistability checks and persisted-dependency propagation are currently spread across multiple places, making the actual behavior hard to understand and likely hiding incorrect or inefficient work.
+  * In particular, `markResultAsDepOfPersistedLocked(...)` and related persistence-side effects currently appear from too many call sites, which makes it unclear what the single source of truth is for "this result is now part of persisted closure".
+  * Cleanup target: collapse this into one explicit, easy-to-follow flow for:
+    * indexing the completed result into the e-graph
+    * deciding whether the result is persistable
+    * computing/marking the persisted closure exactly once
+    * emitting persistence/export work from one clearly-owned place
+  * Strong suspicion: the current shape is at best inefficient and at worst semantically wrong/confused, so this area needs a serious redesign rather than incremental cleanup.
+* Naming cleanup is needed around the many different things currently called `ID`.
+  * Example: `sharedResultID` is a totally different kind of identity than `call.ID`, but the current naming makes that much harder to see than it should be.
+  * Lower priority than the semantic cleanup above, but still worth fixing because it actively obscures reasoning about the system.
+* `indexWaitResultInEgraphLocked(...)` should return an error instead of silently swallowing failure cases.
+  * In particular, places like the `derivePersistResultKey(...)` call during persist-key indexing should not just ignore errors and move on.
+  * Cleanup target: make indexing/reporting failures explicit and return them to the caller so persistence/index integrity issues fail loudly instead of disappearing into partial state.
+* `markResultAsDepOfPersistedLocked(...)` being called at the end of `indexWaitResultInEgraphLocked(...)` is not self-explanatory and needs justification or removal.
+  * Right now this looks like persistence-side closure propagation is being opportunistically retriggered from deep inside indexing, which makes the control flow hard to follow.
+  * Cleanup target: either eliminate this call as part of the broader persistence-flow simplification, or document the exact invariant it is repairing and why that repair belongs here rather than in one explicit persistence owner.
+* `emitPersistUpsertForRootLocked(...)` firing from the cache-hit upgrade path also needs reassessment.
+  * The current behavior of "mark this hit as dep-of-persisted and immediately emit a persist upsert for the root from deep inside lookup/indexing-related flow" feels suspicious and needs a harder look.
+  * Cleanup target: revisit whether persist-upsert emission has a single coherent owner, or whether we are currently smearing persistence-side writes across too many opportunistic paths.
+* In `sharedResult`, the `deps`, `heldDependencyResults`, and `persistedSnapshotLinks` fields feel overlap-y and need a dedicated ownership/lifecycle pass.
+  * It is not currently clear which of these are truly fundamental versus artifacts of layering multiple experiments and hacks on top of each other.
+  * Cleanup target: decide what concepts actually need to exist on `sharedResult`, what should be derived, and what should be owned elsewhere.
+* Lazy persisted-envelope decode on first cache hit should go away along with the broader hit-time import behavior.
+  * The whole import/reconstruction boundary should happen up front at engine startup rather than partially/lazily on the first runtime hit.
+  * Cleanup target: remove the `persistedEnvelope` lazy-hit path as part of the same import-up-front redesign.
+* `persistedClosureGraphLocked(...)` and related closure logic currently choosing only the first live result for an output eq class has a slightly suspicious smell and should be reassessed.
+  * It may be okay, but it is worth double-checking whether evolving/pruned graphs can make that choice inconsistent or brittle over time.
+  * Cleanup target: verify whether "first live result for output eq class" is actually a sound closure rule or just a convenient heuristic that happened to work so far.
+* `attachDependencyResults(...)` / `loadDependencyResults(...)` currently look especially ugly and overloaded.
+  * That path is not just recording symbolic dependency metadata; it is also doing live dependency materialization (`lookupCacheForID(...)` and even `srv.LoadType(...)`), validating cache-backed attachment, mutating explicit dependency edges, propagating persisted-liveness state, and taking over ref ownership via `heldDependencyResults`.
+  * Cleanup target: split apart the symbolic dependency model from live ref-management and persistence-side bookkeeping so result completion is not secretly doing a pile of dynamic graph work through one hard-to-follow helper.
+
+## Persistence Cleanup Implementation
+
+### Phase 1: Remove persisted-object-resolver context plumbing
+
+#### Goal
+
+* Remove `ContextWithPersistedObjectResolver(...)` / `currentPersistedObjectResolver(...)` entirely.
+* Keep current lazy persisted decode behavior for now; this phase is only about making the resolver/decode state explicit instead of smuggling it through `context.Context`.
+
+#### Non-goals
+
+* Do **not** solve the full eager-import-at-startup problem in this phase.
+* Do **not** redesign the DB model in this phase.
+* Do **not** change when lazy persisted payload decode happens yet.
+* Do **not** try to solve the module-object/schema bootstrap problem yet beyond keeping the new API shape compatible with solving it later.
+
+#### Implementation plan
+
+* Change the persisted-result decode API so persisted object resolution is passed explicitly instead of being recovered from `context.Context`.
+  * The cleanest first pass is likely to thread `PersistedObjectResolver` as an explicit argument through `PersistedSelfCodec.DecodeResult(...)` and the lower-level decode helpers, since object decoders already accept an explicit resolver today.
+* Update all decode call sites to pass the resolver explicitly.
+  * This includes the lazy persisted-hit path and any import-side eager decode helpers that currently rely on the context hack.
+* Delete the context helper functions and all context writes/reads for persisted object resolution.
+  * After this phase there should be no `ContextWithPersistedObjectResolver(...)` or `currentPersistedObjectResolver(...)` left.
+* Keep `CurrentDagqlServer(ctx)` usage as-is for now.
+  * This phase is specifically about removing the resolver-specific context hack, not about removing all ambient dagql-server context usage in one shot.
+
+#### Desired end state
+
+* Persisted decode paths are still lazy for now, but the data/control dependencies are explicit in function signatures.
+* The next phase can then tackle eager startup import/bootstrap separately without also carrying the resolver-context cleanup at the same time.
+
+#### Validation
+
+* `go test ./dagql -run 'TestPersistedSelfCodec|TestCachePersistenceImport' -count=1`
+* `go test ./dagql -run '^$' -count=1`
+* Grep check that no persisted-object-resolver context helper usages remain.
+
+### One-go hard cut: exact structural input refs + explicit exportability
+
+#### Goal
+
+* Replace the current lossy `SelfDigestAndInputs() -> []digest.Digest -> try to recover proof inputs later` flow with an explicit structural input model that never throws away the distinction between:
+  * real call IDs
+  * digest-only inputs
+* Remove all fallback behavior when deciding whether a proof input is represented as a result ref or a digest ref.
+* Make persistence observe runtime state transitions instead of causing them:
+  * persistable values may remain lazy in memory
+  * export must not force materialization
+  * export may only serialize values that are already explicitly exportable
+  * lazy but explicit/symbolic state is okay to export
+  * opaque lazy state is not exportable and must trigger deferred retry, not forced `Sync`
+
+#### Non-goals
+
+* Do **not** reintroduce `Sync`/`PreparePersistedObject` forcing.
+* Do **not** add compatibility shims for the old DB model.
+* Do **not** keep the old proof-capture path around in parallel.
+* Do **not** silently downgrade unresolved result-backed proof inputs to digest refs.
+* Do **not** solve full eager payload import/bootstrap in the same pass.
+
+#### Core design decisions
+
+* `SelfDigestAndInputs()` should stop returning only raw digests.
+* Replace it with an API that returns:
+  * the same `selfDigest`
+  * an ordered slice of input refs
+* Each input ref must preserve what kind of structural input it is:
+  * receiver call ID
+  * ID literal argument
+  * module call ID
+  * digest-only literal (`LiteralDigestedString`)
+* Downstream code is then responsible for explicitly deciding how each kind is persisted:
+  * receiver / ID literal / module input => result-backed structural input, must resolve to a real cached result or error
+  * digest-only literal => digest-backed structural input
+* There is no fallback path from result-backed input to digest-backed input.
+
+#### New call-layer shape
+
+* Add a new ordered input-ref representation in `dagql/call`, something like:
+  * `type StructuralInputRef struct { ID *ID; Digest digest.Digest }`
+  * exactly one of `ID` or `Digest` must be set
+* Add a new helper on `call.ID` that returns:
+  * `selfDigest`
+  * `[]StructuralInputRef`
+* The order must exactly match the current `SelfDigestAndInputs()` input order so term digest semantics do not change.
+* Explicit required behavior for that helper:
+  * receiver => `ID`
+  * `LiteralID` => `ID`
+  * module input => `ID`
+  * `LiteralDigestedString` => `Digest`
+* Keep `SelfDigestAndInputs()` only if truly needed elsewhere, but it should become a simple projection from the richer API rather than the source of truth.
+
+#### New proof-capture rules
+
+* Replace `exactProofInputsForDigestsLocked(...)` with a helper that consumes the new ordered structural input refs directly.
+* For each structural input ref:
+  * if it is `ID`, resolve it to the actual cached `sharedResult`
+    * if resolution fails, return an error immediately
+    * do **not** try another lookup surface and do **not** fall back to digest
+  * if it is `Digest`, emit a digest proof input directly
+* The result of that helper is the exact proof witness list stored on `egraphResultTermAssoc`.
+* `egraphResultTermAssoc` remains the per-result/per-term metadata carrier because the proof belongs to the association, not to the term alone and not to the result alone.
+
+#### New e-graph association semantics
+
+* Keep `egraphResultsByTermID` as the reverse lookup index for runtime hits.
+* Keep `egraphTermIDsByResult`, but as the richer association map carrying exact proof inputs.
+* Stop using `sharedResult.deps` for structural term proof edges.
+  * `deps` is only for explicit non-structural dependencies (attached dependency results, etc.).
+* `persistedClosureGraphLocked(...)` and any active-closure walk that needs structural proof must read it from `egraphResultTermAssoc.proofInputs`, not by heuristically picking “first live result for output eq class”.
+
+#### Exportability model
+
+* Export must be side-effect free.
+* `EncodePersistedObject(...)` must remain pure.
+* Exportability is a property of the current object state, not of the field spec alone.
+* Valid export cases:
+  * concrete realized state (snapshot-backed, etc.)
+  * explicit symbolic lazy state that already has a real serializable form
+* Invalid export case:
+  * opaque lazy state represented only by runtime `LazyInit` behavior with no explicit serializable form
+* Invalid exportability must return `ErrPersistStateNotReady`.
+* `ErrPersistStateNotReady` is not a cache/persistence failure; it means “this persistable root is not exportable yet in its current runtime state”.
+
+#### Deferred export model
+
+* Keep the cache-level deferred export approach.
+* When a persistable root completes and export hits `ErrPersistStateNotReady`:
+  * mark that root as pending persistence
+  * compute which closure members are currently not exportable
+  * register retry callbacks on those closure members' natural lazy-realization path
+* The callback must only:
+  * retry persistence for the original root
+  * never trigger materialization itself
+* De-duplicate retries:
+  * one root should not register multiple watchers for the same member
+  * repeated natural realizations should not spam repeated exports once persistence succeeds
+* Important detail for shared lazy gates like `WithExec`:
+  * the root itself may not be the thing that gets evaluated directly
+  * so we must continue registering on all non-exportable closure members, not just the root object
+
+#### DB model hard cut
+
+* Keep the new durable model we already cut to:
+  * `results`
+  * `roots`
+  * `root_members`
+  * `result_terms`
+  * `result_deps`
+  * `result_snapshot_links`
+  * plus `meta`
+* `result_terms` continues to be the durable statement of structural proof for one result/term association.
+* `input_refs_json` remains acceptable for this pass if it continues to faithfully encode ordered tagged refs.
+  * If we later want a normalized `result_term_inputs` table, that is a separate cleanup, not part of this hard cut.
+* No reintroduction of:
+  * `eq_facts`
+  * `terms`
+  * `term_results`
+  * `snapshot_refs`
+
+#### Export implementation details
+
+* `buildPersistUpsertBatchForRootLocked(...)` should:
+  * walk the persisted closure
+  * write one `results` row per closure result
+  * write one `root_members` row per closure membership
+  * write one `result_terms` row per exact result-term association
+  * serialize exact proof inputs from `egraphResultTermAssoc.proofInputs`
+  * write explicit non-structural `result_deps`
+  * write `result_snapshot_links`
+* It should not synthesize any proof from digests at export time.
+* It should not “best effort” persist around a bad proof input.
+  * unresolved result-backed proof input => error
+  * opaque lazy non-exportable member => `ErrPersistStateNotReady`
+
+#### Import implementation details
+
+* Import should:
+  * load all durable results first
+  * seed digest equivalence from each result's own durable digests
+  * load `root_members`
+  * load explicit `result_deps`
+  * load `result_snapshot_links`
+  * load `result_terms`
+* For each `result_terms` row:
+  * decode ordered tagged refs
+  * for `result_ref`:
+    * resolve imported result by durable key
+    * use its output digest / eq class
+    * recreate `egraphProofInput{kind: result, resultID: ...}`
+  * for `digest_ref`:
+    * ensure eq class for that digest
+    * recreate `egraphProofInput{kind: digest, digest: ...}`
+* Then:
+  * rebuild the imported term
+  * rebuild the result-term association with the exact proof inputs
+  * rebuild the `egraphResultsByTermID` reverse index
+* Import should not heuristically infer structural proof from the live graph.
+
+#### The specific receiver-input bug we are fixing
+
+* Today the receiver-side structural input for things like `Container.withMountedDirectory` is flattened to a raw digest too early.
+* Later proof capture tries to reverse-map that digest to a result and may fail.
+* The current fallback then silently emits a `digest_ref`, which weakens the persisted proof and causes restart misses.
+* After this hard cut:
+  * receiver inputs are captured as actual `ID` refs up front
+  * proof capture resolves them directly to actual `sharedResult`s
+  * unresolved receiver result => immediate error
+  * therefore the wrong `digest_ref` can no longer be emitted for that class of bug
+
+#### Required validations
+
+* Focused unit/compile checks while iterating:
+  * `go test ./dagql -run '^$' -count=1`
+  * `go test ./core -run '^$' -count=1`
+  * `go test ./cmd/engine -run '^$' -count=1`
+* Focused persistence tests:
+  * `go test ./dagql -run 'TestPersistedSelfCodec|TestCachePersistenceImport|TestCachePersistenceWorker|TestCachePersistenceCleanShutdownToggleOnClose|TestCachePersistenceWorkerIdempotentUpsertAndTombstone|TestCachePersistenceWorkerRootDeleteKeepsSharedClosureMembers|TestCachePersistenceWorkerUsesTermGraphWhenDepsAreMissing' -count=1`
+* Focused integration repro:
+  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/container withExec output on host mount survives restart'`
+* Trace expectations for the integration repro:
+  * no `persist_batch_build_failed` for lazy directory/file exportability on the path under test
+  * no `Host` decode failures
+  * `Host.directory` may still be `DONE` on the second run
+  * `Container.withMountedDirectory` should become `CACHED` on the second run
+  * `Container.withExec` should become `CACHED` on the second run
+* If any of the following happen, stop and escalate:
+  * a structural input kind is ambiguous (unclear whether it should be `ID` or `Digest`)
+  * a receiver / module / literal ID input cannot be resolved to a cached result and it is not obvious whether that is a producer bug or a persistence-timing bug
+  * making `SelfDigestAndInputs()` a projection from the richer API would break some call-site semantics in a non-obvious way
+  * any producer appears to require a broader shared-lazy-gate abstraction rather than the per-member deferred-export model we already agreed on
+
+### One-go hard cut: on-demand `SelectNth` promotion into standalone cached results
+
+#### Goal
+
+* Keep the current no-fallback proof model intact:
+  * structural `ID` inputs must resolve to real cached `sharedResult`s
+  * digest-only literals remain `digest_ref`
+* Fix the `function cache control survives restart` failure by making `SelectNth`-derived IDs real cache-backed results when they are actually loaded.
+* Do this as a runtime identity/lifecycle fix, not as another persistence-model special case.
+
+#### Problem statement
+
+* Today array elements already have real IDs:
+  * `DynamicArrayOutput.NthValue(...)` returns `newDetachedResult(enumID.SelectNth(i), t)`
+  * module list conversion assigns `itemID := curID.SelectNth(i + 1)` before converting each element
+* But `LoadType(...)` currently treats `id.Nth() != 0` as a pure projection:
+  * it loads the parent enumerable
+  * calls `NthValue(nth)`
+  * dereferences the result
+  * returns it directly
+* That means the nth-element ID may never become a standalone cached `sharedResult`.
+* Later proof capture sees a real `StructuralInputRef{ID: ...}` for that nth-element receiver and correctly expects `resolveSharedResultForInputIDLocked(...)` to find a cached result.
+* In the failing `InputTypeDef.fields` case, it does not, and indexing errors before term association.
+
+#### Why this is the right fix class
+
+* The right invariant is:
+  * if something has a real structural `ID` and can later act as a receiver, it should be resolvable to a real cached result
+* That lets us keep the current clean proof rules:
+  * `ID` input => `result_ref`
+  * digest-only literal => `digest_ref`
+  * no fallback
+  * no third proof kind
+* This is more cohesive than inventing a special persisted `id_ref` just because nth-element receivers are currently projections instead of cache entries.
+
+#### Non-goals
+
+* Do **not** add a third structural proof kind for this pass.
+* Do **not** change persistence schema or `result_terms` encoding for this pass.
+* Do **not** add a `currentTypeDefs`-specific hack.
+* Do **not** eagerly fan out every array result into cached nth children by default.
+  * We want on-demand promotion, not unconditional eager explosion.
+
+#### Core implementation shape
+
+* Hard-cut server-side nth materialization so `SelectNth` IDs are always loaded through a real `GetOrInitCall(...)` path with a real initializer.
+* This applies to every place the server materializes nth elements, not just `LoadType(...)`.
+* The first time an nth-element ID is materialized:
+  * it becomes a real cache entry
+  * it gets indexed into the e-graph like any other completed call result
+* Every later load of that nth-element ID becomes a normal cache hit.
+* Downstream proof capture then works unchanged because `resolveSharedResultForInputIDLocked(...)` can now find that nth receiver result.
+
+#### Exact file/line plan
+
+* `dagql/server.go`
+  * At `LoadType(...)` around the current `callCtx := srvToContext(idToContext(ctx, id), s)` setup and the cache-probe block, keep the telemetry option construction intact.
+  * Add a dedicated nth-promotion path for `id.Receiver() != nil && id.Nth() != 0` before the existing hit-only `cache miss` probe.
+  * That path should call the shared nth-promotion logic instead of the current "probe then project" behavior.
+  * The nth-promotion logic should:
+    * call `GetOrInitCall(...)` for the nth ID
+    * materialize the parent enumerable
+    * select `NthValue(nth)`
+    * call `DerefValue()`
+    * preserve the current null/error behavior
+    * return the dereferenced nth result
+  * After adding that nth path, keep the existing hit-only `cache miss` probe for non-nth IDs only.
+  * Leave the non-nth receiver recursion and normal object-call path unchanged.
+  * Also update every other server-side nth materialization site to use the same nth-promotion logic rather than raw `NthValue(...)` projection:
+    * enumerable walk in `Resolve(...)`
+    * nth-selection / array enumeration in `Select(...)`
+  * This is required because nth-element receivers can be materialized by normal GraphQL traversal without ever going through `LoadType(...)`, and those sites must also promote nth IDs into real cached results.
+
+* `dagql/cache.go`
+  * Do not add a new code path here.
+  * Rely on the existing `initCompletedResult(...)` behavior where, if the initializer result is already cache-backed, it aliases the existing `sharedResult`; otherwise it materializes a new one.
+  * This is important because the nth-promotion path should reuse normal cache completion/indexing semantics instead of inventing a second result-installation mechanism.
+
+* `dagql/cache_egraph.go`
+  * Do not change `exactProofInputsForRefsLocked(...)`.
+  * Do not change `resolveSharedResultForInputIDLocked(...)`.
+  * The point of the runtime fix is that these functions should start succeeding for nth-element receiver IDs without any fallback or new proof kind.
+
+* `dagql/builtins.go`
+  * No code change planned.
+  * Keep relying on `DynamicArrayOutput.NthValue(...)` manufacturing `enumID.SelectNth(i)` detached results.
+  * Keep relying on `DynamicResultArrayOutput.NthValue(...)` returning the already-materialized per-element `AnyResult`.
+
+* `core/modtypes.go`
+  * No code change planned.
+  * Keep relying on module list conversion assigning `itemID := curID.SelectNth(i + 1)` before converting each element.
+  * That is already the correct identity model; the missing piece is promotion into the cache when that nth ID is actually loaded later.
+
+#### Why on-demand instead of eager fan-out
+
+* Eagerly caching every nth child when an array result is created would likely fix this class of bug too.
+* But it has real downsides:
+  * cache/index explosion for large arrays
+  * unnecessary persistence closure growth for array elements nobody ever uses
+  * noisier release/dependency ownership between parent arrays and all children
+* On-demand promotion keeps the same clean invariant without paying those costs:
+  * the nth child becomes real when the system actually materializes it as a value
+  * not before
+
+#### Detailed behavior after the change
+
+* First materialization of an nth ID:
+  * one of the server nth-materialization sites enters the shared nth-promotion path
+  * `GetOrInitCall(...)` misses for the nth ID
+  * initializer loads the parent enumerable, selects nth, dereferences it, returns it
+  * normal cache completion indexes that nth ID as a real result
+* Later field selection using the nth ID as receiver:
+  * proof capture sees `StructuralInputRef{ID: nthID}`
+  * `resolveSharedResultForInputIDLocked(...)` can now resolve it
+  * proof input is recorded as `result_ref`
+  * export/import path remains unchanged and now works correctly
+
+#### Focused test plan
+
+* Add a new targeted test in `dagql/dagql_test.go` near `TestSelectArray`.
+* The test should use a deterministic array-of-objects field, not a random one.
+* The test should:
+  * build the parent list ID
+  * build `nthID := listID.SelectNth(1)`
+  * call `srv.LoadType(ctx, nthID)` once and assert success
+  * call `srv.LoadType(ctx, nthID)` again and assert it is now a cache hit
+  * build a child field ID off that nth receiver
+  * call `srv.LoadType(ctx, childID)` and assert success
+  * call `srv.LoadType(ctx, childID)` again and assert it hits cache
+* This proves both:
+  * nth-element IDs are promoted into real cached results
+  * downstream proof capture on fields selected from nth receivers now succeeds
+
+#### Validation
+
+* Focused compile/unit checks while iterating:
+  * `go test ./dagql -run '^$' -count=1`
+  * focused new dagql nth-promotion test
+* Targeted integration repro:
+  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/function cache control survives restart' > /tmp/cache-debug-function-cache-control.log 2>&1`
+  * grep for `panic:|fatal error:|SIGSEGV|--- FAIL:|^FAIL\\s`
+* Full restart suite after the targeted repro goes green:
+  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart' > /tmp/cache-debug-disk-persistence-full.log 2>&1`
+
+#### Expected outcome
+
+* `InputTypeDef.fields` receiver IDs coming from `currentTypeDefs` array elements will resolve to cached nth-element results instead of erroring.
+* We keep the current clean proof model:
+  * real `ID` => real cached result => `result_ref`
+  * digest-only literal => `digest_ref`
+* No fallback behavior returns.
+* No DB/persistence special case is needed for this fix.
+
+### Handoff Packet
+
+#### Current status
+
+* The persistence rewrite and restart-debug sequence has made real progress in layers:
+  * `7bd18dbdd`
+    * hard-cut the DB model to `results`, `roots`, `root_members`, `result_terms`, `result_deps`, `result_snapshot_links`
+    * removed `eq_facts`, `terms`, `term_results`, `snapshot_refs`
+  * `44eff441f`
+    * hard-cut structural proof capture over to `StructuralInputRef`
+    * removed proof fallback from `ID` to digest
+    * fixed the host-mount restart miss by capturing exact `result_ref` proof instead of guessed `digest_ref`
+  * `2408374ce`
+    * promoted derived receiver IDs into cache-backed results
+    * fixed the class of restart failures where nth-derived or dereferenced object receivers had real IDs but no standalone cached `sharedResult`
+* After `2408374ce`, the old `function cache control survives restart` failure mode was gone:
+  * no more `resolve structural input ... no cached shared result found`
+  * no more proof-capture/indexing failure during `loading type definitions`
+* Then a new failure surfaced:
+  * persisted-hit decode of `Container.withMountedFile` failed because embedded persisted object refs inside container payloads were written using the wrong ID surface
+  * the payload pointed at a request/alias object ID while restart lookup expected the canonical persisted result identity
+* The current uncommitted work fixes that write-side bug by canonicalizing embedded persisted object references before encoding them:
+  * `dagql/cache_persistence_resolver.go`
+    * adds a `CanonicalPersistedCallID(...)` helper on cache/session cache
+  * `core/persisted_object.go`
+    * adds `encodePersistedObjectRefID(...)`
+  * `core/container.go`
+  * `core/directory.go`
+  * `core/file.go`
+  * `core/module.go`
+  * `core/modulesource.go`
+  * `core/object.go`
+* With those uncommitted changes applied:
+  * `go test ./dagql -run '^$' -count=1`
+  * `go test ./core -run '^$' -count=1`
+  * `go test ./cmd/engine -run '^$' -count=1`
+  * all pass
+* The latest targeted repro log is:
+  * `/tmp/cache-debug-function-cache-control-rerun3.log`
+* The old failures are gone in that log:
+  * no `resolve structural input ... no cached shared result found`
+  * no `decode persisted hit payload ... missing persisted result key`
+* The current blocker is now purely semantic:
+  * the test runs successfully on both sides of the restart
+  * module loading succeeds
+  * `test-always-cache` succeeds on both runs
+  * but the returned string differs across restart, so the function result is still being recomputed instead of reused
+
+#### Current blocker in plain English
+
+* We are past:
+  * structural proof capture problems
+  * nth/deref receiver promotion problems
+  * persisted object embedded-reference decode problems
+* We are now at the actual thing the test cares about:
+  * `Test.testAlwaysCache` returns random text
+  * after restart, the second run still computes a new random value instead of reusing the first-run result
+* So the next debugging question is:
+  * why is the actual function-cache result still missing across restart even though the surrounding module/runtime/container state is now successfully reconstructed?
+
+#### Current repro command
+
+* Use the exact integration command format from `debugging.md`:
+  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/function cache control survives restart' > /tmp/cache-debug-function-cache-control-rerunN.log 2>&1`
+* Useful follow-up greps:
+  * `rg -n "panic:|fatal error:|SIGSEGV|--- FAIL:|^FAIL\\s" /tmp/cache-debug-function-cache-control-rerunN.log`
+  * `rg -n "resolve structural input|missing persisted result key|decode persisted hit payload|test-always-cache|Test\\.testAlwaysCache|loading type definitions|load module: \\." /tmp/cache-debug-function-cache-control-rerunN.log`
+* Current important logs to preserve as historical checkpoints:
+  * `/tmp/cache-debug-disk-persistence-IbLDTa.log`
+    * broad suite run showing the earlier failing subtests
+  * `/tmp/cache-debug-function-cache-control-rerun.log`
+    * first focused rerun while still failing on structural input resolution
+  * `/tmp/cache-debug-function-cache-control-rerun2.log`
+    * rerun showing the persisted-hit decode failure for embedded object refs
+  * `/tmp/cache-debug-function-cache-control-rerun3.log`
+    * latest rerun showing those old failures gone and the remaining semantic function-cache miss
+
+#### Effective subagent repro prompt
+
+* This was effective when the goal was just to rerun the test and report what changed:
+
+```text
+Please rerun the exact targeted repro for the function-cache-control restart failure in /home/sipsma/repo/github.com/sipsma/dagger.
+
+Before running, quickly re-read:
+- AGENTS.md
+- skills/cache-expert/references/debugging.md
+
+Then run exactly this, capturing the full output to a /tmp log:
+
+dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/function cache control survives restart' > /tmp/cache-debug-function-cache-control-rerun.log 2>&1
+
+After it finishes:
+1. report whether it passed or failed
+2. if failed, grep/summarize the first concrete failure and the first relevant dagql_egraph_trace divergence
+3. if passed, say that clearly and mention the key signs in the log that the previous failure is gone
+4. include the log path
+5. do not change code
+
+Focus especially on whether the previous known error is still present, and whether the latest code moved the failure forward.
+```
+
+#### Effective subagent analysis prompt
+
+* This was effective when the goal was deep log/code analysis without another blind rerun:
+
+```text
+Please do a deep-dive analysis of the current failure in /home/sipsma/repo/github.com/sipsma/dagger.
+
+First, refresh yourself on the current repo guidance and debugging workflow:
+- read AGENTS.md
+- read skills/cache-expert/references/debugging.md
+
+Then familiarize yourself with the relevant dagql code and especially the available debug trace surfaces. Read enough of these files to understand what the trace events mean and where they come from:
+- dagql/cache.go
+- dagql/cache_egraph.go
+- dagql/cache_debug.go
+- dagql/server.go
+- dagql/objects.go
+- dagql/cache_persistence_import.go
+- dagql/cache_persistence_self.go
+- core/persisted_object.go
+- any other directly-adjacent persistence/decode file needed for the exact failure
+
+Important context:
+- do not rerun unless absolutely necessary
+- start from the existing log and current code
+- current checkpoint commit and current uncommitted changes matter; inspect the live tree, not an older assumption
+
+Please answer these questions very concretely:
+1. What is the first real divergence now?
+2. What exact code path produces the current error or miss?
+3. What do the logs prove already about what succeeded before that point?
+4. What is your most specific theory on why the current failure is happening?
+5. Is the current observability sufficient to act, or do we need additional logs? If we need more logs, specify exactly where and what fields.
+6. If you can see the likely fix direction already, explain it, but do not edit code.
+
+Be explicit about the first bad event and the exact surrounding events that matter.
+```
+
+#### What the next agent should verify first
+
+* Before doing any more code changes:
+  * reread `AGENTS.md`
+  * reread `skills/cache-expert/references/debugging.md`
+  * inspect current uncommitted changes in:
+    * `dagql/cache_persistence_resolver.go`
+    * `core/persisted_object.go`
+    * `core/container.go`
+    * `core/directory.go`
+    * `core/file.go`
+    * `core/module.go`
+    * `core/modulesource.go`
+    * `core/object.go`
+  * confirm the latest targeted repro state from `/tmp/cache-debug-function-cache-control-rerun3.log`
+
+#### What the next agent should focus on
+
+* Do **not** re-debug the old structural-input failure unless current evidence says it came back.
+* Do **not** re-debug the old embedded persisted object reference decode failure unless current evidence says it came back.
+* Focus on the remaining semantic miss:
+  * why `Test.testAlwaysCache` still produces a new random value after restart
+  * even though module load, type-def load, and test execution all now succeed
+* The likely debugging seam is the actual persisted function result/hit path rather than object decode or receiver identity.
+
+## E-graph Observability
+
+### Goal
+
+* Make e-graph/cache behavior permanently debugable without having to add and later remove one-off targeted logs.
+* Preserve enough structured mutation history that, with enough patience, we can reconstruct how the e-graph evolved over a run.
+* Preserve a deterministic point-in-time snapshot facility so we can answer "what exists right now?" separately from "how did we get here?".
+
+### High-level design
+
+* Use two complementary mechanisms:
+  * structured mutation trace events written into the normal engine log stream
+  * deterministic e-graph snapshot dump exposed from a debug endpoint
+* Mutation trace answers:
+  * how did the graph evolve?
+  * what path created/merged/removed this result/term/eq-class edge?
+* Snapshot dump answers:
+  * what is the exact current in-memory graph state right now?
+* Both are needed; either one alone leaves big blind spots.
+
+### Logging direction
+
+* Do **not** create a separate side log file for the first cut.
+  * With ephemeral engines, operational friction for fetching a separate file is likely not worth it.
+* Instead, emit structured e-graph trace events through the same engine logs we already capture.
+* Gate them behind a simple compile-time boolean constant for now.
+  * Runtime configurability can come later.
+* Keep the events structured and machine-parseable, not ad hoc prose logging.
+  * Stable event names + stable field names are more important than pretty human wording.
+
+### Snapshot direction
+
+* Add a dedicated debug endpoint under the existing engine debug HTTP surface in `cmd/engine/debug.go`.
+* Proposed endpoint shape:
+  * `/debug/dagql/egraph`
+* Return deterministic JSON for the full current e-graph/cache state.
+* This should be point-in-time / pull-based rather than continuously logged.
+
+### Mutation trace event schema
+
+* Every event should include:
+  * `trace_format_version`
+  * `boot_id` / engine-start ID
+  * monotonic `seq`
+  * timestamp
+  * event type
+  * phase/source (`runtime`, `import`, `persist-export`, `persist-apply`, `prune`, etc.)
+  * correlation IDs when relevant:
+    * `batch_id`
+    * `import_run_id`
+    * `client_id`
+    * `session_id`
+    * request/call digest
+  * local in-memory IDs when useful:
+    * `shared_result_id`
+    * `term_id`
+    * `eq_class_id`
+  * durable identities when useful:
+    * `result_key`
+    * `id_digest`
+    * `output_digest`
+    * `output_extra_digests`
+  * lightweight metadata:
+    * `record_type`
+    * `description`
+    * object/graphql type when available
+  * exact proof inputs when relevant:
+    * `result_ref`
+    * `digest_ref`
+  * short reason/source field saying what code path emitted the event
+
+### Initial event set
+
+* `result_created`
+* `result_removed`
+* `result_digest_seeded`
+* `eq_class_created`
+* `eq_class_merged`
+* `term_created`
+* `term_removed`
+* `result_term_assoc_added`
+* `result_term_assoc_removed`
+* `result_term_assoc_updated`
+* `explicit_dep_added`
+* `explicit_dep_removed`
+* `ref_acquired`
+* `ref_released`
+* `term_inputs_repaired`
+* `term_digest_recomputed`
+* `term_rehomed_under_eq_classes`
+* `term_outputs_merged`
+* `persist_root_marked`
+* `persist_root_deferred`
+* `persist_member_not_ready`
+* `persist_retry_registered`
+* `persist_root_retry_triggered`
+* `persist_retry_succeeded`
+* `persist_batch_build_failed`
+* `persist_batch_built`
+* `persist_batch_applied`
+* `persisted_payload_imported_lazy`
+* `persisted_payload_imported_eager`
+* `persisted_payload_decoded`
+* `persisted_payload_decode_failed`
+* `persist_root_added`
+* `persist_root_member_added`
+* `persist_root_deleted`
+* `persist_root_member_removed`
+* `persist_orphan_gc_deleted`
+* `persist_store_wiped_schema_mismatch`
+* `persist_store_wiped_unclean_shutdown`
+* `persist_store_wiped_import_failure`
+* `import_result_loaded`
+* `import_root_member_loaded`
+* `import_result_term_loaded`
+* `import_result_dep_loaded`
+* `import_result_snapshot_link_loaded`
+* `lazy_realized`
+* `lookup_attempt`
+* `lookup_hit`
+* `lookup_miss_reason`
+* explicit no-op / skip decisions at important persistence/debug boundaries
+
+### Where to emit mutation logs
+
+* `dagql/cache_egraph.go`
+  * digest -> eq-class creation
+  * eq-class merges
+  * term creation/removal
+  * result-term association changes
+  * result removal from the e-graph
+  * persisted-closure propagation decisions
+* `dagql/cache.go`
+  * result creation/finalization in `initCompletedResult`
+  * explicit dependency attachment/removal
+  * deferred persist registration / retry trigger paths
+  * release paths that affect structural ownership
+* `dagql/cache_persistence_worker.go`
+  * persistence batch build/apply
+  * root delete/orphan GC
+* `dagql/cache_persistence_import.go`
+  * startup import reconstruction
+
+### Snapshot dump contents
+
+* All results:
+  * local result ID
+  * durable result key
+  * request/output digests
+  * extra digests/effects
+  * `ref_count`
+  * `has_value`
+  * payload state (`materialized`, `imported_lazy_envelope`, `nil`)
+  * retained/deferred-persist state
+  * current deferred-persist watch state
+  * explicit deps
+  * `held_dependency_results` count
+  * snapshot links
+  * basic metadata (`record_type`, `description`)
+* All terms:
+  * local term ID
+  * self digest
+  * canonical input eq-class IDs
+  * term digest
+  * output eq-class ID
+* All result-term associations:
+  * result ID
+  * term ID
+  * exact proof inputs
+* Digest -> eq-class mapping
+* Canonical eq-class membership view
+* Any pending deferred-persist state
+  * including which roots are pending and which members they are currently watching
+* Snapshot metadata:
+  * `trace_format_version`
+  * `boot_id`
+  * `captured_at_seq`
+  * `captured_at_time`
+
+### Important design principles
+
+* Log mutations, not reads/lookups by default.
+  * We want causal history without overwhelming noise.
+  * Exception: a small `lookup_attempt` / `lookup_hit` / `lookup_miss_reason`
+    family is worth including because it directly identifies first divergence
+    boundaries during cache-debug work.
+* Include both local IDs and durable keys/digests.
+  * Local IDs are needed to reconstruct one process's in-memory graph.
+  * Durable keys/digests are needed to correlate across export/import/restart boundaries.
+* Keep the trace facility generic and permanent.
+  * It should be useful for this bug and the next ten, not just the current host-mount restart miss.
+
+### Initial implementation proposal
+
+#### Phase 1
+
+* Add a tiny central e-graph trace helper in dagql cache code:
+  * no-op when the debug const is false
+  * emits one structured log event per mutation when enabled
+  * owns the monotonic sequence counter
+* Add the `/debug/dagql/egraph` endpoint in `cmd/engine/debug.go`.
+* Instrument the full mutation surface needed to reconstruct the e-graph with enough patience from one log:
+  * result create/remove
+  * digest -> eq-class creation
+  * eq-class merges
+  * term create/remove
+  * result-term assoc add/remove
+  * result-term assoc metadata updates
+  * term repair / rehome / digest recompute transitions
+  * output-eq merges caused by congruent term repair
+  * explicit dep add/remove
+  * retained/persisted-closure propagation changes
+  * deferred-persist not-ready / registration / retry / success / failure transitions
+  * exact deferred-watch registration / firing / clearing details
+  * persistence batch build/apply and build-failure transitions
+  * persisted-root and root-member add/remove transitions
+  * root delete/orphan-GC transitions
+  * persistence-store wipe/reset transitions at startup
+  * import-time result/root/member/term/dep/snapshot-link reconstruction events
+  * imported payload lazy/eager materialization state transitions
+  * successful natural lazy-realization completion events
+  * lookup attempt/hit/miss-reason events at the cache lookup boundary
+  * important skip/no-op decisions at persistence/debugging boundaries
+  * refcount/lifecycle transitions that affect retention/prune semantics
+* Make the dump deterministic enough that two snapshots can be diffed meaningfully.
+
+### Expected payoff
+
+* New cache/e-graph bugs should become debuggable from one captured engine log plus an optional debug dump, instead of requiring temporary ad hoc logging patches every time.

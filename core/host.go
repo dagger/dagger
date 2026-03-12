@@ -2,11 +2,14 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -22,6 +25,14 @@ func (*Host) Type() *ast.Type {
 
 func (*Host) TypeDescription() string {
 	return "Information about the host environment."
+}
+
+func (*Host) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+func (*Host) DecodePersistedObject(context.Context, *dagql.Server, *call.ID, json.RawMessage) (dagql.Typed, error) {
+	return &Host{}, nil
 }
 
 // Lookup an environment variable in the host system from the current context

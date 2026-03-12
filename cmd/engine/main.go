@@ -30,7 +30,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
-	"github.com/dagger/dagger/internal/buildkit/util/profiler"
 	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	"github.com/dagger/dagger/internal/buildkit/version"
 	"github.com/gofrs/flock"
@@ -440,12 +439,6 @@ func main() { //nolint:gocyclo
 
 		bklog.G(context.Background()).Infof("engine name: %s", engineName)
 
-		if bkcfg.GRPC.DebugAddress != "" {
-			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress); err != nil {
-				return err
-			}
-		}
-
 		bklog.G(ctx).Debug("creating engine GRPC server")
 		grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
@@ -484,7 +477,21 @@ func main() { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
 		}
-		defer srv.Close()
+		defer func() {
+			if srv != nil {
+				srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
+				if err := srv.GracefulStop(context.WithoutCancel(srvStopCtx)); err != nil {
+					slog.Error("server graceful stop", "error", err)
+				}
+				srvStopCancel()
+			}
+		}()
+
+		if bkcfg.GRPC.DebugAddress != "" {
+			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress, srv); err != nil {
+				return err
+			}
+		}
 
 		// start Prometheus metrics server if configured
 		if metricsAddr := os.Getenv("_EXPERIMENTAL_DAGGER_METRICS_ADDR"); metricsAddr != "" {
@@ -543,6 +550,7 @@ func main() { //nolint:gocyclo
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
+
 		grpcServer.GracefulStop()
 
 		srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
@@ -550,6 +558,7 @@ func main() { //nolint:gocyclo
 		if err := srv.GracefulStop(srvStopCtx); err != nil {
 			slog.Error("server graceful stop", "error", err)
 		}
+		srv = nil // prevent deferred close from running again
 
 		return err
 	}
@@ -560,8 +569,6 @@ func main() { //nolint:gocyclo
 		telemetry.Close()
 		return nil
 	}
-
-	profiler.Attach(app)
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)

@@ -152,14 +152,17 @@ type OnReleaser interface {
 	OnRelease(context.Context) error
 }
 
-// HasAdditionalOutputResults is implemented by resolver-returned values that
-// produce additional result handles which should be attached to cache when the
-// main resolver result is attached.
+// HasOwnedResults is implemented by resolver-returned values that embed child
+// results which must be normalized onto attached/cache-backed results before
+// lifecycle bookkeeping or persistence.
 //
-// This must return already-constructed result handles only. It must not perform
-// evaluation/materialization work.
-type HasAdditionalOutputResults interface {
-	AdditionalOutputResults() []AnyResult
+// Implementations must:
+//   - call attach for each embedded child result that should be normalized
+//   - rewrite themselves in place to point at the attached result returned by attach
+//   - return only the subset of attached child results that should become
+//     explicit non-structural cache dependency edges
+type HasOwnedResults interface {
+	AttachOwnedResults(context.Context, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

@@ -509,7 +509,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}
 	}
-	go srv.baseDagqlCache.GCLoop(ctx)
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -605,6 +604,32 @@ func (srv *Server) Clients() []string {
 // GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
 // run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
 func (srv *Server) GracefulStop(ctx context.Context) error {
+	var err error
+
+	// note this *could* cause a panic in Session if it was still running, so
+	// the server should be shutdown first
+	srv.daggerSessionsMu.Lock()
+	daggerSessions := srv.daggerSessions
+	srv.daggerSessionsMu.Unlock()
+
+	for _, s := range daggerSessions {
+		s.stateMu.Lock()
+		err = errors.Join(err, srv.removeDaggerSession(ctx, s))
+		s.stateMu.Unlock()
+	}
+
+	err = errors.Join(err, srv.worker.Close())
+
+	// Shutdown the global namespace worker pool
+	buildkit.ShutdownGlobalNamespaceWorkerPool()
+
+	if srv.baseDagqlCache != nil {
+		err = errors.Join(err, srv.baseDagqlCache.Close(ctx))
+	}
+	if err != nil {
+		return err
+	}
+
 	var eg errgroup.Group
 	eg.Go(func() error {
 		err := srv.snapshotterMDStore.Close()
@@ -652,26 +677,6 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func (srv *Server) Close() error {
-	err := srv.worker.Close()
-
-	// Shutdown the global namespace worker pool
-	buildkit.ShutdownGlobalNamespaceWorkerPool()
-
-	// note this *could* cause a panic in Session if it was still running, so
-	// the server should be shutdown first
-	srv.daggerSessionsMu.Lock()
-	daggerSessions := srv.daggerSessions
-	srv.daggerSessionsMu.Unlock()
-
-	for _, s := range daggerSessions {
-		s.stateMu.Lock()
-		err = errors.Join(err, srv.removeDaggerSession(context.Background(), s))
-		s.stateMu.Unlock()
-	}
-	return err
 }
 
 func (srv *Server) BuildkitCache() bkcache.SnapshotManager {
@@ -738,6 +743,13 @@ func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {
 		return dagql.CacheEntryStats{}
 	}
 	return srv.baseDagqlCache.EntryStats()
+}
+
+func (srv *Server) DagqlDebugSnapshot() *dagql.EGraphDebugSnapshot {
+	if srv.baseDagqlCache == nil {
+		return nil
+	}
+	return srv.baseDagqlCache.DebugEGraphSnapshot()
 }
 
 // ConnectedClients returns the number of currently connected clients

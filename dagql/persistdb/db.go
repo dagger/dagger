@@ -1,4 +1,4 @@
-package db
+package persistdb
 
 import (
 	"context"
@@ -24,25 +24,25 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
-	if q.selectCallStmt, err = db.PrepareContext(ctx, selectCall); err != nil {
-		return nil, fmt.Errorf("error preparing query SelectCall: %w", err)
+	if q.selectMetaStmt, err = db.PrepareContext(ctx, selectMeta); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectMeta: %w", err)
 	}
-	if q.setExpirationStmt, err = db.PrepareContext(ctx, setExpiration); err != nil {
-		return nil, fmt.Errorf("error preparing query SetExpiration: %w", err)
+	if q.upsertMetaStmt, err = db.PrepareContext(ctx, upsertMeta); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertMeta: %w", err)
 	}
 	return &q, nil
 }
 
 func (q *Queries) Close() error {
 	var err error
-	if q.selectCallStmt != nil {
-		if cerr := q.selectCallStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing selectCallStmt: %w", cerr)
+	if q.selectMetaStmt != nil {
+		if cerr := q.selectMetaStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectMetaStmt: %w", cerr)
 		}
 	}
-	if q.setExpirationStmt != nil {
-		if cerr := q.setExpirationStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing setExpirationStmt: %w", cerr)
+	if q.upsertMetaStmt != nil {
+		if cerr := q.upsertMetaStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertMetaStmt: %w", cerr)
 		}
 	}
 	return err
@@ -71,17 +71,18 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                DBTX
-	tx                *sql.Tx
-	selectCallStmt    *sql.Stmt
-	setExpirationStmt *sql.Stmt
+	db DBTX
+	tx *sql.Tx
+
+	selectMetaStmt *sql.Stmt
+	upsertMetaStmt *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                tx,
-		tx:                tx,
-		selectCallStmt:    q.selectCallStmt,
-		setExpirationStmt: q.setExpirationStmt,
+		db:             tx,
+		tx:             tx,
+		selectMetaStmt: q.selectMetaStmt,
+		upsertMetaStmt: q.upsertMetaStmt,
 	}
 }

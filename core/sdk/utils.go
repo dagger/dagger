@@ -27,11 +27,17 @@ func scopeSourceForSDKOperation(
 		return inst, fmt.Errorf("failed to get source content digest for sdk operation %q: %w", op, err)
 	}
 	scopedID := src.ID().With(call.WithScopeToDigest(op, srcContentDigestForSDK))
+	scopedContentDigest := hashutil.HashStrings(
+		"sdk-scoped-module-source",
+		op,
+		srcContentDigestForSDK.String(),
+	)
 
 	scopedSrc, err := dagql.NewObjectResultForID(src.Self(), dag, scopedID)
 	if err != nil {
 		return inst, err
 	}
+	scopedSrc = scopedSrc.WithContentDigest(scopedContentDigest)
 	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
 		ID: scopedSrc.ID(),
 	}, dagql.ValueFunc(scopedSrc))

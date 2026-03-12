@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"reflect"
 	"slices"
 	"sync"
@@ -16,7 +18,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/dagger/dagger/dagql/call"
-	cachedb "github.com/dagger/dagger/dagql/db"
+	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
@@ -58,8 +60,12 @@ type Cache interface {
 	// Applies ordered prune policies and returns the set of pruned entries.
 	Prune(context.Context, []CachePrunePolicy) (CachePruneReport, error)
 
-	// Run a blocking loop that periodically garbage collects expired entries from the cache db.
-	GCLoop(context.Context)
+	// Close flushes and closes cache-owned persistence resources.
+	Close(context.Context) error
+
+	// DebugEGraphSnapshot returns a deterministic point-in-time dump of the
+	// current in-memory e-graph/cache state for debugging.
+	DebugEGraphSnapshot() *EGraphDebugSnapshot
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
@@ -131,15 +137,110 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 }
 
+const cachePersistenceSchemaVersion = "5"
+
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
+var errPersistedHitNotDecodable = errors.New("persisted hit payload not decodable in current context")
+var ErrPersistStateNotReady = errors.New("persist state not ready")
 
 func NewCache(ctx context.Context, dbPath string) (Cache, error) {
-	c := &cache{}
+	c := &cache{traceBootID: newTraceBootID()}
 
 	if dbPath == "" {
 		return c, nil
 	}
 
+	db, persistDB, err := prepareCacheDBs(ctx, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	c.sqlDB = db
+	c.pdb = persistDB
+
+	schemaVersionVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeySchemaVersion)
+	if err != nil {
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("read schema_version metadata: %w", err), closeErr)
+		}
+		return nil, fmt.Errorf("read schema_version metadata: %w", err)
+	}
+	if found && schemaVersionVal != cachePersistenceSchemaVersion {
+		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
+		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("close db before schema-version wipe"), closeErr)
+		}
+		if err := wipeSQLiteFiles(dbPath); err != nil {
+			return nil, fmt.Errorf("wipe schema-mismatched persistence db: %w", err)
+		}
+
+		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
+		if err != nil {
+			return nil, err
+		}
+		c.sqlDB = db
+		c.pdb = persistDB
+	}
+
+	cleanShutdownVal, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
+	if err != nil {
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("read clean_shutdown metadata: %w", err), closeErr)
+		}
+		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
+	}
+	if found && cleanShutdownVal != "1" {
+		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
+		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("close db before wipe"), closeErr)
+		}
+		if err := wipeSQLiteFiles(dbPath); err != nil {
+			return nil, fmt.Errorf("wipe unclean persistence db: %w", err)
+		}
+
+		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
+		if err != nil {
+			return nil, err
+		}
+		c.sqlDB = db
+		c.pdb = persistDB
+	}
+	if err := c.importPersistedState(ctx); err != nil {
+		c.tracePersistStoreWipedImportFailure(ctx, err)
+		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("close db before import-wipe"), closeErr)
+		}
+		if err := wipeSQLiteFiles(dbPath); err != nil {
+			return nil, fmt.Errorf("wipe persistence db after import failure: %w", err)
+		}
+		db, persistDB, err = prepareCacheDBs(ctx, dbPath)
+		if err != nil {
+			return nil, err
+		}
+		c.sqlDB = db
+		c.pdb = persistDB
+	}
+
+	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, cachePersistenceSchemaVersion); err != nil {
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("set persistence schema version: %w", err), closeErr)
+		}
+		return nil, fmt.Errorf("set persistence schema version: %w", err)
+	}
+	if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "0"); err != nil {
+		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
+			return nil, errors.Join(fmt.Errorf("mark clean_shutdown=0 at startup: %w", err), closeErr)
+		}
+		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
+	}
+	c.startPersistenceWorker()
+
+	return c, nil
+}
+
+func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
 	connURL := &url.URL{
 		Scheme: "file",
 		Path:   dbPath,
@@ -165,23 +266,54 @@ func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 	}
 	db, err := sql.Open("sqlite", connURL.String())
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", connURL, err)
+		return nil, nil, fmt.Errorf("open %s: %w", connURL, err)
 	}
 	if err := db.Ping(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("ping %s: %w", connURL, err)
+		return nil, nil, fmt.Errorf("ping %s: %w", connURL, err)
 	}
-	if _, err := db.Exec(cachedb.Schema); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
+	if _, err := db.Exec(persistdb.Schema); err != nil {
+		db.Close()
+		return nil, nil, fmt.Errorf("migrate persistence schema: %w", err)
 	}
-
-	c.db, err = cachedb.Prepare(ctx, db)
+	persistDB, err := persistdb.Prepare(ctx, db)
 	if err != nil {
 		db.Close()
-		return nil, fmt.Errorf("prepare queries: %w", err)
+		return nil, nil, fmt.Errorf("prepare persistence queries: %w", err)
 	}
 
-	return c, nil
+	return db, persistDB, nil
+}
+
+func closeCacheDBs(db *sql.DB, persistDB *persistdb.Queries) error {
+	var err error
+	if persistDB != nil {
+		err = errors.Join(err, persistDB.Close())
+	}
+	if db != nil {
+		err = errors.Join(err, db.Close())
+	}
+	return err
+}
+
+func wipeSQLiteFiles(dbPath string) error {
+	removeIfExists := func(path string) error {
+		err := os.Remove(path)
+		if err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if err := removeIfExists(dbPath); err != nil {
+		return err
+	}
+	if err := removeIfExists(dbPath + "-wal"); err != nil {
+		return err
+	}
+	if err := removeIfExists(dbPath + "-shm"); err != nil {
+		return err
+	}
+	return nil
 }
 
 type cache struct {
@@ -194,33 +326,105 @@ type cache struct {
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
 	ongoingCalls map[callConcurrencyKeys]*ongoingCall
 
-	// e-graph index for call-result equivalence.
+	//
+	// indexes for eq classes, which are disjoint sets of digests considered equivalent and interchangeable
+	//
+
+	nextEgraphClassID eqClassID
+
+	// map of eqClassID -> all digests in that class
+	eqClassToDigests map[eqClassID]map[string]struct{}
+
+	// map of eqClassID -> all labeled extra digests known to belong to that class
+	eqClassExtraDigests map[eqClassID]map[call.ExtraDigest]struct{}
+
+	// map of digest -> eqClassID for the class that digest is in, if any
+	// due to the sets being disjoint, a digest is enforced to only be in one
+	// set at a time (any overlap results in union of the sets)
 	egraphDigestToClass map[string]eqClassID
-	egraphParents       []eqClassID
-	egraphRanks         []uint8
 
-	egraphClassTerms    map[eqClassID]map[egraphTermID]struct{}
-	egraphTerms         map[egraphTermID]*egraphTerm
-	egraphTermsByDigest map[string]map[egraphTermID]struct{}
-	// Reverse index for fallback lookup by any output digest (primary output
-	// digest or extra digest).
-	egraphResultsByOutputDigest map[string]map[sharedResultID]struct{}
-	// Bidirectional term<->result association maps. A term may map to multiple
-	// materialized results; a result may map to multiple terms.
-	egraphResultsByTermID map[egraphTermID]map[sharedResultID]struct{}
-	egraphTermIDsByResult map[sharedResultID]map[egraphTermID]struct{}
-	resultsByID           map[sharedResultID]*sharedResult
+	// the parent of the given eqClassID, slice is index by eqClassID so it's
+	// conceptually a map of eqClassID->parent eqClassID
+	egraphParents []eqClassID
 
-	nextEgraphClassID  eqClassID
-	nextEgraphTermID   egraphTermID
+	// the rand of the given eqClassID, slice is index by eqClassID so it's
+	// conceptually a map of eqClassID->rank
+	egraphRanks []uint8
+
+	//
+	// indexes for terms
+	//
+
+	nextEgraphTermID egraphTermID
+
+	// term ID -> term
+	egraphTerms map[egraphTermID]*egraphTerm
+
+	// term digest -> all terms with that digest
+	egraphTermsByTermDigest map[string]map[egraphTermID]struct{}
+
+	//
+	// indexes for results
+	//
+
 	nextSharedResultID sharedResultID
+
+	// result id -> result
+	resultsByID map[sharedResultID]*sharedResult
+
+	// one canonical caller-facing ID per materialized result, used for
+	// persistence payload encoding and lazy rehydration after import
+	resultCanonicalIDs map[sharedResultID]*call.ID
+
+	//
+	// other indexes
+	//
+
+	// map of eq class -> all terms that have it as an input, needed during repair to
+	// figure out all the terms that need repair after eq class union
+	inputEqClassToTerms map[eqClassID]map[egraphTermID]struct{}
+
+	// reverse index from canonical output eq class to all terms whose outputs are
+	// currently represented by that class
+	outputEqClassToTerms map[eqClassID]map[egraphTermID]struct{}
+
+	// reverse index from materialized result to all output eq classes it is
+	// currently associated with
+	resultOutputEqClasses map[sharedResultID]map[eqClassID]struct{}
+
+	// Reverse index from any known result-associated digest to materialized results.
+	// This includes request recipe+extra digests and result recipe+extra digests.
+	egraphResultsByDigest map[string]map[sharedResultID]struct{}
+
+	// per-term input provenance indicates whether each input slot was
+	// result-backed or digest-only when the term was observed
+	termInputProvenance map[egraphTermID][]egraphInputProvenanceKind
 
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
 	completedArbitraryCalls map[string]*sharedArbitraryResult
 
-	// db for persistence; currently only used for metadata supporting ttl-based expiration
-	db *cachedb.Queries
+	sqlDB *sql.DB
+	// persistent normalized cache store (disk persistence/import).
+	pdb *persistdb.Queries
+
+	persistMu            sync.Mutex
+	persistDirty         bool
+	persistNotify        chan struct{}
+	persistFlushRequests chan chan error
+	persistStop          chan struct{}
+	persistDone          chan struct{}
+	persistClosed        bool
+	persistErr           error
+	persistWatchResults  map[sharedResultID]struct{}
+
+	traceBootID       string
+	traceSeq          uint64
+	tracePersistBatch uint64
+	traceImportRuns   uint64
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 type callConcurrencyKeys struct {
@@ -275,21 +479,24 @@ type sharedResult struct {
 	// depOfPersistedResult marks results that must remain live because they are
 	// dependencies of a persisted/retained result.
 	depOfPersistedResult bool
-	// deps tracks direct result dependencies used for transitive dependency
-	// liveness propagation in persistence experiments.
+	// deps tracks explicit non-structural owned child-result dependencies used
+	// for release/liveness propagation and persistence closure.
 	deps map[sharedResultID]struct{}
-	// heldAdditionalOutputs are attached output results whose refs are held
+	// heldDependencyResults are explicit owned child results whose refs are held
 	// while this result has active refs. They are released when this result's
 	// refcount drains to zero.
-	heldAdditionalOutputs []AnyResult
+	heldDependencyResults []AnyResult
+	// persistedSnapshotLinks are imported snapshot-link associations used before
+	// typed self payload is decoded/rehydrated. They are not child-result deps.
+	persistedSnapshotLinks []PersistedSnapshotRefLink
 
-	// Output digests learned from the materialized result ID.
-	outputDigest       digest.Digest
-	outputExtraDigests []call.ExtraDigest
-	outputEffectIDs    []string
+	outputEffectIDs []string
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
 	// 0 means "never expires".
 	expiresAtUnix int64
+	// persistedEnvelope is populated for imported rows and decoded lazily on
+	// first cache-hit use in a server-aware context.
+	persistedEnvelope *PersistedResultEnvelope
 
 	// Prune-accounting metadata. Size is unknown until explicitly measured.
 	createdAtUnixNano  int64
@@ -324,11 +531,47 @@ type ongoingCall struct {
 func newDetachedResult[T Typed](resultID *call.ID, self T) Result[T] {
 	return Result[T]{
 		shared: &sharedResult{
-			self:     self,
-			hasValue: true,
+			self:               self,
+			hasValue:           true,
+			safeToPersistCache: true,
 		},
 		id: resultID,
 	}
+}
+
+func setTypedPersistedResultID(val Typed, resultID sharedResultID) {
+	if resultID == 0 || val == nil {
+		return
+	}
+	setter, ok := val.(PersistedResultIDSetter)
+	if !ok {
+		return
+	}
+	setter.SetPersistedResultID(uint64(resultID))
+}
+
+func (c *cache) attachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
+	if res == nil {
+		return nil, nil
+	}
+	if res.ID() == nil {
+		return nil, fmt.Errorf("attach owned result: nil ID")
+	}
+	if shared := res.cacheSharedResult(); shared != nil && shared.id != 0 {
+		return res, nil
+	}
+	attached, err := c.GetOrInitCall(ctx, CacheKey{ID: res.ID()}, ValueFunc(res))
+	if err != nil {
+		return nil, fmt.Errorf("attach owned result %q: %w", res.ID().Digest(), err)
+	}
+	if attached == nil {
+		return nil, fmt.Errorf("attach owned result %q: nil result", res.ID().Digest())
+	}
+	shared := attached.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil, fmt.Errorf("attach owned result %q: attached result missing shared result ID", res.ID().Digest())
+	}
+	return attached, nil
 }
 
 func (res *sharedResult) release(ctx context.Context) error {
@@ -338,26 +581,33 @@ func (res *sharedResult) release(ctx context.Context) error {
 	}
 
 	var onRelease OnReleaseFunc
-	var heldAdditionalOutputs []AnyResult
-	if atomic.AddInt64(&res.refCount, -1) == 0 {
+	var heldDependencyResults []AnyResult
+	var removeErr error
+	newRefCount := atomic.AddInt64(&res.refCount, -1)
+	if res.cache != nil {
+		res.cache.traceRefReleased(ctx, res, newRefCount)
+	}
+	if newRefCount == 0 {
 		res.cache.egraphMu.Lock()
-		heldAdditionalOutputs = res.heldAdditionalOutputs
-		res.heldAdditionalOutputs = nil
+		heldDependencyResults = res.heldDependencyResults
+		res.heldDependencyResults = nil
 		if !res.depOfPersistedResult {
 			// Non-retained entries keep current behavior: once refs drain, drop the
 			// result from the in-memory e-graph and release associated resources.
-			res.cache.removeResultFromEgraphLocked(res)
-			onRelease = res.onRelease
+			removeErr = res.cache.removeResultFromEgraphLocked(ctx, res)
+			if removeErr == nil {
+				onRelease = res.onRelease
+			}
 		}
 		res.cache.egraphMu.Unlock()
 	}
 
-	var rerr error
-	for _, output := range heldAdditionalOutputs {
-		if output == nil {
+	rerr := removeErr
+	for _, dep := range heldDependencyResults {
+		if dep == nil {
 			continue
 		}
-		rerr = errors.Join(rerr, output.Release(ctx))
+		rerr = errors.Join(rerr, dep.Release(ctx))
 	}
 	if onRelease != nil {
 		rerr = errors.Join(rerr, onRelease(ctx))
@@ -446,20 +696,20 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 func (r Result[T]) withDetachedPayload() Result[T] {
 	if r.shared != nil {
 		r.shared = &sharedResult{
-			self:               r.shared.self,
-			objType:            r.shared.objType,
-			hasValue:           r.shared.hasValue,
-			postCall:           r.shared.postCall,
-			safeToPersistCache: r.shared.safeToPersistCache,
-			outputDigest:       r.shared.outputDigest,
-			outputExtraDigests: slices.Clone(r.shared.outputExtraDigests),
-			outputEffectIDs:    slices.Clone(r.shared.outputEffectIDs),
-			createdAtUnixNano:  r.shared.createdAtUnixNano,
-			lastUsedAtUnixNano: r.shared.lastUsedAtUnixNano,
-			sizeEstimateBytes:  r.shared.sizeEstimateBytes,
-			usageIdentity:      r.shared.usageIdentity,
-			description:        r.shared.description,
-			recordType:         r.shared.recordType,
+			self:                   r.shared.self,
+			objType:                r.shared.objType,
+			hasValue:               r.shared.hasValue,
+			postCall:               r.shared.postCall,
+			safeToPersistCache:     r.shared.safeToPersistCache,
+			persistedEnvelope:      r.shared.persistedEnvelope,
+			persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
+			outputEffectIDs:        slices.Clone(r.shared.outputEffectIDs),
+			createdAtUnixNano:      r.shared.createdAtUnixNano,
+			lastUsedAtUnixNano:     r.shared.lastUsedAtUnixNano,
+			sizeEstimateBytes:      r.shared.sizeEstimateBytes,
+			usageIdentity:          r.shared.usageIdentity,
+			description:            r.shared.description,
+			recordType:             r.shared.recordType,
 		}
 	} else {
 		r.shared = &sharedResult{}
@@ -611,27 +861,28 @@ type cacheContextKey struct {
 	cache *cache
 }
 
-func (c *cache) GCLoop(ctx context.Context) {
-	if c.db == nil {
-		<-ctx.Done()
-		return
-	}
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
+func (c *cache) Close(ctx context.Context) error {
+	c.closeOnce.Do(func() {
+		if err := c.flushAndStopPersistenceWorker(ctx); err != nil {
+			c.closeErr = errors.Join(c.closeErr, err)
+		}
+		if c.closeErr != nil {
+			c.closeErr = errors.Join(c.closeErr, closeCacheDBs(c.sqlDB, c.pdb))
+			c.sqlDB = nil
+			c.pdb = nil
 			return
-		case <-ticker.C:
 		}
-
-		now := time.Now().Unix()
-		if err := c.db.GCExpiredCalls(ctx, cachedb.GCExpiredCallsParams{
-			Now: now,
-		}); err != nil {
-			slog.Warn("failed to GC expired function calls", "err", err)
+		if c.pdb != nil {
+			if err := c.pdb.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"); err != nil {
+				slog.Warn("failed to mark clean shutdown in persistence metadata", "err", err)
+			}
+			slog.Warn("successfully marked clean shutdown in persistence metadata")
 		}
-	}
+		c.closeErr = closeCacheDBs(c.sqlDB, c.pdb)
+		c.sqlDB = nil
+		c.pdb = nil
+	})
+	return c.closeErr
 }
 
 func (c *cache) Size() int {
@@ -643,7 +894,7 @@ func (c *cache) Size() int {
 	// TODO: Re-implement size accounting directly from egraph state instead of
 	// relying on mixed index-oriented counters.
 	total := len(c.ongoingCalls)
-	total += len(c.egraphTermIDsByResult)
+	total += len(c.resultOutputEqClasses)
 	total += len(c.ongoingArbitraryCalls)
 	total += len(c.completedArbitraryCalls)
 	return total
@@ -657,8 +908,8 @@ func (c *cache) EntryStats() CacheEntryStats {
 
 	var stats CacheEntryStats
 	stats.OngoingCalls = len(c.ongoingCalls)
-	stats.CompletedCalls = len(c.egraphTermIDsByResult)
-	for resID := range c.egraphTermIDsByResult {
+	stats.CompletedCalls = len(c.resultOutputEqClasses)
+	for resID := range c.resultOutputEqClasses {
 		res := c.resultsByID[resID]
 		if res != nil && res.depOfPersistedResult {
 			stats.RetainedCalls++
@@ -931,6 +1182,23 @@ func (c *cache) activeDependencyClosureLocked() map[sharedResultID]struct{} {
 		for depID := range cur.deps {
 			stack = append(stack, depID)
 		}
+		for termID := range c.termIDsForResultLocked(curID) {
+			term := c.egraphTerms[termID]
+			if term == nil {
+				continue
+			}
+			inputProvenance := c.termInputProvenance[termID]
+			for i, provenance := range inputProvenance {
+				if provenance != egraphInputProvenanceKindResult || i >= len(term.inputEqIDs) {
+					continue
+				}
+				dep := c.firstResultForOutputEqClassAnyAtLocked(term.inputEqIDs[i])
+				if dep == nil || dep.id == curID {
+					continue
+				}
+				stack = append(stack, dep.id)
+			}
+		}
 	}
 
 	return closure
@@ -962,8 +1230,6 @@ func (c *cache) GetOrInitCall(
 			hasValue:           true,
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
-			outputDigest:       val.ID().Digest(),
-			outputExtraDigests: val.ID().ExtraDigests(),
 			outputEffectIDs:    val.ID().AllEffectIDs(),
 		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
@@ -1003,7 +1269,13 @@ func (c *cache) GetOrInitCall(
 		return nil, err
 	}
 	if hit {
-		return hitRes, nil
+		loadedHit, loadErr := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
+		if loadErr == nil {
+			return loadedHit, nil
+		}
+		if !errors.Is(loadErr, errPersistedHitNotDecodable) {
+			return nil, loadErr
+		}
 	}
 
 	c.callsMu.Lock()
@@ -1098,16 +1370,30 @@ func (c *cache) wait(
 	}
 
 	atomic.AddInt64(&oc.res.refCount, 1)
+	c.traceRefAcquired(ctx, oc.res, atomic.LoadInt64(&oc.res.refCount))
 	c.egraphMu.Lock()
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
+	var contentDigest call.ExtraDigest
+	for outputEqID := range c.outputEqClassesForResultLocked(oc.res.id) {
+		// NOTE: if multiple content-labeled digests end up in one eq class, we
+		// intentionally tolerate that for now and just use the first one we
+		// encounter.
+		for extra := range c.eqClassExtraDigests[outputEqID] {
+			if extra.Label != call.ExtraDigestLabelContent || extra.Digest == "" {
+				continue
+			}
+			contentDigest = extra
+			break
+		}
+		if contentDigest.Digest != "" {
+			break
+		}
+	}
 	c.egraphMu.Unlock()
 
 	retID := requestID
-	for _, extra := range oc.res.outputExtraDigests {
-		if extra.Digest == "" {
-			continue
-		}
-		retID = retID.With(call.WithExtraDigest(extra))
+	if contentDigest.Digest != "" {
+		retID = retID.With(call.WithExtraDigest(contentDigest))
 	}
 	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
 
@@ -1134,7 +1420,7 @@ func (c *cache) wait(
 	}
 	retObjRes, constructErr := retRes.shared.objType.New(retRes)
 	if constructErr != nil {
-		return nil, fmt.Errorf("reconstruct object result from cache wait: %w", constructErr)
+		return retRes, nil
 	}
 	return retObjRes, nil
 }
@@ -1146,6 +1432,7 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 		resultID         *call.ID
 		resultTermSelf   digest.Digest
 		resultTermInputs []digest.Digest
+		resultTermRefs   []call.StructuralInputRef
 		hasResultTerm    bool
 	)
 
@@ -1169,6 +1456,10 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 			}
 			if obj, ok := oc.val.(AnyObjectResult); ok {
 				oc.res.objType = obj.ObjectType()
+			} else if srv := CurrentDagqlServer(ctx); srv != nil && oc.val.Type() != nil && oc.val.Type().Elem == nil {
+				if objType, ok := srv.ObjectType(oc.val.Type().Name()); ok {
+					oc.res.objType = objType
+				}
 			}
 		}
 	}
@@ -1215,108 +1506,128 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 	if oc.val != nil {
 		resultID = oc.val.ID()
 		if !resWasCacheBacked {
-			oc.res.outputDigest = resultID.Digest()
-			oc.res.outputExtraDigests = resultID.ExtraDigests()
 			oc.res.outputEffectIDs = resultID.AllEffectIDs()
 		}
 	}
 	if resultID != nil && !resWasCacheBacked {
-		selfDigest, inputDigests, deriveErr := resultID.SelfDigestAndInputs()
+		selfDigest, inputRefs, deriveErr := resultID.SelfDigestAndInputRefs()
 		if deriveErr != nil {
 			return fmt.Errorf("derive result term digests: %w", deriveErr)
 		}
+		inputDigests := make([]digest.Digest, 0, len(inputRefs))
+		for _, ref := range inputRefs {
+			dig, err := ref.InputDigest()
+			if err != nil {
+				return fmt.Errorf("derive result term input digest: %w", err)
+			}
+			inputDigests = append(inputDigests, dig)
+		}
 		resultTermSelf = selfDigest
 		resultTermInputs = inputDigests
+		resultTermRefs = inputRefs
 		hasResultTerm = true
 	}
 
-	requestSelf, requestInputs, err := requestIDForIndex.SelfDigestAndInputs()
+	requestSelf, requestInputRefs, err := requestIDForIndex.SelfDigestAndInputRefs()
 	if err != nil {
 		return fmt.Errorf("derive request term digests: %w", err)
 	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return fmt.Errorf("derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
 
 	c.egraphMu.Lock()
-	c.indexWaitResultInEgraphLocked(
+	indexErr := c.indexWaitResultInEgraphLocked(
+		ctx,
 		requestIDForIndex,
+		resultID,
 		requestSelf,
 		requestInputs,
+		requestInputRefs,
 		resultTermSelf,
 		resultTermInputs,
+		resultTermRefs,
 		hasResultTerm,
 		oc.res,
 	)
+	if indexErr != nil {
+		c.egraphMu.Unlock()
+		return indexErr
+	}
 	if oc.isPersistable {
-		c.markResultAsDepOfPersistedLocked(oc.res)
+		c.markResultAsDepOfPersistedLocked(ctx, oc.res)
 	}
 	c.egraphMu.Unlock()
 
-	if err := c.attachAdditionalOutputResults(ctx, oc.res, oc.val); err != nil {
+	if err := c.attachOwnedResults(ctx, oc.res, oc.val); err != nil {
 		return err
+	}
+	if oc.isPersistable {
+		c.egraphMu.Lock()
+		c.markPersistenceDirty()
+		c.egraphMu.Unlock()
+	} else {
+		c.markPersistenceDirty()
 	}
 
 	return nil
 }
 
-func (c *cache) attachAdditionalOutputResults(ctx context.Context, parent *sharedResult, val AnyResult) error {
+func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, val AnyResult) error {
 	if parent == nil || val == nil {
 		return nil
 	}
-
-	withOutputs, ok := UnwrapAs[HasAdditionalOutputResults](val)
+	withOwned, ok := UnwrapAs[HasOwnedResults](val)
 	if !ok {
 		return nil
 	}
-	outputs := withOutputs.AdditionalOutputResults()
-	if len(outputs) == 0 {
+	deps, err := withOwned.AttachOwnedResults(ctx, func(child AnyResult) (AnyResult, error) {
+		return c.attachResult(ctx, child)
+	})
+	if err != nil {
+		return err
+	}
+	if len(deps) == 0 {
 		return nil
 	}
 
-	attachedOutputIDs := make([]sharedResultID, 0, len(outputs))
-	attachedOutputRefs := make([]AnyResult, 0, len(outputs))
-	seen := make(map[sharedResultID]struct{}, len(outputs))
-	seenCallDigests := make(map[string]struct{}, len(outputs))
-	addOutputID := func(outputID sharedResultID) {
-		if outputID == 0 {
+	attachedDepIDs := make([]sharedResultID, 0, len(deps))
+	attachedDepRefs := make([]AnyResult, 0, len(deps))
+	seen := make(map[sharedResultID]struct{}, len(deps))
+	addDepID := func(depID sharedResultID) {
+		if depID == 0 {
 			return
 		}
-		if _, ok := seen[outputID]; ok {
+		if _, ok := seen[depID]; ok {
 			return
 		}
-		seen[outputID] = struct{}{}
-		attachedOutputIDs = append(attachedOutputIDs, outputID)
+		seen[depID] = struct{}{}
+		attachedDepIDs = append(attachedDepIDs, depID)
 	}
 
-	for _, output := range outputs {
-		if output == nil || output.ID() == nil {
+	for _, dep := range deps {
+		if dep == nil || dep.ID() == nil {
 			continue
 		}
-		callDigest := output.ID().Digest().String()
-		if _, ok := seenCallDigests[callDigest]; ok {
-			continue
+		attachedDepRes := dep.cacheSharedResult()
+		if attachedDepRes == nil || attachedDepRes.id == 0 {
+			return fmt.Errorf("attach owned result %q: unexpected detached result", dep.ID().Digest())
 		}
-		seenCallDigests[callDigest] = struct{}{}
-
-		attachedOutput, err := c.GetOrInitCall(ctx, CacheKey{
-			ID: output.ID(),
-		}, ValueFunc(output))
-		if err != nil {
-			return fmt.Errorf("attach additional output result %q: %w", output.ID().Digest(), err)
-		}
-		attachedOutputRes := attachedOutput.cacheSharedResult()
-		if attachedOutputRes == nil || attachedOutputRes.cache != c || attachedOutputRes.id == 0 {
-			return fmt.Errorf("attach additional output result %q: unexpected detached result", output.ID().Digest())
-		}
-
-		attachedOutputRefs = append(attachedOutputRefs, attachedOutput)
-		addOutputID(attachedOutputRes.id)
+		attachedDepRefs = append(attachedDepRefs, dep)
+		addDepID(attachedDepRes.id)
 	}
 
-	if parent.id == 0 || len(attachedOutputIDs) == 0 {
-		for _, output := range attachedOutputRefs {
-			if output == nil {
+	if parent.id == 0 || len(attachedDepIDs) == 0 {
+		for _, dep := range attachedDepRefs {
+			if dep == nil {
 				continue
 			}
-			if err := output.Release(ctx); err != nil {
+			if err := dep.Release(ctx); err != nil {
 				return err
 			}
 		}
@@ -1334,18 +1645,19 @@ func (c *cache) attachAdditionalOutputResults(ctx context.Context, parent *share
 		parentRes.deps = make(map[sharedResultID]struct{})
 	}
 
-	for _, outputID := range attachedOutputIDs {
-		if outputID == parentRes.id {
+	for _, depID := range attachedDepIDs {
+		if depID == parentRes.id {
 			continue
 		}
-		parentRes.deps[outputID] = struct{}{}
+		parentRes.deps[depID] = struct{}{}
+		c.traceExplicitDepAdded(ctx, parentRes.id, depID, "attached_owned_result")
 		if parentRes.depOfPersistedResult {
-			if outputRes := c.resultsByID[outputID]; outputRes != nil {
-				c.markResultAsDepOfPersistedLocked(outputRes)
+			if depRes := c.resultsByID[depID]; depRes != nil {
+				c.markResultAsDepOfPersistedLocked(ctx, depRes)
 			}
 		}
 	}
-	parentRes.heldAdditionalOutputs = append(parentRes.heldAdditionalOutputs, attachedOutputRefs...)
+	parentRes.heldDependencyResults = append(parentRes.heldDependencyResults, attachedDepRefs...)
 
 	return nil
 }

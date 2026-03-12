@@ -6,12 +6,14 @@ import (
 	"maps"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
@@ -306,6 +308,37 @@ func (sr *immutableRef) setBlob(ctx context.Context, desc ocispecs.Descriptor) (
 	}
 
 	if err := sr.finalize(ctx); err != nil {
+		return err
+	}
+	snapshotLeaseID := sr.getSnapshotID()
+	if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+		l.ID = snapshotLeaseID
+		l.Labels = map[string]string{
+			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return err
+	}
+	if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: snapshotLeaseID}, leases.Resource{
+		ID:   snapshotLeaseID,
+		Type: "snapshots/" + sr.cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return err
+	}
+	if _, err := sr.cm.LeaseManager.Create(ctx, func(l *leases.Lease) error {
+		l.ID = sr.ID()
+		l.Labels = map[string]string{
+			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		return nil
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		return err
+	}
+	if err := sr.cm.LeaseManager.AddResource(ctx, leases.Lease{ID: sr.ID()}, leases.Resource{
+		ID:   sr.getSnapshotID(),
+		Type: "snapshots/" + sr.cm.Snapshotter.Name(),
+	}); err != nil && !cerrdefs.IsAlreadyExists(err) {
 		return err
 	}
 

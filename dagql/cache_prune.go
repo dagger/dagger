@@ -72,6 +72,12 @@ func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 					"entryID", entry.ID,
 					"reason", "actively-used")
 				continue
+			case res.depOfPersistedResult:
+				slog.Debug("dagql prune skip candidate",
+					"policyIndex", policyIdx,
+					"entryID", entry.ID,
+					"reason", "persistence-retained")
+				continue
 			case resultInActiveClosure(activeClosure, resultID):
 				slog.Debug("dagql prune skip candidate",
 					"policyIndex", policyIdx,
@@ -133,7 +139,11 @@ func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 				continue
 			}
 
-			onRelease := c.pruneResultLocked(candidate.resultID)
+			onRelease, err := c.pruneResultLocked(ctx, candidate.resultID)
+			if err != nil {
+				c.egraphMu.Unlock()
+				return report, err
+			}
 			if onRelease != nil {
 				onReleases = append(onReleases, onRelease)
 			}
@@ -162,19 +172,29 @@ func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	return report, releaseErr
 }
 
-func (c *cache) pruneResultLocked(resultID sharedResultID) OnReleaseFunc {
+func (c *cache) pruneResultLocked(ctx context.Context, resultID sharedResultID) (OnReleaseFunc, error) {
 	res := c.resultsByID[resultID]
 	if res == nil {
-		return nil
+		return nil, nil
 	}
-	c.removeResultFromEgraphLocked(res)
+	if err := c.removeResultFromEgraphLocked(ctx, res); err != nil {
+		return nil, err
+	}
+	removedDeps := false
 	for _, remaining := range c.resultsByID {
 		if remaining == nil || len(remaining.deps) == 0 {
 			continue
 		}
+		if _, ok := remaining.deps[resultID]; ok {
+			c.traceExplicitDepRemoved(ctx, remaining.id, resultID, "prune")
+			removedDeps = true
+		}
 		delete(remaining.deps, resultID)
 	}
-	return res.onRelease
+	if removedDeps {
+		c.markPersistenceDirty()
+	}
+	return res.onRelease, nil
 }
 
 func resultInActiveClosure(activeClosure map[sharedResultID]struct{}, resultID sharedResultID) bool {

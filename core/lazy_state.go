@@ -17,6 +17,10 @@ type LazyInitFunc func(context.Context) error
 type LazyState struct {
 	LazyMu   *sync.Mutex
 	LazyInit LazyInitFunc
+	// AfterEvaluate runs exactly once after the lazy init completes
+	// successfully. It is intended for observers that need to react to natural
+	// realization, not to trigger realization themselves.
+	AfterEvaluate []func(context.Context)
 	// LazyInitComplete tracks whether this object's lazy init callback has
 	// already been executed.
 	LazyInitComplete bool
@@ -43,21 +47,57 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string) error {
 	}
 
 	lazy.LazyMu.Lock()
-	defer lazy.LazyMu.Unlock()
 
 	// Single-flight: once locked, re-check completion and init callback.
 	if lazy.LazyInitComplete {
+		lazy.LazyMu.Unlock()
 		return nil
 	}
 	if lazy.LazyInit == nil {
 		lazy.LazyInitComplete = true
+		callbacks := lazy.AfterEvaluate
+		lazy.AfterEvaluate = nil
+		lazy.LazyMu.Unlock()
+		for _, callback := range callbacks {
+			if callback != nil {
+				callback(ctx)
+			}
+		}
 		return nil
 	}
 
 	if err := lazy.LazyInit(ctx); err != nil {
+		lazy.LazyMu.Unlock()
 		return err
 	}
 
 	lazy.LazyInitComplete = true
+	callbacks := lazy.AfterEvaluate
+	lazy.AfterEvaluate = nil
+	lazy.LazyMu.Unlock()
+	for _, callback := range callbacks {
+		if callback != nil {
+			callback(ctx)
+		}
+	}
 	return nil
+}
+
+// OnEvaluateComplete registers a one-shot callback to run after natural lazy
+// evaluation succeeds. It returns true if the value had already completed
+// evaluation at registration time.
+func (lazy *LazyState) OnEvaluateComplete(fn func(context.Context)) bool {
+	if lazy == nil {
+		return true
+	}
+	if lazy.LazyMu == nil {
+		lazy.LazyMu = new(sync.Mutex)
+	}
+	lazy.LazyMu.Lock()
+	defer lazy.LazyMu.Unlock()
+	if lazy.LazyInitComplete {
+		return true
+	}
+	lazy.AfterEvaluate = append(lazy.AfterEvaluate, fn)
+	return false
 }

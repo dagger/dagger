@@ -48,7 +48,8 @@ type Directory struct {
 	Parent dagql.ObjectResult[*Directory]
 	LazyState
 	// Below is lazily initialized and shoud not be accessed directly
-	Snapshot bkcache.ImmutableRef
+	Snapshot          bkcache.ImmutableRef
+	persistedResultID uint64
 }
 
 func (*Directory) Type() *ast.Type {
@@ -60,6 +61,19 @@ func (*Directory) Type() *ast.Type {
 
 func (*Directory) TypeDescription() string {
 	return "A directory."
+}
+
+func (dir *Directory) PersistedResultID() uint64 {
+	if dir == nil {
+		return 0
+	}
+	return dir.persistedResultID
+}
+
+func (dir *Directory) SetPersistedResultID(resultID uint64) {
+	if dir != nil {
+		dir.persistedResultID = resultID
+	}
 }
 
 func (dir *Directory) IsRootDir() bool {
@@ -84,6 +98,7 @@ func NewDirectoryChild(parent dagql.ObjectResult[*Directory]) *Directory {
 }
 
 var _ dagql.OnReleaser = (*Directory)(nil)
+var _ dagql.HasOwnedResults = (*Directory)(nil)
 
 func (dir *Directory) OnRelease(ctx context.Context) error {
 	if dir.Snapshot != nil {
@@ -98,6 +113,35 @@ func (dir *Directory) Evaluate(ctx context.Context) error {
 
 func (dir *Directory) Sync(ctx context.Context) error {
 	return dir.Evaluate(ctx)
+}
+
+func (dir *Directory) PreparePersistedObject(ctx context.Context) error {
+	if dir == nil {
+		return nil
+	}
+	if dir.Snapshot != nil {
+		return retainImmutableRefChain(ctx, dir.Snapshot)
+	}
+	return nil
+}
+
+func (dir *Directory) AttachOwnedResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if dir == nil || dir.Parent.ID() == nil {
+		return nil, nil
+	}
+	attached, err := attach(dir.Parent)
+	if err != nil {
+		return nil, fmt.Errorf("attach directory parent: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return nil, fmt.Errorf("attach directory parent: unexpected result %T", attached)
+	}
+	dir.Parent = typed
+	return []dagql.AnyResult{typed}, nil
 }
 
 func (dir *Directory) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
@@ -133,6 +177,92 @@ func (dir *Directory) CacheUsageIdentity() (string, bool) {
 		return "", false
 	}
 	return dir.Snapshot.ID(), true
+}
+
+func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if dir == nil || dir.Snapshot == nil {
+		return nil
+	}
+	return []dagql.PersistedSnapshotRefLink{
+		{
+			RefKey: dir.Snapshot.SnapshotID(),
+			Role:   "snapshot",
+		},
+	}
+}
+
+const (
+	persistedDirectoryFormSnapshot   = "snapshot"
+	persistedDirectoryFormParentLazy = "parent_lazy"
+)
+
+type persistedDirectoryPayload struct {
+	Form           string   `json:"form"`
+	Dir            string   `json:"dir,omitempty"`
+	Platform       Platform `json:"platform"`
+	ParentResultID uint64   `json:"parentResultID,omitempty"`
+}
+
+func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if dir == nil {
+		return nil, fmt.Errorf("encode persisted directory: nil directory")
+	}
+	payload := persistedDirectoryPayload{
+		Dir:      dir.Dir,
+		Platform: dir.Platform,
+	}
+	switch {
+	case dir.Snapshot != nil:
+		payload.Form = persistedDirectoryFormSnapshot
+	case dir.Parent.ID() != nil:
+		parentID, err := encodePersistedObjectRef(cache, dir.Parent, "directory parent")
+		if err != nil {
+			return nil, err
+		}
+		payload.Form = persistedDirectoryFormParentLazy
+		payload.ParentResultID = parentID
+	default:
+		return nil, fmt.Errorf("%w: encode persisted directory: unsupported lazy directory state", dagql.ErrPersistStateNotReady)
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted directory payload: %w", err)
+	}
+	return payloadJSON, nil
+}
+
+func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedDirectoryPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted directory payload: %w", err)
+	}
+
+	dir := &Directory{
+		Dir:       persisted.Dir,
+		Platform:  persisted.Platform,
+		LazyState: NewLazyState(),
+	}
+	switch persisted.Form {
+	case persistedDirectoryFormSnapshot:
+		snapshot, _, err := loadPersistedImmutableSnapshot(ctx, dag, id, "snapshot")
+		if err != nil {
+			return nil, err
+		}
+		dir.setSnapshot(snapshot)
+		return dir, nil
+	case persistedDirectoryFormParentLazy:
+		parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ParentResultID, "directory parent")
+		if err != nil {
+			return nil, err
+		}
+		dir.Parent = parent
+		if parent.Self() != nil {
+			dir.Services = slices.Clone(parent.Self().Services)
+		}
+		return dir, nil
+	default:
+		return nil, fmt.Errorf("decode persisted directory payload: unsupported form %q", persisted.Form)
+	}
 }
 
 func (dir *Directory) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {

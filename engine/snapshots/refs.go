@@ -48,6 +48,7 @@ var additionalAnnotations = append(compression.EStargzAnnotations, labels.LabelU
 type Ref interface {
 	Mountable
 	RefMetadata
+	SnapshotID() string
 	Release(context.Context) error
 	Size(context.Context) (int64, error)
 	IdentityMapping() *idtools.IdentityMapping
@@ -625,6 +626,14 @@ type mutableRef struct {
 	*cacheRecord
 	triggerLastUsed bool
 	descHandlers    DescHandlers
+}
+
+func (sr *immutableRef) SnapshotID() string {
+	return sr.getSnapshotID()
+}
+
+func (sr *mutableRef) SnapshotID() string {
+	return sr.getSnapshotID()
 }
 
 // hold ref lock before calling

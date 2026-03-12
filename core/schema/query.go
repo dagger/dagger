@@ -152,8 +152,8 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	dirInst, err := (&directorySchema{}).directory(ctx, parent, struct{}{})
-	if err != nil {
+	var dirInst dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &dirInst, dagql.Selector{Field: "directory"}); err != nil {
 		return inst, err
 	}
 

@@ -5,12 +5,12 @@ import (
 	"strconv"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkexecutor "github.com/dagger/dagger/internal/buildkit/executor"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
 )
 

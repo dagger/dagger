@@ -682,15 +682,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	var resourceIDs []*resource.ID
 	if sshAuthSock.Self() != nil {
 		dgstInputs = append(dgstInputs, "sshAuthSock", sshAuthSock.Self().IDDigest.String())
-		resourceIDs = append(resourceIDs, &resource.ID{ID: *sshAuthSock.ID()})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: sshAuthSock.ID()})
 	}
 	if httpAuthToken.Self() != nil {
 		dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(httpAuthToken.Self() != nil))
-		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthToken.ID()})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: httpAuthToken.ID()})
 	}
 	if httpAuthHeader.Self() != nil {
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
-		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: httpAuthHeader.ID()})
 	}
 	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {

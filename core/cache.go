@@ -28,6 +28,8 @@ type CacheVolume struct {
 	mu       sync.Mutex
 	snapshot bkcache.MutableRef
 	selector string
+
+	persistedResultID uint64
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -106,6 +108,98 @@ func (cache *CacheVolume) CacheUsageIdentity() (string, bool) {
 	return snapshot.ID(), true
 }
 
+func (cache *CacheVolume) PersistedResultID() uint64 {
+	if cache == nil {
+		return 0
+	}
+	return cache.persistedResultID
+}
+
+func (cache *CacheVolume) SetPersistedResultID(resultID uint64) {
+	if cache != nil {
+		cache.persistedResultID = resultID
+	}
+}
+
+func (cache *CacheVolume) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	snapshot := cache.getSnapshot()
+	if snapshot == nil {
+		return nil
+	}
+	return []dagql.PersistedSnapshotRefLink{
+		{
+			RefKey: snapshot.SnapshotID(),
+			Role:   "snapshot",
+			Slot:   cache.getSnapshotSelector(),
+		},
+	}
+}
+
+type persistedCacheVolumePayload struct {
+	Key       string           `json:"key"`
+	Namespace string           `json:"namespace,omitempty"`
+	Sharing   CacheSharingMode `json:"sharing,omitempty"`
+	Owner     string           `json:"owner,omitempty"`
+}
+
+func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	_ = persistedCache
+	if cache == nil {
+		return nil, fmt.Errorf("encode persisted cache volume: nil cache volume")
+	}
+	payload, err := json.Marshal(persistedCacheVolumePayload{
+		Key:       cache.Key,
+		Namespace: cache.Namespace,
+		Sharing:   cache.Sharing,
+		Owner:     cache.Owner,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted cache volume payload: %w", err)
+	}
+	return payload, nil
+}
+
+func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedCacheVolumePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted cache volume payload: %w", err)
+	}
+
+	cache := NewCache(
+		persisted.Key,
+		persisted.Namespace,
+		dagql.Optional[DirectoryID]{},
+		persisted.Sharing,
+		persisted.Owner,
+	)
+	if id != nil {
+		links, err := loadPersistedSnapshotLinksForID(ctx, dag, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, link := range links {
+			if link.Role != "snapshot" {
+				continue
+			}
+			snapshot, link, err := loadPersistedMutableSnapshot(ctx, dag, id, "snapshot")
+			if err != nil {
+				return nil, err
+			}
+			selector := link.Slot
+			if selector == "" {
+				selector = "/"
+			}
+			cache.mu.Lock()
+			cache.snapshot = snapshot
+			cache.selector = selector
+			cache.mu.Unlock()
+			break
+		}
+	}
+	return cache, nil
+}
+
 func (cache *CacheVolume) CacheUsageMayChange() bool {
 	return true
 }
@@ -116,6 +210,21 @@ func (cache *CacheVolume) invalidateSnapshotSize(ctx context.Context) error {
 		return nil
 	}
 	return snapshot.InvalidateSize(ctx)
+}
+
+func (cache *CacheVolume) Sync(ctx context.Context) error {
+	return cache.InitializeSnapshot(ctx)
+}
+
+func (cache *CacheVolume) PreparePersistedObject(ctx context.Context) error {
+	if cache == nil {
+		return nil
+	}
+	snapshot := cache.getSnapshot()
+	if snapshot != nil {
+		return snapshot.SetCachePolicyRetain()
+	}
+	return nil
 }
 
 func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {

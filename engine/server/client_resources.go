@@ -21,7 +21,7 @@ func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID
 }
 
 func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
-	walked, err := dagql.WalkID(&id.ID, skipTopLevel)
+	walked, err := dagql.WalkID(id.ID, skipTopLevel)
 	if err != nil {
 		return fmt.Errorf("failed to walk ID: %w", err)
 	}

@@ -8,6 +8,8 @@ with all persistent caching going through purely dagql and NOT buildkit.
 3. We are EMPIRICAL. When we have theories, we write+run tests to verify them, including with lots of extra debugging logs, metrics and other data when needed. It's easy to remove debugging helpers later, so we're not afraid of using them.
 4. Don't take any of my ideas+suggestions as gospel. Consider them, do they make sense? Is there something I'm missing? Is there a better way? I'm right a lot, but far from always! And the same is true of you. We're a team and together greater than the sum of our parts.
 5. We are working on a LARGE project with lots of moving parts that can't always move all at once. There are times where existing comments and unit tests are OUT OF DATE and can thus be SELECTIVELY disregarded. Unit tests and comments are NOTgospel. Known updated ones are a useful tool for understanding, but must be followed with caution.
+6. When you encounter anything not explicitly covered by our design — an ambiguity, an undocumented assumption, a deviation from what we discussed — treat it as a blocker and escalate. Do NOT make unilateral implementation decisions. Do NOT introduce ad hoc solutions. SURFACE the issue. We already did the design work. During implementation, any ambiguity, surprise, or hidden dependency is a blocker. Ambiguity is a tripwire: stop and escalate. NO silent assumptions. NO ad hoc workarounds. Treat local fixes to non-local problems as spec violations.
+
 
 Also, if I refer to a WHITEBOARD.md file where we collaborate on notes, TODOs, task progress, etc. you can find it in ./scratch/WHITEBOARD.md
 

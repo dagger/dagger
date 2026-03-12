@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/containersource"
 	"github.com/dagger/dagger/engine/buildkit/exporter/containerimage/exptypes"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -75,11 +76,10 @@ type Container struct {
 	// Mount points configured for the container.
 	Mounts ContainerMounts
 
-	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *Directory
-	// MetaResult is the object result handle for Meta when available. This is
-	// used to expose meta as an attached output of operations like withExec.
-	MetaResult *dagql.ObjectResult[*Directory]
+	// MetaSnapshot is the internal exec metadata snapshot containing stdout,
+	// stderr, combined output, and exit code files. It will be nil if nothing
+	// has run yet.
+	MetaSnapshot bkcache.ImmutableRef
 
 	// The platform of the container's rootfs.
 	Platform Platform
@@ -119,6 +119,8 @@ type Container struct {
 	// synthesizing updated container child selection IDs (e.g. rootfs, file,
 	// directory) after operations like exec/import.
 	OpID *call.ID
+
+	persistedResultID uint64
 }
 
 func (*Container) Type() *ast.Type {
@@ -130,6 +132,19 @@ func (*Container) Type() *ast.Type {
 
 func (*Container) TypeDescription() string {
 	return "An OCI-compatible container, also known as a Docker container."
+}
+
+func (container *Container) PersistedResultID() uint64 {
+	if container == nil {
+		return 0
+	}
+	return container.persistedResultID
+}
+
+func (container *Container) SetPersistedResultID(resultID uint64) {
+	if container != nil {
+		container.persistedResultID = resultID
+	}
 }
 
 func NewContainer(platform Platform) *Container {
@@ -162,12 +177,15 @@ func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	cp.Parent = parent
 	cp.LazyState = NewLazyState()
+	if cp.MetaSnapshot != nil {
+		cp.MetaSnapshot = cp.MetaSnapshot.Clone()
+	}
 	cp.OpID = nil
 	return &cp
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
-var _ dagql.HasAdditionalOutputResults = (*Container)(nil)
+var _ dagql.HasOwnedResults = (*Container)(nil)
 
 func (container *Container) Evaluate(ctx context.Context) error {
 	if container == nil {
@@ -188,40 +206,271 @@ func (container *Container) Sync(ctx context.Context) error {
 			return err
 		}
 	}
-	if container.Meta != nil {
-		if err := container.Meta.Evaluate(ctx); err != nil {
+	return nil
+}
+
+func (container *Container) PreparePersistedObject(ctx context.Context) error {
+	if container == nil {
+		return nil
+	}
+	if container.MetaSnapshot != nil {
+		if err := retainImmutableRefChain(ctx, container.MetaSnapshot); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (container *Container) AdditionalOutputResults() []dagql.AnyResult {
+func (container *Container) AttachOwnedResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
 	if container == nil {
-		return nil
+		return nil, nil
 	}
 
-	outputs := make([]dagql.AnyResult, 0, 2+len(container.Mounts))
-	if container.FS != nil {
-		outputs = append(outputs, *container.FS)
+	owned := make([]dagql.AnyResult, 0, 1+len(container.Mounts))
+	if container.FS != nil && container.FS.ID() != nil {
+		attached, err := attach(*container.FS)
+		if err != nil {
+			return nil, fmt.Errorf("attach container rootfs: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach container rootfs: unexpected result %T", attached)
+		}
+		container.FS = &typed
+		owned = append(owned, typed)
 	}
-	if container.MetaResult != nil {
-		outputs = append(outputs, *container.MetaResult)
+
+	for i := range container.Mounts {
+		mnt := &container.Mounts[i]
+		switch {
+		case mnt.DirectorySource != nil && mnt.DirectorySource.ID() != nil:
+			attached, err := attach(*mnt.DirectorySource)
+			if err != nil {
+				return nil, fmt.Errorf("attach container directory mount %q: %w", mnt.Target, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach container directory mount %q: unexpected result %T", mnt.Target, attached)
+			}
+			mnt.DirectorySource = &typed
+			owned = append(owned, typed)
+		case mnt.FileSource != nil && mnt.FileSource.ID() != nil:
+			attached, err := attach(*mnt.FileSource)
+			if err != nil {
+				return nil, fmt.Errorf("attach container file mount %q: %w", mnt.Target, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*File])
+			if !ok {
+				return nil, fmt.Errorf("attach container file mount %q: unexpected result %T", mnt.Target, attached)
+			}
+			mnt.FileSource = &typed
+			owned = append(owned, typed)
+		case mnt.CacheSource != nil && mnt.CacheSource.Volume.ID() != nil:
+			attached, err := attach(mnt.CacheSource.Volume)
+			if err != nil {
+				return nil, fmt.Errorf("attach container cache mount %q: %w", mnt.Target, err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*CacheVolume])
+			if !ok {
+				return nil, fmt.Errorf("attach container cache mount %q: unexpected result %T", mnt.Target, attached)
+			}
+			mnt.CacheSource.Volume = typed
+			owned = append(owned, typed)
+		}
+	}
+
+	return owned, nil
+}
+
+func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if container == nil {
+		return nil, fmt.Errorf("encode persisted container: nil container")
+	}
+	if len(container.Services) > 0 {
+		return nil, fmt.Errorf("encode persisted container: services are not yet supported")
+	}
+	if len(container.Secrets) > 0 {
+		return nil, fmt.Errorf("encode persisted container: secrets are not yet supported")
+	}
+
+	payload := persistedContainerPayload{
+		Config:             container.Config,
+		EnabledGPUs:        slices.Clone(container.EnabledGPUs),
+		Mounts:             make([]persistedContainerMountPayload, 0, len(container.Mounts)),
+		Platform:           container.Platform,
+		Annotations:        slices.Clone(container.Annotations),
+		ImageRef:           container.ImageRef,
+		Ports:              slices.Clone(container.Ports),
+		DefaultTerminalCmd: container.DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
+		DefaultArgs:        container.DefaultArgs,
+	}
+	if container.FS != nil && container.FS.ID() != nil {
+		encoded, err := encodePersistedObjectRef(cache, container.FS, "container rootfs")
+		if err != nil {
+			return nil, err
+		}
+		payload.FSResultID = encoded
+	}
+	if container.OpID != nil {
+		encoded, err := encodePersistedCallID(container.OpID)
+		if err != nil {
+			return nil, fmt.Errorf("encode persisted container op ID: %w", err)
+		}
+		payload.OpID = encoded
 	}
 
 	for _, mnt := range container.Mounts {
-		if mnt.Readonly {
-			continue
+		encoded := persistedContainerMountPayload{
+			Target:   mnt.Target,
+			Readonly: mnt.Readonly,
 		}
 		switch {
-		case mnt.DirectorySource != nil:
-			outputs = append(outputs, *mnt.DirectorySource)
-		case mnt.FileSource != nil:
-			outputs = append(outputs, *mnt.FileSource)
+		case mnt.DirectorySource != nil && mnt.DirectorySource.ID() != nil:
+			id, err := encodePersistedObjectRef(cache, mnt.DirectorySource, fmt.Sprintf("directory mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.DirectorySourceResultID = id
+		case mnt.FileSource != nil && mnt.FileSource.ID() != nil:
+			id, err := encodePersistedObjectRef(cache, mnt.FileSource, fmt.Sprintf("file mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.FileSourceResultID = id
+		case mnt.CacheSource != nil:
+			id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
+			if err != nil {
+				return nil, err
+			}
+			encoded.CacheSourceResultID = id
+		case mnt.TmpfsSource != nil:
+			encoded.TmpfsSize = mnt.TmpfsSource.Size
+		default:
+			return nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
+		payload.Mounts = append(payload.Mounts, encoded)
 	}
 
-	return outputs
+	if container.FS != nil && container.FS.ID() != nil {
+		slog.Info(
+			"cache-debug container persist encode",
+			"op_id", container.OpID,
+			"rootfs_id_digest", container.FS.ID().Digest(),
+			"rootfs_content_digest", container.FS.ID().ContentDigest(),
+			"mounts", len(container.Mounts),
+		)
+	}
+
+	enc, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted container payload: %w", err)
+	}
+	return enc, nil
+}
+
+func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedContainerPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted container payload: %w", err)
+	}
+
+	var rootfs *dagql.ObjectResult[*Directory]
+	if persisted.FSResultID != 0 {
+		rootfsRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.FSResultID, "container rootfs")
+		if err != nil {
+			return nil, err
+		}
+		rootfs = &rootfsRes
+	}
+
+	mounts := make(ContainerMounts, 0, len(persisted.Mounts))
+	for _, persistedMount := range persisted.Mounts {
+		mnt := ContainerMount{
+			Target:   persistedMount.Target,
+			Readonly: persistedMount.Readonly,
+		}
+		switch {
+		case persistedMount.DirectorySourceResultID != 0:
+			dirRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persistedMount.DirectorySourceResultID, "container mount directory")
+			if err != nil {
+				return nil, err
+			}
+			mnt.DirectorySource = &dirRes
+		case persistedMount.FileSourceResultID != 0:
+			fileRes, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persistedMount.FileSourceResultID, "container mount file")
+			if err != nil {
+				return nil, err
+			}
+			mnt.FileSource = &fileRes
+		case persistedMount.CacheSourceResultID != 0:
+			cacheRes, err := loadPersistedObjectResultByResultID[*CacheVolume](ctx, dag, persistedMount.CacheSourceResultID, "container mount cache")
+			if err != nil {
+				return nil, err
+			}
+			mnt.CacheSource = &CacheMountSource{Volume: cacheRes}
+		case persistedMount.TmpfsSize != 0:
+			mnt.TmpfsSource = &TmpfsMountSource{Size: persistedMount.TmpfsSize}
+		}
+		mounts = append(mounts, mnt)
+	}
+
+	var opID *call.ID
+	if persisted.OpID != "" {
+		decodedOpID, err := decodePersistedCallID(persisted.OpID)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted container op ID: %w", err)
+		}
+		opID = decodedOpID
+	} else {
+		opID = id
+	}
+
+	var metaSnapshot bkcache.ImmutableRef
+	links, err := loadPersistedSnapshotLinksForID(ctx, dag, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range links {
+		if link.Role != "meta" {
+			continue
+		}
+		metaSnapshot, _, err = loadPersistedImmutableSnapshot(ctx, dag, id, "meta")
+		if err != nil {
+			return nil, err
+		}
+		break
+	}
+
+	if rootfs != nil && rootfs.ID() != nil {
+		slog.Info(
+			"cache-debug container persist decode",
+			"op_id", opID,
+			"rootfs_id_digest", rootfs.ID().Digest(),
+			"rootfs_content_digest", rootfs.ID().ContentDigest(),
+			"mounts", len(mounts),
+		)
+	}
+
+	return &Container{
+		FS:                 rootfs,
+		Config:             persisted.Config,
+		EnabledGPUs:        slices.Clone(persisted.EnabledGPUs),
+		Mounts:             mounts,
+		MetaSnapshot:       metaSnapshot,
+		Platform:           persisted.Platform,
+		Annotations:        slices.Clone(persisted.Annotations),
+		ImageRef:           persisted.ImageRef,
+		Ports:              slices.Clone(persisted.Ports),
+		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
+		DefaultArgs:        persisted.DefaultArgs,
+		LazyState:          NewLazyState(),
+		OpID:               opID,
+	}, nil
 }
 
 func (container *Container) OnRelease(ctx context.Context) error {
@@ -336,6 +585,42 @@ type TmpfsMountSource struct {
 }
 
 type ContainerMounts []ContainerMount
+
+type persistedContainerMountPayload struct {
+	Target                  string `json:"target"`
+	Readonly                bool   `json:"readonly,omitempty"`
+	DirectorySourceResultID uint64 `json:"directorySourceResultID,omitempty"`
+	FileSourceResultID      uint64 `json:"fileSourceResultID,omitempty"`
+	CacheSourceResultID     uint64 `json:"cacheSourceResultID,omitempty"`
+	TmpfsSize               int    `json:"tmpfsSize,omitempty"`
+}
+
+type persistedContainerPayload struct {
+	FSResultID         uint64                              `json:"fsResultID,omitempty"`
+	Config             dockerspec.DockerOCIImageConfig     `json:"config"`
+	EnabledGPUs        []string                            `json:"enabledGPUs,omitempty"`
+	Mounts             []persistedContainerMountPayload    `json:"mounts,omitempty"`
+	Platform           Platform                            `json:"platform"`
+	Annotations        []containerutil.ContainerAnnotation `json:"annotations,omitempty"`
+	ImageRef           string                              `json:"imageRef,omitempty"`
+	Ports              []Port                              `json:"ports,omitempty"`
+	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
+	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
+	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
+	OpID               string                              `json:"opID,omitempty"`
+}
+
+func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if container == nil || container.MetaSnapshot == nil {
+		return nil
+	}
+	return []dagql.PersistedSnapshotRefLink{
+		{
+			RefKey: container.MetaSnapshot.SnapshotID(),
+			Role:   "meta",
+		},
+	}
+}
 
 func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	mntsCp := make(ContainerMounts, 0, len(mnts))
@@ -1160,7 +1445,9 @@ func (container *Container) WithMountedCache(
 		return nil, errors.New("cache volume is nil")
 	}
 	if cacheSelf.getSnapshot() == nil {
-		return nil, errors.New("cache volume snapshot is nil")
+		if err := cacheSelf.InitializeSnapshot(ctx); err != nil {
+			return nil, fmt.Errorf("initialize cache volume snapshot: %w", err)
+		}
 	}
 
 	mount := ContainerMount{

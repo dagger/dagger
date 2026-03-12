@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
-	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
@@ -873,7 +872,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			// objects (e.g. container state), persisting can incorrectly reuse
 			// secret-dependent results across sessions.
 			for _, id := range returnedIDsList {
-				typ := id.Type()
+				var typ *call.Type
+				if id.ID != nil {
+					typ = id.ID.Type()
+				}
 				if typ == nil {
 					safeToPersistCache = false
 					break
