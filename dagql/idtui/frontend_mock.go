@@ -61,6 +61,9 @@ var _ Frontend = &FrontendMock{}
 //			SetSidebarContentFunc: func(sidebarSection SidebarSection)  {
 //				panic("mock out the SetSidebarContent method")
 //			},
+//			SetTelemetryErrorFunc: func(err error)  {
+//				panic("mock out the SetTelemetryError method")
+//			},
 //			SetVerbosityFunc: func(n int)  {
 //				panic("mock out the SetVerbosity method")
 //			},
@@ -112,6 +115,9 @@ type FrontendMock struct {
 
 	// SetSidebarContentFunc mocks the SetSidebarContent method.
 	SetSidebarContentFunc func(sidebarSection SidebarSection)
+
+	// SetTelemetryErrorFunc mocks the SetTelemetryError method.
+	SetTelemetryErrorFunc func(err error)
 
 	// SetVerbosityFunc mocks the SetVerbosity method.
 	SetVerbosityFunc func(n int)
@@ -196,6 +202,11 @@ type FrontendMock struct {
 			// SidebarSection is the sidebarSection argument value.
 			SidebarSection SidebarSection
 		}
+		// SetTelemetryError holds details about calls to the SetTelemetryError method.
+		SetTelemetryError []struct {
+			// Err is the err argument value.
+			Err error
+		}
 		// SetVerbosity holds details about calls to the SetVerbosity method.
 		SetVerbosity []struct {
 			// N is the n argument value.
@@ -224,6 +235,7 @@ type FrontendMock struct {
 	lockSetCloudURL       sync.RWMutex
 	lockSetPrimary        sync.RWMutex
 	lockSetSidebarContent sync.RWMutex
+	lockSetTelemetryError sync.RWMutex
 	lockSetVerbosity      sync.RWMutex
 	lockShell             sync.RWMutex
 	lockSpanExporter      sync.RWMutex
@@ -630,6 +642,38 @@ func (mock *FrontendMock) SetSidebarContentCalls() []struct {
 	mock.lockSetSidebarContent.RLock()
 	calls = mock.calls.SetSidebarContent
 	mock.lockSetSidebarContent.RUnlock()
+	return calls
+}
+
+// SetTelemetryError calls SetTelemetryErrorFunc.
+func (mock *FrontendMock) SetTelemetryError(err error) {
+	if mock.SetTelemetryErrorFunc == nil {
+		panic("FrontendMock.SetTelemetryErrorFunc: method is nil but Frontend.SetTelemetryError was just called")
+	}
+	callInfo := struct {
+		Err error
+	}{
+		Err: err,
+	}
+	mock.lockSetTelemetryError.Lock()
+	mock.calls.SetTelemetryError = append(mock.calls.SetTelemetryError, callInfo)
+	mock.lockSetTelemetryError.Unlock()
+	mock.SetTelemetryErrorFunc(err)
+}
+
+// SetTelemetryErrorCalls gets all the calls that were made to SetTelemetryError.
+// Check the length with:
+//
+//	len(mockedFrontend.SetTelemetryErrorCalls())
+func (mock *FrontendMock) SetTelemetryErrorCalls() []struct {
+	Err error
+} {
+	var calls []struct {
+		Err error
+	}
+	mock.lockSetTelemetryError.RLock()
+	calls = mock.calls.SetTelemetryError
+	mock.lockSetTelemetryError.RUnlock()
 	return calls
 }
 

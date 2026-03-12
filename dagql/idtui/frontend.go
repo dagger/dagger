@@ -82,6 +82,8 @@ type Frontend interface {
 	// Opts returns the opts of the currently running frontend.
 	Opts() *dagui.FrontendOpts
 	SetVerbosity(n int)
+	// SetTelemetryError records an error from the OTel telemetry pipeline.
+	SetTelemetryError(error)
 
 	// SetPrimary tells the frontend which span should be treated like the focal
 	// point of the command. Its output will be displayed at the end, and its

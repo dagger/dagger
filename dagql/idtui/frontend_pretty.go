@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/adrg/xdg"
@@ -66,6 +67,9 @@ type frontendPretty struct {
 	tuist.Compo
 
 	dagui.FrontendOpts
+
+	// telemetryError records errors from the OTel telemetry pipeline.
+	telemetryError atomic.Pointer[error]
 
 	dag *dagger.Client
 
@@ -749,6 +753,10 @@ func (fe *frontendPretty) SetVerbosity(n int) {
 	})
 }
 
+func (fe *frontendPretty) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
+}
+
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	fe.dispatch(func() {
 		fe.db.SetPrimarySpan(spanID)
@@ -976,7 +984,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			defer func() {
 				fmt.Fprintln(w)
 				var telemetryErr error
-				if p := fe.TelemetryError.Load(); p != nil {
+				if p := fe.telemetryError.Load(); p != nil {
 					telemetryErr = *p
 				}
 				handleTelemetryErrorOutput(w, out, telemetryErr)
