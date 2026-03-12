@@ -730,7 +730,10 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	if err != nil {
 		return inst, err
 	}
-	if args.Commit != "" && args.Commit != ref.SHA && gitutil.IsCommitSHA(args.Commit) {
+	if args.Commit != "" && !gitutil.IsCommitSHA(args.Commit) {
+		return inst, fmt.Errorf("invalid commit SHA: %q", args.Commit)
+	}
+	if args.Commit != "" && args.Commit != ref.SHA {
 		ref.SHA = args.Commit
 	}
 
