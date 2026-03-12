@@ -422,7 +422,11 @@ func (fe *frontendPlain) finalRender() {
 		fmt.Fprintln(stderr)
 	}
 
-	handleTelemetryErrorOutput(stderr, fe.output, fe.TelemetryError)
+	var telemetryErr error
+	if p := fe.TelemetryError.Load(); p != nil {
+		telemetryErr = *p
+	}
+	handleTelemetryErrorOutput(stderr, fe.output, telemetryErr)
 
 	if fe.msgPreFinalRender.Len() > 0 {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")

@@ -975,7 +975,11 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
 				fmt.Fprintln(w)
-				handleTelemetryErrorOutput(w, out, fe.TelemetryError)
+				var telemetryErr error
+				if p := fe.TelemetryError.Load(); p != nil {
+					telemetryErr = *p
+				}
+				handleTelemetryErrorOutput(w, out, telemetryErr)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
