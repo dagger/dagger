@@ -987,6 +987,25 @@ Current transplant stance:
   end-to-end coverage for that retained CLI behavior
 - keep the nested-precedence case deferred unless the branch scope is widened
 
+### 2026-03-12: Plumbing Test Harness Build Fix
+
+While rerunning the retained plumbing unit tests, `./core` was blocked by a
+stale test mock rather than a runtime compat failure.
+
+Concrete fix in this pass:
+
+- updated `core/telemetry_test.go` so its `mockServer` matches the current
+  `core.Server` interface after `CurrentServedDeps` switched from `*ModDeps`
+  to `*ServedMods`
+- added the no-op `CurrentWorkspace` stub required by the newer interface
+
+Verification after this pass:
+
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core`
+  passes again
+- the original `./core` plumbing test target can now proceed past package
+  build instead of failing in `core/telemetry_test.go`
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
