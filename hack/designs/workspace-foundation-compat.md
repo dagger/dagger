@@ -1254,6 +1254,80 @@ Review checkpoint:
 - after the engine and CLI batches, re-check `git diff origin/main --` on the
   touched files and confirm the delta shrank rather than grew
 
+### 2026-03-12: Category 1 Execution Result
+
+Category 1 is now implemented without changing the runtime design.
+
+What changed:
+
+- restored engine-backed blueprint/toolchain authoring in
+  `core/schema/modulesource.go`
+  - re-added `withBlueprint`, `withUpdateBlueprint`, `withoutBlueprint`
+  - re-added `withToolchains`, `withUpdateToolchains`,
+    `withoutToolchains`
+  - restored blueprint/toolchain config round-trip through
+    `loadModuleSourceConfig(...)`
+  - restored blueprint/toolchain loading for local and git module sources
+- restored the corresponding `ModuleSource` data model fields and digest inputs
+  in `core/modulesource.go`
+- restored the corresponding generated Go client methods in `sdk/go`
+- restored the CLI surface in `cmd/dagger` only as thin wrappers over those
+  engine operations
+  - `dagger init --blueprint`
+  - `dagger toolchain install|update|uninstall|list`
+
+Guardrails honored in this batch:
+
+- no direct `dagger.json` edits in the CLI
+- no second compat path under `ModuleSource.asModule()`
+- no rollback of `check` / `generate` away from workspace traversal
+- no new runtime-only legacy shim to satisfy authoring tests
+
+Targeted verification after the restore:
+
+- compile checks:
+  - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./cmd/dagger`
+  - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core/schema`
+- targeted integration reruns:
+  - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestChecks/TestChecksAsToolchain/typescript' --test-verbose`
+    - result: passes
+  - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestBlueprint/TestBlueprintUseLocal/use_local_blueprint' --test-verbose`
+    - result: `init --blueprint` succeeds; failure moved to runtime compat
+  - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestToolchain/TestMultipleToolchains/install_multiple_toolchains' --test-verbose`
+    - result: `toolchain install` succeeds; failure moved to runtime compat
+
+Failure reclassification after the restore:
+
+- `core/integration/TestChecks/TestChecksAsToolchain/typescript`
+  - previous cause: missing `toolchain` command
+  - current status: green
+- `core/integration/TestBlueprint/TestBlueprintUseLocal/use_local_blueprint`
+  - previous cause: missing `--blueprint` flag
+  - current cause:
+    `load contextual arg "config": load legacy default file "./app-config.txt":
+    workspace file "./app-config.txt": path "app" resolves outside root "/"`
+  - current stance: runtime compat bug in the existing workspace/session/legacy
+    path, not an authoring-surface gap
+- `core/integration/TestToolchain/TestMultipleToolchains/install_multiple_toolchains`
+  - previous cause: missing `toolchain install` command
+  - current cause:
+    `load contextual arg "config": load legacy default file "./app-config.txt":
+    workspace file "./app-config.txt": path "app" resolves outside root "/"`
+  - current stance: same runtime compat family as the blueprint case
+
+Diff-to-main checkpoint for the restored authoring files:
+
+- before this batch:
+  - `5 files changed, 327 insertions(+), 1617 deletions(-)`
+- after this batch:
+  - `5 files changed, 367 insertions(+), 853 deletions(-)`
+
+Conclusion:
+
+- category 1 now converges toward `main` instead of diverging from it
+- the remaining blueprint/toolchain failures are no longer missing-command
+  failures; they have moved into the runtime-compat bucket below
+
 - `core/integration/TestUserDefaults`
   - confirmed failing subtest:
     - `TestUserDefaults/TestLocalBlueprint/inner_envfile`
