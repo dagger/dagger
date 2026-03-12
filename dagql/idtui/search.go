@@ -16,23 +16,10 @@ type searchMatch struct {
 	logRow int
 }
 
-// searchVtermRows returns the row indices within vt's content that contain
-// query (case-insensitive). Only rows up to UsedHeight are examined.
-func searchVtermRows(vt *midterm.Terminal, query string) []int {
-	used := vt.UsedHeight()
-	if used == 0 {
-		return nil
-	}
-	var rows []int
-	for i, line := range vt.Content {
-		if i >= used {
-			break
-		}
-		if strings.Contains(strings.ToLower(strings.TrimRight(string(line), " ")), query) {
-			rows = append(rows, i)
-		}
-	}
-	return rows
+// searchVtermRows returns the distinct row indices with matches from
+// midterm's current search state. Read-only — does not re-run the search.
+func searchVtermRows(vt *midterm.Terminal) []int {
+	return vt.SearchMatchRows()
 }
 
 // buildSearchMatches walks the visible rows and populates fe.searchMatches
@@ -59,10 +46,9 @@ func (fe *frontendPretty) buildSearchMatches() {
 			fe.searchMatchSpans[span.ID] = true
 		}
 
-		// 2. Vterm log content matches
+		// 2. Vterm log content matches (reads midterm's current search state)
 		if logs, ok := fe.logs.Logs[span.ID]; ok {
-			vt := logs.Term()
-			matchRows := searchVtermRows(vt, query)
+			matchRows := searchVtermRows(logs.Term())
 			for _, r := range matchRows {
 				fe.searchMatches = append(fe.searchMatches, searchMatch{
 					spanID: span.ID,
@@ -104,8 +90,12 @@ func (fe *frontendPretty) searchPrev() bool {
 	return true
 }
 
-// syncSearchState propagates search highlights to vterms and marks
-// affected SpanTreeViews dirty so they repaint.
+// syncSearchState propagates the search query to all vterms (so midterm
+// runs/refreshes its search), then rebuilds idtui's match list from
+// midterm's results, and marks affected SpanTreeViews dirty.
+//
+// Call this whenever the search query changes or vterm content may have
+// changed. It is safe to call even when no search is active.
 func (fe *frontendPretty) syncSearchState() {
 	fe.syncVtermSearchHighlights()
 	fe.dirtySearchTrees()
