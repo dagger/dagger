@@ -3320,7 +3320,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message
 	}
 }
 
-func handleTelemetryErrorOutput(w io.Writer, to *termenv.Output, err error) {
+func handleTelemetryErrorOutput(w io.Writer, to TermOutput, err error) {
 	if err != nil {
 		fmt.Fprintf(w, "%s - %s\n(%s)\n", to.String("WARN").Foreground(termenv.ANSIYellow), "failures detected while emitting telemetry. trace information incomplete", err.Error())
 		fmt.Fprintln(w)
