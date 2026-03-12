@@ -94,4 +94,49 @@ func TestHighlightANSI(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
+
+	t.Run("midterm-style rendered line with color prefix", func(t *testing.T) {
+		// Simulates what midterm RenderLineFgBg produces for a line like
+		// "[TestDang] Null check test: String is null"
+		// where [TestDang] is cyan.
+		cyan := "\x1b[36m"
+		reset := "\x1b[0m"
+		input := reset + cyan + "[TestDang]" + reset + " Null check test: String is null" + reset
+		got := highlightANSI(input, "test:", style)
+
+		// "test:" appears at visible byte position 22 in
+		// "[TestDang] Null check test: String is null"
+		// Only those 5 bytes should be highlighted.
+		want := reset + cyan + "[TestDang]" + reset + " Null check " +
+			hlStart + "test:" + hlEnd + reset + cyan + reset +
+			" String is null" + reset
+		if got != want {
+			t.Errorf("got  %q\nwant %q", got, want)
+		}
+
+		// Verify the highlight doesn't bleed: count visible chars in highlight
+		inHL := false
+		hlChars := 0
+		j := 0
+		for j < len(got) {
+			if got[j] == '\x1b' {
+				k := skipANSI(got, j)
+				seq := got[j:k]
+				if seq == hlStart {
+					inHL = true
+				} else if inHL && seq == hlEnd {
+					inHL = false
+				}
+				j = k
+				continue
+			}
+			if inHL {
+				hlChars++
+			}
+			j++
+		}
+		if hlChars != 5 {
+			t.Errorf("highlighted %d visible chars, want 5", hlChars)
+		}
+	})
 }
