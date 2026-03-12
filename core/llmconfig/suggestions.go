@@ -3,65 +3,14 @@ package llmconfig
 import (
 	"encoding/json"
 	"os/exec"
-	"strings"
 )
 
-// SecretSchemes returns the supported secret provider URI schemes.
-var SecretSchemes = []string{
-	"op://",
-	"vault://",
-	"env://",
-	"cmd://",
-	"file://",
-	"aws+sm://",
-	"aws+ps://",
-	"libsecret://",
-}
-
-// SecretSuggestions returns autocomplete suggestions for the API key input.
-// It provides secret provider URI schemes and, when `op` CLI is available,
-// 1Password vault/item completions.
-func SecretSuggestions(current string) []string {
-	// If user hasn't typed a scheme yet, suggest all schemes
-	if !strings.Contains(current, "://") {
-		return SecretSchemes
-	}
-
-	// If user typed an op:// prefix, complete with 1Password vaults/items
-	if strings.HasPrefix(current, "op://") {
-		return opSuggestions(current)
-	}
-
-	return nil
-}
-
-// opSuggestions returns 1Password URI completions using the `op` CLI.
-// URIs follow the form: op://vault/item/field
-func opSuggestions(current string) []string {
+// opListVaults returns vault names via `op vault list`.
+func opListVaults() []string {
 	if _, err := exec.LookPath("op"); err != nil {
 		return nil
 	}
 
-	path := strings.TrimPrefix(current, "op://")
-	parts := strings.SplitN(path, "/", 3)
-
-	switch {
-	case len(parts) <= 1:
-		// No slash yet or completing vault name — list vaults
-		return opListVaults()
-	case len(parts) == 2:
-		// Have vault, completing item name — list items in vault
-		return opListItems(parts[0])
-	case len(parts) == 3:
-		// Have vault/item, completing field name — list fields
-		return opListFields(parts[0], parts[1])
-	}
-
-	return nil
-}
-
-// opListVaults returns op://vault suggestions.
-func opListVaults() []string {
 	out, err := exec.Command("op", "vault", "list", "--format=json").Output()
 	if err != nil {
 		return nil
@@ -74,14 +23,14 @@ func opListVaults() []string {
 		return nil
 	}
 
-	suggestions := make([]string, 0, len(vaults))
+	names := make([]string, 0, len(vaults))
 	for _, v := range vaults {
-		suggestions = append(suggestions, "op://"+v.Name+"/")
+		names = append(names, v.Name)
 	}
-	return suggestions
+	return names
 }
 
-// opListItems returns op://vault/item suggestions.
+// opListItems returns item titles in a vault via `op item list`.
 func opListItems(vault string) []string {
 	out, err := exec.Command("op", "item", "list", "--vault="+vault, "--format=json").Output()
 	if err != nil {
@@ -95,15 +44,14 @@ func opListItems(vault string) []string {
 		return nil
 	}
 
-	prefix := "op://" + vault + "/"
-	suggestions := make([]string, 0, len(items))
+	names := make([]string, 0, len(items))
 	for _, item := range items {
-		suggestions = append(suggestions, prefix+item.Title+"/")
+		names = append(names, item.Title)
 	}
-	return suggestions
+	return names
 }
 
-// opListFields returns op://vault/item/field suggestions.
+// opListFields returns field labels for an item via `op item get`.
 func opListFields(vault, item string) []string {
 	out, err := exec.Command("op", "item", "get", item, "--vault="+vault, "--format=json").Output()
 	if err != nil {
@@ -119,12 +67,11 @@ func opListFields(vault, item string) []string {
 		return nil
 	}
 
-	prefix := "op://" + vault + "/" + item + "/"
-	suggestions := make([]string, 0, len(result.Fields))
+	names := make([]string, 0, len(result.Fields))
 	for _, f := range result.Fields {
 		if f.Label != "" {
-			suggestions = append(suggestions, prefix+f.Label)
+			names = append(names, f.Label)
 		}
 	}
-	return suggestions
+	return names
 }

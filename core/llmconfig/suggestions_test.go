@@ -1,42 +1,34 @@
 package llmconfig
 
 import (
+	"os/exec"
 	"testing"
 )
 
-func TestSecretSuggestionsNoScheme(t *testing.T) {
-	// Without a scheme, should suggest all schemes
-	suggestions := SecretSuggestions("")
-	if len(suggestions) != len(SecretSchemes) {
-		t.Errorf("expected %d scheme suggestions, got %d", len(SecretSchemes), len(suggestions))
-	}
-	for i, s := range suggestions {
-		if s != SecretSchemes[i] {
-			t.Errorf("suggestion[%d] = %q, want %q", i, s, SecretSchemes[i])
+func TestOpListVaultsNoOp(t *testing.T) {
+	// If op isn't available or not signed in, should return nil gracefully
+	if _, err := exec.LookPath("op"); err != nil {
+		vaults := opListVaults()
+		if vaults != nil {
+			t.Errorf("expected nil when op is not installed, got %v", vaults)
 		}
 	}
 }
 
-func TestSecretSuggestionsPartialScheme(t *testing.T) {
-	// Partial text without :// should still return all schemes (huh filters them)
-	suggestions := SecretSuggestions("op")
-	if len(suggestions) != len(SecretSchemes) {
-		t.Errorf("expected %d scheme suggestions, got %d", len(SecretSchemes), len(suggestions))
+func TestOpListItemsNoOp(t *testing.T) {
+	if _, err := exec.LookPath("op"); err != nil {
+		items := opListItems("nonexistent")
+		if items != nil {
+			t.Errorf("expected nil when op is not installed, got %v", items)
+		}
 	}
 }
 
-func TestSecretSuggestionsLiteralToken(t *testing.T) {
-	// A literal token (no ://) should get scheme suggestions
-	suggestions := SecretSuggestions("sk-ant-12345")
-	if len(suggestions) != len(SecretSchemes) {
-		t.Errorf("expected %d scheme suggestions for literal token, got %d", len(SecretSchemes), len(suggestions))
-	}
-}
-
-func TestSecretSuggestionsNonOpScheme(t *testing.T) {
-	// Non-op scheme should return nil (no further completions)
-	suggestions := SecretSuggestions("env://MY_KEY")
-	if suggestions != nil {
-		t.Errorf("expected nil for env:// scheme, got %v", suggestions)
+func TestOpListFieldsNoOp(t *testing.T) {
+	if _, err := exec.LookPath("op"); err != nil {
+		fields := opListFields("nonexistent", "nonexistent")
+		if fields != nil {
+			t.Errorf("expected nil when op is not installed, got %v", fields)
+		}
 	}
 }

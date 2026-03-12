@@ -56,44 +56,56 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		return false, err
 	}
 
-	// 3. Get API key for chosen provider
-	var apiKey string
-	var signupURL string
-
-	switch providerChoice {
-	case "openrouter":
-		signupURL = "https://openrouter.ai/keys"
-	case "anthropic":
-		signupURL = "https://console.anthropic.com/settings/keys"
-	case "openai":
-		signupURL = "https://platform.openai.com/api-keys"
-	case "google":
-		signupURL = "https://aistudio.google.com/app/apikey"
-	}
-
-	keyForm := huh.NewForm(
+	// 3. Choose how to provide the API key
+	var keyMethod string
+	methodForm := huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
-				Title(fmt.Sprintf("Enter your %s API key or secret reference", providerChoice)).
-				Description(fmt.Sprintf(
-					"A secret ref like op://vault/item/field is preferred over a literal token.\n"+
-						"Get a key at: %s", signupURL)).
-				Placeholder("op://vault/item/field or sk-...").
-				SuggestionsFunc(func() []string {
-					return SecretSuggestions(apiKey)
-				}, &apiKey).
-				Value(&apiKey).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("API key or secret reference cannot be empty")
-					}
-					return nil
-				}),
+			huh.NewSelect[string]().
+				Title(fmt.Sprintf("How would you like to provide your %s API key?", providerChoice)).
+				Description("A secret provider reference is preferred over pasting a literal token.").
+				Options(
+					huh.NewOption("1Password (op://)", "op"),
+					huh.NewOption("HashiCorp Vault (vault://)", "vault"),
+					huh.NewOption("Environment variable (env://)", "env"),
+					huh.NewOption("Command (cmd://)", "cmd"),
+					huh.NewOption("File (file://)", "file"),
+					huh.NewOption("AWS Secrets Manager (aws+sm://)", "aws+sm"),
+					huh.NewOption("AWS Parameter Store (aws+ps://)", "aws+ps"),
+					huh.NewOption("Paste literal token", "literal"),
+				).
+				Value(&keyMethod),
 		),
 	)
 
-	if err := promptHandler.HandleForm(ctx, keyForm); err != nil {
+	if err := promptHandler.HandleForm(ctx, methodForm); err != nil {
 		return false, err
+	}
+
+	var apiKey string
+	switch keyMethod {
+	case "op":
+		key, err := promptOp(ctx, promptHandler)
+		if err != nil {
+			return false, err
+		}
+		apiKey = key
+	case "literal":
+		key, err := promptLiteralKey(ctx, promptHandler, providerChoice)
+		if err != nil {
+			return false, err
+		}
+		apiKey = key
+	default:
+		// For all other providers, prompt for the path portion after scheme://
+		key, err := promptSecretRef(ctx, promptHandler, keyMethod)
+		if err != nil {
+			return false, err
+		}
+		apiKey = key
+	}
+
+	if apiKey == "" {
+		return false, nil
 	}
 
 	// 4. Build provider config
@@ -169,4 +181,200 @@ func AutoSetupIfNeeded(ctx context.Context, promptHandler PromptHandler, interac
 	}
 
 	return InteractiveSetup(ctx, promptHandler)
+}
+
+// promptOp walks the user through selecting a 1Password secret via the op CLI.
+func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
+	// List vaults
+	vaults := opListVaults()
+	if len(vaults) == 0 {
+		// Fall back to manual entry
+		var ref string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter 1Password secret reference").
+					Description("Could not list vaults. Is the op CLI installed and signed in?\nEnter a reference manually, e.g. op://vault/item/field").
+					Placeholder("op://vault/item/field").
+					Value(&ref).
+					Validate(validateNonEmpty("secret reference")),
+			),
+		)
+		if err := ph.HandleForm(ctx, form); err != nil {
+			return "", err
+		}
+		return ref, nil
+	}
+
+	// Pick vault
+	var vault string
+	vaultOpts := make([]huh.Option[string], 0, len(vaults))
+	for _, v := range vaults {
+		vaultOpts = append(vaultOpts, huh.NewOption(v, v))
+	}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Choose a 1Password vault").
+				Options(vaultOpts...).
+				Value(&vault),
+		),
+	)
+	if err := ph.HandleForm(ctx, form); err != nil {
+		return "", err
+	}
+
+	// List items in vault
+	items := opListItems(vault)
+	if len(items) == 0 {
+		var ref string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter item path").
+					Description(fmt.Sprintf("No items found in vault %q. Enter the item/field path manually.", vault)).
+					Placeholder("item/field").
+					Value(&ref).
+					Validate(validateNonEmpty("item path")),
+			),
+		)
+		if err := ph.HandleForm(ctx, form); err != nil {
+			return "", err
+		}
+		return "op://" + vault + "/" + ref, nil
+	}
+
+	// Pick item
+	var item string
+	itemOpts := make([]huh.Option[string], 0, len(items))
+	for _, i := range items {
+		itemOpts = append(itemOpts, huh.NewOption(i, i))
+	}
+	form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Choose an item").
+				Options(itemOpts...).
+				Value(&item),
+		),
+	)
+	if err := ph.HandleForm(ctx, form); err != nil {
+		return "", err
+	}
+
+	// List fields in item
+	fields := opListFields(vault, item)
+	if len(fields) == 0 {
+		var field string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter field name").
+					Description(fmt.Sprintf("No fields found for %s/%s. Enter the field name manually.", vault, item)).
+					Placeholder("credential").
+					Value(&field).
+					Validate(validateNonEmpty("field name")),
+			),
+		)
+		if err := ph.HandleForm(ctx, form); err != nil {
+			return "", err
+		}
+		return "op://" + vault + "/" + item + "/" + field, nil
+	}
+
+	// Pick field
+	var field string
+	fieldOpts := make([]huh.Option[string], 0, len(fields))
+	for _, f := range fields {
+		fieldOpts = append(fieldOpts, huh.NewOption(f, f))
+	}
+	form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Choose a field").
+				Options(fieldOpts...).
+				Value(&field),
+		),
+	)
+	if err := ph.HandleForm(ctx, form); err != nil {
+		return "", err
+	}
+
+	return "op://" + vault + "/" + item + "/" + field, nil
+}
+
+// promptSecretRef prompts for a secret reference path for the given scheme.
+func promptSecretRef(ctx context.Context, ph PromptHandler, scheme string) (string, error) {
+	var examples string
+	switch scheme {
+	case "vault":
+		examples = "path/to/secret.field"
+	case "env":
+		examples = "MY_API_KEY"
+	case "cmd":
+		examples = "pass show api-key"
+	case "file":
+		examples = "/run/secrets/api-key"
+	case "aws+sm":
+		examples = "my-secret-name"
+	case "aws+ps":
+		examples = "/my/parameter/path"
+	case "libsecret":
+		examples = "collection/label"
+	}
+
+	var path string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(fmt.Sprintf("Enter %s:// path", scheme)).
+				Placeholder(examples).
+				Value(&path).
+				Validate(validateNonEmpty("secret path")),
+		),
+	)
+	if err := ph.HandleForm(ctx, form); err != nil {
+		return "", err
+	}
+	return scheme + "://" + path, nil
+}
+
+// promptLiteralKey prompts for a literal API key with password masking.
+func promptLiteralKey(ctx context.Context, ph PromptHandler, provider string) (string, error) {
+	var signupURL string
+	switch provider {
+	case "openrouter":
+		signupURL = "https://openrouter.ai/keys"
+	case "anthropic":
+		signupURL = "https://console.anthropic.com/settings/keys"
+	case "openai":
+		signupURL = "https://platform.openai.com/api-keys"
+	case "google":
+		signupURL = "https://aistudio.google.com/app/apikey"
+	}
+
+	var key string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title(fmt.Sprintf("Enter your %s API key", provider)).
+				Description(fmt.Sprintf("Get a key at: %s", signupURL)).
+				EchoMode(huh.EchoModePassword).
+				Value(&key).
+				Validate(validateNonEmpty("API key")),
+		),
+	)
+	if err := ph.HandleForm(ctx, form); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+func validateNonEmpty(label string) func(string) error {
+	return func(s string) error {
+		if s == "" {
+			return fmt.Errorf("%s cannot be empty", label)
+		}
+		return nil
+	}
 }
