@@ -511,7 +511,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			if errors.As(fe.err, &exitErr) {
 				return exitErr
 			}
-			return ExitError{Code: 1, Original: fe.err}
+			return ExitError{OriginalCode: 1, Original: fe.err}
 		}
 	}
 

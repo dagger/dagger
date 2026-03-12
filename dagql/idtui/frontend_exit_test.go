@@ -46,8 +46,8 @@ func TestNormalizeFrontendExit(t *testing.T) {
 		if !errors.As(got, &exitErr) {
 			t.Fatalf("normalizeFrontendExit(nil, failed primary) = %T, want ExitError", got)
 		}
-		if exitErr.Code != 1 {
-			t.Fatalf("normalizeFrontendExit(nil, failed primary) exit code = %d, want 1", exitErr.Code)
+		if exitErr.Code() != 1 {
+			t.Fatalf("normalizeFrontendExit(nil, failed primary) exit code = %d, want 1", exitErr.Code())
 		}
 	})
 }

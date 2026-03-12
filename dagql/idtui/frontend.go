@@ -116,7 +116,7 @@ func normalizeFrontendExit(err error, db *dagui.DB) error {
 		return err
 	}
 
-	return ExitError{Code: 1}
+	return ExitError{OriginalCode: 1}
 }
 
 type SidebarSection struct {

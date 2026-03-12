@@ -200,11 +200,11 @@ func (fc *FuncCommand) Command() *cobra.Command {
 								c.PrintErrln(ex.Stderr)
 							}
 							return idtui.ExitError{
-								Code:     normalizeExitCode(ex.ExitCode, err),
-								Original: err,
+								OriginalCode: ex.ExitCode,
+								Original:     err,
 							}
 						}
-						return idtui.ExitError{Code: 1, Original: err}
+						return idtui.ExitError{OriginalCode: 1, Original: err}
 					}
 
 					return nil
