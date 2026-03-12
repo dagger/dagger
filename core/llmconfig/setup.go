@@ -2,10 +2,14 @@ package llmconfig
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/huh"
 )
+
+// ErrAborted is returned when the user cancels a setup form (e.g. ctrl+c).
+var ErrAborted = errors.New("setup cancelled")
 
 // PromptHandler is the minimal interface needed for interactive prompts
 type PromptHandler interface {
@@ -55,6 +59,9 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 	if err := promptHandler.HandleForm(ctx, providerForm); err != nil {
 		return false, err
 	}
+	if providerChoice == "" {
+		return false, ErrAborted
+	}
 
 	// 3. Choose how to provide the API key
 	var keyMethod string
@@ -79,6 +86,9 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 
 	if err := promptHandler.HandleForm(ctx, methodForm); err != nil {
 		return false, err
+	}
+	if keyMethod == "" {
+		return false, ErrAborted
 	}
 
 	var apiKey string
@@ -203,6 +213,9 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 		if err := ph.HandleForm(ctx, form); err != nil {
 			return "", err
 		}
+		if ref == "" {
+			return "", ErrAborted
+		}
 		return ref, nil
 	}
 
@@ -223,6 +236,9 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	if err := ph.HandleForm(ctx, form); err != nil {
 		return "", err
 	}
+	if vault == "" {
+		return "", ErrAborted
+	}
 
 	// List items in vault
 	items := opListItems(vault)
@@ -240,6 +256,9 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 		)
 		if err := ph.HandleForm(ctx, form); err != nil {
 			return "", err
+		}
+		if ref == "" {
+			return "", ErrAborted
 		}
 		return "op://" + vault + "/" + ref, nil
 	}
@@ -261,6 +280,9 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	if err := ph.HandleForm(ctx, form); err != nil {
 		return "", err
 	}
+	if item == "" {
+		return "", ErrAborted
+	}
 
 	// List fields in item
 	fields := opListFields(vault, item)
@@ -278,6 +300,9 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 		)
 		if err := ph.HandleForm(ctx, form); err != nil {
 			return "", err
+		}
+		if field == "" {
+			return "", ErrAborted
 		}
 		return "op://" + vault + "/" + item + "/" + field, nil
 	}
@@ -298,6 +323,9 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	)
 	if err := ph.HandleForm(ctx, form); err != nil {
 		return "", err
+	}
+	if field == "" {
+		return "", ErrAborted
 	}
 
 	return "op://" + vault + "/" + item + "/" + field, nil
@@ -336,6 +364,9 @@ func promptSecretRef(ctx context.Context, ph PromptHandler, scheme string) (stri
 	if err := ph.HandleForm(ctx, form); err != nil {
 		return "", err
 	}
+	if path == "" {
+		return "", ErrAborted
+	}
 	return scheme + "://" + path, nil
 }
 
@@ -366,6 +397,9 @@ func promptLiteralKey(ctx context.Context, ph PromptHandler, provider string) (s
 	)
 	if err := ph.HandleForm(ctx, form); err != nil {
 		return "", err
+	}
+	if key == "" {
+		return "", ErrAborted
 	}
 	return key, nil
 }

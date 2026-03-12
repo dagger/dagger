@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -73,6 +74,10 @@ var llmSetupCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 			configured, err := llmconfig.InteractiveSetup(ctx, Frontend)
+			if errors.Is(err, llmconfig.ErrAborted) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
+				return nil, nil
+			}
 			if err != nil {
 				return nil, err
 			}
