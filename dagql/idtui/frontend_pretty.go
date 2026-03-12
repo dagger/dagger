@@ -3259,6 +3259,10 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 
 	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
 	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+	if span.LLMThinking {
+		pipe = out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack).Faint()
+		dashed = out.String(VertBoldDash3).Foreground(termenv.ANSIBrightBlack).Faint()
+	}
 	if focused {
 		pipe = hl(pipe)
 		dashed = hl(dashed)
@@ -3442,6 +3446,10 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 		term = NewVterm(l.Profile)
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
+		}
+		// Check if this span is a thinking span
+		if span, ok := l.DB.Spans.Map[spanID]; ok && span.LLMThinking {
+			term.Thinking = true
 		}
 		l.Logs[spanID] = term
 	}

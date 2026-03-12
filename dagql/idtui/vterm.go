@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -32,6 +33,10 @@ type Vterm struct {
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	needsRedraw bool
+
+	// Thinking mode: when true, rendered Markdown is styled dim+italic
+	// to visually distinguish LLM thinking/reasoning output.
+	Thinking bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
 	// substrings in rendered lines are highlighted. SearchCurrentRow
@@ -248,6 +253,11 @@ func (term *Vterm) View() string {
 
 var MarkdownStyle = styles.LightStyleConfig
 
+// ThinkingMarkdownStyle is used for LLM thinking/reasoning output.
+// It renders text dim and italic to visually distinguish it from
+// normal assistant output.
+var ThinkingMarkdownStyle ansi.StyleConfig
+
 func init() {
 	if HasDarkBackground() {
 		MarkdownStyle = styles.DarkStyleConfig
@@ -258,6 +268,18 @@ func init() {
 
 	// No real point setting a custom foreground, it just looks weird.
 	MarkdownStyle.Document.Color = nil
+
+	// Build thinking style: clone the base style and set Faint+Italic
+	// on the document so all text inherits it.
+	ThinkingMarkdownStyle = MarkdownStyle
+	t := true
+	ThinkingMarkdownStyle.Document.StylePrimitive.Italic = &t
+	ThinkingMarkdownStyle.Document.StylePrimitive.Faint = &t
+	// Also dim the foreground color for dark backgrounds
+	dimColor := "245" // ANSI 256-color gray
+	ThinkingMarkdownStyle.Document.StylePrimitive.Color = &dimColor
+	ThinkingMarkdownStyle.Paragraph.Italic = &t
+	ThinkingMarkdownStyle.Paragraph.Faint = &t
 }
 
 func (term *Vterm) redraw() {
@@ -265,9 +287,14 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
+		style := MarkdownStyle
+		if term.Thinking {
+			style = ThinkingMarkdownStyle
+		}
+
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(MarkdownStyle),
+			glamour.WithStyles(style),
 			glamour.WithPreservedNewLines(),
 			glamour.WithEmoji(),
 		)
