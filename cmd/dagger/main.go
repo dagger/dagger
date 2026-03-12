@@ -485,7 +485,7 @@ func main() {
 		var exit idtui.ExitError
 		switch {
 		case errors.As(err, &exit):
-			os.Exit(exit.Code)
+			os.Exit(normalizeExitCode(exit.Code, exit.Original))
 		case errors.Is(err, idtui.ErrShellExited):
 			os.Exit(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
@@ -499,6 +499,15 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+// normalizeExitCode ensures we don't accidentally report success when a
+// concrete error is already present.
+func normalizeExitCode(code int, err error) int {
+	if code == 0 && err != nil {
+		return 1
+	}
+	return code
 }
 
 func NormalizeWorkdir(workdir string) (string, error) {
