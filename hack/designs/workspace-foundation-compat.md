@@ -902,6 +902,36 @@ Verification after this pass:
 - `dagger check test-split:test-cli-engine` passes
 - `dagger check test-split:test-call-and-shell` passes
 
+### 2026-03-12: Main-First Test Baseline Audit
+
+Re-audited the preserved test changes with a stricter branch contract:
+`workspace-plumbing` is supposed to preserve `main` behavior via workspace-aware
+runtime loading, so test churn should default back to `main` unless a test is
+specifically covering a new plumbing behavior.
+
+Concrete follow-up in this pass:
+
+- restored the changed `core/integration/` suites to their `main` versions
+  instead of preserving workspace-branch command-surface rewrites
+- restored `core/integration/toolchain_test.go` and
+  `core/integration/workspace_test.go`, which had been dropped from this branch
+- treated any newly exposed failures after that restore as compatibility
+  regressions to investigate in code, not as stale tests to rewrite around
+
+Scope rule after this audit:
+
+- keep branch-specific coverage only where the test is explicitly about new
+  workspace-plumbing behavior such as workspace detection, legacy compat
+  loading, workspace binding, sibling module entrypoints, or related cache
+  identity
+- revert generic module, blueprint, toolchain, and CLI coverage to the `main`
+  implementation by default
+
+Verification intent after this pass:
+
+- rerun targeted test packages after each restore batch to identify actual
+  compat regressions instead of carrying workspace-era test updates forward
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
