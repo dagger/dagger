@@ -137,6 +137,7 @@ func (fe *frontendPretty) refreshSearchMatches() {
 		fe.searchIdx = -1
 	}
 	fe.dirtySearchTrees()
+	fe.keymapBar.Update()
 }
 
 // searchFirstForward finds the first match at or after the currently focused
