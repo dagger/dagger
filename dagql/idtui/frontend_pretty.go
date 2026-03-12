@@ -1852,7 +1852,12 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 			}
 		}
 	}
-	// Deselect current search match so that n/N seek from the new focus.
+}
+
+// manualFocus is like focus but also deselects the current search match
+// so that n/N seek relative to the new position.
+func (fe *frontendPretty) manualFocus(row *dagui.TraceRow) {
+	fe.focus(row)
 	if fe.searchQuery != "" {
 		fe.searchIdx = -1
 	}
@@ -2430,14 +2435,14 @@ func (fe *frontendPretty) quitAction(interruptErr error) {
 func (fe *frontendPretty) goStart() {
 	fe.autoFocus = false
 	if len(fe.rows.Order) > 0 {
-		fe.focus(fe.rows.Order[0])
+		fe.manualFocus(fe.rows.Order[0])
 	}
 }
 
 func (fe *frontendPretty) goEnd() {
 	fe.autoFocus = true
 	if len(fe.rows.Order) > 0 {
-		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
+		fe.manualFocus(fe.rows.Order[len(fe.rows.Order)-1])
 	}
 }
 
@@ -2447,7 +2452,7 @@ func (fe *frontendPretty) goUp() {
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
 	}
-	fe.focus(fe.rows.Order[newIdx])
+	fe.manualFocus(fe.rows.Order[newIdx])
 }
 
 func (fe *frontendPretty) goDown() {
@@ -2457,7 +2462,7 @@ func (fe *frontendPretty) goDown() {
 		// at bottom
 		return
 	}
-	fe.focus(fe.rows.Order[newIdx])
+	fe.manualFocus(fe.rows.Order[newIdx])
 }
 
 func (fe *frontendPretty) goOut() {
@@ -2466,7 +2471,7 @@ func (fe *frontendPretty) goOut() {
 	if focused == nil {
 		return
 	}
-	fe.focus(focused.Parent)
+	fe.manualFocus(focused.Parent)
 }
 
 func (fe *frontendPretty) goIn() {
@@ -2482,7 +2487,7 @@ func (fe *frontendPretty) goIn() {
 		// has no children
 		return
 	}
-	fe.focus(next)
+	fe.manualFocus(next)
 }
 
 func (fe *frontendPretty) closeOrGoOut() {
@@ -2532,7 +2537,7 @@ func (fe *frontendPretty) goErrorOrigin() {
 	if focusedRow == nil {
 		return
 	}
-	fe.focus(focusedRow)
+	fe.manualFocus(focusedRow)
 	for cur := focusedRow.Parent; cur != nil; cur = cur.Parent {
 		// expand parents of target span
 		fe.setExpanded(cur.Span.ID, true)
