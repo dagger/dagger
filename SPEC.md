@@ -143,13 +143,14 @@ Once midterm has native search:
 
 ### Implementation order
 
-1. Add `SearchHighlight` struct and fields to `midterm.Terminal`
-2. Implement `Search()`, `SearchClear()`, `SearchSetCurrent()` on Terminal
-3. Modify `renderLine()` to composite search highlights over format regions
-4. Add tests in midterm
-5. Bump midterm dependency in dagger, wire up Vterm to use native search
-6. Remove ANSI post-processing from Vterm.Render
-7. Keep `highlightANSI` for title-line highlighting only (or simplify it)
+1. ✅ Add `SearchHighlight` struct and fields to `midterm.Terminal`
+2. ✅ Implement `Search()`, `SearchClear()`, `SearchSetCurrent()` on Terminal
+3. ✅ Modify `renderLine()` to composite search highlights over format regions
+4. ✅ Add tests in midterm (`search_test.go`)
+5. ✅ Wire up Vterm to use native search (go.mod replace directive)
+6. ✅ Remove ANSI post-processing from `Vterm.Render`
+7. ✅ Keep `highlightANSI` for title-line highlighting only
+8. TODO: Publish midterm release, replace go.mod replace with version bump
 
 ## File inventory
 
