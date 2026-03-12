@@ -110,7 +110,6 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	client, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
-	requireShellAutocompleteSchema(ctx, t, client)
 
 	handler := newShellCallHandler(client, &idtui.FrontendMock{})
 	handler.debug = debugFlag
@@ -147,78 +146,5 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 				require.Contains(t, candidates, expected)
 			}
 		})
-	}
-}
-
-func requireShellAutocompleteSchema(ctx context.Context, t *testctx.T, client *dagger.Client) {
-	t.Helper()
-
-	var res struct {
-		FunctionType struct {
-			Fields []struct {
-				Name string
-			}
-		} `json:"functionType"`
-		QueryType struct {
-			Fields []struct {
-				Name string
-				Args []struct {
-					Name string
-				}
-			}
-		} `json:"queryType"`
-	}
-
-	err := client.Do(ctx, &dagger.Request{
-		Query: `
-			query ShellAutocompleteSchemaCheck {
-				functionType: __type(name: "Function") {
-					fields {
-						name
-					}
-				}
-				queryType: __type(name: "Query") {
-					fields {
-						name
-						args {
-							name
-						}
-					}
-				}
-			}
-		`,
-	}, &dagger.Response{Data: &res})
-	require.NoError(t, err)
-
-	hasSourceModuleName := false
-	for _, field := range res.FunctionType.Fields {
-		if field.Name == "sourceModuleName" {
-			hasSourceModuleName = true
-			break
-		}
-	}
-
-	hasCurrentTypeDefsIncludeCore := false
-	for _, field := range res.QueryType.Fields {
-		if field.Name != "currentTypeDefs" {
-			continue
-		}
-		for _, arg := range field.Args {
-			if arg.Name == "includeCore" {
-				hasCurrentTypeDefsIncludeCore = true
-				break
-			}
-		}
-		if hasCurrentTypeDefsIncludeCore {
-			break
-		}
-	}
-
-	if !hasSourceModuleName || !hasCurrentTypeDefsIncludeCore {
-		t.Skipf(
-			"requires host dagger schema with Function.sourceModuleName=%t and currentTypeDefs(includeCore)=%t",
-			hasSourceModuleName,
-			hasCurrentTypeDefsIncludeCore,
-		)
 	}
 }
