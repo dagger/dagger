@@ -100,10 +100,15 @@ func (fe *frontendPretty) buildSearchMatches() {
 }
 
 // searchNext moves to the next match after the current one (wrapping).
+// If no match is selected (searchIdx == -1), seeks forward from focus.
 // Returns true if a match was navigated to.
 func (fe *frontendPretty) searchNext() bool {
 	if len(fe.searchMatches) == 0 {
 		return false
+	}
+	if fe.searchIdx < 0 {
+		fe.searchFirstForward()
+		return fe.searchIdx >= 0
 	}
 	fe.searchIdx++
 	if fe.searchIdx >= len(fe.searchMatches) {
@@ -115,10 +120,15 @@ func (fe *frontendPretty) searchNext() bool {
 }
 
 // searchPrev moves to the previous match before the current one (wrapping).
+// If no match is selected (searchIdx == -1), seeks backward from focus.
 // Returns true if a match was navigated to.
 func (fe *frontendPretty) searchPrev() bool {
 	if len(fe.searchMatches) == 0 {
 		return false
+	}
+	if fe.searchIdx < 0 {
+		fe.searchFirstBackward()
+		return fe.searchIdx >= 0
 	}
 	fe.searchIdx--
 	if fe.searchIdx < 0 {
@@ -167,6 +177,32 @@ func (fe *frontendPretty) searchFirstForward() {
 	// Nothing after focus — wrap to first match.
 	fe.searchIdx = 0
 	fe.goToSearchMatch(0)
+}
+
+// searchFirstBackward finds the last match at or before the currently
+// focused span and navigates to it.
+func (fe *frontendPretty) searchFirstBackward() {
+	if len(fe.searchMatches) == 0 {
+		return
+	}
+	// Walk backward to find the last match at or before focus.
+	for i := len(fe.searchMatches) - 1; i >= 0; i-- {
+		m := fe.searchMatches[i]
+		row := fe.rows.BySpan[m.spanID]
+		if row != nil && row.Index <= fe.focusedIdx {
+			fe.searchIdx = i
+			fe.goToSearchMatch(i)
+			return
+		}
+		if row == nil {
+			fe.searchIdx = i
+			fe.goToSearchMatch(i)
+			return
+		}
+	}
+	// Nothing before focus — wrap to last match.
+	fe.searchIdx = len(fe.searchMatches) - 1
+	fe.goToSearchMatch(fe.searchIdx)
 }
 
 // goToSearchMatch navigates to the match at the given index in searchMatches.

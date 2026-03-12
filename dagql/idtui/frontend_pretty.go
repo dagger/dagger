@@ -1683,9 +1683,12 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 
 	end := len(allLines)
 	if focusLine >= 0 && len(allLines) > viewportHeight {
+		// Use the root span's own rendered height (selfLineCount), not
+		// the entire tree height. Children may extend below the viewport,
+		// but the root's own content must stay in view.
 		focusHeight := 1
 		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			focusHeight = focused.totalLineCount()
+			focusHeight = focused.selfLineCount
 		}
 		end = cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
 	}
@@ -1693,11 +1696,10 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	return allLines[:end]
 }
 
-// cropEnd computes the end index for slicing rendered lines so that:
-//  1. The focused span [focusLine, focusLine+focusHeight) is never cropped.
-//  2. When the focused span fits in the viewport, its start line is visible
-//     (i.e. within [end-viewportHeight, end)).
-//  3. Remaining viewport space is split evenly above and below the focused span.
+// cropEnd computes the end index for slicing rendered lines so that the
+// focused span's own content [focusLine, focusLine+focusHeight) is always
+// visible within [end-viewportHeight, end). Remaining viewport space is
+// split evenly above and below the focused span's root content.
 //
 // Content above the visible window scrolls into terminal scrollback naturally.
 func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
@@ -1706,8 +1708,7 @@ func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 		focusEnd = totalLines
 	}
 
-	// When the focused span fits in the viewport, distribute remaining
-	// space evenly above and below.
+	// Split remaining viewport space evenly above and below the focus root.
 	remaining := viewportHeight - focusHeight
 	if remaining < 0 {
 		remaining = 0
@@ -1716,10 +1717,16 @@ func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 
 	end := focusEnd + below
 
-	// Ensure the focus start is visible when it fits in the viewport:
-	// the visible window is [end-viewportHeight, end), so cap end.
+	// Ensure the focus root stays fully visible: the visible window is
+	// [end-viewportHeight, end), so cap end so focusLine >= end-viewportHeight.
 	if focusHeight <= viewportHeight && end > focusLine+viewportHeight {
 		end = focusLine + viewportHeight
+	}
+
+	// When the focus root is taller than the viewport, at least show up
+	// to its end.
+	if end < focusEnd {
+		end = focusEnd
 	}
 
 	// Never crop to less than a full viewport when there's enough content.
@@ -1727,10 +1734,6 @@ func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 		end = viewportHeight
 	}
 
-	// Never crop below focusEnd — the focused span is always fully shown.
-	if end < focusEnd {
-		end = focusEnd
-	}
 	if end > totalLines {
 		end = totalLines
 	}
@@ -1848,6 +1851,10 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 				fe.tui.SetFocus(sr)
 			}
 		}
+	}
+	// Deselect current search match so that n/N seek from the new focus.
+	if fe.searchQuery != "" {
+		fe.searchIdx = -1
 	}
 }
 
