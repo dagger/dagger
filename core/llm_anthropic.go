@@ -265,6 +265,27 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 	}
 
 	acc := new(anthropic.Message)
+
+	// Track thinking spans per content block index.
+	type thinkingSpanState struct {
+		span  trace.Span
+		stdio telemetry.SpanStreams
+	}
+	thinkingSpans := map[int64]*thinkingSpanState{}
+	// endThinking closes the thinking span for the given block index.
+	endThinking := func(idx int64) {
+		if ts, ok := thinkingSpans[idx]; ok {
+			ts.stdio.Close()
+			ts.span.End()
+			delete(thinkingSpans, idx)
+		}
+	}
+	defer func() {
+		for idx := range thinkingSpans {
+			endThinking(idx)
+		}
+	}()
+
 	for stream.Next() {
 		event := stream.Current()
 		acc.Accumulate(event)
@@ -283,12 +304,39 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
 		}
 
-		// Check if the event delta contains text and trace it.
-		if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-			if delta.Delta.Text != "" {
-				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(markdownW, delta.Delta.Text)
+		switch ev := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			if ev.ContentBlock.Type == "thinking" {
+				// Start a child span for this thinking block.
+				thinkCtx, thinkSpan := Tracer(ctx).Start(ctx, "thinking",
+					telemetry.Reveal(),
+					trace.WithAttributes(
+						attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+						attribute.Bool("llm.thinking", true),
+					),
+				)
+				thinkStdio := telemetry.SpanStdio(thinkCtx, InstrumentationLibrary,
+					log.String(telemetry.ContentTypeAttr, "text/markdown"),
+					log.Bool("llm.thinking", true),
+				)
+				thinkingSpans[ev.Index] = &thinkingSpanState{
+					span:  thinkSpan,
+					stdio: thinkStdio,
+				}
 			}
+
+		case anthropic.ContentBlockDeltaEvent:
+			switch ev.Delta.Type {
+			case "thinking_delta":
+				if ts, ok := thinkingSpans[ev.Index]; ok {
+					fmt.Fprint(ts.stdio.Stdout, ev.Delta.Thinking)
+				}
+			case "text_delta":
+				fmt.Fprint(markdownW, ev.Delta.Text)
+			}
+
+		case anthropic.ContentBlockStopEvent:
+			endThinking(ev.Index)
 		}
 	}
 
