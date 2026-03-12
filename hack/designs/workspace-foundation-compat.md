@@ -1083,6 +1083,30 @@ Verification after this sweep:
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./engine/server`
 - `tar -cf - . | docker run --rm -i --entrypoint sh golang:1.26-alpine -lc 'mkdir /src && tar -xf - -C /src && cd /src && /usr/local/go/bin/go test ./cmd/engine ./engine/buildkit -count=1'`
 
+### 2026-03-12: Base Check Slice First Failure
+
+The first concrete failure in `dagger --progress=logs check test-split:test-base`
+is a test-only worktree isolation bug in `util/gitutil`.
+
+Root cause:
+
+- `util/gitutil/glob_test.go` shells out to `git ls-remote file://<tmpDir>` as
+  a sanity check against Git's own globbing behavior
+- that command inherited the outer repo cwd
+- in the containerized check run, the outer cwd contains a worktree `.git`
+  file that points to a gitdir path not mounted in the container
+- Git failed before touching the temp repo, with:
+  `fatal: not a git repository: .../.git/worktrees/dagger_workspace`
+
+Concrete fix in this pass:
+
+- set `cmd.Dir = tmpDir` for the sanity-check `git ls-remote` call so it runs
+  from the temporary repo it is validating instead of the outer worktree
+
+Verification target for this pass:
+
+- `env GOCACHE=/tmp/go-build go test ./util/gitutil -count=1`
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
