@@ -1128,8 +1128,12 @@ Guardrails for the follow-up fixes:
   `ModuleSource.asModule()`
 - do not revert `check` / `generate` back to the old standalone-module path
 - if legacy authoring commands must be restored for backwards compatibility,
-  keep that as a thin CLI-edge shim only; runtime behavior must still flow
-  through the existing workspace/session/legacy loader
+  restore them the same way `main` does: as engine-backed `ModuleSource`
+  authoring operations whose generated context writes `dagger.json`
+- keep the CLI dumb: no direct `dagger.json` editing and no CLI-owned
+  blueprint/toolchain resolution logic
+- keep runtime behavior on the existing workspace/session/legacy loader; do
+  not add authoring-specific runtime branches to satisfy these tests
 - if a failure is in runtime behavior, fix it in the existing
   workspace/session/legacy loading path or workspace aggregation semantics, not
   by rewriting the tests to workspace-only expectations
@@ -1166,14 +1170,17 @@ Current failure ledger:
     `TestBlueprint/TestBlueprintInit/init_with_python_blueprint`, which uses
     the same restored `main` command shape
   - known cause: this branch currently removed the legacy `init --blueprint`
-    authoring surface that `main` exposes
+    authoring surface that `main` exposes through engine-backed
+    `ModuleSource.WithBlueprint(...)`
   - current plan:
-    - restore backwards compatibility only at the CLI edge if we decide this
-      branch must preserve the `main` authoring surface
+    - restore the missing engine-backed authoring path from `main`:
+      `ModuleSource.withBlueprint` plus the generated-context export flow
+    - re-add the CLI flag only as a thin wrapper over that engine API
     - keep the runtime path on workspace/session compat loading
     - do not reintroduce the old module-scoped runtime path just to satisfy
       these tests
-  - fix stance: `implementation`, but CLI-edge only
+    - do not teach the CLI to write legacy config directly
+  - fix stance: `implementation`, engine-backed authoring only
 
 - `core/integration/TestChecks`
   - confirmed failing subtest:
@@ -1186,15 +1193,21 @@ Current failure ledger:
   - the full `test-base` slice also reported
     `TestChecks/TestChecksDirectSDK/java`
   - known cause for the toolchain-backed case: this branch currently removed
-    the legacy `toolchain ...` authoring surface that `main` exposes
+    the legacy `toolchain ...` authoring surface that `main` exposes through
+    engine-backed `ModuleSource` toolchain mutators and queries
   - current plan:
-    - handle the toolchain-setup failures, if we keep full `main`
-      backwards-compat, with a thin CLI-edge compat shim only
+    - restore the missing engine-backed authoring/query surface from `main`:
+      `withToolchains`, `withUpdateToolchains`, `withoutToolchains`, and the
+      read-side toolchain query used by `toolchain list`
+    - re-add the CLI `toolchain ...` commands only as thin wrappers over that
+      engine surface
+    - keep all config writing in generated-context export rather than direct
+      CLI file edits
     - keep looking for a direct isolated repro of `TestChecksDirectSDK/java`
       before deciding whether there is also a separate runtime regression in
       the direct-SDK path
   - fix stance:
-    - `TestChecksAsToolchain/*`: `implementation`, but CLI-edge only
+    - `TestChecksAsToolchain/*`: `implementation`, engine-backed authoring only
     - `TestChecksDirectSDK/java`: `pending isolated repro`
 
 - `core/integration/TestToolchain`
@@ -1205,11 +1218,11 @@ Current failure ledger:
   - known cause: most likely the same missing `toolchain ...` command surface
     confirmed in `TestChecks/TestChecksAsToolchain/typescript`
   - current plan:
-    - treat these as the same CLI-edge compatibility decision as the other
-      toolchain-backed failures
+    - treat these as the same engine-backed authoring compatibility decision as
+      the other toolchain-backed failures
     - only do another isolated repro if the later full-suite results suggest a
       second runtime bug after the command surface is restored
-  - fix stance: `implementation`, but CLI-edge only
+  - fix stance: `implementation`, engine-backed authoring only
 
 - `core/integration/TestUserDefaults`
   - confirmed failing subtest:
