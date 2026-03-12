@@ -1,0 +1,122 @@
+package llmconfig
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/adrg/xdg"
+	"github.com/gofrs/flock"
+	toml "github.com/pelletier/go-toml"
+)
+
+const (
+	ConfigFileName = "config.toml"
+)
+
+var (
+	ConfigRoot = filepath.Join(xdg.ConfigHome, "dagger")
+	ConfigFile = filepath.Join(ConfigRoot, ConfigFileName)
+)
+
+// Config represents the top-level dagger config file.
+// Only the [llm] section is managed here; other sections are preserved as-is.
+type Config struct {
+	LLM LLMConfig `toml:"llm"`
+}
+
+// LLMConfig represents the [llm] section.
+type LLMConfig struct {
+	DefaultProvider string              `toml:"default_provider"`
+	DefaultModel    string              `toml:"default_model,omitempty"`
+	Providers       map[string]Provider `toml:"providers"`
+}
+
+// Provider represents a single LLM provider's configuration.
+type Provider struct {
+	APIKey          string `toml:"api_key"`
+	BaseURL         string `toml:"base_url,omitempty"`
+	AzureVersion    string `toml:"azure_version,omitempty"`
+	DisableStreaming bool   `toml:"disable_streaming,omitempty"`
+	Enabled         bool   `toml:"enabled"`
+}
+
+// Load reads config from disk, returns nil if not exists.
+func Load() (*Config, error) {
+	data, err := os.ReadFile(ConfigFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No config is OK
+		}
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var cfg Config
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Initialize providers map if nil
+	if cfg.LLM.Providers == nil {
+		cfg.LLM.Providers = make(map[string]Provider)
+	}
+
+	return &cfg, nil
+}
+
+// Save writes config to disk with proper permissions (0600).
+func (c *Config) Save() error {
+	// Create directory if needed
+	if err := os.MkdirAll(ConfigRoot, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Lock file for atomic writes
+	lockFile := ConfigFile + ".lock"
+	lock := flock.New(lockFile)
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer lock.Unlock()
+
+	// Initialize providers map if nil
+	if c.LLM.Providers == nil {
+		c.LLM.Providers = make(map[string]Provider)
+	}
+
+	// Marshal to TOML
+	data, err := toml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write with 0600 permissions
+	if err := os.WriteFile(ConfigFile, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// ConfigExists checks if config file exists.
+func ConfigExists() bool {
+	_, err := os.Stat(ConfigFile)
+	return err == nil
+}
+
+// LLMConfigured checks if the config file exists and has LLM providers configured.
+func LLMConfigured() bool {
+	cfg, err := Load()
+	if err != nil || cfg == nil {
+		return false
+	}
+	return len(cfg.LLM.Providers) > 0
+}
+
+// Remove deletes the config file.
+func Remove() error {
+	if err := os.Remove(ConfigFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove config file: %w", err)
+	}
+	return nil
+}

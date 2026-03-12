@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
@@ -398,6 +399,96 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	return nil
 }
 
+// LoadFromConfig populates router from config file (base layer).
+// Only sets fields that are currently empty, allowing env vars to take priority.
+func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
+	if cfg == nil {
+		return
+	}
+
+	for name, provider := range cfg.LLM.Providers {
+		if !provider.Enabled {
+			continue
+		}
+
+		switch name {
+		case "openrouter":
+			// OpenRouter uses OpenAI-compatible API
+			if r.OpenAIAPIKey == "" {
+				r.OpenAIAPIKey = provider.APIKey
+			}
+			if r.OpenAIBaseURL == "" {
+				r.OpenAIBaseURL = "https://openrouter.ai/api/v1"
+				if provider.BaseURL != "" {
+					r.OpenAIBaseURL = provider.BaseURL
+				}
+			}
+		case "anthropic":
+			if r.AnthropicAPIKey == "" {
+				r.AnthropicAPIKey = provider.APIKey
+			}
+			if r.AnthropicBaseURL == "" && provider.BaseURL != "" {
+				r.AnthropicBaseURL = provider.BaseURL
+			}
+		case "openai":
+			if r.OpenAIAPIKey == "" {
+				r.OpenAIAPIKey = provider.APIKey
+			}
+			if r.OpenAIBaseURL == "" && provider.BaseURL != "" {
+				r.OpenAIBaseURL = provider.BaseURL
+			}
+		case "google":
+			if r.GeminiAPIKey == "" {
+				r.GeminiAPIKey = provider.APIKey
+			}
+		}
+	}
+
+	// Set default model for the default provider if not already set
+	if cfg.LLM.DefaultModel != "" {
+		switch cfg.LLM.DefaultProvider {
+		case "openrouter", "openai":
+			if r.OpenAIModel == "" {
+				r.OpenAIModel = cfg.LLM.DefaultModel
+			}
+		case "anthropic":
+			if r.AnthropicModel == "" {
+				r.AnthropicModel = cfg.LLM.DefaultModel
+			}
+		case "google":
+			if r.GeminiModel == "" {
+				r.GeminiModel = cfg.LLM.DefaultModel
+			}
+		}
+	}
+}
+
+// IsEmpty returns true if no LLM configuration is available.
+func (r *LLMRouter) IsEmpty() bool {
+	return r.OpenAIAPIKey == "" &&
+		r.AnthropicAPIKey == "" &&
+		r.GeminiAPIKey == ""
+}
+
+// ErrNoLLMConfig is returned when no LLM configuration is found.
+type ErrNoLLMConfig struct{}
+
+func (e *ErrNoLLMConfig) Error() string {
+	return `No LLM configuration found.
+
+To get started, run:
+    dagger llm setup
+
+Or set environment variables:
+    export ANTHROPIC_API_KEY=sk-ant-...
+    export OPENAI_API_KEY=sk-...
+    export GEMINI_API_KEY=AIza...
+
+For unified access to all models with a single key:
+    https://openrouter.ai/keys
+`
+}
+
 func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
 	router := new(LLMRouter)
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
@@ -423,13 +514,26 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
+
+	// Priority order:
+	// 1. Config file (~/.config/dagger/llm/config.json) - base layer
+	// 2. .env file - middle layer (legacy support)
+	// 3. Environment variables - top layer (overrides everything)
+
+	// First: Try loading from config file
+	if cfg, err := llmconfig.Load(); err == nil && cfg != nil {
+		router.LoadFromConfig(cfg)
+	}
+
+	// Second: Load .env from current directory, if it exists
 	env := make(map[string]string)
-	// Load .env from current directory, if it exists
 	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
 		if e, err := godotenv.Unmarshal(envFile); err == nil {
 			env = e
 		}
 	}
+
+	// Third: Load environment variables (highest priority, overrides everything)
 	err := router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
@@ -442,7 +546,11 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 		}
 		return "", nil
 	})
-	return router, err
+	if err != nil {
+		return nil, err
+	}
+
+	return router, nil
 }
 
 func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
