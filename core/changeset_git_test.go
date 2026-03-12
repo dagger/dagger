@@ -153,6 +153,7 @@ func TestCollapseChildPaths(t *testing.T) {
 func TestCompareDirectories_Integration(t *testing.T) {
 	oldDir := t.TempDir()
 	newDir := t.TempDir()
+	brokenWorktree := t.TempDir()
 
 	// old: file1 (will be modified), file2 (will be deleted), subdir/nested
 	require.NoError(t, os.WriteFile(filepath.Join(oldDir, "file1.txt"), []byte("v1"), 0644))
@@ -165,6 +166,10 @@ func TestCompareDirectories_Integration(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(newDir, "file3.txt"), []byte("new"), 0644))
 	require.NoError(t, os.MkdirAll(filepath.Join(newDir, "subdir"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(newDir, "subdir", "nested.txt"), []byte("same"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(brokenWorktree, ".git"), []byte("gitdir: /does/not/exist\n"), 0644))
+
+	// Reproduce the worktree layout used by the repo checkout in Linux-backed tests.
+	t.Chdir(brokenWorktree)
 
 	ctx := context.Background()
 
