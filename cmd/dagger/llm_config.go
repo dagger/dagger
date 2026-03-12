@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 )
 
 func init() {
@@ -73,12 +74,18 @@ var llmSetupCmd = &cobra.Command{
 	Short: "Configure LLM authentication interactively",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			cmd.SetOut(stdio.Stdout)
+			cmd.SetErr(stdio.Stderr)
+
 			configured, err := llmconfig.InteractiveSetup(ctx, Frontend)
 			if errors.Is(err, llmconfig.ErrAborted) {
 				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
+				stdio.Close()
 				return nil, nil
 			}
 			if err != nil {
+				stdio.Close()
 				return nil, err
 			}
 
@@ -88,6 +95,7 @@ var llmSetupCmd = &cobra.Command{
 				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
 			}
 
+			stdio.Close()
 			return nil, nil
 		})
 	},
