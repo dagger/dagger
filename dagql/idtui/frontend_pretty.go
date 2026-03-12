@@ -163,12 +163,13 @@ type frontendPretty struct {
 	viewDirty bool
 
 	// search state (Vim-style "/" search)
-	searchActive     bool              // search input bar is shown
-	searchQuery      string            // confirmed search string
-	searchInput      *tuist.TextInput  // the "/" prompt input (non-nil while searchActive)
-	searchMatches    []searchMatch     // ordered list of all matches
-	searchMatchSpans map[dagui.SpanID]bool // fast lookup: does this span have any match?
-	searchIdx        int               // current match index (-1 = none)
+	searchActive         bool                  // search input bar is shown
+	searchQuery          string                // confirmed search string
+	searchInput          *tuist.TextInput      // the "/" prompt input (non-nil while searchActive)
+	searchMatches        []searchMatch         // ordered list of all matches
+	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
+	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
+	searchIdx            int                   // current match index (-1 = none)
 }
 
 // Verify interface compliance at compile time.
@@ -329,6 +330,22 @@ func (s *SpanTreeView) Render(ctx tuist.Context) tuist.RenderResult {
 	if text != "" {
 		lines = append(lines, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
 	}
+
+	// Highlight search matches in span name lines.
+	if s.fe.searchQuery != "" && s.fe.searchMatchSpans[s.spanID] {
+		style := matchHighlight
+		// Check if the current match is a name match on this span.
+		if s.fe.searchIdx >= 0 && s.fe.searchIdx < len(s.fe.searchMatches) {
+			cm := s.fe.searchMatches[s.fe.searchIdx]
+			if cm.spanID == s.spanID && cm.logRow == -1 {
+				style = currentMatchHighlight
+			}
+		}
+		for i, line := range lines {
+			lines[i] = highlightANSI(line, s.fe.searchQuery, style)
+		}
+	}
+
 	s.selfLineCount = len(lines)
 
 	// Render children (already synced by syncSpanTreeState).
@@ -1416,6 +1433,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		if len(fe.searchMatches) == 0 {
 			fe.searchIdx = -1
 		}
+		fe.syncSearchState()
 	}
 }
 
@@ -2137,6 +2155,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	fe.searchIdx = -1
 	fe.buildSearchMatches()
 	fe.searchFirstForward()
+	fe.syncSearchState()
 	fe.Update()
 }
 
@@ -2956,11 +2975,6 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
 		fmt.Fprint(out, " ")
-	}
-
-	// Search match indicator
-	if fe.searchQuery != "" && fe.searchMatchSpans[span.ID] {
-		fmt.Fprint(out, out.String("● ").Foreground(termenv.ANSIYellow).String())
 	}
 
 	if err := fe.renderStepTitle(out, r, row, prefix, false); err != nil {
