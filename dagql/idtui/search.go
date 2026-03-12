@@ -85,6 +85,7 @@ func (fe *frontendPretty) searchNext() bool {
 		fe.searchIdx = 0 // wrap
 	}
 	fe.goToSearchMatch(fe.searchIdx)
+	fe.syncSearchState()
 	return true
 }
 
@@ -99,7 +100,15 @@ func (fe *frontendPretty) searchPrev() bool {
 		fe.searchIdx = len(fe.searchMatches) - 1 // wrap
 	}
 	fe.goToSearchMatch(fe.searchIdx)
+	fe.syncSearchState()
 	return true
+}
+
+// syncSearchState propagates search highlights to vterms and marks
+// affected SpanTreeViews dirty so they repaint.
+func (fe *frontendPretty) syncSearchState() {
+	fe.syncVtermSearchHighlights()
+	fe.dirtySearchTrees()
 }
 
 // searchFirstForward finds the first match at or after the currently focused
@@ -176,6 +185,65 @@ func (fe *frontendPretty) expandToSpan(spanID dagui.SpanID) {
 func (fe *frontendPretty) clearSearch() {
 	fe.searchQuery = ""
 	fe.searchMatches = nil
-	fe.searchMatchSpans = nil
 	fe.searchIdx = -1
+	// Clear highlights from all vterms.
+	for _, vt := range fe.logs.Logs {
+		vt.SetSearchHighlight("", -1)
+	}
+	// Dirty trees that had matches so they repaint without highlights.
+	fe.dirtySearchTrees()
+	// Now clear the span sets (after dirtySearchTrees used them for diff).
+	fe.searchMatchSpans = nil
+}
+
+// dirtySearchTrees calls Update() on every SpanTreeView that has (or had)
+// a search match so tuist will repaint them with the new highlight state.
+func (fe *frontendPretty) dirtySearchTrees() {
+	// Dirty all spans that currently have matches.
+	for spanID := range fe.searchMatchSpans {
+		if st, ok := fe.spanTrees[spanID]; ok {
+			st.Update()
+		}
+	}
+	// Also dirty spans that previously had matches but no longer do
+	// (tracked via prevSearchMatchSpans).
+	for spanID := range fe.prevSearchMatchSpans {
+		if !fe.searchMatchSpans[spanID] {
+			if st, ok := fe.spanTrees[spanID]; ok {
+				st.Update()
+			}
+		}
+	}
+	// Snapshot current set for next diff.
+	fe.prevSearchMatchSpans = make(map[dagui.SpanID]bool, len(fe.searchMatchSpans))
+	for id := range fe.searchMatchSpans {
+		fe.prevSearchMatchSpans[id] = true
+	}
+}
+
+// syncVtermSearchHighlights propagates the current search state to all
+// vterms so they highlight matches during rendering.
+func (fe *frontendPretty) syncVtermSearchHighlights() {
+	// Determine the current match's vterm row (if any).
+	var currentSpan dagui.SpanID
+	currentRow := -1
+	if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
+		m := fe.searchMatches[fe.searchIdx]
+		if m.logRow >= 0 {
+			currentSpan = m.spanID
+			currentRow = m.logRow
+		}
+	}
+
+	for spanID, vt := range fe.logs.Logs {
+		if fe.searchQuery == "" {
+			vt.SetSearchHighlight("", -1)
+		} else {
+			cr := -1
+			if spanID == currentSpan {
+				cr = currentRow
+			}
+			vt.SetSearchHighlight(fe.searchQuery, cr)
+		}
+	}
 }
