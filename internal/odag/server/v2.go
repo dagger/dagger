@@ -166,11 +166,16 @@ type v2Client struct {
 	ServiceName       string   `json:"serviceName,omitempty"`
 	ServiceVersion    string   `json:"serviceVersion,omitempty"`
 	ScopeName         string   `json:"scopeName,omitempty"`
+	SDKName           string   `json:"sdkName,omitempty"`
+	SDKVersion        string   `json:"sdkVersion,omitempty"`
 	ClientVersion     string   `json:"clientVersion,omitempty"`
 	ClientOS          string   `json:"clientOS,omitempty"`
 	ClientArch        string   `json:"clientArch,omitempty"`
 	ClientMachineID   string   `json:"clientMachineID,omitempty"`
 	ClientKind        string   `json:"clientKind,omitempty"`
+	PrimaryModuleRef  string   `json:"primaryModuleRef,omitempty"`
+	CallCount         int      `json:"callCount"`
+	TopLevelCallCount int      `json:"topLevelCallCount"`
 	FirstSeenUnixNano int64    `json:"firstSeenUnixNano"`
 	LastSeenUnixNano  int64    `json:"lastSeenUnixNano"`
 }
@@ -898,9 +903,15 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]v2Client, 0)
 	for _, traceID := range traceIDs {
-		_, _, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
+			return
+		}
+		callStats := collectV2ClientCallStats(traceID, proj, scopeIdx, q)
+		moduleIndex, err := buildV2TraceModuleIndex(traceID, spans, proj, scopeIdx)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("build module index for trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
 		for _, client := range scopeIdx.Clients {
@@ -910,6 +921,7 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 			if !matchesV2Scope(q, traceID, client.SessionID, client.ID) {
 				continue
 			}
+			stats := callStats[client.ID]
 			items = append(items, v2Client{
 				ID:                client.ID,
 				TraceID:           traceID,
@@ -922,11 +934,16 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 				ServiceName:       client.ServiceName,
 				ServiceVersion:    client.ServiceVersion,
 				ScopeName:         client.ScopeName,
+				SDKName:           client.SDKName,
+				SDKVersion:        client.SDKVersion,
 				ClientVersion:     client.ClientVersion,
 				ClientOS:          client.ClientOS,
 				ClientArch:        client.ClientArch,
 				ClientMachineID:   client.ClientMachineID,
 				ClientKind:        client.ClientKind,
+				PrimaryModuleRef:  moduleIndex.PreferredRefByClient[client.ID],
+				CallCount:         stats.CallCount,
+				TopLevelCallCount: stats.TopLevelCallCount,
 				FirstSeenUnixNano: client.FirstSeenUnixNano,
 				LastSeenUnixNano:  client.LastSeenUnixNano,
 			})
@@ -946,6 +963,44 @@ func (s *Server) handleV2Clients(w http.ResponseWriter, r *http.Request) {
 		"items":             page,
 		"nextCursor":        next,
 	})
+}
+
+type v2ClientCallStats struct {
+	CallCount         int
+	TopLevelCallCount int
+}
+
+func collectV2ClientCallStats(traceID string, proj *transform.TraceProjection, scopeIdx *derive.ScopeIndex, q v2Query) map[string]v2ClientCallStats {
+	stats := map[string]v2ClientCallStats{}
+	if proj == nil || scopeIdx == nil {
+		return stats
+	}
+	for _, event := range proj.Events {
+		if event.RawKind != "call" {
+			continue
+		}
+		if !q.IncludeInternal && event.Internal {
+			continue
+		}
+		if !intersectsTime(event.StartUnixNano, event.EndUnixNano, q.FromUnixNano, q.ToUnixNano) {
+			continue
+		}
+		clientID := scopeIdx.ClientIDForSpan(event.SpanID)
+		sessionID := scopeIdx.SessionIDForSpan(event.SpanID)
+		if !matchesV2Scope(q, traceID, sessionID, clientID) {
+			continue
+		}
+		if clientID == "" {
+			continue
+		}
+		entry := stats[clientID]
+		entry.CallCount++
+		if event.TopLevel {
+			entry.TopLevelCallCount++
+		}
+		stats[clientID] = entry
+	}
+	return stats
 }
 
 func (s *Server) resolveV2TraceIDs(ctx context.Context, q v2Query) ([]string, error) {

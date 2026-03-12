@@ -43,6 +43,8 @@ type Client struct {
 	ServiceName       string
 	ServiceVersion    string
 	ScopeName         string
+	SDKName           string
+	SDKVersion        string
 	ClientVersion     string
 	ClientOS          string
 	ClientArch        string
@@ -270,6 +272,8 @@ func detectClients(traceID string, spans []rawSpan) []*clientState {
 			ServiceName:       sp.ServiceName,
 			ServiceVersion:    getStringDefault(sp.Resource, "service.version"),
 			ScopeName:         sp.ScopeName,
+			SDKName:           getStringDefault(sp.Resource, "dagger.io/sdk.name"),
+			SDKVersion:        getStringDefault(sp.Resource, "dagger.io/sdk.version"),
 			ClientVersion:     getStringDefault(sp.Resource, "dagger.io/client.version"),
 			ClientOS:          getStringDefault(sp.Resource, "dagger.io/client.os"),
 			ClientArch:        getStringDefault(sp.Resource, "dagger.io/client.arch"),
@@ -314,6 +318,8 @@ func detectExplicitClients(traceID string, spans []rawSpan) []*clientState {
 				ServiceName:     sp.ServiceName,
 				ServiceVersion:  getStringDefault(sp.Resource, "service.version"),
 				ScopeName:       sp.ScopeName,
+				SDKName:         getStringDefault(sp.Resource, "dagger.io/sdk.name"),
+				SDKVersion:      getStringDefault(sp.Resource, "dagger.io/sdk.version"),
 				ClientVersion:   getStringDefault(sp.Resource, "dagger.io/client.version"),
 				ClientOS:        getStringDefault(sp.Resource, "dagger.io/client.os"),
 				ClientArch:      getStringDefault(sp.Resource, "dagger.io/client.arch"),
@@ -348,6 +354,12 @@ func detectExplicitClients(traceID string, spans []rawSpan) []*clientState {
 		}
 		if client.ScopeName == "" {
 			client.ScopeName = sp.ScopeName
+		}
+		if client.SDKName == "" {
+			client.SDKName = getStringDefault(sp.Resource, "dagger.io/sdk.name")
+		}
+		if client.SDKVersion == "" {
+			client.SDKVersion = getStringDefault(sp.Resource, "dagger.io/sdk.version")
 		}
 		if client.ClientVersion == "" {
 			client.ClientVersion = getStringDefault(sp.Resource, "dagger.io/client.version")

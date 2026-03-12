@@ -728,7 +728,13 @@ func TestV2APIUsesExplicitExecutionScopeIDs(t *testing.T) {
 	reqPB := &coltracepb.ExportTraceServiceRequest{
 		ResourceSpans: []*tracepb.ResourceSpans{
 			{
-				Resource: &resourcepb.Resource{},
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						kvString(t, "service.name", "dagger-cli"),
+						kvString(t, "dagger.io/sdk.name", "go"),
+						kvString(t, "dagger.io/sdk.version", "v1.2.3"),
+					},
+				},
 				ScopeSpans: []*tracepb.ScopeSpans{
 					{
 						Scope: &commonpb.InstrumentationScope{Name: "dagger.io/engine.client"},
@@ -856,9 +862,13 @@ func TestV2APIUsesExplicitExecutionScopeIDs(t *testing.T) {
 	}
 	var clientsResp struct {
 		Items []struct {
-			ID         string `json:"id"`
-			SessionID  string `json:"sessionID"`
-			ClientKind string `json:"clientKind"`
+			ID                string `json:"id"`
+			SessionID         string `json:"sessionID"`
+			ClientKind        string `json:"clientKind"`
+			SDKName           string `json:"sdkName"`
+			SDKVersion        string `json:"sdkVersion"`
+			CallCount         int    `json:"callCount"`
+			TopLevelCallCount int    `json:"topLevelCallCount"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(clientsRec.Body.Bytes(), &clientsResp); err != nil {
@@ -867,7 +877,13 @@ func TestV2APIUsesExplicitExecutionScopeIDs(t *testing.T) {
 	if len(clientsResp.Items) != 1 {
 		t.Fatalf("expected 1 explicit client, got %#v", clientsResp.Items)
 	}
-	if clientsResp.Items[0].ID != clientID || clientsResp.Items[0].SessionID != sessionID || clientsResp.Items[0].ClientKind != "root" {
+	if clientsResp.Items[0].ID != clientID ||
+		clientsResp.Items[0].SessionID != sessionID ||
+		clientsResp.Items[0].ClientKind != "root" ||
+		clientsResp.Items[0].SDKName != "go" ||
+		clientsResp.Items[0].SDKVersion != "v1.2.3" ||
+		clientsResp.Items[0].CallCount != 1 ||
+		clientsResp.Items[0].TopLevelCallCount != 1 {
 		t.Fatalf("unexpected explicit client payload: %#v", clientsResp.Items[0])
 	}
 }

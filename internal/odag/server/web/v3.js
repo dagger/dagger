@@ -337,6 +337,25 @@ const entities = [
     ],
   },
   {
+    id: "clients",
+    label: "Clients",
+    code: "CT",
+    category: "Execution-centric",
+    eyebrow: "Execution roots and nested runtimes",
+    blurb:
+      "Clients are the execution entry surfaces ODAG derives from engine connect spans. They capture the submitted command, SDK identity when declared, parent/root relationships, and the DAGQL calls owned by that execution lane.",
+    metrics: [
+      { label: "Detected clients", value: "0", detail: "hydrates from /api/v2/clients" },
+      { label: "Nested clients", value: "0", detail: "child runtimes attached to one root session tree" },
+      { label: "SDK-labeled", value: "0", detail: "clients that declared dagger.io/sdk.name" },
+    ],
+    highlights: [],
+    signals: [],
+    evidence: [],
+    inventory: [],
+    relations: [],
+  },
+  {
     id: "sessions",
     label: "Sessions",
     code: "SE",
@@ -718,6 +737,14 @@ const deviceDetailEntityIDs = [
   "workspace-ops",
 ];
 
+const clientDetailEntityIDs = [
+  "clients",
+  "calls",
+  "devices",
+  "sessions",
+  "modules",
+];
+
 const substrateDetailEntityIDs = [
   "calls",
   "functions",
@@ -746,6 +773,7 @@ const state = {
   detailGraphs: {
     pipelines: {},
     functionCalls: {},
+    clientCalls: {},
   },
   live: {
     terminals: {
@@ -1027,6 +1055,11 @@ async function ensureActiveEntityData() {
     void shellHydration;
     return;
   }
+  if (state.entityID === "clients" && state.detailID) {
+    await ensureClientDetailData();
+    void shellHydration;
+    return;
+  }
   if (substrateDetailEntityIDs.includes(state.entityID) && state.detailID) {
     await ensureSubstrateDetailData();
     void shellHydration;
@@ -1060,6 +1093,14 @@ async function ensureSessionDetailData() {
 
 async function ensureDeviceDetailData() {
   const jobs = deviceDetailEntityIDs
+    .map((entityID) => liveDomainConfigs[entityID])
+    .filter(Boolean)
+    .map((config) => ensureLiveDomainData(config));
+  await Promise.all(jobs);
+}
+
+async function ensureClientDetailData() {
+  const jobs = clientDetailEntityIDs
     .map((entityID) => liveDomainConfigs[entityID])
     .filter(Boolean)
     .map((config) => ensureLiveDomainData(config));
@@ -1570,6 +1611,88 @@ async function fetchFunctionCalls(row, entry) {
       ...item,
       routeID: String(item?.routeID || item?.id || ""),
     }));
+    entry.status = "loaded";
+    entry.error = "";
+  } catch (err) {
+    entry.status = "error";
+    entry.error = err instanceof Error ? err.message : String(err || "unknown error");
+  }
+  render();
+}
+
+function clientCallEntry(row) {
+  const key = String(row?.id || row?.routeID || "");
+  if (!key) {
+    return {
+      status: "error",
+      items: [],
+      error: "Client key is missing.",
+    };
+  }
+  if (!state.detailGraphs.clientCalls[key]) {
+    state.detailGraphs.clientCalls[key] = {
+      status: "idle",
+      items: [],
+      error: "",
+    };
+  }
+  return state.detailGraphs.clientCalls[key];
+}
+
+function ensureClientCallEntry(row) {
+  const entry = clientCallEntry(row);
+  if (Number(row?.callCount || 0) === 0) {
+    entry.status = "loaded";
+    entry.items = [];
+    entry.error = "";
+    return entry;
+  }
+  const present = clientCallRows(row, entry).length;
+  if (present >= Number(row?.callCount || 0)) {
+    entry.status = "loaded";
+    entry.error = "";
+    return entry;
+  }
+  if (entry.status !== "idle") {
+    return entry;
+  }
+  entry.status = "loading";
+  entry.error = "";
+  render();
+  void fetchClientCalls(row, entry);
+  return entry;
+}
+
+async function fetchClientCalls(row, entry) {
+  const clientID = String(row?.id || "");
+  if (!clientID) {
+    entry.status = "error";
+    entry.error = "Client identity is missing.";
+    render();
+    return;
+  }
+  try {
+    const items = [];
+    let cursor = "";
+    do {
+      const params = new URLSearchParams({
+        clientID,
+        limit: "2000",
+      });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const res = await fetch(`/api/v2/calls?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const payload = await res.json();
+      if (Array.isArray(payload?.items)) {
+        items.push(...payload.items);
+      }
+      cursor = String(payload?.nextCursor || "").trim();
+    } while (cursor && items.length < Number(row?.callCount || 0));
+    entry.items = items;
     entry.status = "loaded";
     entry.error = "";
   } catch (err) {
@@ -2648,6 +2771,10 @@ function renderDetail(entity) {
   }
   if (entity.dynamicKind === "devices") {
     commitDetail(renderDeviceDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "clients") {
+    commitDetail(renderClientDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "calls") {
@@ -4418,7 +4545,7 @@ function renderDeviceDetail(entity, row) {
   const workspaceOpRows = deviceOwnedRows(row, "workspace-ops");
   const clientTable = renderTableHTML({
     columns: [
-      { label: "Top-Level Client", render: (item) => primaryCell(item.name || shortID(item.id), deviceClientPlatform(item) || item.clientKind || "top-level") },
+      { label: "Top-Level Client", render: (item) => linkedPrimaryCell(item.name || shortID(item.id), deviceClientPlatform(item) || item.clientKind || "top-level", entityPath("clients", item.id || "")) },
       { label: "Session", render: (item) => deviceClientSessionCell(item) },
       { label: "Kind", render: (item) => tonePill("neutral", item.clientKind || "top-level") },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.firstSeenUnixNano)) },
@@ -4496,6 +4623,82 @@ function renderDeviceDetail(entity, row) {
       ${detailSection("Pipelines", pipelineTable)}
       ${detailSection("Workspaces", workspaceTable)}
       ${detailSection("Host Ops", workspaceOpTable)}
+    </div>
+  `;
+}
+
+function renderClientDetail(entity, row) {
+  const callEntry = ensureClientCallEntry(row);
+  const calls = clientCallRows(row, callEntry);
+  const nested = clientIsNested(row);
+  const moduleRuntime = clientLooksLikeModule(row);
+  const childRows = clientRows()
+    .filter((item) => String(item?.parentClientID || "") === String(row?.id || ""))
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  let callEmptyMessage = "No calls were attached to this client row.";
+  if (Number(row?.callCount || 0) > 0 && callEntry.status === "loading" && calls.length === 0) {
+    callEmptyMessage = "Loading calls for this client...";
+  } else if (Number(row?.callCount || 0) > 0 && callEntry.status === "error" && calls.length === 0) {
+    callEmptyMessage = `Could not load calls for this client: ${callEntry.error || "unknown error"}`;
+  }
+  const callTable = renderTableHTML({
+    columns: [
+      { label: "Call", render: (item) => linkedCallCell(callSignatureText(item), callTableSubtitle(item), entityPath("calls", item.routeID)) },
+      { label: "Return Type", render: (item) => objectTypeLinkFromName(item.returnType, item.returnTypeID) },
+      { label: "Return value", render: (item) => callReturnValueCell(item) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: calls,
+    emptyMessage: callEmptyMessage,
+  });
+  const childTable = renderTableHTML({
+    columns: [
+      { label: "Client", render: (item) => linkedPrimaryCell(clientCommandText(item), clientCommandSubtitle(item), entityPath("clients", item.routeID)) },
+      { label: "SDK", render: (item) => clientSDKCell(item) },
+      { label: "Module", render: (item) => clientYesNoCell(clientLooksLikeModule(item)) },
+      { label: "Calls", render: (item) => clientCallsCell(item) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: childRows,
+    emptyMessage: "No nested child clients were attached to this client.",
+  });
+  const sessionHref = row?.sessionID ? entityPath("sessions", sessionRouteID(row.traceID, row.sessionID)) : "";
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Client</p>
+          <strong>${escapeHTML(clientCommandText(row))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("SDK", clientSDKCell(row))}
+          ${pipelineRecapItem("Nested", clientYesNoCell(nested))}
+          ${pipelineRecapItem("Module", clientYesNoCell(moduleRuntime))}
+          ${pipelineRecapItem("Device", clientDeviceCell(row))}
+          ${pipelineRecapItem("Session", sessionHref ? linkedPrimaryCell(shortID(row.sessionID), "", sessionHref) : "Unknown")}
+          ${pipelineRecapItem("Platform", escapeHTML(deviceClientPlatform(row) || "Unknown"))}
+          ${pipelineRecapItem("Calls", escapeHTML(String(row.callCount || 0)))}
+          ${pipelineRecapItem("Top-Level Calls", escapeHTML(String(row.topLevelCallCount || 0)))}
+          ${pipelineRecapItem("First Seen", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Service", row.serviceName ? detailCode(row.serviceName) : "Unknown")}
+          ${pipelineRecapItem("Scope", row.scopeName ? detailCode(row.scopeName) : "Unknown")}
+        </div>
+      </section>
+      ${detailCard(
+        "Relationships",
+        detailList([
+          ["Parent Client", nested && row.parentClientID ? clientLinkByID(row.parentClientID) : "None"],
+          ["Root Client", row.rootClientID && row.rootClientID !== row.id ? clientLinkByID(row.rootClientID) : "Self"],
+          ["Primary Module", clientPrimaryModuleCell(row)],
+          ["Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown"],
+          ["Client ID", row.id ? detailCode(row.id) : "Unknown"],
+        ]),
+      )}
+      ${detailSection("Calls", callTable)}
+      ${detailSection("Nested Clients", childTable)}
     </div>
   `;
 }
@@ -4940,6 +5143,9 @@ function tableModel(entity, sectionID) {
   if (entity.dynamicKind === "devices") {
     return devicesTableModel(entity, sectionID);
   }
+  if (entity.dynamicKind === "clients") {
+    return clientsTableModel(entity, sectionID);
+  }
   if (entity.dynamicKind === "calls") {
     return callsTableModel(entity, sectionID);
   }
@@ -5167,6 +5373,55 @@ function devicesTableModel(entity, sectionID) {
           { label: "Top-Level Clients", render: (row) => escapeHTML(String(row.clientCount || 0)) },
           { label: "Traces", render: (row) => escapeHTML(String(row.traceCount || 0)) },
           { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
+function clientsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Clients",
+        meta: `${rows.length} real clients`,
+        emptyMessage: "No execution clients detected yet.",
+        columns: [
+          {
+            label: "Client Command",
+            render: (row) => linkedPrimaryCell(clientCommandText(row), clientCommandSubtitle(row), entityPath(entity.id, row.routeID)),
+            sortValue: (row) => clientCommandText(row),
+            filterValue: (row) => [clientCommandText(row), clientCommandSubtitle(row), row?.serviceName, row?.clientKind].filter(Boolean).join(" "),
+          },
+          {
+            label: "SDK",
+            render: (row) => clientSDKCell(row),
+            sortValue: (row) => clientSDKText(row),
+            filterValue: (row) => clientSDKText(row),
+          },
+          {
+            label: "Nested",
+            render: (row) => clientYesNoCell(clientIsNested(row)),
+            sortValue: (row) => (clientIsNested(row) ? 1 : 0),
+          },
+          {
+            label: "Module",
+            render: (row) => clientYesNoCell(clientLooksLikeModule(row)),
+            sortValue: (row) => (clientLooksLikeModule(row) ? 1 : 0),
+          },
+          {
+            label: "Device",
+            render: (row) => clientDeviceCell(row),
+          },
+          {
+            label: "Calls",
+            render: (row) => clientCallsCell(row),
+            sortValue: (row) => Number(row?.callCount || 0),
+            filterValue: (row) => `${row?.callCount || 0} ${row?.topLevelCallCount || 0}`,
+          },
         ],
         rows,
       };
@@ -5693,12 +5948,8 @@ function workspaceHostQualifier(workspaceRow) {
 }
 
 function clientRowsByID() {
-  const rows = state.live.clients?.items;
   const byID = new Map();
-  if (!Array.isArray(rows)) {
-    return byID;
-  }
-  for (const row of rows) {
+  for (const row of clientRows()) {
     const id = String(row?.id || "");
     if (!id) {
       continue;
@@ -5711,6 +5962,15 @@ function clientRowsByID() {
 function deviceRows() {
   const rows = materializedEntityByID("devices")?.liveItems;
   return Array.isArray(rows) ? rows : [];
+}
+
+function clientRows() {
+  const rows = materializedEntityByID("clients")?.liveItems;
+  if (Array.isArray(rows)) {
+    return rows;
+  }
+  const liveRows = state.live.clients?.items;
+  return Array.isArray(liveRows) ? liveRows : [];
 }
 
 function deviceRowsForEntity(entityID, row) {
@@ -5740,6 +6000,10 @@ function objectTypeRows() {
 function moduleRows() {
   const rows = materializedEntityByID("modules")?.liveItems;
   return Array.isArray(rows) ? rows : [];
+}
+
+function clientRowByID(clientID) {
+  return clientRows().find((row) => String(row?.id || "") === String(clientID || "")) || null;
 }
 
 function callRowByID(callID) {
@@ -6342,6 +6606,21 @@ function functionCallRows(row, entry = null) {
     .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
 }
 
+function clientCallRows(row, entry = null) {
+  const clientID = String(row?.id || "");
+  if (!clientID) {
+    return [];
+  }
+  const combined = dedupeByKey(
+    [...callRows(), ...(Array.isArray(entry?.items) ? entry.items : [])].map((call) => ({
+      ...call,
+      routeID: String(call?.routeID || call?.id || ""),
+    })),
+    (call) => String(call?.routeID || call?.id || ""),
+  );
+  return combined.filter((call) => String(call?.clientID || "") === clientID).sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+}
+
 function functionSnapshotRows(row) {
   const ids = new Set(Array.isArray(row?.snapshotDagqlIDs) ? row.snapshotDagqlIDs : []);
   return objectRows()
@@ -6431,6 +6710,157 @@ function moduleSummaryLink(ref) {
     return ref ? detailCode(ref) : "";
   }
   return entityInlineLink("modules", row.routeID, row.ref);
+}
+
+function clientIsNested(row) {
+  const id = String(row?.id || "").trim();
+  const parentClientID = String(row?.parentClientID || "").trim();
+  const rootClientID = String(row?.rootClientID || "").trim();
+  return Boolean(parentClientID || (id && rootClientID && rootClientID !== id));
+}
+
+function clientLooksLikeModule(row) {
+  if (!clientIsNested(row)) {
+    return false;
+  }
+  const serviceName = String(row?.serviceName || "").trim();
+  if (serviceName && serviceName !== "dagger-cli") {
+    return true;
+  }
+  const sdkName = String(row?.sdkName || "").trim();
+  const commandArgs = Array.isArray(row?.commandArgs) ? row.commandArgs.filter(Boolean) : [];
+  return String(row?.clientKind || "").trim() === "nested" && !commandArgs.length && Boolean(sdkName);
+}
+
+function clientCommandText(row) {
+  const name = String(row?.name || "").trim();
+  if (name) {
+    return name;
+  }
+  const args = Array.isArray(row?.commandArgs) ? row.commandArgs.filter(Boolean) : [];
+  if (args.length) {
+    return args.join(" ");
+  }
+  const serviceName = String(row?.serviceName || "").trim();
+  if (serviceName) {
+    return serviceName;
+  }
+  return shortID(row?.id) || "Client";
+}
+
+function clientCommandMode(row) {
+  const args = Array.isArray(row?.commandArgs) ? row.commandArgs.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  if (args.includes("-c")) {
+    return "inline";
+  }
+  const known = ["call", "check", "query", "shell", "session"];
+  for (const token of args) {
+    if (known.includes(token)) {
+      return token;
+    }
+  }
+  if (clientLooksLikeModule(row)) {
+    return "module runtime";
+  }
+  if (clientIsNested(row)) {
+    return "nested runtime";
+  }
+  return String(row?.clientKind || "").trim() || "client";
+}
+
+function clientCommandSubtitle(row) {
+  return [clientCommandMode(row), deviceClientPlatform(row)].filter(Boolean).join(" · ");
+}
+
+function clientSDKText(row) {
+  const sdkName = String(row?.sdkName || "").trim();
+  const sdkVersion = String(row?.sdkVersion || "").trim();
+  if (!sdkName) {
+    return "";
+  }
+  return sdkVersion ? `${sdkName} ${sdkVersion}` : sdkName;
+}
+
+function clientSDKCell(row) {
+  const text = clientSDKText(row);
+  return text ? detailCode(text) : "None";
+}
+
+function clientYesNoCell(value) {
+  return tonePill(value ? "good" : "neutral", value ? "Yes" : "No");
+}
+
+function clientDeviceRow(row) {
+  const ownMachineID = String(row?.clientMachineID || "").trim();
+  if (ownMachineID) {
+    const direct = deviceRows().find((device) => String(device?.machineID || "").trim() === ownMachineID);
+    if (direct) {
+      return direct;
+    }
+  }
+  const rootClientID = String(row?.rootClientID || row?.id || "").trim();
+  if (!rootClientID) {
+    return null;
+  }
+  const rootClient = clientRowByID(rootClientID);
+  const rootMachineID = String(rootClient?.clientMachineID || "").trim();
+  if (!rootMachineID) {
+    return null;
+  }
+  return deviceRows().find((device) => String(device?.machineID || "").trim() === rootMachineID) || null;
+}
+
+function clientDeviceCell(row) {
+  const device = clientDeviceRow(row);
+  if (device) {
+    return entityInlineLink("devices", device.routeID, deviceTitle(device));
+  }
+  const machineID = String(row?.clientMachineID || clientRowByID(row?.rootClientID)?.clientMachineID || "").trim();
+  if (machineID) {
+    return detailCode(shortMachineID(machineID));
+  }
+  return "None";
+}
+
+function clientCallsCell(row) {
+  return primaryCell(String(row?.callCount || 0), `${row?.topLevelCallCount || 0} top-level`);
+}
+
+function clientPrimaryModuleRows(row) {
+  const refs = new Set();
+  const primaryRef = String(row?.primaryModuleRef || "").trim();
+  if (primaryRef) {
+    refs.add(primaryRef);
+  }
+  for (const module of moduleRows()) {
+    if (Array.isArray(module?.clientIDs) && module.clientIDs.includes(String(row?.id || ""))) {
+      refs.add(String(module.ref || "").trim());
+    }
+  }
+  return Array.from(refs)
+    .filter(Boolean)
+    .map((ref) => moduleRowByRef(ref) || { ref, routeID: "" })
+    .sort((a, b) => String(a?.ref || "").localeCompare(String(b?.ref || "")));
+}
+
+function clientPrimaryModuleCell(row) {
+  const modules = clientPrimaryModuleRows(row);
+  if (!modules.length) {
+    return "None";
+  }
+  if (modules.length === 1) {
+    return moduleSummaryLink(modules[0].ref);
+  }
+  return detailLinkList(modules.map((module) => moduleSummaryLink(module.ref)), "None");
+}
+
+function clientLinkByID(clientID, fallback = "Unknown") {
+  const row = clientRowByID(clientID);
+  const label = row ? clientCommandText(row) : String(clientID || "").trim();
+  if (!row) {
+    return label ? detailCode(label) : fallback;
+  }
+  return entityInlineLink("clients", String(row.routeID || row.id || ""), label);
 }
 
 function objectProducedBySummary(row) {
@@ -6743,7 +7173,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "checks" && entity.id !== "workspaces" && entity.id !== "devices" && entity.id !== "calls" && entity.id !== "functions" && entity.id !== "objects" && entity.id !== "object-types" && entity.id !== "modules" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
+  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "checks" && entity.id !== "workspaces" && entity.id !== "devices" && entity.id !== "clients" && entity.id !== "calls" && entity.id !== "functions" && entity.id !== "objects" && entity.id !== "object-types" && entity.id !== "modules" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -6763,6 +7193,9 @@ function materializeEntity(entity) {
     }
     if (entity.id === "devices") {
       return buildLiveDevicesEntity(entity, live.items);
+    }
+    if (entity.id === "clients") {
+      return buildLiveClientsEntity(entity, live.items);
     }
     if (entity.id === "calls") {
       return buildLiveCallsEntity(entity, live.items);
@@ -7254,6 +7687,74 @@ function buildLiveDevicesEntity(base, items) {
         value: String(clientTotal),
         tone: clientTotal > liveItems.length ? "neutral" : "good",
         detail: "Repeated top-level clients collapsed onto stable host identities.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveClientsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.id || ""),
+      name: clientCommandText(item),
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  const nestedCount = liveItems.filter((item) => clientIsNested(item)).length;
+  const sdkCount = liveItems.filter((item) => String(item?.sdkName || "").trim()).length;
+  const moduleCount = liveItems.filter((item) => clientLooksLikeModule(item)).length;
+  const callTotal = liveItems.reduce((sum, item) => sum + Number(item.callCount || 0), 0);
+
+  return {
+    ...base,
+    dynamicKind: "clients",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one execution client derived from an engine connect span, carrying command identity, parent/root ownership, SDK labels when declared, and owned DAGQL call counts.",
+    metrics: [
+      {
+        label: "Detected clients",
+        value: String(liveItems.length),
+        detail: `${nestedCount} nested | ${moduleCount} module runtimes`,
+      },
+      {
+        label: "SDK-labeled",
+        value: String(sdkCount),
+        detail: "Clients that declared dagger.io/sdk.name in telemetry.",
+      },
+      {
+        label: "Owned calls",
+        value: String(callTotal),
+        detail: "Total DAGQL calls currently attached to client rows.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: clientCommandText(item),
+      value: clientIsNested(item) ? "NESTED" : "ROOT",
+      note: `${item.callCount || 0} calls · ${clientCommandSubtitle(item) || "client"}`,
+    })),
+    signals: [
+      {
+        label: "Nested fanout",
+        value: String(nestedCount),
+        tone: nestedCount > 0 ? "neutral" : "good",
+        detail: "Child runtimes remain visible instead of collapsing into sessions only.",
+      },
+      {
+        label: "Module runtimes",
+        value: String(moduleCount),
+        tone: moduleCount > 0 ? "neutral" : "good",
+        detail: "Nested non-CLI runtimes that look like module execution clients.",
+      },
+      {
+        label: "SDK coverage",
+        value: `${sdkCount}/${liveItems.length || 0}`,
+        tone: sdkCount > 0 ? "good" : "neutral",
+        detail: "How often clients declared their SDK explicitly.",
       },
     ],
     evidence: [],
@@ -8370,6 +8871,8 @@ function navIcon(entityID) {
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 5.5h4l1 1h6v5.5h-11z"></path><path d="M2.5 5.5V4.5h4l1 1"></path></svg>',
     devices:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><rect x="3" y="3.5" width="10" height="6.5" rx="1"></rect><path d="M5.5 12.5h5"></path><path d="M7 10v2.5M9 10v2.5"></path></svg>',
+    clients:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="8" cy="5.5" r="2.2"></circle><path d="M3.5 12.5c.8-2 2.5-3 4.5-3s3.7 1 4.5 3"></path></svg>',
     sessions:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="5" cy="8" r="2.5"></circle><circle cx="11" cy="8" r="2.5"></circle><path d="M7.5 8h1"></path></svg>',
     pipelines:
