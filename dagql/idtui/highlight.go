@@ -13,14 +13,14 @@ type searchHighlight struct {
 }
 
 var (
-	// matchHighlight is used for non-current matches.
+	// matchHighlight is used for non-current matches (white bg).
 	matchHighlight = searchHighlight{
-		bg: termenv.ANSIYellow,
+		bg: termenv.ANSIWhite,
 		fg: termenv.ANSIBlack,
 	}
-	// currentMatchHighlight is used for the currently selected match.
+	// currentMatchHighlight is used for the currently selected match (yellow bg).
 	currentMatchHighlight = searchHighlight{
-		bg: termenv.ANSIBrightYellow,
+		bg: termenv.ANSIYellow,
 		fg: termenv.ANSIBlack,
 	}
 )
@@ -29,8 +29,10 @@ var (
 // visible text of an ANSI-formatted string and wraps them with the given
 // highlight style. It preserves existing ANSI sequences.
 //
-// This works by walking the string, skipping over ESC sequences (which are
-// invisible), and matching against the visible characters only.
+// The key challenge is that ANSI formatting is cumulative across multiple
+// CSI sequences (e.g., faint + foreground color). We can't just track the
+// "last" sequence — we need to replay ALL sequences seen before the highlight
+// to fully restore the prior formatting state after the highlight ends.
 func highlightANSI(s, query string, style searchHighlight) string {
 	if query == "" || s == "" {
 		return s
@@ -39,58 +41,28 @@ func highlightANSI(s, query string, style searchHighlight) string {
 	lowerQuery := strings.ToLower(query)
 	queryLen := len(lowerQuery)
 
-	// First pass: build a map from visible-char index to byte offset,
-	// and extract the visible text.
-	type charInfo struct {
-		byteOffset int
-		byteLen    int
-	}
-	var visible []charInfo
+	// First pass: extract visible text (skipping ANSI sequences) and record
+	// byte offsets so we can map match positions back to the original string.
 	var visibleText strings.Builder
 
 	i := 0
 	for i < len(s) {
 		if s[i] == '\x1b' {
-			// Skip the entire ANSI escape sequence.
-			j := i + 1
-			if j < len(s) && s[j] == '[' {
-				j++
-				for j < len(s) && !isANSITerminator(s[j]) {
-					j++
-				}
-				if j < len(s) {
-					j++ // skip terminator
-				}
-			} else if j < len(s) && s[j] == ']' {
-				// OSC sequence: ESC ] ... ST (or BEL)
-				j++
-				for j < len(s) && s[j] != '\x07' {
-					if s[j] == '\x1b' && j+1 < len(s) && s[j+1] == '\\' {
-						j += 2
-						break
-					}
-					j++
-				}
-				if j < len(s) && s[j] == '\x07' {
-					j++
-				}
-			}
-			i = j
+			i = skipANSI(s, i)
 			continue
 		}
-		visible = append(visible, charInfo{byteOffset: i, byteLen: 1})
 		visibleText.WriteByte(s[i])
 		i++
 	}
 
-	if len(visible) == 0 {
+	if visibleText.Len() == 0 {
 		return s
 	}
 
-	// Find all match positions in visible text.
+	// Find all match positions in visible text (byte indices).
 	lowerVisible := strings.ToLower(visibleText.String())
 	type matchRange struct {
-		start, end int // indices into visible[]
+		start, end int // byte indices into visible text
 	}
 	var matches []matchRange
 	searchFrom := 0
@@ -109,11 +81,11 @@ func highlightANSI(s, query string, style searchHighlight) string {
 		return s
 	}
 
-	// Build highlight start/end sequences.
+	// Build highlight start sequence.
 	hlStart := termenv.CSI + style.bg.Sequence(true) + ";" + style.fg.Sequence(false) + "m"
-	hlEnd := termenv.CSI + termenv.ResetSeq + "m"
+	hlEnd := termenv.CSI + termenv.ResetSeq + "m" // full reset
 
-	// Build a set of visible-char indices that start/end a highlight.
+	// Build sets of visible-byte indices that start/end a highlight.
 	hlStarts := make(map[int]bool, len(matches))
 	hlEnds := make(map[int]bool, len(matches))
 	for _, m := range matches {
@@ -122,43 +94,27 @@ func highlightANSI(s, query string, style searchHighlight) string {
 	}
 
 	// Second pass: reconstruct the string, injecting highlight markers.
+	// We accumulate ALL ANSI sequences seen outside of highlights so that
+	// after hlEnd (full reset) we can replay them to restore the complete
+	// formatting state (faint, bold, fg color, etc.).
 	var out strings.Builder
-	out.Grow(len(s) + len(matches)*(len(hlStart)+len(hlEnd)))
+	out.Grow(len(s) + len(matches)*(len(hlStart)+len(hlEnd)+32))
 
-	visIdx := 0
-	byteIdx := 0
+	visIdx := 0 // index into visible text (bytes)
+	byteIdx := 0 // index into original string s
 	inHighlight := false
-	// Track the ANSI state so we can restore it after highlight end.
-	var lastANSI string
+
+	// savedANSI accumulates all ANSI sequences seen while NOT in a highlight.
+	// When a highlight ends, we replay them all to restore cumulative state.
+	var savedANSI strings.Builder
 
 	for byteIdx < len(s) {
 		if s[byteIdx] == '\x1b' {
-			// Copy the entire escape sequence.
-			j := byteIdx + 1
-			if j < len(s) && s[j] == '[' {
-				j++
-				for j < len(s) && !isANSITerminator(s[j]) {
-					j++
-				}
-				if j < len(s) {
-					j++
-				}
-			} else if j < len(s) && s[j] == ']' {
-				j++
-				for j < len(s) && s[j] != '\x07' {
-					if s[j] == '\x1b' && j+1 < len(s) && s[j+1] == '\\' {
-						j += 2
-						break
-					}
-					j++
-				}
-				if j < len(s) && s[j] == '\x07' {
-					j++
-				}
-			}
+			// Copy the entire escape sequence to output.
+			j := skipANSI(s, byteIdx)
 			seq := s[byteIdx:j]
 			if !inHighlight {
-				lastANSI = seq
+				savedANSI.WriteString(seq)
 			}
 			out.WriteString(seq)
 			byteIdx = j
@@ -167,10 +123,9 @@ func highlightANSI(s, query string, style searchHighlight) string {
 
 		// Visible character.
 		if hlEnds[visIdx] && inHighlight {
+			// End highlight: full reset then replay all prior ANSI state.
 			out.WriteString(hlEnd)
-			if lastANSI != "" {
-				out.WriteString(lastANSI)
-			}
+			out.WriteString(savedANSI.String())
 			inHighlight = false
 		}
 		if hlStarts[visIdx] && !inHighlight {
@@ -185,12 +140,44 @@ func highlightANSI(s, query string, style searchHighlight) string {
 
 	if inHighlight {
 		out.WriteString(hlEnd)
-		if lastANSI != "" {
-			out.WriteString(lastANSI)
-		}
+		out.WriteString(savedANSI.String())
 	}
 
 	return out.String()
+}
+
+// skipANSI returns the byte index past the ANSI escape sequence starting at
+// position i in s. Handles CSI (ESC [) and OSC (ESC ]) sequences.
+func skipANSI(s string, i int) int {
+	j := i + 1
+	if j >= len(s) {
+		return j
+	}
+	switch s[j] {
+	case '[': // CSI sequence
+		j++
+		for j < len(s) && !isANSITerminator(s[j]) {
+			j++
+		}
+		if j < len(s) {
+			j++ // skip terminator
+		}
+	case ']': // OSC sequence: ESC ] ... ST (or BEL)
+		j++
+		for j < len(s) && s[j] != '\x07' {
+			if s[j] == '\x1b' && j+1 < len(s) && s[j+1] == '\\' {
+				j += 2
+				return j
+			}
+			j++
+		}
+		if j < len(s) && s[j] == '\x07' {
+			j++
+		}
+	default:
+		// Unknown escape — skip just the ESC byte; next byte is not consumed.
+	}
+	return j
 }
 
 func isANSITerminator(b byte) bool {
