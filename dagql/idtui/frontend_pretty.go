@@ -1457,7 +1457,8 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
 			oldMatch = fe.searchMatches[fe.searchIdx]
 		}
-		// Push query to all vterms first so midterm has fresh search results.
+		// Single pass: push query to vterms (incremental), read results,
+		// update dirty trees.
 		fe.syncVtermSearchHighlights()
 		fe.buildSearchMatches()
 		// Try to preserve the current match position.
@@ -1471,7 +1472,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		if len(fe.searchMatches) == 0 {
 			fe.searchIdx = -1
 		}
-		fe.syncSearchState()
+		fe.dirtySearchTrees()
 	}
 }
 
@@ -2206,12 +2207,12 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
-	// Push query to all vterms first so midterm has fresh search results,
-	// then build idtui's match list from those results.
+	// Push query to all vterms (triggers midterm Search), read results,
+	// navigate to first match, then update highlights + dirty trees.
 	fe.syncVtermSearchHighlights()
 	fe.buildSearchMatches()
 	fe.searchFirstForward()
-	fe.syncSearchState()
+	fe.dirtySearchTrees()
 	fe.Update()
 }
 
