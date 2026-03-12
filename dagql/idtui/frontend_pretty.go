@@ -1156,11 +1156,34 @@ type FrontendMetricExporter struct {
 }
 
 func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	// Copy the data — the OTel SDK reuses the ResourceMetrics after Export
+	// returns (via a sync.Pool in PeriodicReader), and dispatch runs
+	// asynchronously on the UI goroutine.
+	metricsCopy := cloneResourceMetrics(resourceMetrics)
 	fe.dispatch(func() {
-		fe.db.MetricExporter().Export(ctx, resourceMetrics)
+		fe.db.MetricExporter().Export(ctx, metricsCopy)
 		fe.Update()
 	})
 	return nil
+}
+
+// cloneResourceMetrics returns a shallow-enough copy of rm so that the
+// caller can safely read it after the original is recycled by the SDK.
+func cloneResourceMetrics(rm *metricdata.ResourceMetrics) *metricdata.ResourceMetrics {
+	out := &metricdata.ResourceMetrics{
+		Resource: rm.Resource,
+	}
+	if len(rm.ScopeMetrics) > 0 {
+		out.ScopeMetrics = make([]metricdata.ScopeMetrics, len(rm.ScopeMetrics))
+		for i, sm := range rm.ScopeMetrics {
+			out.ScopeMetrics[i].Scope = sm.Scope
+			if len(sm.Metrics) > 0 {
+				out.ScopeMetrics[i].Metrics = make([]metricdata.Metrics, len(sm.Metrics))
+				copy(out.ScopeMetrics[i].Metrics, sm.Metrics)
+			}
+		}
+	}
+	return out
 }
 
 func (fe FrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
@@ -1434,6 +1457,8 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
 			oldMatch = fe.searchMatches[fe.searchIdx]
 		}
+		// Push query to all vterms first so midterm has fresh search results.
+		fe.syncVtermSearchHighlights()
 		fe.buildSearchMatches()
 		// Try to preserve the current match position.
 		fe.searchIdx = 0
@@ -2166,6 +2191,9 @@ func (fe *frontendPretty) confirmSearch(query string) {
 	}
 	fe.searchQuery = query
 	fe.searchIdx = -1
+	// Push query to all vterms first so midterm has fresh search results,
+	// then build idtui's match list from those results.
+	fe.syncVtermSearchHighlights()
 	fe.buildSearchMatches()
 	fe.searchFirstForward()
 	fe.syncSearchState()
