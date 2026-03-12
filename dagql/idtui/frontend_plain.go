@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dagger.io/dagger"
@@ -32,6 +33,9 @@ const plainMaxLiteralLen = 256 // same value as cloud currently
 
 type frontendPlain struct {
 	dagui.FrontendOpts
+
+	// telemetryError records errors from the OTel telemetry pipeline.
+	telemetryError atomic.Pointer[error]
 
 	// db stores info about all the spans
 	db   *dagui.DB
@@ -230,6 +234,10 @@ func (fe *frontendPlain) SetVerbosity(n int) {
 	fe.mu.Unlock()
 }
 
+func (fe *frontendPlain) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
+}
+
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
@@ -423,7 +431,7 @@ func (fe *frontendPlain) finalRender() {
 	}
 
 	var telemetryErr error
-	if p := fe.TelemetryError.Load(); p != nil {
+	if p := fe.telemetryError.Load(); p != nil {
 		telemetryErr = *p
 	}
 	handleTelemetryErrorOutput(stderr, fe.output, telemetryErr)
