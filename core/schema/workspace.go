@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -19,10 +20,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
 			Doc("Detect and return the current workspace.").
-			Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
-			Args(
-				dagql.Arg("skipMigrationCheck").Doc("If true, skip legacy dagger.json migration checks."),
-			),
+			Experimental("Highly experimental API extracted from a more ambitious workspace implementation."),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
@@ -32,18 +30,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
 			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
-				`Path is relative to workspace root. Use "." for the root directory.`).
+				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").`),
+				dagql.Arg("path").Doc(`Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
-				`Path is relative to workspace root.`).
+				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
+				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.`),
 			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
@@ -53,54 +51,25 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
 			),
+		dagql.Func("checks", s.checks).
+			Doc("Return all checks from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+			),
+		dagql.Func("generators", s.generators).
+			Doc("Return all generators from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
+			),
 	}.Install(srv)
-}
-
-type workspaceArgs struct {
-	SkipMigrationCheck bool `default:"false"`
 }
 
 func (s *workspaceSchema) currentWorkspace(
 	ctx context.Context,
 	parent *core.Query,
-	args workspaceArgs,
+	_ struct{},
 ) (*core.Workspace, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("buildkit: %w", err)
-	}
-	cwd, err := bk.AbsPath(ctx, ".")
-	if err != nil {
-		return nil, fmt.Errorf("cwd: %w", err)
-	}
-
-	statFS := core.NewCallerStatFS(bk)
-	repoRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
-	if err != nil {
-		return nil, fmt.Errorf("workspace detection: %w", err)
-	}
-	if !found {
-		repoRoot = cwd
-	}
-
-	// Capture the current client ID so that when this workspace is passed to
-	// a module function, the directory/file resolvers can route host filesystem
-	// operations through the correct (original) client session.
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("client metadata: %w", err)
-	}
-
-	result := &core.Workspace{
-		Root:     repoRoot,
-		ClientID: clientMetadata.ClientID,
-	}
-
-	return result, nil
+	return parent.Server.CurrentWorkspace(ctx)
 }
 
 type workspaceDirectoryArgs struct {
@@ -117,63 +86,116 @@ func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
 	return dagql.CacheTypePerClient
 }
 
-func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
-	ws := parent.Self()
-
-	// Override the client metadata in context to the workspace's owning client
-	// so that host filesystem operations route through the correct session.
-	// This is necessary when the workspace is passed to a module function —
-	// the module's own session doesn't have access to the host filesystem.
-	ctx, err := s.withWorkspaceClientContext(ctx, ws)
-	if err != nil {
-		return inst, err
-	}
-
+// resolveRootfs returns a lazy directory reference for a resolved workspace path.
+// Local: per-call host.directory(absPath, include, exclude) via workspace client session.
+// Remote: navigates the pre-fetched rootfs.
+func (s *workspaceSchema) resolveRootfs(
+	ctx context.Context,
+	ws *core.Workspace,
+	resolvedPath string,
+	filter core.CopyFilter,
+	gitignore bool,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
 
-	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
-	if err != nil {
-		return inst, err
-	}
+	if ws.HostPath() != "" {
+		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return inst, err
+		}
+		absPath, err := pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+		if err != nil {
+			return inst, err
+		}
 
-	dirArgs := []dagql.NamedInput{
-		{Name: "path", Value: dagql.NewString(absPath)},
-	}
-	if len(args.Include) > 0 {
-		includes := make(dagql.ArrayInput[dagql.String], len(args.Include))
-		for i, p := range args.Include {
-			includes[i] = dagql.String(p)
+		args := []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(absPath)},
 		}
-		dirArgs = append(dirArgs, dagql.NamedInput{Name: "include", Value: includes})
-	}
-	if len(args.Exclude) > 0 {
-		excludes := make(dagql.ArrayInput[dagql.String], len(args.Exclude))
-		for i, p := range args.Exclude {
-			excludes[i] = dagql.String(p)
+		if len(filter.Include) > 0 {
+			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
+			for i, p := range filter.Include {
+				includes[i] = dagql.String(p)
+			}
+			args = append(args, dagql.NamedInput{Name: "include", Value: includes})
 		}
-		dirArgs = append(dirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
-	}
-	if args.Gitignore {
-		dirArgs = append(dirArgs,
-			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
-			// The workspace root is already the repo root, so pass it
-			// directly to avoid a redundant .git search.
-			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.Root)},
+		if len(filter.Exclude) > 0 {
+			excludes := make(dagql.ArrayInput[dagql.String], len(filter.Exclude))
+			for i, p := range filter.Exclude {
+				excludes[i] = dagql.String(p)
+			}
+			args = append(args, dagql.NamedInput{Name: "exclude", Value: excludes})
+		}
+		if gitignore {
+			args = append(args,
+				dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
+				dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.HostPath())},
+			)
+		}
+		err = srv.Select(ctx, srv.Root(), &inst,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{Field: "directory", Args: args},
 		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
+		}
+		return inst, nil
 	}
 
-	err = srv.Select(ctx, srv.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "directory", Args: dirArgs},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("workspace directory %q: %w", args.Path, err)
+	var ctxDir dagql.ObjectResult[*core.Directory] = ws.Rootfs()
+	if resolvedPath != "." && resolvedPath != "" {
+		err = srv.Select(ctx, ctxDir, &ctxDir,
+			dagql.Selector{
+				Field: "directory",
+				Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(resolvedPath)}},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
+		}
 	}
 
-	return inst, nil
+	if len(filter.Include) > 0 || len(filter.Exclude) > 0 {
+		withDirArgs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString("/")},
+			{Name: "directory", Value: dagql.NewID[*core.Directory](ctxDir.ID())},
+		}
+		if len(filter.Include) > 0 {
+			includes := make(dagql.ArrayInput[dagql.String], len(filter.Include))
+			for i, p := range filter.Include {
+				includes[i] = dagql.String(p)
+			}
+			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "include", Value: includes})
+		}
+		if len(filter.Exclude) > 0 {
+			excludes := make(dagql.ArrayInput[dagql.String], len(filter.Exclude))
+			for i, p := range filter.Exclude {
+				excludes[i] = dagql.String(p)
+			}
+			withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+		}
+		err = srv.Select(ctx, srv.Root(), &ctxDir,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withDirectory", Args: withDirArgs},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("workspace directory %q (filtering): %w", resolvedPath, err)
+		}
+	}
+
+	return ctxDir, nil
+}
+
+func (s *workspaceSchema) directory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceDirectoryArgs,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	ws := parent.Self()
+	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
 type workspaceFileArgs struct {
@@ -184,45 +206,58 @@ func (workspaceFileArgs) CacheType() dagql.CacheControlType {
 	return dagql.CacheTypePerClient
 }
 
-func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
+func (s *workspaceSchema) file(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceFileArgs,
+) (inst dagql.Result[*core.File], _ error) {
 	ws := parent.Self()
 
-	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	parentDir := filepath.Dir(resolvedPath)
+	basename := filepath.Base(resolvedPath)
+
+	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{}, false)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-
-	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
-	if err != nil {
-		return inst, err
-	}
-	fileDir, fileName := path.Split(absPath)
-
-	if err := srv.Select(ctx, srv.Root(), &inst,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(fileDir)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)}},
-			},
-		},
+	if err := srv.Select(ctx, dir, &inst,
 		dagql.Selector{
 			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(fileName)},
-			},
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.NewString(basename)}},
 		},
 	); err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}
 
 	return inst, nil
+}
+
+// resolveWorkspacePath resolves a path within the workspace root:
+//   - Relative paths resolve from the workspace root (root/workspacePath/).
+//   - Absolute paths resolve from the root (sandbox root).
+//
+// Returns a path relative to the root.
+func resolveWorkspacePath(path, workspacePath string) string {
+	clean := filepath.Clean(path)
+	if filepath.IsAbs(clean) {
+		return clean[1:]
+	}
+	return filepath.Join(workspacePath, clean)
+}
+
+// workspaceHostPath returns the absolute host path for a workspace-relative path.
+// Returns an error if the workspace is remote (read-only).
+func workspaceHostPath(ws *core.Workspace) (string, error) {
+	if ws.HostPath() == "" {
+		return "", fmt.Errorf("workspace is read-only (remote)")
+	}
+	return ws.HostPath(), nil
 }
 
 type workspaceFindUpArgs struct {
@@ -234,7 +269,11 @@ func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
 	return dagql.CacheTypePerClient
 }
 
-func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFindUpArgs) (dagql.Nullable[dagql.String], error) {
+func (s *workspaceSchema) findUp(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceFindUpArgs,
+) (dagql.Nullable[dagql.String], error) {
 	none := dagql.Null[dagql.String]()
 	ws := parent.Self()
 
@@ -252,22 +291,22 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 		return none, fmt.Errorf("buildkit: %w", err)
 	}
 
-	// Resolve start path relative to workspace root
-	absStart, err := pathutil.SandboxedRelativePath(args.From, ws.Root)
+	wsRoot := filepath.Join(ws.HostPath(), ws.Path)
+	absStart, err := pathutil.SandboxedRelativePath(args.From, wsRoot)
 	if err != nil {
 		return none, err
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	cleanRoot := path.Clean(ws.Root)
-
-	// Walk up from absStart, stopping at workspace root
+	cleanRoot := path.Clean(wsRoot)
 	curDir := absStart
 	for {
 		candidate := path.Join(curDir, args.Name)
-		_, _, err := statFS.Stat(ctx, candidate)
-		if err == nil {
-			// Found it — return path relative to workspace root
+		_, exists, err := core.StatFSExists(ctx, statFS, candidate)
+		if err != nil {
+			return none, fmt.Errorf("stat %s: %w", candidate, err)
+		}
+		if exists {
 			relPath, err := pathutil.LexicalRelativePath(cleanRoot, candidate)
 			if err != nil {
 				return none, fmt.Errorf("compute relative path: %w", err)
@@ -275,14 +314,12 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 			return dagql.NonNull(dagql.NewString(relPath)), nil
 		}
 
-		// Stop at workspace root
 		if path.Clean(curDir) == cleanRoot {
 			break
 		}
 
 		nextDir := path.Dir(curDir)
 		if nextDir == curDir {
-			// hit filesystem root (shouldn't happen since we check workspace root first)
 			break
 		}
 		curDir = nextDir
@@ -291,10 +328,169 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	return none, nil
 }
 
+func (s *workspaceSchema) checks(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.CheckGroup, error) {
+	include := workspaceIncludePatterns(args.Include)
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var allChecks []*core.Check
+	for _, mod := range mods {
+		checkGroup, err := mod.Checks(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("checks from module %q: %w", mod.Name(), err)
+		}
+		reparentWorkspaceTreeRoot(checkGroup.Node, mod.Name())
+		filtered, err := filterNodesByInclude(
+			ctx,
+			checkGroup.Checks,
+			include,
+			func(check *core.Check) *core.ModTreeNode { return check.Node },
+			func(check *core.Check) string { return check.Name() },
+			"check",
+		)
+		if err != nil {
+			return nil, err
+		}
+		allChecks = append(allChecks, filtered...)
+	}
+
+	return &core.CheckGroup{Checks: allChecks}, nil
+}
+
+func (s *workspaceSchema) generators(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.GeneratorGroup, error) {
+	include := workspaceIncludePatterns(args.Include)
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var allGenerators []*core.Generator
+	for _, mod := range mods {
+		generatorGroup, err := mod.Generators(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
+		}
+		reparentWorkspaceTreeRoot(generatorGroup.Node, mod.Name())
+		filtered, err := filterNodesByInclude(
+			ctx,
+			generatorGroup.Generators,
+			include,
+			func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
+			func(generator *core.Generator) string { return generator.Name() },
+			"generator",
+		)
+		if err != nil {
+			return nil, err
+		}
+		allGenerators = append(allGenerators, filtered...)
+	}
+
+	return &core.GeneratorGroup{Generators: allGenerators}, nil
+}
+
+func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
+	if !includeArg.Valid {
+		return nil
+	}
+	patterns := make([]string, 0, len(includeArg.Value))
+	for _, pattern := range includeArg.Value {
+		patterns = append(patterns, pattern.String())
+	}
+	return patterns
+}
+
+func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	served, err := query.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+
+	mods := make([]*core.Module, 0, len(served.PrimaryMods()))
+	for _, mod := range served.PrimaryMods() {
+		userMod, ok := mod.(*core.Module)
+		if !ok {
+			continue
+		}
+		if userMod.Name() == core.ModuleName {
+			continue
+		}
+		mods = append(mods, userMod)
+	}
+	return mods, nil
+}
+
+func reparentWorkspaceTreeRoot(root *core.ModTreeNode, modName string) {
+	if root == nil {
+		return
+	}
+	root.Parent = &core.ModTreeNode{}
+	root.Name = modName
+}
+
+func matchWorkspaceInclude(ctx context.Context, node *core.ModTreeNode, include []string) (bool, error) {
+	if len(include) == 0 {
+		return true, nil
+	}
+	if node == nil {
+		return false, nil
+	}
+	return node.Match(ctx, include)
+}
+
+func filterNodesByInclude[T any](
+	ctx context.Context,
+	items []T,
+	include []string,
+	nodeOf func(T) *core.ModTreeNode,
+	nameOf func(T) string,
+	itemKind string,
+) ([]T, error) {
+	if len(include) == 0 {
+		return items, nil
+	}
+
+	filtered := make([]T, 0, len(items))
+	for _, item := range items {
+		match, err := matchWorkspaceInclude(ctx, nodeOf(item), include)
+		if err != nil {
+			return nil, fmt.Errorf("%s %q include match: %w", itemKind, nameOf(item), err)
+		}
+		if match {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
 // withWorkspaceClientContext overrides the client metadata in context to the
 // workspace's owning client ID. This ensures host filesystem operations route
 // through the correct client session, even when called from a module context.
 func (s *workspaceSchema) withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
+	return withWorkspaceClientContext(ctx, ws)
+}
+
+// withWorkspaceClientContext overrides the client metadata in context to the
+// workspace's owning client ID. This ensures host filesystem operations route
+// through the correct client session, even when called from a module context.
+func withWorkspaceClientContext(ctx context.Context, ws *core.Workspace) (context.Context, error) {
 	if ws.ClientID == "" {
 		return nil, fmt.Errorf("workspace has no client ID")
 	}

@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,12 +43,15 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -58,6 +63,8 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/util/cleanups"
+	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 type daggerSession struct {
@@ -142,8 +149,9 @@ type daggerClient struct {
 	// if the client is coming from a module, this is that module
 	mod *core.Module
 
-	// the DAG of modules being served to this client
-	deps *core.ModDeps
+	// the set of modules being served to this client, with per-module
+	// install policy (constructor vs type-only)
+	servedMods *core.ServedMods
 	// the default deps that each client/module starts out with (currently just core)
 	defaultDeps *core.ModDeps
 
@@ -169,6 +177,29 @@ type daggerClient struct {
 
 	meterProvider  *sdkmetric.MeterProvider
 	metricExporter sdkmetric.Exporter
+
+	// Workspace and extra module loading is deferred from initializeDaggerClient
+	// to serveQuery because it requires the client's buildkit session, which
+	// isn't available during initialization (the session attachables request
+	// is blocked on the same locks that initializeDaggerClient holds).
+
+	// Whether this client should detect its own workspace and auto-load
+	// workspace modules from that workspace.
+	// True for non-module clients (main client and nested non-module clients);
+	// false for module clients (they inherit workspace binding and skip auto-load).
+	pendingWorkspaceLoad bool
+	workspaceMu          sync.Mutex
+	workspaceLoaded      bool
+	workspaceErr         error
+
+	// Cached workspace result from ensureWorkspaceLoaded.
+	workspace *core.Workspace
+
+	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
+	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
+	modulesMu           sync.Mutex
+	modulesLoaded       bool
+	modulesErr          error
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -628,7 +659,8 @@ func (srv *Server) initializeDaggerClient(
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
-	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.servedMods = core.NewServedMods(client.dagqlRoot)
+	client.servedMods.Add(coreMod, false)
 	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
@@ -656,12 +688,25 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
+		client.servedMods = core.NewServedMods(client.dagqlRoot)
+		client.servedMods.Add(coreMod, false)
+		for _, dep := range client.mod.Deps.Mods {
+			client.servedMods.Add(dep, false)
+		}
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
-			client.deps = client.deps.Append(client.mod)
+			client.servedMods.Add(client.mod, false)
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	}
+
+	// Mark non-module clients for deferred workspace + extra module loading.
+	// Actual loading happens in serveQuery once the buildkit session is available.
+	if opts.EncodedModuleID == "" {
+		client.pendingWorkspaceLoad = true
+		if clientMD := client.clientMetadata; clientMD != nil && len(clientMD.ExtraModules) > 0 {
+			client.pendingExtraModules = clientMD.ExtraModules
+		}
 	}
 
 	// configure OTel providers that export to SQLite
@@ -886,6 +931,21 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
+		if opts.SkipWorkspaceModules {
+			client.clientMetadata.SkipWorkspaceModules = true
+		}
+		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
+			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
+				ref := workspaceRef
+				client.clientMetadata.Workspace = &ref
+			}
+		}
+		// ExtraModules may arrive on a later request (e.g. /init) after the
+		// session attachable request already created the client without them.
+		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
+			client.clientMetadata.ExtraModules = opts.ExtraModules
+			client.pendingExtraModules = opts.ExtraModules
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -955,25 +1015,37 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}
 
 	allowedLLMModules := execMD.AllowedLLMModules
-	eagerRuntime := false
+	var extraModules []engine.ExtraModule
+	var skipWorkspaceModules bool
+	var eagerRuntime bool
+	var workspaceRef *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
+		extraModules = md.ExtraModules
+		skipWorkspaceModules = md.SkipWorkspaceModules
 		eagerRuntime = md.EagerRuntime
+		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
+			ref := declaredWorkspace
+			workspaceRef = &ref
+		}
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
-			ClientID:          execMD.ClientID,
-			ClientVersion:     clientVersion,
-			ClientSecretToken: execMD.SecretToken,
-			SessionID:         execMD.SessionID,
-			ClientHostname:    execMD.Hostname,
-			ClientStableID:    execMD.ClientStableID,
-			Labels:            map[string]string{},
-			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
-			AllowedLLMModules: allowedLLMModules,
-			EagerRuntime:      eagerRuntime,
+			ClientID:             execMD.ClientID,
+			ClientVersion:        clientVersion,
+			ClientSecretToken:    execMD.SecretToken,
+			SessionID:            execMD.SessionID,
+			ClientHostname:       execMD.Hostname,
+			ClientStableID:       execMD.ClientStableID,
+			Labels:               map[string]string{},
+			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
+			AllowedLLMModules:    allowedLLMModules,
+			ExtraModules:         extraModules,
+			SkipWorkspaceModules: skipWorkspaceModules,
+			EagerRuntime:         eagerRuntime,
+			Workspace:            workspaceRef,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -1155,6 +1227,22 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
+	// turn panics into graphql errors — must be set up before any code that
+	// could panic (including ensureExtraModulesLoaded and schema loading).
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+			switch v := v.(type) {
+			case error:
+				rerr = gqlErr(v, http.StatusInternalServerError)
+			case string:
+				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
+			default:
+				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
+			}
+		}
+	}()
+
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
 	if trace.SpanContextFromContext(ctx).IsValid() {
@@ -1185,8 +1273,19 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
+	// Load workspace modules and extra modules (e.g. from -m flag). These are
+	// deferred from initializeDaggerClient because they need the client's
+	// buildkit session, which only becomes available after the session
+	// attachables handshake completes (after init locks are released).
+	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
+	}
+	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
+		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
+	}
+
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
-	schema, err := client.deps.Schema(ctx)
+	schema, err := client.servedMods.Schema(ctx)
 	if err != nil {
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
@@ -1199,21 +1298,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
 	// 	return res
 	// })
-
-	// turn panics into graphql errors
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			switch v := v.(type) {
-			case error:
-				rerr = gqlErr(v, http.StatusInternalServerError)
-			case string:
-				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
-			default:
-				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
-			}
-		}
-	}()
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
@@ -1306,7 +1390,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
-// Stitch in the given module to the list being served to the current client
+// Stitch in the given module to the list being served to the current client.
+// When includeDependencies is true, dependency modules are also served with
+// their constructors on the Query root (used by `dagger query`).
 func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
@@ -1316,39 +1402,51 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	err = srv.serveModule(client, mod)
-	if err != nil {
+	if err := srv.serveModule(client, mod, false); err != nil {
 		return err
 	}
 	if includeDependencies {
-		for _, depMod := range mod.Deps.Mods {
-			err = srv.serveModule(client, depMod)
-			if err != nil {
-				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)
+		for _, dep := range mod.Deps.Mods {
+			if err := srv.serveModule(client, dep, false); err != nil {
+				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 			}
 		}
 	}
 	return nil
 }
 
-// not threadsafe, client.stateMu must be held when calling
-func (srv *Server) serveModule(client *daggerClient, mod core.Mod) error {
-	// don't add the same module twice
-	// This can happen with generated clients since all remote dependencies are added
-	// on each connection and this could happen multiple times.
-	depMod, exist := client.deps.LookupDep(mod.Name())
-	if exist {
-		// Error if there's a conflict between dependencies
-		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
+// serveModuleWithDeps serves a module with its constructor on the Query
+// root, and its dependencies as type-only (types available for schema
+// resolution but no constructors).
+//
+// Not threadsafe: client.stateMu must be held when calling.
+func (srv *Server) serveModuleWithDeps(client *daggerClient, mod *core.Module) error {
+	if err := srv.serveModule(client, mod, false); err != nil {
+		return err
+	}
+	for _, dep := range mod.Deps.Mods {
+		if err := srv.serveModule(client, dep, true); err != nil {
+			return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
+		}
+	}
+	return nil
+}
+
+// serveModule adds a module to the client's served set. skipConstructor
+// controls whether the module's constructor appears on the Query root.
+//
+// Not threadsafe: client.stateMu must be held when calling.
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod, skipConstructor bool) error {
+	existing, ok := client.servedMods.Lookup(mod.Name())
+	if ok {
+		if !isSameModuleReference(existing.GetSource(), mod.GetSource()) {
 			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
-				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
+				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), existing.GetSource().AsString(), existing.GetSource().Pin(),
 			)
 		}
-
-		return nil
 	}
-
-	client.deps = client.deps.Append(mod)
+	// Add handles deduplication and promotion internally.
+	client.servedMods.Add(mod, skipConstructor)
 	return nil
 }
 
@@ -1364,12 +1462,745 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 		return true
 	}
 
-	// If they are do not have the same reference nor same pin, they cannot be the same.
-	if a.AsString() != b.AsString() || a.Pin() != b.Pin() {
+	// Match by canonical module identity:
+	// - local: absolute source-code path (context dir + sourceSubpath)
+	// - git: clone ref + sourceSubpath
+	// plus pin equality for immutable provenance.
+	if canonicalModuleReference(a) != canonicalModuleReference(b) {
 		return false
 	}
+	return a.Pin() == b.Pin()
+}
 
-	return true
+func canonicalModuleReference(src *core.ModuleSource) string {
+	sourceSubpath := src.SourceSubpath
+	if sourceSubpath == "" {
+		sourceSubpath = src.SourceRootSubpath
+	}
+
+	switch src.Kind {
+	case core.ModuleSourceKindLocal:
+		return filepath.Clean(filepath.Join(src.Local.ContextDirectoryPath, sourceSubpath))
+	case core.ModuleSourceKindGit:
+		return core.GitRefString(src.Git.CloneRef, sourceSubpath, "")
+	default:
+		// Fallback for non-local/non-git sources.
+		return src.AsString()
+	}
+}
+
+// ensureWorkspaceLoaded detects the workspace from the client's working directory
+// and loads all configured modules onto the dagql server. Called from serveQuery
+// (not initializeDaggerClient) because it requires the client's buildkit session
+// to access the client's filesystem for workspace detection.
+func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error {
+	mode, workspaceRef := workspaceBindingMode(client)
+	if mode == workspaceBindingInherit {
+		return srv.inheritWorkspaceBinding(ctx, client)
+	}
+
+	client.workspaceMu.Lock()
+	defer client.workspaceMu.Unlock()
+
+	if client.workspaceLoaded {
+		return client.workspaceErr
+	}
+
+	// Wait for the client's buildkit session to be available.
+	// Don't mark as loaded on failure — allow retry on next request.
+	if _, err := client.getClientCaller(client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session: %w", err)
+	}
+
+	var err error
+	switch mode {
+	case workspaceBindingDeclared:
+		err = srv.loadWorkspaceFromDeclaredRef(ctx, client, workspaceRef)
+	case workspaceBindingDetectHost:
+		err = srv.loadWorkspaceFromHost(ctx, client)
+	default:
+		err = fmt.Errorf("unsupported workspace binding mode %q", mode)
+	}
+	if err != nil {
+		client.workspaceErr = err
+	}
+
+	client.workspaceLoaded = true
+	return client.workspaceErr
+}
+
+type workspaceBindingModeType string
+
+const (
+	workspaceBindingDeclared   workspaceBindingModeType = "declared"
+	workspaceBindingDetectHost workspaceBindingModeType = "detect_host"
+	workspaceBindingInherit    workspaceBindingModeType = "inherit"
+)
+
+// workspaceBindingMode resolves binding behavior for the current client:
+// explicit workspace declaration, own host detection, or parent inheritance.
+func workspaceBindingMode(client *daggerClient) (workspaceBindingModeType, string) {
+	if workspaceRef, ok := workspaceRefFromClientMetadata(client.clientMetadata); ok {
+		return workspaceBindingDeclared, workspaceRef
+	}
+	if client.pendingWorkspaceLoad {
+		return workspaceBindingDetectHost, ""
+	}
+	return workspaceBindingInherit, ""
+}
+
+// workspaceRefFromClientMetadata returns the explicitly declared workspace
+// binding, if present.
+func workspaceRefFromClientMetadata(clientMD *engine.ClientMetadata) (string, bool) {
+	if clientMD == nil {
+		return "", false
+	}
+	if clientMD.Workspace != nil {
+		return *clientMD.Workspace, true
+	}
+	return "", false
+}
+
+// inheritWorkspaceBinding copies the nearest available parent workspace binding
+// onto the current client. This keeps nested clients aligned with their parent
+// workspace for currentWorkspace() resolution.
+func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error {
+	client.workspaceMu.Lock()
+	if client.workspace != nil {
+		client.workspaceMu.Unlock()
+		return nil
+	}
+	client.workspaceMu.Unlock()
+
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
+			return err
+		}
+
+		parent.workspaceMu.Lock()
+		parentWorkspace := parent.workspace
+		parent.workspaceMu.Unlock()
+		if parentWorkspace == nil {
+			continue
+		}
+
+		client.workspaceMu.Lock()
+		if client.workspace == nil {
+			client.workspace = parentWorkspace
+		}
+		client.workspaceMu.Unlock()
+		return nil
+	}
+
+	return nil
+}
+
+// loadWorkspaceFromHost detects and loads the workspace from the client's host filesystem.
+func (srv *Server) loadWorkspaceFromHost(ctx context.Context, client *daggerClient) error {
+	return srv.loadWorkspaceFromHostPath(ctx, client, ".")
+}
+
+func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *daggerClient, hostPath string) error {
+	cwd, err := client.bkClient.AbsPath(ctx, hostPath)
+	if err != nil {
+		return fmt.Errorf("workspace detection: %w", err)
+	}
+
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		return filepath.Join(ws.Root, ws.Path, relPath)
+	}
+
+	return srv.detectAndLoadWorkspace(ctx, client,
+		core.NewCallerStatFS(client.bkClient),
+		client.bkClient.ReadCallerHostFile,
+		cwd,
+		resolveLocalRef,
+		true, // isLocal
+	)
+}
+
+func (srv *Server) loadWorkspaceFromDeclaredRef(ctx context.Context, client *daggerClient, workspaceRef string) error {
+	// Resolve as local path first (relative to the connecting client's cwd).
+	// If not found, fall back to parsing as a git workspace ref.
+	localPath, err := client.bkClient.AbsPath(ctx, workspaceRef)
+	if err == nil {
+		localStat, statErr := client.bkClient.StatCallerHostPath(ctx, localPath, true)
+		switch {
+		case statErr == nil:
+			if !localStat.IsDir() {
+				return fmt.Errorf("workspace %q: local path is not a directory", workspaceRef)
+			}
+			return srv.loadWorkspaceFromHostPath(ctx, client, localPath)
+		case !isWorkspaceNotFound(statErr):
+			return fmt.Errorf("workspace %q: checking local path: %w", workspaceRef, statErr)
+		}
+	}
+
+	if remoteErr := srv.loadWorkspaceFromRemote(ctx, client, workspaceRef); remoteErr == nil {
+		return nil
+	} else if err == nil {
+		return fmt.Errorf("workspace %q did not resolve as local path or git ref: %w", workspaceRef, remoteErr)
+	}
+	return fmt.Errorf("workspace %q: resolving local path: %w", workspaceRef, err)
+}
+
+func isWorkspaceNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+type workspaceRemoteRef struct {
+	cloneRef        string
+	version         string
+	workspaceSubdir string
+}
+
+func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRemoteRef, error) {
+	// Fragment refs are parsed via the same git URL parser used by Address.*.
+	if strings.Contains(remoteRef, "#") {
+		gitURL, err := gitutil.ParseURL(remoteRef)
+		if err != nil {
+			return workspaceRemoteRef{}, err
+		}
+		version := ""
+		subdir := "."
+		if gitURL.Fragment != nil {
+			version = gitURL.Fragment.Ref
+			subdir = gitURL.Fragment.Subdir
+		}
+		workspaceSubdir, err := normalizeWorkspaceRemoteSubdir(subdir)
+		if err != nil {
+			return workspaceRemoteRef{}, fmt.Errorf("invalid git subdir in workspace ref %q: %w", remoteRef, err)
+		}
+		return workspaceRemoteRef{
+			cloneRef:        gitURL.Remote(),
+			version:         version,
+			workspaceSubdir: workspaceSubdir,
+		}, nil
+	}
+
+	// Preserve legacy @ref parsing semantics for existing workspace refs.
+	parsedRef, err := core.ParseGitRefString(ctx, remoteRef)
+	if err != nil {
+		return workspaceRemoteRef{}, err
+	}
+	workspaceSubdir := "."
+	if parsedRef.RepoRootSubdir != "/" && parsedRef.RepoRootSubdir != "." {
+		workspaceSubdir = parsedRef.RepoRootSubdir
+	}
+	return workspaceRemoteRef{
+		cloneRef:        parsedRef.SourceCloneRef,
+		version:         parsedRef.ModVersion,
+		workspaceSubdir: workspaceSubdir,
+	}, nil
+}
+
+func normalizeWorkspaceRemoteSubdir(subdir string) (string, error) {
+	if subdir == "" {
+		return ".", nil
+	}
+	subdir = filepath.Clean(subdir)
+	subdir = strings.TrimPrefix(subdir, string(filepath.Separator))
+	if subdir == "" || subdir == "." {
+		return ".", nil
+	}
+	if !filepath.IsLocal(subdir) {
+		return "", fmt.Errorf("path points outside repository: %q", subdir)
+	}
+	return subdir, nil
+}
+
+// loadWorkspaceFromRemote clones a git repo and detects/loads the workspace from it.
+func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerClient, remoteRef string) error {
+	parsedRef, err := parseWorkspaceRemoteRef(ctx, remoteRef)
+	if err != nil {
+		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
+	}
+
+	tree, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
+	if err != nil {
+		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
+	}
+
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		subPath := filepath.Join(ws.Root, ws.Path, relPath)
+		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
+	}
+
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
+		&core.DirectoryStatFS{Dir: tree},
+		func(ctx context.Context, path string) ([]byte, error) {
+			return core.DirectoryReadFile(ctx, tree, path)
+		},
+		parsedRef.workspaceSubdir,
+		resolveLocalRef,
+		false, // isLocal
+		tree,  // pre-built rootfs for remote
+	)
+}
+
+// detectAndLoadWorkspace is the unified core of workspace detection and module loading
+// for local workspaces.
+func (srv *Server) detectAndLoadWorkspace(
+	ctx context.Context,
+	client *daggerClient,
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
+	cwd string,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	isLocal bool,
+) error {
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, isLocal, dagql.ObjectResult[*core.Directory]{})
+}
+
+// pendingModule represents a module to be loaded from compat parsing,
+// -m flags, or the implicit CWD module.
+type pendingModule struct {
+	// Source reference (local path or git URL).
+	Ref string
+
+	// Requested pin for git/module refs. Empty means resolve live.
+	RefPin string
+
+	// Name override (empty = derive from module).
+	Name string
+
+	// If true, this is a blueprint module: it replaces the CWD module's
+	// constructor, assuming its name and type namespace.
+	Blueprint bool
+
+	// If true, resolve +defaultPath from workspace root instead of module source.
+	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	LegacyDefaultPath bool
+
+	// If true, disable find-up when resolving the module source.
+	// Used for explicitly-targeted refs whose path is already final.
+	DisableFindUp bool
+
+	// Workspace config defaults to apply to the module.
+	ConfigDefaults     map[string]any
+	DefaultsFromDotEnv bool
+}
+
+type moduleLoadRequest struct {
+	mod   pendingModule
+	extra bool
+}
+
+const maxParallelModuleResolves = 8
+
+// findBlueprint returns the index of the first blueprint module in pending,
+// or -1 if none exists.
+func findBlueprint(pending []pendingModule) int {
+	for i, m := range pending {
+		if m.Blueprint {
+			return i
+		}
+	}
+	return -1
+}
+
+// cwdModuleName reads the module name from the dagger.json in moduleDir.
+func cwdModuleName(ctx context.Context, readFile func(context.Context, string) ([]byte, error), moduleDir string) string {
+	data, err := readFile(ctx, filepath.Join(moduleDir, workspace.ModuleConfigFileName))
+	if err != nil {
+		return ""
+	}
+	var cfg struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	return cfg.Name
+}
+
+func pendingLegacyModule(
+	ws *workspace.Workspace,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	name, source, pin string,
+	blueprint bool,
+	configDefaults map[string]any,
+) pendingModule {
+	kind := core.FastModuleSourceKindCheck(source, pin)
+	ref := source
+	if kind == core.ModuleSourceKindLocal {
+		ref = resolveLocalRef(ws, source)
+	}
+
+	mod := pendingModule{
+		Ref:               ref,
+		RefPin:            pin,
+		Name:              name,
+		Blueprint:         blueprint,
+		LegacyDefaultPath: true,
+		ConfigDefaults:    configDefaults,
+	}
+	if kind == core.ModuleSourceKindLocal {
+		mod.RefPin = ""
+	}
+	return mod
+}
+
+// detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
+// and module gathering. It detects the current workspace root, applies legacy
+// dagger.json compat, and gathers all modules to be loaded later by
+// ensureModulesLoaded.
+//
+// It works for both local and remote workspaces, parameterized by the filesystem
+// abstraction (statFS/readFile) and reference resolution (resolveLocalRef).
+// For remote workspaces, prebuiltRootfs provides the already-cloned git tree.
+func (srv *Server) detectAndLoadWorkspaceWithRootfs(
+	ctx context.Context,
+	client *daggerClient,
+	statFS core.StatFS,
+	readFile func(context.Context, string) ([]byte, error),
+	cwd string,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	isLocal bool,
+	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+) error {
+	clientMD := client.clientMetadata
+	skipModules := !client.pendingWorkspaceLoad || (clientMD != nil && clientMD.SkipWorkspaceModules)
+
+	// --- Detect workspace (pure — no dagger.json knowledge) ---
+	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
+		return core.StatFSExists(ctx, statFS, path)
+	}, readFile, cwd)
+	if err != nil {
+		return err
+	}
+
+	// --- Compat mode: extract toolchains/blueprints from legacy dagger.json ---
+	// In the foundation split, initialized workspace config is deferred, so a
+	// nearby dagger.json is the only source of workspace-level enrichment.
+	var legacyToolchains []workspace.LegacyToolchain
+	var legacyBlueprint *workspace.LegacyBlueprint
+	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+	if hasModuleConfig {
+		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
+		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
+			legacyToolchains, _ = workspace.ParseLegacyToolchains(data)
+			legacyBlueprint, _ = workspace.ParseLegacyBlueprint(data)
+		}
+		if len(legacyToolchains) > 0 || legacyBlueprint != nil {
+			slog.Warn("Inferring workspace behavior from legacy module config.",
+				"config", cfgPath)
+		}
+	} else {
+		wsDir := filepath.Join(ws.Root, ws.Path)
+		slog.Info("No workspace modules detected.", "path", wsDir)
+	}
+
+	// Build + cache core.Workspace.
+	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs)
+	if err != nil {
+		return fmt.Errorf("building workspace: %w", err)
+	}
+	client.workspace = coreWS
+
+	if skipModules {
+		return nil
+	}
+
+	// --- Gather all modules to load ---
+	var pending []pendingModule
+
+	// (1a) Legacy toolchains (from compat mode, extracted above)
+	for _, tc := range legacyToolchains {
+		pending = append(pending, pendingLegacyModule(
+			ws,
+			resolveLocalRef,
+			tc.Name,
+			tc.Source,
+			tc.Pin,
+			false,
+			tc.ConfigDefaults,
+		))
+	}
+
+	// (1b) Legacy blueprint (from compat mode, extracted above)
+	if legacyBlueprint != nil {
+		pending = append(pending, pendingLegacyModule(
+			ws,
+			resolveLocalRef,
+			legacyBlueprint.Name,
+			legacyBlueprint.Source,
+			legacyBlueprint.Pin,
+			true,
+			nil,
+		))
+	}
+
+	// (2) Implicit module (dagger.json near CWD)
+	{
+		moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+		if hasModuleConfig {
+			wsDir := filepath.Join(ws.Root, ws.Path)
+			rel, _ := filepath.Rel(wsDir, moduleDir)
+			name := cwdModuleName(ctx, readFile, moduleDir)
+			pending = append(pending, pendingModule{
+				Ref:       resolveLocalRef(ws, rel),
+				Name:      name,
+				Blueprint: true,
+			})
+		}
+	}
+
+	// (3) Extra modules from -m flag are stored separately in
+	//     client.pendingExtraModules (already populated from clientMD).
+	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
+
+	client.pendingModules = pending
+
+	// Set the workspace's default module so the CLI knows which module
+	// to focus on without heuristics.
+	if idx := findBlueprint(pending); idx >= 0 {
+		client.workspace.DefaultModule = pending[idx].Name
+	}
+
+	return nil
+}
+
+// buildCoreWorkspace converts the internal workspace detection result into
+// the public core.Workspace. For local workspaces, it stores the host path
+// (directories are resolved lazily). For remote, it stores the prebuiltRootfs.
+func (srv *Server) buildCoreWorkspace(
+	ctx context.Context,
+	_ *daggerClient,
+	detected *workspace.Workspace,
+	isLocal bool,
+	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+) (*core.Workspace, error) {
+	// Capture the current client ID for routing host filesystem operations.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("client metadata: %w", err)
+	}
+
+	coreWS := &core.Workspace{
+		Path:     detected.Path,
+		ClientID: clientMetadata.ClientID,
+	}
+
+	if isLocal {
+		// Local: store host path only. Directories are resolved lazily
+		// via per-call host.directory() in resolveRootfs.
+		coreWS.SetHostPath(detected.Root)
+	} else {
+		// Remote: store the cloned git tree.
+		coreWS.SetRootfs(prebuiltRootfs)
+	}
+
+	return coreWS, nil
+}
+
+// cloneGitTree clones a git repository and returns its directory tree.
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], error) {
+	// Build the ref selector — use "head" if no version specified.
+	refSelector := dagql.Selector{Field: "head"}
+	if version != "" {
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(version)}},
+		}
+	}
+
+	var tree dagql.ObjectResult[*core.Directory]
+	err := dag.Select(ctx, dag.Root(), &tree,
+		dagql.Selector{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(cloneRef)},
+			},
+		},
+		refSelector,
+		dagql.Selector{Field: "tree"},
+	)
+	if err != nil {
+		return tree, fmt.Errorf("cloning repo: %w", err)
+	}
+	return tree, nil
+}
+
+// ensureModulesLoaded loads all pending modules (from compat parsing,
+// the implicit CWD module, and -m flags). Called from serveQuery after
+// ensureWorkspaceLoaded. Uses a mutex+flag instead of sync.Once so that
+// transient failures (e.g. session not yet registered) can be retried.
+func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient) error {
+	if len(client.pendingModules) == 0 && len(client.pendingExtraModules) == 0 {
+		return nil
+	}
+
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
+
+	if client.modulesLoaded {
+		return client.modulesErr
+	}
+
+	// Wait for the client's buildkit session to be available.
+	// Don't mark as loaded on failure — allow retry on next request.
+	if _, err := client.getClientCaller(client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session: %w", err)
+	}
+
+	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules)
+	resolvedMods := make([]*core.Module, len(loads))
+	resolveErrs := make([]error, len(loads))
+
+	// Resolve modules in parallel, then apply to client state in deterministic order.
+	jobs := parallel.New().
+		WithContextualTracer(true).
+		WithLimit(moduleResolveParallelism(len(loads)))
+	for i, load := range loads {
+		i := i
+		load := load
+		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
+			resolved, err := srv.resolveModule(ctx, client.dag, load.mod)
+			if err != nil {
+				resolveErrs[i] = err
+				return nil
+			}
+			resolvedMods[i] = resolved
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		client.modulesErr = fmt.Errorf("resolving modules: %w", err)
+		client.modulesLoaded = true
+		return client.modulesErr
+	}
+
+	for i, load := range loads {
+		if resolveErrs[i] != nil {
+			client.modulesErr = moduleLoadErr(load, resolveErrs[i])
+			client.modulesLoaded = true
+			return client.modulesErr
+		}
+	}
+
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+	for i, load := range loads {
+		if err := srv.serveModuleWithDeps(client, resolvedMods[i]); err != nil {
+			client.modulesErr = moduleLoadErr(load, err)
+			client.modulesLoaded = true
+			return client.modulesErr
+		}
+	}
+
+	client.modulesLoaded = true
+	return nil
+}
+
+func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {
+	loads := make([]moduleLoadRequest, 0, len(pending)+len(extras))
+	for _, mod := range pending {
+		loads = append(loads, moduleLoadRequest{mod: mod})
+	}
+	for _, extra := range extras {
+		loads = append(loads, moduleLoadRequest{
+			mod: pendingModule{
+				Ref:       extra.Ref,
+				Name:      extra.Name,
+				Blueprint: extra.Blueprint,
+			},
+			extra: true,
+		})
+	}
+	return loads
+}
+
+func moduleResolveParallelism(moduleCount int) int {
+	if moduleCount <= 1 {
+		return 1
+	}
+	if moduleCount > maxParallelModuleResolves {
+		return maxParallelModuleResolves
+	}
+	return moduleCount
+}
+
+func moduleProgressName(mod pendingModule) string {
+	if mod.Name != "" {
+		return mod.Name
+	}
+	if mod.Ref != "" {
+		return mod.Ref
+	}
+	return "<unknown>"
+}
+
+func moduleLoadJobName(load moduleLoadRequest) string {
+	prefix := "load module: "
+	if load.extra {
+		prefix = "load extra module: "
+	}
+	return prefix + moduleProgressName(load.mod)
+}
+
+func moduleLoadErr(load moduleLoadRequest, err error) error {
+	prefix := "loading module"
+	if load.extra {
+		prefix = "loading extra module"
+	}
+	return fmt.Errorf("%s %q: %w", prefix, load.mod.Ref, err)
+}
+
+// resolveModule resolves a module through the dagql pipeline.
+// Handles all module sources uniformly: legacy compat modules,
+// implicit CWD modules, and -m flag modules.
+func (srv *Server) resolveModule(
+	ctx context.Context,
+	dag *dagql.Server,
+	mod pendingModule,
+) (*core.Module, error) {
+	args := []dagql.NamedInput{
+		{Name: "refString", Value: dagql.String(mod.Ref)},
+	}
+	if mod.RefPin != "" {
+		args = append(args, dagql.NamedInput{Name: "refPin", Value: dagql.String(mod.RefPin)})
+	}
+	if mod.DisableFindUp {
+		args = append(args, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
+	}
+
+	var resolved dagql.ObjectResult[*core.Module]
+	err := dag.Select(ctx, dag.Root(), &resolved,
+		dagql.Selector{Field: "moduleSource", Args: args},
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+	}
+
+	if mod.Name != "" {
+		resolved.Self().NameField = mod.Name
+	}
+	// noop: Blueprint is handled during module gathering, not at load time.
+	if mod.LegacyDefaultPath {
+		resolved.Self().LegacyDefaultPath = true
+	}
+	if len(mod.ConfigDefaults) > 0 {
+		resolved.Self().WorkspaceConfig = mod.ConfigDefaults
+		resolved.Self().DefaultsFromDotEnv = mod.DefaultsFromDotEnv
+		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
+	}
+
+	return resolved.Self(), nil
+}
+
+// CurrentWorkspace returns the cached workspace for the current client.
+func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.workspace == nil {
+		return nil, fmt.Errorf("workspace not loaded")
+	}
+	return client.workspace, nil
 }
 
 // If the current client is coming from a function, return the module that function is from
@@ -1418,13 +2249,13 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	return client.fnCall, nil
 }
 
-// Return the list of deps being served to the current client
-func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {
+// Return the modules being served to the current client
+func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ServedMods, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return client.deps, nil
+	return client.servedMods, nil
 }
 
 // The Client metadata of the main client caller (i.e. the one who created the

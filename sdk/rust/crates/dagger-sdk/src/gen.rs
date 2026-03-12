@@ -9297,6 +9297,11 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// If this function is provided by a module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Returns the function with the provided argument
     ///
     /// # Arguments
@@ -11367,15 +11372,6 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The blueprint referenced by the module source.
-    pub fn blueprint(&self) -> ModuleSource {
-        let query = self.selection.select("blueprint");
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
@@ -11545,15 +11541,6 @@ impl ModuleSource {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The toolchains referenced by the module source.
-    pub fn toolchains(&self) -> Vec<ModuleSource> {
-        let query = self.selection.select("toolchains");
-        vec![ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
-    }
     /// User-defined defaults read from local .env files
     pub fn user_defaults(&self) -> EnvFile {
         let query = self.selection.select("userDefaults");
@@ -11567,26 +11554,6 @@ impl ModuleSource {
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Set a blueprint for the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `blueprint` - The blueprint module to set.
-    pub fn with_blueprint(&self, blueprint: impl IntoID<ModuleSourceId>) -> ModuleSource {
-        let mut query = self.selection.select("withBlueprint");
-        query = query.arg_lazy(
-            "blueprint",
-            Box::new(move || {
-                let blueprint = blueprint.clone();
-                Box::pin(async move { blueprint.into_id().await.unwrap().quote() })
-            }),
-        );
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// Update the module source with a new client to generate.
     ///
@@ -11715,29 +11682,6 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Add toolchains to the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `toolchains` - The toolchain modules to add.
-    pub fn with_toolchains(&self, toolchains: Vec<ModuleSourceId>) -> ModuleSource {
-        let mut query = self.selection.select("withToolchains");
-        query = query.arg("toolchains", toolchains);
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Update the blueprint module to the latest version.
-    pub fn with_update_blueprint(&self) -> ModuleSource {
-        let query = self.selection.select("withUpdateBlueprint");
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Update one or more module dependencies.
     ///
     /// # Arguments
@@ -11748,26 +11692,6 @@ impl ModuleSource {
         query = query.arg(
             "dependencies",
             dependencies
-                .into_iter()
-                .map(|i| i.into())
-                .collect::<Vec<String>>(),
-        );
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Update one or more toolchains.
-    ///
-    /// # Arguments
-    ///
-    /// * `toolchains` - The toolchains to update.
-    pub fn with_update_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
-        let mut query = self.selection.select("withUpdateToolchains");
-        query = query.arg(
-            "toolchains",
-            toolchains
                 .into_iter()
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
@@ -11792,15 +11716,6 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Remove the current blueprint from the module source.
-    pub fn without_blueprint(&self) -> ModuleSource {
-        let query = self.selection.select("withoutBlueprint");
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -11852,26 +11767,6 @@ impl ModuleSource {
     ) -> ModuleSource {
         let mut query = self.selection.select("withoutExperimentalFeatures");
         query = query.arg("features", features);
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Remove the provided toolchains from the module source.
-    ///
-    /// # Arguments
-    ///
-    /// * `toolchains` - The toolchains to remove.
-    pub fn without_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
-        let mut query = self.selection.select("withoutToolchains");
-        query = query.arg(
-            "toolchains",
-            toolchains
-                .into_iter()
-                .map(|i| i.into())
-                .collect::<Vec<String>>(),
-        );
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -11994,10 +11889,10 @@ pub struct QueryContainerOpts {
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryCurrentWorkspaceOpts {
-    /// If true, skip legacy dagger.json migration checks.
+pub struct QueryCurrentTypeDefsOpts {
+    /// Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
     #[builder(setter(into, strip_option), default)]
-    pub skip_migration_check: Option<bool>,
+    pub include_core: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryEnvOpts {
@@ -12196,6 +12091,10 @@ impl Query {
         }
     }
     /// The TypeDef representations of the objects currently being served in the session.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn current_type_defs(&self) -> Vec<TypeDef> {
         let query = self.selection.select("currentTypeDefs");
         vec![TypeDef {
@@ -12204,29 +12103,25 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// Detect and return the current workspace.
+    /// The TypeDef representations of the objects currently being served in the session.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn current_workspace(&self) -> Workspace {
-        let query = self.selection.select("currentWorkspace");
-        Workspace {
+    pub fn current_type_defs_opts(&self, opts: QueryCurrentTypeDefsOpts) -> Vec<TypeDef> {
+        let mut query = self.selection.select("currentTypeDefs");
+        if let Some(include_core) = opts.include_core {
+            query = query.arg("includeCore", include_core);
+        }
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }
+        }]
     }
     /// Detect and return the current workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn current_workspace_opts(&self, opts: QueryCurrentWorkspaceOpts) -> Workspace {
-        let mut query = self.selection.select("currentWorkspace");
-        if let Some(skip_migration_check) = opts.skip_migration_check {
-            query = query.arg("skipMigrationCheck", skip_migration_check);
-        }
+    pub fn current_workspace(&self) -> Workspace {
+        let query = self.selection.select("currentWorkspace");
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -14624,6 +14519,12 @@ pub struct Workspace {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceChecksOpts<'a> {
+    /// Only include checks matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -14641,18 +14542,58 @@ pub struct WorkspaceFindUpOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub from: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceGeneratorsOpts<'a> {
+    /// Only include generators matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
 impl Workspace {
+    /// Return all checks from modules loaded in the workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checks(&self) -> CheckGroup {
+        let query = self.selection.select("checks");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all checks from modules loaded in the workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checks_opts<'a>(&self, opts: WorkspaceChecksOpts<'a>) -> CheckGroup {
+        let mut query = self.selection.select("checks");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The client ID that owns this workspace's host filesystem.
     pub async fn client_id(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("clientId");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+    pub async fn default_module(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultModule");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Returns a Directory from the workspace.
-    /// Path is relative to workspace root. Use "." for the root directory.
+    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -14664,11 +14605,11 @@ impl Workspace {
         }
     }
     /// Returns a Directory from the workspace.
-    /// Path is relative to workspace root. Use "." for the root directory.
+    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
         &self,
@@ -14693,11 +14634,11 @@ impl Workspace {
         }
     }
     /// Returns a File from the workspace.
-    /// Path is relative to workspace root.
+    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    /// * `path` - Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -14740,14 +14681,43 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
+    /// Return all generators from modules loaded in the workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators(&self) -> GeneratorGroup {
+        let query = self.selection.select("generators");
+        GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all generators from modules loaded in the workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generators_opts<'a>(&self, opts: WorkspaceGeneratorsOpts<'a>) -> GeneratorGroup {
+        let mut query = self.selection.select("generators");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<WorkspaceId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Absolute path to the workspace root directory.
-    pub async fn root(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("root");
+    /// Workspace path relative to root.
+    pub async fn path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await
     }
 }

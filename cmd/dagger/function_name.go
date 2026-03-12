@@ -7,19 +7,16 @@ import (
 )
 
 func initModuleParams(a []string) client.Params {
-	params := client.Params{
-		ExecCmd:      a,
-		Function:     functionName(a),
-		EagerRuntime: eagerRuntime,
+	return client.Params{
+		ExecCmd:              a,
+		Function:             functionName(a),
+		EagerRuntime:         eagerRuntime,
+		SkipWorkspaceModules: shouldSkipWorkspaceModules(false),
 	}
+}
 
-	if !moduleNoURL {
-		modRef, _ := getExplicitModuleSourceRef()
-		if modRef != "" {
-			params.Module = modRef
-		}
-	}
-	return params
+func shouldSkipWorkspaceModules(disableModuleLoad bool) bool {
+	return disableModuleLoad || moduleNoURL
 }
 
 func functionName(args []string) string {
