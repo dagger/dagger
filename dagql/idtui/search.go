@@ -2,9 +2,9 @@ package idtui
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/vito/midterm"
 )
 
 // searchMatch represents a single search hit: either a span name match or a
@@ -16,46 +16,85 @@ type searchMatch struct {
 	logRow int
 }
 
-// searchVtermRows returns the distinct row indices with matches from
-// midterm's current search state. Read-only — does not re-run the search.
-func searchVtermRows(vt *midterm.Terminal) []int {
-	return vt.SearchMatchRows()
+// spanSearchResult collects all matches for a single span, produced in
+// parallel and merged afterward.
+type spanSearchResult struct {
+	spanID  dagui.SpanID
+	matches []searchMatch
 }
 
-// buildSearchMatches walks the visible rows and populates fe.searchMatches
-// with every hit for the current searchQuery. It also rebuilds the fast-lookup
-// set searchMatchSpans.
+// buildSearchMatches walks ALL spans in the trace tree (not just visible
+// rows) and populates fe.searchMatches with every hit for the current
+// searchQuery. Vterm searches run in parallel. Results are ordered by
+// tree position so n/N navigation follows a logical sequence.
 func (fe *frontendPretty) buildSearchMatches() {
 	fe.searchMatches = fe.searchMatches[:0]
 	fe.searchMatchSpans = make(map[dagui.SpanID]bool)
 
-	if fe.searchQuery == "" || fe.rows == nil {
+	if fe.searchQuery == "" || fe.rowsView == nil {
 		return
 	}
 
 	query := strings.ToLower(fe.searchQuery)
 
-	for _, row := range fe.rows.Order {
-		span := row.Span
-		// 1. Span name match
-		if strings.Contains(strings.ToLower(span.Name), query) {
-			fe.searchMatches = append(fe.searchMatches, searchMatch{
-				spanID: span.ID,
+	// Collect all spans from the tree in tree-walk order.
+	type spanEntry struct {
+		order  int
+		spanID dagui.SpanID
+		span   *dagui.Span
+	}
+	var allSpans []spanEntry
+	var walkTree func(trees []*dagui.TraceTree)
+	walkTree = func(trees []*dagui.TraceTree) {
+		for _, tree := range trees {
+			allSpans = append(allSpans, spanEntry{
+				order:  len(allSpans),
+				spanID: tree.Span.ID,
+				span:   tree.Span,
+			})
+			walkTree(tree.Children)
+		}
+	}
+	walkTree(fe.rowsView.Body)
+
+	// Search all spans in parallel.
+	results := make([]spanSearchResult, len(allSpans))
+	var wg sync.WaitGroup
+	for i, entry := range allSpans {
+		i, entry := i, entry
+		results[i].spanID = entry.spanID
+
+		// Span name match (cheap, no goroutine needed).
+		if strings.Contains(strings.ToLower(entry.span.Name), query) {
+			results[i].matches = append(results[i].matches, searchMatch{
+				spanID: entry.spanID,
 				logRow: -1,
 			})
-			fe.searchMatchSpans[span.ID] = true
 		}
 
-		// 2. Vterm log content matches (reads midterm's current search state)
-		if logs, ok := fe.logs.Logs[span.ID]; ok {
-			matchRows := searchVtermRows(logs.Term())
-			for _, r := range matchRows {
-				fe.searchMatches = append(fe.searchMatches, searchMatch{
-					spanID: span.ID,
-					logRow: r,
-				})
-				fe.searchMatchSpans[span.ID] = true
-			}
+		// Vterm log content match (parallel).
+		if logs, ok := fe.logs.Logs[entry.spanID]; ok {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vt := logs.Term()
+				matchRows := vt.SearchMatchRows()
+				for _, r := range matchRows {
+					results[i].matches = append(results[i].matches, searchMatch{
+						spanID: entry.spanID,
+						logRow: r,
+					})
+				}
+			}()
+		}
+	}
+	wg.Wait()
+
+	// Merge results in tree order.
+	for _, res := range results {
+		if len(res.matches) > 0 {
+			fe.searchMatches = append(fe.searchMatches, res.matches...)
+			fe.searchMatchSpans[res.spanID] = true
 		}
 	}
 }
@@ -102,15 +141,24 @@ func (fe *frontendPretty) syncSearchState() {
 }
 
 // searchFirstForward finds the first match at or after the currently focused
-// span and navigates to it.
+// span and navigates to it. Matches in collapsed spans are included — they
+// will be revealed when navigated to.
 func (fe *frontendPretty) searchFirstForward() {
 	if len(fe.searchMatches) == 0 {
 		return
 	}
-	// Find the first match whose span is at or after the focused row index.
+	// Find the first match whose tree position is at or after the focused row.
+	// For matches in collapsed spans, compare using the tree's order index.
 	for i, m := range fe.searchMatches {
 		row := fe.rows.BySpan[m.spanID]
 		if row != nil && row.Index >= fe.focusedIdx {
+			fe.searchIdx = i
+			fe.goToSearchMatch(i)
+			return
+		}
+		// If the span isn't visible yet (collapsed), still consider it — the
+		// tree walk order is already logical so we just take the first match.
+		if row == nil {
 			fe.searchIdx = i
 			fe.goToSearchMatch(i)
 			return

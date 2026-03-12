@@ -7,7 +7,9 @@
 - **Core search infrastructure** (`search.go`): `/` enters search mode with
   a TextInput prompt, `Enter` confirms, `n`/`N` navigate matches (wrapping),
   `Esc` clears. Searches span names + vterm log content (case-insensitive
-  substring). Match state auto-refreshes as new spans/logs arrive.
+  substring) across ALL spans in the trace tree (subject to verbosity),
+  not just currently visible rows. Vterm searches run in parallel.
+  Match state auto-refreshes as new spans/logs arrive.
 
 - **Match navigation**: Navigating to a span-name match focuses the row and
   expands ancestors. Navigating to a log match also expands the span and
