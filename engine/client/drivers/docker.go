@@ -156,6 +156,19 @@ func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
 	return strings.Split(stdout, "\n"), nil
 }
 
+func (d docker) ContainerLogs(ctx context.Context, name string) (string, error) {
+	cmd := exec.CommandContext(ctx, d.cmd, "logs", name)
+	stdout, stderr, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
+	if err != nil {
+		return "", err
+	}
+	// Docker logs can go to stdout or stderr depending on the container
+	if stdout != "" {
+		return stdout, nil
+	}
+	return stderr, nil
+}
+
 func isContainerAlreadyInUseOutput(output string) bool {
 	switch {
 	case strings.Contains(output, "is already in use"):
