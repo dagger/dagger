@@ -112,6 +112,20 @@ generic lockfile work back in.
 - generic lookup-lock helpers when they are only needed by non-workspace consumers
 - any broader lockfile rollout beyond workspace `modules.resolve`
 
+## Porcelain Principles
+
+PR B is the author-intent layer on top of PR A's runtime truth.
+
+This branch should optimize for:
+
+- explicitness: users can see which workspace they are operating on and why
+- trust: repo-owned state changes are understandable before and after they happen
+- ownership: initialized-workspace config and lock state belong to the repo, not to
+  implicit connect-time compat behavior
+
+If a behavior would be acceptable only because the engine happened to infer it, it is
+probably still plumbing. Porcelain should make user intent legible.
+
 ## Design Constraints
 
 - No silent auto-conversion on connect.
@@ -128,6 +142,53 @@ generic lockfile work back in.
   - engine should own detection, config loading, module resolution, and lock use.
 - Do not replace the current split ledger with the old `workspace` branch docs.
   Continue recording progress in this branch's own doc.
+
+## Mutation Policy
+
+Repo-owned workspace state begins in PR B, so mutation rules need to be explicit.
+
+- compat repos without `.dagger/config.toml` must not gain `.dagger/config.toml` or
+  `.dagger/lock` unless the user runs an explicit porcelain flow such as
+  `dagger migrate`
+- initialized workspaces may read and write `.dagger/config.toml` and `.dagger/lock`,
+  but only through explicit commands and engine operations that are clearly part of
+  workspace authoring
+- if config or lock mutation rules are ambiguous, prefer leaving the repo unchanged
+  over guessing
+
+Surprising repo mutation is a product failure for this branch.
+
+## Engine And CLI Boundary
+
+PR B restores more CLI surface, but the engine still owns workspace semantics.
+
+- CLI selects intent: target workspace, requested operation, requested lock mode
+- engine owns meaning: detection, config loading, module resolution, migration, and
+  lockfile application
+- avoid adding CLI-only targeting or lock semantics that the engine does not also
+  understand
+
+## PR B Success Criteria
+
+PR B is successful when:
+
+- initialized workspaces are explicit and inspectable through `.dagger/config.toml`
+- `dagger migrate` produces a coherent initialized workspace story, including
+  workspace-owned pins for `modules.resolve`
+- workspace targeting and management are understandable without knowing PR A
+  internals
+- config and lock updates happen only in expected, explainable cases
+- restored docs and generated surfaces describe the same workspace product users see
+
+## PR B Test Priorities
+
+The highest-value coverage for this branch is:
+
+- migration idempotence and migrated output correctness
+- config and lock mutation rules
+- workspace root and path-boundary behavior
+- explicit workspace targeting semantics
+- initialized-workspace module resolution, including `modules.resolve`
 
 ## Product Surface To Restore
 
