@@ -118,10 +118,6 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 		introspectionResponse.Schema.Directives = append(introspectionResponse.Schema.Directives, dd)
 	}
 
-	for _, typed := range core.TypesHiddenFromModuleSDKs {
-		introspectionResponse.Schema.ScrubType(typed.Type().Name())
-		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameFor(typed))
-	}
 	for _, rawType := range hiddenTypes {
 		introspectionResponse.Schema.ScrubType(rawType)
 		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameForRawType(rawType))
