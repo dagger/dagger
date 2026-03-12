@@ -16,6 +16,7 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/dagger/dagger/util/parallel"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -164,6 +165,36 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("dependencies").Doc(`The dependencies to remove.`),
 			),
+
+		dagql.Func("withBlueprint", s.moduleSourceWithBlueprint).
+			Doc(`Set a blueprint for the module source.`).
+			Args(
+				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
+			),
+
+		dagql.Func("withToolchains", s.moduleSourceWithToolchains).
+			Doc(`Add toolchains to the module source.`).
+			Args(
+				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
+			),
+
+		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
+			Doc(`Update one or more toolchains.`).
+			Args(
+				dagql.Arg("toolchains").Doc(`The toolchains to update.`),
+			),
+
+		dagql.Func("withoutToolchains", s.moduleSourceWithoutToolchains).
+			Doc(`Remove the provided toolchains from the module source.`).
+			Args(
+				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
+			),
+
+		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
+			Doc(`Update the blueprint module to the latest version.`),
+
+		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
+			Doc(`Remove the current blueprint from the module source.`),
 
 		dagql.Func("withExperimentalFeatures", s.moduleSourceWithExperimentalFeatures).
 			Doc(`Enable the experimental features for the module source.`).
@@ -509,6 +540,10 @@ func (s *moduleSourceSchema) localModuleSource(
 			return nil
 		})
 
+		eg.Go(func() error {
+			return s.loadBlueprintModule(ctx, bk, localSrc)
+		})
+
 		localSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(localSrc.ConfigDependencies))
 		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
@@ -664,6 +699,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return nil
 	})
 
+	eg.Go(func() error {
+		return s.loadBlueprintModule(ctx, bk, gitSrc)
+	})
+
 	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
@@ -701,6 +740,47 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst.ResultWithPostCall(secretTransferPostCall), nil
+}
+
+func (s *moduleSourceSchema) loadBlueprintModule(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource,
+) error {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	jobs := parallel.New().WithContextualTracer(true).WithReveal(false)
+	if src.ConfigBlueprint != nil {
+		jobs = jobs.WithJob("load blueprint: "+src.ConfigBlueprint.Source, func(ctx context.Context) error {
+			blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, src.ConfigBlueprint.Source, src.ConfigBlueprint.Pin, src.ConfigBlueprint.Name)
+			if err != nil {
+				return fmt.Errorf("failed to resolve blueprint to source: %w", err)
+			}
+			src.Blueprint = blueprint
+			return nil
+		})
+	}
+	if len(src.ConfigToolchains) > 0 {
+		jobs = jobs.WithJob("load toolchains", func(ctx context.Context) error {
+			src.Toolchains = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigToolchains))
+			toolchainJobs := parallel.New().WithReveal(false).WithContextualTracer(true)
+			for i, pcfg := range src.ConfigToolchains {
+				toolchainJobs = toolchainJobs.WithJob(pcfg.Name, func(ctx context.Context) error {
+					toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+					if err != nil {
+						return fmt.Errorf("failed to resolve toolchain to source: %w", err)
+					}
+					src.Toolchains[i] = toolchain
+					return nil
+				})
+			}
+			return toolchainJobs.Run(ctx)
+		})
+	}
+	return jobs.Run(ctx)
 }
 
 type directoryAsModuleArgs struct {
@@ -1032,12 +1112,26 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
+	if modCfg.Blueprint != nil {
+		if modCfg.SDK != nil {
+			return fmt.Errorf("blueprint and sdk can't both be set")
+		}
+		if len(modCfg.Dependencies) != 0 {
+			return fmt.Errorf("blueprint and dependencies can't both be set")
+		}
+		if modCfg.Source != "" {
+			return fmt.Errorf("blueprint and source can't both be set")
+		}
+	}
+
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
+	src.ConfigBlueprint = modCfg.Blueprint
+	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1541,55 +1635,64 @@ func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Contex
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
-// validateAndCollectDependencies validates new dependencies and returns all dependencies (new + existing)
-func (s *moduleSourceSchema) validateAndCollectDependencies(
-	parentSrc *core.ModuleSource,
-	newDeps []dagql.ObjectResult[*core.ModuleSource],
-) ([]dagql.ObjectResult[*core.ModuleSource], error) {
-	var allDeps []dagql.ObjectResult[*core.ModuleSource]
+// moduleRelationTypeAccessor provides unified access to dependencies or
+// toolchains in a ModuleSource.
+type moduleRelationTypeAccessor struct {
+	typ core.ModuleRelationType
+}
 
-	// Validate and collect new dependencies
-	for _, newDep := range newDeps {
+func (a moduleRelationTypeAccessor) getItems(src *core.ModuleSource) []dagql.ObjectResult[*core.ModuleSource] {
+	return src.GetRelatedModules(a.typ)
+}
+
+func (a moduleRelationTypeAccessor) setItems(src *core.ModuleSource, items []dagql.ObjectResult[*core.ModuleSource]) {
+	src.SetRelatedModules(a.typ, items)
+}
+
+// validateAndCollectRelatedModules validates new related modules and returns
+// all related modules (new + existing).
+func (s *moduleSourceSchema) validateAndCollectRelatedModules(
+	parentSrc *core.ModuleSource,
+	newRelatedModules []dagql.ObjectResult[*core.ModuleSource],
+	accessor moduleRelationTypeAccessor,
+) ([]dagql.ObjectResult[*core.ModuleSource], error) {
+	var allRelatedModules []dagql.ObjectResult[*core.ModuleSource]
+
+	for _, newRelatedModule := range newRelatedModules {
 		switch parentSrc.Kind {
 		case core.ModuleSourceKindLocal:
-			switch newDep.Self().Kind {
+			switch newRelatedModule.Self().Kind {
 			case core.ModuleSourceKindLocal:
-				// parent=local, dep=local
-				// local deps must be located in the same context as the parent
 				contextRelPath, err := pathutil.LexicalRelativePath(
 					parentSrc.Local.ContextDirectoryPath,
-					newDep.Self().Local.ContextDirectoryPath,
+					newRelatedModule.Self().Local.ContextDirectoryPath,
 				)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get relative path from parent context to dependency context: %w", err)
+					return nil, fmt.Errorf("failed to get relative path from parent context to %s context: %w", accessor.typ, err)
 				}
 				if !filepath.IsLocal(contextRelPath) {
-					return nil, fmt.Errorf("local module dependency context directory %q is not in parent context directory %q",
-						newDep.Self().Local.ContextDirectoryPath, parentSrc.Local.ContextDirectoryPath)
+					return nil, fmt.Errorf("local module %s context directory %q is not in parent context directory %q",
+						accessor.typ, newRelatedModule.Self().Local.ContextDirectoryPath, parentSrc.Local.ContextDirectoryPath)
 				}
-				allDeps = append(allDeps, newDep)
+				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			case core.ModuleSourceKindGit:
-				// parent=local, dep=git
-				allDeps = append(allDeps, newDep)
+				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			default:
-				return nil, fmt.Errorf("unhandled module source kind: %s", newDep.Self().Kind)
+				return nil, fmt.Errorf("unhandled module source kind: %s", newRelatedModule.Self().Kind)
 			}
 
 		case core.ModuleSourceKindGit:
-			switch newDep.Self().Kind {
+			switch newRelatedModule.Self().Kind {
 			case core.ModuleSourceKindLocal:
-				// parent=git, dep=local
-				// cannot add a module source that's local to the caller as a dep of a git module source
-				return nil, fmt.Errorf("cannot add local module source as dependency of git module source")
+				return nil, fmt.Errorf("cannot add local module source as %s of git module source", accessor.typ)
 
 			case core.ModuleSourceKindGit:
-				// parent=git, dep=git
-				allDeps = append(allDeps, newDep)
+				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			default:
-				return nil, fmt.Errorf("unhandled module source kind: %s", newDep.Self().Kind)
+				return nil, fmt.Errorf("unhandled module source kind: %s", newRelatedModule.Self().Kind)
 			}
 
 		default:
@@ -1597,65 +1700,67 @@ func (s *moduleSourceSchema) validateAndCollectDependencies(
 		}
 	}
 
-	// Append pre-existing deps; they need to come later so we prefer new ones over existing ones
-	allDeps = append(allDeps, parentSrc.Dependencies...)
-
-	return allDeps, nil
+	allRelatedModules = append(allRelatedModules, accessor.getItems(parentSrc)...)
+	return allRelatedModules, nil
 }
 
-// deduplicateAndSortDependencies deduplicates dependencies by symbolic name, validates name uniqueness, and sorts by name
-func (s *moduleSourceSchema) deduplicateAndSortDependencies(
-	deps []dagql.ObjectResult[*core.ModuleSource],
+// deduplicateAndSortItems deduplicates items by symbolic name, validates name
+// uniqueness, and sorts by name.
+func (s *moduleSourceSchema) deduplicateAndSortItems(
+	items []dagql.ObjectResult[*core.ModuleSource],
+	accessor moduleRelationTypeAccessor,
 ) ([]dagql.ObjectResult[*core.ModuleSource], error) {
-	// Deduplicate equivalent deps at differing versions, preferring the new dep over the existing one
-	symbolicDeps := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(deps))
-	depNames := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(deps))
+	symbolicItems := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(items))
+	itemNames := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(items))
 
-	for _, dep := range deps {
-		var symbolicStr string
-		switch dep.Self().Kind {
+	for _, item := range items {
+		var symbolicItemStr string
+		switch item.Self().Kind {
 		case core.ModuleSourceKindLocal:
-			symbolicStr = filepath.Join(dep.Self().Local.ContextDirectoryPath, dep.Self().SourceRootSubpath)
+			symbolicItemStr = filepath.Join(item.Self().Local.ContextDirectoryPath, item.Self().SourceRootSubpath)
 		case core.ModuleSourceKindGit:
-			symbolicStr = dep.Self().Git.CloneRef
-			if dep.Self().SourceRootSubpath != "" {
-				symbolicStr += "/" + strings.TrimPrefix(dep.Self().SourceRootSubpath, "/")
+			symbolicItemStr = item.Self().Git.CloneRef
+			if item.Self().SourceRootSubpath != "" {
+				symbolicItemStr += "/" + strings.TrimPrefix(item.Self().SourceRootSubpath, "/")
+			}
+			if accessor.typ == core.ModuleRelationTypeToolchain {
+				if item.Self().Git.Version != "" {
+					symbolicItemStr += "@" + item.Self().Git.Version
+				} else if item.Self().Git.Commit != "" {
+					symbolicItemStr += "@" + item.Self().Git.Commit
+				}
 			}
 		}
 
-		_, isDuplicate := symbolicDeps[symbolicStr]
-		if isDuplicate {
-			// prefer the new dep over the existing one (new deps were added first, so we only hit this
-			// if a new dep overrides an existing one)
+		if _, isDuplicateSymbolic := symbolicItems[symbolicItemStr]; isDuplicateSymbolic {
 			continue
 		}
-		symbolicDeps[symbolicStr] = dep
+		symbolicItems[symbolicItemStr] = item
 
-		// duplicate names are not allowed
-		_, isDuplicateName := depNames[dep.Self().ModuleName]
-		if isDuplicateName {
-			return nil, fmt.Errorf("duplicate dependency name %q", dep.Self().ModuleName)
+		if _, isDuplicateName := itemNames[item.Self().ModuleName]; isDuplicateName {
+			return nil, fmt.Errorf("duplicate %s name %q", accessor.typ, item.Self().ModuleName)
 		}
-		depNames[dep.Self().ModuleName] = dep
+		itemNames[item.Self().ModuleName] = item
 	}
 
-	// Get the final slice of deps, sorting by name for determinism
-	finalDeps := make([]dagql.ObjectResult[*core.ModuleSource], 0, len(symbolicDeps))
-	for _, dep := range symbolicDeps {
-		finalDeps = append(finalDeps, dep)
+	finalItems := make([]dagql.ObjectResult[*core.ModuleSource], 0, len(symbolicItems))
+	for _, item := range symbolicItems {
+		finalItems = append(finalItems, item)
 	}
-	sort.Slice(finalDeps, func(i, j int) bool {
-		return finalDeps[i].Self().ModuleName < finalDeps[j].Self().ModuleName
+	sort.Slice(finalItems, func(i, j int) bool {
+		return finalItems[i].Self().ModuleName < finalItems[j].Self().ModuleName
 	})
 
-	return finalDeps, nil
+	return finalItems, nil
 }
 
-// moduleSourceUpdateDeps processes update requests for dependencies
-func (s *moduleSourceSchema) moduleSourceUpdateDeps(
+// moduleSourceUpdateItems processes update requests for items (dependencies or
+// toolchains).
+func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
 	updateArgs []string,
+	accessor moduleRelationTypeAccessor,
 ) ([]core.ModuleSourceID, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1663,8 +1768,8 @@ func (s *moduleSourceSchema) moduleSourceUpdateDeps(
 	}
 
 	type updateReq struct {
-		symbolic string // either 1) a name of a dep or 2) the source minus any @version
-		version  string // the version to update to, if any specified
+		symbolic string
+		version  string
 	}
 	updateReqs := make(map[updateReq]struct{}, len(updateArgs))
 	for _, updateArg := range updateArgs {
@@ -1673,40 +1778,34 @@ func (s *moduleSourceSchema) moduleSourceUpdateDeps(
 		updateReqs[req] = struct{}{}
 	}
 
-	// loop over the existing deps, checking each one for whether they should be updated based on the args
-	// this is technically O(n^2) but not expected to matter for the relatively low values of n we deal
-	// with here
 	var newUpdatedArgs []core.ModuleSourceID
-	for _, existingDep := range parentSrc.Self().Dependencies {
-		// If no update requests, implicitly update all deps
+	for _, existingItem := range accessor.getItems(parentSrc.Self()) {
 		if len(updateReqs) == 0 {
-			if existingDep.Self().Kind == core.ModuleSourceKindLocal {
-				// local dep, skip update
+			if existingItem.Self().Kind == core.ModuleSourceKindLocal {
 				continue
 			}
 
-			var updatedDep dagql.ObjectResult[*core.ModuleSource]
-			err := dag.Select(ctx, dag.Root(), &updatedDep,
+			var updatedItem dagql.ObjectResult[*core.ModuleSource]
+			err := dag.Select(ctx, dag.Root(), &updatedItem,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(existingDep.Self().AsString())},
+						{Name: "refString", Value: dagql.String(existingItem.Self().AsString())},
 					},
 				},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load existing dependency: %w", err)
+				return nil, fmt.Errorf("failed to load existing %s: %w", accessor.typ, err)
 			}
 
-			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedDep.ID()))
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItem.ID()))
 			continue
 		}
 
-		// if the existingDep is local and requested to be updated, return error, otherwise skip it
-		if existingDep.Self().Kind == core.ModuleSourceKindLocal {
+		if existingItem.Self().Kind == core.ModuleSourceKindLocal {
 			for updateReq := range updateReqs {
-				if updateReq.symbolic == existingDep.Self().ModuleName {
-					return nil, fmt.Errorf("updating local dependencies is not supported")
+				if updateReq.symbolic == existingItem.Self().ModuleName {
+					return nil, fmt.Errorf("updating local %s is not supported", accessor.typ.Plural())
 				}
 
 				var contextRoot string
@@ -1720,32 +1819,30 @@ func (s *moduleSourceSchema) moduleSourceUpdateDeps(
 				}
 
 				parentSrcRoot := filepath.Join(contextRoot, parentSrc.Self().SourceRootSubpath)
-				depSrcRoot := filepath.Join(contextRoot, existingDep.Self().SourceRootSubpath)
-				existingSymbolic, err := pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
+				itemSrcRoot := filepath.Join(contextRoot, existingItem.Self().SourceRootSubpath)
+				existingSymbolic, err := pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get relative path: %w", err)
 				}
 
 				if updateReq.symbolic == existingSymbolic {
-					return nil, fmt.Errorf("updating local dependencies is not supported")
+					return nil, fmt.Errorf("updating local %s is not supported", accessor.typ.Plural())
 				}
 			}
 			continue
 		}
 
-		existingName := existingDep.Self().ModuleName
-		existingVersion := existingDep.Self().Git.Version
-		existingSymbolic := existingDep.Self().Git.CloneRef
-		if depSrcRoot := existingDep.Self().SourceRootSubpath; depSrcRoot != "" {
-			existingSymbolic += "/" + strings.TrimPrefix(depSrcRoot, "/")
+		existingName := existingItem.Self().ModuleName
+		existingVersion := existingItem.Self().Git.Version
+		existingSymbolic := existingItem.Self().Git.CloneRef
+		if itemSrcRoot := existingItem.Self().SourceRootSubpath; itemSrcRoot != "" {
+			existingSymbolic += "/" + strings.TrimPrefix(itemSrcRoot, "/")
 		}
-		// For matching purposes, include version/commit in symbolic representation to match deduplication logic
-		// This ensures proper matching when updating dependencies with version information
 		existingSymbolicWithVersion := existingSymbolic
-		if existingDep.Self().Git.Version != "" {
-			existingSymbolicWithVersion += "@" + existingDep.Self().Git.Version
-		} else if existingDep.Self().Git.Commit != "" {
-			existingSymbolicWithVersion += "@" + existingDep.Self().Git.Commit
+		if existingItem.Self().Git.Version != "" {
+			existingSymbolicWithVersion += "@" + existingItem.Self().Git.Version
+		} else if existingItem.Self().Git.Commit != "" {
+			existingSymbolicWithVersion += "@" + existingItem.Self().Git.Commit
 		}
 
 		matched := false
@@ -1765,8 +1862,8 @@ func (s *moduleSourceSchema) moduleSourceUpdateDeps(
 				updateRef += "@" + updateVersion
 			}
 
-			var updatedDep dagql.ObjectResult[*core.ModuleSource]
-			err := dag.Select(ctx, dag.Root(), &updatedDep,
+			var updatedItem dagql.ObjectResult[*core.ModuleSource]
+			err := dag.Select(ctx, dag.Root(), &updatedItem,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
@@ -1775,66 +1872,68 @@ func (s *moduleSourceSchema) moduleSourceUpdateDeps(
 				},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load updated dependency: %w", err)
+				return nil, fmt.Errorf("failed to load updated %s: %w", accessor.typ, err)
 			}
 
-			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedDep.ID()))
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItem.ID()))
 			break
 		}
 
-		// If this dep wasn't matched for update, keep it as-is
 		if !matched {
-			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](existingDep.ID()))
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](existingItem.ID()))
 		}
 	}
 
 	if len(updateReqs) > 0 {
-		names := make([]string, 0, len(updateReqs))
+		items := make([]string, 0, len(updateReqs))
 		for updateReq := range updateReqs {
-			names = append(names, updateReq.symbolic)
+			items = append(items, updateReq.symbolic)
 		}
-		return nil, fmt.Errorf("dependency %q was requested to be updated, but it is not found in the dependencies list", strings.Join(names, ","))
+		return nil, fmt.Errorf("%s %q was requested to be updated, but it is not found in the %s list", accessor.typ, strings.Join(items, ","), accessor.typ.Plural())
 	}
 
 	return newUpdatedArgs, nil
 }
 
-// moduleSourceRemoveDeps processes removal requests for dependencies
-func (s *moduleSourceSchema) moduleSourceRemoveDeps(
+// moduleSourceRemoveItems processes removal requests for items (dependencies or
+// toolchains).
+func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	ctx context.Context,
 	parentSrc *core.ModuleSource,
 	removeArgs []string,
+	accessor moduleRelationTypeAccessor,
 ) (*core.ModuleSource, error) {
 	parentSrc = parentSrc.Clone()
 
-	var filteredDeps []dagql.ObjectResult[*core.ModuleSource]
+	var filteredItems []dagql.ObjectResult[*core.ModuleSource]
+	var filteredConfigItems []*modules.ModuleConfigDependency
 
-	for _, existingDep := range parentSrc.Dependencies {
-		existingName := existingDep.Self().ModuleName
+	for i, existingItem := range accessor.getItems(parentSrc) {
+		existingName := existingItem.Self().ModuleName
 		var existingSymbolic, existingVersion string
 
-		switch existingDep.Self().Kind {
+		switch existingItem.Self().Kind {
 		case core.ModuleSourceKindLocal:
 			if parentSrc.Kind != core.ModuleSourceKindLocal {
-				return nil, fmt.Errorf("cannot remove local dependency from non-local module source kind %s", parentSrc.Kind)
+				return nil, fmt.Errorf("cannot remove local %s from non-local module source kind %s", accessor.typ, parentSrc.Kind)
 			}
 			parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
-			depSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingDep.Self().SourceRootSubpath)
+			itemSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingItem.Self().SourceRootSubpath)
 			var err error
-			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
+			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get relative path: %w", err)
 			}
 
 		case core.ModuleSourceKindGit:
-			existingSymbolic = existingDep.Self().Git.CloneRef
-			if existingDep.Self().SourceRootSubpath != "" {
-				existingSymbolic += "/" + strings.TrimPrefix(existingDep.Self().SourceRootSubpath, "/")
+			existingSymbolic = existingItem.Self().Git.CloneRef
+			if existingItem.Self().SourceRootSubpath != "" {
+				existingSymbolic += "/" + strings.TrimPrefix(existingItem.Self().SourceRootSubpath, "/")
 			}
-			existingVersion = existingDep.Self().Git.Version
+			existingVersion = existingItem.Self().Git.Version
 
 		default:
-			return nil, fmt.Errorf("unhandled dependency kind: %s", existingDep.Self().Kind)
+			return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
 		}
 
 		keep := true
@@ -1853,8 +1952,9 @@ func (s *moduleSourceSchema) moduleSourceRemoveDeps(
 
 			if existingVersion == "" {
 				return nil, fmt.Errorf(
-					"version %q was requested to be uninstalled but the dependency %q was installed without a specific version. Try re-running without specifying the version number",
+					"version %q was requested to be uninstalled but the %s %q was installed without a specific version. Try re-running without specifying the version number",
 					argVersion,
+					accessor.typ,
 					existingSymbolic,
 				)
 			}
@@ -1869,11 +1969,12 @@ func (s *moduleSourceSchema) moduleSourceRemoveDeps(
 				reqModVersion := parsedGitRef.ModVersion
 				if !strings.HasPrefix(reqModVersion, parsedGitRef.RepoRootSubdir) {
 					reqModVersion, _ = strings.CutPrefix(reqModVersion, parsedGitRef.RepoRootSubdir+"/")
-					existingVersion, _ = strings.CutPrefix(existingVersion, existingDep.Self().SourceRootSubpath+"/")
+					existingVersion, _ = strings.CutPrefix(existingVersion, existingItem.Self().SourceRootSubpath+"/")
 				}
 				return nil, fmt.Errorf(
-					"version %q was requested to be uninstalled but the dependency %q was installed with %q. Try re-running without specifying the version number",
+					"version %q was requested to be uninstalled but the %s %q was installed with %q. Try re-running without specifying the version number",
 					reqModVersion,
+					accessor.typ,
 					existingSymbolic,
 					existingVersion,
 				)
@@ -1883,11 +1984,17 @@ func (s *moduleSourceSchema) moduleSourceRemoveDeps(
 		}
 
 		if keep {
-			filteredDeps = append(filteredDeps, existingDep)
+			filteredItems = append(filteredItems, existingItem)
+			if accessor.typ == core.ModuleRelationTypeToolchain && i < len(parentSrc.ConfigToolchains) {
+				filteredConfigItems = append(filteredConfigItems, parentSrc.ConfigToolchains[i])
+			}
 		}
 	}
 
-	parentSrc.Dependencies = filteredDeps
+	accessor.setItems(parentSrc, filteredItems)
+	if accessor.typ == core.ModuleRelationTypeToolchain {
+		parentSrc.ConfigToolchains = filteredConfigItems
+	}
 	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
@@ -1911,21 +2018,214 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
 
-	// Validate and collect all deps (new + existing)
-	allDeps, err := s.validateAndCollectDependencies(parentSrc, newDeps)
+	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeDependency}
+
+	allDeps, err := s.validateAndCollectRelatedModules(parentSrc, newDeps, accessor)
 	if err != nil {
 		return nil, err
 	}
 
-	// Deduplicate and sort
-	finalDeps, err := s.deduplicateAndSortDependencies(allDeps)
+	finalDeps, err := s.deduplicateAndSortItems(allDeps, accessor)
 	if err != nil {
 		return nil, err
 	}
 
-	parentSrc.Dependencies = finalDeps
+	accessor.setItems(parentSrc, finalDeps)
 	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithBlueprint(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Blueprint core.ModuleSourceID
+	},
+) (*core.ModuleSource, error) {
+	if parentSrc.SDK != nil {
+		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
+	}
+	if parentSrc.Dependencies.Len() > 0 {
+		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
+	}
+
+	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
+		Dependencies: []core.ModuleSourceID{args.Blueprint},
+	}
+	tmpSrc := parentSrc.Clone()
+	tmpSrc.Dependencies = nil
+	tmpSrc, err := s.moduleSourceWithDependencies(ctx, parentSrc, tmpArgs)
+	if err != nil {
+		return nil, err
+	}
+	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
+	if err != nil {
+		return nil, err
+	}
+
+	parentSrc = parentSrc.Clone()
+	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
+	parentSrc.Blueprint = tmpSrc.Dependencies[0]
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithToolchains(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Toolchains []core.ModuleSourceID
+	},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	newToolchains, err := collectIDObjectResults(ctx, dag, args.Toolchains)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module source toolchains from ids: %w", err)
+	}
+
+	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
+
+	allToolchains, err := s.validateAndCollectRelatedModules(parentSrc, newToolchains, accessor)
+	if err != nil {
+		return nil, err
+	}
+
+	finalToolchains, err := s.deduplicateAndSortItems(allToolchains, accessor)
+	if err != nil {
+		return nil, err
+	}
+
+	accessor.setItems(parentSrc, finalToolchains)
+
+	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
+	for i, toolchain := range finalToolchains {
+		tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
+			Dependencies: []core.ModuleSourceID{dagql.NewID[*core.ModuleSource](toolchain.ID())},
+		}
+		tmpSrc := parentSrc.Clone()
+		tmpSrc.Dependencies = nil
+		tmpSrc, err := s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
+		}
+		tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
+		}
+		if len(tmpConfig.Dependencies) > 0 {
+			configToolchains[i] = tmpConfig.Dependencies[0]
+			for _, origToolchain := range parentSrc.ConfigToolchains {
+				if origToolchain.Name == configToolchains[i].Name {
+					configToolchains[i].Customizations = origToolchain.Customizations
+					break
+				}
+			}
+		}
+	}
+	parentSrc.ConfigToolchains = configToolchains
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
+	ctx context.Context,
+	parentSrc dagql.ObjectResult[*core.ModuleSource],
+	args struct {
+		Toolchains []string
+	},
+) (inst dagql.Result[*core.ModuleSource], _ error) {
+	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
+	newUpdatedArgs, err := s.moduleSourceUpdateItems(ctx, parentSrc, args.Toolchains, accessor)
+	if err != nil {
+		return inst, err
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	err = dag.Select(ctx, parentSrc, &inst,
+		dagql.Selector{
+			Field: "withToolchains",
+			Args: []dagql.NamedInput{{
+				Name:  "toolchains",
+				Value: dagql.ArrayInput[core.ModuleSourceID](newUpdatedArgs),
+			}},
+		},
+	)
+	return inst, err
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutToolchains(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Toolchains []string
+	},
+) (*core.ModuleSource, error) {
+	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeToolchain}
+	return s.moduleSourceRemoveItems(ctx, parentSrc, args.Toolchains, accessor)
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutBlueprint(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct{},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+	parentSrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
+	parentSrc.ConfigBlueprint = nil
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
+	ctx context.Context,
+	parentSrc dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (inst dagql.Result[*core.ModuleSource], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	if parentSrc.Self().Blueprint.Self() == nil {
+		return parentSrc.Result, nil
+	}
+
+	bpSrc := parentSrc.Self().Blueprint.Self()
+	if bpSrc.Kind != core.ModuleSourceKindGit {
+		return parentSrc.Result, nil
+	}
+
+	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
+	err = dag.Select(ctx, dag.Root(), &bpUpdated,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
+			},
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+	}
+
+	err = dag.Select(ctx, parentSrc, &inst,
+		dagql.Selector{
+			Field: "withBlueprint",
+			Args: []dagql.NamedInput{{
+				Name:  "blueprint",
+				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
+			}},
+		},
+	)
+	return inst, err
 }
 
 func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
@@ -1981,7 +2281,8 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 		Dependencies []string
 	},
 ) (inst dagql.Result[*core.ModuleSource], _ error) {
-	newUpdatedArgs, err := s.moduleSourceUpdateDeps(ctx, parentSrc, args.Dependencies)
+	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeDependency}
+	newUpdatedArgs, err := s.moduleSourceUpdateItems(ctx, parentSrc, args.Dependencies, accessor)
 	if err != nil {
 		return inst, err
 	}
@@ -2010,7 +2311,8 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 		Dependencies []string
 	},
 ) (*core.ModuleSource, error) {
-	return s.moduleSourceRemoveDeps(ctx, parentSrc, args.Dependencies)
+	accessor := moduleRelationTypeAccessor{typ: core.ModuleRelationTypeDependency}
+	return s.moduleSourceRemoveItems(ctx, parentSrc, args.Dependencies, accessor)
 }
 
 func (s *moduleSourceSchema) loadModuleSourceConfig(
@@ -2040,6 +2342,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			Experimental: src.SDK.Experimental,
 		}
 	}
+
+	if src.ConfigBlueprint != nil {
+		modCfg.Blueprint = src.ConfigBlueprint
+	}
+	modCfg.Toolchains = src.ConfigToolchains
 
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
