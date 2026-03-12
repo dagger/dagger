@@ -640,6 +640,8 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 		cfg.LLM.Providers = make(map[string]Provider)
 	}
 
+	providerCfg.SubscriptionType = "chatgpt"
+
 	cfg.LLM.DefaultProvider = "openai-codex"
 	cfg.LLM.DefaultModel = "gpt-5.1-codex"
 	cfg.LLM.Providers["openai-codex"] = *providerCfg

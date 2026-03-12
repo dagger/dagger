@@ -281,8 +281,9 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	return nil
 }
 
-// subscriptionLabel returns a display label for the OAuth subscription type,
-// or empty string if not using OAuth. Cached after first lookup.
+// subscriptionLabel returns a display label for the OAuth subscription type
+// of the currently active provider, or empty string if not using OAuth.
+// Cached after first lookup.
 func (s *LLMSession) subscriptionLabel() string {
 	if s.subscriptionLabelCache != "" {
 		return s.subscriptionLabelCache
@@ -291,13 +292,17 @@ func (s *LLMSession) subscriptionLabel() string {
 	if err != nil || cfg == nil {
 		return ""
 	}
-	for _, provider := range cfg.LLM.Providers {
-		if provider.IsOAuth() && provider.SubscriptionType != "" {
-			s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
-			return s.subscriptionLabelCache
-		}
+	// Only show subscription label for the default provider
+	defaultProvider := cfg.LLM.DefaultProvider
+	if defaultProvider == "" {
+		return ""
 	}
-	return ""
+	provider, ok := cfg.LLM.Providers[defaultProvider]
+	if !ok || !provider.IsOAuth() || provider.SubscriptionType == "" {
+		return ""
+	}
+	s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
+	return s.subscriptionLabelCache
 }
 
 func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
