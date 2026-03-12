@@ -1192,6 +1192,83 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 	require.Contains(t, commit, strings.TrimSpace(head))
 }
 
+// TestTagNamePinTreeCheckout verifies that a git tag can be checked out when
+// the internal "commit" arg carries a tag name (e.g. "v1.0") instead of a
+// real SHA. This is the flow exercised by module source loading when
+// dagger.json has "pin": "<tag-name>" for a dependency.
+//
+// Regression test for https://github.com/dagger/dagger/pull/11909 which
+// switched remote fetches to --no-tags. Before the fix, the non-SHA pin
+// value would override the resolved commit SHA, causing the local checkout
+// fetch to fail with "couldn't find remote ref".
+func (GitSuite) TestTagNamePinTreeCheckout(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Stand up a self-contained git service with a tagged commit.
+	svc, url := gitService(ctx, t, c, c.Directory().
+		WithNewFile("README.md", "Hello "+identity.NewID()).
+		WithNewFile("dagger.json", `{"name":"dep","sdk":"go","source":".","engineVersion":"v0.0.0"}`).
+		WithNewFile("main.go", `package main
+
+type Dep struct{}
+`))
+
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	// Clone, create a tag, and push it.
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "tagged" && git tag v1.0 && git push origin main && git push origin v1.0`})
+	_, err = ctr.Sync(ctx)
+	require.NoError(t, err)
+
+	// Resolve the tag via the git API (this populates ls-remote metadata).
+	tagRef := c.Git(url, dagger.GitOpts{ExperimentalServiceHost: svc}).Tag("v1.0")
+	commit, err := tagRef.Commit(ctx)
+	require.NoError(t, err)
+	require.True(t, gitutil.IsCommitSHA(commit), "expected a valid SHA, got %q", commit)
+
+	// Create a module whose dagger.json pins the dependency to the tag *name*
+	// (not the SHA). This exercises the internal "commit" arg override path in
+	// the ref resolver — the exact code path that broke with --no-tags.
+	modCtr := goGitBase(t, c).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{
+	"name": "test",
+	"source": ".",
+	"sdk": "go",
+	"dependencies": [
+		{
+			"name": "dep",
+			"source": "`+url+`@v1.0",
+			"pin": "v1.0"
+		}
+	],
+	"engineVersion": "v0.0.0"
+}`).
+		With(sdkSource("go", `package main
+
+type Test struct{}
+`))
+
+	// "dagger develop" triggers module source resolution for all deps,
+	// which will exercise the tag-name pin → ref resolver → tree checkout
+	// path. Before the fix this would fail with:
+	//   "git error: sha fetch unsupported by remote"
+	_, err = modCtr.With(daggerExec("develop")).Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
 	hostname := func(c *dagger.Client) string {

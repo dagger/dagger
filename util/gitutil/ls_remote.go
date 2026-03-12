@@ -223,7 +223,7 @@ func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
 		match.Name = ref
 	}
 
-	if isHead && remote.Head != nil && remote.Head.SHA != "" {
+	if isHead && remote.Head != nil && remote.Head.SHA != "" && IsCommitSHA(remote.Head.SHA) {
 		match.SHA = remote.Head.SHA
 	}
 
