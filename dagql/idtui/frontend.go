@@ -116,6 +116,9 @@ type Frontend interface {
 	// allowing it to shut down gracefully.
 	Close() error
 
+	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
+	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
+
 	prompt.PromptHandler
 }
 

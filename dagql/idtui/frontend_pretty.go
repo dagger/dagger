@@ -542,6 +542,10 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	}
 }
 
+func (fe *frontendPretty) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
