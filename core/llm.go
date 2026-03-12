@@ -18,6 +18,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
+	toml "github.com/pelletier/go-toml"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -516,13 +517,29 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	defer telemetry.EndWithCause(span, &rerr)
 
 	// Priority order:
-	// 1. Config file (~/.config/dagger/llm/config.json) - base layer
+	// 1. Config file (~/.config/dagger/config.toml) - base layer
 	// 2. .env file - middle layer (legacy support)
 	// 3. Environment variables - top layer (overrides everything)
 
-	// First: Try loading from config file
-	if cfg, err := llmconfig.Load(); err == nil && cfg != nil {
-		router.LoadFromConfig(cfg)
+	// First: Try loading from config file via the client's filesystem.
+	// Use ~ so the file:// secret provider resolves the user's home on the client side.
+	if configData, err := loadSecret(ctx, "file://~/.config/dagger/config.toml"); err == nil && configData != "" {
+		var cfg llmconfig.Config
+		if err := toml.Unmarshal([]byte(configData), &cfg); err == nil {
+			if cfg.LLM.Providers == nil {
+				cfg.LLM.Providers = make(map[string]llmconfig.Provider)
+			}
+			// Resolve API keys that may be secret references (e.g. op://vault/item/field)
+			for name, provider := range cfg.LLM.Providers {
+				if provider.APIKey != "" {
+					if resolved, err := loadSecret(ctx, provider.APIKey); err == nil {
+						provider.APIKey = resolved
+						cfg.LLM.Providers[name] = provider
+					}
+				}
+			}
+			router.LoadFromConfig(&cfg)
+		}
 	}
 
 	// Second: Load .env from current directory, if it exists
