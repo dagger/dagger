@@ -91,6 +91,8 @@ func (fe *frontendDots) Opts() *dagui.FrontendOpts {
 	return &fe.opts
 }
 
+func (fe *frontendDots) SetTelemetryError(error) {}
+
 func (fe *frontendDots) SetVerbosity(verbosity int) {
 	fe.mu.Lock()
 	fe.opts.Verbosity = verbosity
