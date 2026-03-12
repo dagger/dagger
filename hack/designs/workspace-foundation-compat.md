@@ -1035,6 +1035,54 @@ Verification after this pass:
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core --run='^TestCompareDirectories_Integration$' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core`
 
+### 2026-03-12: Non-Integration Sweep Status
+
+After the targeted fixes above, the non-integration sweep is down to one real
+remaining package failure plus a separate generation prerequisite bucket.
+
+Green in this sweep:
+
+- host-safe root packages (`auth`, codegen templates, `dagql`, `dagql/dagui`,
+  `engine`, `engine/client/drivers`, `engine/client/pathutil`,
+  `engine/clientdb`, `engine/filesync`, `engine/session/git`,
+  `engine/telemetry`, `engine/vcs`, `internal/buildkit/frontend/gateway/container`,
+  `internal/cloud/auth`, `util/*`, and the other previously restored
+  root-module test dirs)
+- Linux-backed root packages: `cmd/dagger`, `cmd/engine`, `core`,
+  `core/schema`, `core/sdk`, `engine/buildkit`, `engine/server`
+- nested-module unit packages that do not depend on generated bindings:
+  `sdk/go`, `sdk/typescript/runtime/tsutils`, `toolchains/cli-dev/util`
+
+Still failing:
+
+- `dagql/idtui`
+  - the failure is not a runtime crash; it is telemetry golden drift
+  - the observed diffs show the current CLI emitting workspace-loading steps
+    like `load workspace: .`, `load extra module: ...`, and
+    `ModuleSource.moduleName: String!` where the existing goldens expected the
+    older standalone-module load path
+  - several golden cases also now fail under the same telemetry surface shift,
+    especially the broken-dependency, Python, TypeScript, and remote-module
+    examples
+
+Generation prerequisite bucket, not counted as branch regressions:
+
+- `sdk/python/runtime`
+- `sdk/typescript/runtime` root package
+- `toolchains/cli-dev` root package
+
+Those module roots import generated `internal/dagger` bindings that are
+intentionally untracked until `dagger develop -m <module>` runs.
+
+Verification after this sweep:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./cmd/dagger`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/schema`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/sdk`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./engine/server`
+- `tar -cf - . | docker run --rm -i --entrypoint sh golang:1.26-alpine -lc 'mkdir /src && tar -xf - -C /src && cd /src && /usr/local/go/bin/go test ./cmd/engine ./engine/buildkit -count=1'`
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
