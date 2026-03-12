@@ -165,16 +165,51 @@ func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return term, nil
 }
 
-// SetSearchHighlight sets the search highlight state. Pass an empty query
-// to clear highlights. currentRow is the vterm row of the "current" match
-// (-1 if none in this vterm).
+// SetSearchHighlight sets the search highlight state using native midterm
+// search. Pass an empty query to clear highlights. currentRow is the vterm
+// row of the "current" match (-1 if none in this vterm).
+//
+// Always re-runs the search so that new content is picked up.
 func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+
+	if query == "" {
+		if term.SearchQuery != "" {
+			term.vt.SearchClear()
+			term.needsRedraw = true
+		}
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		return
+	}
+
+	// Always re-run search to pick up new content.
+	term.vt.Search(query)
+
+	// Mark the current match by row.
+	if currentRow >= 0 {
+		term.setCurrentMatchByRow(currentRow)
+	} else {
+		// Clear any previous current highlight.
+		term.vt.SearchSetCurrent(-1)
+	}
+
 	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
-		term.SearchQuery = query
-		term.SearchCurrentRow = currentRow
 		term.needsRedraw = true
+	}
+	term.SearchQuery = query
+	term.SearchCurrentRow = currentRow
+}
+
+// setCurrentMatchByRow finds the first search match on the given row and
+// marks it as "current" in midterm. Must be called with term.mu held.
+func (term *Vterm) setCurrentMatchByRow(row int) {
+	for i, m := range term.vt.SearchMatches {
+		if m.Row == row {
+			term.vt.SearchSetCurrent(i)
+			return
+		}
 	}
 }
 
@@ -326,7 +361,7 @@ func (m *Markdown) View() string {
 }
 
 // Render writes the output for the given region of the terminal, with
-// ANSI formatting. If SearchQuery is set, matching substrings are highlighted.
+// ANSI formatting. Search highlights are rendered natively by midterm.
 func (term *Vterm) Render(w io.Writer, offset, height int) {
 	used := term.vt.UsedHeight()
 	if used == 0 {
@@ -346,22 +381,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		}
 
 		fmt.Fprint(w, vt.String(term.Prefix))
-
-		if term.SearchQuery != "" {
-			// Render line to a buffer so we can highlight it.
-			var lineBuf strings.Builder
-			term.vt.RenderLineFgBg(&lineBuf, row, nil, nil)
-			rendered := lineBuf.String()
-			style := matchHighlight
-			if row == term.SearchCurrentRow {
-				style = currentMatchHighlight
-			}
-			rendered = highlightANSI(rendered, term.SearchQuery, style)
-			fmt.Fprint(w, rendered)
-		} else {
-			term.vt.RenderLineFgBg(w, row, nil, nil)
-		}
-
+		term.vt.RenderLineFgBg(w, row, nil, nil)
 		fmt.Fprintln(w)
 		lines++
 
