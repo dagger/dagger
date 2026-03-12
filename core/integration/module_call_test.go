@@ -75,8 +75,10 @@ func (m *Test) Conflict(ctx context.Context, mod *dagger.Module) (string, error)
 	})
 
 	t.Run("flag conflict", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerCall("conflict", "--help")).Sync(ctx)
-		requireErrOut(t, err, "flag already exists: mod")
+		out, err := modGen.With(daggerCall("conflict", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "USAGE")
+		require.Contains(t, out, "dagger call conflict [arguments]")
 	})
 }
 
@@ -2065,7 +2067,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./mod-a")).
 			With(daggerExec("install", "--name", "bar", "./mod-b"))
 
@@ -2110,7 +2112,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
 			With(daggerExec("install", "--name", "bar", "/work/mod-b"))
 
@@ -2173,7 +2175,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
 
 		// call main module at /work path
@@ -2188,7 +2190,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/").
-			With(daggerExec("init", "--source=test@test", "--name=mod-a", "--sdk=go", "test@test")).
+			With(daggerExec("init", "--sdk=go", "--name=mod-a", "test@test")).
 			WithNewFile("/work/test@test/main.go", `package main
 
 			import "context"
@@ -2200,7 +2202,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("init", "--source=.", "--name=wrapper", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "/work/test@test"))
 
 		// call main module at /work path
@@ -2219,7 +2221,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(privateSetup).
-				With(daggerExec("init", "--source=.")).
+				With(daggerExec("init", "--source=.", "--name=wrapper", "--sdk=go")).
 				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
 				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
 

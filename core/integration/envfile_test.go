@@ -465,7 +465,7 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--name=test", "--sdk=go")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -485,7 +485,7 @@ func (m *Test) Foo(ctx context.Context) (string, error) {
 	depDir := filepath.Join(modDir, "dep")
 	require.NoError(t, os.Mkdir(depDir, 0755))
 
-	initDepCmd := hostDaggerCommand(ctx, t, depDir, "init", "--source=.", "--name=dep", "--sdk=go")
+	initDepCmd := hostDaggerCommand(ctx, t, depDir, "module", "init", "--source=.", "--name=dep", "--sdk=go")
 	initDepOutput, err := initDepCmd.CombinedOutput()
 	require.NoError(t, err, string(initDepOutput))
 
@@ -513,7 +513,7 @@ func (m *Dep) Bar(
 `), 0644)
 	require.NoError(t, err)
 
-	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
+	installCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", depDir)
 	installOutput, err := installCmd.CombinedOutput()
 	require.NoError(t, err, string(installOutput))
 
