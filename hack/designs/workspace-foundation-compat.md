@@ -1107,6 +1107,174 @@ Verification target for this pass:
 
 - `env GOCACHE=/tmp/go-build go test ./util/gitutil -count=1`
 
+### 2026-03-12: `test-base` Remaining Failures and Fix Policy
+
+After fixing the initial `util/gitutil` worktree leak, the remaining
+`test-base` failures fall into two different buckets:
+
+- restored `main` tests that fail because this branch no longer exposes a
+  legacy authoring command or flag (`init --blueprint`, `toolchain install`)
+- restored `main` tests that reach the current workspace-plumbing runtime path
+  and compute the wrong result
+
+This doc update records the current evidence only. No implementation changes
+are made in this pass.
+
+Guardrails for the follow-up fixes:
+
+- keep the restored `main` tests as the source of truth unless they are
+  demonstrably flaky or harness-only
+- do not add a second runtime compatibility path under
+  `ModuleSource.asModule()`
+- do not revert `check` / `generate` back to the old standalone-module path
+- if legacy authoring commands must be restored for backwards compatibility,
+  keep that as a thin CLI-edge shim only; runtime behavior must still flow
+  through the existing workspace/session/legacy loader
+- if a failure is in runtime behavior, fix it in the existing
+  workspace/session/legacy loading path or workspace aggregation semantics, not
+  by rewriting the tests to workspace-only expectations
+
+Evidence baseline for this section:
+
+- the earlier worktree-specific git failure does not reproduce in an ordinary
+  clone; that removed the worktree layout as the primary explanation for the
+  remaining failures
+- some focused reruns in the ordinary clone hit generated-module prerequisites
+  in `toolchains/cli-dev`, so the detailed reproductions below were captured in
+  the main worktree after the worktree-specific git bug was fixed
+
+Current failure ledger:
+
+- `cmd/codegen/generator/typescript/templates`
+  - observed once in the isolated `test-base` slice
+  - not reproduced by direct package runs in either the main worktree or the
+    ordinary clone:
+    - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=1`
+    - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=5`
+  - current cause: unconfirmed
+  - current plan: no code or test change yet; capture the exact failing stack
+    if it reappears in another slice run
+  - fix stance: `pending`
+
+- `core/integration/TestBlueprint`
+  - confirmed failing subtest:
+    - `TestBlueprint/TestBlueprintUseLocal/use_local_blueprint`
+  - exact failure:
+    - `dagger init --blueprint=../hello`
+    - `Error: unknown flag: --blueprint`
+  - same root cause almost certainly explains
+    `TestBlueprint/TestBlueprintInit/init_with_python_blueprint`, which uses
+    the same restored `main` command shape
+  - known cause: this branch currently removed the legacy `init --blueprint`
+    authoring surface that `main` exposes
+  - current plan:
+    - restore backwards compatibility only at the CLI edge if we decide this
+      branch must preserve the `main` authoring surface
+    - keep the runtime path on workspace/session compat loading
+    - do not reintroduce the old module-scoped runtime path just to satisfy
+      these tests
+  - fix stance: `implementation`, but CLI-edge only
+
+- `core/integration/TestChecks`
+  - confirmed failing subtest:
+    - `TestChecks/TestChecksAsToolchain/typescript`
+  - exact failure:
+    - `dagger toolchain install ../hello-with-checks-ts`
+    - `Error: unknown command or file "toolchain" for "dagger"`
+  - same root cause is expected for the toolchain-setup failures in
+    `TestToolchain`
+  - the full `test-base` slice also reported
+    `TestChecks/TestChecksDirectSDK/java`
+  - known cause for the toolchain-backed case: this branch currently removed
+    the legacy `toolchain ...` authoring surface that `main` exposes
+  - current plan:
+    - handle the toolchain-setup failures, if we keep full `main`
+      backwards-compat, with a thin CLI-edge compat shim only
+    - keep looking for a direct isolated repro of `TestChecksDirectSDK/java`
+      before deciding whether there is also a separate runtime regression in
+      the direct-SDK path
+  - fix stance:
+    - `TestChecksAsToolchain/*`: `implementation`, but CLI-edge only
+    - `TestChecksDirectSDK/java`: `pending isolated repro`
+
+- `core/integration/TestToolchain`
+  - `test-base` reported at least:
+    - `TestToolchain/TestMultipleToolchains/install_multiple_toolchains`
+    - `TestToolchain/TestToolchainsWithSDK/use_checks_with_sdk_that_have_a_constructor/go`
+  - both restored `main` tests execute `dagger toolchain install ...`
+  - known cause: most likely the same missing `toolchain ...` command surface
+    confirmed in `TestChecks/TestChecksAsToolchain/typescript`
+  - current plan:
+    - treat these as the same CLI-edge compatibility decision as the other
+      toolchain-backed failures
+    - only do another isolated repro if the later full-suite results suggest a
+      second runtime bug after the command surface is restored
+  - fix stance: `implementation`, but CLI-edge only
+
+- `core/integration/TestUserDefaults`
+  - confirmed failing subtest:
+    - `TestUserDefaults/TestLocalBlueprint/inner_envfile`
+  - exact failure:
+    - expected: `salut-inner, monde-inner!`
+    - actual: `hello, world!`
+  - observed runtime signal:
+    - the engine warns `module "defaults" uses legacy-default-path; port to
+      workspace API and remove this flag`
+    - that means the legacy blueprint module is loading, but the caller's
+      `.env` defaults are not being applied to it
+  - `test-base` also reported
+    `TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir`; based on
+    the test shape, that likely belongs to the same dependency-default
+    propagation bug family
+  - known cause:
+    - precise code location still needs root-cause analysis
+    - behaviorally, user defaults from the caller/module scope are not being
+      propagated through the legacy blueprint/toolchain compatibility path
+  - current plan:
+    - fix this in the existing workspace/session/legacy loading path
+    - do not rewrite the test to accept workspace-specific output
+    - do not add a second compat path under `ModuleSource.asModule()`
+  - fix stance: `implementation`
+
+- `core/integration/TestGenerators`
+  - confirmed failing subtest:
+    - `TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple`
+  - exact failure:
+    - expected output should not contain `no changes to apply`
+    - actual run returns `no changes to apply`
+  - observed runtime signal:
+    - the command goes through `currentWorkspace`
+    - `Workspace.generators(include: ["generate-*"])` compares the include glob
+      against workspace-qualified names such as
+      `hello-with-generators-java/generate-files`
+    - the trace shows the filter rejecting them:
+      - `"hello-with-generators-java/generate-files".Glob("generate-*") -> no match`
+      - `[generate-*].Equals([hello-with-generators-java]): "generate" != "helloWithGeneratorsJava" -> NOT EQUAL`
+    - the resulting generator set is empty, so the command reaches the
+      no-op changeset path
+  - `test-base` also reported `TestGenerators/TestGeneratorsAsToolchain/go`
+  - known cause:
+    - the workspace aggregation/filtering semantics do not currently preserve
+      the old single-module include-matching behavior that the restored `main`
+      tests expect
+  - current plan:
+    - keep `generate` on the workspace path
+    - change the workspace-side generator matching/naming semantics so
+      unchanged `main` patterns such as `generate-*` still match in the
+      single-module case
+    - do not rewrite the tests to use workspace-qualified generator names
+    - do not revert to the standalone-module runtime path
+  - fix stance: `implementation`
+
+Verification used to build this ledger:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestBlueprint/TestBlueprintUseLocal/use_local_blueprint' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestChecks/TestChecksAsToolchain/typescript' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalBlueprint/inner_envfile' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
+- `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=1`
+- `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=5`
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
