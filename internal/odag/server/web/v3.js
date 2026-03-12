@@ -4567,7 +4567,7 @@ function renderFunctionDetail(entity, row) {
   const callTable = renderTableHTML({
     columns: [
       { label: "Call", render: (item) => linkedCallCell(callSignatureText(item), callTableSubtitle(item), entityPath("calls", item.routeID)) },
-      { label: "Output", render: (item) => objectSummaryLink(item.outputDagqlID) || "None" },
+      { label: "Return value", render: (item) => callReturnValueCell(item) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
     ],
     rows: calls,
@@ -5191,7 +5191,7 @@ function callsTableModel(entity, sectionID) {
             filterValue: (row) => `${callSignatureText(row)} ${callTableSubtitle(row)}`,
           },
           { label: "Return Type", render: (row) => objectTypeLinkFromName(row.returnType, row.returnTypeID) },
-          { label: "Output", render: (row) => objectSummaryLink(row.outputDagqlID) || "None" },
+          { label: "Return value", render: (row) => callReturnValueCell(row) },
           { label: "Receiver", render: (row) => objectSummaryLink(row.receiverDagqlID) || (row.receiverIsQuery ? tonePill("neutral", "Query") : "None") },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
         ],
@@ -6400,6 +6400,18 @@ function objectSummaryLink(dagqlID, label = "") {
     return dagqlID ? detailCode(label || shortDagqlID(dagqlID)) : "";
   }
   return entityInlineLink("objects", row.routeID, label || objectTitle(row));
+}
+
+function callReturnValueCell(row) {
+  const dagqlID = String(row?.outputDagqlID || "").trim();
+  if (!dagqlID) {
+    return "None";
+  }
+  const output = objectRowByID(dagqlID);
+  if (output) {
+    return entityInlineLink("objects", output.routeID, objectTitle(output));
+  }
+  return detailCode(shortDagqlID(dagqlID));
 }
 
 function callSummaryLink(callID, label = "") {
