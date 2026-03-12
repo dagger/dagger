@@ -74,13 +74,18 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 	keyForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title(fmt.Sprintf("Enter your %s API key", providerChoice)).
-				Description(fmt.Sprintf("Get your key at: %s", signupURL)).
-				EchoMode(huh.EchoModePassword).
+				Title(fmt.Sprintf("Enter your %s API key or secret reference", providerChoice)).
+				Description(fmt.Sprintf(
+					"A secret ref like op://vault/item/field is preferred over a literal token.\n"+
+						"Get a key at: %s", signupURL)).
+				Placeholder("op://vault/item/field or sk-...").
+				SuggestionsFunc(func() []string {
+					return SecretSuggestions(apiKey)
+				}, &apiKey).
 				Value(&apiKey).
 				Validate(func(s string) error {
 					if s == "" {
-						return fmt.Errorf("API key cannot be empty")
+						return fmt.Errorf("API key or secret reference cannot be empty")
 					}
 					return nil
 				}),
