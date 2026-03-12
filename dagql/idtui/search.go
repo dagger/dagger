@@ -110,6 +110,35 @@ func (fe *frontendPretty) syncSearchState() {
 	fe.dirtySearchTrees()
 }
 
+// refreshSearchMatches is called every frame when a search is active.
+// It incrementally updates midterm's search results (only re-scanning
+// rows that changed), rebuilds the match list, and preserves the
+// current match selection.
+func (fe *frontendPretty) refreshSearchMatches() {
+	oldMatch := searchMatch{}
+	if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
+		oldMatch = fe.searchMatches[fe.searchIdx]
+	}
+
+	fe.syncVtermSearchHighlights()
+	fe.buildSearchMatches()
+
+	// Try to preserve the current match position.
+	if oldMatch != (searchMatch{}) {
+		fe.searchIdx = 0
+		for i, m := range fe.searchMatches {
+			if m == oldMatch {
+				fe.searchIdx = i
+				break
+			}
+		}
+	}
+	if len(fe.searchMatches) == 0 {
+		fe.searchIdx = -1
+	}
+	fe.dirtySearchTrees()
+}
+
 // searchFirstForward finds the first match at or after the currently focused
 // span and navigates to it. Matches in collapsed spans are included — they
 // will be revealed when navigated to.
