@@ -40,6 +40,9 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
 
+	// Inject OTel tracing HTTP client to capture LLM request/response bodies
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("anthropic")))
+
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,

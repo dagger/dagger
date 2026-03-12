@@ -45,6 +45,9 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 	opts = append(opts, option.WithHeader("originator", "dagger"))
 	opts = append(opts, option.WithHeader("User-Agent", "dagger"))
 
+	// Inject OTel tracing HTTP client to capture LLM request/response bodies
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-codex")))
+
 	svc := responses.NewResponseService(opts...)
 	return &OpenAICodexClient{svc: svc, endpoint: endpoint}
 }

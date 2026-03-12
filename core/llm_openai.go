@@ -30,6 +30,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		if endpoint.Key != "" {
 			opts = append(opts, azure.WithAPIKey(endpoint.Key))
 		}
+		opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-azure")))
 		c := openai.NewClient(opts...)
 		return &OpenAIClient{client: c, endpoint: endpoint}
 	}
@@ -40,6 +41,9 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
+	// Inject OTel tracing HTTP client to capture LLM request/response bodies
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai")))
 
 	c := openai.NewClient(opts...)
 	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}

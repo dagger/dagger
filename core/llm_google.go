@@ -27,7 +27,8 @@ type GenaiClient struct {
 func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	ctx := context.Background() // FIXME: should we wire this through from somewhere else?
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: endpoint.Key,
+		APIKey:     endpoint.Key,
+		HTTPClient: newLLMOTelHTTPClient("google"),
 	})
 	if err != nil {
 		return nil, err
