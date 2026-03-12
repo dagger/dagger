@@ -80,7 +80,7 @@ func withEngine(
 			if opts.Debug {
 				slog.Error("failed to emit telemetry", "error", err)
 			}
-			Frontend.Opts().TelemetryError = err
+			Frontend.Opts().TelemetryError.Store(&err)
 		}))
 		cleanup.Add("close telemetry", func() error {
 			cleanupTelemetry(rerr)
