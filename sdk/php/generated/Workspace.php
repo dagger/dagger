@@ -71,6 +71,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+     */
+    public function defaultModule(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultModule');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultModule');
+    }
+
+    /**
      * Returns a Directory from the workspace.
      *
      * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
@@ -191,8 +200,13 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Create a new module in the workspace, scaffold its files, and auto-install it in config.toml.
      */
-    public function moduleInit(string $name, string $sdk, ?string $source = '', ?array $include = null): string
-    {
+    public function moduleInit(
+        string $name,
+        string $sdk,
+        ?string $source = '',
+        ?array $include = null,
+        ?string $license = 'Apache-2.0',
+    ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
         $leafQueryBuilder->setArgument('name', $name);
         $leafQueryBuilder->setArgument('sdk', $sdk);
@@ -202,7 +216,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         if (null !== $include) {
         $leafQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $license) {
+        $leafQueryBuilder->setArgument('license', $license);
+        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'moduleInit');
+    }
+
+    /**
+     * List modules defined in the workspace configuration.
+     */
+    public function moduleList(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleList');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'moduleList');
     }
 
     /**
@@ -212,5 +238,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
         return (string)$this->queryLeaf($leafQueryBuilder, 'path');
+    }
+
+    /**
+     * Update one or more workspace module lock entries in .dagger/lock.
+     *
+     * Leaves config.toml unchanged. If modules is empty, updates all git modules.
+     */
+    public function update(?array $modules = null): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('update');
+        if (null !== $modules) {
+        $leafQueryBuilder->setArgument('modules', $modules);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'update');
     }
 }

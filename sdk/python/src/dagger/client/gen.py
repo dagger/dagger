@@ -316,6 +316,11 @@ class WorkspaceID(Scalar):
     object of type Workspace."""
 
 
+class WorkspaceModuleID(Scalar):
+    """The `WorkspaceModuleID` scalar type represents an identifier for an
+    object of type WorkspaceModule."""
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -902,6 +907,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
+
+    def as_workspace_module(self) -> "WorkspaceModule":
+        """Retrieve the binding value, as type WorkspaceModule"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceModule", _args)
+        return WorkspaceModule(_ctx)
 
     async def digest(self) -> str:
         """Returns the digest of the binding value
@@ -6711,6 +6722,49 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withWorkspaceInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_module_input(
+        self,
+        name: str,
+        value: "WorkspaceModule",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceModule in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceModule value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceModuleInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_module_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceModule output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceModuleOutput", _args)
         return Env(_ctx)
 
     def with_workspace_output(self, name: str, description: str) -> Self:
@@ -12587,6 +12641,14 @@ class Client(Root):
         _ctx = self._select("loadWorkspaceFromID", _args)
         return Workspace(_ctx)
 
+    def load_workspace_module_from_id(self, id: WorkspaceModuleID) -> "WorkspaceModule":
+        """Load a WorkspaceModule from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadWorkspaceModuleFromID", _args)
+        return WorkspaceModule(_ctx)
+
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -14229,6 +14291,28 @@ class Workspace(Type):
         _ctx = self._select("configWrite", _args)
         return await _ctx.execute(str)
 
+    async def default_module(self) -> str:
+        """The default module to focus on (blueprint or standalone module name).
+        Empty when ambiguous.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultModule", _args)
+        return await _ctx.execute(str)
+
     def directory(
         self,
         path: str,
@@ -14475,6 +14559,7 @@ class Workspace(Type):
         *,
         source: str | None = "",
         include: list[str] | None = None,
+        license: str | None = "Apache-2.0",
     ) -> str:
         """Create a new module in the workspace, scaffold its files, and auto-
         install it in config.toml.
@@ -14489,6 +14574,8 @@ class Workspace(Type):
             Source subpath within the module root.
         include:
             Additional include patterns for the module.
+        license:
+            SPDX license identifier to generate (empty to skip).
 
         Returns
         -------
@@ -14509,9 +14596,16 @@ class Workspace(Type):
             Arg("sdk", sdk),
             Arg("source", source, ""),
             Arg("include", [] if include is None else include, []),
+            Arg("license", license, "Apache-2.0"),
         ]
         _ctx = self._select("moduleInit", _args)
         return await _ctx.execute(str)
+
+    async def module_list(self) -> list["WorkspaceModule"]:
+        """List modules defined in the workspace configuration."""
+        _args: list[Arg] = []
+        _ctx = self._select("moduleList", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
 
     async def path(self) -> str:
         """Workspace path relative to root.
@@ -14532,6 +14626,131 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def update(
+        self,
+        *,
+        modules: list[str] | None = None,
+    ) -> str:
+        """Update one or more workspace module lock entries in .dagger/lock.
+
+        Leaves config.toml unchanged. If modules is empty, updates all git
+        modules.
+
+        Parameters
+        ----------
+        modules:
+            Workspace module names to update. Empty updates all git modules.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("modules", [] if modules is None else modules, []),
+        ]
+        _ctx = self._select("update", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class WorkspaceModule(Type):
+    """A module entry in the workspace configuration."""
+
+    async def blueprint(self) -> bool:
+        """Whether the module is a blueprint (functions aliased to Query root).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("blueprint", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> WorkspaceModuleID:
+        """A unique identifier for this WorkspaceModule.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        WorkspaceModuleID
+            The `WorkspaceModuleID` scalar type represents an identifier for
+            an object of type WorkspaceModule.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(WorkspaceModuleID)
+
+    async def name(self) -> str:
+        """The module name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def source(self) -> str:
+        """The module source path.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
         return await _ctx.execute(str)
 
 
@@ -14675,5 +14894,7 @@ __all__ = [
     "Void",
     "Workspace",
     "WorkspaceID",
+    "WorkspaceModule",
+    "WorkspaceModuleID",
     "dag",
 ]

@@ -2775,12 +2775,29 @@ export type WorkspaceModuleInitOpts = {
    * Additional include patterns for the module.
    */
   include?: string[]
+
+  /**
+   * SPDX license identifier to generate (empty to skip).
+   */
+  license?: string
+}
+
+export type WorkspaceUpdateOpts = {
+  /**
+   * Workspace module names to update. Empty updates all git modules.
+   */
+  modules?: string[]
 }
 
 /**
  * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
  */
 export type WorkspaceID = string & { __WorkspaceID: never }
+
+/**
+ * The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+ */
+export type WorkspaceModuleID = string & { __WorkspaceModuleID: never }
 
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
@@ -3180,6 +3197,14 @@ export class Binding extends BaseClient {
   asWorkspace = (): Workspace => {
     const ctx = this._ctx.select("asWorkspace")
     return new Workspace(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModule
+   */
+  asWorkspaceModule = (): WorkspaceModule => {
+    const ctx = this._ctx.select("asWorkspaceModule")
+    return new WorkspaceModule(ctx)
   }
 
   /**
@@ -7286,6 +7311,38 @@ export class Env extends BaseClient {
     const ctx = this._ctx.select("withWorkspaceInput", {
       name,
       value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModule in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModule value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleInput = (
+    name: string,
+    value: WorkspaceModule,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModule output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
+      name,
       description,
     })
     return new Env(ctx)
@@ -12386,6 +12443,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a WorkspaceModule from its ID.
+   */
+  loadWorkspaceModuleFromID = (id: WorkspaceModuleID): WorkspaceModule => {
+    const ctx = this._ctx.select("loadWorkspaceModuleFromID", { id })
+    return new WorkspaceModule(ctx)
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -13682,6 +13747,7 @@ export class Workspace extends BaseClient {
   private readonly _configPath?: string = undefined
   private readonly _configRead?: string = undefined
   private readonly _configWrite?: string = undefined
+  private readonly _defaultModule?: string = undefined
   private readonly _findUp?: string = undefined
   private readonly _hasConfig?: boolean = undefined
   private readonly _init?: string = undefined
@@ -13689,6 +13755,7 @@ export class Workspace extends BaseClient {
   private readonly _install?: string = undefined
   private readonly _moduleInit?: string = undefined
   private readonly _path?: string = undefined
+  private readonly _update?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -13700,6 +13767,7 @@ export class Workspace extends BaseClient {
     _configPath?: string,
     _configRead?: string,
     _configWrite?: string,
+    _defaultModule?: string,
     _findUp?: string,
     _hasConfig?: boolean,
     _init?: string,
@@ -13707,6 +13775,7 @@ export class Workspace extends BaseClient {
     _install?: string,
     _moduleInit?: string,
     _path?: string,
+    _update?: string,
   ) {
     super(ctx)
 
@@ -13715,6 +13784,7 @@ export class Workspace extends BaseClient {
     this._configPath = _configPath
     this._configRead = _configRead
     this._configWrite = _configWrite
+    this._defaultModule = _defaultModule
     this._findUp = _findUp
     this._hasConfig = _hasConfig
     this._init = _init
@@ -13722,6 +13792,7 @@ export class Workspace extends BaseClient {
     this._install = _install
     this._moduleInit = _moduleInit
     this._path = _path
+    this._update = _update
   }
 
   /**
@@ -13809,6 +13880,21 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("configWrite", { key, value })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+   */
+  defaultModule = async (): Promise<string> => {
+    if (this._defaultModule) {
+      return this._defaultModule
+    }
+
+    const ctx = this._ctx.select("defaultModule")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -13945,6 +14031,7 @@ export class Workspace extends BaseClient {
    * @param sdk SDK to use (go, python, typescript).
    * @param opts.source Source subpath within the module root.
    * @param opts.include Additional include patterns for the module.
+   * @param opts.license SPDX license identifier to generate (empty to skip).
    */
   moduleInit = async (
     name: string,
@@ -13963,6 +14050,23 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * List modules defined in the workspace configuration.
+   */
+  moduleList = async (): Promise<WorkspaceModule[]> => {
+    type moduleList = {
+      id: WorkspaceModuleID
+    }
+
+    const ctx = this._ctx.select("moduleList").select("id")
+
+    const response: Awaited<moduleList[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadWorkspaceModuleFromID(r.id),
+    )
+  }
+
+  /**
    * Workspace path relative to root.
    */
   path = async (): Promise<string> => {
@@ -13971,6 +14075,112 @@ export class Workspace extends BaseClient {
     }
 
     const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Update one or more workspace module lock entries in .dagger/lock.
+   *
+   * Leaves config.toml unchanged. If modules is empty, updates all git modules.
+   * @param opts.modules Workspace module names to update. Empty updates all git modules.
+   */
+  update = async (opts?: WorkspaceUpdateOpts): Promise<string> => {
+    if (this._update) {
+      return this._update
+    }
+
+    const ctx = this._ctx.select("update", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A module entry in the workspace configuration.
+ */
+export class WorkspaceModule extends BaseClient {
+  private readonly _id?: WorkspaceModuleID = undefined
+  private readonly _blueprint?: boolean = undefined
+  private readonly _name?: string = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: WorkspaceModuleID,
+    _blueprint?: boolean,
+    _name?: string,
+    _source?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._blueprint = _blueprint
+    this._name = _name
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModule.
+   */
+  id = async (): Promise<WorkspaceModuleID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceModuleID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is a blueprint (functions aliased to Query root).
+   */
+  blueprint = async (): Promise<boolean> => {
+    if (this._blueprint) {
+      return this._blueprint
+    }
+
+    const ctx = this._ctx.select("blueprint")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module source path.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
 
     const response: Awaited<string> = await ctx.execute()
 

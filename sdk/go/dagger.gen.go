@@ -317,6 +317,9 @@ type Void string
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
+// The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+type WorkspaceModuleID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -804,6 +807,15 @@ func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceModule
+func (r *Binding) AsWorkspaceModule() *WorkspaceModule {
+	q := r.query.Select("asWorkspaceModule")
+
+	return &WorkspaceModule{
 		query: q,
 	}
 }
@@ -6150,6 +6162,30 @@ func (r *Env) WithWorkspaceInput(name string, value *Workspace, description stri
 	q := r.query.Select("withWorkspaceInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceModule in the environment
+func (r *Env) WithWorkspaceModuleInput(name string, value *WorkspaceModule, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceModuleInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceModule output to be assigned in the environment
+func (r *Env) WithWorkspaceModuleOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceModuleOutput")
+	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{
@@ -12485,6 +12521,16 @@ func (r *Client) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	}
 }
 
+// Load a WorkspaceModule from its ID.
+func (r *Client) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule {
+	q := r.query.Select("loadWorkspaceModuleFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceModule{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
@@ -14528,6 +14574,39 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, sdk string, opt
 	return response, q.Execute(ctx)
 }
 
+// List modules defined in the workspace configuration.
+func (r *Workspace) ModuleList(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("moduleList")
+
+	q = q.Select("id")
+
+	type moduleList struct {
+		Id WorkspaceModuleID
+	}
+
+	convert := func(fields []moduleList) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = q.Root().Select("loadWorkspaceModuleFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []moduleList
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Workspace path relative to root.
 func (r *Workspace) Path(ctx context.Context) (string, error) {
 	if r.path != nil {
@@ -14561,6 +14640,101 @@ func (r *Workspace) Update(ctx context.Context, opts ...WorkspaceUpdateOpts) (st
 			q = q.Arg("modules", opts[i].Modules)
 		}
 	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A module entry in the workspace configuration.
+type WorkspaceModule struct {
+	query *querybuilder.Selection
+
+	blueprint *bool
+	id        *WorkspaceModuleID
+	name      *string
+	source    *string
+}
+
+func (r *WorkspaceModule) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModule {
+	return &WorkspaceModule{
+		query: q,
+	}
+}
+
+// Whether the module is a blueprint (functions aliased to Query root).
+func (r *WorkspaceModule) Blueprint(ctx context.Context) (bool, error) {
+	if r.blueprint != nil {
+		return *r.blueprint, nil
+	}
+	q := r.query.Select("blueprint")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceModule.
+func (r *WorkspaceModule) ID(ctx context.Context) (WorkspaceModuleID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceModuleID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceModule) XXX_GraphQLType() string {
+	return "WorkspaceModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceModule) XXX_GraphQLIDType() string {
+	return "WorkspaceModuleID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The module name.
+func (r *WorkspaceModule) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module source path.
+func (r *WorkspaceModule) Source(ctx context.Context) (string, error) {
+	if r.source != nil {
+		return *r.source, nil
+	}
+	q := r.query.Select("source")
 
 	var response string
 

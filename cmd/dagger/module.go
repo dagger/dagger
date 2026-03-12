@@ -12,6 +12,8 @@ import (
 
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5"
+	"github.com/juju/ansiterm/tabwriter"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
@@ -178,6 +180,8 @@ func init() {
 	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
+
+	moduleCmd.AddCommand(moduleListCmd)
 }
 
 // moduleModInitCmd is the "dagger module init" subcommand.
@@ -318,6 +322,63 @@ func initStandaloneModule(ctx context.Context, cmd *cobra.Command, modName strin
 		fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", modName, "in", contextDirPath)
 		return nil
 	})
+}
+
+var moduleListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List workspace's modules",
+	Long: `List all the modules referenced in this workspace.
+
+Note:
+- Source paths are relative to the workspace root.
+- * means the module is a blueprint, with all its functions aliased to the root level.`,
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			ctx, span := Tracer().Start(ctx, "fetching module list")
+			defer telemetry.EndWithCause(span, &err)
+
+			modules, err := dag.CurrentWorkspace().ModuleList(ctx)
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+
+			fmt.Fprintf(out, "%s\n%s\n\n",
+				termenv.String("Source paths are relative to the workspace root").Faint(),
+				termenv.String("* indicates a module is a blueprint, with all its functions aliased to the root level").Faint())
+
+			tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+			fmt.Fprintf(tw, "%s\t%s\n",
+				termenv.String("Name").Bold(),
+				termenv.String("Source").Bold(),
+			)
+			for _, mod := range modules {
+				name, err := mod.Name(ctx)
+				if err != nil {
+					return err
+				}
+				source, err := mod.Source(ctx)
+				if err != nil {
+					return err
+				}
+				blueprint, err := mod.Blueprint(ctx)
+				if err != nil {
+					return err
+				}
+				if blueprint {
+					name += "*"
+				}
+				fmt.Fprintf(tw, "%s\t%s\n", name, source)
+			}
+			return tw.Flush()
+		})
+	},
 }
 
 var moduleUpdateCmd = &cobra.Command{

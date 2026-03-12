@@ -51,22 +51,6 @@ class Client extends Client\AbstractClient
         return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function codegen(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): GeneratedCode
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
-        $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
-        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function codegenBase(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
-        $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
     /**
      * Creates a scratch container, with no image or metadata.
      *
@@ -925,20 +909,22 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a WorkspaceModule from its ID.
+     */
+    public function loadWorkspaceModuleFromID(WorkspaceModuleId|WorkspaceModule $id): WorkspaceModule
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceModuleFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new module.
      */
     public function module(): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('module');
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function moduleRuntime(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
-        $innerQueryBuilder->setArgument('modSource', $modSource);
-        $innerQueryBuilder->setArgument('introspectionJson', $introspectionJson);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

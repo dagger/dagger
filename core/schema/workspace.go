@@ -28,6 +28,8 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
+	dagql.Fields[*core.WorkspaceModule]{}.Install(srv)
+
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("currentWorkspace", s.currentWorkspace, dagql.CachePerCall).
 			Doc("Detect and return the current workspace.").
@@ -107,6 +109,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("modules").Doc("Workspace module names to update. Empty updates all git modules."),
 			),
+		dagql.Func("moduleList", s.moduleList).
+			DoNotCache("Reads live config from host").
+			Doc("List modules defined in the workspace configuration."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
@@ -832,6 +837,29 @@ func (s *workspaceSchema) initModule(
 	return string(contextDirPath), nil
 }
 
+// readConfigBytes reads the raw config.toml bytes from the host filesystem.
+func readConfigBytes(ctx context.Context, parent *core.Workspace) ([]byte, error) {
+	cfgPath, err := configHostPath(parent)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	return data, nil
+}
+
 type configReadArgs struct {
 	Key string `default:""`
 }
@@ -845,23 +873,9 @@ func (s *workspaceSchema) configRead(
 		return "", fmt.Errorf("no config.toml found in workspace")
 	}
 
-	cfgPath, err := configHostPath(parent)
+	data, err := readConfigBytes(ctx, parent)
 	if err != nil {
 		return "", err
-	}
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return "", fmt.Errorf("buildkit: %w", err)
-	}
-
-	data, err := bk.ReadCallerHostFile(ctx, cfgPath)
-	if err != nil {
-		return "", fmt.Errorf("reading config: %w", err)
 	}
 
 	result, err := workspace.ReadConfigValue(data, args.Key)
@@ -870,6 +884,46 @@ func (s *workspaceSchema) configRead(
 	}
 
 	return dagql.String(result), nil
+}
+
+func (s *workspaceSchema) moduleList(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.Array[*core.WorkspaceModule], error) {
+	if !parent.HasConfig {
+		return nil, nil
+	}
+
+	data, err := readConfigBytes(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Source paths in config.toml are relative to the config directory (.dagger/).
+	// Resolve them to be relative to the workspace root for display.
+	configDir := path.Dir(parent.ConfigPath)
+
+	modules := make(core.WorkspaceModules, 0, len(cfg.Modules))
+	for name, entry := range cfg.Modules {
+		source := entry.Source
+		if core.FastModuleSourceKindCheck(source, "") == core.ModuleSourceKindLocal {
+			source = path.Join(configDir, source)
+		}
+		modules = append(modules, &core.WorkspaceModule{
+			Name:      name,
+			Blueprint: entry.Blueprint,
+			Source:    source,
+		})
+	}
+	modules.Sort()
+
+	return dagql.Array[*core.WorkspaceModule](modules), nil
 }
 
 type configWriteArgs struct {

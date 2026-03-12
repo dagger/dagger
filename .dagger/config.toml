@@ -1,6 +1,6 @@
 [modules.dagger-dev]
 source = "modules/dagger-dev"
-alias = true
+blueprint = true
 
 [modules.changelog]
 source = "../toolchains/changelog"
