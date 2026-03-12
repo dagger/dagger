@@ -1330,6 +1330,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 	if len(fe.rows.Order) == 0 {
 		fe.focus(nil)
+		fe.topTrees = nil
 		return
 	}
 	if len(fe.rows.Order) < fe.focusedIdx {
