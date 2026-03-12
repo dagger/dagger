@@ -74,7 +74,7 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)
 	}
-	return runErr
+	return normalizeFrontendExit(runErr, fe.db)
 }
 
 func (fe *frontendLogs) Opts() *dagui.FrontendOpts {

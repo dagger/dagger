@@ -224,7 +224,7 @@ func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Check
 		}
 	}
 	if failed > 0 {
-		return idtui.ExitError{Code: 1, Original: fmt.Errorf("%d checks failed", failed)}
+		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("%d checks failed", failed)}
 	}
 	return nil
 }
