@@ -1551,14 +1551,14 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		focusLine = fe.findFocusLine(topGapCounts)
 	}
 
-	// Crop to the viewport, keeping the focused span fully visible and
-	// filling remaining space evenly from above and below for context.
+	// Crop the bottom so the focused span stays within the visible
+	// screen area. Content above scrolls into terminal scrollback
+	// naturally — we never crop the top.
 	viewportHeight := ctx.ScreenHeight() - chromeHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
 
-	start := 0
 	end := len(allLines)
 	if focusLine >= 0 && len(allLines) > viewportHeight {
 		// Determine the focused span's extent.
@@ -1570,36 +1570,27 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 			focusEnd = len(allLines)
 		}
 
+		// Place the focused span in the viewport with remaining
+		// space split evenly above and below.
 		focusHeight := focusEnd - focusLine
 		remaining := viewportHeight - focusHeight
 		if remaining < 0 {
-			// Focused span alone exceeds viewport; show from its
-			// top line and let the bottom get cropped.
 			remaining = 0
 		}
+		below := remaining / 2
 
-		// Split remaining space: half above, half below.
-		above := remaining / 2
-		below := remaining - above
-
-		start = focusLine - above
 		end = focusEnd + below
-
-		// Clamp and redistribute if we hit an edge.
-		if start < 0 {
-			end -= start // give surplus to below
-			start = 0
+		// Ensure the focus start is visible: the visible window is
+		// [end-viewportHeight, end), so end <= focusLine+viewportHeight.
+		if end > focusLine+viewportHeight {
+			end = focusLine + viewportHeight
 		}
 		if end > len(allLines) {
-			start -= end - len(allLines) // give surplus to above
 			end = len(allLines)
-		}
-		if start < 0 {
-			start = 0
 		}
 	}
 
-	return allLines[start:end]
+	return allLines[:end]
 }
 
 // totalLineCount returns the total number of rendered lines for a SpanTreeView,
