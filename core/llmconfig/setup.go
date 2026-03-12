@@ -29,6 +29,13 @@ type PromptHandler interface {
 	HandleForm(ctx context.Context, form *huh.Form) error
 }
 
+// AbovePrinter is an optional interface that PromptHandlers may implement
+// to print text above the TUI into the terminal scrollback buffer. This is
+// useful for content that must not be word-wrapped (e.g. clickable URLs).
+type AbovePrinter interface {
+	PrintAbove(text string)
+}
+
 // InteractiveSetup guides user through LLM configuration
 // Returns (configured bool, error) - configured is true if setup completed
 func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, error) {
@@ -445,16 +452,28 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
 		return false, fmt.Errorf("failed to generate OAuth URL: %w", err)
 	}
 
-	// Show the URL and ask user to visit it
+	// Print the URL above the TUI if supported, so it's not word-wrapped
+	// and can be Ctrl+Clicked. Otherwise include it inline in the form.
 	var authCode string
+	var description string
+	if printer, ok := ph.(AbovePrinter); ok {
+		printer.PrintAbove(fmt.Sprintf(
+			"Claude Code OAuth — visit this URL to authorize:\n\n%s\n",
+			authURL,
+		))
+		description = "After authorizing, paste the code below."
+	} else {
+		description = fmt.Sprintf(
+			"Visit this URL to authorize:\n\n%s\n\nAfter authorizing, paste the code below.",
+			authURL,
+		)
+	}
+
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Claude Code OAuth").
-				Description(fmt.Sprintf(
-					"Visit this URL to authorize:\n\n%s\n\nAfter authorizing, paste the code below.",
-					authURL,
-				)).
+				Description(description).
 				Placeholder("paste authorization code here").
 				Value(&authCode).
 				Validate(validateNonEmpty("authorization code")),

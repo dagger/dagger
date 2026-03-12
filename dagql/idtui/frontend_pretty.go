@@ -764,6 +764,13 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	}
 }
 
+// PrintAbove writes text into the terminal scrollback buffer above the
+// TUI content. The text is not subject to TUI word-wrapping, making it
+// suitable for clickable URLs and other content that must stay on one line.
+func (fe *frontendPretty) PrintAbove(text string) {
+	fe.tui.PrintAbove(text)
+}
+
 // blankLine is a trivial component that renders a single empty line.
 type blankLine struct{ tuist.Compo }
 
