@@ -1551,32 +1551,55 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		focusLine = fe.findFocusLine(topGapCounts)
 	}
 
-	// Truncate content below focus so the focused item stays onscreen.
-	// Everything above renders into terminal scrollback naturally.
-	//
-	// In shell mode, skip truncation: the focused span's inline logs
-	// (command output) appear below the step line and must not be clipped.
+	// Crop to the viewport, keeping the focused span fully visible and
+	// filling remaining space evenly from above and below for context.
 	viewportHeight := ctx.ScreenHeight() - chromeHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
+
+	start := 0
 	end := len(allLines)
-	if focusLine >= 0 {
-		// Allow some context below focus (half the viewport), but cap
-		// the total so focus doesn't get pushed above the viewport.
-		afterBudget := viewportHeight / 2
-		if focusLine+afterBudget < end {
-			end = focusLine + afterBudget
+	if focusLine >= 0 && len(allLines) > viewportHeight {
+		// Determine the focused span's extent.
+		focusEnd := focusLine
+		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+			focusEnd = focusLine + focused.totalLineCount()
 		}
-		// Never crop to less than a full viewport — when the focused
-		// line is near the top, keep enough content below to fill the
-		// screen rather than leaving it half-empty.
-		if end < viewportHeight && viewportHeight < len(allLines) {
-			end = viewportHeight
+		if focusEnd > len(allLines) {
+			focusEnd = len(allLines)
+		}
+
+		focusHeight := focusEnd - focusLine
+		remaining := viewportHeight - focusHeight
+		if remaining < 0 {
+			// Focused span alone exceeds viewport; show from its
+			// top line and let the bottom get cropped.
+			remaining = 0
+		}
+
+		// Split remaining space: half above, half below.
+		above := remaining / 2
+		below := remaining - above
+
+		start = focusLine - above
+		end = focusEnd + below
+
+		// Clamp and redistribute if we hit an edge.
+		if start < 0 {
+			end -= start // give surplus to below
+			start = 0
+		}
+		if end > len(allLines) {
+			start -= end - len(allLines) // give surplus to above
+			end = len(allLines)
+		}
+		if start < 0 {
+			start = 0
 		}
 	}
 
-	return allLines[:end]
+	return allLines[start:end]
 }
 
 // totalLineCount returns the total number of rendered lines for a SpanTreeView,
