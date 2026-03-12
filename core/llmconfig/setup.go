@@ -458,7 +458,7 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
 	var description string
 	if printer, ok := ph.(AbovePrinter); ok {
 		printer.PrintAbove(fmt.Sprintf(
-			"Claude Code OAuth — visit this URL to authorize:\n\n%s\n",
+			"Claude Code OAuth — visit this URL to authorize:\n\n%s\n\n",
 			authURL,
 		))
 		description = "After authorizing, paste the code below."
