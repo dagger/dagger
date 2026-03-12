@@ -90,6 +90,46 @@ CREATE TABLE IF NOT EXISTS spans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_spans_trace_start ON spans(trace_id, start_unix_nano);
+
+CREATE TABLE IF NOT EXISTS derived_workspace_ops (
+  id TEXT PRIMARY KEY,
+  trace_id TEXT NOT NULL,
+  workspace_root TEXT NOT NULL DEFAULT '',
+  session_id TEXT NOT NULL DEFAULT '',
+  client_id TEXT NOT NULL DEFAULT '',
+  span_id TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT '',
+  direction TEXT NOT NULL DEFAULT '',
+  call_name TEXT NOT NULL DEFAULT '',
+  path TEXT NOT NULL DEFAULT '',
+  target_type TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  status_code TEXT NOT NULL DEFAULT '',
+  start_unix_nano INTEGER NOT NULL,
+  end_unix_nano INTEGER NOT NULL,
+  receiver_dagql_id TEXT NOT NULL DEFAULT '',
+  output_dagql_id TEXT NOT NULL DEFAULT '',
+  pipeline_client_id TEXT NOT NULL DEFAULT '',
+  pipeline_id TEXT NOT NULL DEFAULT '',
+  pipeline_command TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_ops_trace_start
+  ON derived_workspace_ops(trace_id, start_unix_nano, id);
+CREATE INDEX IF NOT EXISTS idx_workspace_ops_root_last
+  ON derived_workspace_ops(workspace_root, end_unix_nano DESC, start_unix_nano DESC, id);
+CREATE INDEX IF NOT EXISTS idx_workspace_ops_session_start
+  ON derived_workspace_ops(session_id, start_unix_nano, id);
+CREATE INDEX IF NOT EXISTS idx_workspace_ops_client_start
+  ON derived_workspace_ops(client_id, start_unix_nano, id);
+
+CREATE TABLE IF NOT EXISTS derived_workspace_traces (
+  trace_id TEXT PRIMARY KEY,
+  refreshed_unix_nano INTEGER NOT NULL,
+  workspace_count INTEGER NOT NULL DEFAULT 0,
+  workspace_op_count INTEGER NOT NULL DEFAULT 0
+);
 `
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {

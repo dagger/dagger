@@ -2045,6 +2045,7 @@ body {
 }
 
 .v3-link:hover .v3-cell-primary strong,
+.v3-link:hover .v3-call-signature,
 .v3-back-link:hover {
   color: #f7d79a;
 }
@@ -2829,10 +2830,15 @@ body {
   border-collapse: collapse;
 }
 
+.v3-data-table {
+  min-width: 100%;
+}
+
 .v3-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
+  overflow: visible;
   padding: 12px 14px;
   text-align: left;
   font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
@@ -2853,6 +2859,306 @@ body {
   vertical-align: middle;
 }
 
+.v3-table-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.v3-table-search {
+  display: grid;
+  gap: 6px;
+  min-width: min(360px, 100%);
+}
+
+.v3-table-search-label {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v3-table-search-input {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f4efe1;
+  font: inherit;
+}
+
+.v3-table-search-input:focus {
+  outline: none;
+  border-color: rgba(247, 215, 154, 0.42);
+  box-shadow: 0 0 0 1px rgba(247, 215, 154, 0.18);
+}
+
+.v3-table-toolbar-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.v3-table-summary {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.82rem;
+}
+
+.v3-table-clear {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f4efe1;
+  font: inherit;
+  cursor: pointer;
+}
+
+.v3-table-clear:hover,
+.v3-table-sort:hover {
+  border-color: rgba(247, 215, 154, 0.28);
+  color: #f7d79a;
+}
+
+.v3-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.v3-table-sort.is-active {
+  color: #f7d79a;
+}
+
+.v3-table-sort-indicator {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.v3-table-sort.is-active .v3-table-sort-indicator {
+  color: currentColor;
+}
+
+.v3-table-head-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v3-table-head-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.v3-table-facet {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.v3-table-facet[open] {
+  z-index: 4;
+}
+
+.v3-table-facet summary {
+  list-style: none;
+}
+
+.v3-table-facet summary::-webkit-details-marker {
+  display: none;
+}
+
+.v3-table-facet-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+}
+
+.v3-table-facet-trigger:hover,
+.v3-table-facet[open] .v3-table-facet-trigger,
+.v3-table-facet.is-active .v3-table-facet-trigger {
+  border-color: rgba(247, 215, 154, 0.28);
+  color: #f7d79a;
+}
+
+.v3-table-facet-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v3-table-facet-icon svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+.v3-table-facet-badge {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(247, 215, 154, 0.16);
+  color: inherit;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.v3-table-facet-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  display: grid;
+  gap: 10px;
+  width: min(280px, 36vw);
+  min-width: 220px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(14, 18, 26, 0.98);
+  box-shadow: 0 18px 36px -22px rgba(0, 0, 0, 0.78);
+}
+
+.v3-table-facet-head {
+  display: grid;
+  gap: 2px;
+}
+
+.v3-table-facet-head strong {
+  color: #f4efe1;
+  font-size: 0.76rem;
+}
+
+.v3-table-facet-head span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.72rem;
+}
+
+.v3-table-facet-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v3-table-facet-actions button {
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f4efe1;
+  font: inherit;
+  cursor: pointer;
+}
+
+.v3-table-facet-actions button:hover {
+  border-color: rgba(247, 215, 154, 0.28);
+  color: #f7d79a;
+}
+
+.v3-table-facet-search {
+  display: grid;
+  gap: 6px;
+}
+
+.v3-table-facet-search-label {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.v3-table-facet-search-input {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f4efe1;
+  font: inherit;
+}
+
+.v3-table-facet-search-input:focus {
+  outline: none;
+  border-color: rgba(247, 215, 154, 0.42);
+  box-shadow: 0 0 0 1px rgba(247, 215, 154, 0.18);
+}
+
+.v3-table-facet-note {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.v3-table-facet-options {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.v3-table-facet-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: 10px;
+}
+
+.v3-table-facet-option:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.v3-table-facet-option input {
+  margin: 0;
+}
+
+.v3-table-facet-option-label {
+  min-width: 0;
+  overflow: hidden;
+  color: #d7dae0;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-table-facet-option-count {
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 0.72rem;
+}
+
+.v3-table-facet-empty {
+  padding: 6px 2px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.76rem;
+}
+
 .v3-cell-primary {
   display: grid;
   gap: 3px;
@@ -2861,6 +3167,21 @@ body {
 .v3-cell-primary strong {
   font-size: 0.9rem;
   font-weight: 400;
+}
+
+.v3-call-cell {
+  min-width: 0;
+}
+
+.v3-call-signature {
+  display: block;
+  overflow: hidden;
+  color: #f4efe1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.83rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v3-cell-primary span {
@@ -2958,6 +3279,14 @@ body {
   color: #b8bec8;
 }
 
+.v3-graph-note {
+  margin: -6px 0 0;
+  color: #97a0ae;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  max-width: 68ch;
+}
+
 .v3-graph-scroll {
   overflow: auto;
   border-radius: 18px;
@@ -3029,7 +3358,7 @@ body {
   line-height: 1.2;
 }
 
-.v3-pipeline-node span {
+.v3-pipeline-node-subtitle {
   color: #b4bac4;
   font-size: 0.84rem;
   overflow-wrap: anywhere;
@@ -3041,6 +3370,50 @@ body {
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.v3-pipeline-node-fields {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(124, 146, 182, 0.16);
+}
+
+.v3-pipeline-node-field {
+  display: grid;
+  grid-template-columns: minmax(0, 104px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.v3-pipeline-node-field-name {
+  color: #8f9399;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-pipeline-node-field-value {
+  color: #d6dbe3;
+  font-size: 0.77rem;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-pipeline-node-field-more {
+  grid-template-columns: 1fr;
+  color: #8f9399;
+  font-size: 0.72rem;
 }
 
 .v3-pipeline-node.is-output {
@@ -3090,6 +3463,13 @@ body {
   font-family: "IBM Plex Mono", "SFMono-Regular", "Menlo", monospace;
   font-size: 0.8rem;
   overflow-wrap: anywhere;
+}
+
+.v3-detail-code-block {
+  display: block;
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
 }
 
 .v3-detail-tags {

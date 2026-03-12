@@ -82,6 +82,101 @@ const entities = [
     ],
   },
   {
+    id: "calls",
+    label: "Calls",
+    code: "CL",
+    category: "Substrate",
+    eyebrow: "Function call substrate",
+    blurb:
+      "Calls are the atomic semantic operations in the trace: one function field invocation with a receiver, args, output snapshot, and parent-call context.",
+    metrics: [
+      { label: "Visible calls", value: "0", detail: "hydrates from /api/v2/calls" },
+      { label: "Receivers", value: "0", detail: "linked from output and receiver DAGQL IDs" },
+      { label: "Outputs", value: "0", detail: "each call can link directly to its output object page" },
+    ],
+    highlights: [],
+    signals: [],
+    evidence: [],
+    inventory: [],
+    relations: [],
+  },
+  {
+    id: "functions",
+    label: "Functions",
+    code: "FN",
+    category: "Substrate",
+    eyebrow: "Schema-level function identities",
+    blurb:
+      "Functions aggregate semantic call identities across traces. Each row belongs to exactly one module, links to the calls that invoked it, and carries any recorded function metadata snapshots.",
+    metrics: [
+      { label: "Functions", value: "0", detail: "hydrates from /api/functions" },
+      { label: "Calls", value: "0", detail: "semantic calls linked back to their canonical function row" },
+      { label: "Snapshots", value: "0", detail: "Function metadata snapshots attached when schema state was recorded" },
+    ],
+    highlights: [],
+    signals: [],
+    evidence: [],
+    inventory: [],
+    relations: [],
+  },
+  {
+    id: "objects",
+    label: "Objects",
+    code: "OB",
+    category: "Substrate",
+    eyebrow: "DAGQL object snapshots",
+    blurb:
+      "Objects are immutable snapshot values keyed by DAGQL ID. Their pages should answer what this snapshot contains, which call produced it, and which other snapshots it points at.",
+    metrics: [
+      { label: "Snapshots", value: "0", detail: "hydrates from /api/v2/object-snapshots" },
+      { label: "Field refs", value: "0", detail: "links to other object pages when state exposes refs" },
+      { label: "Produced by", value: "0", detail: "call links come from snapshot provenance" },
+    ],
+    highlights: [],
+    signals: [],
+    evidence: [],
+    inventory: [],
+    relations: [],
+  },
+  {
+    id: "object-types",
+    label: "Object Types",
+    code: "TY",
+    category: "Substrate",
+    eyebrow: "Type-level aggregation",
+    blurb:
+      "Object types group snapshot and function metadata by type name, so custom module-defined types can be inspected without needing one lucky concrete snapshot on screen.",
+    metrics: [
+      { label: "Types", value: "0", detail: "hydrates from /api/object-types" },
+      { label: "Snapshots", value: "0", detail: "real snapshot rows grouped by type name" },
+      { label: "Functions", value: "0", detail: "function metadata rows that return this type" },
+    ],
+    highlights: [],
+    signals: [],
+    evidence: [],
+    inventory: [],
+    relations: [],
+  },
+  {
+    id: "modules",
+    label: "Modules",
+    code: "MO",
+    category: "Substrate",
+    eyebrow: "Loaded schema sources",
+    blurb:
+      "Modules represent explicit loaded schema origins. They are the dependency anchors for custom object types and the clean place to show module-prelude calls.",
+    metrics: [
+      { label: "Modules", value: "0", detail: "hydrates from /api/modules" },
+      { label: "Prelude calls", value: "0", detail: "moduleSource/asModule style setup calls" },
+      { label: "Type deps", value: "0", detail: "object types can depend on one loaded module when provenance is unambiguous" },
+    ],
+    highlights: [],
+    signals: [],
+    evidence: [],
+    inventory: [],
+    relations: [],
+  },
+  {
     id: "repls",
     label: "Repls",
     code: "RP",
@@ -200,6 +295,45 @@ const entities = [
       { source: "ws-alpha", relation: "contains", target: "release-shell-04", note: "release terminal surface" },
       { source: "ws-beta", relation: "hosts", target: "repl-preview-7", note: "preview iteration lane" },
       { source: "ws-staging", relation: "collects", target: "chk-release-acceptance", note: "staging verification pass" },
+    ],
+  },
+  {
+    id: "devices",
+    label: "Devices",
+    code: "DV",
+    category: "Host-centric",
+    eyebrow: "Top-level client origins",
+    blurb:
+      "Devices represent stable host identities derived from top-level clients only. They anchor the sessions, pipelines, and local workspaces that originate from one user machine.",
+    metrics: [
+      { label: "Detected devices", value: "3", detail: "top-level clients collapsed into stable machine identities" },
+      { label: "Active sessions", value: "7", detail: "recent execution lanes started from those hosts" },
+      { label: "Observed workspaces", value: "4", detail: "local roots touched by those devices" },
+    ],
+    highlights: [
+      { title: "Device 5e4d46", value: "Primary", note: "Owns the release and docs command lanes." },
+      { title: "Device 9ac211", value: "Preview", note: "Mostly drives sandbox and shell exploration." },
+      { title: "Device f03ab8", value: "Cold", note: "Historical host with no recent local workspace activity." },
+    ],
+    signals: [
+      { label: "Root-only", value: "Yes", tone: "good", detail: "Nested module/runtime clients do not create device identities." },
+      { label: "Host spread", value: "3 devices", tone: "neutral", detail: "Distinct top-level machine fingerprints in the current sample." },
+      { label: "Workspace overlap", value: "Low", tone: "good", detail: "Most observed roots still map cleanly back to one host." },
+    ],
+    evidence: [
+      { kind: "Client machine ID", confidence: "high", source: "top-level client resource labels", note: "Anonymous machine fingerprints remain stable enough to group repeated command roots." },
+      { kind: "Root-client boundary", confidence: "high", source: "parent-client graph", note: "Only top-level clients contribute to device identity; nested runtimes do not." },
+      { kind: "Workspace attachment", confidence: "medium", source: "session and client scope", note: "Local workspaces can be attached back to a device through the top-level client lane that touched them." },
+    ],
+    inventory: [
+      { name: "Device 5e4d46", status: "active", owner: "platform", scope: "darwin arm64", updated: "2m ago" },
+      { name: "Device 9ac211", status: "active", owner: "design", scope: "linux amd64", updated: "12m ago" },
+      { name: "Device f03ab8", status: "idle", owner: "release", scope: "linux amd64", updated: "3h ago" },
+    ],
+    relations: [
+      { source: "Device 5e4d46", relation: "started", target: "session-release-main", note: "top-level command lane" },
+      { source: "Device 5e4d46", relation: "submitted", target: "call-release-91", note: "one-shot pipeline" },
+      { source: "Device 9ac211", relation: "touched", target: "ws-beta", note: "local preview workspace" },
     ],
   },
   {
@@ -472,11 +606,47 @@ const liveDomainConfigs = {
     label: "Workspaces",
     singularLabel: "Workspace",
   },
+  devices: {
+    stateKey: "devices",
+    endpoint: "/api/devices?limit=200",
+    label: "Devices",
+    singularLabel: "Device",
+  },
   clients: {
     stateKey: "clients",
     endpoint: "/api/v2/clients?limit=400",
     label: "Clients",
     singularLabel: "Client",
+  },
+  calls: {
+    stateKey: "calls",
+    endpoint: "/api/v2/calls?limit=400",
+    label: "Calls",
+    singularLabel: "Call",
+  },
+  functions: {
+    stateKey: "functions",
+    endpoint: "/api/functions?limit=200",
+    label: "Functions",
+    singularLabel: "Function",
+  },
+  objects: {
+    stateKey: "objects",
+    endpoint: "/api/v2/object-snapshots?limit=400",
+    label: "Objects",
+    singularLabel: "Object",
+  },
+  "object-types": {
+    stateKey: "objectTypes",
+    endpoint: "/api/object-types?limit=200",
+    label: "Object Types",
+    singularLabel: "Object Type",
+  },
+  modules: {
+    stateKey: "modules",
+    endpoint: "/api/modules?limit=200",
+    label: "Modules",
+    singularLabel: "Module",
   },
   services: {
     stateKey: "services",
@@ -523,6 +693,9 @@ const liveDomainConfigs = {
 };
 
 const workspaceScopeCache = new WeakMap();
+const deviceScopeCache = new WeakMap();
+const moduleSnapshotCanonicalCache = new WeakMap();
+let autoTableCounter = 0;
 
 const sessionHubEntityIDs = [
   "pipelines",
@@ -537,11 +710,31 @@ const sessionHubEntityIDs = [
   "registries",
 ];
 
+const deviceDetailEntityIDs = [
+  "devices",
+  "sessions",
+  "pipelines",
+  "workspaces",
+  "workspace-ops",
+];
+
+const substrateDetailEntityIDs = [
+  "calls",
+  "functions",
+  "objects",
+  "object-types",
+  "modules",
+  "sessions",
+  "devices",
+  "clients",
+];
+
 const state = {
   entityID: OVERVIEW_ROUTE_ID,
   detailID: "",
   workspaceFilterID: "",
   sessionFilterID: "",
+  tableControls: {},
   importTraceOpen: false,
   importTraceTraceID: "",
   importTraceOrg: "",
@@ -552,6 +745,7 @@ const state = {
   sessionFilterQuery: "",
   detailGraphs: {
     pipelines: {},
+    functionCalls: {},
   },
   live: {
     terminals: {
@@ -570,6 +764,36 @@ const state = {
       error: "",
     },
     workspaces: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    devices: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    calls: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    functions: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    objects: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    objectTypes: {
+      status: "idle",
+      items: [],
+      error: "",
+    },
+    modules: {
       status: "idle",
       items: [],
       error: "",
@@ -722,7 +946,7 @@ function parseRoute(pathname, search) {
   const segments = String(pathname || "/")
     .split("/")
     .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment).toLowerCase());
+    .map((segment) => decodeURIComponent(segment));
   const legacyID = legacyEntityID(search);
   if (!segments.length) {
     return {
@@ -736,7 +960,7 @@ function parseRoute(pathname, search) {
       detailID: "",
     };
   }
-  const entityID = resolveEntityID(segments[0] || "") || legacyID;
+  const entityID = resolveEntityID(String(segments[0] || "").toLowerCase()) || legacyID;
   const detailID = supportsDetailRoute(entityID) && segments[1] ? segments[1] : "";
   return {
     entityID: entityID || entities[0].id,
@@ -798,6 +1022,16 @@ async function ensureActiveEntityData() {
     void shellHydration;
     return;
   }
+  if (state.entityID === "devices" && state.detailID) {
+    await ensureDeviceDetailData();
+    void shellHydration;
+    return;
+  }
+  if (substrateDetailEntityIDs.includes(state.entityID) && state.detailID) {
+    await ensureSubstrateDetailData();
+    void shellHydration;
+    return;
+  }
   const config = liveDomainConfigs[state.entityID];
   if (!config) {
     void shellHydration;
@@ -811,12 +1045,29 @@ function ensureShellHydration() {
   return Promise.allSettled([
     ensureLiveDomainData(liveDomainConfigs.sessions),
     ensureLiveDomainData(liveDomainConfigs.workspaces),
+    ensureLiveDomainData(liveDomainConfigs.devices),
     ensureLiveDomainData(liveDomainConfigs.clients),
   ]);
 }
 
 async function ensureSessionDetailData() {
   const jobs = ["sessions", ...sessionHubEntityIDs]
+    .map((entityID) => liveDomainConfigs[entityID])
+    .filter(Boolean)
+    .map((config) => ensureLiveDomainData(config));
+  await Promise.all(jobs);
+}
+
+async function ensureDeviceDetailData() {
+  const jobs = deviceDetailEntityIDs
+    .map((entityID) => liveDomainConfigs[entityID])
+    .filter(Boolean)
+    .map((config) => ensureLiveDomainData(config));
+  await Promise.all(jobs);
+}
+
+async function ensureSubstrateDetailData() {
+  const jobs = substrateDetailEntityIDs
     .map((entityID) => liveDomainConfigs[entityID])
     .filter(Boolean)
     .map((config) => ensureLiveDomainData(config));
@@ -881,14 +1132,14 @@ function renderWorkspaceFilter() {
   const selected = currentWorkspaceFilterID();
   const status = state.live.workspaces.status;
   const options = [];
-  const allLabel = status === "error" ? "Workspaces unavailable" : "Workspace";
+  const allLabel = status === "error" ? "Workspaces unavailable" : rows.length === 0 ? "No workspaces" : "Workspace";
   options.push(`<option value="">${escapeHTML(allLabel)}</option>`);
   for (const row of rows) {
     options.push(`<option value="${escapeHTML(row.routeID)}">${escapeHTML(workspaceFilterOptionLabel(row))}</option>`);
   }
   els.workspaceFilter.innerHTML = options.join("");
   els.workspaceFilter.value = rows.some((row) => row.routeID === selected) ? selected : "";
-  els.workspaceFilter.disabled = false;
+  els.workspaceFilter.disabled = status !== "loaded" || rows.length === 0;
 }
 
 function renderImportTraceControl() {
@@ -1241,7 +1492,95 @@ async function fetchPipelineGraph(row, entry) {
   render();
 }
 
+function functionCallEntry(row) {
+  const key = String(row?.id || row?.routeID || "");
+  if (!key) {
+    return {
+      status: "error",
+      items: [],
+      error: "Function key is missing.",
+    };
+  }
+  if (!state.detailGraphs.functionCalls[key]) {
+    state.detailGraphs.functionCalls[key] = {
+      status: "idle",
+      items: [],
+      error: "",
+    };
+  }
+  return state.detailGraphs.functionCalls[key];
+}
+
+function ensureFunctionCallEntry(row) {
+  const entry = functionCallEntry(row);
+  const expected = Array.isArray(row?.callIDs) ? row.callIDs.filter(Boolean) : [];
+  if (expected.length === 0 && Number(row?.callCount || 0) === 0) {
+    entry.status = "loaded";
+    entry.items = [];
+    entry.error = "";
+    return entry;
+  }
+  const present = new Set(functionCallRows(row, entry).map((call) => String(call?.routeID || call?.id || "")));
+  const missing = expected.filter((id) => !present.has(String(id || "")));
+  if (missing.length === 0 && (expected.length > 0 || entry.status === "loaded")) {
+    entry.status = "loaded";
+    entry.error = "";
+    return entry;
+  }
+  if (entry.status !== "idle") {
+    return entry;
+  }
+  entry.status = "loading";
+  entry.error = "";
+  render();
+  void fetchFunctionCalls(row, entry);
+  return entry;
+}
+
+async function fetchFunctionCalls(row, entry) {
+  const functionID = String(row?.id || "");
+  if (!functionID) {
+    entry.status = "error";
+    entry.error = "Function identity is missing.";
+    render();
+    return;
+  }
+  try {
+    const items = [];
+    let cursor = "";
+    do {
+      const params = new URLSearchParams({
+        functionID,
+        limit: "2000",
+      });
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      const res = await fetch(`/api/v2/calls?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const payload = await res.json();
+      if (Array.isArray(payload?.items)) {
+        items.push(...payload.items);
+      }
+      cursor = String(payload?.nextCursor || "").trim();
+    } while (cursor && items.length < Number(row?.callCount || 0));
+    entry.items = items.map((item) => ({
+      ...item,
+      routeID: String(item?.routeID || item?.id || ""),
+    }));
+    entry.status = "loaded";
+    entry.error = "";
+  } catch (err) {
+    entry.status = "error";
+    entry.error = err instanceof Error ? err.message : String(err || "unknown error");
+  }
+  render();
+}
+
 function render() {
+  autoTableCounter = 0;
   sanitizeSessionFilterSelection();
   renderWorkspaceFilter();
   renderImportTraceControl();
@@ -1304,6 +1643,8 @@ function renderMain() {
   }
 
   const model = tableModel(entity, "inventory");
+  model.tableID = `${entity.dynamicKind || entity.id}:inventory`;
+  model.filterPlaceholder = `Filter ${String(entity.label || "rows").toLowerCase()}`;
   document.title = `ODAG ${entity.label}`;
   els.tableTitle.textContent = entity.label;
   els.tableMeta.textContent = model.meta;
@@ -1331,15 +1672,18 @@ function renderOverview() {
 }
 
 function renderTable(model) {
-  els.tableShell.innerHTML = renderTableHTML(model);
+  const interactive = interactiveTableModel(model);
+  els.tableShell.innerHTML = renderInteractiveTableHTML(interactive);
+  bindTableControls();
 }
 
 function renderTableHTML(model) {
-  const head = model.columns.map((column) => `<th>${escapeHTML(column.label)}</th>`).join("");
-  const body = model.rows.length
-    ? model.rows
+  const interactive = model?.tableState ? model : interactiveTableModel(model);
+  const head = interactive.columns.map((column) => `<th>${column.headerHTML || escapeHTML(column.label)}</th>`).join("");
+  const body = interactive.rows.length
+    ? interactive.rows
         .map((row) => {
-          const cells = model.columns
+          const cells = interactive.columns
             .map((column) => {
               const value =
                 typeof column.render === "function"
@@ -1351,16 +1695,846 @@ function renderTableHTML(model) {
           return `<tr>${cells}</tr>`;
         })
         .join("")
-    : `<tr><td colspan="${model.columns.length}">${escapeHTML(model.emptyMessage || "No rows yet.")}</td></tr>`;
+    : `<tr><td colspan="${interactive.columns.length}">${escapeHTML(interactive.emptyMessage || "No rows yet.")}</td></tr>`;
 
   return `
-    <table class="v3-table">
-      <thead>
-        <tr>${head}</tr>
-      </thead>
-      <tbody>${body}</tbody>
-    </table>
+    <div class="v3-data-table" data-table-id="${escapeHTML(interactive.tableID || "")}">
+      <table class="v3-table">
+        <thead>
+          <tr>${head}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
   `;
+}
+
+function interactiveTableModel(model) {
+  const tableID = String(model?.tableID || nextAutoTableID(model));
+  const tableState = tableControlsState(tableID);
+  const columns = Array.isArray(model?.columns)
+    ? model.columns.map((column, index) => ({
+        ...column,
+        columnID: tableColumnID(column, index),
+      }))
+    : [];
+  const sourceRows = Array.isArray(model?.rows) ? model.rows.slice() : [];
+  const filterStateByColumn = {};
+  const facetModelByColumn = {};
+  tableState.facetMeta = {};
+  for (const column of columns) {
+    filterStateByColumn[column.columnID] = tableColumnFilterState(tableState, column.columnID);
+    facetModelByColumn[column.columnID] = tableColumnFacetModel(column, sourceRows, filterStateByColumn[column.columnID]);
+    tableState.facetMeta[column.columnID] = {
+      allValues: facetModelByColumn[column.columnID].allOptions.map((option) => option.value),
+    };
+  }
+  const query = String(tableState.query || "").trim().toLowerCase();
+  let rows = sourceRows;
+  if (query) {
+    rows = rows.filter((row) => tableRowMatchesQuery(row, columns, query));
+  }
+  rows = rows.filter((row) => tableRowMatchesColumnFilters(row, columns, filterStateByColumn, facetModelByColumn));
+  const sortColumn = columns.find((column) => column.columnID === tableState.sortColumnID && column.sortable !== false) || null;
+  if (sortColumn) {
+    const direction = tableState.sortDir === "desc" ? "desc" : "asc";
+    rows = stableSortedRows(rows, (left, right) => compareTableValues(tableColumnSortValue(sortColumn, left), tableColumnSortValue(sortColumn, right), direction));
+  }
+  const decoratedColumns = columns.map((column) => ({
+    ...column,
+    headerHTML: interactiveTableHeaderHTML(tableID, column, tableState, filterStateByColumn[column.columnID], facetModelByColumn[column.columnID]),
+  }));
+  return {
+    ...model,
+    tableID,
+    columns: decoratedColumns,
+    rows,
+    totalRows: sourceRows.length,
+    filteredRows: rows.length,
+    tableState,
+  };
+}
+
+function renderInteractiveTableHTML(model) {
+  const query = String(model?.tableState?.query || "");
+  const hasQuery = query.trim().length > 0;
+  const activeFilterCount = tableActiveFilterCount(model?.tableState);
+  const resultLabel = hasQuery || activeFilterCount > 0 ? `${model.filteredRows} of ${model.totalRows}` : String(model.filteredRows);
+  const clearButton = hasQuery || activeFilterCount > 0
+    ? `<button class="v3-table-clear" type="button" data-table-filter-clear data-table-id="${escapeHTML(model.tableID || "")}">Clear Filters</button>`
+    : "";
+  const filterSummary = activeFilterCount > 0 ? ` · ${activeFilterCount} column filter${activeFilterCount === 1 ? "" : "s"}` : "";
+  return `
+    <div class="v3-table-toolbar">
+      <label class="v3-table-search">
+        <span class="v3-table-search-label">Filter</span>
+        <input
+          class="v3-table-search-input"
+          type="search"
+          value="${escapeHTML(query)}"
+          placeholder="${escapeHTML(model.filterPlaceholder || "Filter rows")}"
+          data-table-filter-input
+          data-table-id="${escapeHTML(model.tableID || "")}"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </label>
+      <div class="v3-table-toolbar-side">
+        <span class="v3-table-summary">${escapeHTML(resultLabel)} rows${escapeHTML(filterSummary)}</span>
+        ${clearButton}
+      </div>
+    </div>
+    ${renderTableHTML(model)}
+  `;
+}
+
+function bindTableControls() {
+  for (const input of els.tableShell?.querySelectorAll("[data-table-filter-input]") || []) {
+    input.addEventListener("input", () => {
+      const tableID = String(input.getAttribute("data-table-id") || "");
+      if (!tableID) {
+        return;
+      }
+      tableControlsState(tableID).query = String(input.value || "");
+      render();
+    });
+  }
+  for (const clear of els.tableShell?.querySelectorAll("[data-table-filter-clear]") || []) {
+    clear.addEventListener("click", () => {
+      const tableID = String(clear.getAttribute("data-table-id") || "");
+      if (!tableID) {
+        return;
+      }
+      const tableState = tableControlsState(tableID);
+      tableState.query = "";
+      tableState.openColumnID = "";
+      tableState.columnFilters = {};
+      render();
+    });
+  }
+  for (const node of els.tableShell?.querySelectorAll("[data-table-sort]") || []) {
+    node.addEventListener("click", () => {
+      const tableID = String(node.getAttribute("data-table-id") || "");
+      const columnID = String(node.getAttribute("data-table-sort") || "");
+      if (!tableID || !columnID) {
+        return;
+      }
+      toggleTableSort(tableID, columnID, node.getAttribute("data-table-sort-default") || "asc");
+      render();
+    });
+  }
+  for (const node of els.tableShell?.querySelectorAll("[data-table-facet]") || []) {
+    node.addEventListener("toggle", () => {
+      const tableID = String(node.getAttribute("data-table-id") || "");
+      const columnID = String(node.getAttribute("data-column-id") || "");
+      if (!tableID || !columnID) {
+        return;
+      }
+      const tableState = tableControlsState(tableID);
+      tableState.openColumnID = node.open ? columnID : "";
+    });
+  }
+  for (const node of els.tableShell?.querySelectorAll("[data-table-facet-all]") || []) {
+    node.addEventListener("click", () => {
+      const tableID = String(node.getAttribute("data-table-id") || "");
+      const columnID = String(node.getAttribute("data-column-id") || "");
+      if (!tableID || !columnID) {
+        return;
+      }
+      const filterState = tableColumnFilterState(tableControlsState(tableID), columnID);
+      filterState.mode = "all";
+      filterState.selected = [];
+      render();
+    });
+  }
+  for (const node of els.tableShell?.querySelectorAll("[data-table-facet-none]") || []) {
+    node.addEventListener("click", () => {
+      const tableID = String(node.getAttribute("data-table-id") || "");
+      const columnID = String(node.getAttribute("data-column-id") || "");
+      if (!tableID || !columnID) {
+        return;
+      }
+      const filterState = tableColumnFilterState(tableControlsState(tableID), columnID);
+      filterState.mode = "subset";
+      filterState.selected = [];
+      render();
+    });
+  }
+  for (const node of els.tableShell?.querySelectorAll("[data-table-facet-option]") || []) {
+    node.addEventListener("change", () => {
+      const tableID = String(node.getAttribute("data-table-id") || "");
+      const columnID = String(node.getAttribute("data-column-id") || "");
+      if (!tableID || !columnID) {
+        return;
+      }
+      const filterState = tableColumnFilterState(tableControlsState(tableID), columnID);
+      const facetMeta = tableControlsState(tableID).facetMeta?.[columnID];
+      const allValues = Array.isArray(facetMeta?.allValues) ? facetMeta.allValues.slice() : [];
+      const currentValue = String(node.getAttribute("data-option-value") || "");
+      const selectedValues = new Set(filterState.mode === "all" ? allValues : filterState.selected);
+      if (node.checked) {
+        selectedValues.add(currentValue);
+      } else {
+        selectedValues.delete(currentValue);
+      }
+      if (allValues.length && selectedValues.size === allValues.length) {
+        filterState.mode = "all";
+        filterState.selected = [];
+      } else {
+        filterState.mode = "subset";
+        filterState.selected = Array.from(selectedValues);
+      }
+      render();
+    });
+  }
+  for (const input of els.tableShell?.querySelectorAll("[data-table-facet-search]") || []) {
+    input.addEventListener("input", () => {
+      const tableID = String(input.getAttribute("data-table-id") || "");
+      const columnID = String(input.getAttribute("data-column-id") || "");
+      if (!tableID || !columnID) {
+        return;
+      }
+      const tableState = tableControlsState(tableID);
+      tableState.openColumnID = columnID;
+      tableColumnFilterState(tableState, columnID).query = String(input.value || "");
+      const start = Number(input.selectionStart || 0);
+      const end = Number(input.selectionEnd || start);
+      render();
+      const selector = `[data-table-facet-search][data-table-id="${cssEscape(tableID)}"][data-column-id="${cssEscape(columnID)}"]`;
+      const next = els.tableShell?.querySelector(selector);
+      if (next) {
+        next.focus();
+        next.setSelectionRange(start, end);
+      }
+    });
+  }
+}
+
+function tableControlsState(tableID) {
+  const key = String(tableID || "");
+  if (!state.tableControls[key]) {
+    state.tableControls[key] = {
+      query: "",
+      sortColumnID: "",
+      sortDir: "",
+      openColumnID: "",
+      columnFilters: {},
+      facetMeta: {},
+    };
+  }
+  return state.tableControls[key];
+}
+
+function toggleTableSort(tableID, columnID, defaultDir = "asc") {
+  const tableState = tableControlsState(tableID);
+  if (tableState.sortColumnID === columnID) {
+    tableState.sortDir = tableState.sortDir === "asc" ? "desc" : "asc";
+    return;
+  }
+  tableState.sortColumnID = columnID;
+  tableState.sortDir = defaultDir === "desc" ? "desc" : "asc";
+}
+
+function tableColumnID(column, index) {
+  if (column?.id) {
+    return String(column.id);
+  }
+  if (column?.key) {
+    return String(column.key);
+  }
+  return `${slugifyText(column?.label || "column")}-${index}`;
+}
+
+function nextAutoTableID(model) {
+  autoTableCounter += 1;
+  const scope = `${state.entityID || "table"}-${state.detailID || "list"}`;
+  const label = Array.isArray(model?.columns) && model.columns.length
+    ? model.columns.map((column) => column?.label || column?.key || "col").join("-")
+    : model?.filterPlaceholder || model?.emptyMessage || "table";
+  return `${slugifyText(scope)}-${slugifyText(label).slice(0, 48)}-${autoTableCounter}`;
+}
+
+function tableColumnFilterState(tableState, columnID) {
+  if (!tableState.columnFilters || typeof tableState.columnFilters !== "object") {
+    tableState.columnFilters = {};
+  }
+  if (!tableState.columnFilters[columnID] || typeof tableState.columnFilters[columnID] !== "object") {
+    tableState.columnFilters[columnID] = {
+      mode: "all",
+      selected: [],
+      query: "",
+    };
+  }
+  const filterState = tableState.columnFilters[columnID];
+  filterState.mode = filterState.mode === "subset" ? "subset" : "all";
+  filterState.selected = Array.isArray(filterState.selected)
+    ? Array.from(new Set(filterState.selected.map((value) => String(value || "")).filter(Boolean)))
+    : [];
+  filterState.query = String(filterState.query || "");
+  return filterState;
+}
+
+function tableActiveFilterCount(tableState) {
+  if (!tableState?.columnFilters || typeof tableState.columnFilters !== "object") {
+    return 0;
+  }
+  return Object.values(tableState.columnFilters).filter((filterState) => filterState?.mode === "subset").length;
+}
+
+function interactiveTableHeaderHTML(tableID, column, tableState, filterState, facetModel) {
+  return `
+    <div class="v3-table-head-cell">
+      ${sortableTableHeaderHTML(tableID, column, tableState)}
+      ${tableFacetHeaderHTML(tableID, column, tableState, filterState, facetModel)}
+    </div>
+  `;
+}
+
+function tableFacetHeaderHTML(tableID, column, tableState, filterState, facetModel) {
+  const active = filterState?.mode === "subset";
+  const open = String(tableState?.openColumnID || "") === String(column?.columnID || "");
+  const selectedCount = Array.isArray(filterState?.selected) ? filterState.selected.length : 0;
+  const visibleOptions = Array.isArray(facetModel?.visibleOptions) ? facetModel.visibleOptions : [];
+  const totalOptionCount = Number(facetModel?.totalOptionCount || 0);
+  const facetQuery = String(filterState?.query || "");
+  const searchHTML = facetModel?.searchable
+    ? `
+        <label class="v3-table-facet-search">
+          <span class="v3-table-facet-search-label">Search values</span>
+          <input
+            class="v3-table-facet-search-input"
+            type="search"
+            value="${escapeHTML(facetQuery)}"
+            placeholder="Search values"
+            data-table-facet-search
+            data-table-id="${escapeHTML(tableID || "")}"
+            data-column-id="${escapeHTML(column?.columnID || "")}"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+      `
+    : "";
+  const noteHTML = facetModel?.note ? `<div class="v3-table-facet-note">${escapeHTML(facetModel.note)}</div>` : "";
+  const optionsHTML = visibleOptions.length
+    ? visibleOptions
+        .map((option) => {
+          const checked = filterState?.mode === "all" || filterState?.selected?.includes(option.value);
+          return `
+            <label class="v3-table-facet-option">
+              <input
+                type="checkbox"
+                data-table-facet-option
+                data-table-id="${escapeHTML(tableID || "")}"
+                data-column-id="${escapeHTML(column?.columnID || "")}"
+                data-option-value="${escapeHTML(option.value)}"
+                ${checked ? "checked" : ""}
+              />
+              <span class="v3-table-facet-option-label">${escapeHTML(option.label)}</span>
+              <span class="v3-table-facet-option-count">${escapeHTML(String(option.count))}</span>
+            </label>
+          `;
+        })
+        .join("")
+    : `<div class="v3-table-facet-empty">${escapeHTML(facetQuery ? "No matching values." : "No values in this column.")}</div>`;
+  return `
+    <details
+      class="v3-table-facet${active ? " is-active" : ""}"
+      data-table-facet
+      data-table-id="${escapeHTML(tableID || "")}"
+      data-column-id="${escapeHTML(column?.columnID || "")}"
+      ${open ? "open" : ""}
+    >
+      <summary class="v3-table-facet-trigger" title="${escapeHTML(`Filter ${column?.label || "column"}`)}" aria-label="${escapeHTML(`Filter ${column?.label || "column"}`)}">
+        <span class="v3-table-facet-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" focusable="false" role="presentation">
+            <path d="M2.5 4h11M4.5 8h7M6.5 12h3"></path>
+          </svg>
+        </span>
+        ${active ? `<span class="v3-table-facet-badge">${escapeHTML(String(selectedCount))}</span>` : ""}
+      </summary>
+      <div class="v3-table-facet-popover">
+        <div class="v3-table-facet-head">
+          <strong>${escapeHTML(column?.label || "Column")}</strong>
+          <span>${escapeHTML(totalOptionCount === 1 ? "1 value" : `${totalOptionCount} values`)}</span>
+        </div>
+        <div class="v3-table-facet-actions">
+          <button type="button" data-table-facet-all data-table-id="${escapeHTML(tableID || "")}" data-column-id="${escapeHTML(column?.columnID || "")}">All</button>
+          <button type="button" data-table-facet-none data-table-id="${escapeHTML(tableID || "")}" data-column-id="${escapeHTML(column?.columnID || "")}">None</button>
+        </div>
+        ${searchHTML}
+        ${noteHTML}
+        <div class="v3-table-facet-options">${optionsHTML}</div>
+      </div>
+    </details>
+  `;
+}
+
+function tableRowMatchesColumnFilters(row, columns, filterStateByColumn, facetModelByColumn) {
+  for (const column of columns) {
+    const filterState = filterStateByColumn?.[column.columnID];
+    if (!filterState || filterState.mode !== "subset") {
+      continue;
+    }
+    const selected = Array.isArray(filterState.selected) ? filterState.selected : [];
+    if (!selected.length) {
+      return false;
+    }
+    const facetKind = facetModelByColumn?.[column.columnID]?.kind || tableColumnFilterKind(column);
+    const values = new Set(tableColumnFacetValues(column, row, facetKind));
+    let matched = false;
+    for (const value of selected) {
+      if (values.has(value)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function tableColumnFacetModel(column, rows, filterState) {
+  const kind = tableColumnFilterKind(column);
+  const counts = new Map();
+  for (const row of rows) {
+    for (const entry of tableColumnFacetEntries(column, row, kind)) {
+      const existing = counts.get(entry.value) || { ...entry, count: 0 };
+      existing.count += 1;
+      counts.set(entry.value, existing);
+    }
+  }
+  const allOptions = Array.from(counts.values()).sort((left, right) => compareFacetOptions(left, right, kind));
+  const searchable = kind === "categorical" && allOptions.length > 8;
+  const query = searchable ? String(filterState?.query || "").trim().toLowerCase() : "";
+  const matchingOptions = query ? allOptions.filter((option) => option.label.toLowerCase().includes(query)) : allOptions;
+  const limit = searchable && !query ? 24 : 80;
+  const visibleOptions = matchingOptions.slice(0, limit);
+  let note = "";
+  if (query && matchingOptions.length > visibleOptions.length) {
+    note = `Showing ${visibleOptions.length} of ${matchingOptions.length} matching values.`;
+  } else if (!query && searchable && allOptions.length > visibleOptions.length) {
+    note = `Showing top ${visibleOptions.length} values by frequency.`;
+  }
+  return {
+    kind,
+    searchable,
+    allOptions,
+    visibleOptions,
+    totalOptionCount: allOptions.length,
+    note,
+  };
+}
+
+function compareFacetOptions(left, right, kind) {
+  if (kind !== "categorical") {
+    return Number(left.order || 0) - Number(right.order || 0);
+  }
+  return Number(right.count || 0) - Number(left.count || 0) || left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function tableColumnFilterKind(column) {
+  const explicit = String(column?.filterKind || "").trim().toLowerCase();
+  if (explicit) {
+    return explicit;
+  }
+  const label = normalizeTableLabel(column?.label);
+  if (["started", "first seen", "last seen", "last activity", "updated"].includes(label)) {
+    return "time";
+  }
+  if (label === "duration") {
+    return "duration";
+  }
+  if (["sessions", "ops", "pipelines", "top-level clients", "traces", "refs", "snapshots", "functions", "prelude calls", "requests", "commands"].includes(label)) {
+    return "count";
+  }
+  return "categorical";
+}
+
+function tableColumnFacetEntries(column, row, kind) {
+  if (kind === "time") {
+    return [timeFacetEntry(tableColumnSortValue(column, row))];
+  }
+  if (kind === "duration") {
+    return [durationFacetEntry(row)];
+  }
+  if (kind === "count") {
+    return [countFacetEntry(tableColumnSortValue(column, row))];
+  }
+  const rawValue = typeof column?.facetValue === "function" ? column.facetValue(row) : tableColumnFilterValue(column, row);
+  const values = normalizeTableFacetValues(rawValue);
+  if (!values.length) {
+    return [{ value: "__odag_empty__", label: "Empty", order: 999 }];
+  }
+  return values.map((value) => ({
+    value,
+    label: value === "__odag_empty__" ? "Empty" : value,
+    order: 0,
+  }));
+}
+
+function tableColumnFacetValues(column, row, kind = tableColumnFilterKind(column)) {
+  return tableColumnFacetEntries(column, row, kind).map((entry) => entry.value);
+}
+
+function timeFacetEntry(unixNano) {
+  const stamp = Number(unixNano || 0);
+  if (!(stamp > 0)) {
+    return { value: "time:unknown", label: "Unknown", order: 5 };
+  }
+  const ageMs = Math.max(0, Date.now() - stamp / 1e6);
+  if (ageMs < 5 * 60 * 1000) {
+    return { value: "time:5m", label: "Past 5 min", order: 0 };
+  }
+  if (ageMs < 60 * 60 * 1000) {
+    return { value: "time:1h", label: "Past hour", order: 1 };
+  }
+  if (ageMs < 24 * 60 * 60 * 1000) {
+    return { value: "time:1d", label: "Today", order: 2 };
+  }
+  if (ageMs < 7 * 24 * 60 * 60 * 1000) {
+    return { value: "time:7d", label: "Past 7 days", order: 3 };
+  }
+  return { value: "time:older", label: "Older", order: 4 };
+}
+
+function durationFacetEntry(row) {
+  if (row?.status === "running" || row?.open) {
+    return { value: "duration:running", label: "Running", order: 0 };
+  }
+  const start = numericSortToken(row?.startUnixNano, row?.firstSeenUnixNano);
+  const end = numericSortToken(row?.endUnixNano, row?.lastSeenUnixNano, row?.lastActivityUnixNano);
+  if (!(start > 0) || !(end > start)) {
+    return { value: "duration:unknown", label: "Unknown", order: 6 };
+  }
+  const durationMs = (end - start) / 1e6;
+  if (durationMs < 1000) {
+    return { value: "duration:1s", label: "<1s", order: 1 };
+  }
+  if (durationMs < 10 * 1000) {
+    return { value: "duration:10s", label: "<10s", order: 2 };
+  }
+  if (durationMs < 60 * 1000) {
+    return { value: "duration:1m", label: "<1m", order: 3 };
+  }
+  if (durationMs < 10 * 60 * 1000) {
+    return { value: "duration:10m", label: "<10m", order: 4 };
+  }
+  return { value: "duration:long", label: "10m+", order: 5 };
+}
+
+function countFacetEntry(value) {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count < 0) {
+    return { value: "count:unknown", label: "Unknown", order: 5 };
+  }
+  if (count === 0) {
+    return { value: "count:0", label: "0", order: 0 };
+  }
+  if (count === 1) {
+    return { value: "count:1", label: "1", order: 1 };
+  }
+  if (count <= 5) {
+    return { value: "count:2-5", label: "2-5", order: 2 };
+  }
+  if (count <= 20) {
+    return { value: "count:6-20", label: "6-20", order: 3 };
+  }
+  return { value: "count:21+", label: "21+", order: 4 };
+}
+
+function normalizeTableFacetValues(value, depth = 0) {
+  if (value == null || depth > 2) {
+    return [];
+  }
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return [String(value)];
+  }
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.flatMap((item) => normalizeTableFacetValues(item, depth + 1)).filter(Boolean)));
+  }
+  if (typeof value === "object") {
+    for (const key of ["label", "name", "title", "routeID", "id", "ref"]) {
+      if (typeof value[key] === "string" && value[key].trim()) {
+        return [value[key].trim()];
+      }
+    }
+    const text = truncateText(JSON.stringify(value), 120);
+    return text ? [text] : [];
+  }
+  return [String(value)];
+}
+
+function cssEscape(value) {
+  if (globalThis.CSS && typeof globalThis.CSS.escape === "function") {
+    return globalThis.CSS.escape(String(value || ""));
+  }
+  return String(value || "").replaceAll(/["\\\]]/g, "\\$&");
+}
+
+function sortableTableHeaderHTML(tableID, column, tableState) {
+  if (column?.sortable === false) {
+    return `<span class="v3-table-head-label">${escapeHTML(column?.label || "")}</span>`;
+  }
+  const active = String(tableState?.sortColumnID || "") === String(column?.columnID || "");
+  const direction = active && tableState?.sortDir === "desc" ? "desc" : "asc";
+  const glyph = active ? (direction === "desc" ? "v" : "^") : "+";
+  const ariaSort = active ? (direction === "desc" ? "descending" : "ascending") : "none";
+  return `
+    <button
+      class="v3-table-sort${active ? " is-active" : ""}"
+      type="button"
+      data-table-id="${escapeHTML(tableID || "")}"
+      data-table-sort="${escapeHTML(column.columnID || "")}"
+      data-table-sort-default="${escapeHTML(defaultTableSortDirection(column))}"
+      aria-sort="${escapeHTML(ariaSort)}"
+      title="${escapeHTML(`Sort by ${column.label || "column"}`)}"
+    >
+      <span>${escapeHTML(column.label || "")}</span>
+      <span class="v3-table-sort-indicator" aria-hidden="true">${glyph}</span>
+    </button>
+  `;
+}
+
+function tableRowMatchesQuery(row, columns, query) {
+  if (!query) {
+    return true;
+  }
+  const parts = [];
+  for (const column of columns) {
+    const value = tableColumnFilterValue(column, row);
+    collectFilterFragments(parts, value);
+  }
+  if (parts.length === 0) {
+    collectFilterFragments(parts, row);
+  }
+  return parts.join(" ").toLowerCase().includes(query);
+}
+
+function tableColumnFilterValue(column, row) {
+  if (typeof column?.filterValue === "function") {
+    return column.filterValue(row);
+  }
+  if (column?.key) {
+    return row?.[column.key];
+  }
+  if (typeof column?.render === "function") {
+    return stripHTMLText(column.render(row));
+  }
+  return "";
+}
+
+function collectFilterFragments(parts, value, depth = 0) {
+  if (value == null || depth > 2 || parts.length > 32) {
+    return;
+  }
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text) {
+      parts.push(text);
+    }
+    return;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    parts.push(String(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 12)) {
+      collectFilterFragments(parts, item, depth + 1);
+    }
+    return;
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value).slice(0, 12);
+    for (const [key, item] of entries) {
+      parts.push(String(key));
+      collectFilterFragments(parts, item, depth + 1);
+    }
+  }
+}
+
+function tableColumnSortValue(column, row) {
+  if (typeof column?.sortValue === "function") {
+    return column.sortValue(row);
+  }
+  const label = normalizeTableLabel(column?.label);
+  switch (label) {
+    case "status":
+      return row?.status || row?.statusCode || sessionStatusLabel(row) || "";
+    case "started":
+      return numericSortToken(row?.startUnixNano, row?.firstSeenUnixNano);
+    case "first seen":
+      return numericSortToken(row?.firstSeenUnixNano);
+    case "last seen":
+    case "last activity":
+    case "updated":
+      return numericSortToken(row?.lastActivityUnixNano, row?.lastSeenUnixNano, row?.updatedUnixNano, row?.endUnixNano);
+    case "duration":
+      return rowDurationSortValue(row);
+    case "sessions":
+      return numericSortToken(row?.sessionCount, arrayLength(row?.sessionIDs));
+    case "ops":
+      return numericSortToken(row?.opCount);
+    case "pipelines":
+      return numericSortToken(row?.pipelineCount);
+    case "top-level clients":
+      return numericSortToken(row?.clientCount);
+    case "traces":
+      return numericSortToken(row?.traceCount, arrayLength(row?.traceIDs));
+    case "refs":
+      return numericSortToken(arrayLength(row?.fieldRefs));
+    case "snapshots":
+      return numericSortToken(row?.snapshotCount);
+    case "functions":
+      return numericSortToken(row?.functionCount);
+    case "prelude calls":
+      return numericSortToken(arrayLength(row?.callIDs));
+    case "requests":
+      return numericSortToken(row?.activityCount);
+    case "commands":
+      return numericSortToken(row?.commandCount);
+    default:
+      break;
+  }
+  if (column?.key) {
+    return row?.[column.key];
+  }
+  if (typeof column?.render === "function") {
+    return stripHTMLText(column.render(row));
+  }
+  return "";
+}
+
+function rowDurationSortValue(row) {
+  const start = numericSortToken(row?.startUnixNano, row?.firstSeenUnixNano);
+  const end = numericSortToken(row?.endUnixNano, row?.lastSeenUnixNano, row?.lastActivityUnixNano);
+  if (start > 0 && end > start) {
+    return end - start;
+  }
+  if (row?.status === "running" || row?.open) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return 0;
+}
+
+function numericSortToken(...values) {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num)) {
+      return num;
+    }
+  }
+  return 0;
+}
+
+function defaultTableSortDirection(column) {
+  const label = normalizeTableLabel(column?.label);
+  if (
+    [
+      "status",
+      "started",
+      "first seen",
+      "last seen",
+      "last activity",
+      "updated",
+      "duration",
+      "sessions",
+      "ops",
+      "pipelines",
+      "top-level clients",
+      "traces",
+      "refs",
+      "snapshots",
+      "functions",
+      "prelude calls",
+      "requests",
+      "commands",
+    ].includes(label)
+  ) {
+    return "desc";
+  }
+  return "asc";
+}
+
+function normalizeTableLabel(label) {
+  return String(label || "")
+    .trim()
+    .toLowerCase();
+}
+
+function compareTableValues(left, right, direction = "asc") {
+  const leftValue = normalizeSortValue(left);
+  const rightValue = normalizeSortValue(right);
+  let result = 0;
+  if (typeof leftValue === "number" && typeof rightValue === "number") {
+    result = leftValue - rightValue;
+  } else {
+    result = String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" });
+  }
+  return direction === "desc" ? -result : result;
+}
+
+function normalizeSortValue(value) {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === "boolean") {
+    return value ? 1 : 0;
+  }
+  if (typeof value === "string") {
+    return value.trim().toLowerCase();
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeSortValue(item)).join(" ");
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function stableSortedRows(rows, compare) {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => compare(left.row, right.row) || left.index - right.index)
+    .map((entry) => entry.row);
+}
+
+function stripHTMLText(value) {
+  const text = decodeBasicEntities(String(value || "").replaceAll(/<[^>]*>/g, " "));
+  return text.replaceAll(/\s+/g, " ").trim();
+}
+
+function decodeBasicEntities(value) {
+  return String(value || "")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+}
+
+function slugifyText(value) {
+  const text = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
+  return text || "column";
+}
+
+function arrayLength(value) {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function renderOverviewHTML(model) {
@@ -1431,20 +2605,24 @@ function renderDetail(entity) {
   const live = config ? state.live[config.stateKey] : null;
   const detailLabel = config?.singularLabel || entity.label;
   const detailItem = currentDetailItem(entity);
+  const commitDetail = (html) => {
+    els.tableShell.innerHTML = html;
+    bindTableControls();
+  };
   els.tableTitle.textContent = entity.dynamicKind === "sessions" && detailItem ? detailItem.name : `${detailLabel} Details`;
   setPanelHeadHidden(true);
 
   if (live && live.status !== "loaded") {
     document.title = `ODAG ${detailLabel}`;
     els.tableMeta.textContent = live.status === "error" ? "Unavailable" : "Loading";
-    els.tableShell.innerHTML = renderDetailState(entity, detailLabel, live.status === "error" ? "unavailable" : "loading");
+    commitDetail(renderDetailState(entity, detailLabel, live.status === "error" ? "unavailable" : "loading"));
     return;
   }
 
   if (!detailItem) {
     document.title = `ODAG ${detailLabel}`;
     els.tableMeta.textContent = state.detailID;
-    els.tableShell.innerHTML = renderDetailState(entity, detailLabel, "missing");
+    commitDetail(renderDetailState(entity, detailLabel, "missing"));
     return;
   }
 
@@ -1453,51 +2631,75 @@ function renderDetail(entity) {
 
   if (entity.dynamicKind === "pipelines") {
     const graph = ensurePipelineGraph(detailItem);
-    els.tableShell.innerHTML = renderPipelineDetail(entity, detailItem, graph);
+    commitDetail(renderPipelineDetail(entity, detailItem, graph));
     return;
   }
   if (entity.dynamicKind === "repls") {
-    els.tableShell.innerHTML = renderReplDetail(entity, detailItem);
+    commitDetail(renderReplDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "checks") {
-    els.tableShell.innerHTML = renderCheckDetail(entity, detailItem);
+    commitDetail(renderCheckDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "workspaces") {
-    els.tableShell.innerHTML = renderWorkspaceDetail(entity, detailItem);
+    commitDetail(renderWorkspaceDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "devices") {
+    commitDetail(renderDeviceDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "calls") {
+    commitDetail(renderCallDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "functions") {
+    commitDetail(renderFunctionDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "objects") {
+    commitDetail(renderObjectDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "object-types") {
+    commitDetail(renderObjectTypeDetail(entity, detailItem));
+    return;
+  }
+  if (entity.dynamicKind === "modules") {
+    commitDetail(renderModuleDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "workspace-ops") {
-    els.tableShell.innerHTML = renderWorkspaceOpDetail(entity, detailItem);
+    commitDetail(renderWorkspaceOpDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "services") {
-    els.tableShell.innerHTML = renderServiceDetail(entity, detailItem);
+    commitDetail(renderServiceDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "terminals") {
-    els.tableShell.innerHTML = renderTerminalDetail(entity, detailItem);
+    commitDetail(renderTerminalDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "git-remotes") {
-    els.tableShell.innerHTML = renderGitRemoteDetail(entity, detailItem);
+    commitDetail(renderGitRemoteDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "registries") {
-    els.tableShell.innerHTML = renderRegistryDetail(entity, detailItem);
+    commitDetail(renderRegistryDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "sessions") {
-    els.tableShell.innerHTML = renderSessionDetail(entity, detailItem);
+    commitDetail(renderSessionDetail(entity, detailItem));
     return;
   }
   if (entity.dynamicKind === "shells") {
-    els.tableShell.innerHTML = renderShellDetail(entity, detailItem);
+    commitDetail(renderShellDetail(entity, detailItem));
     return;
   }
 
-  els.tableShell.innerHTML = renderDetailState(entity, detailLabel, "missing");
+  commitDetail(renderDetailState(entity, detailLabel, "missing"));
 }
 
 function renderDetailState(entity, label, kind) {
@@ -1531,6 +2733,7 @@ function renderPipelineDetail(entity, row, graph) {
           ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
           ${pipelineRecapItem("Duration", escapeHTML(pipelineDurationLabel(row)))}
           ${pipelineRecapItem("Output Type", escapeHTML(pipelineOutputTypeLabel(row)))}
+          ${pipelineRecapItem("Device", deviceSummaryForEntity("pipelines", row))}
           ${pipelineRecapItem("Session", pipelineSessionSummary(row))}
           ${moduleItem}
         </div>
@@ -1585,6 +2788,10 @@ function renderPipelineGraph(row, graph) {
   }
   return `
     <div class="v3-graph-panel">
+      <div class="v3-graph-head">
+        <p class="v3-graph-meta">${escapeHTML(model.meta)}</p>
+      </div>
+      ${model.notice ? `<p class="v3-graph-note">${escapeHTML(model.notice)}</p>` : ""}
       <div class="v3-graph-scroll">
         <div class="v3-graph-canvas" style="width:${model.width}px; height:${model.height}px;">
           <svg class="v3-graph-svg" viewBox="0 0 ${model.width} ${model.height}" aria-hidden="true" focusable="false">
@@ -1622,19 +2829,23 @@ function renderWorkspaceOpDetail(entity, row) {
           ${pipelineRecapItem("Status", statusPill(row.status))}
           ${pipelineRecapItem("Direction", escapeHTML(row.direction || "unknown"))}
           ${pipelineRecapItem("Call", detailCode(row.callName || "Unknown"))}
-          ${pipelineRecapItem("Path", row.path ? detailCode(row.path) : "Unknown")}
+          ${pipelineRecapItem("Target", row.path ? detailCode(row.path) : "Unknown")}
           ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
           ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)))}
+          ${pipelineRecapItem("Device", deviceSummaryForEntity("workspace-ops", row))}
           ${pipelineRecapItem("Session", workspaceOpSessionSummary(row))}
           ${pipelineRecapItem("Pipeline", workspaceOpPipelineSummary(row))}
         </div>
       </section>
       <section class="v3-detail-card">
         <div class="v3-detail-list">
+          ${workspaceOpDetailItem("Target", row.path ? detailCode(row.path) : "Unknown")}
           ${workspaceOpDetailItem("Kind", escapeHTML(row.kind || "unknown"))}
           ${workspaceOpDetailItem("Target Type", escapeHTML(row.targetType || "Unknown"))}
+          ${workspaceOpDetailItem("Device", deviceSummaryForEntity("workspace-ops", row))}
           ${workspaceOpDetailItem("Receiver", row.receiverDagqlID ? detailCode(row.receiverDagqlID) : "None")}
           ${workspaceOpDetailItem("Output", row.outputDagqlID ? detailCode(row.outputDagqlID) : "None")}
+          ${workspaceOpDetailItem("Root Client", row.rootClientID ? detailCode(row.rootClientID) : "Unknown")}
           ${workspaceOpDetailItem("Client", row.clientID ? detailCode(row.clientID) : "Unknown")}
           ${workspaceOpDetailItem("Trace", row.traceID ? detailCode(row.traceID) : "Unknown")}
         </div>
@@ -1762,6 +2973,7 @@ function renderServiceDetail(entity, row) {
             ["Started", escapeHTML(relativeTimeFromNow(row.startUnixNano))],
             ["Last activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano))],
             ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
+            ["Pipeline Command", row.pipelineCommand ? detailCode(row.pipelineCommand) : "None"],
           ]),
         )}
       </div>
@@ -1834,41 +3046,72 @@ function buildPipelineGraphModel(row, payload) {
   const focusObjectID = payload?.context?.outputDagqlID && objectByID.has(payload.context.outputDagqlID) ? payload.context.outputDagqlID : "";
   const layout = layoutPipelineGraph(objects, edges, focusObjectID);
   const aliases = pipelineSnapshotAliases(objects);
-  const nodeW = 246;
-  const nodeH = 114;
+  const nodeW = 282;
+  const baseNodeH = 108;
+  const fieldRowH = 28;
   const colGap = objects.length <= 2 ? 88 : 60;
-  const rowGap = 18;
+  const rowGap = 22;
   const padX = 24;
   const padY = 24;
   const totalColumns = layout.columns.length || 1;
-  const maxRows = Math.max(1, ...layout.columns.map((column) => column.length));
   const width = padX * 2 + totalColumns * nodeW + Math.max(0, totalColumns - 1) * colGap;
-  const height = padY * 2 + maxRows * nodeH + Math.max(0, maxRows - 1) * rowGap;
+  const nodeMeta = new Map();
+  for (const obj of objects) {
+    const fieldPreview = pipelineNodeFieldPreview(obj);
+    const previewCount = fieldPreview.items.length + (fieldPreview.hiddenCount > 0 ? 1 : 0);
+    const nodeH = baseNodeH + (previewCount > 0 ? 12 + previewCount * fieldRowH : 0);
+    nodeMeta.set(obj.dagqlID, {
+      title: pipelineNodeTitle(obj, aliases),
+      subtitle: pipelineNodeSubtitle(obj),
+      eyebrow: pipelineNodeEyebrow(obj, focusObjectID),
+      fieldPreview,
+      nodeH,
+    });
+  }
   const nodePositions = new Map();
+  let contentHeight = padY * 2;
+  for (let colIndex = 0; colIndex < layout.columns.length; colIndex += 1) {
+    const column = layout.columns[colIndex];
+    let cursorY = padY;
+    for (const obj of column) {
+      const meta = nodeMeta.get(obj.dagqlID);
+      const nodeH = Number(meta?.nodeH || baseNodeH);
+      const x = padX + colIndex * (nodeW + colGap);
+      const y = cursorY;
+      nodePositions.set(obj.dagqlID, {
+        x,
+        y,
+        width: nodeW,
+        height: nodeH,
+        centerX: x + nodeW / 2,
+        centerY: y + nodeH / 2,
+      });
+      cursorY += nodeH + rowGap;
+    }
+    if (column.length > 0) {
+      contentHeight = Math.max(contentHeight, cursorY - rowGap + padY);
+    }
+  }
+  const height = Math.max(220, contentHeight);
   const nodeMarkup = layout.columns
-    .map((column, colIndex) =>
+    .map((column) =>
       column
-        .map((obj, rowIndex) => {
-          const x = padX + colIndex * (nodeW + colGap);
-          const y = padY + rowIndex * (nodeH + rowGap);
-          nodePositions.set(obj.dagqlID, {
-            x,
-            y,
-            width: nodeW,
-            height: nodeH,
-            centerX: x + nodeW / 2,
-            centerY: y + nodeH / 2,
-          });
-          const title = pipelineNodeTitle(obj, aliases);
-          const subtitle = pipelineNodeSubtitle(obj);
+        .map((obj) => {
+          const pos = nodePositions.get(obj.dagqlID);
+          const meta = nodeMeta.get(obj.dagqlID);
+          if (!pos || !meta) {
+            return "";
+          }
           const focusClass = obj.role === "output" || obj.dagqlID === focusObjectID ? " is-output" : "";
           const placeholderClass = obj.placeholder ? " is-placeholder" : "";
-          const eyebrow = pipelineNodeEyebrow(obj, focusObjectID);
+          const fieldMarkup = renderPipelineNodeFields(meta.fieldPreview);
+          const eyebrowMarkup = meta.eyebrow ? `<span class="v3-pipeline-node-label">${escapeHTML(meta.eyebrow)}</span>` : "";
           return `
-            <article class="v3-pipeline-node${focusClass}${placeholderClass}" style="left:${x}px; top:${y}px; width:${nodeW}px; height:${nodeH}px;">
-              <span class="v3-pipeline-node-label">${escapeHTML(eyebrow)}</span>
-              <strong>${escapeHTML(title)}</strong>
-              <span>${escapeHTML(subtitle)}</span>
+            <article class="v3-pipeline-node${focusClass}${placeholderClass}" style="left:${pos.x}px; top:${pos.y}px; width:${nodeW}px; height:${pos.height}px;">
+              ${eyebrowMarkup}
+              <strong>${escapeHTML(meta.title)}</strong>
+              <span class="v3-pipeline-node-subtitle">${escapeHTML(meta.subtitle)}</span>
+              ${fieldMarkup}
             </article>
           `;
         })
@@ -1897,6 +3140,11 @@ function buildPipelineGraphModel(row, payload) {
     .join("");
   const chainCount = edges.filter((edge) => edge.kind === "call_chain").length;
   const refCount = edges.filter((edge) => edge.kind === "field_ref").length;
+  const statefulNodeCount = objects.filter((obj) => obj?.outputState && typeof obj.outputState === "object").length;
+  const fieldfulNodeCount = objects.filter((obj) => {
+    const fields = obj?.outputState?.fields;
+    return fields && typeof fields === "object" && Object.keys(fields).length > 0;
+  }).length;
   const meta = [
     `${objects.length} object${objects.length === 1 ? "" : "s"}`,
     chainCount ? `${chainCount} chain step${chainCount === 1 ? "" : "s"}` : "",
@@ -1905,6 +3153,14 @@ function buildPipelineGraphModel(row, payload) {
   ]
     .filter(Boolean)
     .join(" · ");
+  let notice = "";
+  if (objects.length > 0 && fieldfulNodeCount === 0) {
+    if (statefulNodeCount === 0) {
+      notice = "This pipeline recorded object identities and links, but not output-state payloads, so no fields are available to render.";
+    } else {
+      notice = "This pipeline captured object state, but none of these nodes expose field values.";
+    }
+  }
 
   return {
     nodes: objects,
@@ -1912,6 +3168,7 @@ function buildPipelineGraphModel(row, payload) {
     width,
     height,
     meta,
+    notice,
     defsMarkup: pipelineGraphDefs(),
     edgeMarkup,
     nodeMarkup,
@@ -2118,10 +3375,325 @@ function pipelineNodeEyebrow(obj, focusObjectID) {
   if (obj.placeholder) {
     return "Ref";
   }
-  if (obj.role === "chain") {
-    return "Pipeline";
+  return "";
+}
+
+function pipelineNodeFieldPreview(obj) {
+  const outputState = obj?.outputState;
+  if (!outputState || typeof outputState !== "object") {
+    return { items: [], hiddenCount: 0 };
   }
-  return "Object";
+  const fields = outputState.fields;
+  if (!fields || typeof fields !== "object") {
+    return { items: [], hiddenCount: 0 };
+  }
+
+  const expandedRows = previewPipelineNestedFields(fields);
+  const items = expandedRows.slice();
+  const rawItems = [];
+  for (const [fallbackName, raw] of Object.entries(fields)) {
+    if (!raw || typeof raw !== "object") {
+      continue;
+    }
+    const name = typeof raw.name === "string" && raw.name ? raw.name : fallbackName;
+    if (expandedRows.length > 0 && (name === "Fields" || name === "TypeDef")) {
+      continue;
+    }
+    const refs = Array.isArray(raw.refs)
+      ? raw.refs.map((value) => String(value || "")).filter(Boolean)
+      : [];
+    const value = formatPipelineNodeFieldValue(raw.value, refs, name);
+    if (!name || !value) {
+      continue;
+    }
+    rawItems.push({ name: humanizePipelineFieldLabel(name), value });
+  }
+
+  rawItems.sort((a, b) => a.name.localeCompare(b.name));
+  items.push(...rawItems);
+  const previewLimit = expandedRows.length > 0 ? 5 : 4;
+  return {
+    items: items.slice(0, previewLimit),
+    hiddenCount: Math.max(0, items.length - previewLimit),
+  };
+}
+
+function previewPipelineNestedFields(fields) {
+  const nested = fields?.Fields?.value;
+  const typedefFields = Array.isArray(fields?.TypeDef?.value?.Fields)
+    ? fields.TypeDef.value.Fields.filter((item) => item && typeof item === "object")
+    : [];
+  const metaByKey = new Map();
+  for (const field of typedefFields) {
+    for (const key of [field.OriginalName, field.Name]) {
+      const text = String(key || "").trim();
+      if (text) {
+        metaByKey.set(text, field);
+      }
+    }
+  }
+
+  if (nested && typeof nested === "object" && !Array.isArray(nested) && Object.keys(nested).length > 0) {
+    return Object.entries(nested)
+      .map(([key, value]) => {
+        const meta = metaByKey.get(key);
+        return {
+          name: humanizePipelineFieldLabel(key),
+          value: formatPipelineNestedFieldValue(value, meta),
+          rank: rankPipelineNestedFieldValue(value, meta),
+        };
+      })
+      .sort((a, b) => {
+        if (a.rank !== b.rank) {
+          return a.rank - b.rank;
+        }
+        return a.name.localeCompare(b.name);
+      })
+      .map(({ name, value }) => ({ name, value }));
+  }
+
+  const functions = Array.isArray(fields?.TypeDef?.value?.Functions)
+    ? fields.TypeDef.value.Functions.filter((item) => item && typeof item === "object")
+    : [];
+  if (functions.length === 0) {
+    return [];
+  }
+
+  return functions.map((fn) => ({
+    name: humanizePipelineFieldLabel(fn.OriginalName || fn.Name || ""),
+    value: formatPipelineFunctionValue(fn),
+  }));
+}
+
+function renderPipelineNodeFields(fieldPreview) {
+  const items = Array.isArray(fieldPreview?.items) ? fieldPreview.items : [];
+  const hiddenCount = Number(fieldPreview?.hiddenCount || 0);
+  if (!items.length && hiddenCount <= 0) {
+    return "";
+  }
+
+  const rows = items
+    .map(
+      (field) => `
+        <div class="v3-pipeline-node-field">
+          <span class="v3-pipeline-node-field-name">${escapeHTML(field.name)}</span>
+          <span class="v3-pipeline-node-field-value">${escapeHTML(field.value)}</span>
+        </div>
+      `,
+    )
+    .join("");
+  const overflow = hiddenCount > 0 ? `<div class="v3-pipeline-node-field v3-pipeline-node-field-more">+${hiddenCount} more</div>` : "";
+  return `<div class="v3-pipeline-node-fields">${rows}${overflow}</div>`;
+}
+
+function formatPipelineNodeFieldValue(value, refs, fieldName = "") {
+  const refList = Array.isArray(refs) ? refs.filter(Boolean) : [];
+  const semanticSummary = summarizePipelineSemanticField(fieldName, value);
+  if (semanticSummary) {
+    return semanticSummary;
+  }
+  if (value === null) {
+    return summarizePipelineNodeRefs(refList) || "null";
+  }
+  if (value === undefined) {
+    return summarizePipelineNodeRefs(refList);
+  }
+  if (typeof value === "string") {
+    if (value === "") {
+      return summarizePipelineNodeRefs(refList) || '""';
+    }
+    if (looksLikeDigest(value)) {
+      return shortID(value, 18);
+    }
+    return truncateText(value, 32);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "[]";
+    }
+    return `[${value.length}]`;
+  }
+  if (typeof value === "object") {
+    if (typeof value.error === "string" && value.error) {
+      return `error: ${truncateText(value.error, 24)}`;
+    }
+    const keys = Object.keys(value);
+    if (keys.length === 0) {
+      return "{}";
+    }
+    return `{${truncateText(keys.join(", "), 24)}}`;
+  }
+  return String(value);
+}
+
+function formatPipelineNestedFieldValue(value, meta) {
+  const typeLabel = formatPipelineTypeLabel(meta?.TypeDef);
+  if (value === null || value === undefined) {
+    return typeLabel || "unset";
+  }
+  if (typeof value === "boolean" || typeof value === "number") {
+    return String(value);
+  }
+  if (typeof value === "string") {
+    if (value === "") {
+      return typeLabel || "empty";
+    }
+    if (looksLikeDigest(value)) {
+      return shortID(value, 18);
+    }
+    if (looksLikeOpaqueBase64(value)) {
+      return typeLabel || "encoded";
+    }
+    return truncateText(value, 24);
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return typeLabel || "[]";
+    }
+    return typeLabel ? `${typeLabel} [${value.length}]` : `[${value.length}]`;
+  }
+  if (typeof value === "object") {
+    if (typeof value.error === "string" && value.error) {
+      return `error: ${truncateText(value.error, 18)}`;
+    }
+    if (typeLabel) {
+      return typeLabel;
+    }
+    const keys = Object.keys(value);
+    if (keys.length === 0) {
+      return "{}";
+    }
+    return `{${truncateText(keys.join(", "), 18)}}`;
+  }
+  return String(value);
+}
+
+function formatPipelineFunctionValue(fn) {
+  const returnLabel = formatPipelineTypeLabel(fn?.ReturnType) || "void";
+  const argCount = Array.isArray(fn?.Args) ? fn.Args.filter((arg) => arg && typeof arg === "object").length : 0;
+  if (argCount <= 0) {
+    return returnLabel;
+  }
+  return `${returnLabel} · ${argCount} arg${argCount === 1 ? "" : "s"}`;
+}
+
+function rankPipelineNestedFieldValue(value, meta) {
+  if (typeof value === "boolean" || typeof value === "number") {
+    return 0;
+  }
+  if (typeof value === "string") {
+    if (value && !looksLikeOpaqueBase64(value)) {
+      return 0;
+    }
+    return meta ? 1 : 2;
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value).length > 0 ? 1 : 2;
+  }
+  return meta ? 2 : 3;
+}
+
+function summarizePipelineSemanticField(fieldName, value) {
+  const name = String(fieldName || "");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  if (name === "Fields") {
+    const count = Object.keys(value).length;
+    return count > 0 ? `${count} entries` : "empty";
+  }
+  if (name === "TypeDef") {
+    const parts = [];
+    if (typeof value.Name === "string" && value.Name) {
+      parts.push(value.Name);
+    }
+    const fieldCount = Array.isArray(value.Fields) ? value.Fields.filter((item) => item && typeof item === "object").length : 0;
+    const functionCount = Array.isArray(value.Functions) ? value.Functions.filter((item) => item && typeof item === "object").length : 0;
+    if (fieldCount > 0) {
+      parts.push(`${fieldCount} fields`);
+    }
+    if (functionCount > 0) {
+      parts.push(`${functionCount} fns`);
+    }
+    return parts.join(" · ");
+  }
+  if (name === "Module") {
+    const parts = [];
+    if (typeof value.NameField === "string" && value.NameField) {
+      parts.push(value.NameField);
+    } else if (typeof value.Name === "string" && value.Name) {
+      parts.push(value.Name);
+    }
+    const dependencyCount = Array.isArray(value?.Deps?.Mods) ? value.Deps.Mods.length : 0;
+    if (dependencyCount > 0) {
+      parts.push(`${dependencyCount} deps`);
+    }
+    return parts.join(" · ");
+  }
+  return "";
+}
+
+function formatPipelineTypeLabel(typeDef) {
+  if (!typeDef || typeof typeDef !== "object") {
+    return "";
+  }
+  const kind = String(typeDef.Kind || typeDef.kind || "");
+  const optional = typeDef.Optional ? "?" : "";
+  if (kind === "LIST_KIND") {
+    const elementType = formatPipelineTypeLabel(typeDef?.AsList?.Value?.ElementTypeDef);
+    return elementType ? `[${elementType}]${optional}` : `list${optional}`;
+  }
+  if (kind === "OBJECT_KIND") {
+    return `object${optional}`;
+  }
+  if (kind === "SCALAR_KIND") {
+    const name = String(typeDef?.AsScalar?.Value?.Name || "").trim();
+    return `${name || "scalar"}${optional}`;
+  }
+  if (kind === "ENUM_KIND") {
+    const name = String(typeDef?.AsEnum?.Value?.Name || "").trim();
+    return `${name || "enum"}${optional}`;
+  }
+  if (kind === "INPUT_KIND") {
+    const name = String(typeDef?.AsInput?.Value?.Name || "").trim();
+    return `${name || "input"}${optional}`;
+  }
+  if (kind === "INTERFACE_KIND") {
+    const name = String(typeDef?.AsInterface?.Value?.Name || "").trim();
+    return `${name || "interface"}${optional}`;
+  }
+  return optional ? `value${optional}` : "";
+}
+
+function humanizePipelineFieldLabel(name) {
+  const text = String(name || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text
+    .replace(/[-_]+/g, " ")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function looksLikeOpaqueBase64(value) {
+  const text = String(value || "");
+  return text.length >= 24 && /^[A-Za-z0-9+/=]+$/.test(text) && !looksLikeDigest(text);
+}
+
+function summarizePipelineNodeRefs(refs) {
+  if (!refs.length) {
+    return "";
+  }
+  if (refs.length === 1) {
+    return looksLikeDigest(refs[0]) ? shortID(refs[0], 18) : truncateText(refs[0], 32);
+  }
+  return `${refs.length} refs`;
 }
 
 function renderSessionDetail(entity, row) {
@@ -2134,6 +3706,7 @@ function renderSessionDetail(entity, row) {
           ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)))}
           ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)))}
           ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Device", deviceSummaryForEntity("sessions", row))}
           ${pipelineRecapItem("Root Client", row.rootClientID ? detailCode(shortID(row.rootClientID)) : "Unknown")}
           ${pipelineRecapItem("Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown")}
         </div>
@@ -2257,8 +3830,15 @@ function workspaceOwnsEntity(workspaceRow, entityID, row) {
   switch (entityID) {
     case "workspaces":
       return workspaceRow.routeID === row.routeID;
+    case "devices":
+      return deviceOwnsEntity(row, "workspaces", workspaceRow);
     case "sessions":
       return workspaceScopeData(workspaceRow).sessionIDs.has(String(row.id || ""));
+    case "objects":
+    case "functions":
+    case "object-types":
+    case "modules":
+      return workspaceOwnsScopeArrays(workspaceRow, row);
     case "git-remotes":
       return Array.isArray(row?.pipelines) && row.pipelines.some((pipeline) => workspaceOwnsDirectRow(workspaceRow, pipeline));
     case "registries":
@@ -2298,12 +3878,32 @@ function workspaceScopeData(workspaceRow) {
     sessionIDs: new Set(),
     clientIDs: new Set(),
     pipelineIDs: new Set(),
+    traceIDs: new Set(),
   };
+  for (const sessionID of Array.isArray(workspaceRow?.sessionIDs) ? workspaceRow.sessionIDs : []) {
+    const key = String(sessionID || "");
+    if (key) {
+      data.sessionIDs.add(key);
+    }
+  }
+  for (const clientID of Array.isArray(workspaceRow?.clientIDs) ? workspaceRow.clientIDs : []) {
+    const key = String(clientID || "");
+    if (key) {
+      data.clientIDs.add(key);
+    }
+  }
+  for (const pipelineID of Array.isArray(workspaceRow?.pipelineIDs) ? workspaceRow.pipelineIDs : []) {
+    const key = String(pipelineID || "");
+    if (key) {
+      data.pipelineIDs.add(key);
+    }
+  }
   for (const op of Array.isArray(workspaceRow?.ops) ? workspaceRow.ops : []) {
     const sessionID = String(op?.sessionID || "");
     const clientID = String(op?.clientID || "");
     const pipelineClientID = String(op?.pipelineClientID || "");
     const pipelineID = String(op?.pipelineID || "");
+    const traceID = String(op?.traceID || "");
     if (sessionID) {
       data.sessionIDs.add(sessionID);
     }
@@ -2316,13 +3916,135 @@ function workspaceScopeData(workspaceRow) {
     if (pipelineID) {
       data.pipelineIDs.add(pipelineID);
     }
+    if (traceID) {
+      data.traceIDs.add(traceID);
+    }
   }
   workspaceScopeCache.set(workspaceRow, data);
   return data;
 }
 
+function deviceOwnedRows(deviceRow, entityID) {
+  const entity = materializedEntityByID(entityID);
+  if (!entity || !Array.isArray(entity.liveItems)) {
+    return [];
+  }
+  return entity.liveItems
+    .filter((item) => deviceOwnsEntity(deviceRow, entityID, item))
+    .slice()
+    .sort((a, b) => overviewItemUnixNano(b) - overviewItemUnixNano(a));
+}
+
+function deviceOwnsEntity(deviceRow, entityID, row) {
+  if (!deviceRow || !row) {
+    return false;
+  }
+  switch (entityID) {
+    case "devices":
+      return deviceRow.routeID === row.routeID;
+    case "sessions":
+      return deviceScopeData(deviceRow).sessionIDs.has(String(row.id || "")) || deviceOwnsDirectRow(deviceRow, row);
+    case "objects":
+    case "functions":
+    case "object-types":
+    case "modules":
+      return deviceOwnsScopeArrays(deviceRow, row);
+    case "workspaces":
+      return Array.isArray(row?.ops) && row.ops.some((op) => deviceOwnsDirectRow(deviceRow, op));
+    case "git-remotes":
+      return Array.isArray(row?.pipelines) && row.pipelines.some((pipeline) => deviceOwnsDirectRow(deviceRow, pipeline));
+    case "registries":
+      return Array.isArray(row?.activities) && row.activities.some((activity) => deviceOwnsDirectRow(deviceRow, activity));
+    default:
+      return deviceOwnsDirectRow(deviceRow, row);
+  }
+}
+
+function deviceOwnsDirectRow(deviceRow, row) {
+  if (!deviceRow || !row) {
+    return false;
+  }
+  const scope = deviceScopeData(deviceRow);
+  if (String(row.deviceID || "") === String(deviceRow.id || "")) {
+    return true;
+  }
+  const sessionIDs = [row.sessionID, row.pipelineSessionID]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+  if (sessionIDs.some((value) => scope.sessionIDs.has(value))) {
+    return true;
+  }
+  const clientIDs = [row.rootClientID, row.clientID, row.pipelineClientID]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+  if (clientIDs.some((value) => scope.clientIDs.has(value))) {
+    return true;
+  }
+  return false;
+}
+
+function deviceScopeData(deviceRow) {
+  if (deviceScopeCache.has(deviceRow)) {
+    return deviceScopeCache.get(deviceRow);
+  }
+  const data = {
+    sessionIDs: new Set(),
+    clientIDs: new Set(),
+    traceIDs: new Set(),
+  };
+  for (const sessionID of Array.isArray(deviceRow?.sessionIDs) ? deviceRow.sessionIDs : []) {
+    const key = String(sessionID || "");
+    if (key) {
+      data.sessionIDs.add(key);
+    }
+  }
+  for (const clientID of Array.isArray(deviceRow?.clientIDs) ? deviceRow.clientIDs : []) {
+    const key = String(clientID || "");
+    if (key) {
+      data.clientIDs.add(key);
+    }
+  }
+  for (const traceID of Array.isArray(deviceRow?.traceIDs) ? deviceRow.traceIDs : []) {
+    const key = String(traceID || "");
+    if (key) {
+      data.traceIDs.add(key);
+    }
+  }
+  for (const client of Array.isArray(deviceRow?.clients) ? deviceRow.clients : []) {
+    const clientID = String(client?.id || "");
+    const sessionID = String(client?.sessionID || "");
+    const traceID = String(client?.traceID || "");
+    if (clientID) {
+      data.clientIDs.add(clientID);
+    }
+    if (sessionID) {
+      data.sessionIDs.add(sessionID);
+    }
+    if (traceID) {
+      data.traceIDs.add(traceID);
+    }
+  }
+  deviceScopeCache.set(deviceRow, data);
+  return data;
+}
+
+function deviceOwnsScopeArrays(deviceRow, row) {
+  if (!deviceRow || !row) {
+    return false;
+  }
+  const scope = deviceScopeData(deviceRow);
+  return rowMatchesScopeSets(row, scope);
+}
+
 function sessionOwnsEntity(sessionRow, entityID, row) {
   switch (entityID) {
+    case "devices":
+      return deviceOwnsEntity(row, "sessions", sessionRow);
+    case "objects":
+    case "functions":
+    case "object-types":
+    case "modules":
+      return sessionOwnsScopeArrays(sessionRow, row);
     case "workspaces":
       return Array.isArray(row?.ops) && row.ops.some((op) => sessionOwnsDirectRow(sessionRow, op));
     case "git-remotes":
@@ -2368,6 +4090,46 @@ function sessionOwnsDirectRow(sessionRow, row) {
   }
 
   return !sessionID;
+}
+
+function sessionOwnsScopeArrays(sessionRow, row) {
+  if (!sessionRow || !row) {
+    return false;
+  }
+  const sessionID = String(sessionRow.id || "");
+  const traceID = String(sessionRow.traceID || "");
+  const rootClientID = String(sessionRow.rootClientID || "");
+  const sessionIDs = new Set([sessionID].filter(Boolean));
+  const clientIDs = new Set([rootClientID].filter(Boolean));
+  const traceIDs = new Set([traceID].filter(Boolean));
+  return rowMatchesScopeSets(row, { sessionIDs, clientIDs, traceIDs });
+}
+
+function workspaceOwnsScopeArrays(workspaceRow, row) {
+  if (!workspaceRow || !row) {
+    return false;
+  }
+  const scope = workspaceScopeData(workspaceRow);
+  return rowMatchesScopeSets(row, scope);
+}
+
+function rowMatchesScopeSets(row, scope) {
+  if (!row || !scope) {
+    return false;
+  }
+  const scopeSessionIDs = scope.sessionIDs instanceof Set ? scope.sessionIDs : new Set();
+  const scopeClientIDs = scope.clientIDs instanceof Set ? scope.clientIDs : new Set();
+  const scopeTraceIDs = scope.traceIDs instanceof Set ? scope.traceIDs : new Set();
+  const sessionIDs = Array.isArray(row?.sessionIDs) ? row.sessionIDs : [];
+  if (sessionIDs.some((value) => scopeSessionIDs.has(String(value || "")))) {
+    return true;
+  }
+  const clientIDs = Array.isArray(row?.clientIDs) ? row.clientIDs : [];
+  if (clientIDs.some((value) => scopeClientIDs.has(String(value || "")))) {
+    return true;
+  }
+  const traceIDs = Array.isArray(row?.traceIDs) ? row.traceIDs : [];
+  return traceIDs.some((value) => scopeTraceIDs.has(String(value || "")));
 }
 
 function sessionDomainItemLabel(entity, row) {
@@ -2632,6 +4394,7 @@ function renderWorkspaceDetail(entity, row) {
         </div>
         <div class="v3-pipeline-recap-grid">
           ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("Devices", deviceSummaryForEntity("workspaces", row, "None"))}
           ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
           ${pipelineRecapItem("Ops", escapeHTML(String(row.opCount || 0)))}
           ${pipelineRecapItem("Reads", escapeHTML(String(row.readCount || 0)))}
@@ -2641,6 +4404,413 @@ function renderWorkspaceDetail(entity, row) {
         </div>
       </section>
       ${detailSection("Recent Ops", opsTable)}
+    </div>
+  `;
+}
+
+function renderDeviceDetail(entity, row) {
+  const topLevelClients = Array.isArray(row?.clients)
+    ? row.clients.slice().sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0))
+    : [];
+  const sessionRows = deviceOwnedRows(row, "sessions");
+  const pipelineRows = deviceOwnedRows(row, "pipelines");
+  const workspaceRows = deviceOwnedRows(row, "workspaces");
+  const workspaceOpRows = deviceOwnedRows(row, "workspace-ops");
+  const clientTable = renderTableHTML({
+    columns: [
+      { label: "Top-Level Client", render: (item) => primaryCell(item.name || shortID(item.id), deviceClientPlatform(item) || item.clientKind || "top-level") },
+      { label: "Session", render: (item) => deviceClientSessionCell(item) },
+      { label: "Kind", render: (item) => tonePill("neutral", item.clientKind || "top-level") },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.firstSeenUnixNano)) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: topLevelClients,
+    emptyMessage: "No top-level client records recorded for this device.",
+  });
+  const sessionTable = renderTableHTML({
+    columns: [
+      { label: "Session", render: (item) => linkedPrimaryCell(shortID(item.id), "", entityPath("sessions", item.routeID)) },
+      { label: "Status", render: (item) => statusOrbCell(sessionStatusLabel(item)) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.firstSeenUnixNano)) },
+      { label: "Duration", render: (item) => escapeHTML(durationLabel(item.firstSeenUnixNano, item.lastSeenUnixNano, item.open ? "running" : item.status)) },
+      { label: "Trace", render: (item) => detailCode(shortID(item.traceID)) },
+    ],
+    rows: sessionRows,
+    emptyMessage: "No sessions are attached to this device.",
+  });
+  const pipelineTable = renderTableHTML({
+    columns: [
+      { label: "Pipeline", render: (item) => linkedPrimaryCell(item.command || item.name || "Pipeline", "", entityPath("pipelines", item.routeID)) },
+      { label: "Status", render: (item) => statusOrbCell(item.status) },
+      { label: "Session", render: (item) => pipelineSessionCell(item) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+      { label: "Output Type", render: (item) => escapeHTML(pipelineOutputTypeLabel(item)) },
+    ],
+    rows: pipelineRows,
+    emptyMessage: "No pipelines were submitted from this device.",
+  });
+  const workspaceTable = renderTableHTML({
+    columns: [
+      { label: "Workspace", render: (item) => linkedPrimaryCell(item.name || item.root || "Workspace", item.root || "", entityPath("workspaces", item.routeID)) },
+      { label: "Sessions", render: (item) => escapeHTML(String(item.sessionCount || 0)) },
+      { label: "Ops", render: (item) => workspaceCountsCell(item) },
+      { label: "Pipelines", render: (item) => escapeHTML(String(item.pipelineCount || 0)) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: workspaceRows,
+    emptyMessage: "No local workspaces were observed from this device.",
+  });
+  const workspaceOpTable = renderTableHTML({
+    columns: [
+      { label: "Operation", render: (item) => linkedPrimaryCell(item.name || item.callName || "Workspace Op", item.callName || "", entityPath("workspace-ops", item.routeID)) },
+      { label: "Direction", render: (item) => tonePill("neutral", item.direction || "op") },
+      { label: "Target", render: (item) => item.path ? detailCode(item.path) : "Unknown" },
+      { label: "Pipeline", render: (item) => workspaceOpPipelineCell(item) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: workspaceOpRows,
+    emptyMessage: "No host operations were attributed to this device.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Device</p>
+          <strong>${escapeHTML(deviceTitle(row))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Machine ID", detailCode(shortMachineID(row.machineID, 12) || row.machineID || "Unknown"))}
+          ${pipelineRecapItem("Platform", escapeHTML(deviceSubtitle(row) || "Unknown"))}
+          ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
+          ${pipelineRecapItem("Top-Level Clients", escapeHTML(String(row.clientCount || 0)))}
+          ${pipelineRecapItem("Traces", escapeHTML(String(row.traceCount || 0)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+          ${pipelineRecapItem("First Seen", escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)))}
+          ${pipelineRecapItem("Latest Command", topLevelClients[0]?.name ? detailCode(topLevelClients[0].name) : "Unknown")}
+        </div>
+      </section>
+      ${detailSection("Top-Level Clients", clientTable)}
+      ${detailSection("Sessions", sessionTable)}
+      ${detailSection("Pipelines", pipelineTable)}
+      ${detailSection("Workspaces", workspaceTable)}
+      ${detailSection("Host Ops", workspaceOpTable)}
+    </div>
+  `;
+}
+
+function renderCallDetail(entity, row) {
+  const parentCall = callRowByID(row.parentCallID);
+  const receiver = objectRowByID(row.receiverDagqlID);
+  const output = objectRowByID(row.outputDagqlID);
+  const functionRow = functionRowForCall(row);
+  const argRows = callArgumentRows(row);
+  const moduleCell = functionRow ? functionModuleCell(functionRow) : detailLinkList(moduleRowsForCall(row).map((item) => entityInlineLink("modules", item.routeID, item.ref)), "None");
+  const argTable = renderTableHTML({
+    columns: [
+      { label: "Argument", render: (item) => primaryCell(item.name || "arg", callArgumentKindLabel(item)) },
+      { label: "Value", render: (item) => callArgumentValueCell(item) },
+      { label: "Type", render: (item) => callArgumentTypeCell(item) },
+    ],
+    rows: argRows,
+    emptyMessage: "No arguments were recorded for this call.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Function Call</p>
+          <strong>${escapeHTML(callTitle(row))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Status", statusPill(row.statusCode || "ok"))}
+          ${pipelineRecapItem("Return Type", objectTypeLinkFromName(row.returnType, row.returnTypeID))}
+          ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
+          ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.statusCode || "completed")))}
+          ${pipelineRecapItem("Device", deviceSummaryForEntity("calls", row))}
+          ${pipelineRecapItem("Session", row.sessionID ? pipelineSessionSummary({ traceID: row.traceID, sessionID: row.sessionID }) : "None")}
+          ${pipelineRecapItem("Function", functionRow ? entityInlineLink("functions", functionRow.routeID, functionTitle(functionRow)) : detailCode(row.name || "Unknown"))}
+          ${pipelineRecapItem("Output", output ? entityInlineLink("objects", output.routeID, objectTitle(output)) : "None")}
+          ${pipelineRecapItem("Module", moduleCell)}
+        </div>
+      </section>
+      ${detailCard(
+        "Relationships",
+        detailList([
+          ["Function", functionRow ? entityInlineLink("functions", functionRow.routeID, functionTitle(functionRow)) : "None"],
+          ["Parent Call", parentCall ? entityInlineLink("calls", parentCall.routeID, callTitle(parentCall)) : "None"],
+          ["Receiver", receiver ? entityInlineLink("objects", receiver.routeID, objectTitle(receiver)) : row.receiverIsQuery ? tonePill("neutral", "Query") : "None"],
+          ["Output", output ? entityInlineLink("objects", output.routeID, objectTitle(output)) : "None"],
+          ["Module", moduleCell],
+          ["Call ID", detailCode(row.id || "Unknown")],
+          ["Trace", detailCode(row.traceID || "Unknown")],
+          ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
+        ]),
+      )}
+      ${detailSection("Arguments", argTable)}
+    </div>
+  `;
+}
+
+function renderFunctionDetail(entity, row) {
+  const callEntry = ensureFunctionCallEntry(row);
+  const calls = functionCallRows(row, callEntry);
+  let callEmptyMessage = "No calls were attached to this function row.";
+  if (Number(row?.callCount || 0) > 0 && callEntry.status === "loading" && calls.length === 0) {
+    callEmptyMessage = "Loading calls for this function...";
+  } else if (Number(row?.callCount || 0) > 0 && callEntry.status === "error" && calls.length === 0) {
+    callEmptyMessage = `Could not load calls for this function: ${callEntry.error || "unknown error"}`;
+  }
+  const callTable = renderTableHTML({
+    columns: [
+      { label: "Call", render: (item) => linkedCallCell(callSignatureText(item), callTableSubtitle(item), entityPath("calls", item.routeID)) },
+      { label: "Output", render: (item) => objectSummaryLink(item.outputDagqlID) || "None" },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: calls,
+    emptyMessage: callEmptyMessage,
+  });
+  const snapshotTable = renderTableHTML({
+    columns: [
+      { label: "Snapshot", render: (item) => linkedPrimaryCell(objectTitle(item), item.typeName || "Function", entityPath("objects", item.routeID)) },
+      { label: "Produced By", render: (item) => objectProducedBySummary(item) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: functionSnapshotRows(row),
+    emptyMessage: "No Function metadata snapshots were attached to this function row.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Function</p>
+          <strong>${escapeHTML(functionTitle(row))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Module", functionModuleCell(row))}
+          ${pipelineRecapItem("Receiver Type", functionReceiverTypeCell(row))}
+          ${pipelineRecapItem("Return Type", objectTypeLinkFromName(row.returnType, row.returnTypeID))}
+          ${pipelineRecapItem("Calls", escapeHTML(String(row.callCount || 0)))}
+          ${pipelineRecapItem("Snapshots", escapeHTML(String(row.snapshotCount || 0)))}
+          ${pipelineRecapItem("Arguments", escapeHTML(String(row.argCount || 0)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+        </div>
+      </section>
+      ${detailCard(
+        "Relationships",
+        detailList([
+          ["Module", functionModuleCell(row)],
+          ["Receiver Type", functionReceiverTypeCell(row)],
+          ["Call Name", row.callName ? detailCode(row.callName) : detailCode(functionTitle(row))],
+          ["Return Type", objectTypeLinkFromName(row.returnType, row.returnTypeID)],
+          ["Original Name", row.originalName ? detailCode(row.originalName) : "None"],
+          ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
+          ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
+          ["Client Set", detailInlineList(row.clientIDs || [], "None")],
+        ]),
+      )}
+      ${row.description ? detailCard("Description", `<p>${escapeHTML(row.description)}</p>`) : ""}
+      ${detailSection("Calls", callTable)}
+      ${detailSection("Function Snapshots", snapshotTable)}
+    </div>
+  `;
+}
+
+function renderObjectDetail(entity, row) {
+  const fields = objectFieldRows(row);
+  const typeRow = objectTypeRowByID(row.typeID) || objectTypeRowByName(row.typeName);
+  const canonicalModuleRow = moduleSnapshotCanonicalRow(row);
+  const canonicalFunctionRow = functionSnapshotCanonicalRow(row);
+  const relationshipItems = [
+    ["Type", typeRow ? entityInlineLink("object-types", typeRow.routeID, typeRow.name) : detailCode(row.typeName || "Unknown")],
+  ];
+  if (String(row?.typeName || "").trim() === "Module") {
+    relationshipItems.push(["Canonical Module", canonicalModuleRow ? entityInlineLink("modules", canonicalModuleRow.routeID, canonicalModuleRow.ref) : "None"]);
+  }
+  if (String(row?.typeName || "").trim() === "Function") {
+    relationshipItems.push(["Canonical Function", canonicalFunctionRow ? entityInlineLink("functions", canonicalFunctionRow.routeID, functionTitle(canonicalFunctionRow)) : "None"]);
+  }
+  relationshipItems.push(
+    ["Modules", typeRow ? detailLinkList(objectTypeModuleLinks(typeRow), "None") : "None"],
+    ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
+    ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
+  );
+  const fieldTable = renderTableHTML({
+    columns: [
+      { label: "Field", render: (item) => primaryCell(item.name, item.type || "") },
+      { label: "Value", render: (item) => renderObjectFieldValue(item.value) },
+      { label: "Refs", render: (item) => detailLinkList(item.refs.map((ref) => objectSummaryLink(ref, shortDagqlID(ref))), "None") },
+    ],
+    rows: fields,
+    emptyMessage: "No structured field state was recorded for this snapshot.",
+  });
+  const producedByTable = renderTableHTML({
+    columns: [
+      { label: "Call", render: (item) => linkedPrimaryCell(callTitle(item), callSubtitle(item), entityPath("calls", item.routeID)) },
+      { label: "Return Type", render: (item) => objectTypeLinkFromName(item.returnType, item.returnTypeID) },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: (Array.isArray(row?.producedByCallIDs) ? row.producedByCallIDs : []).map((id) => callRowByID(id)).filter(Boolean),
+    emptyMessage: "No producing calls were attached to this snapshot.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Object Snapshot</p>
+          <strong>${escapeHTML(objectTitle(row))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Type", typeRow ? entityInlineLink("object-types", typeRow.routeID, typeRow.name) : detailCode(row.typeName || "Object"))}
+          ${pipelineRecapItem("DAGQL ID", detailCode(row.dagqlID || "Unknown"))}
+          ${pipelineRecapItem("Device", deviceSummaryForEntity("objects", row))}
+          ${pipelineRecapItem("Produced By", objectProducedBySummary(row))}
+          ${pipelineRecapItem("Refs", escapeHTML(String(Array.isArray(row.fieldRefs) ? row.fieldRefs.length : 0)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+        </div>
+      </section>
+      ${detailCard(
+        "Relationships",
+        detailList(relationshipItems),
+      )}
+      ${detailSection("Fields", fieldTable)}
+      ${detailSection("Produced By Calls", producedByTable)}
+    </div>
+  `;
+}
+
+function renderObjectTypeDetail(entity, row) {
+  const snapshots = objectRowsForType(row);
+  const functions = functionRowsForType(row);
+  const snapshotTable = renderTableHTML({
+    columns: [
+      { label: "Snapshot", render: (item) => linkedPrimaryCell(objectTitle(item), item.typeName || "Object", entityPath("objects", item.routeID)) },
+      { label: "Produced By", render: (item) => objectProducedBySummary(item) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: snapshots,
+    emptyMessage: "No concrete snapshots of this type were recorded.",
+  });
+  const functionTable = renderTableHTML({
+    columns: [
+      { label: "Function", render: (item) => linkedPrimaryCell(functionTitle(item), functionSubtitle(item), entityPath("functions", item.routeID)) },
+      { label: "Module", render: (item) => functionModuleCell(item) },
+      { label: "Calls", render: (item) => escapeHTML(String(item.callCount || 0)) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: functions,
+    emptyMessage: "No functions returning this type were recorded.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Object Type</p>
+          <strong>${escapeHTML(row.name || "Type")}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Module", detailLinkList(objectTypeModuleLinks(row), "Core"))}
+          ${pipelineRecapItem("Snapshots", escapeHTML(String(row.snapshotCount || 0)))}
+          ${pipelineRecapItem("Functions", escapeHTML(String(functions.length)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+        </div>
+      </section>
+      ${detailCard(
+        "Relationships",
+        detailList([
+          ["Module Dependencies", detailLinkList(objectTypeModuleLinks(row), "None")],
+          ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
+          ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
+        ]),
+      )}
+      ${detailSection("Snapshots", snapshotTable)}
+      ${detailSection("Returning Functions", functionTable)}
+    </div>
+  `;
+}
+
+function renderModuleDetail(entity, row) {
+  const preludeCalls = modulePreludeCallRows(row);
+  const typeRows = moduleTypeRows(row);
+  const functionRows = moduleFunctionRows(row);
+  const snapshotRows = moduleSnapshotRows(row);
+  const preludeTable = renderTableHTML({
+    columns: [
+      { label: "Call", render: (item) => linkedPrimaryCell(callTitle(item), callSubtitle(item), entityPath("calls", item.routeID)) },
+      { label: "Output", render: (item) => objectSummaryLink(item.outputDagqlID) || "None" },
+      { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
+    ],
+    rows: preludeCalls,
+    emptyMessage: "No module-prelude calls were attached to this module row.",
+  });
+  const typeTable = renderTableHTML({
+    columns: [
+      { label: "Type", render: (item) => linkedPrimaryCell(item.name || "Type", `${item.snapshotCount || 0} snapshots`, entityPath("object-types", item.routeID)) },
+      { label: "Functions", render: (item) => escapeHTML(String(item.functionCount || 0)) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: typeRows,
+    emptyMessage: "No object types currently depend on this module.",
+  });
+  const snapshotTable = renderTableHTML({
+    columns: [
+      { label: "Snapshot", render: (item) => linkedPrimaryCell(objectTitle(item), item.typeName || "Module", entityPath("objects", item.routeID)) },
+      { label: "Produced By", render: (item) => objectProducedBySummary(item) },
+      { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
+    ],
+    rows: snapshotRows,
+    emptyMessage: "No concrete Module snapshots could be mapped back to this module row.",
+  });
+  const functionTable = renderTableHTML({
+    columns: [
+      { label: "Function", render: (item) => linkedPrimaryCell(functionTitle(item), functionSubtitle(item), entityPath("functions", item.routeID)) },
+      { label: "Return Type", render: (item) => objectTypeLinkFromName(item.returnType, item.returnTypeID) },
+      { label: "Calls", render: (item) => escapeHTML(String(item.callCount || 0)) },
+    ],
+    rows: functionRows,
+    emptyMessage: "No functions currently depend on this module.",
+  });
+
+  return `
+    <div class="v3-detail-stack">
+      ${backLink(entity)}
+      <section class="v3-detail-card v3-pipeline-recap">
+        <div class="v3-pipeline-recap-command">
+          <p class="v3-foot-label">Module</p>
+          <strong>${escapeHTML(moduleTitle(row))}</strong>
+        </div>
+        <div class="v3-pipeline-recap-grid">
+          ${pipelineRecapItem("Ref", detailCode(row.ref || "Unknown"))}
+          ${pipelineRecapItem("Resolved", detailInlineList(row.resolvedRefs || [], "None"))}
+          ${pipelineRecapItem("Prelude Calls", escapeHTML(String(Array.isArray(row.callIDs) ? row.callIDs.length : 0)))}
+          ${pipelineRecapItem("Snapshots", escapeHTML(String(snapshotRows.length)))}
+          ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
+          ${pipelineRecapItem("Types", escapeHTML(String(typeRows.length)))}
+          ${pipelineRecapItem("Functions", escapeHTML(String(functionRows.length)))}
+          ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
+        </div>
+      </section>
+      ${detailCard(
+        "Relationships",
+        detailList([
+          ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
+          ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
+          ["Client Set", detailInlineList(row.clientIDs || [], "None")],
+        ]),
+      )}
+      ${detailSection("Concrete Module Snapshots", snapshotTable)}
+      ${detailSection("Prelude Calls", preludeTable)}
+      ${detailSection("Functions", functionTable)}
+      ${detailSection("Dependent Object Types", typeTable)}
     </div>
   `;
 }
@@ -2766,6 +4936,24 @@ function tableModel(entity, sectionID) {
   }
   if (entity.dynamicKind === "workspaces") {
     return workspacesTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "devices") {
+    return devicesTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "calls") {
+    return callsTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "functions") {
+    return functionsTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "objects") {
+    return objectsTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "object-types") {
+    return objectTypesTableModel(entity, sectionID);
+  }
+  if (entity.dynamicKind === "modules") {
+    return modulesTableModel(entity, sectionID);
   }
   if (entity.dynamicKind === "services") {
     return servicesTableModel(entity, sectionID);
@@ -2963,6 +5151,154 @@ function workspacesTableModel(entity, sectionID) {
   }
 }
 
+function devicesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Devices",
+        meta: `${rows.length} real devices`,
+        emptyMessage: "No top-level client devices detected yet.",
+        columns: [
+          { label: "Device", render: (row) => linkedPrimaryCell(deviceTitle(row), deviceSubtitle(row), entityPath(entity.id, row.routeID)) },
+          { label: "Sessions", render: (row) => escapeHTML(String(row.sessionCount || 0)) },
+          { label: "Top-Level Clients", render: (row) => escapeHTML(String(row.clientCount || 0)) },
+          { label: "Traces", render: (row) => escapeHTML(String(row.traceCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
+function callsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Calls",
+        meta: `${rows.length} real calls`,
+        emptyMessage: "No calls detected yet.",
+        columns: [
+          {
+            label: "Call",
+            render: (row) => linkedCallCell(callSignatureText(row), callTableSubtitle(row), entityPath(entity.id, row.routeID)),
+            sortValue: (row) => callSignatureText(row),
+            filterValue: (row) => `${callSignatureText(row)} ${callTableSubtitle(row)}`,
+          },
+          { label: "Return Type", render: (row) => objectTypeLinkFromName(row.returnType, row.returnTypeID) },
+          { label: "Output", render: (row) => objectSummaryLink(row.outputDagqlID) || "None" },
+          { label: "Receiver", render: (row) => objectSummaryLink(row.receiverDagqlID) || (row.receiverIsQuery ? tonePill("neutral", "Query") : "None") },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
+function functionsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Functions",
+        meta: `${rows.length} real functions`,
+        emptyMessage: "No function identities detected yet.",
+        columns: [
+          {
+            label: "Receiver Type",
+            render: (row) => functionReceiverTypeCell(row),
+            sortValue: (row) => row.receiverType || "",
+            filterValue: (row) => row.receiverType || "",
+          },
+          {
+            label: "Name",
+            render: (row) => linkedPrimaryCell(row.name || functionTitle(row), row.originalName && row.originalName !== row.name ? `original ${row.originalName}` : "", entityPath(entity.id, row.routeID)),
+            sortValue: (row) => row.name || functionTitle(row),
+            filterValue: (row) => `${row.name || functionTitle(row)} ${row.callName || ""} ${row.originalName || ""} ${row.description || ""}`,
+          },
+          { label: "Module", render: (row) => functionModuleCell(row) },
+          { label: "Return Type", render: (row) => objectTypeLinkFromName(row.returnType, row.returnTypeID) },
+          { label: "Calls", render: (row) => escapeHTML(String(row.callCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
+function objectsTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Objects",
+        meta: `${rows.length} real snapshots`,
+        emptyMessage: "No object snapshots detected yet.",
+        columns: [
+          { label: "Object", render: (row) => linkedPrimaryCell(objectTitle(row), row.typeName || "snapshot", entityPath(entity.id, row.routeID)) },
+          { label: "Type", render: (row) => objectTypeLinkFromName(row.typeName, row.typeID) },
+          { label: "Produced By", render: (row) => objectProducedBySummary(row) },
+          { label: "Refs", render: (row) => escapeHTML(String(Array.isArray(row.fieldRefs) ? row.fieldRefs.length : 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
+function objectTypesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Object Types",
+        meta: `${rows.length} real types`,
+        emptyMessage: "No object types detected yet.",
+        columns: [
+          { label: "Type", render: (row) => linkedPrimaryCell(row.name || "Type", moduleRefsSummaryText(row), entityPath(entity.id, row.routeID)) },
+          { label: "Module", render: (row) => detailLinkList(objectTypeModuleLinks(row), "Core") },
+          { label: "Snapshots", render: (row) => escapeHTML(String(row.snapshotCount || 0)) },
+          { label: "Functions", render: (row) => escapeHTML(String(row.functionCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
+function modulesTableModel(entity, sectionID) {
+  const rows = visibleEntityRows(entity);
+  switch (sectionID) {
+    case "inventory":
+    default:
+      return {
+        eyebrow: "Inventory",
+        title: "Modules",
+        meta: `${rows.length} real modules`,
+        emptyMessage: "No loaded modules detected yet.",
+        columns: [
+          { label: "Module", render: (row) => linkedPrimaryCell(moduleTitle(row), moduleSubtitle(row), entityPath(entity.id, row.routeID)) },
+          { label: "Prelude Calls", render: (row) => escapeHTML(String(Array.isArray(row.callIDs) ? row.callIDs.length : 0)) },
+          { label: "Sessions", render: (row) => escapeHTML(String(row.sessionCount || 0)) },
+          { label: "Traces", render: (row) => escapeHTML(String(row.traceCount || 0)) },
+          { label: "Last Seen", render: (row) => escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)) },
+        ],
+        rows,
+      };
+  }
+}
+
 function servicesTableModel(entity, sectionID) {
   const rows = visibleEntityRows(entity);
   switch (sectionID) {
@@ -2974,7 +5310,7 @@ function servicesTableModel(entity, sectionID) {
         meta: `${rows.length} real services`,
         emptyMessage: "No services detected yet.",
         columns: [
-          { label: "Service", render: (row) => linkedPrimaryCell(row.name || "Service", row.imageRef || "", entityPath(entity.id, row.routeID)) },
+          { label: "Service", render: (row) => linkedPrimaryCell(row.name || "Service", servicePrimarySubtitle(row), entityPath(entity.id, row.routeID)) },
           { label: "Status", render: (row) => statusOrbCell(row.status) },
           { label: "Kind", render: (row) => tonePill("neutral", row.kind || "service") },
           { label: "Created By", render: (row) => serviceCreatedByCell(row) },
@@ -3133,10 +5469,11 @@ function workspaceOpsTableModel(entity, sectionID) {
         columns: [
           { label: "Operation", render: (row) => linkedPrimaryCell(row.name, row.callName, entityPath(entity.id, row.routeID)) },
           { label: "Status", render: (row) => statusOrbCell(row.status) },
-          { label: "Path", render: (row) => row.path ? detailCode(row.path) : "Unknown" },
-          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
+          { label: "Target", render: (row) => row.path ? detailCode(row.path) : "Unknown" },
+          { label: "Device", render: (row) => deviceSummaryForEntity("workspace-ops", row) },
           { label: "Pipeline", render: (row) => workspaceOpPipelineCell(row) },
           { label: "Session", render: (row) => workspaceOpSessionCell(row) },
+          { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.startUnixNano)) },
         ],
         rows,
       };
@@ -3326,17 +5663,22 @@ function workspaceHostQualifier(workspaceRow) {
   }
   const clientMap = clientRowsByID();
   const machineIDs = new Set();
+  const candidateClientIDs = [];
+  if (Array.isArray(workspaceRow?.clientIDs)) {
+    candidateClientIDs.push(...workspaceRow.clientIDs);
+  }
   for (const op of Array.isArray(workspaceRow?.ops) ? workspaceRow.ops : []) {
-    for (const clientID of [op?.clientID, op?.pipelineClientID]) {
-      const key = String(clientID || "");
-      if (!key) {
-        continue;
-      }
-      const client = clientMap.get(key);
-      const machineID = String(client?.clientMachineID || "").trim();
-      if (machineID) {
-        machineIDs.add(machineID);
-      }
+    candidateClientIDs.push(op?.clientID, op?.pipelineClientID);
+  }
+  for (const clientID of candidateClientIDs) {
+    const key = String(clientID || "");
+    if (!key) {
+      continue;
+    }
+    const client = clientMap.get(key);
+    const machineID = String(client?.clientMachineID || "").trim();
+    if (machineID) {
+      machineIDs.add(machineID);
     }
   }
   const ids = Array.from(machineIDs).sort();
@@ -3366,12 +5708,870 @@ function clientRowsByID() {
   return byID;
 }
 
+function deviceRows() {
+  const rows = materializedEntityByID("devices")?.liveItems;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function deviceRowsForEntity(entityID, row) {
+  return deviceRows().filter((device) => deviceOwnsEntity(device, entityID, row));
+}
+
+function callRows() {
+  const rows = materializedEntityByID("calls")?.liveItems;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function functionRows() {
+  const rows = materializedEntityByID("functions")?.liveItems;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function objectRows() {
+  const rows = materializedEntityByID("objects")?.liveItems;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function objectTypeRows() {
+  const rows = materializedEntityByID("object-types")?.liveItems;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function moduleRows() {
+  const rows = materializedEntityByID("modules")?.liveItems;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function callRowByID(callID) {
+  return callRows().find((row) => String(row.id || "") === String(callID || "")) || null;
+}
+
+function functionRowByID(functionID) {
+  return functionRows().find((row) => String(row.id || "") === String(functionID || "")) || null;
+}
+
+function objectRowByID(dagqlID) {
+  return objectRows().find((row) => String(row.dagqlID || "") === String(dagqlID || "")) || null;
+}
+
+function objectTypeRowByID(typeID) {
+  return objectTypeRows().find((row) => String(row.id || "") === String(typeID || "")) || null;
+}
+
+function objectTypeRowByName(name) {
+  const matches = objectTypeRows().filter((row) => String(row.name || "") === String(name || ""));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function moduleRowByRef(ref) {
+  return moduleRows().find((row) => String(row.ref || "") === String(ref || "")) || null;
+}
+
+function entityInlineLink(entityID, routeID, label) {
+  const text = String(label || "").trim() || entityID;
+  if (!routeID) {
+    return escapeHTML(text);
+  }
+  const href = entityPath(entityID, routeID);
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(text)}</a>`;
+}
+
+function detailLinkList(links, emptyLabel = "None") {
+  if (!Array.isArray(links) || links.length === 0) {
+    return emptyLabel;
+  }
+  return `<div class="v3-detail-tags">${links.map((item) => `<span>${item}</span>`).join("")}</div>`;
+}
+
+function callTitle(row) {
+  return row?.name || "Call";
+}
+
+function functionTitle(row) {
+  const callName = String(row?.callName || row?.name || "").trim();
+  if (callName) {
+    return callFieldName({ name: callName });
+  }
+  return "Function";
+}
+
+function functionSubtitle(row) {
+  const pieces = [];
+  const moduleLabel = functionModuleText(row);
+  if (moduleLabel) {
+    pieces.push(moduleLabel);
+  }
+  if (row?.returnType) {
+    pieces.push(`returns ${row.returnType}`);
+  }
+  if (Number(row?.callCount || 0) > 0) {
+    pieces.push(`${row.callCount} calls`);
+  } else if (Number(row?.snapshotCount || 0) > 0) {
+    pieces.push(`${row.snapshotCount} snapshots`);
+  }
+  return pieces.join(" · ");
+}
+
+function callFieldName(row) {
+  const raw = String(row?.name || "").trim();
+  if (!raw) {
+    return "call";
+  }
+  const dot = raw.lastIndexOf(".");
+  if (dot < 0) {
+    return raw;
+  }
+  const receiver = raw.slice(0, dot).trim();
+  const field = raw.slice(dot + 1).trim();
+  if (!receiver || !field) {
+    return raw;
+  }
+  if (receiver === "Query") {
+    return field;
+  }
+  return `${receiver}.${field}`;
+}
+
+function callSubtitle(row) {
+  return [row?.derivedOperation, row?.returnType].filter(Boolean).join(" · ");
+}
+
+function callSignatureText(row, maxArgs = 4) {
+  const name = callFieldName(row);
+  const args = callArgumentRows(row);
+  if (args.length === 0) {
+    return `${name}()`;
+  }
+  const rendered = args.slice(0, maxArgs).map((arg) => `${arg.name}: ${callSignatureArgText(arg)}`);
+  if (args.length > maxArgs) {
+    rendered.push("...");
+  }
+  return `${name}(${rendered.join(", ")})`;
+}
+
+function callTableSubtitle(row) {
+  const receiver = callReceiverSummary(row);
+  const pieces = [receiver, row?.derivedOperation, row?.returnType].filter(Boolean);
+  return pieces.join(" · ");
+}
+
+function callReceiverSummary(row) {
+  if (row?.receiverIsQuery) {
+    return "Query";
+  }
+  const receiver = objectRowByID(row?.receiverDagqlID);
+  if (receiver) {
+    return objectTitle(receiver);
+  }
+  return row?.receiverDagqlID ? shortDagqlID(row.receiverDagqlID) : "";
+}
+
+function callSignatureArgText(arg) {
+  const dagqlID = String(arg?.dagqlID || "").trim();
+  if (dagqlID) {
+    return `<${shortDagqlID(dagqlID)}>`;
+  }
+  return callSignatureLiteralText(arg?.value);
+}
+
+function callSignatureLiteralText(value) {
+  if (value == null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return truncateText(JSON.stringify(value), 48);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return truncateText(JSON.stringify(value), 64);
+  } catch (_error) {
+    return truncateText(String(value), 64);
+  }
+}
+
+function shortDagqlID(value) {
+  return shortID(value, 18);
+}
+
+function objectTitle(row) {
+  const typeName = String(row?.typeName || "").trim() || "Object";
+  const suffix = shortDagqlID(row?.dagqlID || "");
+  return suffix ? `${typeName} ${suffix}` : typeName;
+}
+
+function objectSubtitle(row) {
+  return String(row?.typeName || "").trim() || "snapshot";
+}
+
+function moduleTitle(row) {
+  const ref = String(row?.ref || "").trim();
+  if (!ref) {
+    return "Module";
+  }
+  const parts = ref.split("/").filter(Boolean);
+  return parts[parts.length - 1] || ref;
+}
+
+function moduleSubtitle(row) {
+  const ref = String(row?.ref || "").trim();
+  const latestResolved = Array.isArray(row?.resolvedRefs) && row.resolvedRefs.length ? row.resolvedRefs[row.resolvedRefs.length - 1] : "";
+  return latestResolved || ref || "";
+}
+
+function functionModuleText(row) {
+  const ref = String(row?.moduleRef || "").trim();
+  if (!ref || ref === "core") {
+    return "Core";
+  }
+  return ref;
+}
+
+function functionModuleCell(row) {
+  const ref = String(row?.moduleRef || "").trim();
+  if (!ref || ref === "core") {
+    return tonePill("neutral", "Core");
+  }
+  const module = moduleRowByRef(ref);
+  return module ? entityInlineLink("modules", module.routeID, module.ref) : detailCode(ref);
+}
+
+function functionReceiverTypeCell(row) {
+  const text = String(row?.receiverType || "").trim();
+  if (!text) {
+    return "Unknown";
+  }
+  if (text === "Query") {
+    return tonePill("neutral", "Query");
+  }
+  return objectTypeLinkFromName(text, row?.receiverTypeID || "");
+}
+
+function objectTypeModuleLinks(row) {
+  const ref = objectTypeModuleRef(row);
+  const module = moduleRowByRef(ref);
+  return module ? [entityInlineLink("modules", module.routeID, module.ref)] : [];
+}
+
+function objectTypeModuleRef(row) {
+  const direct = String(row?.moduleRef || "").trim();
+  if (direct) {
+    return direct;
+  }
+  const refs = Array.isArray(row?.moduleRefs) ? row.moduleRefs.filter(Boolean) : [];
+  return refs[0] || "";
+}
+
+function moduleRefsSummaryText(rowOrModuleRefs) {
+  if (Array.isArray(rowOrModuleRefs)) {
+    return rowOrModuleRefs.length > 0 ? rowOrModuleRefs[0] : "Core";
+  }
+  return objectTypeModuleRef(rowOrModuleRefs) || "Core";
+}
+
+function modulePreludeCallRows(row) {
+  const ids = new Set(Array.isArray(row?.callIDs) ? row.callIDs : []);
+  return callRows().filter((call) => ids.has(String(call.id || "")));
+}
+
+function moduleTypeRows(row) {
+  const ref = String(row?.ref || "");
+  if (!ref) {
+    return [];
+  }
+  return objectTypeRows().filter((item) => objectTypeModuleRef(item) === ref);
+}
+
+function moduleFunctionRows(row) {
+  const ref = String(row?.ref || "");
+  if (!ref) {
+    return [];
+  }
+  return functionRows()
+    .filter((item) => String(item?.moduleRef || "") === ref)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+}
+
+function moduleRowsForCall(row) {
+  const callID = String(row?.id || "");
+  const sessionID = String(row?.sessionID || "");
+  const clientID = String(row?.clientID || "");
+  return moduleRows().filter((module) => {
+    if (Array.isArray(module?.callIDs) && module.callIDs.includes(callID)) {
+      return true;
+    }
+    if (clientID && Array.isArray(module?.clientIDs) && module.clientIDs.includes(clientID)) {
+      return true;
+    }
+    return sessionID && Array.isArray(module?.sessionIDs) && module.sessionIDs.includes(sessionID);
+  });
+}
+
+function directModuleRowsForCall(row) {
+  const callID = String(row?.id || "").trim();
+  if (!callID) {
+    return [];
+  }
+  return moduleRows().filter((module) => Array.isArray(module?.callIDs) && module.callIDs.includes(callID));
+}
+
+function scopedModuleRowsForCall(row) {
+  const sessionID = String(row?.sessionID || "").trim();
+  const clientID = String(row?.clientID || "").trim();
+  if (!sessionID && !clientID) {
+    return [];
+  }
+  return moduleRows().filter((module) => {
+    if (clientID && Array.isArray(module?.clientIDs) && module.clientIDs.includes(clientID)) {
+      return true;
+    }
+    return sessionID && Array.isArray(module?.sessionIDs) && module.sessionIDs.includes(sessionID);
+  });
+}
+
+function uniqueRow(rows) {
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    return null;
+  }
+  return rows[0] || null;
+}
+
+function dedupeByKey(rows, keyFn) {
+  const seen = new Set();
+  const out = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = String(keyFn?.(row) || "");
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
+function canonicalModuleRowForCall(row) {
+  const direct = uniqueRow(directModuleRowsForCall(row));
+  if (direct) {
+    return direct;
+  }
+  return uniqueRow(scopedModuleRowsForCall(row));
+}
+
+function functionRowForCall(row) {
+  const direct = functionRowByID(row?.functionID);
+  if (direct) {
+    return direct;
+  }
+  return null;
+}
+
+function rowsShareScope(a, b) {
+  const sessionIDsA = new Set(Array.isArray(a?.sessionIDs) ? a.sessionIDs.map((value) => String(value || "")).filter(Boolean) : []);
+  const clientIDsA = new Set(Array.isArray(a?.clientIDs) ? a.clientIDs.map((value) => String(value || "")).filter(Boolean) : []);
+  const traceIDsA = new Set(Array.isArray(a?.traceIDs) ? a.traceIDs.map((value) => String(value || "")).filter(Boolean) : []);
+  const sessionIDsB = Array.isArray(b?.sessionIDs) ? b.sessionIDs : [];
+  if (sessionIDsB.some((value) => sessionIDsA.has(String(value || "")))) {
+    return true;
+  }
+  const clientIDsB = Array.isArray(b?.clientIDs) ? b.clientIDs : [];
+  if (clientIDsB.some((value) => clientIDsA.has(String(value || "")))) {
+    return true;
+  }
+  const traceIDsB = Array.isArray(b?.traceIDs) ? b.traceIDs : [];
+  return traceIDsB.some((value) => traceIDsA.has(String(value || "")));
+}
+
+function moduleSnapshotDefinedTypeNames(row) {
+  const defs = row?.outputState?.fields?.ObjectDefs?.value;
+  if (!Array.isArray(defs) || defs.length === 0) {
+    return [];
+  }
+  const names = new Set();
+  for (const item of defs) {
+    const asObject = item?.AsObject;
+    if (asObject?.Valid === false) {
+      continue;
+    }
+    const value = asObject?.Value || item || {};
+    const originalName = String(value?.OriginalName || "").trim();
+    const name = String(value?.Name || "").trim();
+    if (originalName) {
+      names.add(originalName);
+      continue;
+    }
+    if (name) {
+      names.add(name);
+    }
+  }
+  return Array.from(names.values()).sort();
+}
+
+function moduleSnapshotRowsByMutationReceiver(row) {
+  const dagqlID = String(row?.dagqlID || "").trim();
+  if (!dagqlID) {
+    return [];
+  }
+  return callRows()
+    .filter((call) => String(call?.receiverDagqlID || "").trim() === dagqlID)
+    .map((call) => objectRowByID(call?.outputDagqlID))
+    .filter((item) => String(item?.typeName || "").trim() === "Module");
+}
+
+function canonicalModuleRowForModuleSnapshotByTypes(row) {
+  const typeNames = moduleSnapshotDefinedTypeNames(row);
+  if (typeNames.length === 0) {
+    return null;
+  }
+  const candidates = moduleRows().filter((module) => {
+    if (!rowsShareScope(module, row)) {
+      return false;
+    }
+    const names = new Set(moduleTypeRows(module).map((item) => String(item?.name || "").trim()).filter(Boolean));
+    if (names.size === 0) {
+      return false;
+    }
+    return typeNames.every((name) => names.has(name));
+  });
+  return uniqueRow(candidates);
+}
+
+function moduleSnapshotCanonicalRow(row, visited = new Set()) {
+  if (!row || String(row.typeName || "").trim() !== "Module") {
+    return null;
+  }
+  if (moduleSnapshotCanonicalCache.has(row)) {
+    return moduleSnapshotCanonicalCache.get(row);
+  }
+  const dagqlID = String(row.dagqlID || "").trim();
+  if (!dagqlID || visited.has(dagqlID)) {
+    return null;
+  }
+  visited.add(dagqlID);
+
+  const directMatches = new Map();
+  const producedBy = Array.isArray(row?.producedByCallIDs) ? row.producedByCallIDs : [];
+  for (const callID of producedBy) {
+    const call = callRowByID(callID);
+    const direct = canonicalModuleRowForCall(call);
+    if (direct?.routeID) {
+      directMatches.set(direct.routeID, direct);
+    }
+  }
+  if (directMatches.size === 1) {
+    const match = Array.from(directMatches.values())[0];
+    moduleSnapshotCanonicalCache.set(row, match);
+    return match;
+  }
+  if (directMatches.size > 1) {
+    moduleSnapshotCanonicalCache.set(row, null);
+    return null;
+  }
+
+  const typeMatch = canonicalModuleRowForModuleSnapshotByTypes(row);
+  if (typeMatch) {
+    moduleSnapshotCanonicalCache.set(row, typeMatch);
+    return typeMatch;
+  }
+
+  const receiverMatches = new Map();
+  for (const callID of producedBy) {
+    const call = callRowByID(callID);
+    const receiver = objectRowByID(call?.receiverDagqlID);
+    const candidate = moduleSnapshotCanonicalRow(receiver, visited);
+    if (candidate?.routeID) {
+      receiverMatches.set(candidate.routeID, candidate);
+    }
+  }
+  if (receiverMatches.size === 1) {
+    const match = Array.from(receiverMatches.values())[0];
+    moduleSnapshotCanonicalCache.set(row, match);
+    return match;
+  }
+
+  const successorMatches = new Map();
+  for (const successor of moduleSnapshotRowsByMutationReceiver(row)) {
+    const candidate = moduleSnapshotCanonicalRow(successor, visited);
+    if (candidate?.routeID) {
+      successorMatches.set(candidate.routeID, candidate);
+    }
+  }
+  if (successorMatches.size === 1) {
+    const match = Array.from(successorMatches.values())[0];
+    moduleSnapshotCanonicalCache.set(row, match);
+    return match;
+  }
+  moduleSnapshotCanonicalCache.set(row, null);
+  return null;
+}
+
+function moduleSnapshotRows(moduleRow) {
+  const targetRef = String(moduleRow?.ref || "").trim();
+  if (!targetRef) {
+    return [];
+  }
+  return objectRows()
+    .filter((row) => String(row?.typeName || "").trim() === "Module")
+    .filter((row) => String(moduleSnapshotCanonicalRow(row)?.ref || "") === targetRef)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+}
+
+function callArgumentRows(row) {
+  const args = Array.isArray(row?.args) ? row.args : [];
+  if (args.length > 0) {
+    return args.map((arg, index) => ({
+      name: String(arg?.name || "").trim() || `arg ${index + 1}`,
+      kind: String(arg?.kind || "").trim() || (arg?.dagqlID ? "object" : "literal"),
+      dagqlID: String(arg?.dagqlID || "").trim(),
+      value: arg?.value,
+    }));
+  }
+  return (Array.isArray(row?.argDagqlIDs) ? row.argDagqlIDs : [])
+    .filter(Boolean)
+    .map((dagqlID, index) => ({
+      name: `input ${index + 1}`,
+      kind: "object",
+      dagqlID: String(dagqlID || "").trim(),
+      value: null,
+    }));
+}
+
+function callArgumentKindLabel(arg) {
+  const kind = String(arg?.kind || "").trim();
+  switch (kind) {
+    case "object":
+      return "object ref";
+    case "object-literal":
+      return "object";
+    case "bool":
+      return "bool";
+    case "enum":
+      return "enum";
+    case "int":
+      return "int";
+    case "float":
+      return "float";
+    case "list":
+      return "list";
+    case "null":
+      return "null";
+    case "string":
+      return "string";
+    default:
+      return kind || "literal";
+  }
+}
+
+function callArgumentValueCell(arg) {
+  const dagqlID = String(arg?.dagqlID || "").trim();
+  if (dagqlID) {
+    const object = objectRowByID(dagqlID);
+    if (object) {
+      return entityInlineLink("objects", object.routeID, objectTitle(object));
+    }
+    return detailCode(shortDagqlID(dagqlID));
+  }
+  if (String(arg?.kind || "").trim() === "null") {
+    return detailCode("null");
+  }
+  return detailCode(callArgumentValueText(arg?.value));
+}
+
+function callArgumentTypeCell(arg) {
+  const dagqlID = String(arg?.dagqlID || "").trim();
+  if (dagqlID) {
+    const object = objectRowByID(dagqlID);
+    return object ? objectTypeLinkFromName(object.typeName, object.typeID) : escapeHTML("Object");
+  }
+  return escapeHTML(callArgumentKindLabel(arg));
+}
+
+function callArgumentValueText(value) {
+  if (value == null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function objectRowsForType(typeRow) {
+  const ids = new Set(Array.isArray(typeRow?.snapshotDagqlIDs) ? typeRow.snapshotDagqlIDs : []);
+  return objectRows().filter((row) => ids.has(String(row?.dagqlID || "")));
+}
+
+function functionRowsForType(typeRow) {
+  const typeID = String(typeRow?.id || "").trim();
+  const typeName = String(typeRow?.name || "").trim();
+  return functionRows()
+    .filter((row) => {
+      if (typeID && String(row?.returnTypeID || "") === typeID) {
+        return true;
+      }
+      return typeName && String(row?.returnType || "") === typeName;
+    })
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+}
+
+function functionCallRows(row, entry = null) {
+  const ids = new Set(Array.isArray(row?.callIDs) ? row.callIDs : []);
+  const combined = dedupeByKey(
+    [...callRows(), ...(Array.isArray(entry?.items) ? entry.items : [])].map((call) => ({
+      ...call,
+      routeID: String(call?.routeID || call?.id || ""),
+    })),
+    (call) => String(call?.routeID || call?.id || ""),
+  );
+  return combined
+    .filter((call) => {
+      const callID = String(call?.routeID || call?.id || "");
+      if (ids.size > 0) {
+        return ids.has(callID);
+      }
+      return String(call?.functionID || "") === String(row?.id || "");
+    })
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+}
+
+function functionSnapshotRows(row) {
+  const ids = new Set(Array.isArray(row?.snapshotDagqlIDs) ? row.snapshotDagqlIDs : []);
+  return objectRows()
+    .filter((item) => ids.has(String(item?.dagqlID || "")))
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+}
+
+function functionSnapshotCanonicalRow(row) {
+  const dagqlID = String(row?.dagqlID || "").trim();
+  if (!dagqlID) {
+    return null;
+  }
+  return functionRows().find((item) => Array.isArray(item?.snapshotDagqlIDs) && item.snapshotDagqlIDs.includes(dagqlID)) || null;
+}
+
+function functionReturnTypeName(row) {
+  return functionSnapshotReturnTypeName(row?.outputState);
+}
+
+function functionSnapshotName(row) {
+  return functionSnapshotFieldString(row?.outputState, "Name");
+}
+
+function functionSnapshotFieldString(outputState, fieldName) {
+  const field = outputState?.fields?.[fieldName];
+  return String(field?.value || "").trim();
+}
+
+function functionSnapshotReturnTypeName(outputState) {
+  if (!outputState || String(outputState.type || "").trim() !== "Function") {
+    return "";
+  }
+  return String(outputState?.fields?.ReturnType?.value?.AsObject?.Value?.Name || "").trim();
+}
+
+function objectTypeLinkFromName(typeName, typeID = "") {
+  const text = String(typeName || "").trim();
+  if (!text) {
+    return "Unknown";
+  }
+  const directID = String(typeID || "").trim();
+  if (directID) {
+    const row = objectTypeRowByID(directID);
+    return entityInlineLink("object-types", directID, row?.name || text);
+  }
+  const row = objectTypeRowByName(text);
+  if (!row) {
+    return detailCode(text);
+  }
+  return entityInlineLink("object-types", row.routeID, row.name);
+}
+
+function objectSummaryLink(dagqlID, label = "") {
+  const row = objectRowByID(dagqlID);
+  if (!row) {
+    return dagqlID ? detailCode(label || shortDagqlID(dagqlID)) : "";
+  }
+  return entityInlineLink("objects", row.routeID, label || objectTitle(row));
+}
+
+function callSummaryLink(callID, label = "") {
+  const row = callRowByID(callID);
+  if (!row) {
+    return callID ? detailCode(label || shortID(callID)) : "";
+  }
+  return entityInlineLink("calls", row.routeID, label || callTitle(row));
+}
+
+function moduleSummaryLink(ref) {
+  if (String(ref || "").trim() === "core") {
+    return tonePill("neutral", "Core");
+  }
+  const row = moduleRowByRef(ref);
+  if (!row) {
+    return ref ? detailCode(ref) : "";
+  }
+  return entityInlineLink("modules", row.routeID, row.ref);
+}
+
+function objectProducedBySummary(row) {
+  const ids = Array.isArray(row?.producedByCallIDs) ? row.producedByCallIDs : [];
+  if (!ids.length) {
+    return "None";
+  }
+  if (ids.length === 1) {
+    return callSummaryLink(ids[0]);
+  }
+  return detailLinkList(ids.slice(0, 3).map((id) => callSummaryLink(id, shortID(id))), `${ids.length} calls`);
+}
+
+function objectFieldRows(row) {
+  const fields = row?.outputState?.fields;
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+    return [];
+  }
+  return Object.entries(fields)
+    .map(([key, field]) => ({
+      name: humanizePipelineFieldLabel(key),
+      rawName: key,
+      type: String(field?.type || "").trim(),
+      value: field?.value,
+      refs: Array.isArray(field?.refs) ? field.refs.filter(Boolean) : [],
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderObjectFieldValue(value) {
+  const { text, block } = objectFieldValueText(value);
+  if (block) {
+    return `<pre class="v3-detail-code v3-detail-code-block">${escapeHTML(text)}</pre>`;
+  }
+  return detailCode(text);
+}
+
+function objectFieldValueText(value) {
+  if (value === null) {
+    return { text: "null", block: false };
+  }
+  if (value === undefined) {
+    return { text: "undefined", block: false };
+  }
+  if (typeof value === "string") {
+    return { text: value === "" ? '""' : value, block: false };
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return { text: String(value), block: false };
+  }
+  if (Array.isArray(value) || typeof value === "object") {
+    const compact = safeJSONStringify(value);
+    if (compact.length <= 96 && !compact.includes("\\n")) {
+      return { text: compact, block: false };
+    }
+    return { text: safeJSONStringify(value, 2), block: true };
+  }
+  return { text: String(value), block: false };
+}
+
+function safeJSONStringify(value, spacing = 0) {
+  try {
+    return JSON.stringify(value, null, spacing) || String(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function deviceSummaryForEntity(entityID, row, fallback = "Unknown") {
+  const devices = deviceRowsForEntity(entityID, row);
+  if (!devices.length) {
+    return fallback;
+  }
+  const links = devices.map((device) => {
+    const href = entityPath("devices", device.routeID);
+    return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(deviceTitle(device))}</a>`;
+  });
+  if (links.length === 1) {
+    return links[0];
+  }
+  return `<div class="v3-detail-tags">${links.map((link) => `<span>${link}</span>`).join("")}</div>`;
+}
+
+function deviceClientPlatform(client) {
+  const os = String(client?.clientOS || "").trim();
+  const arch = String(client?.clientArch || "").trim();
+  if (os && arch) {
+    return `${os} ${arch}`;
+  }
+  return os || arch || "";
+}
+
+function deviceClientSessionCell(client) {
+  const sessionID = String(client?.sessionID || "");
+  const traceID = String(client?.traceID || "");
+  if (!sessionID) {
+    return "";
+  }
+  const href = entityPath("sessions", sessionRouteID(traceID, sessionID));
+  return linkedPrimaryCell(shortID(sessionID), "", href);
+}
+
 function shortMachineID(value, width = 6) {
   const text = String(value || "").toLowerCase().replaceAll(/[^a-z0-9]+/g, "");
   if (!text) {
     return "";
   }
   return text.slice(0, width);
+}
+
+function deviceTitle(row) {
+  const label = String(row?.name || "").trim();
+  if (label) {
+    return label;
+  }
+  const machineID = shortMachineID(row?.machineID || row?.id || "");
+  if (machineID) {
+    return `Device ${machineID}`;
+  }
+  return "Device";
+}
+
+function deviceClientRows(row) {
+  const rows = Array.isArray(row?.clients) ? row.clients.slice() : [];
+  return rows.sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+}
+
+function devicePlatforms(row) {
+  const values = new Set();
+  for (const client of deviceClientRows(row)) {
+    const os = String(client?.clientOS || "").trim();
+    const arch = String(client?.clientArch || "").trim();
+    const value = [os, arch].filter(Boolean).join(" ");
+    if (value) {
+      values.add(value);
+    }
+  }
+  return Array.from(values);
+}
+
+function deviceSubtitle(row) {
+  const platforms = devicePlatforms(row);
+  if (platforms.length === 1) {
+    return platforms[0];
+  }
+  if (platforms.length > 1) {
+    return `${platforms[0]} +${platforms.length - 1}`;
+  }
+  const latest = deviceClientRows(row)[0];
+  if (latest?.name) {
+    return latest.name;
+  }
+  return "";
 }
 
 function workspaceRootNeedsHostQualifier(root) {
@@ -3476,6 +6676,18 @@ function overviewItemLabel(entity, row) {
   switch (entity.id) {
     case "pipelines":
       return row.command || row.name || "Pipeline";
+    case "calls":
+      return callTitle(row);
+    case "functions":
+      return functionTitle(row);
+    case "devices":
+      return deviceTitle(row);
+    case "objects":
+      return objectTitle(row);
+    case "object-types":
+      return row.name || "Type";
+    case "modules":
+      return moduleTitle(row);
     case "sessions":
       return shortID(row.id);
     case "workspaces":
@@ -3501,6 +6713,9 @@ function overviewItemStatus(entity, row) {
   if (entity.id === "sessions") {
     return sessionStatusLabel(row);
   }
+  if (entity.id === "calls") {
+    return row.statusCode || "";
+  }
   return row.status || "";
 }
 
@@ -3516,7 +6731,7 @@ function supportsDetailRoute(entityID) {
 }
 
 function materializeEntity(entity) {
-  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "checks" && entity.id !== "workspaces" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
+  if (!entity || (entity.id !== "terminals" && entity.id !== "repls" && entity.id !== "checks" && entity.id !== "workspaces" && entity.id !== "devices" && entity.id !== "calls" && entity.id !== "functions" && entity.id !== "objects" && entity.id !== "object-types" && entity.id !== "modules" && entity.id !== "services" && entity.id !== "sessions" && entity.id !== "pipelines" && entity.id !== "shells" && entity.id !== "workspace-ops" && entity.id !== "git-remotes" && entity.id !== "registries")) {
     return entity;
   }
   const config = liveDomainConfigs[entity.id];
@@ -3533,6 +6748,24 @@ function materializeEntity(entity) {
     }
     if (entity.id === "workspaces") {
       return buildLiveWorkspacesEntity(entity, live.items);
+    }
+    if (entity.id === "devices") {
+      return buildLiveDevicesEntity(entity, live.items);
+    }
+    if (entity.id === "calls") {
+      return buildLiveCallsEntity(entity, live.items);
+    }
+    if (entity.id === "functions") {
+      return buildLiveFunctionsEntity(entity, live.items);
+    }
+    if (entity.id === "objects") {
+      return buildLiveObjectsEntity(entity, live.items);
+    }
+    if (entity.id === "object-types") {
+      return buildLiveObjectTypesEntity(entity, live.items);
+    }
+    if (entity.id === "modules") {
+      return buildLiveModulesEntity(entity, live.items);
     }
     if (entity.id === "services") {
       return buildLiveServicesEntity(entity, live.items);
@@ -3897,7 +7130,7 @@ function buildLiveWorkspacesEntity(base, items) {
     dynamicKind: "workspaces",
     liveItems,
     blurb:
-      "This domain is now live as observed workspace roots. Each row is one absolute host root repeatedly touched by authoritative workspace-op calls, with relative exports attached only when one root is unambiguous.",
+      "This domain is now live as inferred workspace roots. Each row is one absolute root anchored either by module-source provenance or by repeated absolute host workspace ops, with relative ops attached only when one root is unambiguous.",
     metrics: [
       {
         label: "Observed roots",
@@ -3940,6 +7173,300 @@ function buildLiveWorkspacesEntity(base, items) {
         detail: "These are observed roots derived from ops, not canonical Workspace objects yet.",
       },
     ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveDevicesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.machineID || item.id || ""),
+      name: deviceTitle(item),
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  const sessionTotal = liveItems.reduce((sum, item) => sum + Number(item.sessionCount || 0), 0);
+  const clientTotal = liveItems.reduce((sum, item) => sum + Number(item.clientCount || 0), 0);
+  const osCount = new Set(
+    liveItems.flatMap((item) =>
+      Array.isArray(item?.clients) ? item.clients.map((client) => String(client?.clientOS || "").trim()).filter(Boolean) : [],
+    ),
+  ).size;
+
+  return {
+    ...base,
+    dynamicKind: "devices",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one anonymous host identity derived only from top-level clients, then used to attach the sessions, pipelines, and local workspaces that originated from that machine.",
+    metrics: [
+      {
+        label: "Detected devices",
+        value: String(liveItems.length),
+        detail: `${clientTotal} top-level clients across ${sessionTotal} sessions`,
+      },
+      {
+        label: "Host spread",
+        value: String(osCount || 0),
+        detail: "Distinct client OS variants seen in current device rows.",
+      },
+      {
+        label: "Last activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].lastSeenUnixNano) : "none",
+        detail: "Most recently active top-level host identity.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: deviceTitle(item),
+      value: String(item.sessionCount || 0),
+      note: deviceSubtitle(item) || `${item.traceCount || 0} traces`,
+    })),
+    signals: [
+      {
+        label: "Root-only derivation",
+        value: "Yes",
+        tone: "good",
+        detail: "Nested module/runtime clients do not produce standalone device identities.",
+      },
+      {
+        label: "Session spread",
+        value: String(sessionTotal),
+        tone: "neutral",
+        detail: "Derived sessions attached through top-level client ownership.",
+      },
+      {
+        label: "Client fan-in",
+        value: String(clientTotal),
+        tone: clientTotal > liveItems.length ? "neutral" : "good",
+        detail: "Repeated top-level clients collapsed onto stable host identities.",
+      },
+    ],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveCallsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.id || ""),
+      name: callTitle(item),
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.startUnixNano || 0) - Number(a.startUnixNano || 0));
+  const outputCount = liveItems.filter((item) => item.outputDagqlID).length;
+  const receiverCount = liveItems.filter((item) => item.receiverDagqlID).length;
+  return {
+    ...base,
+    dynamicKind: "calls",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one semantic call span, with parent-call edges and receiver/output DAGQL links preserved as first-class relationships.",
+    metrics: [
+      {
+        label: "Calls",
+        value: String(liveItems.length),
+        detail: `${outputCount} with output snapshots`,
+      },
+      {
+        label: "Receivers",
+        value: String(receiverCount),
+        detail: "Calls that were invoked on an existing object snapshot.",
+      },
+      {
+        label: "Latest activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].startUnixNano) : "none",
+        detail: "Most recently observed call in the current result set.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: callTitle(item),
+      value: item.returnType || "Void",
+      note: callSubtitle(item) || "call",
+    })),
+    signals: [],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveFunctionsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.id || ""),
+      name: functionTitle(item),
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  return {
+    ...base,
+    dynamicKind: "functions",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one canonical function identity, with module ownership, attached calls, and optional function metadata snapshots kept together instead of being split between call spans and object snapshots.",
+    metrics: [
+      {
+        label: "Functions",
+        value: String(liveItems.length),
+        detail: `${liveItems.reduce((sum, item) => sum + Number(item.callCount || 0), 0)} attached calls`,
+      },
+      {
+        label: "Snapshots",
+        value: String(liveItems.reduce((sum, item) => sum + Number(item.snapshotCount || 0), 0)),
+        detail: "Recorded Function object snapshots attached to canonical function rows.",
+      },
+      {
+        label: "Latest activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].lastSeenUnixNano) : "none",
+        detail: "Most recently observed function activity.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: functionTitle(item),
+      value: item.returnType || "Void",
+      note: functionSubtitle(item),
+    })),
+    signals: [],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveObjectsEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.dagqlID || ""),
+      name: objectTitle(item),
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  const fieldRefCount = liveItems.reduce((sum, item) => sum + (Array.isArray(item.fieldRefs) ? item.fieldRefs.length : 0), 0);
+  return {
+    ...base,
+    dynamicKind: "objects",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one immutable DAGQL snapshot, with field refs and producing call links surfaced directly instead of being hidden inside a graph overlay.",
+    metrics: [
+      {
+        label: "Objects",
+        value: String(liveItems.length),
+        detail: `${fieldRefCount} field refs across current snapshots`,
+      },
+      {
+        label: "Typed snapshots",
+        value: String(new Set(liveItems.map((item) => item.typeName).filter(Boolean)).size),
+        detail: "Distinct type names represented by current snapshots.",
+      },
+      {
+        label: "Latest activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].lastSeenUnixNano) : "none",
+        detail: "Most recently observed object snapshot.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: objectTitle(item),
+      value: item.typeName || "Object",
+      note: item.fieldRefs?.length ? `${item.fieldRefs.length} refs` : "no refs",
+    })),
+    signals: [],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveObjectTypesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.id || ""),
+      name: String(item.name || "").trim() || "Type",
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  return {
+    ...base,
+    dynamicKind: "object-types",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one aggregated type name, combining real snapshots with function metadata that returns that type, plus an optional module dependency when provenance is honest.",
+    metrics: [
+      {
+        label: "Types",
+        value: String(liveItems.length),
+        detail: `${liveItems.reduce((sum, item) => sum + Number(item.functionCount || 0), 0)} function return observations`,
+      },
+      {
+        label: "Module-backed",
+        value: String(liveItems.filter((item) => Array.isArray(item.moduleRefs) && item.moduleRefs.length > 0).length),
+        detail: "Types with unambiguous module dependency links.",
+      },
+      {
+        label: "Latest activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].lastSeenUnixNano) : "none",
+        detail: "Most recently observed type activity.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: item.name,
+      value: String(item.snapshotCount || 0),
+      note: `${item.functionCount || 0} functions`,
+    })),
+    signals: [],
+    evidence: [],
+    relations: [],
+    inventory: liveItems,
+  };
+}
+
+function buildLiveModulesEntity(base, items) {
+  const liveItems = items
+    .map((item) => ({
+      ...item,
+      routeID: String(item.ref || ""),
+      name: moduleTitle(item),
+    }))
+    .filter((item) => item.routeID)
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+  return {
+    ...base,
+    dynamicKind: "modules",
+    liveItems,
+    blurb:
+      "This domain is now live. Each row is one loaded module reference, with prelude setup calls retained so custom types can depend on a concrete schema source page.",
+    metrics: [
+      {
+        label: "Modules",
+        value: String(liveItems.length),
+        detail: `${liveItems.reduce((sum, item) => sum + (Array.isArray(item.callIDs) ? item.callIDs.length : 0), 0)} prelude calls`,
+      },
+      {
+        label: "Traces",
+        value: String(new Set(liveItems.flatMap((item) => item.traceIDs || [])).size),
+        detail: "Distinct traces containing loaded modules.",
+      },
+      {
+        label: "Latest activity",
+        value: liveItems.length ? relativeTimeFromNow(liveItems[0].lastSeenUnixNano) : "none",
+        detail: "Most recently seen module load lane.",
+      },
+    ],
+    highlights: liveItems.slice(0, 3).map((item) => ({
+      title: moduleTitle(item),
+      value: String(item.callIDs?.length || 0),
+      note: moduleSubtitle(item),
+    })),
+    signals: [],
     evidence: [],
     relations: [],
     inventory: liveItems,
@@ -4471,7 +7998,7 @@ function terminalActivityCell(row) {
 }
 
 function serviceCreatedByCell(row) {
-  return primaryCell(row.createdByCallName || "Unknown", row.pipelineCommand || "");
+  return primaryCell(row.createdByCallName || "Unknown", row.producerLabel || servicePipelineLabel(row));
 }
 
 function serviceSessionCell(row) {
@@ -4511,7 +8038,15 @@ function servicePipelineSummary(row) {
   if (!href) {
     return "None";
   }
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(row.pipelineCommand || "Pipeline")}</a>`;
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(servicePipelineLabel(row) || "Pipeline")}</a>`;
+}
+
+function servicePrimarySubtitle(row) {
+  return row.imageRef || row.producerLabel || servicePipelineLabel(row);
+}
+
+function servicePipelineLabel(row) {
+  return row.pipelineName || row.pipelineCommand || "";
 }
 
 function workspaceOpSessionCell(row) {
@@ -4586,6 +8121,26 @@ function linkedPrimaryCell(title, subtitle, href) {
   return `
     <a class="v3-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">
       ${primaryCell(title, subtitle)}
+    </a>
+  `;
+}
+
+function callCell(title, subtitle) {
+  return `
+    <div class="v3-cell-primary v3-call-cell">
+      <code class="v3-call-signature">${escapeHTML(title)}</code>
+      ${subtitle ? `<span>${escapeHTML(subtitle)}</span>` : ""}
+    </div>
+  `;
+}
+
+function linkedCallCell(title, subtitle, href) {
+  if (!href) {
+    return callCell(title, subtitle);
+  }
+  return `
+    <a class="v3-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">
+      ${callCell(title, subtitle)}
     </a>
   `;
 }
@@ -4677,6 +8232,22 @@ function shortID(raw, width = 12) {
     return text;
   }
   return text.slice(0, width);
+}
+
+function looksLikeDigest(value) {
+  const text = String(value || "");
+  return (text.startsWith("xxh3:") || text.startsWith("sha256:")) && text.length > 12;
+}
+
+function truncateText(value, maxLen) {
+  const text = String(value || "");
+  if (!text || text.length <= maxLen) {
+    return text;
+  }
+  if (maxLen <= 1) {
+    return text.slice(0, maxLen);
+  }
+  return `${text.slice(0, maxLen - 1)}…`;
 }
 
 function shortRouteID(left, right) {
@@ -4771,12 +8342,22 @@ function navIcon(entityID) {
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 3.5h11v9h-11z"></path><path d="M4.5 6 6.5 8 4.5 10"></path><path d="M8 10h2.5"></path></svg>',
     services:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M8 2.5 12.5 5v6L8 13.5 3.5 11V5z"></path><path d="M8 2.5V8m4.5-3L8 8 3.5 5"></path></svg>',
+    calls:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M3 8h10"></path><path d="M9 4l4 4-4 4"></path><circle cx="4" cy="8" r="1.5"></circle></svg>',
+    objects:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M8 2.5 12.5 5v6L8 13.5 3.5 11V5z"></path><path d="M8 2.5 3.5 5 8 7.5 12.5 5 8 2.5Z"></path></svg>',
+    "object-types":
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M3.5 4.5h9"></path><path d="M8 4.5v7"></path><path d="M5 7.5h6"></path><path d="M4.5 11.5h7"></path></svg>',
+    modules:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M3.5 4.5h5l2 2h2v5h-9z"></path><path d="M8.5 4.5v2h2"></path></svg>',
     repls:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 3.5h11v9h-11z"></path><path d="M4.5 6.5 6.5 8 4.5 9.5"></path><path d="M8 9.5h3"></path></svg>',
     checks:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M3.5 8.5 6.5 11 12.5 5"></path><path d="M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"></path></svg>',
     workspaces:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><path d="M2.5 5.5h4l1 1h6v5.5h-11z"></path><path d="M2.5 5.5V4.5h4l1 1"></path></svg>',
+    devices:
+      '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><rect x="3" y="3.5" width="10" height="6.5" rx="1"></rect><path d="M5.5 12.5h5"></path><path d="M7 10v2.5M9 10v2.5"></path></svg>',
     sessions:
       '<svg viewBox="0 0 16 16" role="presentation" focusable="false"><circle cx="5" cy="8" r="2.5"></circle><circle cx="11" cy="8" r="2.5"></circle><path d="M7.5 8h1"></path></svg>',
     pipelines:

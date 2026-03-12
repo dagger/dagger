@@ -148,3 +148,29 @@ ORDER BY end_unix_nano ASC, start_unix_nano ASC, span_id ASC
 
 	return spans, nil
 }
+
+func (s *Store) ListTraceIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT trace_id
+FROM traces
+ORDER BY last_seen_unix_nano DESC, trace_id ASC
+`)
+	if err != nil {
+		return nil, fmt.Errorf("query trace ids: %w", err)
+	}
+	defer rows.Close()
+
+	traceIDs := make([]string, 0)
+	for rows.Next() {
+		var traceID string
+		if err := rows.Scan(&traceID); err != nil {
+			return nil, fmt.Errorf("scan trace id: %w", err)
+		}
+		traceIDs = append(traceIDs, traceID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate trace ids: %w", err)
+	}
+
+	return traceIDs, nil
+}

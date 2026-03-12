@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/internal/odag/derive"
 	"github.com/dagger/dagger/internal/odag/store"
 	"github.com/dagger/dagger/internal/odag/transform"
@@ -27,6 +28,7 @@ type v2Query struct {
 	TraceID         string
 	SessionID       string
 	ClientID        string
+	FunctionID      string
 	FromUnixNano    int64
 	ToUnixNano      int64
 	IncludeInternal bool
@@ -54,26 +56,36 @@ type v2Span struct {
 }
 
 type v2Call struct {
-	ID                    string   `json:"id"`
-	TraceID               string   `json:"traceID"`
-	SessionID             string   `json:"sessionID,omitempty"`
-	SpanID                string   `json:"spanID"`
-	ParentCallID          string   `json:"parentCallID,omitempty"`
-	ClientID              string   `json:"clientID,omitempty"`
-	Name                  string   `json:"name"`
-	StartUnixNano         int64    `json:"startUnixNano"`
-	EndUnixNano           int64    `json:"endUnixNano"`
-	StatusCode            string   `json:"statusCode"`
-	ReturnType            string   `json:"returnType,omitempty"`
-	TopLevel              bool     `json:"topLevel"`
-	CallDepth             int      `json:"callDepth"`
-	ParentChainIncomplete bool     `json:"parentChainIncomplete,omitempty"`
-	ReceiverDagqlID       string   `json:"receiverDagqlID,omitempty"`
-	ReceiverIsQuery       bool     `json:"receiverIsQuery,omitempty"`
-	ArgDagqlIDs           []string `json:"argDagqlIDs,omitempty"`
-	OutputDagqlID         string   `json:"outputDagqlID,omitempty"`
-	DerivedOperation      string   `json:"derivedOperation,omitempty"`
-	Internal              bool     `json:"internal,omitempty"`
+	ID                    string      `json:"id"`
+	TraceID               string      `json:"traceID"`
+	SessionID             string      `json:"sessionID,omitempty"`
+	SpanID                string      `json:"spanID"`
+	ParentCallID          string      `json:"parentCallID,omitempty"`
+	ClientID              string      `json:"clientID,omitempty"`
+	Name                  string      `json:"name"`
+	StartUnixNano         int64       `json:"startUnixNano"`
+	EndUnixNano           int64       `json:"endUnixNano"`
+	StatusCode            string      `json:"statusCode"`
+	ReturnType            string      `json:"returnType,omitempty"`
+	TopLevel              bool        `json:"topLevel"`
+	CallDepth             int         `json:"callDepth"`
+	ParentChainIncomplete bool        `json:"parentChainIncomplete,omitempty"`
+	ReceiverDagqlID       string      `json:"receiverDagqlID,omitempty"`
+	ReceiverIsQuery       bool        `json:"receiverIsQuery,omitempty"`
+	ArgDagqlIDs           []string    `json:"argDagqlIDs,omitempty"`
+	Args                  []v2CallArg `json:"args,omitempty"`
+	FunctionID            string      `json:"functionID,omitempty"`
+	ReturnTypeID          string      `json:"returnTypeID,omitempty"`
+	OutputDagqlID         string      `json:"outputDagqlID,omitempty"`
+	DerivedOperation      string      `json:"derivedOperation,omitempty"`
+	Internal              bool        `json:"internal,omitempty"`
+}
+
+type v2CallArg struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind,omitempty"`
+	DagqlID string `json:"dagqlID,omitempty"`
+	Value   any    `json:"value,omitempty"`
 }
 
 type v2FieldRef struct {
@@ -84,6 +96,7 @@ type v2FieldRef struct {
 type v2ObjectSnapshot struct {
 	DagqlID           string         `json:"dagqlID"`
 	TypeName          string         `json:"typeName,omitempty"`
+	TypeID            string         `json:"typeID,omitempty"`
 	OutputState       map[string]any `json:"outputState,omitempty"`
 	FieldRefs         []v2FieldRef   `json:"fieldRefs,omitempty"`
 	SessionIDs        []string       `json:"sessionIDs,omitempty"`
@@ -167,6 +180,7 @@ type v2SpanEnvelope struct {
 	Scope      map[string]any   `json:"scope"`
 	Attributes map[string]any   `json:"attributes"`
 	Events     []map[string]any `json:"events"`
+	Links      []map[string]any `json:"links"`
 }
 
 func (s *Server) handleV2Spans(w http.ResponseWriter, r *http.Request) {
@@ -268,10 +282,19 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]v2Call, 0)
 	for _, traceID := range traceIDs {
-		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
+		}
+		typeClassifier, err := buildV2TraceObjectTypeClassifier(traceID, spans, proj, scopeIdx)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("build object type classifier for trace %s: %v", traceID, err), http.StatusInternalServerError)
+			return
+		}
+		spanByID := make(map[string]store.SpanRecord, len(spans))
+		for _, sp := range spans {
+			spanByID[sp.SpanID] = sp
 		}
 		for _, event := range proj.Events {
 			if event.RawKind != "call" {
@@ -300,6 +323,15 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 				argDagqlIDs = append(argDagqlIDs, digest)
 			}
 			sort.Strings(argDagqlIDs)
+			args := fallbackV2CallArgs(argDagqlIDs)
+			if sp, ok := spanByID[event.SpanID]; ok {
+				args = decodeV2CallArgs(sp, argDagqlIDs)
+			}
+			returnTypeID, _ := typeClassifier.classify(event.ReturnType, sessionID, clientID, true)
+			functionObservation := v2FunctionObservationFromCall(event, nil, sessionID, clientID, typeClassifier)
+			if q.FunctionID != "" && (functionObservation == nil || functionObservation.ID != q.FunctionID) {
+				continue
+			}
 			callID := spanKey(traceID, event.SpanID)
 			parentCallID := ""
 			if event.ParentCallSpanID != "" {
@@ -323,9 +355,17 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 				ReceiverDagqlID:       event.ReceiverStateDigest,
 				ReceiverIsQuery:       event.ReceiverIsQuery,
 				ArgDagqlIDs:           argDagqlIDs,
-				OutputDagqlID:         event.OutputStateDigest,
-				DerivedOperation:      event.Operation,
-				Internal:              event.Internal,
+				Args:                  args,
+				FunctionID: func() string {
+					if functionObservation != nil {
+						return functionObservation.ID
+					}
+					return ""
+				}(),
+				ReturnTypeID:     returnTypeID,
+				OutputDagqlID:    event.OutputStateDigest,
+				DerivedOperation: event.Operation,
+				Internal:         event.Internal,
 			})
 		}
 	}
@@ -346,6 +386,98 @@ func (s *Server) handleV2Calls(w http.ResponseWriter, r *http.Request) {
 		"items":             page,
 		"nextCursor":        next,
 	})
+}
+
+func decodeV2CallArgs(sp store.SpanRecord, argDagqlIDs []string) []v2CallArg {
+	call := serviceSpanCallPayload(sp)
+	if call == nil {
+		return fallbackV2CallArgs(argDagqlIDs)
+	}
+
+	args := make([]v2CallArg, 0, max(len(call.GetArgs()), len(argDagqlIDs)))
+	seenDagqlIDs := make(map[string]struct{}, len(argDagqlIDs))
+	for index, arg := range call.GetArgs() {
+		if arg == nil {
+			continue
+		}
+		name := strings.TrimSpace(arg.GetName())
+		if name == "" {
+			name = fmt.Sprintf("arg %d", index+1)
+		}
+		callArg := v2CallArg{Name: name}
+		kind, value, dagqlID := decodeV2CallArgLiteral(arg.GetValue())
+		callArg.Kind = kind
+		if dagqlID != "" {
+			callArg.DagqlID = dagqlID
+			seenDagqlIDs[dagqlID] = struct{}{}
+		} else if kind != "null" {
+			callArg.Value = value
+		}
+		args = append(args, callArg)
+	}
+
+	fallbackIndex := 0
+	for _, dagqlID := range argDagqlIDs {
+		if dagqlID == "" {
+			continue
+		}
+		if _, ok := seenDagqlIDs[dagqlID]; ok {
+			continue
+		}
+		fallbackIndex++
+		args = append(args, v2CallArg{
+			Name:    fmt.Sprintf("input %d", fallbackIndex),
+			Kind:    "object",
+			DagqlID: dagqlID,
+		})
+	}
+	return args
+}
+
+func fallbackV2CallArgs(argDagqlIDs []string) []v2CallArg {
+	if len(argDagqlIDs) == 0 {
+		return nil
+	}
+	args := make([]v2CallArg, 0, len(argDagqlIDs))
+	for index, dagqlID := range argDagqlIDs {
+		if dagqlID == "" {
+			continue
+		}
+		args = append(args, v2CallArg{
+			Name:    fmt.Sprintf("input %d", index+1),
+			Kind:    "object",
+			DagqlID: dagqlID,
+		})
+	}
+	return args
+}
+
+func decodeV2CallArgLiteral(lit *callpbv1.Literal) (kind string, value any, dagqlID string) {
+	if lit == nil {
+		return "null", nil, ""
+	}
+	switch v := lit.GetValue().(type) {
+	case *callpbv1.Literal_CallDigest:
+		return "object", nil, v.CallDigest
+	case *callpbv1.Literal_Null:
+		return "null", nil, ""
+	case *callpbv1.Literal_Bool:
+		return "bool", v.Bool, ""
+	case *callpbv1.Literal_Enum:
+		return "enum", v.Enum, ""
+	case *callpbv1.Literal_Int:
+		return "int", v.Int, ""
+	case *callpbv1.Literal_Float:
+		return "float", v.Float, ""
+	case *callpbv1.Literal_String_:
+		return "string", v.String_, ""
+	case *callpbv1.Literal_List:
+		return "list", serviceLiteralToJSON(lit), ""
+	case *callpbv1.Literal_Object:
+		return "object-literal", serviceLiteralToJSON(lit), ""
+	default:
+		return "literal", serviceLiteralToJSON(lit), ""
+	}
 }
 
 func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request) {
@@ -376,9 +508,14 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 	byID := map[string]*snapshotAgg{}
 
 	for _, traceID := range traceIDs {
-		_, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
+		spans, proj, scopeIdx, err := s.loadV2TraceScope(r.Context(), traceID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
+			return
+		}
+		typeClassifier, err := buildV2TraceObjectTypeClassifier(traceID, spans, proj, scopeIdx)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("build object type classifier for trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
 		for _, obj := range proj.Objects {
@@ -399,12 +536,15 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 				if !matchesV2Scope(q, traceID, sessionID, clientID) {
 					continue
 				}
+				typeName := v2ResolvedOutputStateTypeName(obj.TypeName, st.OutputStateJSON)
+				typeID, _ := typeClassifier.classify(typeName, sessionID, clientID, true)
 				agg := byID[st.StateDigest]
 				if agg == nil {
 					agg = &snapshotAgg{
 						item: v2ObjectSnapshot{
 							DagqlID:           st.StateDigest,
-							TypeName:          obj.TypeName,
+							TypeName:          typeName,
+							TypeID:            typeID,
 							OutputState:       st.OutputStateJSON,
 							FirstSeenUnixNano: st.StartUnixNano,
 							LastSeenUnixNano:  st.EndUnixNano,
@@ -423,8 +563,9 @@ func (s *Server) handleV2ObjectSnapshots(w http.ResponseWriter, r *http.Request)
 				if agg.item.OutputState == nil && st.OutputStateJSON != nil {
 					agg.item.OutputState = st.OutputStateJSON
 				}
-				if typ, ok := getV2String(st.OutputStateJSON, "type"); ok && typ != "" {
-					agg.item.TypeName = typ
+				agg.item.TypeName = typeName
+				if typeID != "" {
+					agg.item.TypeID = typeID
 				}
 				if agg.item.FirstSeenUnixNano == 0 || (st.StartUnixNano > 0 && st.StartUnixNano < agg.item.FirstSeenUnixNano) {
 					agg.item.FirstSeenUnixNano = st.StartUnixNano
@@ -870,23 +1011,31 @@ func (s *Server) projectTraceWithOptions(ctx context.Context, traceID string, op
 	return transform.ProjectTraceWithOptions(traceID, spans, opts)
 }
 
+func buildV2TraceScope(traceID string, spans []store.SpanRecord) (*transform.TraceProjection, *derive.ScopeIndex, error) {
+	proj, err := transform.ProjectTraceWithOptions(traceID, spans, transform.ProjectOptions{
+		IncludeInternal: true,
+		ApplyKeepRules:  false,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return proj, derive.BuildScopeIndex(traceID, spans, proj), nil
+}
+
 func (s *Server) loadV2TraceScope(ctx context.Context, traceID string) ([]store.SpanRecord, *transform.TraceProjection, *derive.ScopeIndex, error) {
 	scope, err := s.v2ScopeCache.loadOrCompute(ctx, traceID, func(ctx context.Context) (v2TraceScope, error) {
 		spans, err := s.store.ListTraceSpans(ctx, traceID)
 		if err != nil {
 			return v2TraceScope{}, err
 		}
-		proj, err := transform.ProjectTraceWithOptions(traceID, spans, transform.ProjectOptions{
-			IncludeInternal: true,
-			ApplyKeepRules:  false,
-		})
+		proj, scopeIdx, err := buildV2TraceScope(traceID, spans)
 		if err != nil {
 			return v2TraceScope{}, err
 		}
 		return v2TraceScope{
 			spans:    spans,
 			proj:     proj,
-			scopeIdx: derive.BuildScopeIndex(traceID, spans, proj),
+			scopeIdx: scopeIdx,
 		}, nil
 	})
 	if err != nil {
@@ -897,10 +1046,11 @@ func (s *Server) loadV2TraceScope(ctx context.Context, traceID string) ([]store.
 
 func parseV2Query(r *http.Request) (v2Query, error) {
 	q := v2Query{
-		TraceID:   strings.TrimSpace(r.URL.Query().Get("traceID")),
-		SessionID: strings.TrimSpace(r.URL.Query().Get("sessionID")),
-		ClientID:  strings.TrimSpace(r.URL.Query().Get("clientID")),
-		Limit:     v2DefaultLimit,
+		TraceID:    strings.TrimSpace(r.URL.Query().Get("traceID")),
+		SessionID:  strings.TrimSpace(r.URL.Query().Get("sessionID")),
+		ClientID:   strings.TrimSpace(r.URL.Query().Get("clientID")),
+		FunctionID: strings.TrimSpace(r.URL.Query().Get("functionID")),
+		Limit:      v2DefaultLimit,
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		v, err := strconv.Atoi(raw)

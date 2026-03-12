@@ -18,8 +18,12 @@ import (
 type v2WorkspaceOp struct {
 	ID               string             `json:"id"`
 	TraceID          string             `json:"traceID"`
+	WorkspaceRoot    string             `json:"workspaceRoot,omitempty"`
 	SessionID        string             `json:"sessionID,omitempty"`
 	ClientID         string             `json:"clientID,omitempty"`
+	RootClientID     string             `json:"rootClientID,omitempty"`
+	DeviceID         string             `json:"deviceID,omitempty"`
+	DeviceMachineID  string             `json:"deviceMachineID,omitempty"`
 	SpanID           string             `json:"spanID,omitempty"`
 	Name             string             `json:"name"`
 	Kind             string             `json:"kind"`
@@ -129,6 +133,9 @@ func collectV2WorkspaceOps(
 		if !matchesV2Scope(q, traceID, sessionID, clientID) {
 			continue
 		}
+		rootClientID := workspaceOpRootClientID(scopeIdx, sessionID, clientID)
+		deviceMachineID := workspaceOpDeviceMachineID(scopeIdx, rootClientID, clientID)
+		deviceID := workspaceOpDeviceID(deviceMachineID)
 
 		kind, direction, targetType := classifyWorkspaceOpCall(event.Name)
 		if kind == "" {
@@ -136,7 +143,7 @@ func collectV2WorkspaceOps(
 		}
 
 		callPayload := callPayloads[event.SpanID]
-		path := workspaceOpPath(callPayload)
+		path := workspaceOpTarget(event.Name, callPayload)
 		pipeline := workspaceOpPipelineForEvent(pipelinesByClient[clientID], event)
 		status := deriveV2WorkspaceOpStatus(traceStatus, event.StatusCode)
 		name := workspaceOpDisplayName(kind, targetType, path)
@@ -146,6 +153,9 @@ func collectV2WorkspaceOps(
 			TraceID:         traceID,
 			SessionID:       sessionID,
 			ClientID:        clientID,
+			RootClientID:    rootClientID,
+			DeviceID:        deviceID,
+			DeviceMachineID: deviceMachineID,
 			SpanID:          event.SpanID,
 			Name:            name,
 			Kind:            kind,
@@ -160,7 +170,7 @@ func collectV2WorkspaceOps(
 			ReceiverDagqlID: event.ReceiverStateDigest,
 			OutputDagqlID:   event.OutputStateDigest,
 			Evidence:        buildV2WorkspaceOpEvidence(event.Name, path, direction, pipeline),
-			Relations:       buildV2WorkspaceOpRelations(sessionID, clientID, pipeline, event),
+			Relations:       buildV2WorkspaceOpRelations(sessionID, clientID, rootClientID, deviceID, pipeline, event),
 		}
 		if pipeline != nil {
 			item.PipelineID = pipeline.ID
@@ -179,13 +189,30 @@ func classifyWorkspaceOpCall(name string) (kind string, direction string, target
 		return "host-directory", "read", "Directory"
 	case "Host.file":
 		return "host-file", "read", "File"
+	case "Host.socket", "Host.unixSocket":
+		return "host-socket", "read", "Socket"
+	case "Host.service":
+		return "host-service", "read", "Service"
+	case "Host.tunnel":
+		return "host-tunnel", "write", "Service"
 	case "Directory.export":
 		return "directory-export", "write", "Directory"
 	case "File.export":
 		return "file-export", "write", "File"
+	case "Container.export":
+		return "container-export", "write", "Container"
 	default:
 		return "", "", ""
 	}
+}
+
+func traceContainsWorkspaceOpSpans(spans []store.SpanRecord) bool {
+	for _, sp := range spans {
+		if kind, _, _ := classifyWorkspaceOpCall(sp.Name); kind != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeWorkspaceOpCallPayloads(spans []store.SpanRecord) (map[string]*workspaceOpCallPayload, error) {
@@ -220,9 +247,20 @@ func decodeWorkspaceOpCallPayload(payload string) (*callpbv1.Call, error) {
 	return &call, nil
 }
 
-func workspaceOpPath(payload *workspaceOpCallPayload) string {
+func workspaceOpTarget(callName string, payload *workspaceOpCallPayload) string {
 	if payload == nil || payload.Call == nil {
 		return ""
+	}
+	switch strings.TrimSpace(callName) {
+	case "Host.service":
+		if label := workspaceOpHostServiceTarget(payload.Call); label != "" {
+			return label
+		}
+	case "Host.tunnel":
+		if label := serviceTunnelDisplayName(nil, payload.Call); label != "" {
+			return label
+		}
+		return "host -> service"
 	}
 	for _, name := range []string{"path", "dest", "target"} {
 		if value := workspaceOpCallArgString(payload.Call, name); value != "" {
@@ -230,6 +268,95 @@ func workspaceOpPath(payload *workspaceOpCallPayload) string {
 		}
 	}
 	return ""
+}
+
+func workspaceOpRootClientID(scopeIdx *derive.ScopeIndex, sessionID, clientID string) string {
+	if scopeIdx == nil {
+		return ""
+	}
+	if rootClientID := strings.TrimSpace(scopeIdx.RootClientByID[clientID]); rootClientID != "" {
+		return rootClientID
+	}
+	if sessionID != "" {
+		if session, ok := scopeIdx.SessionByID[sessionID]; ok && strings.TrimSpace(session.RootClientID) != "" {
+			return session.RootClientID
+		}
+	}
+	return strings.TrimSpace(clientID)
+}
+
+func workspaceOpDeviceMachineID(scopeIdx *derive.ScopeIndex, rootClientID, clientID string) string {
+	if scopeIdx == nil {
+		return ""
+	}
+	for _, candidate := range []string{rootClientID, clientID} {
+		if candidate == "" {
+			continue
+		}
+		if client, ok := scopeIdx.ClientByID[candidate]; ok {
+			if machineID := strings.TrimSpace(client.ClientMachineID); machineID != "" {
+				return machineID
+			}
+		}
+	}
+	return ""
+}
+
+func workspaceOpDeviceID(machineID string) string {
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return ""
+	}
+	return "device:" + machineID
+}
+
+func workspaceOpHostServiceTarget(call *callpbv1.Call) string {
+	if call == nil {
+		return ""
+	}
+	host := workspaceOpCallArgString(call, "host")
+	if host == "" {
+		host = "localhost"
+	}
+	value, ok := serviceCallArgValue(call, "ports")
+	if !ok {
+		return host
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return host
+	}
+	ports := serviceTunnelPortsFromAny(items)
+	if len(ports) == 0 {
+		return host
+	}
+	parts := make([]string, 0, min(len(ports), 3))
+	limit := len(ports)
+	if limit > 2 {
+		limit = 2
+	}
+	for _, port := range ports[:limit] {
+		parts = append(parts, workspaceOpHostServicePortLabel(host, port))
+	}
+	if len(ports) > limit {
+		parts = append(parts, fmt.Sprintf("+%d more", len(ports)-limit))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func workspaceOpHostServicePortLabel(host string, port serviceTunnelPort) string {
+	left := "service"
+	if port.Frontend > 0 {
+		left = fmt.Sprintf("service:%d", port.Frontend)
+	}
+	right := host
+	if port.Backend > 0 {
+		right = fmt.Sprintf("%s:%d", host, port.Backend)
+	}
+	if protocol := strings.TrimSpace(port.Protocol); protocol != "" {
+		return strings.ToLower(protocol) + " " + left + " -> " + right
+	}
+	return left + " -> " + right
 }
 
 func workspaceOpCallArgString(call *callpbv1.Call, names ...string) string {
@@ -331,8 +458,8 @@ func buildV2WorkspaceOpEvidence(callName, path, direction string, pipeline *v2CL
 	return evidence
 }
 
-func buildV2WorkspaceOpRelations(sessionID, clientID string, pipeline *v2CLIRun, event transform.MutationEvent) []v2EntityRelation {
-	relations := make([]v2EntityRelation, 0, 5)
+func buildV2WorkspaceOpRelations(sessionID, clientID, rootClientID, deviceID string, pipeline *v2CLIRun, event transform.MutationEvent) []v2EntityRelation {
+	relations := make([]v2EntityRelation, 0, 7)
 	if sessionID != "" {
 		relations = append(relations, v2EntityRelation{
 			Relation:   "belongs-to",
@@ -345,6 +472,20 @@ func buildV2WorkspaceOpRelations(sessionID, clientID string, pipeline *v2CLIRun,
 			Relation:   "owned-by",
 			Target:     clientID,
 			TargetKind: "client",
+		})
+	}
+	if rootClientID != "" && rootClientID != clientID {
+		relations = append(relations, v2EntityRelation{
+			Relation:   "rooted-at",
+			Target:     rootClientID,
+			TargetKind: "client",
+		})
+	}
+	if deviceID != "" {
+		relations = append(relations, v2EntityRelation{
+			Relation:   "originates-from",
+			Target:     deviceID,
+			TargetKind: "device",
 		})
 	}
 	if pipeline != nil {

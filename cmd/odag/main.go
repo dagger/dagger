@@ -203,6 +203,9 @@ func newFetchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := server.RefreshMaterializedWorkspaces(cmd.Context(), st, []string{res.TraceID}); err != nil {
+				return err
+			}
 
 			fmt.Fprintf(cmd.ErrOrStderr(), "imported trace %s: %d batches, %d span updates\n", res.TraceID, res.Batches, res.SpanUpdates)
 			fmt.Fprintf(cmd.ErrOrStderr(), "start `odag serve` and open http://%s\n", defaultListenAddr)
@@ -231,10 +234,38 @@ func newRebuildCmd() *cobra.Command {
 			}
 			defer st.Close()
 
+			stderr := cmd.ErrOrStderr()
+			rebuildStart := time.Now()
+			fmt.Fprintln(stderr, "rebuilding trace summaries from stored spans...")
 			res, err := st.RebuildDerived(cmd.Context())
 			if err != nil {
 				return err
 			}
+			fmt.Fprintf(stderr, "rebuilt trace summaries for %d traces, %d spans in %s\n", res.Traces, res.Spans, time.Since(rebuildStart).Round(100*time.Millisecond))
+
+			workspaceStart := time.Now()
+			fmt.Fprintf(stderr, "materializing workspace projection for %d traces...\n", res.Traces)
+			lastReportedCount := 0
+			lastReportedAt := time.Now()
+			if err := server.RebuildMaterializedWorkspacesWithProgress(cmd.Context(), st, func(progress server.MaterializedWorkspaceRefreshProgress) {
+				now := time.Now()
+				shouldReport := progress.Completed == progress.Total || progress.Completed == 1
+				if progress.Completed-lastReportedCount >= 100 {
+					shouldReport = true
+				}
+				if now.Sub(lastReportedAt) >= 5*time.Second {
+					shouldReport = true
+				}
+				if !shouldReport {
+					return
+				}
+				fmt.Fprintf(stderr, "materialized workspace projection: %d/%d traces\n", progress.Completed, progress.Total)
+				lastReportedCount = progress.Completed
+				lastReportedAt = now
+			}); err != nil {
+				return err
+			}
+			fmt.Fprintf(stderr, "materialized workspace projection in %s\n", time.Since(workspaceStart).Round(100*time.Millisecond))
 
 			fmt.Fprintf(cmd.ErrOrStderr(), "rebuilt derived state: %d traces, %d spans\n", res.Traces, res.Spans)
 			return nil

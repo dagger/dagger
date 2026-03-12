@@ -83,12 +83,16 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/v2/object-snapshots", srv.handleV2ObjectSnapshots)
 	mux.HandleFunc("GET /api/v2/object-bindings", srv.handleV2ObjectBindings)
 	mux.HandleFunc("GET /api/v2/mutations", srv.handleV2Mutations)
+	mux.HandleFunc("GET /api/functions", srv.handleV2Functions)
 	mux.HandleFunc("GET /api/terminals", srv.handleV2Terminals)
 	mux.HandleFunc("GET /api/repls", srv.handleV2Repls)
 	mux.HandleFunc("GET /api/checks", srv.handleV2Checks)
 	mux.HandleFunc("GET /api/workspaces", srv.handleV2Workspaces)
 	mux.HandleFunc("GET /api/sessions", srv.handleV2Sessions)
 	mux.HandleFunc("GET /api/v2/clients", srv.handleV2Clients)
+	mux.HandleFunc("GET /api/modules", srv.handleV2Modules)
+	mux.HandleFunc("GET /api/object-types", srv.handleV2ObjectTypes)
+	mux.HandleFunc("GET /api/devices", srv.handleV2Devices)
 	mux.HandleFunc("GET /api/services", srv.handleV2Services)
 	mux.HandleFunc("GET /api/pipelines", srv.handleV2CLIRuns)
 	mux.HandleFunc("GET /api/shells", srv.handleV2Shells)
@@ -249,6 +253,10 @@ func (s *Server) handleOpenTrace(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("pull trace: %v", err), http.StatusBadGateway)
 		return
 	}
+	if err := RefreshMaterializedWorkspaces(r.Context(), s.store, []string{req.TraceID}); err != nil {
+		http.Error(w, fmt.Sprintf("materialize workspaces: %v", err), http.StatusInternalServerError)
+		return
+	}
 	s.v2ScopeCache.invalidate(req.TraceID)
 
 	traceMeta, err := s.store.GetTrace(r.Context(), req.TraceID)
@@ -377,8 +385,13 @@ func (s *Server) handleTraceIngest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("persist spans: %v", err), http.StatusInternalServerError)
 		return
 	}
-	s.v2ScopeCache.invalidate(sortedTraceIDs(traceCounts)...)
-	for _, traceID := range sortedTraceIDs(traceCounts) {
+	traceIDs := sortedTraceIDs(traceCounts)
+	if err := RefreshMaterializedWorkspaces(r.Context(), s.store, traceIDs); err != nil {
+		http.Error(w, fmt.Sprintf("materialize workspaces: %v", err), http.StatusInternalServerError)
+		return
+	}
+	s.v2ScopeCache.invalidate(traceIDs...)
+	for _, traceID := range traceIDs {
 		log.Printf("odag: client %s completed trace %s (%d spans)", clientAddr, traceID, traceCounts[traceID])
 	}
 
