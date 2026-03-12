@@ -22,13 +22,24 @@ type AnthropicClient struct {
 }
 
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
-	if endpoint.Key != "" {
+	var opts []option.RequestOption
+
+	if endpoint.IsOAuth {
+		// Claude Code OAuth: use bearer token auth with Claude Code headers
+		opts = append(opts,
+			option.WithAuthToken(endpoint.AuthToken),
+			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
+			option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
+			option.WithHeader("x-app", "cli"),
+		)
+	} else if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
 	}
+
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,
@@ -195,6 +206,17 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 				// CacheControl: ephemeral,
 			},
 		})
+	}
+
+	// When using OAuth (Claude Code subscription), prepend the Claude Code
+	// identity system prompt. This is required for the OAuth endpoint to
+	// accept the request.
+	if c.endpoint.IsOAuth {
+		claudeCodePrompt := anthropic.TextBlockParam{
+			Text:         "You are Claude Code, Anthropic's official CLI for Claude.",
+			CacheControl: ephemeral,
+		}
+		systemPrompts = append([]anthropic.TextBlockParam{claudeCodePrompt}, systemPrompts...)
 	}
 
 	// Prepare parameters for the streaming call.

@@ -63,7 +63,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 				Description("OpenRouter provides unified access to 100+ models with a single API key").
 				Options(
 					huh.NewOption("OpenRouter (recommended)", "openrouter"),
-					huh.NewOption("Anthropic (Claude models)", "anthropic"),
+					huh.NewOption("Anthropic (Claude Code OAuth - use your Pro/Max subscription)", "anthropic-oauth"),
+					huh.NewOption("Anthropic (API key)", "anthropic"),
 					huh.NewOption("OpenAI (GPT models)", "openai"),
 					huh.NewOption("Google (Gemini models)", "google"),
 				).
@@ -73,6 +74,11 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 
 	if err := checkAbort(promptHandler.HandleForm(ctx, providerForm)); err != nil {
 		return false, err
+	}
+
+	// Handle Claude Code OAuth flow
+	if providerChoice == "anthropic-oauth" {
+		return setupClaudeCodeOAuth(ctx, promptHandler)
 	}
 
 	// 3. Choose how to provide the API key
@@ -428,4 +434,62 @@ func validateNonEmpty(label string) func(string) error {
 		}
 		return nil
 	}
+}
+
+// setupClaudeCodeOAuth guides the user through the Claude Code OAuth flow.
+// This allows using a Claude Pro/Max subscription instead of an API key.
+func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
+	// Generate the OAuth URL
+	authURL, verifier, err := GenerateOAuthURL()
+	if err != nil {
+		return false, fmt.Errorf("failed to generate OAuth URL: %w", err)
+	}
+
+	// Show the URL and ask user to visit it
+	var authCode string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Claude Code OAuth").
+				Description(fmt.Sprintf(
+					"Visit this URL to authorize:\n\n%s\n\nAfter authorizing, paste the code below.",
+					authURL,
+				)).
+				Placeholder("paste authorization code here").
+				Value(&authCode).
+				Validate(validateNonEmpty("authorization code")),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return false, err
+	}
+	if authCode == "" {
+		return false, ErrAborted
+	}
+
+	// Exchange the code for tokens
+	providerCfg, err := ExchangeOAuthCode(authCode, verifier)
+	if err != nil {
+		return false, fmt.Errorf("OAuth token exchange failed: %w", err)
+	}
+
+	// Load existing config or create new one
+	cfg, err := Load()
+	if err != nil || cfg == nil {
+		cfg = &Config{}
+	}
+
+	if cfg.LLM.Providers == nil {
+		cfg.LLM.Providers = make(map[string]Provider)
+	}
+
+	cfg.LLM.DefaultProvider = "anthropic"
+	cfg.LLM.DefaultModel = "claude-sonnet-4-5"
+	cfg.LLM.Providers["anthropic"] = *providerCfg
+
+	if err := cfg.Save(); err != nil {
+		return false, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return true, nil
 }

@@ -91,6 +91,10 @@ type LLMEndpoint struct {
 	Key      string
 	Provider LLMProvider
 	Client   LLMClient
+
+	// OAuth fields for Claude Code subscription auth
+	AuthToken string // OAuth bearer token (used instead of Key when set)
+	IsOAuth   bool   // Whether this endpoint uses OAuth authentication
 }
 
 type LLMProvider string
@@ -155,14 +159,16 @@ const (
 
 // A LLM routing configuration
 type LLMRouter struct {
-	AnthropicAPIKey  string
-	AnthropicBaseURL string
-	AnthropicModel   string
+	AnthropicAPIKey    string
+	AnthropicBaseURL   string
+	AnthropicModel     string
+	AnthropicAuthToken string // OAuth bearer token for Claude Code subscription
+	AnthropicIsOAuth   bool   // Whether Anthropic auth uses OAuth
 
-	OpenAIAPIKey           string
-	OpenAIAzureVersion     string
-	OpenAIBaseURL          string
-	OpenAIModel            string
+	OpenAIAPIKey          string
+	OpenAIAzureVersion    string
+	OpenAIBaseURL         string
+	OpenAIModel           string
 	OpenAIDisableStreaming bool
 
 	GeminiAPIKey  string
@@ -211,9 +217,11 @@ func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) 
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:  r.AnthropicBaseURL,
-		Key:      r.AnthropicAPIKey,
-		Provider: Anthropic,
+		BaseURL:   r.AnthropicBaseURL,
+		Key:       r.AnthropicAPIKey,
+		Provider:  Anthropic,
+		AuthToken: r.AnthropicAuthToken,
+		IsOAuth:   r.AnthropicIsOAuth,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
@@ -278,7 +286,7 @@ func (r *LLMRouter) DefaultModel() string {
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
 	}
-	if r.AnthropicAPIKey != "" {
+	if r.AnthropicAPIKey != "" || r.AnthropicAuthToken != "" {
 		return modelDefaultAnthropic
 	}
 	if r.OpenAIBaseURL != "" {
@@ -425,7 +433,13 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 				}
 			}
 		case "anthropic":
-			if r.AnthropicAPIKey == "" {
+			if provider.IsOAuth() {
+				// OAuth takes precedence over API key
+				if r.AnthropicAuthToken == "" {
+					r.AnthropicAuthToken = provider.AuthToken
+					r.AnthropicIsOAuth = true
+				}
+			} else if r.AnthropicAPIKey == "" {
 				r.AnthropicAPIKey = provider.APIKey
 			}
 			if r.AnthropicBaseURL == "" && provider.BaseURL != "" {
@@ -468,6 +482,7 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 func (r *LLMRouter) IsEmpty() bool {
 	return r.OpenAIAPIKey == "" &&
 		r.AnthropicAPIKey == "" &&
+		r.AnthropicAuthToken == "" &&
 		r.GeminiAPIKey == ""
 }
 

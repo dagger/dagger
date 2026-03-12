@@ -257,6 +257,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 		return c, nil
 	}
 
+	// Refresh any expired OAuth tokens before connecting to the engine.
+	// This ensures the engine always gets a valid token.
+	if err := llmconfig.RefreshOAuthTokensIfNeeded(); err != nil {
+		slog.Warn("failed to refresh OAuth tokens", "error", err)
+	}
+
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.

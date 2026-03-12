@@ -39,6 +39,17 @@ type Provider struct {
 	AzureVersion    string `toml:"azure_version,omitempty"`
 	DisableStreaming bool   `toml:"disable_streaming,omitempty"`
 	Enabled         bool   `toml:"enabled"`
+
+	// OAuth fields for Claude Code subscription auth
+	AuthType     string `toml:"auth_type,omitempty"`      // "oauth" for Claude Code OAuth
+	AuthToken    string `toml:"auth_token,omitempty"`     // OAuth access token
+	RefreshToken string `toml:"refresh_token,omitempty"`  // OAuth refresh token
+	TokenExpiry  int64  `toml:"token_expiry,omitempty"`   // Unix timestamp (ms) when access token expires
+}
+
+// IsOAuth returns true if this provider uses OAuth authentication.
+func (p *Provider) IsOAuth() bool {
+	return p.AuthType == "oauth"
 }
 
 // Load reads config from disk, returns nil if not exists.
@@ -118,5 +129,39 @@ func Remove() error {
 	if err := os.Remove(ConfigFile); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove config file: %w", err)
 	}
+	return nil
+}
+
+// RefreshOAuthTokensIfNeeded checks all OAuth providers in the config and
+// refreshes any expired tokens. This should be called client-side before
+// connecting to the engine.
+func RefreshOAuthTokensIfNeeded() error {
+	cfg, err := Load()
+	if err != nil || cfg == nil {
+		return nil // No config or error loading is OK
+	}
+
+	var changed bool
+	for name, provider := range cfg.LLM.Providers {
+		if !provider.IsOAuth() {
+			continue
+		}
+		if !IsTokenExpired(&provider) {
+			continue
+		}
+		refreshed, err := RefreshOAuthToken(&provider)
+		if err != nil {
+			return fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
+		}
+		cfg.LLM.Providers[name] = *refreshed
+		changed = true
+	}
+
+	if changed {
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("failed to save refreshed tokens: %w", err)
+		}
+	}
+
 	return nil
 }
