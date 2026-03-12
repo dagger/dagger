@@ -149,13 +149,14 @@ type FuncCall struct {
 }
 
 const (
-	OpenAI    LLMProvider = "openai"
-	Anthropic LLMProvider = "anthropic"
-	Google    LLMProvider = "google"
-	Meta      LLMProvider = "meta"
-	Mistral   LLMProvider = "mistral"
-	DeepSeek  LLMProvider = "deepseek"
-	Other     LLMProvider = "other"
+	OpenAI      LLMProvider = "openai"
+	OpenAICodex LLMProvider = "openai-codex"
+	Anthropic   LLMProvider = "anthropic"
+	Google      LLMProvider = "google"
+	Meta        LLMProvider = "meta"
+	Mistral     LLMProvider = "mistral"
+	DeepSeek    LLMProvider = "deepseek"
+	Other       LLMProvider = "other"
 )
 
 // A LLM routing configuration
@@ -173,6 +174,10 @@ type LLMRouter struct {
 	OpenAIModel           string
 	OpenAIDisableStreaming bool
 
+	// OpenAI Codex (ChatGPT subscription) fields
+	OpenAICodexAuthToken string // OAuth bearer token
+	OpenAICodexModel     string
+
 	GeminiAPIKey  string
 	GeminiBaseURL string
 	GeminiModel   string
@@ -180,6 +185,10 @@ type LLMRouter struct {
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
 	return strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "anthropic/")
+}
+
+func (r *LLMRouter) isCodexModel(model string) bool {
+	return strings.Contains(model, "codex") || strings.HasPrefix(model, "openai-codex/")
 }
 
 func (r *LLMRouter) isOpenAIModel(model string) bool {
@@ -228,6 +237,17 @@ func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
+	return endpoint
+}
+
+func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
+	endpoint := &LLMEndpoint{
+		BaseURL:   "https://chatgpt.com/backend-api",
+		AuthToken: r.OpenAICodexAuthToken,
+		IsOAuth:   true,
+		Provider:  OpenAICodex,
+	}
+	endpoint.Client = newOpenAICodexClient(endpoint)
 	return endpoint
 }
 
@@ -281,10 +301,13 @@ func (r *LLMRouter) routeReplayModel(model string) (*LLMEndpoint, error) {
 
 // Return a default model, if configured
 func (r *LLMRouter) DefaultModel() string {
-	for _, model := range []string{r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
+	for _, model := range []string{r.OpenAICodexModel, r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
 		if model != "" {
 			return model
 		}
+	}
+	if r.OpenAICodexAuthToken != "" {
+		return "gpt-5.1-codex"
 	}
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
@@ -314,6 +337,8 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	switch {
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
+	case r.isCodexModel(model):
+		endpoint = r.routeCodexModel()
 	case r.isOpenAIModel(model):
 		endpoint = r.routeOpenAIModel()
 	case r.isGoogleModel(model):
@@ -456,6 +481,10 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 			if r.OpenAIBaseURL == "" && provider.BaseURL != "" {
 				r.OpenAIBaseURL = provider.BaseURL
 			}
+		case "openai-codex":
+			if provider.IsOAuth() && r.OpenAICodexAuthToken == "" {
+				r.OpenAICodexAuthToken = provider.AuthToken
+			}
 		case "google":
 			if r.GeminiAPIKey == "" {
 				r.GeminiAPIKey = provider.APIKey
@@ -473,6 +502,10 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 		case "anthropic":
 			if r.AnthropicModel == "" {
 				r.AnthropicModel = cfg.LLM.DefaultModel
+			}
+		case "openai-codex":
+			if r.OpenAICodexModel == "" {
+				r.OpenAICodexModel = cfg.LLM.DefaultModel
 			}
 		case "google":
 			if r.GeminiModel == "" {

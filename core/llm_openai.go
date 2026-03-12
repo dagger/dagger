@@ -7,9 +7,9 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/azure"
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/azure"
+	"github.com/openai/openai-go/v3/option"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -95,17 +95,19 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 			openAIMessages = append(openAIMessages, openai.UserMessage(blocks))
 		case "assistant":
 			assistantMsg := openai.AssistantMessage(msg.Content)
-			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
+			calls := make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
 			for i, call := range msg.ToolCalls {
 				args, err := json.Marshal(call.Function.Arguments)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal tool call arguments: %w", err)
 				}
-				calls[i] = openai.ChatCompletionMessageToolCallParam{
-					ID: call.ID,
-					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name:      call.Function.Name,
-						Arguments: string(args),
+				calls[i] = openai.ChatCompletionMessageToolCallUnionParam{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: call.ID,
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name:      call.Function.Name,
+							Arguments: string(args),
+						},
 					},
 				}
 			}
@@ -126,14 +128,16 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 	}
 
 	if len(tools) > 0 {
-		var toolParams []openai.ChatCompletionToolParam
+		var toolParams []openai.ChatCompletionToolUnionParam
 		for _, tool := range tools {
-			toolParams = append(toolParams, openai.ChatCompletionToolParam{
-				Function: openai.FunctionDefinitionParam{
-					Name:        tool.Name,
-					Description: openai.Opt(tool.Description),
-					Parameters:  openai.FunctionParameters(tool.Schema),
-					Strict:      openai.Opt(tool.Strict),
+			toolParams = append(toolParams, openai.ChatCompletionToolUnionParam{
+				OfFunction: &openai.ChatCompletionFunctionToolParam{
+					Function: openai.FunctionDefinitionParam{
+						Name:        tool.Name,
+						Description: openai.Opt(tool.Description),
+						Parameters:  openai.FunctionParameters(tool.Schema),
+						Strict:      openai.Opt(tool.Strict),
+					},
 				},
 			})
 		}
@@ -264,7 +268,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	return compl, nil
 }
 
-func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLMToolCall, error) {
+func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCallUnion) ([]LLMToolCall, error) {
 	var toolCalls []LLMToolCall
 	for _, call := range calls {
 		if call.Function.Name == "" {
@@ -283,7 +287,7 @@ func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLM
 				Name:      call.Function.Name,
 				Arguments: args,
 			},
-			Type: string(call.Type),
+			Type: call.Type,
 		})
 	}
 	return toolCalls, nil

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 )
@@ -71,8 +73,9 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 				Options(
 					huh.NewOption("OpenRouter (recommended)", "openrouter"),
 					huh.NewOption("Anthropic (Claude Code OAuth - use your Pro/Max subscription)", "anthropic-oauth"),
+					huh.NewOption("OpenAI Codex (ChatGPT Plus/Pro subscription)", "openai-codex"),
 					huh.NewOption("Anthropic (API key)", "anthropic"),
-					huh.NewOption("OpenAI (GPT models)", "openai"),
+					huh.NewOption("OpenAI (API key)", "openai"),
 					huh.NewOption("Google (Gemini models)", "google"),
 				).
 				Value(&providerChoice),
@@ -83,9 +86,12 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		return false, err
 	}
 
-	// Handle Claude Code OAuth flow
-	if providerChoice == "anthropic-oauth" {
+	// Handle OAuth flows
+	switch providerChoice {
+	case "anthropic-oauth":
 		return setupClaudeCodeOAuth(ctx, promptHandler)
+	case "openai-codex":
+		return setupOpenAICodexOAuth(ctx, promptHandler)
 	}
 
 	// 3. Choose how to provide the API key
@@ -511,4 +517,169 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// setupOpenAICodexOAuth guides the user through the OpenAI Codex OAuth flow.
+// This allows using a ChatGPT Plus/Pro subscription instead of an API key.
+func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
+	// Generate the OAuth URL
+	authURL, verifier, state, err := GenerateOpenAIOAuthURL()
+	if err != nil {
+		return false, fmt.Errorf("failed to generate OAuth URL: %w", err)
+	}
+
+	// Start local callback server
+	callbackServer, serverErr := StartOAuthCallbackServer(1455, state)
+
+	// Print the URL above the TUI if supported
+	if printer, ok := ph.(AbovePrinter); ok {
+		printer.PrintAbove(fmt.Sprintf(
+			"OpenAI Codex OAuth — visit this URL to authorize:\n\n%s\n\n",
+			authURL,
+		))
+	}
+
+	var code string
+
+	if serverErr == nil {
+		defer callbackServer.Close()
+
+		// Race between browser callback and manual paste
+		codeCh := make(chan string, 1)
+		go func() {
+			codeCh <- callbackServer.WaitForCode(ctx)
+		}()
+
+		description := "A browser window should open. Or paste the code/URL below."
+		if _, ok := ph.(AbovePrinter); !ok {
+			description = fmt.Sprintf(
+				"Visit this URL to authorize:\n\n%s\n\n%s",
+				authURL, description,
+			)
+		}
+
+		var manualCode string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("OpenAI Codex OAuth").
+					Description(description).
+					Placeholder("waiting for browser callback (or paste code here)").
+					Value(&manualCode),
+			),
+		)
+
+		// Run form in background — if browser callback fires first, we use that
+		formDone := make(chan error, 1)
+		go func() {
+			formDone <- ph.HandleForm(ctx, form)
+		}()
+
+		select {
+		case browserCode := <-codeCh:
+			if browserCode != "" {
+				code = browserCode
+			}
+		case err := <-formDone:
+			if err != nil {
+				return false, err
+			}
+			if manualCode != "" {
+				code = parseOpenAIAuthInput(manualCode)
+			}
+		}
+
+		// If browser callback didn't fire yet and we got manual input, use it
+		if code == "" && manualCode != "" {
+			code = parseOpenAIAuthInput(manualCode)
+		}
+	} else {
+		// No callback server — fall back to manual paste only
+		description := "After authorizing, paste the code or redirect URL below."
+		if _, ok := ph.(AbovePrinter); !ok {
+			description = fmt.Sprintf(
+				"Visit this URL to authorize:\n\n%s\n\n%s",
+				authURL, description,
+			)
+		}
+
+		var manualCode string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("OpenAI Codex OAuth").
+					Description(description).
+					Placeholder("paste authorization code or redirect URL here").
+					Value(&manualCode).
+					Validate(validateNonEmpty("authorization code")),
+			),
+		)
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+			return false, err
+		}
+		code = parseOpenAIAuthInput(manualCode)
+	}
+
+	if code == "" {
+		return false, fmt.Errorf("no authorization code received")
+	}
+
+	// Exchange the code for tokens
+	providerCfg, err := ExchangeOpenAIOAuthCode(code, verifier)
+	if err != nil {
+		return false, fmt.Errorf("OAuth token exchange failed: %w", err)
+	}
+
+	// Load existing config or create new one
+	cfg, err := Load()
+	if err != nil || cfg == nil {
+		cfg = &Config{}
+	}
+
+	if cfg.LLM.Providers == nil {
+		cfg.LLM.Providers = make(map[string]Provider)
+	}
+
+	cfg.LLM.DefaultProvider = "openai-codex"
+	cfg.LLM.DefaultModel = "gpt-5.1-codex"
+	cfg.LLM.Providers["openai-codex"] = *providerCfg
+
+	if err := cfg.Save(); err != nil {
+		return false, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return true, nil
+}
+
+// parseOpenAIAuthInput extracts an authorization code from user input.
+// The input can be a bare code, a URL with ?code=..., or code#state format.
+func parseOpenAIAuthInput(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+
+	// Try parsing as URL
+	if u, err := url.Parse(input); err == nil && u.Scheme != "" {
+		if code := u.Query().Get("code"); code != "" {
+			return code
+		}
+	}
+
+	// Try code#state format
+	if idx := strings.Index(input, "#"); idx >= 0 {
+		return input[:idx]
+	}
+
+	// Try code=... format
+	if strings.Contains(input, "code=") {
+		if vals, err := url.ParseQuery(input); err == nil {
+			if code := vals.Get("code"); code != "" {
+				return code
+			}
+		}
+	}
+
+	// Bare code
+	return input
 }

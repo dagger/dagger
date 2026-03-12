@@ -150,7 +150,14 @@ func RefreshOAuthTokensIfNeeded() error {
 		if !IsTokenExpired(&provider) {
 			continue
 		}
-		refreshed, err := RefreshOAuthToken(&provider)
+		var refreshed *Provider
+		switch name {
+		case "openai-codex":
+			refreshed, err = RefreshOpenAIOAuthToken(&provider)
+		default:
+			// Anthropic and other providers use the standard refresh
+			refreshed, err = RefreshOAuthToken(&provider)
+		}
 		if err != nil {
 			return fmt.Errorf("failed to refresh OAuth token for %s: %w", name, err)
 		}
