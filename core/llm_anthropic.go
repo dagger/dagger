@@ -220,12 +220,37 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 	}
 
 	// Prepare parameters for the streaming call.
+	maxTokens := int64(8192)
+
+	// Configure thinking/reasoning if requested
+	var thinking anthropic.ThinkingConfigParamUnion
+	switch c.endpoint.ThinkingMode {
+	case "adaptive":
+		thinking = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}
+		// Anthropic requires MaxTokens >= 1024+BudgetTokens for thinking
+		if maxTokens < 16384 {
+			maxTokens = 16384
+		}
+	case "enabled":
+		budget := c.endpoint.ThinkingBudget
+		if budget < 1024 {
+			budget = 10000 // reasonable default
+		}
+		thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+		if maxTokens < budget+1024 {
+			maxTokens = budget + 1024
+		}
+	}
+
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.endpoint.Model),
-		MaxTokens: int64(8192),
+		MaxTokens: maxTokens,
 		Messages:  messages,
 		Tools:     toolsConfig,
 		System:    systemPrompts,
+		Thinking:  thinking,
 	}
 
 	// Start a streaming request.

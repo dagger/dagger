@@ -36,11 +36,12 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_5)
+	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_6)
 	modelDefaultGoogle    = "gemini-2.5-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
+	modelDefaultCodex     = "gpt-5.3-codex"
 )
 
 func resolveModelAlias(maybeAlias string) string {
@@ -96,6 +97,10 @@ type LLMEndpoint struct {
 	AuthToken        string // OAuth bearer token (used instead of Key when set)
 	IsOAuth          bool   // Whether this endpoint uses OAuth authentication
 	SubscriptionType string // "pro", "max", "team", "enterprise" (OAuth only)
+
+	// Thinking / reasoning configuration
+	ThinkingMode   string // "adaptive", "enabled", "disabled" (Anthropic) or reasoning effort (OpenAI)
+	ThinkingBudget int64  // Max thinking tokens (Anthropic, when mode == "enabled")
 }
 
 type LLMProvider string
@@ -167,6 +172,8 @@ type LLMRouter struct {
 	AnthropicAuthToken       string // OAuth bearer token for Claude Code subscription
 	AnthropicIsOAuth         bool   // Whether Anthropic auth uses OAuth
 	AnthropicSubscriptionType string // "pro", "max", etc. (OAuth only)
+	AnthropicThinkingMode    string // "adaptive", "enabled", "disabled"
+	AnthropicThinkingBudget  int64  // Max thinking tokens (when mode == "enabled")
 
 	OpenAIAPIKey          string
 	OpenAIAzureVersion    string
@@ -177,6 +184,7 @@ type LLMRouter struct {
 	// OpenAI Codex (ChatGPT subscription) fields
 	OpenAICodexAuthToken string // OAuth bearer token
 	OpenAICodexModel     string
+	OpenAICodexThinkingMode string // Reasoning effort: "none", "low", "medium", "high", "xhigh"
 
 	GeminiAPIKey  string
 	GeminiBaseURL string
@@ -234,6 +242,8 @@ func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 		AuthToken:        r.AnthropicAuthToken,
 		IsOAuth:          r.AnthropicIsOAuth,
 		SubscriptionType: r.AnthropicSubscriptionType,
+		ThinkingMode:     r.AnthropicThinkingMode,
+		ThinkingBudget:   r.AnthropicThinkingBudget,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
@@ -242,10 +252,11 @@ func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 
 func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:   "https://chatgpt.com/backend-api",
-		AuthToken: r.OpenAICodexAuthToken,
-		IsOAuth:   true,
-		Provider:  OpenAICodex,
+		BaseURL:      "https://chatgpt.com/backend-api",
+		AuthToken:    r.OpenAICodexAuthToken,
+		IsOAuth:      true,
+		Provider:     OpenAICodex,
+		ThinkingMode: r.OpenAICodexThinkingMode,
 	}
 	endpoint.Client = newOpenAICodexClient(endpoint)
 	return endpoint
@@ -307,7 +318,7 @@ func (r *LLMRouter) DefaultModel() string {
 		}
 	}
 	if r.OpenAICodexAuthToken != "" {
-		return "gpt-5.1-codex"
+		return modelDefaultCodex
 	}
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
@@ -474,6 +485,10 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 			if r.AnthropicBaseURL == "" && provider.BaseURL != "" {
 				r.AnthropicBaseURL = provider.BaseURL
 			}
+			if provider.ThinkingMode != "" {
+				r.AnthropicThinkingMode = provider.ThinkingMode
+				r.AnthropicThinkingBudget = provider.ThinkingBudget
+			}
 		case "openai":
 			if r.OpenAIAPIKey == "" {
 				r.OpenAIAPIKey = provider.APIKey
@@ -484,6 +499,9 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 		case "openai-codex":
 			if provider.IsOAuth() && r.OpenAICodexAuthToken == "" {
 				r.OpenAICodexAuthToken = provider.AuthToken
+			}
+			if provider.ThinkingMode != "" {
+				r.OpenAICodexThinkingMode = provider.ThinkingMode
 			}
 		case "google":
 			if r.GeminiAPIKey == "" {

@@ -154,17 +154,21 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		Enabled: true,
 	}
 
-	var defaultModel string
-	switch providerChoice {
-	case "openrouter":
-		defaultModel = "anthropic/claude-sonnet-4.5"
+	if providerChoice == "openrouter" {
 		providerCfg.BaseURL = "https://openrouter.ai/api/v1"
-	case "anthropic":
-		defaultModel = "claude-sonnet-4.5"
-	case "openai":
-		defaultModel = "gpt-4.1"
-	case "google":
-		defaultModel = "gemini-2.5-flash"
+	}
+
+	defaultModel := DefaultModelForProvider(providerChoice)
+
+	// 5. Let user pick a model
+	selectedModel, err := promptModelSelection(ctx, promptHandler, providerChoice, defaultModel)
+	if err != nil {
+		return false, err
+	}
+
+	// 6. Optionally configure thinking/reasoning
+	if err := promptThinkingConfig(ctx, promptHandler, providerChoice, selectedModel, &providerCfg); err != nil {
+		return false, err
 	}
 
 	// Load existing config or create new one (preserves non-LLM sections)
@@ -175,7 +179,7 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 
 	cfg.LLM = LLMConfig{
 		DefaultProvider: providerChoice,
-		DefaultModel:    defaultModel,
+		DefaultModel:    selectedModel,
 		Providers: map[string]Provider{
 			providerChoice: providerCfg,
 		},
@@ -508,8 +512,21 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
 		cfg.LLM.Providers = make(map[string]Provider)
 	}
 
+	defaultModel := DefaultModelForProvider("anthropic")
+
+	// Let user pick a model
+	selectedModel, err := promptModelSelection(ctx, ph, "anthropic", defaultModel)
+	if err != nil {
+		return false, err
+	}
+
+	// Optionally configure thinking
+	if err := promptThinkingConfig(ctx, ph, "anthropic", selectedModel, providerCfg); err != nil {
+		return false, err
+	}
+
 	cfg.LLM.DefaultProvider = "anthropic"
-	cfg.LLM.DefaultModel = "claude-sonnet-4-5"
+	cfg.LLM.DefaultModel = selectedModel
 	cfg.LLM.Providers["anthropic"] = *providerCfg
 
 	if err := cfg.Save(); err != nil {
@@ -642,8 +659,21 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 
 	providerCfg.SubscriptionType = "chatgpt"
 
+	defaultModel := DefaultModelForProvider("openai-codex")
+
+	// Let user pick a model
+	selectedModel, err := promptModelSelection(ctx, ph, "openai-codex", defaultModel)
+	if err != nil {
+		return false, err
+	}
+
+	// Optionally configure reasoning effort
+	if err := promptThinkingConfig(ctx, ph, "openai-codex", selectedModel, providerCfg); err != nil {
+		return false, err
+	}
+
 	cfg.LLM.DefaultProvider = "openai-codex"
-	cfg.LLM.DefaultModel = "gpt-5.1-codex"
+	cfg.LLM.DefaultModel = selectedModel
 	cfg.LLM.Providers["openai-codex"] = *providerCfg
 
 	if err := cfg.Save(); err != nil {
@@ -651,6 +681,173 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 	}
 
 	return true, nil
+}
+
+// promptModelSelection presents a model picker for the given provider.
+// If the provider has no catalog entries, falls back to a text input.
+func promptModelSelection(ctx context.Context, ph PromptHandler, provider, defaultModel string) (string, error) {
+	models := ModelsForProvider(provider)
+	if len(models) == 0 {
+		// No catalog — accept any model string
+		model := defaultModel
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Model").
+					Description("Enter the model identifier to use.").
+					Value(&model).
+					Validate(validateNonEmpty("model")),
+			),
+		)
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+			return "", err
+		}
+		return model, nil
+	}
+
+	// Build select options from catalog
+	opts := make([]huh.Option[string], 0, len(models)+1)
+	for _, m := range models {
+		opts = append(opts, huh.NewOption(m.Label, m.ID))
+	}
+	opts = append(opts, huh.NewOption("Other (enter manually)", "__other__"))
+
+	selected := defaultModel
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Height(8).
+				Filtering(true).
+				Title("Choose a model").
+				Options(opts...).
+				Value(&selected),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return "", err
+	}
+
+	if selected == "__other__" {
+		model := ""
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Model").
+					Description("Enter the model identifier.").
+					Value(&model).
+					Validate(validateNonEmpty("model")),
+			),
+		)
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+			return "", err
+		}
+		return model, nil
+	}
+
+	return selected, nil
+}
+
+// promptThinkingConfig asks the user whether to enable extended thinking / reasoning.
+// Only shown for providers/models that support it.
+func promptThinkingConfig(ctx context.Context, ph PromptHandler, provider, model string, cfg *Provider) error {
+	// Check if the selected model supports thinking
+	supportsThinking := false
+	for _, m := range ModelsForProvider(provider) {
+		if m.ID == model && m.SupportsThinking {
+			supportsThinking = true
+			break
+		}
+	}
+
+	// For providers we know support reasoning (OpenAI Codex), always offer it
+	if provider == "openai-codex" {
+		return promptOpenAIReasoning(ctx, ph, cfg)
+	}
+
+	if !supportsThinking {
+		return nil
+	}
+
+	// Anthropic-style thinking config
+	return promptAnthropicThinking(ctx, ph, cfg)
+}
+
+func promptAnthropicThinking(ctx context.Context, ph PromptHandler, cfg *Provider) error {
+	var mode string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Height(6).
+				Title("Extended thinking").
+				Description("Extended thinking lets Claude reason through complex problems step-by-step before responding.").
+				Options(
+					huh.NewOption("Off (default)", ""),
+					huh.NewOption("Adaptive (model decides)", "adaptive"),
+					huh.NewOption("Enabled (with token budget)", "enabled"),
+				).
+				Value(&mode),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return err
+	}
+
+	cfg.ThinkingMode = mode
+
+	if mode == "enabled" {
+		budget := "10000"
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Thinking budget (tokens)").
+					Description("How many tokens Claude can use for reasoning. Min: 1024.").
+					Value(&budget).
+					Validate(func(s string) error {
+						if s == "" {
+							return fmt.Errorf("budget cannot be empty")
+						}
+						return nil
+					}),
+			),
+		)
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+			return err
+		}
+		var n int64
+		if _, err := fmt.Sscanf(budget, "%d", &n); err == nil && n >= 1024 {
+			cfg.ThinkingBudget = n
+		} else {
+			cfg.ThinkingBudget = 10000
+		}
+	}
+
+	return nil
+}
+
+func promptOpenAIReasoning(ctx context.Context, ph PromptHandler, cfg *Provider) error {
+	var effort string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Height(8).
+				Title("Reasoning effort").
+				Description("Controls how much the model reasons before responding. Higher = slower but better.").
+				Options(
+					huh.NewOption("Medium (default)", ""),
+					huh.NewOption("None (fastest)", "none"),
+					huh.NewOption("Low", "low"),
+					huh.NewOption("High", "high"),
+					huh.NewOption("Extra High (xhigh)", "xhigh"),
+				).
+				Value(&effort),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return err
+	}
+
+	cfg.ThinkingMode = effort
+	return nil
 }
 
 // parseOpenAIAuthInput extracts an authorization code from user input.

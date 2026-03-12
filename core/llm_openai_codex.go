@@ -12,6 +12,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -106,6 +107,14 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*ModelMessa
 			OfToolChoiceMode: param.NewOpt(responses.ToolChoiceOptionsAuto),
 		}
 		params.ParallelToolCalls = param.NewOpt(true)
+	}
+
+	// Configure reasoning effort if specified
+	if c.endpoint.ThinkingMode != "" {
+		params.Reasoning = shared.ReasoningParam{
+			Effort:  shared.ReasoningEffort(c.endpoint.ThinkingMode),
+			Summary: shared.ReasoningSummaryConcise,
+		}
 	}
 
 	// Use streaming
