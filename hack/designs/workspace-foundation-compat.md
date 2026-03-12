@@ -76,6 +76,48 @@ Defer:
 - generic lockfile consumers that are not part of the workspace product story
 - lockfile-enabled `container.from`
 
+## Layering Model
+
+`workspace-plumbing` is the runtime model:
+
+- what the engine loads at connect time
+- how current-directory commands resolve modules
+- how legacy `dagger.json` is adapted into generic module-loading inputs
+- how workspace binding participates in identity and caching
+
+`workspace-porcelain` is the author-intent model:
+
+- what state is persisted in the repo
+- how users target and manage workspaces
+- when repo files are allowed to change
+- how migration and locking become explicit and legible
+
+Generic lockfile consumers remain follow-up work. They do not define the workspace
+product boundary.
+
+## Architectural Seam
+
+The main seam for this split is connect-time module loading in
+`engine/server/session.go`.
+
+- PR A should be reviewed primarily in terms of "which modules are loaded for this
+  session, and why", not in terms of Cobra command shape
+- CLI changes in this branch are support work for existing current-directory flows,
+  not the primary architecture
+- if a change forces reviewers to reason about repo-owned workspace state, it
+  belongs in PR B instead
+
+## Legacy Adapter Rule
+
+Legacy support in PR A is an adapter, not a parallel product model.
+
+- parse legacy-only shape once during compat loading
+- translate it into generic module-loading inputs
+- stop leaking legacy concepts after that chokepoint
+
+This keeps legacy compatibility localized instead of turning it into a second set
+of semantics spread across the codebase
+
 ## Design Constraints
 
 - No silent auto-conversion of legacy projects on connect.
@@ -97,6 +139,29 @@ Defer:
   authoring/targeting UX.
 - The workspace lockfile follows the same boundary: PR B owns the workspace-authored
   lock semantics, while generic lockfile consumers are follow-up work.
+
+## PR A Success Criteria
+
+PR A is successful when:
+
+- existing current-directory `call` / `functions` / `check` / `generate` flows stay
+  coherent in standalone, workspace-shaped, and eligible legacy repos
+- legacy `dagger.json` pins are honored directly without introducing
+  repo-authored `.dagger/lock`
+- workspace binding, default-module selection, and related cache identity stay part
+  of runtime truth
+- no new primary workspace authoring or targeting UX is introduced
+- no repo-owned state appears or mutates as a side effect of the compat path
+
+## PR A Test Priorities
+
+The highest-value coverage for this branch is:
+
+- legacy pin honor in compat mode, without `.dagger/lock`
+- multi-module default-module selection
+- sibling workspace module entrypoints under existing commands
+- workspace binding and cache identity
+- current-directory `call` / `functions` / `check` / `generate` behavior
 
 ## Foundation Retained From `workspace`
 
