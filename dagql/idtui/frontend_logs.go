@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
@@ -22,12 +23,13 @@ import (
 )
 
 type frontendLogs struct {
-	profile termenv.Profile
-	out     TermOutput
-	mu      sync.Mutex
-	db      *dagui.DB
-	opts    dagui.FrontendOpts
-	logs    streamingLogExporter
+	profile        termenv.Profile
+	out            TermOutput
+	mu             sync.Mutex
+	db             *dagui.DB
+	opts           dagui.FrontendOpts
+	logs           streamingLogExporter
+	telemetryError atomic.Pointer[error]
 }
 
 // NewLogs creates a new logs-style frontend that only prints logs from spans,
@@ -73,6 +75,9 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)
 	}
+	if p := fe.telemetryError.Load(); p != nil {
+		handleTelemetryErrorOutput(fe.out, fe.out, *p)
+	}
 	return normalizeFrontendExit(runErr, fe.db)
 }
 
@@ -80,7 +85,9 @@ func (fe *frontendLogs) Opts() *dagui.FrontendOpts {
 	return &fe.opts
 }
 
-func (fe *frontendLogs) SetTelemetryError(error) {}
+func (fe *frontendLogs) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
+}
 
 func (fe *frontendLogs) SetVerbosity(verbosity int) {
 	fe.mu.Lock()
