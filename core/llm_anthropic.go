@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -82,11 +83,9 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 
 //nolint:gocyclo
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	markdownW := telemetry.NewWriter(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	// parentCtx is the context we create sibling spans from (thinking, response).
+	// Each phase of the streaming response gets its own span.
+	parentCtx := ctx
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -266,23 +265,68 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 
 	acc := new(anthropic.Message)
 
-	// Track thinking spans per content block index.
-	type thinkingSpanState struct {
-		span  trace.Span
-		stdio telemetry.SpanStreams
+	// Phase-based span management: thinking and response are sibling spans
+	// created from parentCtx. Each content block maps to a phase; phases
+	// open/close spans lazily as streaming content arrives. This supports
+	// interleaved thinking/response blocks (thinking → text → thinking → text).
+	type phase struct {
+		span       trace.Span
+		stdio      telemetry.SpanStreams
+		markdownW  io.Writer
+		isThinking bool
 	}
-	thinkingSpans := map[int64]*thinkingSpanState{}
-	// endThinking closes the thinking span for the given block index.
-	endThinking := func(idx int64) {
-		if ts, ok := thinkingSpans[idx]; ok {
-			ts.stdio.Close()
-			ts.span.End()
-			delete(thinkingSpans, idx)
+	phases := map[int64]*phase{}
+
+	startPhase := func(idx int64, thinking bool) *phase {
+		if p, ok := phases[idx]; ok {
+			return p
+		}
+		var p phase
+		p.isThinking = thinking
+		if thinking {
+			phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "thinking",
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+					attribute.Bool("llm.thinking", true),
+				),
+			)
+			p.span = span
+			p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, "text/markdown"),
+				log.Bool("llm.thinking", true),
+			)
+		} else {
+			phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "LLM response",
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+				),
+			)
+			p.span = span
+			p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary)
+			p.markdownW = telemetry.NewWriter(phaseCtx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		}
+		phases[idx] = &p
+		return &p
+	}
+
+	endPhase := func(idx int64) {
+		if p, ok := phases[idx]; ok {
+			p.stdio.Close()
+			telemetry.EndWithCause(p.span, &rerr)
+			delete(phases, idx)
 		}
 	}
+
 	defer func() {
-		for idx := range thinkingSpans {
-			endThinking(idx)
+		for idx := range phases {
+			endPhase(idx)
 		}
 	}()
 
@@ -306,37 +350,32 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 
 		switch ev := event.AsAny().(type) {
 		case anthropic.ContentBlockStartEvent:
-			if ev.ContentBlock.Type == "thinking" {
-				// Start a child span for this thinking block.
-				thinkCtx, thinkSpan := Tracer(ctx).Start(ctx, "thinking",
-					telemetry.Reveal(),
-					trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, "💭"),
-						attribute.Bool("llm.thinking", true),
-					),
-				)
-				thinkStdio := telemetry.SpanStdio(thinkCtx, InstrumentationLibrary,
-					log.String(telemetry.ContentTypeAttr, "text/markdown"),
-					log.Bool("llm.thinking", true),
-				)
-				thinkingSpans[ev.Index] = &thinkingSpanState{
-					span:  thinkSpan,
-					stdio: thinkStdio,
-				}
+			switch ev.ContentBlock.Type {
+			case "thinking":
+				startPhase(ev.Index, true)
+			case "text":
+				startPhase(ev.Index, false)
 			}
 
 		case anthropic.ContentBlockDeltaEvent:
 			switch ev.Delta.Type {
 			case "thinking_delta":
-				if ts, ok := thinkingSpans[ev.Index]; ok {
-					fmt.Fprint(ts.stdio.Stdout, ev.Delta.Thinking)
+				if p := phases[ev.Index]; p != nil {
+					fmt.Fprint(p.stdio.Stdout, ev.Delta.Thinking)
 				}
 			case "text_delta":
-				fmt.Fprint(markdownW, ev.Delta.Text)
+				p := phases[ev.Index]
+				if p == nil {
+					// Lazily create a response phase if we get text without a start event
+					p = startPhase(ev.Index, false)
+				}
+				if p.markdownW != nil {
+					fmt.Fprint(p.markdownW, ev.Delta.Text)
+				}
 			}
 
 		case anthropic.ContentBlockStopEvent:
-			endThinking(ev.Index)
+			endPhase(ev.Index)
 		}
 	}
 

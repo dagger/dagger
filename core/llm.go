@@ -1068,13 +1068,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 		client := ep.Client
 		err = backoff.Retry(func() error {
 			var sendErr error
-			ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-			))
 			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
-			telemetry.EndWithCause(span, &sendErr)
 			if sendErr != nil {
 				var finished *ModelFinishedError
 				if errors.As(sendErr, &finished) {
