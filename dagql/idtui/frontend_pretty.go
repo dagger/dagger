@@ -1561,36 +1561,59 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 
 	end := len(allLines)
 	if focusLine >= 0 && len(allLines) > viewportHeight {
-		// Determine the focused span's extent.
-		focusEnd := focusLine
+		focusHeight := 1
 		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			focusEnd = focusLine + focused.totalLineCount()
+			focusHeight = focused.totalLineCount()
 		}
-		if focusEnd > len(allLines) {
-			focusEnd = len(allLines)
-		}
-
-		// Place the focused span in the viewport with remaining
-		// space split evenly above and below.
-		focusHeight := focusEnd - focusLine
-		remaining := viewportHeight - focusHeight
-		if remaining < 0 {
-			remaining = 0
-		}
-		below := remaining / 2
-
-		end = focusEnd + below
-		// Ensure the focus start is visible: the visible window is
-		// [end-viewportHeight, end), so end <= focusLine+viewportHeight.
-		if end > focusLine+viewportHeight {
-			end = focusLine + viewportHeight
-		}
-		if end > len(allLines) {
-			end = len(allLines)
-		}
+		end = cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
 	}
 
 	return allLines[:end]
+}
+
+// cropEnd computes the end index for slicing rendered lines so that:
+//  1. The focused span [focusLine, focusLine+focusHeight) is never cropped.
+//  2. When the focused span fits in the viewport, its start line is visible
+//     (i.e. within [end-viewportHeight, end)).
+//  3. Remaining viewport space is split evenly above and below the focused span.
+//
+// Content above the visible window scrolls into terminal scrollback naturally.
+func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
+	focusEnd := focusLine + focusHeight
+	if focusEnd > totalLines {
+		focusEnd = totalLines
+	}
+
+	// When the focused span fits in the viewport, distribute remaining
+	// space evenly above and below.
+	remaining := viewportHeight - focusHeight
+	if remaining < 0 {
+		remaining = 0
+	}
+	below := remaining / 2
+
+	end := focusEnd + below
+
+	// Ensure the focus start is visible when it fits in the viewport:
+	// the visible window is [end-viewportHeight, end), so cap end.
+	if focusHeight <= viewportHeight && end > focusLine+viewportHeight {
+		end = focusLine + viewportHeight
+	}
+
+	// Never crop to less than a full viewport when there's enough content.
+	if end < viewportHeight && viewportHeight < totalLines {
+		end = viewportHeight
+	}
+
+	// Never crop below focusEnd — the focused span is always fully shown.
+	if end < focusEnd {
+		end = focusEnd
+	}
+	if end > totalLines {
+		end = totalLines
+	}
+
+	return end
 }
 
 // totalLineCount returns the total number of rendered lines for a SpanTreeView,
