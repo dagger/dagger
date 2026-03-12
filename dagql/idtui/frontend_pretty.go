@@ -2389,7 +2389,6 @@ func (fe *frontendPretty) syncPrompt() {
 // runShellAsync runs a shell handler function in a background goroutine,
 // then dispatches a prompt refresh + re-render back to the UI thread.
 func (fe *frontendPretty) runShellAsync(work func()) {
-	fe.syncPrompt()
 	go func() {
 		work()
 		fe.dispatch(func() {

@@ -220,6 +220,10 @@ func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, des
 	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
+func (fe *frontendPlain) Close() error {
+	return nil
+}
+
 func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {
 	return form.RunWithContext(ctx)
 }

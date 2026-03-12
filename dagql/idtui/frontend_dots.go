@@ -154,6 +154,10 @@ func (fe *frontendDots) HandlePrompt(ctx context.Context, _, prompt string, dest
 	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
+func (fe *frontendDots) Close() error {
+	return nil
+}
+
 func (fe *frontendDots) HandleForm(ctx context.Context, form *huh.Form) error {
 	return form.RunWithContext(ctx)
 }

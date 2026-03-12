@@ -138,6 +138,10 @@ func (fe *frontendLogs) HandlePrompt(ctx context.Context, _, prompt string, dest
 	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
+func (fe *frontendLogs) Close() error {
+	return nil
+}
+
 func (fe *frontendLogs) HandleForm(ctx context.Context, form *huh.Form) error {
 	return form.RunWithContext(ctx)
 }

@@ -112,6 +112,10 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// Close signals the frontend that no more data will be sent,
+	// allowing it to shut down gracefully.
+	Close() error
+
 	prompt.PromptHandler
 }
 

@@ -77,15 +77,16 @@ var llmSetupCmd = &cobra.Command{
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 			cmd.SetOut(stdio.Stdout)
 			cmd.SetErr(stdio.Stderr)
+			defer stdio.Close()
 
 			configured, err := llmconfig.InteractiveSetup(ctx, Frontend)
 			if errors.Is(err, llmconfig.ErrAborted) {
 				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
-				stdio.Close()
+				Frontend.Close()
 				return nil, nil
 			}
 			if err != nil {
-				stdio.Close()
+				Frontend.Close()
 				return nil, err
 			}
 
@@ -95,7 +96,7 @@ var llmSetupCmd = &cobra.Command{
 				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
 			}
 
-			stdio.Close()
+			Frontend.Close()
 			return nil, nil
 		})
 	},
