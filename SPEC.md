@@ -1,203 +1,164 @@
 # Fulltext Search for idtui
 
-## Overview
+## Status
 
-Add Vim-style `/` search to the pretty TUI frontend. Searches span names and
-vterm log content. Highlights matches, navigates between them with `n`/`N`,
-and scrolls matched log lines into view within nested vterms.
+### Done
 
-## UX (Vim-inspired)
+- **Core search infrastructure** (`search.go`): `/` enters search mode with
+  a TextInput prompt, `Enter` confirms, `n`/`N` navigate matches (wrapping),
+  `Esc` clears. Searches span names + vterm log content (case-insensitive
+  substring). Match state auto-refreshes as new spans/logs arrive.
 
-| Mode | Key | Action |
-|------|-----|--------|
-| Nav | `/` | Enter search mode — show search input bar at bottom |
-| Search input | `Enter` | Confirm search, jump to first match forward from focus |
-| Search input | `Esc` | Cancel search, clear query |
-| Nav (with active query) | `n` | Next match (forward, wrapping) |
-| Nav (with active query) | `N` | Previous match (backward, wrapping) |
-| Nav (with active query) | `Esc` | Clear search (then second Esc unzooms as usual) |
+- **Match navigation**: Navigating to a span-name match focuses the row and
+  expands ancestors. Navigating to a log match also expands the span and
+  calls `Vterm.ScrollToRow` to center the matched line.
 
-When a search is active, the keymap bar shows: `n next · N prev · esc clear`
+- **Keymap bar integration**: Shows `/ search`, `n next (M/N)`, `N prev`,
+  `esc clear search` bindings when a search is active.
 
-## What gets searched
+- **Title-line highlighting** (`highlight.go`): ANSI-aware `highlightANSI()`
+  that skips escape sequences and matches on visible text. Replays all prior
+  ANSI state after highlight end to preserve faint/bold/color formatting.
+  Applied to span title lines in `SpanTreeView.Render`.
 
-1. **Span names** — `span.Name` (the label shown in the tree)
-2. **Vterm log content** — the plaintext extracted from each span's `Vterm`
-   (the `Content [][]rune` rows of the underlying `midterm.Terminal`)
+- **Separate title vs log rendering**: `renderRowContent` split into
+  `renderStep` (title) + `renderRowContentRest` (logs/errors/debug) so
+  SpanTreeView can highlight only the title, avoiding double-highlighting
+  with the vterm's own search overlay.
 
-Matching is **case-insensitive substring**.
+- **Vterm search state**: `SetSearchHighlight(query, currentRow)` on Vterm,
+  with `SearchQuery`/`SearchCurrentRow` fields. `syncSearchState()` propagates
+  to all vterms and calls `.Update()` on affected SpanTreeViews.
 
-## Data model additions to `frontendPretty`
+- **Repaint correctness**: `dirtySearchTrees()` diffs previous vs current
+  match span sets, calling `.Update()` on all affected components.
+
+### Broken: Vterm inline highlighting
+
+The ANSI post-processing approach in `Vterm.Render` (calling `highlightANSI`
+on rendered line output) has fundamental issues:
+
+- **Byte vs rune mismatch**: `highlightANSI` works on UTF-8 bytes, but
+  midterm's content is `[]rune` and format regions count **columns** (runes).
+  Multi-byte characters cause position drift between the query match and the
+  ANSI output, producing highlights that start/end at wrong positions.
+
+- **Fragile ANSI parsing**: Post-processing rendered output requires
+  perfectly parsing all ANSI sequences (CSI, OSC, etc.) to separate visible
+  text from formatting. Edge cases abound.
+
+- **Format state restoration**: After ending a highlight, we must restore the
+  full cumulative ANSI state. The current approach (replay all prior
+  sequences) is verbose and may interact poorly with complex formatting.
+
+## Next: Native midterm search support
+
+The right fix is to move search highlighting into midterm itself, where it
+operates on the structured **rune content + format canvas** rather than
+post-processing ANSI byte streams.
+
+### Design
+
+Midterm already has the perfect layering:
+
+- `Screen.Content [][]rune` — the character data
+- `Screen.Format *Canvas` — linked-list `Region`s per row with `Format` structs
+- `renderLine()` — iterates regions and emits ANSI sequences
+
+Add a **search overlay** that `renderLine` composites on top of the format
+canvas during rendering. This operates at the rune/column level, completely
+sidestepping ANSI parsing issues.
+
+### New midterm API
 
 ```go
-// search state
-searchActive   bool        // search mode active (query bar shown)
-searchQuery    string      // current confirmed search string
-searchInput    *tuist.TextInput // the search bar input component
-searchMatches  []searchMatch    // ordered list of all matches
-searchIdx      int              // index into searchMatches of current match (-1 = none)
-```
+// SearchHighlight represents a highlighted range on a single row.
+type SearchHighlight struct {
+    Col, End int    // column range [Col, End)
+    Current  bool   // true = current match (distinct style)
+}
 
-```go
-type searchMatch struct {
-    spanID  dagui.SpanID
-    // for log matches, the row within the vterm
-    logRow  int  // -1 means the span name itself matched
+// Search state on Terminal
+type Terminal struct {
+    // ...existing fields...
+
+    // SearchHighlights holds per-row highlight ranges, keyed by row index.
+    // Set by the caller; consulted by renderLine during rendering.
+    SearchHighlights map[int][]SearchHighlight
+    // SearchMatchStyle is the Format override for non-current matches.
+    SearchMatchStyle Format
+    // SearchCurrentStyle is the Format override for the current match.
+    SearchCurrentStyle Format
 }
 ```
 
-## Key implementation pieces
+### renderLine integration
 
-### 1. Search bar component
+In `renderLine`, after determining the format for a character at `(row, col)`,
+check if any `SearchHighlights[row]` range covers `col`. If so, override
+`Bg` and `Fg` from the match/current style. This is O(highlights-per-row)
+per character, but search highlights are sparse.
 
-When `/` is pressed in nav mode:
-- Create a `tuist.TextInput` with prompt `"/"`, insert it before the keymap bar
-  (same pattern as the shell's `textInput`).
-- Set `searchActive = true`, focus the search input.
-- On `Enter`: set `searchQuery`, call `buildSearchMatches()`, jump to first
-  match, remove the search text input, return to nav mode.
-- On `Esc`: cancel, clear `searchActive`, remove input, return to nav mode.
+Alternatively, for better perf, pre-split format regions against highlight
+ranges at the start of `renderLine`.
 
-### 2. `buildSearchMatches()`
-
-Walk `fe.rows.Order` (the flattened visible rows). For each row:
-1. Check `strings.Contains(strings.ToLower(span.Name), query)` → add match
-   with `logRow = -1`.
-2. If the span has a `Vterm` in `fe.logs.Logs[spanID]`:
-   - Access `vterm.Term().Content` (the `[][]rune` from `midterm.Terminal`).
-   - For each row, convert `[]rune` to `string`, check
-     `strings.Contains(strings.ToLower(line), query)`.
-   - Add match with the row index.
-
-Rebuild matches whenever `searchQuery` changes or the view is recalculated
-(new spans/logs arrive).
-
-### 3. Navigating to a match
-
-**Span-name match (`logRow == -1`):**
-- Call `fe.focus(row)` to move the cursor to that span.
-- Expand parents as needed so the span is visible (same as `goErrorOrigin`).
-
-**Log match (`logRow >= 0`):**
-- Focus the span (expand parents if needed).
-- Expand the span itself so logs are shown.
-- **Scroll the Vterm** so the matched line is visible: set
-  `vterm.Offset = max(0, logRow - vterm.Height/2)` to center the match.
-
-### 4. Midterm: search helper (new interface)
-
-Add a `Search` method to `midterm.Terminal` (or as a free function in a new
-`midterm/search` package if we prefer not to touch the struct). Since midterm
-is a dependency at `~/go/pkg/mod`, we have two options:
-
-**Option A (preferred): Keep search logic in idtui.** No midterm changes needed.
-The `midterm.Terminal.Content` field (`[][]rune`) is public. We can iterate it
-directly from idtui:
+### Search + step-through API
 
 ```go
-func searchVterm(vt *midterm.Terminal, query string) []int {
-    query = strings.ToLower(query)
-    var rows []int
-    for i, line := range vt.Content {
-        if i >= vt.UsedHeight() {
-            break
-        }
-        if strings.Contains(strings.ToLower(string(line)), query) {
-            rows = append(rows, i)
-        }
-    }
-    return rows
-}
+// Search finds all occurrences of query (case-insensitive) in Content
+// and populates SearchHighlights. Returns the total match count.
+func (vt *Terminal) Search(query string) int
+
+// SearchClear removes all search highlights.
+func (vt *Terminal) SearchClear()
+
+// SearchSetCurrent marks the match at the given index as "current"
+// (receives CurrentStyle). Returns the (row, col) of that match.
+func (vt *Terminal) SearchSetCurrent(idx int) (row, col int)
 ```
 
-This avoids needing to fork/modify midterm.
+The `Search` method iterates `Content[0:UsedHeight()]`, finds all
+case-insensitive substring matches (rune-level), and builds the
+`SearchHighlights` map. Each match is stored in an ordered list for
+`SearchSetCurrent` to index into.
 
-**Option B: Add `Search(string) []int` to midterm.** Cleaner API but requires
-a midterm release. We can do Option A first and refactor later.
+### idtui integration changes
 
-→ **Go with Option A.**
+Once midterm has native search:
 
-### 5. Vterm scroll-into-view
+1. **Remove `highlightANSI` from Vterm.Render** — no more ANSI post-processing.
+   Delete `SearchQuery`/`SearchCurrentRow` fields from Vterm. Delete
+   `highlight.go` (or keep for title-line highlighting only).
 
-The `Vterm` wrapper in `vterm.go` already has `Offset` and `Height`. To scroll
-a search result into view:
+2. **`Vterm.SetSearchHighlight` calls `vt.Search(query)`** and
+   `vt.SearchSetCurrent(idx)` on the underlying midterm terminal.
 
-```go
-func (term *Vterm) ScrollToRow(row int) {
-    term.mu.Lock()
-    defer term.mu.Unlock()
-    // Center the target row in the viewport
-    term.Offset = max(0, row - term.Height/2)
-    // Clamp to valid range
-    maxOffset := max(0, term.vt.UsedHeight() - term.Height)
-    if term.Offset > maxOffset {
-        term.Offset = maxOffset
-    }
-    term.needsRedraw = true
-}
-```
+3. **`searchVtermRows` uses midterm's search results** instead of
+   independently scanning Content.
 
-### 6. Visual highlighting of matches
+4. **Title-line highlighting stays in idtui** — span names aren't in a
+   midterm terminal, so `highlightANSI` (or a simplified version) remains
+   for the 1-line title. This is reliable since title lines are short and
+   simple.
 
-Two levels:
+### Implementation order
 
-**a) Tree row highlight:** When rendering a span tree row whose span is a
-search match, apply a subtle background/style to make it visually distinct.
-Check `searchMatchSpans` (a `map[dagui.SpanID]bool` built alongside
-`searchMatches`) in `renderStep`/`renderToggler`.
+1. Add `SearchHighlight` struct and fields to `midterm.Terminal`
+2. Implement `Search()`, `SearchClear()`, `SearchSetCurrent()` on Terminal
+3. Modify `renderLine()` to composite search highlights over format regions
+4. Add tests in midterm
+5. Bump midterm dependency in dagger, wire up Vterm to use native search
+6. Remove ANSI post-processing from Vterm.Render
+7. Keep `highlightANSI` for title-line highlighting only (or simplify it)
 
-**b) Log line highlight (stretch goal):** In `Vterm.Render`, when search is
-active, apply a highlight (reverse video or background color) to the matched
-substring in the rendered line. This requires modifying `Vterm.Render` to
-accept an optional highlight config:
+## File inventory
 
-```go
-type VtermHighlight struct {
-    Query string
-    Row   int  // -1 for all rows
-}
-```
-
-For v1, we can skip in-line text highlighting and just scroll to + focus the
-matching span/line. Tree-level indicators (e.g., a colored marker) are enough.
-
-### 7. Integration with view recalculation
-
-In `recalculateViewLocked()`, after rebuilding `fe.rows`:
-- If `searchQuery != ""`, call `buildSearchMatches()` to refresh the match
-  list (spans may have appeared/disappeared).
-- Preserve `searchIdx` if the current match still exists, otherwise reset to 0.
-
-### 8. Keymap bar updates
-
-In `fe.keys()`, when `searchQuery != ""` and not in editline mode:
-- Add bindings for `n` (next match), `N` (prev match).
-- Change `esc` help to "clear search" (first press clears search, not unzoom).
-
-## File changes summary
-
-| File | Changes |
-|------|---------|
-| `dagql/idtui/frontend_pretty.go` | Add search state fields, `/` key handler, `n`/`N`/`Esc` search nav, `buildSearchMatches()`, search bar lifecycle, integrate with `recalculateViewLocked`, update `keys()` |
-| `dagql/idtui/vterm.go` | Add `ScrollToRow(row int)` method |
-| `dagql/idtui/search.go` (new) | `searchMatch` type, `searchVterm()` helper, `buildSearchMatches()`, match navigation logic |
-| `dagql/idtui/keymap.go` | No structural changes; search bindings added via `keys()` |
-
-## No midterm changes needed
-
-All search is done by reading the public `Content [][]rune` field of
-`midterm.Terminal` via `Vterm.Term()`. No new interfaces or methods are
-needed in midterm for v1.
-
-## Implementation order
-
-1. Add search state fields to `frontendPretty`
-2. Create `search.go` with `searchMatch`, `searchVterm()`, `buildSearchMatches()`
-3. Add `ScrollToRow` to `Vterm`
-4. Wire up `/` key → search bar (TextInput lifecycle)
-5. Wire up `Enter` → confirm + jump to first match
-6. Wire up `n`/`N` → next/prev match navigation
-7. Wire up `Esc` → clear search (when query active)
-8. Add search match indicators in span tree rendering
-9. Integrate `buildSearchMatches` into `recalculateViewLocked`
-10. Update keymap bar to show search bindings
+| File | Role |
+|------|------|
+| `~/src/midterm/terminal.go` | Search state fields, `Search`/`SearchClear`/`SearchSetCurrent` |
+| `~/src/midterm/render.go` | `renderLine` overlay compositing |
+| `~/src/midterm/search.go` (new) | Search algorithm, match storage |
+| `dagql/idtui/search.go` | Match navigation, `buildSearchMatches`, `syncSearchState` |
+| `dagql/idtui/vterm.go` | `SetSearchHighlight` → delegates to midterm |
+| `dagql/idtui/highlight.go` | Title-line ANSI highlighting (kept, simplified) |
+| `dagql/idtui/frontend_pretty.go` | Key bindings, search bar, SpanTreeView title highlighting |
