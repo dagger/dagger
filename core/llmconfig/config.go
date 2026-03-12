@@ -41,10 +41,11 @@ type Provider struct {
 	Enabled         bool   `toml:"enabled"`
 
 	// OAuth fields for Claude Code subscription auth
-	AuthType     string `toml:"auth_type,omitempty"`      // "oauth" for Claude Code OAuth
-	AuthToken    string `toml:"auth_token,omitempty"`     // OAuth access token
-	RefreshToken string `toml:"refresh_token,omitempty"`  // OAuth refresh token
-	TokenExpiry  int64  `toml:"token_expiry,omitempty"`   // Unix timestamp (ms) when access token expires
+	AuthType         string `toml:"auth_type,omitempty"`         // "oauth" for Claude Code OAuth
+	AuthToken        string `toml:"auth_token,omitempty"`        // OAuth access token
+	RefreshToken     string `toml:"refresh_token,omitempty"`     // OAuth refresh token
+	TokenExpiry      int64  `toml:"token_expiry,omitempty"`      // Unix timestamp (ms) when access token expires
+	SubscriptionType string `toml:"subscription_type,omitempty"` // "pro", "max", "team", "enterprise"
 }
 
 // IsOAuth returns true if this provider uses OAuth authentication.

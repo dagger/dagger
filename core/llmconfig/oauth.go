@@ -20,6 +20,7 @@ const (
 	oauthTokenURL    = "https://console.anthropic.com/v1/oauth/token"
 	oauthRedirectURI = "https://console.anthropic.com/oauth/code/callback"
 	oauthScopes      = "org:create_api_key user:profile user:inference"
+	oauthProfileURL  = "https://api.anthropic.com/api/oauth/profile"
 )
 
 // OAuthTokenResponse represents the token endpoint response.
@@ -96,13 +97,20 @@ func ExchangeOAuthCode(authCode, verifier string) (*Provider, error) {
 	// Subtract 5 minutes from expiry for safety margin
 	expiryMs := time.Now().UnixMilli() + int64(tokenResp.ExpiresIn)*1000 - 5*60*1000
 
-	return &Provider{
+	provider := &Provider{
 		AuthType:     "oauth",
 		AuthToken:    tokenResp.AccessToken,
 		RefreshToken: tokenResp.RefreshToken,
 		TokenExpiry:  expiryMs,
 		Enabled:      true,
-	}, nil
+	}
+
+	// Fetch subscription type from profile (best-effort)
+	if subType, err := FetchSubscriptionType(tokenResp.AccessToken); err == nil {
+		provider.SubscriptionType = subType
+	}
+
+	return provider, nil
 }
 
 // RefreshOAuthToken refreshes an expired OAuth token.
@@ -142,6 +150,12 @@ func RefreshOAuthToken(provider *Provider) (*Provider, error) {
 	updated.AuthToken = tokenResp.AccessToken
 	updated.RefreshToken = tokenResp.RefreshToken
 	updated.TokenExpiry = expiryMs
+
+	// Refresh subscription type (best-effort)
+	if subType, err := FetchSubscriptionType(tokenResp.AccessToken); err == nil {
+		updated.SubscriptionType = subType
+	}
+
 	return &updated, nil
 }
 
@@ -151,6 +165,67 @@ func IsTokenExpired(provider *Provider) bool {
 		return true
 	}
 	return time.Now().UnixMilli() >= provider.TokenExpiry
+}
+
+// FetchSubscriptionType queries the Anthropic OAuth profile endpoint to
+// determine the user's subscription type (pro, max, team, enterprise).
+func FetchSubscriptionType(accessToken string) (string, error) {
+	req, err := http.NewRequest("GET", oauthProfileURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("profile request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("profile request returned HTTP %d", resp.StatusCode)
+	}
+
+	var profile struct {
+		Organization struct {
+			OrganizationType string `json:"organization_type"`
+		} `json:"organization"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
+		return "", fmt.Errorf("failed to decode profile: %w", err)
+	}
+
+	// Map organization_type to friendly subscription name
+	switch profile.Organization.OrganizationType {
+	case "claude_pro":
+		return "pro", nil
+	case "claude_max":
+		return "max", nil
+	case "claude_team":
+		return "team", nil
+	case "claude_enterprise":
+		return "enterprise", nil
+	default:
+		return "", nil
+	}
+}
+
+// SubscriptionLabel returns a human-readable label for a subscription type.
+func SubscriptionLabel(subType string) string {
+	switch subType {
+	case "pro":
+		return "Claude Pro"
+	case "max":
+		return "Claude Max"
+	case "team":
+		return "Claude Team"
+	case "enterprise":
+		return "Claude Enterprise"
+	default:
+		return ""
+	}
 }
 
 // generatePKCE generates a PKCE verifier and challenge pair.

@@ -20,6 +20,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -81,6 +82,8 @@ type LLMSession struct {
 
 	autoCompact  bool
 	autoCompactL *sync.Mutex
+
+	subscriptionLabelCache string // cached OAuth subscription label
 }
 
 func NewLLMSession(
@@ -278,6 +281,25 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	return nil
 }
 
+// subscriptionLabel returns a display label for the OAuth subscription type,
+// or empty string if not using OAuth. Cached after first lookup.
+func (s *LLMSession) subscriptionLabel() string {
+	if s.subscriptionLabelCache != "" {
+		return s.subscriptionLabelCache
+	}
+	cfg, err := llmconfig.Load()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	for _, provider := range cfg.LLM.Providers {
+		if provider.IsOAuth() && provider.SubscriptionType != "" {
+			s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
+			return s.subscriptionLabelCache
+		}
+	}
+	return ""
+}
+
 func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	// Get current session token usage from API (for this thread only)
 	sessionInputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
@@ -312,9 +334,13 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		}
 	}
 	
-	lines := []string{
-		termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String(),
+	// Build the model line, optionally with subscription badge
+	modelLine := termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String()
+	if label := s.subscriptionLabel(); label != "" {
+		modelLine += " " + termenv.String("("+label+")").Foreground(termenv.ANSICyan).String()
 	}
+
+	lines := []string{modelLine}
 
 	if opts.Verbosity > dagui.ShowInternalVerbosity {
 		if sessionInputTokens > 0 {

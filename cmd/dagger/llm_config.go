@@ -56,8 +56,16 @@ var llmConfigCmd = &cobra.Command{
 
 		for name, provider := range cfg.LLM.Providers {
 			if provider.Enabled {
-				redacted := redactAPIKey(provider.APIKey)
-				fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s: %s\n", name, redacted)
+				if provider.IsOAuth() {
+					label := llmconfig.SubscriptionLabel(provider.SubscriptionType)
+					if label == "" {
+						label = "OAuth"
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s: %s\n", name, label)
+				} else {
+					redacted := redactAPIKey(provider.APIKey)
+					fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s: %s\n", name, redacted)
+				}
 				if provider.BaseURL != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "    Base URL: %s\n", provider.BaseURL)
 				}
@@ -96,7 +104,17 @@ var llmSetupCmd = &cobra.Command{
 		if aborted {
 			fmt.Fprintln(os.Stderr, "Setup cancelled.")
 		} else if configured {
-			fmt.Fprintln(os.Stderr, "✓ LLM configuration saved successfully!")
+			msg := "✓ LLM configuration saved successfully!"
+			// Show subscription type if OAuth was configured
+			if cfg, err := llmconfig.Load(); err == nil && cfg != nil {
+				for _, p := range cfg.LLM.Providers {
+					if label := llmconfig.SubscriptionLabel(p.SubscriptionType); label != "" {
+						msg += fmt.Sprintf(" (%s)", label)
+						break
+					}
+				}
+			}
+			fmt.Fprintln(os.Stderr, msg)
 		}
 		return nil
 	},

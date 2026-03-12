@@ -93,8 +93,9 @@ type LLMEndpoint struct {
 	Client   LLMClient
 
 	// OAuth fields for Claude Code subscription auth
-	AuthToken string // OAuth bearer token (used instead of Key when set)
-	IsOAuth   bool   // Whether this endpoint uses OAuth authentication
+	AuthToken        string // OAuth bearer token (used instead of Key when set)
+	IsOAuth          bool   // Whether this endpoint uses OAuth authentication
+	SubscriptionType string // "pro", "max", "team", "enterprise" (OAuth only)
 }
 
 type LLMProvider string
@@ -159,11 +160,12 @@ const (
 
 // A LLM routing configuration
 type LLMRouter struct {
-	AnthropicAPIKey    string
-	AnthropicBaseURL   string
-	AnthropicModel     string
-	AnthropicAuthToken string // OAuth bearer token for Claude Code subscription
-	AnthropicIsOAuth   bool   // Whether Anthropic auth uses OAuth
+	AnthropicAPIKey          string
+	AnthropicBaseURL         string
+	AnthropicModel           string
+	AnthropicAuthToken       string // OAuth bearer token for Claude Code subscription
+	AnthropicIsOAuth         bool   // Whether Anthropic auth uses OAuth
+	AnthropicSubscriptionType string // "pro", "max", etc. (OAuth only)
 
 	OpenAIAPIKey          string
 	OpenAIAzureVersion    string
@@ -217,11 +219,12 @@ func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) 
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:   r.AnthropicBaseURL,
-		Key:       r.AnthropicAPIKey,
-		Provider:  Anthropic,
-		AuthToken: r.AnthropicAuthToken,
-		IsOAuth:   r.AnthropicIsOAuth,
+		BaseURL:          r.AnthropicBaseURL,
+		Key:              r.AnthropicAPIKey,
+		Provider:         Anthropic,
+		AuthToken:        r.AnthropicAuthToken,
+		IsOAuth:          r.AnthropicIsOAuth,
+		SubscriptionType: r.AnthropicSubscriptionType,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
@@ -438,6 +441,7 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 				if r.AnthropicAuthToken == "" {
 					r.AnthropicAuthToken = provider.AuthToken
 					r.AnthropicIsOAuth = true
+					r.AnthropicSubscriptionType = provider.SubscriptionType
 				}
 			} else if r.AnthropicAPIKey == "" {
 				r.AnthropicAPIKey = provider.APIKey
