@@ -151,6 +151,9 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceModule"""
+  asWorkspaceModule: WorkspaceModule!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -2948,6 +2951,29 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type WorkspaceModule in the environment"""
+  withWorkspaceModuleInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceModule value to assign to the binding"""
+    value: WorkspaceModuleID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceModule output to be assigned in the environment
+  """
+  withWorkspaceModuleOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Declare a desired Workspace output to be assigned in the environment"""
   withWorkspaceOutput(
     """The name of the binding"""
@@ -5058,6 +5084,9 @@ type Query {
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
+  """Load a WorkspaceModule from its ID."""
+  loadWorkspaceModuleFromID(id: WorkspaceModuleID!): WorkspaceModule!
+
   """Create a new module."""
   module: Module!
 
@@ -5740,6 +5769,11 @@ type Workspace {
   ): String!
 
   """
+  The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+  """
+  defaultModule: String!
+
+  """
   Returns a Directory from the workspace.
 
   Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
@@ -5840,10 +5874,26 @@ type Workspace {
 
     """Additional include patterns for the module."""
     include: [String!] = []
+
+    """SPDX license identifier to generate (empty to skip)."""
+    license: String = "Apache-2.0"
   ): String!
+
+  """List modules defined in the workspace configuration."""
+  moduleList: [WorkspaceModule!]!
 
   """Workspace path relative to root."""
   path: String!
+
+  """
+  Update one or more workspace module lock entries in .dagger/lock.
+
+  Leaves config.toml unchanged. If modules is empty, updates all git modules.
+  """
+  update(
+    """Workspace module names to update. Empty updates all git modules."""
+    modules: [String!] = []
+  ): String!
 }
 
 """
@@ -5851,4 +5901,23 @@ The `WorkspaceID` scalar type represents an identifier for an object of type Wor
 """
 scalar WorkspaceID
 
+"""A module entry in the workspace configuration."""
+type WorkspaceModule {
+  """Whether the module is a blueprint (functions aliased to Query root)."""
+  blueprint: Boolean!
+
+  """A unique identifier for this WorkspaceModule."""
+  id: WorkspaceModuleID!
+
+  """The module name."""
+  name: String!
+
+  """The module source path."""
+  source: String!
+}
+
+"""
+The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+"""
+scalar WorkspaceModuleID
 

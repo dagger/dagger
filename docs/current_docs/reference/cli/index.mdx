@@ -22,6 +22,7 @@ dagger [options] [subcommand | file...]
       --eager-runtime                load module runtime eagerly
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -m, --mod string                   Module reference to load, either a local path or a remote git repo (defaults to current directory)
       --model string                 LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
   -E, --no-exit                      Leave the TUI running after completion
@@ -31,7 +32,6 @@ dagger [options] [subcommand | file...]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -80,13 +80,13 @@ dagger call [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -128,13 +128,13 @@ dagger config -m github.com/dagger/hello-dagger
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -163,13 +163,13 @@ dagger core [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -226,13 +226,13 @@ dagger develop [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -250,9 +250,15 @@ List available functions in a module.
 This is similar to `dagger call --help`, but only focused on showing the
 available functions.
 
+Examples:
+  dagger functions                           # List top-level functions in current workspace
+  dagger functions container                 # List functions on container
+  dagger functions github.com/acme/ws --     # List top-level functions in explicit workspace
+  dagger functions github.com/acme/ws -- container from
+
 
 ```
-dagger functions [options] [function]...
+dagger functions [options] [workspace --] [function]...
 ```
 
 ### Options
@@ -270,13 +276,13 @@ dagger functions [options] [function]...
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -302,13 +308,13 @@ dagger workspace init
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -352,13 +358,13 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -380,13 +386,13 @@ dagger login [options] [org]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -408,13 +414,13 @@ dagger logout
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -446,13 +452,13 @@ dagger migrate
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -470,19 +476,22 @@ Manage workspace modules
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger module init](#dagger-module-init)	 - Create a new module
+* [dagger module install](#dagger-module-install)	 - Add a module dependency
+* [dagger module list](#dagger-module-list)	 - List workspace's modules
+* [dagger module update](#dagger-module-update)	 - Update a module's dependencies
 
 ## dagger module init
 
@@ -490,17 +499,18 @@ Create a new module
 
 ### Synopsis
 
-Create a new module, either in the workspace or at a standalone path.
+Create a new module.
 
 The module name can be given as the first positional argument or via --name.
 If neither is given, it defaults to the current working directory name.
 
-The standalone path can be given as the second positional argument or via
---source. With just a name (or no name and no path), the module is created at
-.dagger/modules/<name>/ and automatically added to .dagger/config.toml.
+If a workspace config (.dagger/config.toml) already exists, the module is
+created at .dagger/modules/<name>/ and automatically installed. Otherwise,
+the module is created at the current directory (or the specified path) as
+a standalone module.
 
-With a path, the module is created at that path as a standalone module with
-its own dagger.json — it is NOT added to the workspace config.
+A path can be given as the second positional argument to create the module
+at that specific location without adding it to any workspace.
 
 ```
 dagger module init [options] --sdk=<sdk> [name] [path] [flags]
@@ -525,6 +535,7 @@ dagger module init [options] --sdk=<sdk> [name] [path] [flags]
       --name string       Module name (defaults to working directory name)
       --sdk string        SDK to use (go, python, typescript)
       --source string     Source directory used by the installed SDK. Defaults to module root
+      --with-self-calls   Enable self-calls capability for the module (experimental)
 ```
 
 ### Options inherited from parent commands
@@ -534,13 +545,150 @@ dagger module init [options] --sdk=<sdk> [name] [path] [flags]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage workspace modules
+
+## dagger module install
+
+Add a module dependency
+
+### Synopsis
+
+Add another module as a dependency of the current module, updating its dagger.json.
+
+```
+dagger module install [options] <module> [flags]
+```
+
+### Examples
+
+```
+  dagger module install github.com/shykes/daggerverse/hello@v0.3.0
+  dagger module install ./path/to/local/module
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+      --eager-runtime       load module runtime eagerly
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+  -n, --name string         Name to use for the dependency in the module. Defaults to the name of the module being installed.
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage workspace modules
+
+## dagger module list
+
+List workspace's modules
+
+### Synopsis
+
+List all the modules referenced in this workspace.
+
+Note:
+- Source paths are relative to the workspace root.
+- * means the module is a blueprint, with all its functions aliased to the root level.
+
+```
+dagger module list [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage workspace modules
+
+## dagger module update
+
+Update a module's dependencies
+
+### Synopsis
+
+Update the dependencies of a local module.
+
+To update only specific dependencies, specify their short names or a complete address.
+
+If no dependency is specified, all dependencies are updated.
+
+
+```
+dagger module update [options] [<DEPENDENCY>...] [flags]
+```
+
+### Examples
+
+```
+"dagger module update" or "dagger module update hello" or "dagger module update github.com/shykes/daggerverse/hello@v0.3.0"
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+      --eager-runtime       load module runtime eagerly
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
 ```
 
 ### SEE ALSO
@@ -601,13 +749,13 @@ EOF
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -662,13 +810,13 @@ dagger run python main.py
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -709,13 +857,13 @@ dagger uninstall hello
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -728,11 +876,7 @@ Update workspace module lock entries
 
 ### Synopsis
 
-Update git module lock entries in .dagger/lock.
-
-With no module names, updates all git modules in the workspace config.
-To update module dependencies in a local module's dagger.json, use `dagger module update`.
-
+Update git module lock entries in .dagger/lock. With no module names, updates all git modules in the workspace config.
 
 ```
 dagger update [module...]
@@ -745,13 +889,13 @@ dagger update [module...]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -779,13 +923,13 @@ dagger version
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -803,13 +947,13 @@ Manage the current workspace
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -853,13 +997,13 @@ dagger workspace config [key] [value] [flags]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -881,13 +1025,13 @@ dagger workspace info [flags]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO
@@ -913,13 +1057,13 @@ dagger workspace init
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock mode for lookup resolution (strict, auto, update). Defaults to auto.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -C, --workdir string               Set the working directory (local path or git ref) (default ".")
 ```
 
 ### SEE ALSO

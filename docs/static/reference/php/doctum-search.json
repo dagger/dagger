@@ -1407,6 +1407,26 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceModule",
+			"p": "Dagger/WorkspaceModule.html",
+			"d": "<p>A module entry in the workspace configuration.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceModuleId",
+			"p": "Dagger/WorkspaceModuleId.html",
+			"d": "<p>The <code>WorkspaceModuleID</code> scalar type represents an identifier for an object of type WorkspaceModule.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -1675,6 +1695,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceModule",
+			"p": "Dagger/Binding.html#method_asWorkspaceModule",
+			"d": "<p>Retrieve the binding value, as type WorkspaceModule</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::digest",
 			"p": "Dagger/Binding.html#method_digest",
 			"d": "<p>Returns the digest of the binding value</p>"
@@ -1900,18 +1926,6 @@
 			"n": "Dagger\\Client::cloud",
 			"p": "Dagger/Client.html#method_cloud",
 			"d": "<p>Dagger Cloud configuration and state</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::codegen",
-			"p": "Dagger/Client.html#method_codegen",
-			"d": null
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::codegenBase",
-			"p": "Dagger/Client.html#method_codegenBase",
-			"d": null
 		},
 		{
 			"t": "M",
@@ -2389,15 +2403,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::module",
-			"p": "Dagger/Client.html#method_module",
-			"d": "<p>Create a new module.</p>"
+			"n": "Dagger\\Client::loadWorkspaceModuleFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceModuleFromID",
+			"d": "<p>Load a WorkspaceModule from its ID.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::moduleRuntime",
-			"p": "Dagger/Client.html#method_moduleRuntime",
-			"d": null
+			"n": "Dagger\\Client::module",
+			"p": "Dagger/Client.html#method_module",
+			"d": "<p>Create a new module.</p>"
 		},
 		{
 			"t": "M",
@@ -3916,6 +3930,18 @@
 			"n": "Dagger\\Env::withWorkspaceInput",
 			"p": "Dagger/Env.html#method_withWorkspaceInput",
 			"d": "<p>Create or update a binding of type Workspace in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceModuleInput",
+			"p": "Dagger/Env.html#method_withWorkspaceModuleInput",
+			"d": "<p>Create or update a binding of type WorkspaceModule in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceModuleOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceModuleOutput",
+			"d": "<p>Declare a desired WorkspaceModule output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6013,6 +6039,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::defaultModule",
+			"p": "Dagger/Workspace.html#method_defaultModule",
+			"d": "<p>The default module to focus on (blueprint or standalone module name). Empty when ambiguous.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::directory",
 			"p": "Dagger/Workspace.html#method_directory",
 			"d": "<p>Returns a Directory from the workspace.</p>"
@@ -6073,9 +6105,45 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::moduleList",
+			"p": "Dagger/Workspace.html#method_moduleList",
+			"d": "<p>List modules defined in the workspace configuration.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::path",
 			"p": "Dagger/Workspace.html#method_path",
 			"d": "<p>Workspace path relative to root.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::update",
+			"p": "Dagger/Workspace.html#method_update",
+			"d": "<p>Update one or more workspace module lock entries in .dagger/lock.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::blueprint",
+			"p": "Dagger/WorkspaceModule.html#method_blueprint",
+			"d": "<p>Whether the module is a blueprint (functions aliased to Query root).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::id",
+			"p": "Dagger/WorkspaceModule.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceModule.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::name",
+			"p": "Dagger/WorkspaceModule.html#method_name",
+			"d": "<p>The module name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceModule::source",
+			"p": "Dagger/WorkspaceModule.html#method_source",
+			"d": "<p>The module source path.</p>"
 		},
 		{
 			"t": "M",
