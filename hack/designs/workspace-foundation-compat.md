@@ -952,6 +952,41 @@ Verification after this pass:
 - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./cmd/dagger`
   passes
 
+### 2026-03-12: Workspace-Branch Test Transplant Audit
+
+Audited the original `workspace` test delta against the narrower
+`workspace-plumbing` scope after restoring the generic suites to a `main`
+baseline.
+
+Concrete findings from that audit:
+
+- most workspace-only additions are still out of scope for this branch:
+  explicit workspace target parsing, lockfile behavior, `dagger migrate`,
+  workspace config/update flows, and module-init behavior that depends on an
+  initialized workspace
+- the focused plumbing unit coverage already kept on this branch is the right
+  core set from the original `workspace` diff:
+  workspace-aware function initialization, workspace load-location selection,
+  host find-up behavior, no-config workspace detection, legacy pin parsing,
+  workspace include matching, and session-side workspace binding/module loading
+- one obvious end-to-end transplant candidate remains in the old
+  `workspace`-only integration suite:
+  `TestBlueprintFunctionsIncludesOtherModules` in
+  `core/integration/workspace_test.go`, which exercises sibling workspace
+  module entrypoints under existing `dagger functions` / `dagger call`
+  commands
+- `TestNestedModuleBeneathWorkspace` from the same file is only a partial fit:
+  it covers nested standalone-module precedence and multi-module
+  `functions`/`call` behavior, but that area is still listed in the deferred
+  coverage ledger for the follow-up branch
+
+Current transplant stance:
+
+- keep the existing plumbing unit tests already carried into this branch
+- consider porting the sibling-entrypoint integration case if we want explicit
+  end-to-end coverage for that retained CLI behavior
+- keep the nested-precedence case deferred unless the branch scope is widened
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
