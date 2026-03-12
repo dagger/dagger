@@ -156,7 +156,7 @@ require (
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
-	github.com/vito/midterm v0.2.4
+	github.com/vito/midterm v0.2.5-0.20260312165805-d3e7c8abdfa7
 	github.com/vito/tuist v0.0.6-0.20260312150533-6ad5d35f3c1b
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.3
