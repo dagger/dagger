@@ -1457,7 +1457,6 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
 
-
 }
 
 // syncSpanTreeState synchronizes the SpanTreeView component tree with

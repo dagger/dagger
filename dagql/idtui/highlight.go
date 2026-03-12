@@ -100,7 +100,7 @@ func highlightANSI(s, query string, style searchHighlight) string {
 	var out strings.Builder
 	out.Grow(len(s) + len(matches)*(len(hlStart)+len(hlEnd)+32))
 
-	visIdx := 0 // index into visible text (bytes)
+	visIdx := 0  // index into visible text (bytes)
 	byteIdx := 0 // index into original string s
 	inHighlight := false
 

@@ -146,5 +146,3 @@ func TestCropEndNoFocusFocusStartVisible(t *testing.T) {
 		}
 	}
 }
-
-
