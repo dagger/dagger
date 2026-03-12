@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/core/llmconfig"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 func init() {
@@ -69,18 +71,20 @@ var llmSetupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure LLM authentication interactively",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		configured, err := llmconfig.InteractiveSetup(cmd.Context(), Frontend)
-		if err != nil {
-			return err
-		}
+		return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+			configured, err := llmconfig.InteractiveSetup(ctx, Frontend)
+			if err != nil {
+				return nil, err
+			}
 
-		if configured {
-			fmt.Fprintln(cmd.OutOrStdout(), "✓ LLM configuration saved successfully!")
-		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
-		}
+			if configured {
+				fmt.Fprintln(cmd.OutOrStdout(), "✓ LLM configuration saved successfully!")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
+			}
 
-		return nil
+			return nil, nil
+		})
 	},
 }
 
