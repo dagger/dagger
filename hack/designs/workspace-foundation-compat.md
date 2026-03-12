@@ -1224,6 +1224,36 @@ Current failure ledger:
       second runtime bug after the command surface is restored
   - fix stance: `implementation`, engine-backed authoring only
 
+### 2026-03-12: Category 1 Implementation Plan
+
+For the missing-command failures (`init --blueprint`, `toolchain ...`), the
+implementation strategy is now locked to the same architectural shape used on
+`main`.
+
+Concrete plan:
+
+- restore the missing engine-backed `ModuleSource` authoring/query surface in
+  `core/schema/modulesource.go` rather than teaching `cmd/dagger` to edit
+  `dagger.json`
+- restore the corresponding generated Go client methods in `sdk/go`
+- re-add the CLI flag and `toolchain` command family in `cmd/dagger` only as
+  thin wrappers over those engine operations
+- keep `check` / `generate` and all runtime loading on the existing
+  workspace/session path
+
+Guardrails for this implementation:
+
+- no direct `dagger.json` edits in the CLI
+- no second compat path under `ModuleSource.asModule()`
+- no rollback of `check` / `generate` to standalone-module loading
+- if a command can be restored by pulling code closer to `main`, prefer that
+  over inventing a branch-specific adaptation
+
+Review checkpoint:
+
+- after the engine and CLI batches, re-check `git diff origin/main --` on the
+  touched files and confirm the delta shrank rather than grew
+
 - `core/integration/TestUserDefaults`
   - confirmed failing subtest:
     - `TestUserDefaults/TestLocalBlueprint/inner_envfile`
