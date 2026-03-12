@@ -3,6 +3,7 @@ package dagui
 import (
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -60,8 +61,10 @@ type FrontendOpts struct {
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
 
-	// TelemetryError indicates if an error has occurred while sending telemetry
-	TelemetryError error
+	// TelemetryError indicates if an error has occurred while sending telemetry.
+	// It is accessed atomically since it may be set from the OTel error handler
+	// goroutine while being read from the render goroutine.
+	TelemetryError atomic.Pointer[error]
 
 	// UsingCloudEngine indicates whether the connected engine is a Cloud Engine
 	UsingCloudEngine bool
