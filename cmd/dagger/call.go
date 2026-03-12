@@ -79,11 +79,22 @@ Examples:
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for _, field := range functionPath {
+			for i, field := range functionPath {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil {
-					return err
+					// On the first step, the field may refer to a sibling
+					// workspace module rather than a function on the
+					// default module's object.
+					if i == 0 {
+						if sf := findSiblingEntrypoint(mod, field); sf != nil {
+							nextFunc = sf
+							err = nil
+						}
+					}
+					if err != nil {
+						return err
+					}
 				}
 				nextType := nextFunc.ReturnType
 				if nextType.AsFunctionProvider() != nil {
@@ -131,6 +142,18 @@ Examples:
 //	dagger functions -- <function...>
 func parseFunctionsTargetArgs(args []string, argsLenAtDash int) (*string, []string, error) {
 	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
+}
+
+// findSiblingEntrypoint searches sibling workspace module entrypoints for a
+// function matching the given name. Returns nil if no match is found.
+func findSiblingEntrypoint(mod *moduleDef, name string) *modFunction {
+	for _, fn := range mod.siblingModuleEntrypoints() {
+		if fn.Name == name || fn.CmdName() == name {
+			mod.LoadFunctionTypeDefs(fn)
+			return fn
+		}
+	}
+	return nil
 }
 
 // parseCallTargetArgs parses "call" args with optional workspace target.
