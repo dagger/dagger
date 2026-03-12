@@ -33,6 +33,13 @@ type Vterm struct {
 	viewBuf     *bytes.Buffer
 	needsRedraw bool
 
+	// Search highlight state. When SearchQuery is non-empty, matching
+	// substrings in rendered lines are highlighted. SearchCurrentRow
+	// is the vterm row index of the "current" match (-1 for none),
+	// which gets a brighter highlight.
+	SearchQuery      string
+	SearchCurrentRow int
+
 	mu *sync.Mutex
 }
 
@@ -156,6 +163,19 @@ func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return term, nil
+}
+
+// SetSearchHighlight sets the search highlight state. Pass an empty query
+// to clear highlights. currentRow is the vterm row of the "current" match
+// (-1 if none in this vterm).
+func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
+		term.SearchQuery = query
+		term.SearchCurrentRow = currentRow
+		term.needsRedraw = true
+	}
 }
 
 // ScrollToRow scrolls the viewport so that the given row is centered
@@ -305,8 +325,8 @@ func (m *Markdown) View() string {
 	return m.viewBuf.String()
 }
 
-// Bytes returns the output for the given region of the terminal, with
-// ANSI formatting.
+// Render writes the output for the given region of the terminal, with
+// ANSI formatting. If SearchQuery is set, matching substrings are highlighted.
 func (term *Vterm) Render(w io.Writer, offset, height int) {
 	used := term.vt.UsedHeight()
 	if used == 0 {
@@ -326,7 +346,22 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		}
 
 		fmt.Fprint(w, vt.String(term.Prefix))
-		term.vt.RenderLineFgBg(w, row, nil, nil)
+
+		if term.SearchQuery != "" {
+			// Render line to a buffer so we can highlight it.
+			var lineBuf strings.Builder
+			term.vt.RenderLineFgBg(&lineBuf, row, nil, nil)
+			rendered := lineBuf.String()
+			style := matchHighlight
+			if row == term.SearchCurrentRow {
+				style = currentMatchHighlight
+			}
+			rendered = highlightANSI(rendered, term.SearchQuery, style)
+			fmt.Fprint(w, rendered)
+		} else {
+			term.vt.RenderLineFgBg(w, row, nil, nil)
+		}
+
 		fmt.Fprintln(w)
 		lines++
 
