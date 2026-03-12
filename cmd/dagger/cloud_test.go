@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,10 +18,8 @@ func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn
 	}
 	cmd := exec.Command(daggerBin, args...)
 
-	cmd.Env = append([]string{}, env...)
-	cmd.Env = appendDefaultEnv(cmd.Env, "PATH", os.Getenv("PATH"))
-	cmd.Env = appendDefaultEnv(cmd.Env, "HOME", os.Getenv("HOME"))
-	cmd.Env = appendDefaultEnv(cmd.Env, "XDG_CONFIG_HOME", os.Getenv("XDG_CONFIG_HOME"))
+	cmd.Env = env
+	cmd.Env = append(cmd.Env, "PATH="+os.Getenv("PATH"), "HOME="+os.Getenv("HOME"))
 
 	stdout := &bytes.Buffer{}
 	cmd.Stdout = stdout
@@ -35,25 +32,8 @@ func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn
 	testCommandFn(t, err, stdout, stderr)
 }
 
-func appendDefaultEnv(env []string, key, value string) []string {
-	if value == "" {
-		return env
-	}
-	prefix := key + "="
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			return env
-		}
-	}
-	return append(env, prefix+value)
-}
-
 func TestCloudEngineUnauth(t *testing.T) {
-	home := t.TempDir()
-	env := []string{
-		"HOME=" + home,
-		"XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
-	}
+	env := []string{}
 	args := []string{"--cloud", "functions"}
 	daggerCloudWithEnv(t, env, args, func(t *testing.T, err error, stdout *bytes.Buffer, stderr *bytes.Buffer) {
 		require.Error(t, err, fmt.Sprintf(

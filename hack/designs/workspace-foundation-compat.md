@@ -932,6 +932,26 @@ Verification intent after this pass:
 - rerun targeted test packages after each restore batch to identify actual
   compat regressions instead of carrying workspace-era test updates forward
 
+### 2026-03-12: Main-First `cmd/dagger` Test Cleanup
+
+Applied the same audit rule to the remaining generic `cmd/dagger` test churn.
+
+Concrete follow-up in this pass:
+
+- restored `cmd/dagger/cloud_test.go`,
+  `cmd/dagger/shell_completion_test.go`, and
+  `cmd/dagger/suite_test.go` to their `main` versions
+- kept only the focused new unit coverage that is directly about
+  workspace-plumbing behavior, such as workspace-aware function selection and
+  workspace load-location handling
+
+Verification after this pass:
+
+- direct `go test ./cmd/dagger ...` on macOS still hits the pre-existing
+  `engine/buildkit` platform compile failure
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./cmd/dagger`
+  passes
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
