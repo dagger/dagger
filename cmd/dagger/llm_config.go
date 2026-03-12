@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
-	telemetry "github.com/dagger/otel-go"
 )
 
 func init() {
@@ -73,15 +73,13 @@ var llmSetupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure LLM authentication interactively",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-			cmd.SetOut(stdio.Stdout)
-			cmd.SetErr(stdio.Stderr)
-			defer stdio.Close()
-
-			configured, err := llmconfig.InteractiveSetup(ctx, Frontend)
+		var configured bool
+		var aborted bool
+		err := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+			var err error
+			configured, err = llmconfig.InteractiveSetup(ctx, Frontend)
 			if errors.Is(err, llmconfig.ErrAborted) {
-				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
+				aborted = true
 				Frontend.Close()
 				return nil, nil
 			}
@@ -89,16 +87,18 @@ var llmSetupCmd = &cobra.Command{
 				Frontend.Close()
 				return nil, err
 			}
-
-			if configured {
-				fmt.Fprintln(cmd.OutOrStdout(), "✓ LLM configuration saved successfully!")
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "Setup cancelled.")
-			}
-
 			Frontend.Close()
 			return nil, nil
 		})
+		if err != nil {
+			return err
+		}
+		if aborted {
+			fmt.Fprintln(os.Stderr, "Setup cancelled.")
+		} else if configured {
+			fmt.Fprintln(os.Stderr, "✓ LLM configuration saved successfully!")
+		}
+		return nil
 	},
 }
 
