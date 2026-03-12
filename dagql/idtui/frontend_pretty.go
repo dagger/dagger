@@ -1319,6 +1319,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 		fe.recalculateViewLocked()
 	}
 
+	// Refresh search on every frame — picks up new log output via
+	// midterm's incremental search (only re-scans changed rows).
+	if fe.searchQuery != "" {
+		fe.refreshSearchMatches()
+	}
+
 	// Update window dimensions from tuist
 	fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()}
 	fe.setWindowSizeLocked(fe.window)
@@ -1451,29 +1457,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
 
-	// Refresh search matches if a search is active.
-	if fe.searchQuery != "" {
-		oldMatch := searchMatch{}
-		if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
-			oldMatch = fe.searchMatches[fe.searchIdx]
-		}
-		// Single pass: push query to vterms (incremental), read results,
-		// update dirty trees.
-		fe.syncVtermSearchHighlights()
-		fe.buildSearchMatches()
-		// Try to preserve the current match position.
-		fe.searchIdx = 0
-		for i, m := range fe.searchMatches {
-			if m == oldMatch {
-				fe.searchIdx = i
-				break
-			}
-		}
-		if len(fe.searchMatches) == 0 {
-			fe.searchIdx = -1
-		}
-		fe.dirtySearchTrees()
-	}
+
 }
 
 // syncSpanTreeState synchronizes the SpanTreeView component tree with
