@@ -1840,13 +1840,13 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
 		fe.focusedIdx = -1
-		if !fe.editlineFocused {
+		if !fe.editlineFocused && !fe.searchActive {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
 		fe.FocusedSpan = row.Span.ID
 		fe.focusedIdx = row.Index
-		if !fe.editlineFocused {
+		if !fe.editlineFocused && !fe.searchActive {
 			if sr, ok := fe.spanTrees[row.Span.ID]; ok {
 				fe.tui.SetFocus(sr)
 			}
@@ -2165,6 +2165,9 @@ func (fe *frontendPretty) enterNavMode(auto bool) {
 }
 
 func (fe *frontendPretty) enterSearchMode() {
+	if fe.searchActive {
+		return
+	}
 	fe.searchActive = true
 	fe.searchInput = tuist.NewTextInput("")
 	fe.searchInput.Prompt = "/"
