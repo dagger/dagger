@@ -1006,6 +1006,35 @@ Verification after this pass:
 - the original `./core` plumbing test target can now proceed past package
   build instead of failing in `core/telemetry_test.go`
 
+### 2026-03-12: Changeset Git Helper CWD Fix
+
+While sweeping non-integration tests, the Linux-backed `./core` package exposed
+one real runtime bug in the new changeset helper tests rather than a workspace
+plumbing regression.
+
+Root cause:
+
+- `compareDirectories` and `directoriesAreIdentical` shell out to
+  `git diff --no-index`
+- those helpers inherited the process cwd
+- in the Linux test container, the repo checkout root contains a `.git` file
+  for a worktree whose target is not mounted inside the container
+- Git therefore tried to resolve the broken worktree first and exited `128`
+  before honoring the `--no-index` comparison of the temp directories
+
+Concrete fix in this pass:
+
+- make both helpers set `cmd.Dir` to one of the compared directories so the
+  no-index diff no longer depends on the caller's cwd
+- tighten `TestCompareDirectories_Integration` so it explicitly runs from a
+  fake broken-worktree cwd; this keeps the regression covered instead of
+  relying on the repo checkout layout in the test container
+
+Verification after this pass:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core --run='^TestCompareDirectories_Integration$' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core`
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.

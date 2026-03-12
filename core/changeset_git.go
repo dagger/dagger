@@ -30,6 +30,8 @@ func compareDirectories(ctx context.Context, oldDir, newDir string) (fileChanges
 // directoriesAreIdentical returns true if both directories have identical content.
 func directoriesAreIdentical(ctx context.Context, dir1, dir2 string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--quiet", dir1, dir2)
+	// Avoid inheriting a caller cwd with a broken worktree .git file.
+	cmd.Dir = dir1
 	err := cmd.Run()
 	if err == nil {
 		return true, nil
@@ -44,6 +46,8 @@ func directoriesAreIdentical(ctx context.Context, dir1, dir2 string) (bool, erro
 func runGitDiff(ctx context.Context, oldDir, newDir string) ([]byte, error) {
 	// -z uses NUL delimiters, safe for filenames with spaces/newlines
 	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--name-status", "-z", oldDir, newDir)
+	// Avoid inheriting a caller cwd with a broken worktree .git file.
+	cmd.Dir = oldDir
 	out, err := cmd.Output()
 	if err == nil {
 		return out, nil
