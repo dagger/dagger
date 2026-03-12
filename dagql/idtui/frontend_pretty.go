@@ -736,11 +736,18 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
-	done := make(chan struct{}, 1)
+	type formResult struct {
+		err error
+	}
+	done := make(chan formResult, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(form, func(f *huh.Form) {
-			close(done)
+			if f.State == huh.StateAborted {
+				done <- formResult{err: huh.ErrUserAborted}
+			} else {
+				done <- formResult{}
+			}
 		})
 		fe.Update()
 	})
@@ -748,8 +755,8 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case res := <-done:
+		return res.err
 	}
 }
 

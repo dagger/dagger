@@ -11,6 +11,19 @@ import (
 // ErrAborted is returned when the user cancels a setup form (e.g. ctrl+c).
 var ErrAborted = errors.New("setup cancelled")
 
+// isAbort returns true if the error indicates the user pressed Ctrl+C.
+func isAbort(err error) bool {
+	return errors.Is(err, huh.ErrUserAborted) || errors.Is(err, ErrAborted)
+}
+
+// checkAbort wraps HandleForm: if the user aborted, return ErrAborted.
+func checkAbort(err error) error {
+	if err != nil && isAbort(err) {
+		return ErrAborted
+	}
+	return err
+}
+
 // PromptHandler is the minimal interface needed for interactive prompts
 type PromptHandler interface {
 	HandleForm(ctx context.Context, form *huh.Form) error
@@ -31,7 +44,7 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 					Value(&reconfigure),
 			),
 		)
-		if err := promptHandler.HandleForm(ctx, form); err != nil {
+		if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
 			return false, err
 		}
 		if !reconfigure {
@@ -56,11 +69,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		),
 	)
 
-	if err := promptHandler.HandleForm(ctx, providerForm); err != nil {
+	if err := checkAbort(promptHandler.HandleForm(ctx, providerForm)); err != nil {
 		return false, err
-	}
-	if providerChoice == "" {
-		return false, ErrAborted
 	}
 
 	// 3. Choose how to provide the API key
@@ -84,11 +94,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		),
 	)
 
-	if err := promptHandler.HandleForm(ctx, methodForm); err != nil {
+	if err := checkAbort(promptHandler.HandleForm(ctx, methodForm)); err != nil {
 		return false, err
-	}
-	if keyMethod == "" {
-		return false, ErrAborted
 	}
 
 	var apiKey string
@@ -182,7 +189,7 @@ func AutoSetupIfNeeded(ctx context.Context, promptHandler PromptHandler, interac
 		),
 	)
 
-	if err := promptHandler.HandleForm(ctx, form); err != nil {
+	if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
 		return false, err
 	}
 
@@ -210,7 +217,7 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 					Validate(validateNonEmpty("secret reference")),
 			),
 		)
-		if err := ph.HandleForm(ctx, form); err != nil {
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 			return "", err
 		}
 		if ref == "" {
@@ -233,7 +240,7 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 				Value(&vault),
 		),
 	)
-	if err := ph.HandleForm(ctx, form); err != nil {
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 		return "", err
 	}
 	if vault == "" {
@@ -254,7 +261,7 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 					Validate(validateNonEmpty("item path")),
 			),
 		)
-		if err := ph.HandleForm(ctx, form); err != nil {
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 			return "", err
 		}
 		if ref == "" {
@@ -277,7 +284,7 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 				Value(&item),
 		),
 	)
-	if err := ph.HandleForm(ctx, form); err != nil {
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 		return "", err
 	}
 	if item == "" {
@@ -298,7 +305,7 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 					Validate(validateNonEmpty("field name")),
 			),
 		)
-		if err := ph.HandleForm(ctx, form); err != nil {
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 			return "", err
 		}
 		if field == "" {
@@ -321,7 +328,7 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 				Value(&field),
 		),
 	)
-	if err := ph.HandleForm(ctx, form); err != nil {
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 		return "", err
 	}
 	if field == "" {
@@ -361,7 +368,7 @@ func promptSecretRef(ctx context.Context, ph PromptHandler, scheme string) (stri
 				Validate(validateNonEmpty("secret path")),
 		),
 	)
-	if err := ph.HandleForm(ctx, form); err != nil {
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 		return "", err
 	}
 	if path == "" {
@@ -395,7 +402,7 @@ func promptLiteralKey(ctx context.Context, ph PromptHandler, provider string) (s
 				Validate(validateNonEmpty("API key")),
 		),
 	)
-	if err := ph.HandleForm(ctx, form); err != nil {
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 		return "", err
 	}
 	if key == "" {
