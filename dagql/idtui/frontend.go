@@ -104,6 +104,21 @@ type Frontend interface {
 	prompt.PromptHandler
 }
 
+// normalizeFrontendExit ensures a frontend does not report success when the
+// primary command span itself ended in a failed state.
+func normalizeFrontendExit(err error, db *dagui.DB) error {
+	if err != nil || db == nil || !db.PrimarySpan.IsValid() {
+		return err
+	}
+
+	span, ok := db.Spans.Map[db.PrimarySpan]
+	if !ok || span == nil || !span.IsFailedOrCausedFailure() {
+		return err
+	}
+
+	return ExitError{Code: 1}
+}
+
 type SidebarSection struct {
 	// A heading to show for the content, if any. If empty, the content will be
 	// placed in the topmost portion of the sidebar.

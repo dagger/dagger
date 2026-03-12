@@ -358,7 +358,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
 	// return original err
-	return fe.err
+	return normalizeFrontendExit(fe.err, fe.db)
 }
 
 func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string, dest any) error {
