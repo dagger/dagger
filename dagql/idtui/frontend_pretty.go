@@ -316,34 +316,47 @@ func (s *SpanTreeView) Render(ctx tuist.Context) tuist.RenderResult {
 		s.RenderChild(ctx, s.spinner)
 	}
 
-	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(s.fe.profile))
 	r := newRenderer(s.fe.db, s.fe.contentWidth/2, s.fe.FrontendOpts, false)
 
-	// Override fancyIndent with our pre-computed prefix.
-	r.indentFunc = s.indentFunc(out)
-
-	s.fe.renderRowContent(out, r, row, "")
-
-	text := buf.String()
 	lines := ctx.Recycle()
-	if text != "" {
-		lines = append(lines, strings.Split(strings.TrimSuffix(text, "\n"), "\n")...)
-	}
 
-	// Highlight search matches in span name lines.
-	if s.fe.searchQuery != "" && s.fe.searchMatchSpans[s.spanID] {
-		style := matchHighlight
-		// Check if the current match is a name match on this span.
-		if s.fe.searchIdx >= 0 && s.fe.searchIdx < len(s.fe.searchMatches) {
-			cm := s.fe.searchMatches[s.fe.searchIdx]
-			if cm.spanID == s.spanID && cm.logRow == -1 {
-				style = currentMatchHighlight
+	// Render the title (renderStep) into a separate buffer so we can
+	// apply search highlighting to it without double-highlighting the
+	// vterm log output (which handles its own highlighting via
+	// SearchQuery/SearchCurrentRow).
+	titleBuf := new(strings.Builder)
+	titleOut := NewOutput(titleBuf, termenv.WithProfile(s.fe.profile))
+	r.indentFunc = s.indentFunc(titleOut)
+	s.fe.renderStep(titleOut, r, row, "")
+	titleText := titleBuf.String()
+	if titleText != "" {
+		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
+		// Highlight search matches in title lines only (not logs).
+		if s.fe.searchQuery != "" && s.fe.searchMatchSpans[row.Span.ID] {
+			style := matchHighlight
+			if s.fe.searchIdx >= 0 && s.fe.searchIdx < len(s.fe.searchMatches) {
+				cm := s.fe.searchMatches[s.fe.searchIdx]
+				if cm.spanID == row.Span.ID && cm.logRow == -1 {
+					style = currentMatchHighlight
+				}
+			}
+			for i, line := range titleLines {
+				titleLines[i] = highlightANSI(line, s.fe.searchQuery, style)
 			}
 		}
-		for i, line := range lines {
-			lines[i] = highlightANSI(line, s.fe.searchQuery, style)
-		}
+		lines = append(lines, titleLines...)
+	}
+
+	// Render the rest (logs, errors, debug) into a separate buffer.
+	// Log highlighting is handled by the Vterm's own SearchQuery state,
+	// so we do NOT apply highlightANSI to these lines.
+	restBuf := new(strings.Builder)
+	restOut := NewOutput(restBuf, termenv.WithProfile(s.fe.profile))
+	r.indentFunc = s.indentFunc(restOut)
+	s.fe.renderRowContentRest(restOut, r, row, "")
+	restText := restBuf.String()
+	if restText != "" {
+		lines = append(lines, strings.Split(strings.TrimSuffix(restText, "\n"), "\n")...)
 	}
 
 	s.selfLineCount = len(lines)
@@ -2575,9 +2588,17 @@ func (fe *frontendPretty) renderTreeFinal(out TermOutput, r *renderer, st *SpanT
 // renderRowContent renders the actual content of a row (step + logs + errors
 // + debug) without gap lines. This is what SpanTreeView.Render() calls.
 func (fe *frontendPretty) renderRowContent(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	fe.renderStep(out, r, row, prefix)
+	fe.renderRowContentRest(out, r, row, prefix)
+}
+
+// renderRowContentRest renders everything after the step title: logs, errors,
+// and debug output. Split out so SpanTreeView.Render can apply search
+// highlighting to the title separately from the log content (which handles
+// its own highlighting via Vterm.SearchQuery).
+func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
-	fe.renderStep(out, r, row, prefix)
 
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
