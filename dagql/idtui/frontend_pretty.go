@@ -115,8 +115,7 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	debugged     dagui.SpanID
-	focusedIdx   int
+	focusedIdx int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
@@ -239,6 +238,10 @@ type SpanTreeView struct {
 	// focused tracks whether this span is the currently focused span.
 	// Synced by tuist's SetFocus → SetFocused callback.
 	focused bool
+
+	// debugged tracks whether debug info is shown for this span.
+	// Toggled by the "?" key.
+	debugged bool
 
 	// Render metadata — set during Render() for focus-line lookup.
 	// These are output-derived values, not input state that drives rendering.
@@ -2021,10 +2024,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		}()
 		return
 	case "?":
-		if fe.debugged == fe.FocusedSpan {
-			fe.debugged = dagui.SpanID{}
-		} else {
-			fe.debugged = fe.FocusedSpan
+		if st, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+			st.debugged = !st.debugged
+			st.Update()
 		}
 		return
 	case "enter":
@@ -2660,8 +2662,11 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
-	if span.ID != fe.debugged && !force {
-		return
+	if !force {
+		st, ok := fe.spanTrees[span.ID]
+		if !ok || !st.debugged {
+			return
+		}
 	}
 	vt := NewVterm(fe.profile)
 	vt.WriteMarkdown([]byte("## Span\n"))
