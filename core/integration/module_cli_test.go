@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -407,7 +406,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep"))
 
 		// should be able to invoke dep without name+sdk set yet
@@ -474,7 +473,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
@@ -536,7 +535,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
         `,
 			).
 			WithWorkdir(absPath).
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
@@ -878,7 +877,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			With(daggerExec("install", "--eager-runtime", "./dep")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "failed to install dependency")
+		requireErrOut(t, err, "failed to install module")
 		requireErrOut(t, err, "definitelyUndefinedSymbol")
 	})
 
@@ -1342,14 +1341,12 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "fn-e            doc for FnE")
 	})
 
-	t.Run("no module present lists no functions", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.
+	t.Run("no module present errors nicely", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.
 			WithWorkdir("/empty").
 			With(daggerFunctions()).
 			Stdout(ctx)
-		require.NoError(t, err)
-		out = regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(out, "")
-		require.Equal(t, []string{"Name   Description"}, strings.Split(strings.TrimSpace(out), "\n"))
+		requireErrOut(t, err, `module not found`)
 	})
 }
 
@@ -1793,7 +1790,6 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			}
 		})
 	}
-
 }
 
 func (CLISuite) TestInvalidModule(ctx context.Context, t *testctx.T) {
