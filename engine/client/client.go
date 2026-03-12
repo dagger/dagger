@@ -57,6 +57,7 @@ import (
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/engine/session/pipe"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
@@ -1394,6 +1395,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		ConfigPath:                llmconfig.ConfigFile,
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
 		CloudAuth:                 c.CloudAuth,
