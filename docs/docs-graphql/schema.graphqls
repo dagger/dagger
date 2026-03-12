@@ -3345,6 +3345,11 @@ type Function {
   """The location of this function declaration."""
   sourceMap: SourceMap
 
+  """
+  If this function is provided by a module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
+
   """Returns the function with the provided argument"""
   withArg(
     """The name of the argument"""
@@ -4345,9 +4350,6 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
-  """The blueprint referenced by the module source."""
-  blueprint: ModuleSource!
-
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
@@ -4469,20 +4471,11 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
-  """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]!
-
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
 
   """The specified version of the git repo this source points to."""
   version: String!
-
-  """Set a blueprint for the module source."""
-  withBlueprint(
-    """The blueprint module to set."""
-    blueprint: ModuleSourceID!
-  ): ModuleSource!
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4542,25 +4535,10 @@ type ModuleSource {
     path: String!
   ): ModuleSource!
 
-  """Add toolchains to the module source."""
-  withToolchains(
-    """The toolchain modules to add."""
-    toolchains: [ModuleSourceID!]!
-  ): ModuleSource!
-
-  """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource!
-
   """Update one or more module dependencies."""
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
-  ): ModuleSource!
-
-  """Update one or more toolchains."""
-  withUpdateToolchains(
-    """The toolchains to update."""
-    toolchains: [String!]!
   ): ModuleSource!
 
   """Update one or more clients."""
@@ -4568,9 +4546,6 @@ type ModuleSource {
     """The clients to update"""
     clients: [String!]!
   ): ModuleSource!
-
-  """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource!
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4590,12 +4565,6 @@ type ModuleSource {
   withoutExperimentalFeatures(
     """The experimental features to disable."""
     features: [ModuleSourceExperimentalFeature!]!
-  ): ModuleSource!
-
-  """Remove the provided toolchains from the module source."""
-  withoutToolchains(
-    """The toolchains to remove."""
-    toolchains: [String!]!
   ): ModuleSource!
 }
 
@@ -4775,13 +4744,15 @@ type Query {
   """
   The TypeDef representations of the objects currently being served in the session.
   """
-  currentTypeDefs: [TypeDef!]!
+  currentTypeDefs(
+    """
+    Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
+    """
+    includeCore: Boolean
+  ): [TypeDef!]!
 
   """Detect and return the current workspace."""
-  currentWorkspace(
-    """If true, skip legacy dagger.json migration checks."""
-    skipMigrationCheck: Boolean = false
-  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+  currentWorkspace: Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
 
   """The default platform of the engine."""
   defaultPlatform: Platform!
@@ -5730,17 +5701,30 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """Return all checks from modules loaded in the workspace."""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
 
   """
+  The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+  """
+  defaultModule: String!
+
+  """
   Returns a Directory from the workspace.
 
-  Path is relative to workspace root. Use "." for the root directory.
+  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
   """
   directory(
     """
-    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    Location of the directory to retrieve. Relative paths (e.g., "src") resolve
+    from workspace root; absolute paths (e.g., "/src") resolve from sandbox
+    root.
     """
     path: String!
 
@@ -5761,11 +5745,13 @@ type Workspace {
   """
   Returns a File from the workspace.
 
-  Path is relative to workspace root.
+  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
   """
   file(
     """
-    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
+    from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox
+    root.
     """
     path: String!
   ): File!
@@ -5785,11 +5771,17 @@ type Workspace {
     from: String = "."
   ): String
 
+  """Return all generators from modules loaded in the workspace."""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup!
+
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
-  """Absolute path to the workspace root directory."""
-  root: String!
+  """Workspace path relative to root."""
+  path: String!
 }
 
 """

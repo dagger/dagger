@@ -81,8 +81,7 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
 	}
 
-	// For standalone clients, we want to include Engine and other types that are hidden from module SDKs
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForClient(ctx)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
