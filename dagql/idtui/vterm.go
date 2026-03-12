@@ -158,6 +158,21 @@ func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return term, nil
 }
 
+// ScrollToRow scrolls the viewport so that the given row is centered
+// (or as close as possible) within the visible area.
+func (term *Vterm) ScrollToRow(row int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	// Center the target row in the viewport.
+	term.Offset = max(0, row-term.Height/2)
+	// Clamp to valid range.
+	maxOffset := max(0, term.vt.UsedHeight()-term.Height)
+	if term.Offset > maxOffset {
+		term.Offset = maxOffset
+	}
+	term.needsRedraw = true
+}
+
 func (term *Vterm) ScrollPercent() float64 {
 	return min(1, float64(term.Offset+term.Height)/float64(term.vt.UsedHeight()))
 }

@@ -161,6 +161,14 @@ type frontendPretty struct {
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
 	viewDirty bool
+
+	// search state (Vim-style "/" search)
+	searchActive     bool              // search input bar is shown
+	searchQuery      string            // confirmed search string
+	searchInput      *tuist.TextInput  // the "/" prompt input (non-nil while searchActive)
+	searchMatches    []searchMatch     // ordered list of all matches
+	searchMatchSpans map[dagui.SpanID]bool // fast lookup: does this span have any match?
+	searchIdx        int               // current match index (-1 = none)
 }
 
 // Verify interface compliance at compile time.
@@ -1203,8 +1211,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
 		key.NewBinding(key.WithKeys("esc"),
-			key.WithHelp("esc", "unzoom"),
-			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+			key.WithHelp("esc", fe.escHelp()),
+			KeyEnabled(fe.searchQuery != "" || (fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan))),
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
@@ -1212,7 +1220,29 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
 		),
+		key.NewBinding(key.WithKeys("/"),
+			key.WithHelp("/", "search")),
+		key.NewBinding(key.WithKeys("n"),
+			key.WithHelp("n", fe.searchCountHint("next")),
+			KeyEnabled(fe.searchQuery != "")),
+		key.NewBinding(key.WithKeys("N"),
+			key.WithHelp("N", "prev"),
+			KeyEnabled(fe.searchQuery != "")),
 	}
+}
+
+func (fe *frontendPretty) escHelp() string {
+	if fe.searchQuery != "" {
+		return "clear search"
+	}
+	return "unzoom"
+}
+
+func (fe *frontendPretty) searchCountHint(base string) string {
+	if len(fe.searchMatches) == 0 {
+		return base + " (0)"
+	}
+	return fmt.Sprintf("%s (%d/%d)", base, fe.searchIdx+1, len(fe.searchMatches))
 }
 
 func KeyEnabled(enabled bool) key.BindingOpt {
@@ -1266,6 +1296,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	}
 	chromeHeight += fe.editlineHeight() // textInput is a sibling, not rendered here
 	chromeHeight += fe.formHeight()     // formWrap is a sibling, not rendered here
+	if fe.searchInput != nil {
+		chromeHeight += 1 // searchInput is a sibling, 1 line
+	}
 
 	// Render progress rows via tree-based components
 	progressLines := fe.renderProgressLines(r, ctx, chromeHeight)
@@ -1364,6 +1397,26 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// This is where ALL component state mutations happen — prefix,
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
+
+	// Refresh search matches if a search is active.
+	if fe.searchQuery != "" {
+		oldMatch := searchMatch{}
+		if fe.searchIdx >= 0 && fe.searchIdx < len(fe.searchMatches) {
+			oldMatch = fe.searchMatches[fe.searchIdx]
+		}
+		fe.buildSearchMatches()
+		// Try to preserve the current match position.
+		fe.searchIdx = 0
+		for i, m := range fe.searchMatches {
+			if m == oldMatch {
+				fe.searchIdx = i
+				break
+			}
+		}
+		if len(fe.searchMatches) == 0 {
+			fe.searchIdx = -1
+		}
+	}
 }
 
 // syncSpanTreeState synchronizes the SpanTreeView component tree with
@@ -1872,6 +1925,12 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		fe.goErrorOrigin()
 		return
 	case "esc":
+		if fe.searchQuery != "" {
+			fe.clearSearch()
+			fe.renderVersion++
+			fe.recalculateViewLocked()
+			return
+		}
 		fe.ZoomedSpan = fe.db.PrimarySpan
 		fe.renderVersion++
 		fe.recalculateViewLocked()
@@ -1927,6 +1986,19 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "t":
 		fe.terminal()
 		return
+	case "/":
+		fe.enterSearchMode()
+		return
+	case "n":
+		if fe.searchQuery != "" {
+			fe.searchNext()
+			return
+		}
+	case "N":
+		if fe.searchQuery != "" {
+			fe.searchPrev()
+			return
+		}
 	default:
 		if fe.shell != nil {
 			inputVal := ""
@@ -2022,6 +2094,62 @@ func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.tui.SetFocus(fe)
 	fe.recalculateViewLocked()
 	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) enterSearchMode() {
+	fe.searchActive = true
+	fe.searchInput = tuist.NewTextInput("")
+	fe.searchInput.Prompt = "/"
+	fe.searchInput.OnSubmit = func(ctx tuist.Context, value string) bool {
+		fe.confirmSearch(value)
+		return true
+	}
+	fe.searchInput.KeyInterceptor = fe.interceptSearchKey
+
+	// Insert before keymapBar.
+	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(fe.searchInput)
+	fe.tui.AddChild(fe.keymapBar)
+	fe.tui.SetFocus(fe.searchInput)
+	fe.tui.SetShowHardwareCursor(true)
+	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) exitSearchMode() {
+	if fe.searchInput != nil {
+		fe.tui.RemoveChild(fe.searchInput)
+		fe.searchInput = nil
+	}
+	fe.searchActive = false
+	fe.tui.SetShowHardwareCursor(fe.textInput != nil && fe.editlineFocused)
+	fe.tui.SetFocus(fe)
+	fe.keymapBar.Update()
+}
+
+func (fe *frontendPretty) confirmSearch(query string) {
+	fe.exitSearchMode()
+	query = strings.TrimSpace(query)
+	if query == "" {
+		fe.clearSearch()
+		return
+	}
+	fe.searchQuery = query
+	fe.searchIdx = -1
+	fe.buildSearchMatches()
+	fe.searchFirstForward()
+	fe.Update()
+}
+
+func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
+	k := uv.Key(ev)
+	keyStr := k.String()
+	switch keyStr {
+	case "esc":
+		fe.exitSearchMode()
+		fe.Update()
+		return true
+	}
+	return false
 }
 
 func (fe *frontendPretty) enterInsertMode(auto bool) {
@@ -2828,6 +2956,11 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
 		fmt.Fprint(out, " ")
+	}
+
+	// Search match indicator
+	if fe.searchQuery != "" && fe.searchMatchSpans[span.ID] {
+		fmt.Fprint(out, out.String("● ").Foreground(termenv.ANSIYellow).String())
 	}
 
 	if err := fe.renderStepTitle(out, r, row, prefix, false); err != nil {
