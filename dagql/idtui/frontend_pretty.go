@@ -770,11 +770,7 @@ func (*blankLine) Render(tuist.Context) tuist.RenderResult {
 func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
-	maxHeight := fe.window.Height / 3
-	if maxHeight < 5 {
-		maxHeight = 5
-	}
-	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false).WithHeight(maxHeight)
+	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
 	formSpacer := &blankLine{}
 	fe.formWrap.OnQuit(func() {

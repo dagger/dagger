@@ -57,6 +57,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 	providerForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Height(8).
+				Filtering(true).
 				Title("Choose an LLM provider").
 				Description("OpenRouter provides unified access to 100+ models with a single API key").
 				Options(
@@ -78,6 +80,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 	methodForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Height(8).
+				Filtering(true).
 				Title(fmt.Sprintf("How would you like to provide your %s API key?", providerChoice)).
 				Description("A secret provider reference is preferred over pasting a literal token.").
 				Options(
@@ -235,6 +239,8 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Height(8).
+				Filtering(true).
 				Title("Choose a 1Password vault").
 				Options(vaultOpts...).
 				Value(&vault),
@@ -279,6 +285,8 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	form = huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Height(8).
+				Filtering(true).
 				Title("Choose an item").
 				Options(itemOpts...).
 				Value(&item),
@@ -323,6 +331,8 @@ func promptOp(ctx context.Context, ph PromptHandler) (string, error) {
 	form = huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Height(8).
+				Filtering(true).
 				Title("Choose a field").
 				Options(fieldOpts...).
 				Value(&field),
