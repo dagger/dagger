@@ -44,6 +44,10 @@ func devEngineContainerAsService(ctr *dagger.Container) *dagger.Service {
 
 // devEngineContainer returns a nested dev engine.
 func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
+	return devEngineContainerWithStateKey(c, "dagger-dev-engine-state-"+identity.NewID(), withs...)
+}
+
+func devEngineContainerWithStateKey(c *dagger.Client, stateCacheKey string, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that
 	// was set up by the test caller. This is used to spin up additional dev
 	// engines.
@@ -62,7 +66,7 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 
 	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume(stateCacheKey)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",

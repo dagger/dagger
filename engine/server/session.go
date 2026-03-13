@@ -16,20 +16,13 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
-	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bkfrontend "github.com/dagger/dagger/internal/buildkit/frontend"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
-	"github.com/dagger/dagger/internal/buildkit/util/progress/progressui"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/koron-go/prefixw"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -51,7 +44,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache/cachemanager"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -86,12 +78,6 @@ type daggerSession struct {
 	analytics analytics.Tracker
 
 	authProvider *auth.RegistryAuthProvider
-
-	cacheExporterCfgs []bkgw.CacheOptionsEntry
-	cacheImporterCfgs []bkgw.CacheOptionsEntry
-
-	refs   map[buildkit.Reference]struct{}
-	refsMu sync.Mutex
 
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
@@ -154,9 +140,6 @@ type daggerClient struct {
 	// buildkit job-related state/config
 	buildkitSession *bksession.Session
 	getClientCaller func(string) (bksession.Caller, error)
-	job             *bksolver.Job
-	llbSolver       *llbsolver.Solver
-	llbBridge       bkfrontend.FrontendLLBBridge
 	dialer          *net.Dialer
 	bkClient        *buildkit.Client
 
@@ -261,7 +244,6 @@ func (srv *Server) initializeDaggerSession(
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.authProvider = auth.NewRegistryAuthProvider()
-	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCache = dagql.NewSessionCache(srv.baseDagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
@@ -277,31 +259,10 @@ func (srv *Server) initializeDaggerSession(
 				engine.Version,
 				runtime.GOOS,
 				runtime.GOARCH,
-				srv.SolverCache.ID() != cachemanager.LocalCacheID,
+				false,
 			),
 	})
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
-
-	for _, cacheImportCfg := range clientMetadata.UpstreamCacheImportConfig {
-		_, ok := srv.cacheImporters[cacheImportCfg.Type]
-		if !ok {
-			return fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
-		}
-		sess.cacheImporterCfgs = append(sess.cacheImporterCfgs, bkgw.CacheOptionsEntry{
-			Type:  cacheImportCfg.Type,
-			Attrs: cacheImportCfg.Attrs,
-		})
-	}
-	for _, cacheExportCfg := range clientMetadata.UpstreamCacheExportConfig {
-		_, ok := srv.cacheExporters[cacheExportCfg.Type]
-		if !ok {
-			return fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
-		}
-		sess.cacheExporterCfgs = append(sess.cacheExporterCfgs, bkgw.CacheOptionsEntry{
-			Type:  cacheExportCfg.Type,
-			Attrs: cacheExportCfg.Attrs,
-		})
-	}
 
 	sess.state = sessionStateInitialized
 	return nil
@@ -363,14 +324,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	for _, client := range sess.clients {
 		releaseGroup.Go(func() error {
 			var errs error
-			client.job.Discard()
-			client.job.CloseProgress()
-
-			if client.llbSolver != nil {
-				errs = errors.Join(errs, client.llbSolver.Close())
-				client.llbSolver = nil
-			}
-
 			if client.buildkitSession != nil {
 				errs = errors.Join(errs, client.buildkitSession.Close())
 				client.buildkitSession = nil
@@ -387,33 +340,31 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	}
 	errs = errors.Join(errs, releaseGroup.Wait())
 
-	// release all the references solved in the session
-	sess.refsMu.Lock()
-	var refReleaseGroup errgroup.Group
-	for rf := range sess.refs {
-		if rf != nil {
-			refReleaseGroup.Go(func() error {
-				return rf.Release(ctx)
-			})
-		}
-	}
-	errs = errors.Join(errs, refReleaseGroup.Wait())
-	sess.refs = nil
-	sess.refsMu.Unlock()
-
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
 	beforeDagqlEntries := srv.baseDagqlCache.Size()
+	beforeDagqlStats := srv.baseDagqlCache.EntryStats()
 	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
 	}
 	afterDagqlEntries := srv.baseDagqlCache.Size()
+	afterDagqlStats := srv.baseDagqlCache.EntryStats()
 	if afterDagqlEntries != beforeDagqlEntries {
-		slog.Debug("released dagql cache refs for session", "beforeEntries", beforeDagqlEntries, "afterEntries", afterDagqlEntries)
+		slog.Debug(
+			"released dagql cache refs for session",
+			"beforeEntries", beforeDagqlEntries,
+			"afterEntries", afterDagqlEntries,
+			"beforeRetainedCalls", beforeDagqlStats.RetainedCalls,
+			"afterRetainedCalls", afterDagqlStats.RetainedCalls,
+		)
 	} else {
-		slog.Debug("session dagql cache release did not change base cache size", "entries", afterDagqlEntries)
+		slog.Debug(
+			"session dagql cache release did not change base cache size",
+			"entries", afterDagqlEntries,
+			"retainedCalls", afterDagqlStats.RetainedCalls,
+		)
 	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
@@ -437,6 +388,10 @@ type ClientInitOpts struct {
 	// If the client is running from a function in a module, this is the encoded dagQL ID
 	// of that module.
 	EncodedModuleID string
+
+	// If the client is running from a function in a module, this is the encoded
+	// content-scoped module dagQL ID.
+	EncodedContentModuleID string
 
 	// If the client is running from a function in a module, this is the encoded function call
 	// metadata (of type core.FunctionCall)
@@ -471,7 +426,7 @@ func (srv *Server) initializeDaggerClient(
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
+		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: opts.CallID}, opts.CallerClientID, true); err != nil {
 			return fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}
@@ -489,23 +444,6 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
-	wc, err := buildkit.AsWorkerController(srv.worker)
-	if err != nil {
-		return err
-	}
-	client.llbSolver, err = llbsolver.New(llbsolver.Opt{
-		WorkerController: wc,
-		Frontends:        srv.frontends,
-		CacheManager:     srv.SolverCache,
-		SessionManager:   srv.bkSessionManager,
-		CacheResolvers:   srv.cacheImporters,
-		Entitlements:     buildkit.ToEntitlementStrings(srv.entitlements),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create llbsolver: %w", err)
-	}
-	failureCleanups.Add("close llb solver", client.llbSolver.Close)
-
 	var callerG singleflight.Group[string, bksession.Caller]
 	client.getClientCaller = func(id string) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -516,24 +454,12 @@ func (srv *Server) initializeDaggerClient(
 		return caller, err
 	}
 
+	var err error
 	client.buildkitSession, err = srv.newBuildkitSession(ctx, client)
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit session: %w", err)
 	}
 	failureCleanups.Add("close buildkit session", client.buildkitSession.Close)
-
-	client.job, err = srv.solver.NewJob(client.buildkitSession.ID())
-	if err != nil {
-		return fmt.Errorf("failed to create buildkit job: %w", err)
-	}
-	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", cleanups.Infallible(client.job.CloseProgress))
-
-	client.job.SessionID = client.buildkitSession.ID()
-	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
-
-	br := client.llbSolver.Bridge(client.job)
-	client.llbBridge = br
 
 	client.dialer = &net.Dialer{
 		Resolver: &net.Resolver{
@@ -559,22 +485,6 @@ func (srv *Server) initializeDaggerClient(
 		},
 	}
 
-	// write progress for extra debugging if configured
-	bkLogsW := srv.buildkitLogSink
-	if bkLogsW != nil {
-		prefix := fmt.Sprintf("[buildkit] [client=%s] ", client.clientID)
-		bkLogsW = prefixw.New(bkLogsW, prefix)
-		statusCh := make(chan *bkclient.SolveStatus, 8)
-		pw, err := progressui.NewDisplay(bkLogsW, progressui.PlainMode)
-		if err != nil {
-			return fmt.Errorf("failed to create progress writer: %w", err)
-		}
-		// ensure these logs keep getting printed until the session goes away, not just until this request finishes
-		logCtx := client.daggerSession.withShutdownCancel(context.WithoutCancel(ctx))
-		go client.job.Status(logCtx, statusCh)
-		go pw.UpdateFrom(logCtx, statusCh)
-	}
-
 	var parentBuildkitClient *buildkit.Client
 	numParents := len(client.parents)
 	if numParents > 0 {
@@ -582,19 +492,12 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
-		Worker:               srv.worker,
-		SessionManager:       srv.bkSessionManager,
-		BkSession:            client.buildkitSession,
-		LLBBridge:            client.llbBridge,
-		Dialer:               client.dialer,
-		GetClientCaller:      client.getClientCaller,
-		GetMainClientCaller:  client.getMainClientCaller,
-		Entitlements:         srv.entitlements,
-		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,
-		Frontends:            srv.frontends,
-
-		Refs:   client.daggerSession.refs,
-		RefsMu: &client.daggerSession.refsMu,
+		Worker:              srv.worker,
+		SessionManager:      srv.bkSessionManager,
+		BkSession:           client.buildkitSession,
+		Dialer:              client.dialer,
+		GetClientCaller:     client.getClientCaller,
+		GetMainClientCaller: client.getMainClientCaller,
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
@@ -638,7 +541,7 @@ func (srv *Server) initializeDaggerClient(
 		}
 		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 		if err != nil {
-			return fmt.Errorf("failed to load module: %w", err)
+			return fmt.Errorf("failed to load module during client init: %w", err)
 		}
 		client.mod = modInst.Self()
 
@@ -975,11 +878,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules: allowedLLMModules,
 			EagerRuntime:      eagerRuntime,
 		},
-		CallID:              execMD.CallID,
-		CallerClientID:      execMD.CallerClientID,
-		EncodedModuleID:     execMD.EncodedModuleID,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
-		ParentIDs:           execMD.ParentIDs,
+		CallID:                 execMD.CallID,
+		CallerClientID:         execMD.CallerClientID,
+		EncodedModuleID:        execMD.EncodedModuleID,
+		EncodedContentModuleID: execMD.EncodedContentModuleID,
+		EncodedFunctionCall:    execMD.EncodedFunctionCall,
+		ParentIDs:              execMD.ParentIDs,
 	}).ServeHTTP(w, r)
 }
 
@@ -1254,33 +1158,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
-
-		if len(sess.cacheExporterCfgs) > 0 {
-			ctx = context.WithoutCancel(ctx)
-			t := client.tracerProvider.Tracer(InstrumentationLibrary)
-			ctx, span := t.Start(ctx, "cache export", telemetry.Encapsulate())
-			defer span.End()
-
-			// create an internal span so we hide exporter children spans which are quite noisy
-			ctx, cInternal := t.Start(ctx, "cache export internal", telemetry.Internal())
-			defer cInternal.End()
-			bklog.G(ctx).Infof("running cache export for client %s", client.clientID)
-			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
-			for i, cacheExportCfg := range sess.cacheExporterCfgs {
-				cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup bksession.Group) (remotecache.Exporter, error) {
-					exporterFunc, ok := srv.cacheExporters[cacheExportCfg.Type]
-					if !ok {
-						return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
-					}
-					return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
-				}
-			}
-			err := client.bkClient.UpstreamCacheExport(ctx, cacheExporterFuncs)
-			if err != nil {
-				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", client.clientID)
-			}
-			bklog.G(ctx).Infof("done running cache export for client %s", client.clientID)
-		}
 
 		defer func() {
 			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,

@@ -6,28 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
+	ctrdmount "github.com/containerd/containerd/v2/core/mount"
 	"golang.org/x/sync/errgroup"
 
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
-	bkcontainer "github.com/dagger/dagger/internal/buildkit/frontend/gateway/container"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
-	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/errdefs"
-	bkmounts "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
+	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	utilsystem "github.com/dagger/dagger/internal/buildkit/util/system"
-	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/sys/userns"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"google.golang.org/grpc/codes"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -35,6 +40,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var ErrNoCommand = errors.New("no command has been set")
@@ -67,6 +73,14 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
+	// (Internal-only) execute with no network connectivity, equivalent to
+	// BuildKit NetMode_NONE / Dockerfile RUN --network=none.
+	NoNetwork bool `internal:"true" default:"false"`
+
+	// (Internal-only) execute with host networking, equivalent to
+	// BuildKit NetMode_HOST / Dockerfile RUN --network=host.
+	HostNetwork bool `internal:"true" default:"false"`
+
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
 
@@ -80,6 +94,19 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	if parent != nil {
 		execMD = *parent
 	}
+	preAliasKeys := slices.Collect(maps.Keys(execMD.HostAliases))
+	slices.Sort(preAliasKeys)
+	serviceHosts := make([]string, 0, len(container.Services))
+	for _, bnd := range container.Services {
+		serviceHosts = append(serviceHosts, bnd.Hostname)
+	}
+	slices.Sort(serviceHosts)
+	slog.Info("execMeta init",
+		"parentSet", parent != nil,
+		"preHostAliases", preAliasKeys,
+		"serviceHosts", serviceHosts,
+		"args", opts.Args,
+	)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -113,13 +140,21 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 
 	var callerModID *call.ID
-	if execMD.EncodedModuleID != "" {
+	if execMD.EncodedContentModuleID != "" {
+		callerModID = new(call.ID)
+		if err := callerModID.Decode(execMD.EncodedContentModuleID); err != nil {
+			return nil, fmt.Errorf("failed to decode content-scoped module ID: %w", err)
+		}
+	} else if execMD.EncodedModuleID != "" {
 		callerModID = new(call.ID)
 		if err := callerModID.Decode(execMD.EncodedModuleID); err != nil {
 			return nil, fmt.Errorf("failed to decode module ID: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod != nil {
-		callerModID = callerMod.ResultID
+		callerModID, err = callerMod.SourceContentScopedID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get caller module content-scoped ID: %w", err)
+		}
 	}
 
 	if callerModID != nil {
@@ -147,6 +182,12 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 			execMD.HostAliases[bnd.Hostname] = append(execMD.HostAliases[bnd.Hostname], alias)
 		}
 	}
+	postAliasKeys := slices.Collect(maps.Keys(execMD.HostAliases))
+	slices.Sort(postAliasKeys)
+	slog.Info("execMeta host aliases",
+		"hostAliases", postAliasKeys,
+		"args", opts.Args,
+	)
 
 	for i, secret := range container.Secrets {
 		switch {
@@ -188,6 +229,13 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	if opts.InsecureRootCapabilities {
 		metaSpec.SecurityMode = pb.SecurityMode_INSECURE
 	}
+	netMode, err := execNetMode(opts)
+	if err != nil {
+		return nil, err
+	}
+	if netMode != pb.NetMode_UNSET {
+		metaSpec.NetMode = netMode
+	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
 
@@ -196,6 +244,19 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	return &metaSpec, nil
+}
+
+func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
+	if opts.NoNetwork && opts.HostNetwork {
+		return pb.NetMode_UNSET, fmt.Errorf("cannot set both noNetwork and hostNetwork")
+	}
+	if opts.NoNetwork {
+		return pb.NetMode_NONE, nil
+	}
+	if opts.HostNetwork {
+		return pb.NetMode_HOST, nil
+	}
+	return pb.NetMode_UNSET, nil
 }
 
 func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv) {
@@ -210,373 +271,1290 @@ func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv) {
 	return secretEnvs
 }
 
-//nolint:gocyclo
+type execMountState struct {
+	Dest      string
+	Selector  string
+	Readonly  bool
+	MountType pb.MountType
+
+	SourceRef bkcache.Ref
+
+	TmpfsOpt  *pb.TmpfsOpt
+	SecretOpt *pb.SecretOpt
+	SSHOpt    *pb.SSHOpt
+
+	ApplyOutput func(bkcache.ImmutableRef)
+
+	ActiveRef bkcache.MutableRef
+	OutputRef bkcache.Ref
+}
+
+type materializedExecPlan struct {
+	Root   executor.Mount
+	Mounts []executor.Mount
+	States []*execMountState
+}
+
+func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
+	var rerr error
+	for i := len(plan.States) - 1; i >= 0; i-- {
+		active := plan.States[i].ActiveRef
+		if active == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, active.Release(ctx))
+		plan.States[i].ActiveRef = nil
+	}
+	return rerr
+}
+
+func (plan *materializedExecPlan) releaseOutputRefs(ctx context.Context) error {
+	var rerr error
+	for _, state := range plan.States {
+		if state.OutputRef == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, state.OutputRef.Release(ctx))
+		state.OutputRef = nil
+	}
+	return rerr
+}
+
+type makeExecMutable func(dest string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error)
+
+func prepareMounts(
+	ctx context.Context,
+	container *Container,
+	rootOutput func(bkcache.ImmutableRef),
+	metaOutput func(bkcache.ImmutableRef),
+	mountOutputs []func(bkcache.ImmutableRef),
+	cache bkcache.SnapshotManager,
+	session *bksession.Manager,
+	g bksession.Group,
+	cwd string,
+	platform string,
+	makeMutable makeExecMutable,
+) (materialized materializedExecPlan, err error) {
+	defer func() {
+		if err != nil {
+			_ = materialized.releaseActives(context.WithoutCancel(ctx))
+			_ = materialized.releaseOutputRefs(context.WithoutCancel(ctx))
+		}
+	}()
+
+	materializeState := func(state *execMountState) error {
+		var mountable bkcache.Mountable
+		if state.SourceRef != nil {
+			mountable = state.SourceRef
+		}
+
+		switch state.MountType {
+		case pb.MountType_BIND:
+			if state.ApplyOutput != nil {
+				if state.Readonly && state.SourceRef != nil && state.Dest != pb.RootMount {
+					iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+					if !ok {
+						return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
+					}
+					state.OutputRef = iref.Clone()
+				} else {
+					iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+					if state.SourceRef != nil && !ok {
+						return fmt.Errorf("mount %s writable output needs immutable input, got %T", state.Dest, state.SourceRef)
+					}
+					active, err := makeMutable(state.Dest, iref)
+					if err != nil {
+						return err
+					}
+					mountable = active
+					state.OutputRef = active
+				}
+			} else {
+				if !state.Readonly && state.SourceRef != nil {
+					if mutable, ok := state.SourceRef.(bkcache.MutableRef); ok {
+						mountable = mutable
+					} else {
+						iref := state.SourceRef.(bkcache.ImmutableRef)
+						active, err := makeMutable(state.Dest, iref)
+						if err != nil {
+							return err
+						}
+						mountable = active
+						state.ActiveRef = active
+					}
+				} else if !state.Readonly || state.SourceRef == nil {
+					var iref bkcache.ImmutableRef
+					if state.SourceRef != nil {
+						parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
+						if !ok {
+							return fmt.Errorf("mount %s writable bind needs immutable or mutable input, got %T", state.Dest, state.SourceRef)
+						}
+						iref = parsed
+					}
+					active, err := makeMutable(state.Dest, iref)
+					if err != nil {
+						return err
+					}
+					mountable = active
+					state.ActiveRef = active
+				}
+			}
+
+		case pb.MountType_TMPFS:
+			mountable = execTmpFSMountable(cache, state.TmpfsOpt)
+
+		case pb.MountType_SECRET:
+			mountable, err = prepareExecSecretMount(ctx, cache, session, state.SecretOpt, g)
+			if err != nil {
+				return err
+			}
+
+		case pb.MountType_SSH:
+			mountable, err = prepareExecSSHMount(ctx, cache, session, state.SSHOpt, g)
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("mount type %s not implemented", state.MountType)
+		}
+
+		if state.Dest == pb.RootMount && state.Readonly && state.ApplyOutput == nil {
+			if _, ok := mountable.(bkcache.MutableRef); !ok {
+				var iref bkcache.ImmutableRef
+				if state.SourceRef != nil {
+					parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
+					if !ok {
+						return fmt.Errorf("root mount readonly fallback needs immutable input, got %T", state.SourceRef)
+					}
+					iref = parsed
+				}
+				active, err := makeMutable(state.Dest, iref)
+				if err != nil {
+					return err
+				}
+				mountable = active
+				state.ActiveRef = active
+			}
+		}
+
+		if mountable == nil {
+			return nil
+		}
+
+		if state.Dest == pb.RootMount {
+			root := execMountWithSession(mountable, g)
+			root.Selector = state.Selector
+			materialized.Root = root
+		} else {
+			mount := execMountWithSession(mountable, g)
+			dest := state.Dest
+			if !utilsystem.IsAbs(filepath.Clean(dest), platform) {
+				dest = filepath.Join("/", cwd, dest)
+			}
+			mount.Dest = dest
+			mount.Readonly = state.Readonly
+			mount.Selector = state.Selector
+			materialized.Mounts = append(materialized.Mounts, mount)
+		}
+
+		materialized.States = append(materialized.States, state)
+		return nil
+	}
+
+	rootState := &execMountState{
+		Dest:        pb.RootMount,
+		Selector:    "/",
+		MountType:   pb.MountType_BIND,
+		ApplyOutput: rootOutput,
+	}
+	if container.FS != nil && container.FS.Self() != nil {
+		rootState.Selector = container.FS.Self().Dir
+		if rootState.Selector == "" {
+			rootState.Selector = "/"
+		}
+		ref, err := container.FS.Self().getSnapshot(ctx)
+		if err != nil {
+			return materialized, fmt.Errorf("failed to get rootfs snapshot: %w", err)
+		}
+		rootState.SourceRef = ref
+	}
+	if err := materializeState(rootState); err != nil {
+		return materialized, err
+	}
+
+	metaState := &execMountState{
+		Dest:        buildkit.MetaMountDestPath,
+		Selector:    "/",
+		MountType:   pb.MountType_BIND,
+		ApplyOutput: metaOutput,
+	}
+	if container.MetaSnapshot != nil {
+		metaState.SourceRef = container.MetaSnapshot
+	}
+	if err := materializeState(metaState); err != nil {
+		return materialized, err
+	}
+
+	for i, ctrMount := range container.Mounts {
+		mountState := &execMountState{
+			Dest:      ctrMount.Target,
+			MountType: pb.MountType_BIND,
+			Readonly:  ctrMount.Readonly,
+		}
+
+		switch {
+		case ctrMount.DirectorySource != nil:
+			if ctrMount.DirectorySource.Self() == nil {
+				return materialized, fmt.Errorf("mount %d has nil directory source", i)
+			}
+			mountState.Selector = ctrMount.DirectorySource.Self().Dir
+			ref, err := ctrMount.DirectorySource.Self().getSnapshot(ctx)
+			if err != nil {
+				return materialized, fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err)
+			}
+			mountState.SourceRef = ref
+
+		case ctrMount.FileSource != nil:
+			if ctrMount.FileSource.Self() == nil {
+				return materialized, fmt.Errorf("mount %d has nil file source", i)
+			}
+			mountState.Selector = ctrMount.FileSource.Self().File
+			ref, err := ctrMount.FileSource.Self().getSnapshot(ctx)
+			if err != nil {
+				return materialized, fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err)
+			}
+			mountState.SourceRef = ref
+
+		case ctrMount.CacheSource != nil:
+			cacheSrc := ctrMount.CacheSource
+			if cacheSrc.Volume.Self() == nil {
+				return materialized, fmt.Errorf("mount %d has nil cache volume source", i)
+			}
+			if cacheSrc.Volume.Self().getSnapshot() == nil {
+				if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
+					return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
+				}
+			}
+			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
+			if cacheSnapshot == nil {
+				return materialized, fmt.Errorf("mount %d has nil cache volume snapshot", i)
+			}
+			mountState.SourceRef = cacheSnapshot
+			mountState.Selector = cacheSrc.Volume.Self().getSnapshotSelector()
+
+		case ctrMount.TmpfsSource != nil:
+			mountState.MountType = pb.MountType_TMPFS
+			mountState.TmpfsOpt = &pb.TmpfsOpt{
+				Size_: int64(ctrMount.TmpfsSource.Size),
+			}
+
+		default:
+			return materialized, fmt.Errorf("mount %d has no source", i)
+		}
+
+		if i < len(mountOutputs) {
+			if output := mountOutputs[i]; output != nil && !mountState.Readonly {
+				mountState.ApplyOutput = output
+			}
+		}
+		if err := materializeState(mountState); err != nil {
+			return materialized, err
+		}
+	}
+
+	for _, secret := range container.Secrets {
+		if secret.MountPath == "" {
+			continue
+		}
+		uid, gid := 0, 0
+		if secret.Owner != nil {
+			uid, gid = secret.Owner.UID, secret.Owner.GID
+		}
+		secretState := &execMountState{
+			Dest:      secret.MountPath,
+			MountType: pb.MountType_SECRET,
+			SecretOpt: &pb.SecretOpt{
+				ID:   SecretIDDigest(secret.Secret.ID()).String(),
+				Uid:  uint32(uid),
+				Gid:  uint32(gid),
+				Mode: uint32(secret.Mode),
+			},
+		}
+		if err := materializeState(secretState); err != nil {
+			return materialized, err
+		}
+	}
+
+	for i, socket := range container.Sockets {
+		if socket.ContainerPath == "" {
+			return materialized, fmt.Errorf("unsupported socket %d: only unix paths are implemented", i)
+		}
+		uid, gid := 0, 0
+		if socket.Owner != nil {
+			uid, gid = socket.Owner.UID, socket.Owner.GID
+		}
+		socketState := &execMountState{
+			Dest:      socket.ContainerPath,
+			MountType: pb.MountType_SSH,
+			SSHOpt: &pb.SSHOpt{
+				ID:   socket.Source.LLBID(),
+				Uid:  uint32(uid),
+				Gid:  uint32(gid),
+				Mode: 0o600,
+			},
+		}
+		if err := materializeState(socketState); err != nil {
+			return materialized, err
+		}
+	}
+
+	sort.Slice(materialized.Mounts, func(i, j int) bool {
+		return materialized.Mounts[i].Dest < materialized.Mounts[j].Dest
+	})
+
+	return materialized, nil
+}
+
+func execMountWithSession(mountable bkcache.Mountable, g bksession.Group) executor.Mount {
+	_, readonly := mountable.(bkcache.ImmutableRef)
+	return executor.Mount{
+		Src:      &sessionMountable{mountable: mountable, group: g},
+		Readonly: readonly,
+	}
+}
+
+type sessionMountable struct {
+	mountable bkcache.Mountable
+	group     bksession.Group
+}
+
+func (mountable *sessionMountable) Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
+	return mountable.mountable.Mount(ctx, readonly, mountable.group)
+}
+
+func execTmpFSMountable(cache bkcache.SnapshotManager, opt *pb.TmpfsOpt) bkcache.Mountable {
+	return &execTmpFS{
+		idmap: cache.IdentityMapping(),
+		opt:   opt,
+	}
+}
+
+type execTmpFS struct {
+	idmap *idtools.IdentityMapping
+	opt   *pb.TmpfsOpt
+}
+
+func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool, _ bksession.Group) (snapshot.Mountable, error) {
+	return &execTmpFSMount{
+		readonly: readonly,
+		idmap:    tmpfs.idmap,
+		opt:      tmpfs.opt,
+	}, nil
+}
+
+type execTmpFSMount struct {
+	readonly bool
+	idmap    *idtools.IdentityMapping
+	opt      *pb.TmpfsOpt
+}
+
+func (tmpfs *execTmpFSMount) Mount() ([]ctrdmount.Mount, func() error, error) {
+	options := []string{"nosuid"}
+	if tmpfs.readonly {
+		options = append(options, "ro")
+	}
+	if tmpfs.opt != nil && tmpfs.opt.Size_ > 0 {
+		options = append(options, fmt.Sprintf("size=%d", tmpfs.opt.Size_))
+	}
+	return []ctrdmount.Mount{{
+		Type:    "tmpfs",
+		Source:  "tmpfs",
+		Options: options,
+	}}, func() error { return nil }, nil
+}
+
+func (tmpfs *execTmpFSMount) IdentityMapping() *idtools.IdentityMapping {
+	return tmpfs.idmap
+}
+
+func prepareExecSecretMount(ctx context.Context, cache bkcache.SnapshotManager, session *bksession.Manager, secretOpt *pb.SecretOpt, g bksession.Group) (bkcache.Mountable, error) {
+	if secretOpt == nil {
+		return nil, fmt.Errorf("invalid secret mount options")
+	}
+	secret := *secretOpt
+	if secret.ID == "" {
+		return nil, fmt.Errorf("secret ID missing from mount options")
+	}
+
+	var (
+		data []byte
+		err  error
+	)
+	err = session.Any(ctx, g, func(ctx context.Context, _ string, caller bksession.Caller) error {
+		data, err = secrets.GetSecret(ctx, caller, secret.ID)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, secrets.ErrNotFound) && secret.Optional {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &execSecretMount{
+		secret: &secret,
+		data:   data,
+		idmap:  cache.IdentityMapping(),
+	}, nil
+}
+
+type execSecretMount struct {
+	secret *pb.SecretOpt
+	data   []byte
+	idmap  *idtools.IdentityMapping
+}
+
+func (secret *execSecretMount) Mount(_ context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
+	return &execSecretMountInstance{
+		secret: secret,
+		idmap:  secret.idmap,
+	}, nil
+}
+
+type execSecretMountInstance struct {
+	secret *execSecretMount
+	idmap  *idtools.IdentityMapping
+}
+
+func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
+	dir, err := os.MkdirTemp("", "buildkit-secrets")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	cleanupDir := func() error {
+		return os.RemoveAll(dir)
+	}
+
+	if err := os.Chmod(dir, 0o711); err != nil {
+		_ = cleanupDir()
+		return nil, nil, err
+	}
+
+	var mountOpts []string
+	if secret.secret.secret.Mode&0o111 == 0 {
+		mountOpts = append(mountOpts, "noexec")
+	}
+
+	tmpMount := ctrdmount.Mount{
+		Type:    "tmpfs",
+		Source:  "tmpfs",
+		Options: append([]string{"nodev", "nosuid", fmt.Sprintf("uid=%d,gid=%d", os.Geteuid(), os.Getegid())}, mountOpts...),
+	}
+	if userns.RunningInUserNS() {
+		tmpMount.Options = nil
+	}
+
+	if err := ctrdmount.All([]ctrdmount.Mount{tmpMount}, dir); err != nil {
+		_ = cleanupDir()
+		return nil, nil, fmt.Errorf("unable to setup secret mount: %w", err)
+	}
+
+	cleanup := func() error {
+		if err := ctrdmount.Unmount(dir, 0); err != nil {
+			return err
+		}
+		return cleanupDir()
+	}
+
+	fp := filepath.Join(dir, identity.NewID())
+	if err := os.WriteFile(fp, secret.secret.data, 0o600); err != nil {
+		_ = cleanup()
+		return nil, nil, err
+	}
+
+	uid := int(secret.secret.secret.Uid)
+	gid := int(secret.secret.secret.Gid)
+	if secret.idmap != nil {
+		hostIdentity, err := secret.idmap.ToHost(idtools.Identity{
+			UID: uid,
+			GID: gid,
+		})
+		if err != nil {
+			_ = cleanup()
+			return nil, nil, err
+		}
+		uid = hostIdentity.UID
+		gid = hostIdentity.GID
+	}
+
+	if err := os.Chown(fp, uid, gid); err != nil {
+		_ = cleanup()
+		return nil, nil, err
+	}
+	if err := os.Chmod(fp, os.FileMode(secret.secret.secret.Mode&0o777)); err != nil {
+		_ = cleanup()
+		return nil, nil, err
+	}
+
+	return []ctrdmount.Mount{{
+		Type:    "bind",
+		Source:  fp,
+		Options: append([]string{"ro", "rbind", "nodev", "nosuid"}, mountOpts...),
+	}}, cleanup, nil
+}
+
+func (secret *execSecretMountInstance) IdentityMapping() *idtools.IdentityMapping {
+	return secret.idmap
+}
+
+func prepareExecSSHMount(ctx context.Context, cache bkcache.SnapshotManager, session *bksession.Manager, sshOpt *pb.SSHOpt, g bksession.Group) (bkcache.Mountable, error) {
+	if sshOpt == nil {
+		return nil, fmt.Errorf("invalid ssh mount options")
+	}
+	ssh := *sshOpt
+
+	var caller bksession.Caller
+	err := session.Any(ctx, g, func(ctx context.Context, _ string, c bksession.Caller) error {
+		if err := sshforward.CheckSSHID(ctx, c, ssh.ID); err != nil {
+			if ssh.Optional {
+				return nil
+			}
+			if grpcerrors.Code(err) == codes.Unimplemented {
+				return fmt.Errorf("no SSH key %q forwarded from the client", ssh.ID)
+			}
+			return err
+		}
+		caller = c
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if caller == nil {
+		return nil, nil
+	}
+
+	return &execSSHMount{
+		sshOpt: &ssh,
+		caller: caller,
+		idmap:  cache.IdentityMapping(),
+	}, nil
+}
+
+type execSSHMount struct {
+	sshOpt *pb.SSHOpt
+	caller bksession.Caller
+	idmap  *idtools.IdentityMapping
+}
+
+func (ssh *execSSHMount) Mount(_ context.Context, _ bool, _ bksession.Group) (snapshot.Mountable, error) {
+	return &execSSHMountInstance{
+		ssh:   ssh,
+		idmap: ssh.idmap,
+	}, nil
+}
+
+type execSSHMountInstance struct {
+	ssh   *execSSHMount
+	idmap *idtools.IdentityMapping
+}
+
+func (ssh *execSSHMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
+	ctx, cancel := context.WithCancelCause(context.TODO())
+
+	uid := int(ssh.ssh.sshOpt.Uid)
+	gid := int(ssh.ssh.sshOpt.Gid)
+	if ssh.idmap != nil {
+		hostIdentity, err := ssh.idmap.ToHost(idtools.Identity{
+			UID: uid,
+			GID: gid,
+		})
+		if err != nil {
+			cancel(err)
+			return nil, nil, err
+		}
+		uid = hostIdentity.UID
+		gid = hostIdentity.GID
+	}
+
+	sock, cleanup, err := sshforward.MountSSHSocket(ctx, ssh.ssh.caller, sshforward.SocketOpt{
+		ID:   ssh.ssh.sshOpt.ID,
+		UID:  uid,
+		GID:  gid,
+		Mode: int(ssh.ssh.sshOpt.Mode & 0o777),
+	})
+	if err != nil {
+		cancel(err)
+		return nil, nil, err
+	}
+	release := func() error {
+		var err error
+		if cleanup != nil {
+			err = cleanup()
+		}
+		cancel(err)
+		return err
+	}
+
+	return []ctrdmount.Mount{{
+		Type:    "bind",
+		Source:  sock,
+		Options: []string{"rbind"},
+	}}, release, nil
+}
+
+func (ssh *execSSHMountInstance) IdentityMapping() *idtools.IdentityMapping {
+	return ssh.idmap
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithExec(
 	ctx context.Context,
 	opts ContainerExecOpts,
 	execMD *buildkit.ExecutionMetadata,
-) (_ *Container, rerr error) {
-	container = container.Clone()
+	extractModuleError bool,
+) error {
+	gate := NewLazyState()
+	gateRun := func(ctx context.Context) error {
+		return gate.Evaluate(ctx, "container exec")
+	}
+	container.LazyInit = gateRun
 
-	query, err := CurrentQuery(ctx)
+	inputRootFS := container.FS
+	inputMounts := slices.Clone(container.Mounts)
+	// withExec mutates container filesystem state, so imageRef is no longer valid.
+	container.ImageRef = ""
+
+	rootfsOutput := &Directory{
+		Dir:       "/",
+		Platform:  container.Platform,
+		Services:  container.Services,
+		LazyState: NewLazyState(),
+	}
+	rootfsOutput.LazyInit = gateRun
+	if inputRootFS != nil && inputRootFS.Self() != nil {
+		rootfsOutput.Dir = inputRootFS.Self().Dir
+		rootfsOutput.Platform = inputRootFS.Self().Platform
+		rootfsOutput.Services = inputRootFS.Self().Services
+	}
+	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsOutput)
 	if err != nil {
-		return nil, fmt.Errorf("get current query: %w", err)
+		return fmt.Errorf("failed to initialize rootfs output: %w", err)
 	}
+	container.FS = updatedRootFS
 
-	platform := container.Platform
-	if platform.OS == "" {
-		platform = query.Platform()
+	container.MetaSnapshot = nil
+
+	rootOutputBinding := func(ref bkcache.ImmutableRef) {
+		rootfsOutput.setSnapshot(ref)
 	}
-
-	secretEnvs := container.secretEnvs()
-
-	execMD, err = container.execMeta(ctx, opts, execMD)
-	if err != nil {
-		return nil, err
+	metaOutputBinding := func(ref bkcache.ImmutableRef) {
+		container.MetaSnapshot = ref
 	}
+	mountOutputBindings := make([]func(bkcache.ImmutableRef), len(container.Mounts))
 
-	mounts, ok := CurrentMountData(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no dagop here")
-	}
+	for i, ctrMount := range container.Mounts {
+		if ctrMount.Readonly {
+			continue
+		}
 
-	workerRefs := make([]*worker.WorkerRef, 0, len(mounts.Inputs))
-	for _, ref := range mounts.InputRefs() {
-		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
-	}
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	cache := query.BuildkitCache()
-	session := query.BuildkitSession()
-
-	metaSpec, err := container.metaSpec(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	opt, ok := buildkit.CurrentOpOpts(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit opts in context")
-	}
-
-	mm := bkmounts.NewMountManager(fmt.Sprintf("exec %s", strings.Join(metaSpec.Args, " ")), cache, session)
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, container.Config.WorkingDir, mounts.Mounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-		desc := fmt.Sprintf("mount %s from exec %s", m.Dest, strings.Join(metaSpec.Args, " "))
-		return cache.New(ctx, ref, bkSessionGroup, bkcache.WithDescription(desc))
-	}, runtime.GOOS)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if rerr != nil {
-			execInputs := make([]bksolver.Result, len(mounts.Mounts))
-			for i, m := range mounts.Mounts {
-				if m.Input == pb.Empty {
-					continue
-				}
-				if m.Input < 0 || int(m.Input) >= len(mounts.Inputs) {
-					rerr = errors.Join(rerr, fmt.Errorf("mount index %d references input %d outside available inputs (%d)", i, m.Input, len(mounts.Inputs)))
-					continue
-				}
-				execInputs[i] = mounts.Inputs[m.Input].Clone()
+		switch {
+		case ctrMount.DirectorySource != nil:
+			if ctrMount.DirectorySource.Self() == nil {
+				return fmt.Errorf("mount %d has nil directory source", i)
 			}
-			execMounts := make([]bksolver.Result, len(mounts.Mounts))
-			copy(execMounts, execInputs)
-			results, err := extractContainerBkOutputs(ctx, container, bk, opt.Worker, mounts)
+			dirMnt := ctrMount.DirectorySource.Self()
+			outputDir := &Directory{
+				Dir:       dirMnt.Dir,
+				Platform:  dirMnt.Platform,
+				Services:  dirMnt.Services,
+				LazyState: NewLazyState(),
+			}
+			outputDir.LazyInit = gateRun
+			updatedMnt, err := updatedDirMount(ctx, container, outputDir, ctrMount.Target)
 			if err != nil {
+				return fmt.Errorf("failed to initialize directory mount output %d: %w", i, err)
+			}
+			ctrMount.DirectorySource = updatedMnt
+			container.Mounts[i] = ctrMount
+			dirOutput := outputDir
+			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) {
+				dirOutput.setSnapshot(ref)
+			}
+
+		case ctrMount.FileSource != nil:
+			if ctrMount.FileSource.Self() == nil {
+				return fmt.Errorf("mount %d has nil file source", i)
+			}
+			fileMnt := ctrMount.FileSource.Self()
+			outputFile := &File{
+				File:      fileMnt.File,
+				Platform:  fileMnt.Platform,
+				Services:  fileMnt.Services,
+				LazyState: NewLazyState(),
+			}
+			outputFile.LazyInit = gateRun
+			updatedMnt, err := updatedFileMount(ctx, container, outputFile, ctrMount.Target)
+			if err != nil {
+				return fmt.Errorf("failed to initialize file mount output %d: %w", i, err)
+			}
+			ctrMount.FileSource = updatedMnt
+			container.Mounts[i] = ctrMount
+			fileOutput := outputFile
+			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) {
+				fileOutput.setSnapshot(ref)
+			}
+		}
+	}
+
+	gate.LazyInit = func(ctx context.Context) (rerr error) {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			return fmt.Errorf("get current query: %w", err)
+		}
+
+		secretEnvs := container.secretEnvs()
+
+		execMD, err = container.execMeta(ctx, opts, execMD)
+		if err != nil {
+			return err
+		}
+
+		cache := query.BuildkitCache()
+		session := query.BuildkitSession()
+
+		metaSpec, err := container.metaSpec(ctx, opts)
+		if err != nil {
+			return err
+		}
+
+		bkClient, err := query.Buildkit(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+		bkSessionGroup := NewSessionGroup(bkClient.ID())
+		opWorker := bkClient.Worker
+		causeCtx := trace.SpanContextFromContext(ctx)
+		if opWorker == nil {
+			return fmt.Errorf("missing buildkit worker")
+		}
+
+		var rootMount executor.Mount
+		execMounts := []executor.Mount{}
+		mountStates := []*execMountState{}
+		releaseActives := func() error {
+			var releaseErr error
+			for i := len(mountStates) - 1; i >= 0; i-- {
+				active := mountStates[i].ActiveRef
+				if active == nil {
+					continue
+				}
+				releaseErr = errors.Join(releaseErr, active.Release(context.WithoutCancel(ctx)))
+				mountStates[i].ActiveRef = nil
+			}
+			return releaseErr
+		}
+		releaseOutputRefs := func() error {
+			var releaseErr error
+			for _, state := range mountStates {
+				if state.OutputRef == nil {
+					continue
+				}
+				releaseErr = errors.Join(releaseErr, state.OutputRef.Release(context.WithoutCancel(ctx)))
+				state.OutputRef = nil
+			}
+			return releaseErr
+		}
+		applyOutputs := func() error {
+			for _, state := range mountStates {
+				if state.ApplyOutput == nil || state.OutputRef == nil {
+					continue
+				}
+				var out bkcache.ImmutableRef
+				if mutable, ok := state.OutputRef.(bkcache.MutableRef); ok {
+					committed, err := mutable.Commit(ctx)
+					if err != nil {
+						return fmt.Errorf("error committing %s: %w", mutable.ID(), err)
+					}
+					out = committed
+				} else {
+					out = state.OutputRef.(bkcache.ImmutableRef)
+				}
+				state.ApplyOutput(out)
+				state.OutputRef = nil
+			}
+			return nil
+		}
+
+		makeMutable := func(dest string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+			desc := fmt.Sprintf("mount %s from exec %s", dest, strings.Join(metaSpec.Args, " "))
+			return cache.New(ctx, ref, nil, bkcache.WithDescription(desc))
+		}
+		materializeState := func(state *execMountState) error {
+			var mountable bkcache.Mountable
+			if state.SourceRef != nil {
+				mountable = state.SourceRef
+			}
+
+			switch state.MountType {
+			case pb.MountType_BIND:
+				if state.ApplyOutput != nil {
+					if state.Readonly && state.SourceRef != nil && state.Dest != pb.RootMount {
+						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+						if !ok {
+							return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
+						}
+						state.OutputRef = iref.Clone()
+					} else {
+						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+						if state.SourceRef != nil && !ok {
+							return fmt.Errorf("mount %s writable output needs immutable input, got %T", state.Dest, state.SourceRef)
+						}
+						active, err := makeMutable(state.Dest, iref)
+						if err != nil {
+							return err
+						}
+						mountable = active
+						state.OutputRef = active
+					}
+				} else {
+					if !state.Readonly && state.SourceRef != nil {
+						if mutable, ok := state.SourceRef.(bkcache.MutableRef); ok {
+							mountable = mutable
+						} else {
+							iref := state.SourceRef.(bkcache.ImmutableRef)
+							active, err := makeMutable(state.Dest, iref)
+							if err != nil {
+								return err
+							}
+							mountable = active
+							state.ActiveRef = active
+						}
+					} else if !state.Readonly || state.SourceRef == nil {
+						var iref bkcache.ImmutableRef
+						if state.SourceRef != nil {
+							parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
+							if !ok {
+								return fmt.Errorf("mount %s writable bind needs immutable or mutable input, got %T", state.Dest, state.SourceRef)
+							}
+							iref = parsed
+						}
+						active, err := makeMutable(state.Dest, iref)
+						if err != nil {
+							return err
+						}
+						mountable = active
+						state.ActiveRef = active
+					}
+				}
+
+			case pb.MountType_TMPFS:
+				mountable = execTmpFSMountable(cache, state.TmpfsOpt)
+
+			case pb.MountType_SECRET:
+				mountable, err = prepareExecSecretMount(ctx, cache, session, state.SecretOpt, bkSessionGroup)
+				if err != nil {
+					return err
+				}
+
+			case pb.MountType_SSH:
+				mountable, err = prepareExecSSHMount(ctx, cache, session, state.SSHOpt, bkSessionGroup)
+				if err != nil {
+					return err
+				}
+
+			default:
+				return fmt.Errorf("mount type %s not implemented", state.MountType)
+			}
+
+			if state.Dest == pb.RootMount && state.Readonly && state.ApplyOutput == nil {
+				if _, ok := mountable.(bkcache.MutableRef); !ok {
+					var iref bkcache.ImmutableRef
+					if state.SourceRef != nil {
+						parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
+						if !ok {
+							return fmt.Errorf("root mount readonly fallback needs immutable input, got %T", state.SourceRef)
+						}
+						iref = parsed
+					}
+					active, err := makeMutable(state.Dest, iref)
+					if err != nil {
+						return err
+					}
+					mountable = active
+					state.ActiveRef = active
+				}
+			}
+
+			if mountable == nil {
+				return nil
+			}
+
+			if state.Dest == pb.RootMount {
+				root := execMountWithSession(mountable, bkSessionGroup)
+				root.Selector = state.Selector
+				rootMount = root
+			} else {
+				mount := execMountWithSession(mountable, bkSessionGroup)
+				dest := state.Dest
+				if !utilsystem.IsAbs(filepath.Clean(dest), runtime.GOOS) {
+					dest = filepath.Join("/", container.Config.WorkingDir, dest)
+				}
+				mount.Dest = dest
+				mount.Readonly = state.Readonly
+				mount.Selector = state.Selector
+				execMounts = append(execMounts, mount)
+			}
+
+			mountStates = append(mountStates, state)
+			return nil
+		}
+		failPrepare := func(err error) error {
+			_ = releaseActives()
+			_ = releaseOutputRefs()
+			return fmt.Errorf("failed to prepare mounts: %w", err)
+		}
+
+		rootState := &execMountState{
+			Dest:        pb.RootMount,
+			Selector:    "/",
+			MountType:   pb.MountType_BIND,
+			ApplyOutput: rootOutputBinding,
+		}
+		if inputRootFS != nil && inputRootFS.Self() != nil {
+			rootState.Selector = inputRootFS.Self().Dir
+			if rootState.Selector == "" {
+				rootState.Selector = "/"
+			}
+			ref, err := inputRootFS.Self().getSnapshot(ctx)
+			if err != nil {
+				return failPrepare(fmt.Errorf("failed to get rootfs snapshot: %w", err))
+			}
+			rootState.SourceRef = ref
+		}
+		if err := materializeState(rootState); err != nil {
+			return failPrepare(err)
+		}
+
+		metaState := &execMountState{
+			Dest:        buildkit.MetaMountDestPath,
+			Selector:    "/",
+			MountType:   pb.MountType_BIND,
+			ApplyOutput: metaOutputBinding,
+		}
+		if err := materializeState(metaState); err != nil {
+			return failPrepare(err)
+		}
+
+		for i, ctrMount := range inputMounts {
+			mountState := &execMountState{
+				Dest:      ctrMount.Target,
+				MountType: pb.MountType_BIND,
+				Readonly:  ctrMount.Readonly,
+			}
+
+			switch {
+			case ctrMount.DirectorySource != nil:
+				if ctrMount.DirectorySource.Self() == nil {
+					return failPrepare(fmt.Errorf("mount %d has nil directory source", i))
+				}
+				mountState.Selector = ctrMount.DirectorySource.Self().Dir
+				ref, err := ctrMount.DirectorySource.Self().getSnapshot(ctx)
+				if err != nil {
+					return failPrepare(fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err))
+				}
+				mountState.SourceRef = ref
+
+			case ctrMount.FileSource != nil:
+				if ctrMount.FileSource.Self() == nil {
+					return failPrepare(fmt.Errorf("mount %d has nil file source", i))
+				}
+				mountState.Selector = ctrMount.FileSource.Self().File
+				ref, err := ctrMount.FileSource.Self().getSnapshot(ctx)
+				if err != nil {
+					return failPrepare(fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err))
+				}
+				mountState.SourceRef = ref
+
+			case ctrMount.CacheSource != nil:
+				cacheSrc := ctrMount.CacheSource
+				if cacheSrc.Volume.Self() == nil {
+					return failPrepare(fmt.Errorf("mount %d has nil cache volume source", i))
+				}
+				if cacheSrc.Volume.Self().getSnapshot() == nil {
+					if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
+						return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
+					}
+				}
+				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
+				if cacheSnapshot == nil {
+					return failPrepare(fmt.Errorf("mount %d has nil cache volume snapshot", i))
+				}
+				mountState.SourceRef = cacheSnapshot
+				mountState.Selector = cacheSrc.Volume.Self().getSnapshotSelector()
+
+			case ctrMount.TmpfsSource != nil:
+				mountState.MountType = pb.MountType_TMPFS
+				mountState.TmpfsOpt = &pb.TmpfsOpt{
+					Size_: int64(ctrMount.TmpfsSource.Size),
+				}
+
+			default:
+				return failPrepare(fmt.Errorf("mount %d has no source", i))
+			}
+
+			if output := mountOutputBindings[i]; output != nil && !mountState.Readonly {
+				mountState.ApplyOutput = output
+			}
+			if err := materializeState(mountState); err != nil {
+				return failPrepare(err)
+			}
+		}
+
+		for _, secret := range container.Secrets {
+			if secret.MountPath == "" {
+				continue
+			}
+			uid, gid := 0, 0
+			if secret.Owner != nil {
+				uid, gid = secret.Owner.UID, secret.Owner.GID
+			}
+			secretState := &execMountState{
+				Dest:      secret.MountPath,
+				MountType: pb.MountType_SECRET,
+				SecretOpt: &pb.SecretOpt{
+					ID:   SecretIDDigest(secret.Secret.ID()).String(),
+					Uid:  uint32(uid),
+					Gid:  uint32(gid),
+					Mode: uint32(secret.Mode),
+				},
+			}
+			if err := materializeState(secretState); err != nil {
+				return failPrepare(err)
+			}
+		}
+
+		for i, socket := range container.Sockets {
+			if socket.ContainerPath == "" {
+				return failPrepare(fmt.Errorf("unsupported socket %d: only unix paths are implemented", i))
+			}
+			uid, gid := 0, 0
+			if socket.Owner != nil {
+				uid, gid = socket.Owner.UID, socket.Owner.GID
+			}
+			socketState := &execMountState{
+				Dest:      socket.ContainerPath,
+				MountType: pb.MountType_SSH,
+				SSHOpt: &pb.SSHOpt{
+					ID:   socket.Source.LLBID(),
+					Uid:  uint32(uid),
+					Gid:  uint32(gid),
+					Mode: 0o600,
+				},
+			}
+			if err := materializeState(socketState); err != nil {
+				return failPrepare(err)
+			}
+		}
+
+		sort.Slice(execMounts, func(i, j int) bool {
+			return execMounts[i].Dest < execMounts[j].Dest
+		})
+
+		defer func() {
+			_ = releaseActives()
+			_ = releaseOutputRefs()
+		}()
+
+		defer func() {
+			if rerr == nil {
 				return
 			}
 
-			// FIXME there was an out of range panic that occurred when accessing execMounts below; however it's not clear why
-			if len(results) > 0 && len(execInputs) == 0 {
-				slog.Warn("results were returned without execMounts",
-					"num_results", len(results),
-					"error", rerr)
-			}
-
-			for i, res := range results {
-				if i >= len(p.OutputRefs) {
-					rerr = errors.Join(rerr, fmt.Errorf("missing output ref for result index %d (results=%d, output refs=%d)", i, len(results), len(p.OutputRefs)))
-					continue
-				}
-				mountIdx := p.OutputRefs[i].MountIndex
-				if mountIdx < 0 || mountIdx >= len(execMounts) {
-					rerr = errors.Join(rerr, fmt.Errorf("result index %d has output mount index %d outside exec mounts (%d)", i, mountIdx, len(execMounts)))
-					continue
-				}
-				execMounts[mountIdx] = res
-			}
-			for _, active := range p.Actives {
-				if active.NoCommit {
-					active.Ref.Release(context.WithoutCancel(ctx))
-				} else {
-					ref, cerr := active.Ref.Commit(ctx)
-					if cerr != nil {
-						rerr = errors.Join(rerr, fmt.Errorf("error committing %s: %w: %w", active.Ref.ID(), cerr, err))
-						continue
+			resolveFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
+				switch {
+				case state.OutputRef != nil:
+					switch out := state.OutputRef.(type) {
+					case bkcache.MutableRef:
+						iref, err := out.Commit(ctx)
+						if err != nil {
+							return nil, fmt.Errorf("commit output ref %s: %w", out.ID(), err)
+						}
+						return iref, nil
+					case bkcache.ImmutableRef:
+						return out.Clone(), nil
+					default:
+						return nil, fmt.Errorf("unexpected output ref type %T", state.OutputRef)
 					}
-					if active.MountIndex < 0 || active.MountIndex >= len(execMounts) {
-						rerr = errors.Join(rerr, fmt.Errorf("active mount index %d outside exec mounts (%d)", active.MountIndex, len(execMounts)))
-						continue
-					}
-					execMounts[active.MountIndex] = worker.NewWorkerRefResult(ref, opt.Worker)
-				}
-			}
-
-			for i, res := range results {
-				iref := res.Sys().(*worker.WorkerRef).ImmutableRef
-				switch i {
-				case 0:
-					rootfsDir := &Directory{
-						Result: iref,
-					}
-					if container.FS != nil {
-						rootfsDir.Dir = container.FS.Self().Dir
-						rootfsDir.Platform = container.FS.Self().Platform
-						rootfsDir.Services = container.FS.Self().Services
-					} else {
-						rootfsDir.Dir = "/"
-					}
-					container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+				case state.ActiveRef != nil:
+					iref, err := state.ActiveRef.Commit(ctx)
 					if err != nil {
-						rerr = errors.Join(rerr, fmt.Errorf("failed to update rootfs: %w", err))
-						continue
+						return nil, fmt.Errorf("commit active ref %s: %w", state.ActiveRef.ID(), err)
 					}
-
-				case 1:
-					container.Meta = &Directory{
-						Result: iref,
-					}
-
+					return iref, nil
 				default:
-					mountIdx := i - 2
-					if mountIdx >= len(container.Mounts) {
-						rerr = errors.Join(rerr, fmt.Errorf("result index %d maps to mount index %d outside container mounts (%d)", i, mountIdx, len(container.Mounts)))
-						continue
+					sourceRef, ok := state.SourceRef.(bkcache.ImmutableRef)
+					if ok && sourceRef != nil {
+						return sourceRef.Clone(), nil
 					}
-					ctrMnt := container.Mounts[mountIdx]
-
-					err = handleMountValue(ctrMnt,
-						func(dirMnt *dagql.ObjectResult[*Directory]) error {
-							dir := &Directory{
-								Result:   iref,
-								Dir:      dirMnt.Self().Dir,
-								Platform: dirMnt.Self().Platform,
-								Services: dirMnt.Self().Services,
-							}
-							ctrMnt.DirectorySource, err = updatedDirMount(ctx, dir, ctrMnt.Target)
-							if err != nil {
-								return fmt.Errorf("failed to update directory mount: %w", err)
-							}
-							container.Mounts[mountIdx] = ctrMnt
-							return nil
-						},
-						func(fileMnt *dagql.ObjectResult[*File]) error {
-							file := &File{
-								Result:   iref,
-								File:     fileMnt.Self().File,
-								Platform: fileMnt.Self().Platform,
-								Services: fileMnt.Self().Services,
-							}
-							ctrMnt.FileSource, err = updatedFileMount(ctx, file, ctrMnt.Target)
-							if err != nil {
-								return fmt.Errorf("failed to update file mount: %w", err)
-							}
-							container.Mounts[mountIdx] = ctrMnt
-							return nil
-						},
-						func(cache *CacheMountSource) error {
-							container.Mounts[mountIdx] = ctrMnt
-							return nil
-						},
-						func(tmpfs *TmpfsMountSource) error {
-							container.Mounts[mountIdx] = ctrMnt
-							return nil
-						},
-					)
-					rerr = errors.Join(rerr, err)
+					return nil, nil
 				}
 			}
 
-			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
-			rerr = buildkit.RichError{
-				ExecError: rerr.(*errdefs.ExecError),
-				Origin:    opt.CauseCtx,
-				Mounts:    mounts.Mounts,
-				ExecMD:    execMD,
-				Meta:      metaSpec,
-				Terminal: func(ctx context.Context, richErr *buildkit.RichError) error {
-					return container.TerminalError(ctx, richErr.ExecMD.CallID, richErr)
-				},
+			resolvedRefs := []bkcache.ImmutableRef{}
+			releaseResolvedRefs := func() {
+				for _, ref := range resolvedRefs {
+					if ref == nil {
+						continue
+					}
+					_ = ref.Release(context.WithoutCancel(ctx))
+				}
 			}
-		} else {
-			// Only release actives if err is nil.
-			for i := len(p.Actives) - 1; i >= 0; i-- { // call in LIFO order
-				p.Actives[i].Ref.Release(context.WithoutCancel(ctx))
+			defer releaseResolvedRefs()
+
+			var metaRef bkcache.ImmutableRef
+			var moduleRef bkcache.ImmutableRef
+			for _, state := range mountStates {
+				keepRef := state.Dest == buildkit.MetaMountDestPath
+				if extractModuleError && state.Dest == modMetaDirPath {
+					keepRef = true
+				}
+				if !keepRef {
+					continue
+				}
+				ref, err := resolveFailureRef(state)
+				if err != nil {
+					rerr = errors.Join(rerr, err)
+					continue
+				}
+				if ref == nil {
+					continue
+				}
+				resolvedRefs = append(resolvedRefs, ref)
+				if state.Dest == buildkit.MetaMountDestPath {
+					metaRef = ref
+				}
+				if extractModuleError && state.Dest == modMetaDirPath {
+					moduleRef = ref
+				}
 			}
-		}
-		for _, o := range p.OutputRefs {
-			if o.Ref != nil {
-				o.Ref.Release(context.WithoutCancel(ctx))
+
+			if extractModuleError && moduleRef != nil {
+				errID, ok, err := moduleErrorIDFromRef(ctx, bkClient, moduleRef)
+				if err != nil {
+					rerr = errors.Join(rerr, fmt.Errorf("extract module error: %w", err))
+					return
+				}
+				if ok {
+					rerr = &ModuleExecError{
+						Err:     rerr,
+						ErrorID: errID,
+					}
+					return
+				}
 			}
-		}
-	}()
 
-	// NOTE: seems to be a longstanding bug in buildkit that selector on root mount doesn't work, fix here
-	for _, mnt := range mounts.Mounts {
-		if mnt.Dest != "/" {
-			continue
-		}
-		p.Root.Selector = mnt.Selector
-		break
-	}
+			if bkClient.Interactive &&
+				execMD != nil &&
+				!execMD.Internal &&
+				metaSpec != nil &&
+				(execMD.ExecID == "" || bkClient.RegisterInteractiveExec(execMD.ExecID)) {
+				meta := *metaSpec
+				meta.Args = []string{"/bin/sh"}
+				if len(bkClient.InteractiveCommand) > 0 {
+					meta.Args = bkClient.InteractiveCommand
+				}
+				if err := container.TerminalExecError(ctx, execMD.CallID, execMD, &meta, rerr); err != nil {
+					rerr = err
+					return
+				}
+			}
 
-	emu, err := getEmulator(ctx, specs.Platform(container.Platform))
-	if err != nil {
-		return nil, err
-	}
-	if emu != nil {
-		metaSpec.Args = append([]string{buildkit.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
-		p.Mounts = append(p.Mounts, executor.Mount{
-			Readonly: true,
-			Src:      emu,
-			Dest:     buildkit.BuildkitQemuEmulatorMountPoint,
-		})
-	}
-
-	meta := *metaSpec
-	meta.Env = slices.Clone(meta.Env)
-	secretEnv, err := loadSecretEnv(ctx, bkSessionGroup, session, secretEnvs)
-	if err != nil {
-		return nil, err
-	}
-	meta.Env = append(meta.Env, secretEnv...)
-
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, container.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	worker := opt.Worker.(*buildkit.Worker)
-	worker = worker.ExecWorker(opt.CauseCtx, *execMD)
-	exec := worker.Executor()
-	procInfo := executor.ProcessInfo{Meta: meta}
-	if opts.Stdin != "" {
-		// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
-		procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
-	}
-	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, procInfo, nil)
-
-	for i, ref := range p.OutputRefs {
-		// commit all refs
-		var err error
-		var iref bkcache.ImmutableRef
-		if mutable, ok := ref.Ref.(bkcache.MutableRef); ok {
-			iref, err = mutable.Commit(ctx)
+			execErr, ok, err := execErrorFromMetaRef(ctx, bkClient, causeCtx, rerr, metaSpec, metaRef)
 			if err != nil {
-				return nil, fmt.Errorf("error committing %s: %w", mutable.ID(), err)
+				rerr = errors.Join(err, rerr)
+				return
 			}
-		} else {
-			iref = ref.Ref.(bkcache.ImmutableRef)
+			if ok {
+				rerr = execErr
+			}
+		}()
+
+		emu, err := getEmulator(ctx, specs.Platform(container.Platform))
+		if err != nil {
+			return err
+		}
+		if emu != nil {
+			metaSpec.Args = append([]string{buildkit.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
+			execMounts = append(execMounts, executor.Mount{
+				Readonly: true,
+				Src:      emu,
+				Dest:     buildkit.BuildkitQemuEmulatorMountPoint,
+			})
 		}
 
-		// put the ref to the right mount point
-		switch ref.MountIndex {
-		case 0:
-			rootfsDir := &Directory{
-				Result: iref,
-			}
-			if container.FS != nil {
-				rootfsDir.Dir = container.FS.Self().Dir
-				rootfsDir.Platform = container.FS.Self().Platform
-				rootfsDir.Services = container.FS.Self().Services
-			} else {
-				rootfsDir.Dir = "/"
-			}
-			updatedRootFS, err := UpdatedRootFS(ctx, rootfsDir)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update rootfs: %w", err)
-			}
-			container.FS = updatedRootFS
+		meta := *metaSpec
+		meta.Env = slices.Clone(meta.Env)
+		secretEnv, err := loadSecretEnv(ctx, bkSessionGroup, session, secretEnvs)
+		if err != nil {
+			return err
+		}
+		meta.Env = append(meta.Env, secretEnv...)
 
-		case 1:
-			container.Meta = &Directory{
-				Result: iref,
-			}
+		svcs, err := query.Services(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get services: %w", err)
+		}
+		detach, _, err := svcs.StartBindings(ctx, container.Services)
+		if err != nil {
+			return err
+		}
+		defer detach()
 
-		default:
-			mountIdx := ref.MountIndex - 2
-			if mountIdx < 0 || mountIdx >= len(container.Mounts) {
-				return nil, errors.Join(rerr, fmt.Errorf("output mount index %d maps outside container mounts (%d)", ref.MountIndex, len(container.Mounts)))
-			}
-			ctrMnt := container.Mounts[mountIdx]
+		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
+		procInfo := executor.ProcessInfo{Meta: meta}
+		if opts.Stdin != "" {
+			// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
+			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
+		}
+		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
 
-			err = handleMountValue(ctrMnt,
-				func(dirMnt *dagql.ObjectResult[*Directory]) error {
-					dir := &Directory{
-						Result:   iref,
-						Dir:      dirMnt.Self().Dir,
-						Platform: dirMnt.Self().Platform,
-						Services: dirMnt.Self().Services,
-					}
-					ctrMnt.DirectorySource, err = updatedDirMount(ctx, dir, ctrMnt.Target)
-					if err != nil {
-						return fmt.Errorf("failed to update directory mount: %w", err)
-					}
-					container.Mounts[mountIdx] = ctrMnt
-					return nil
-				},
-				func(fileMnt *dagql.ObjectResult[*File]) error {
-					file := &File{
-						Result:   iref,
-						File:     fileMnt.Self().File,
-						Platform: fileMnt.Self().Platform,
-						Services: fileMnt.Self().Services,
-					}
-					ctrMnt.FileSource, err = updatedFileMount(ctx, file, ctrMnt.Target)
-					if err != nil {
-						return fmt.Errorf("failed to update file mount: %w", err)
-					}
-					container.Mounts[mountIdx] = ctrMnt
-					return nil
-				},
-				func(cache *CacheMountSource) error {
-					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
-				},
-				func(tmpfs *TmpfsMountSource) error {
-					return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
-				},
-			)
-			if err != nil {
-				return nil, err
+		var invalidateErr error
+		for i, ctrMount := range inputMounts {
+			if ctrMount.Readonly || ctrMount.CacheSource == nil || ctrMount.CacheSource.Volume.Self() == nil {
+				continue
+			}
+			if err := ctrMount.CacheSource.Volume.Self().invalidateSnapshotSize(ctx); err != nil {
+				invalidateErr = errors.Join(invalidateErr, fmt.Errorf("invalidate cache mount %d size: %w", i, err))
 			}
 		}
 
-		// prevent the result from being released by the defer
-		p.OutputRefs[i].Ref = nil
+		if execErr != nil {
+			slog.Warn("process did not complete successfully",
+				"process", strings.Join(metaSpec.Args, " "),
+				"error", execErr)
+			if invalidateErr != nil {
+				return errors.Join(execErr, invalidateErr)
+			}
+			return execErr
+		}
+
+		if invalidateErr != nil {
+			return invalidateErr
+		}
+
+		if err := applyOutputs(); err != nil {
+			return err
+		}
+
+		return nil
 	}
 
-	if execErr != nil {
-		slog.Warn("process did not complete successfully",
-			"process", strings.Join(metaSpec.Args, " "),
-			"error", execErr)
-		return nil, execErr
-	}
-
-	return container, nil
+	return nil
 }
 
 func addDefaultEnvvar(env []string, k, v string) []string {
@@ -615,20 +1593,22 @@ func (container *Container) ExitCode(ctx context.Context) (int, error) {
 	return int(code), nil
 }
 
-func (container *Container) usedClientID(ctx context.Context) (string, error) {
-	return container.metaFileContents(ctx, buildkit.MetaMountClientIDPath)
-}
-
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
-	if container.Meta == nil {
+	if err := container.Evaluate(ctx); err != nil {
+		return "", err
+	}
+
+	if container.MetaSnapshot == nil {
 		return "", ErrNoCommand
 	}
-	file := NewFile(
-		container.Meta.LLB,
-		filePath,
-		container.Platform,
-		container.Services,
-	)
+
+	file := &File{
+		File:     filePath,
+		Platform: container.Platform,
+		Services: container.Services,
+		Snapshot: container.MetaSnapshot,
+	}
+
 	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		if errors.Is(err, errEmptyResultRef) {

@@ -21,7 +21,7 @@ func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID
 }
 
 func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
-	walked, err := dagql.WalkID(&id.ID, skipTopLevel)
+	walked, err := dagql.WalkID(id.ID, skipTopLevel)
 	if err != nil {
 		return fmt.Errorf("failed to walk ID: %w", err)
 	}
@@ -66,6 +66,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	// Load IDs in the source client's metadata context so any cache-miss re-evaluation
 	// (e.g. host.unixSocket post-call side effects) targets the correct source client.
 	srcClientCtx := engine.ContextWithClientMetadata(ctx, srcClient.clientMetadata)
+	if srcClient.dagqlRoot != nil {
+		// This path can run during nested client initialization where the incoming ctx
+		// has no query set yet; ensure re-evaluated source IDs still have query access.
+		srcClientCtx = core.ContextWithQuery(srcClientCtx, srcClient.dagqlRoot)
+	}
 
 	srcDag, err := srcClient.deps.Schema(srcClientCtx)
 	if err != nil {

@@ -17,22 +17,16 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-const (
-	// name of arg indicating whether the op should execute the "unlazy" dagop impl
-	IsDagOpArgName = "isDagOp"
-)
-
 var _ dagql.AroundFunc = AroundFunc
 
 func AroundFunc(
 	ctx context.Context,
-	self dagql.AnyObjectResult,
 	id *call.ID,
 ) (
 	context.Context,
 	func(res dagql.AnyResult, cached bool, rerr *error),
 ) {
-	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) || isDagOp(id) {
+	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
@@ -116,8 +110,8 @@ func AroundFunc(
 
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, id)
-		logResult(ctx, res, self, id)
-		collectEffects(res, span, self)
+		logResult(ctx, res, id)
+		collectEffects(res, span, id)
 	}
 }
 
@@ -259,10 +253,10 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 }
 
 // logResult prints the result of a call to the span's stdout.
-func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectResult, id *call.ID) {
+func logResult(ctx context.Context, res dagql.AnyResult, id *call.ID) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
-	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), id.View())
+	fieldSpec, ok := fieldSpecForCall(ctx, id)
 	if !ok {
 		return
 	}
@@ -279,15 +273,33 @@ func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectRes
 	}
 }
 
+func fieldSpecForCall(ctx context.Context, id *call.ID) (dagql.FieldSpec, bool) {
+	srv := dagql.CurrentDagqlServer(ctx)
+	if srv == nil || id == nil {
+		return dagql.FieldSpec{}, false
+	}
+
+	parentTypeName := srv.Root().Type().Name()
+	if receiver := id.Receiver(); receiver != nil {
+		parentTypeName = receiver.Type().NamedType()
+	}
+
+	parentType, ok := srv.ObjectType(parentTypeName)
+	if !ok {
+		return dagql.FieldSpec{}, false
+	}
+	return parentType.FieldSpec(id.Field(), id.View())
+}
+
 // collectEffects records LLB op digests installed by this call so that we can
 // know that it has pending work.
 //
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
-func collectEffects(res dagql.AnyResult, span trace.Span, self dagql.AnyObjectResult) {
+func collectEffects(res dagql.AnyResult, span trace.Span, id *call.ID) {
 	var parentEffects []string
-	if self != nil && self.ID() != nil {
-		parentEffects = self.ID().AllEffectIDs()
+	if receiver := id.Receiver(); receiver != nil {
+		parentEffects = receiver.AllEffectIDs()
 	}
 
 	if res == nil || res.ID() == nil {
@@ -335,8 +347,8 @@ func isIntrospection(ctx context.Context, id *call.ID) bool {
 			"__schemaJSONFile",
 			"__schemaVersion",
 			"currentTypeDefs",
-			"currentFunctionCall",
 			"currentModule",
+			"currentFunctionCall",
 			"typeDef",
 			"sourceMap":
 			return true
@@ -386,15 +398,6 @@ func isMeta(id *call.ID) bool {
 	default:
 		return false
 	}
-}
-
-func isDagOp(id *call.ID) bool {
-	for _, arg := range id.Args() {
-		if arg.Name() == IsDagOpArgName {
-			return true
-		}
-	}
-	return false
 }
 
 // anyReturns returns true if the call or any of its ancestors return any of

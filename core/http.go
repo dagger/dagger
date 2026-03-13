@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
@@ -107,7 +107,7 @@ func DoHTTPRequest(
 			resp.Header.Set("Last-Modified", modTime)
 		}
 
-		snap, err := cache.Get(ctx, md.ID(), nil)
+		snap, err := cache.Get(ctx, md.ID())
 		if err != nil {
 			return nil, "", nil, err
 		}

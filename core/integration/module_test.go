@@ -7722,11 +7722,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out1a, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		out1b, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out1a, out1b)
 		require.NoError(t, c1.Close())
@@ -7736,11 +7736,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out2a, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		out2b, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`, "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out2a, out2b)
 
@@ -8212,6 +8212,10 @@ func sdkSourceAt(dir, sdk, contents string) dagger.WithContainerFunc {
 }
 
 func sdkSourceFile(sdk string) string {
+	if strings.HasPrefix(sdk, "github.com/vito/dang/dagger-sdk") {
+		return "main.dang"
+	}
+
 	switch sdk {
 	case "go":
 		return "main.go"

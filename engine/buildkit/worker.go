@@ -2,33 +2,36 @@ package buildkit
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"sync"
 
+	"github.com/containerd/containerd/v2/core/diff"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/remotes/docker"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	"github.com/dagger/dagger/internal/buildkit/executor"
+	imageexporter "github.com/dagger/dagger/engine/buildkit/exporter/containerimage"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/frontend"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	"github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/ops"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	containerdsnapshot "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
-	"github.com/dagger/dagger/internal/buildkit/worker"
-	"github.com/dagger/dagger/internal/buildkit/worker/base"
 	"github.com/docker/docker/pkg/idtools"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 )
 
 /*
-Worker is Dagger's custom worker. Most of the buildkit Worker interface methods are
-just inherited from buildkit's base.Worker, with the exception of methods involving
-executor.Executor (most importantly ResolveOp).
+Worker is Dagger's custom worker.
 
 We need a custom Executor implementation for setting up containers (currently, just
 for providing SessionID, but in the future everything the shim does will be migrated
@@ -42,13 +45,16 @@ type Worker struct {
 }
 
 type sharedWorkerState struct {
-	*base.Worker
-	root             string
-	executorRoot     string
-	telemetryPubSub  http.Handler
-	bkSessionManager *bksession.Manager
-	sessionHandler   sessionHandler
-	dagqlServer      dagqlServer
+	WorkerOpt
+	root                         string
+	executorRoot                 string
+	telemetryPubSub              http.Handler
+	bkSessionManager             *bksession.Manager
+	sessionHandler               sessionHandler
+	dagqlServer                  dagqlServer
+	imageWriter                  *imageexporter.ImageWriter
+	registryResolveImageConfigG  flightcontrol.Group[*resolveImageResult]
+	ociLayoutResolveImageConfigG flightcontrol.Group[*resolveImageResult]
 
 	runc             *runc.Runc
 	cgroupParent     string
@@ -60,13 +66,32 @@ type sharedWorkerState struct {
 	selinux          bool
 	entitlements     entitlements.Set
 	parallelismSem   *semaphore.Weighted
-	workerCache      bkcache.Manager
+	workerCache      bkcache.SnapshotManager
 
 	hostMntNS  *os.File
 	cleanMntNS *os.File
 
 	running map[string]*execState
 	mu      sync.RWMutex
+}
+
+// WorkerOpt is specific to a worker.
+type WorkerOpt struct {
+	ID               string
+	Root             string
+	Labels           map[string]string
+	Platforms        []ocispecs.Platform
+	GCPolicy         []bkclient.PruneInfo
+	BuildkitVersion  bkclient.BuildkitVersion
+	NetworkProviders map[pb.NetMode]network.Provider
+	Snapshotter      snapshot.Snapshotter
+	ContentStore     *containerdsnapshot.Store
+	Applier          diff.Applier
+	Differ           diff.Comparer
+	ImageStore       images.Store // optional
+	RegistryHosts    docker.RegistryHosts
+	IdentityMapping  *idtools.IdentityMapping
+	LeaseManager     *leaseutil.Manager
 }
 
 type sessionHandler interface {
@@ -78,9 +103,9 @@ type dagqlServer interface {
 }
 
 type NewWorkerOpts struct {
+	WorkerOpt
 	WorkerRoot       string
 	ExecutorRoot     string
-	BaseWorker       *base.Worker
 	TelemetryPubSub  http.Handler
 	BKSessionManager *bksession.Manager
 	SessionHandler   sessionHandler
@@ -89,34 +114,43 @@ type NewWorkerOpts struct {
 	Runc                *runc.Runc
 	DefaultCgroupParent string
 	ProcessMode         oci.ProcessMode
-	IDMapping           *idtools.IdentityMapping
 	DNSConfig           *oci.DNSConfig
 	ApparmorProfile     string
 	SELinux             bool
 	Entitlements        entitlements.Set
-	NetworkProviders    map[pb.NetMode]network.Provider
 	ParallelismSem      *semaphore.Weighted
-	WorkerCache         bkcache.Manager
+	WorkerCache         bkcache.SnapshotManager
 
 	HostMntNS  *os.File
 	CleanMntNS *os.File
 }
 
-func NewWorker(opts *NewWorkerOpts) *Worker {
+func NewWorker(opts *NewWorkerOpts) (*Worker, error) {
+	imageWriter, err := imageexporter.NewImageWriter(imageexporter.WriterOpt{
+		Snapshotter:  opts.Snapshotter,
+		ContentStore: opts.ContentStore,
+		Applier:      opts.Applier,
+		Differ:       opts.Differ,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create image writer: %w", err)
+	}
+
 	return &Worker{sharedWorkerState: &sharedWorkerState{
-		Worker:           opts.BaseWorker,
+		WorkerOpt:        opts.WorkerOpt,
 		root:             opts.WorkerRoot,
 		executorRoot:     opts.ExecutorRoot,
 		telemetryPubSub:  opts.TelemetryPubSub,
 		bkSessionManager: opts.BKSessionManager,
 		sessionHandler:   opts.SessionHandler,
 		dagqlServer:      opts.DagqlServer,
+		imageWriter:      imageWriter,
 
 		runc:             opts.Runc,
 		cgroupParent:     opts.DefaultCgroupParent,
-		networkProviders: opts.NetworkProviders,
+		networkProviders: opts.WorkerOpt.NetworkProviders,
 		processMode:      opts.ProcessMode,
-		idmap:            opts.IDMapping,
+		idmap:            opts.WorkerOpt.IdentityMapping,
 		dns:              opts.DNSConfig,
 		apparmorProfile:  opts.ApparmorProfile,
 		selinux:          opts.SELinux,
@@ -128,68 +162,9 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		cleanMntNS: opts.CleanMntNS,
 
 		running: make(map[string]*execState),
-	}}
-}
-
-func (w *Worker) Executor() executor.Executor {
-	return w
-}
-
-func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *bksession.Manager) (solver.Op, error) {
-	customOp, ok, err := w.customOpFromVtx(vtx, s, sm)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		return customOp, nil
-	}
-
-	// if this is an ExecOp, pass in ourself as executor
-	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
-		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {
-			execMD, ok, err := executionMetadataFromVtx(vtx)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				w = w.ExecWorker(
-					SpanContextFromDescription(vtx.Options().Description),
-					*execMD,
-				)
-			}
-			return ops.NewExecOp(
-				vtx,
-				execOp,
-				baseOp.Platform,
-				w.workerCache,
-				w.parallelismSem,
-				sm,
-				w, // executor
-				w,
-			)
-		}
-	}
-
-	// otherwise, just use the default base.Worker's ResolveOp
-	return w.Worker.ResolveOp(vtx, s, sm)
+	}}, nil
 }
 
 func (w *Worker) ExecWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
 	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
-}
-
-/*
-Buildkit's worker.Controller is a bit odd; it exists to manage multiple workers because that was
-a planned feature years ago, but it never got implemented. So it exists to manage a single worker,
-which doesn't really add much.
-
-We still need to provide a worker.Controller value to a few places though, which this method enables.
-*/
-func AsWorkerController(w worker.Worker) (*worker.Controller, error) {
-	wc := &worker.Controller{}
-	err := wc.Add(w)
-	if err != nil {
-		return nil, err
-	}
-	return wc, nil
 }

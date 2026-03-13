@@ -48,7 +48,8 @@ type gitSchema struct{}
 
 func (s *gitSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("git", s.git, dagql.CachePerClient).
+		dagql.NodeFunc("git", s.git).
+			WithInput(dagql.PerClientInput).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			Args(
@@ -113,7 +114,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
 
-		dagql.NodeFunc("__cleaned", DagOpDirectoryWrapper(srv, s.cleaned, WithPathFn(keepParentGitDir[cleanedArgs]))).
+		dagql.NodeFunc("__cleaned", s.cleaned).
+			IsPersistable().
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
 		dagql.NodeFunc("uncommitted", s.uncommitted).
 			Doc("Returns the changeset of uncommitted changes in the git repository."),
@@ -136,6 +138,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.GitRef]{
 		dagql.NodeFunc("tree", s.tree).
+			IsPersistable().
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			Args(
@@ -153,8 +156,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 					Doc("This option should be passed to `git` instead.").Deprecated(),
 			),
 		dagql.NodeFunc("commit", s.fetchCommit).
+			IsPersistable().
 			Doc(`The resolved commit id at this ref.`),
 		dagql.NodeFunc("ref", s.fetchRef).
+			IsPersistable().
 			Doc(`The resolved ref name at this ref.`),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).
@@ -677,15 +682,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	var resourceIDs []*resource.ID
 	if sshAuthSock.Self() != nil {
 		dgstInputs = append(dgstInputs, "sshAuthSock", sshAuthSock.Self().IDDigest.String())
-		resourceIDs = append(resourceIDs, &resource.ID{ID: *sshAuthSock.ID()})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: sshAuthSock.ID()})
 	}
 	if httpAuthToken.Self() != nil {
 		dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(httpAuthToken.Self() != nil))
-		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthToken.ID()})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: httpAuthToken.ID()})
 	}
 	if httpAuthHeader.Self() != nil {
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
-		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: httpAuthHeader.ID()})
 	}
 	inst = inst.WithContentDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {
@@ -854,18 +859,7 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
 }
 
-type cleanedArgs struct {
-	DagOpInternalArgs
-}
-
-func keepParentGitDir[A any](_ context.Context, repo *core.GitRepository, _ A) (string, error) {
-	if local, ok := repo.Backend.(*core.LocalGitRepository); ok {
-		return local.Directory.Self().Dir, nil
-	}
-	return "", nil
-}
-
-func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args cleanedArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	dir, err := parent.Self().Backend.Cleaned(ctx)
 	if err != nil {
 		return inst, err
@@ -977,8 +971,6 @@ type treeArgs struct {
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
-
-	DagOpInternalArgs
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -994,32 +986,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, fmt.Errorf("sshAuthSocket is no longer supported on `tree`")
 	}
 
-	if args.IsDagOp {
-		dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
-		if err != nil {
-			return inst, err
-		}
-		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	}
-
-	dir, effectID, err := DagOpDirectory(ctx, srv, parent.Self(), args, "", s.tree)
+	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
 	if err != nil {
 		return inst, err
 	}
-	resultID := dagql.CurrentID(ctx)
-	if effectID != "" && resultID != nil {
-		resultID = resultID.AppendEffectIDs(effectID)
-	}
-	inst, err = dagql.NewObjectResultForID(dir, srv, resultID)
-	if err != nil {
-		return inst, err
-	}
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
 		return inst, err
 	}
@@ -1033,11 +1004,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			// do a full hash of the actual files/dirs in the private git repo so
 			// that the cache key of the returned value can't be known unless the
 			// full contents are already known
-			dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+			dgst, err := core.GetContentHashFromDirectory(ctx, inst)
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
-			inst = inst.WithContentDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
+			inst = inst.WithContentDigest(dgst)
 		}
 	}
 
@@ -1047,7 +1018,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 func (s *gitSchema) fetchCommit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRef],
-	args RawDagOpInternalArgs,
+	args struct{},
 ) (dagql.String, error) {
 	return dagql.NewString(parent.Self().Ref.SHA), nil
 }
@@ -1055,15 +1026,13 @@ func (s *gitSchema) fetchCommit(
 func (s *gitSchema) fetchRef(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRef],
-	args RawDagOpInternalArgs,
+	args struct{},
 ) (dagql.String, error) {
 	return dagql.NewString(cmp.Or(parent.Self().Ref.Name, parent.Self().Ref.SHA)), nil
 }
 
 type mergeBaseArgs struct {
 	Other core.GitRefID
-
-	RawDagOpInternalArgs
 }
 
 func (s *gitSchema) commonAncestor(

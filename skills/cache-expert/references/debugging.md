@@ -20,17 +20,141 @@ Use a tight test repro before adding logs.
 Recommended integration command format:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestNameOrSubtest'
+dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
 ```
 
-Capture output to file for long runs:
+This command rebuilds the dev engine, runs it as an ephemeral service, and then runs tests against it.
+Output includes:
+- dev engine build output
+- test runner output
+- engine logs/printlns
+- test logs (e.g. `t.Logf`)
+
+Capture output to a file under `/tmp` to avoid overwhelming terminal context:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestModule' > /tmp/cache-debug.log 2>&1
+dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/cache-debug.log 2>&1
 rg -n "panic:|--- FAIL:|^FAIL\s" /tmp/cache-debug.log
 ```
 
-Avoid broad `./...` when debugging cache; use focused package/test slices.
+During long runs, periodically grep for panics. If the engine panics, tests may hang indefinitely:
+
+```bash
+rg -n "panic:|fatal error:|SIGSEGV|stack trace" /tmp/cache-debug.log
+```
+
+If a test appears hung (engine still alive but no test progress), capture a goroutine dump from the *inner* dev engine process with `SIGQUIT` (THESE INSTRUCTIONS MUST BE FOLLOWED CLOSELY TO AVOID SENDING SIGQUIT TO THE WRONG PROCESS):
+
+```bash
+engine_ctr="$(docker ps --format '{{.Names}}' | rg '^dagger-engine-v' | head -n1)"
+docker exec "$engine_ctr" sh -lc '
+for p in /proc/[0-9]*; do
+  pid=${p#/proc/}
+  [ "$pid" = "1" ] && continue
+  cmd="$(tr "\0" " " < "$p/cmdline" 2>/dev/null || true)"
+  case "$cmd" in
+    *"/usr/local/bin/dagger-engine"*)
+      echo "sending SIGQUIT to inner dagger-engine pid=$pid" >&2
+      kill -QUIT "$pid"
+      exit 0
+      ;;
+  esac
+done
+echo "no inner dagger-engine process found" >&2
+exit 1
+'
+```
+
+Then inspect the same run log for the dump:
+
+```bash
+rg -n "goroutine [0-9]+|fatal error:|SIGQUIT|chan receive|chan send|semacquire|sync\\.Mutex|deadlock" /tmp/cache-debug.log
+```
+
+AFTER SENDING SIGQUIT the tests may hang. Once you confirm the log output has SIGQUIT stack traces, you are done and don't need to wait for the test hang to end.
+
+To compare behavior against an engine from another git ref:
+
+```bash
+dagger --progress=plain call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
+```
+
+Do not run multiple suites in parallel unless necessary; each suite is CPU-heavy and concurrent runs significantly degrade performance.
+
+DO NOT EVER USE broad `./...` WHEN RUNNING TESTS AS YOU WILL ACCIDENTALLY CAPTURE INTEGRATION TESTS OR OTHER TESTS YOU DID NOT MEAN TO RUN.
+
+`./core/integration`, `./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
+
+## Performance Debugging With Persistent Dev Engine
+
+For most testing/debugging flows, prefer ephemeral engines via:
+
+```bash
+dagger --progress=plain call engine-dev ...
+```
+
+However, for performance debugging (pprof snapshots, repeated profiling loops, endpoint inspection), use a persistent dev engine running in Docker.
+
+### Start Persistent Dev Engine
+
+```bash
+docker rm -fv dagger-engine.dev
+docker volume rm dagger-engine.dev
+./hack/dev
+```
+
+Notes:
+- The container is named `dagger-engine.dev`.
+- This engine persists across commands/runs, so it is better for iterative perf investigation.
+- A clean reset is often desirable for consistent baselines, but is not always required (depends on whether cache/warm state is part of what you're measuring).
+
+### Run Commands Against Persistent Engine
+
+Use `./hack/with-dev` to target the running `dagger-engine.dev`:
+
+```bash
+./hack/with-dev go test -v -count=1 -run='TestWorkspace/TestWorkspaceContentAddressed/storing_a_Directory' ./core/integration/
+```
+
+You can also run Dagger commands through the same wrapper:
+
+```bash
+./hack/with-dev ./bin/dagger ...
+```
+
+Important CLI gotcha:
+- If you do `./hack/with-dev bash -c 'dagger ...'`, you may accidentally pick up a non-dev `dagger` binary from `PATH`.
+- In shell-wrapped commands, explicitly use `./bin/dagger` to avoid ambiguity.
+
+### Docker-Level Debugging
+
+Because the engine is a normal Docker container, you can use standard Docker tools:
+- `docker logs dagger-engine.dev`
+- `docker exec -it dagger-engine.dev sh`
+- `docker kill -s <SIGNAL> dagger-engine.dev`
+
+### pprof and Debug Endpoints
+
+The dev engine exposes debug endpoints on `localhost:6060`.
+- Current routes are defined in `cmd/engine/debug.go` (see route setup near line 29).
+- Use whichever endpoint/tooling fits the question (point-in-time snapshots vs time-window captures).
+
+Example heap profile capture over 15 seconds:
+
+```bash
+curl 'http://localhost:6060/debug/pprof/heap?seconds=15' > /tmp/heap.pprof
+```
+
+Then inspect with:
+
+```bash
+go tool pprof /tmp/heap.pprof
+```
+
+General profiling guidance:
+- Choose profile type and capture window based on the symptom.
+- For long-running or phase-specific regressions, align profile capture timing with the relevant test phase.
+- Keep artifacts organized by run so diffs/comparisons are straightforward.
 
 ## Metrics-First Leak Triage
 

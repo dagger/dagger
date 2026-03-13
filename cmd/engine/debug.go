@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"expvar"
 	"fmt"
 	"net"
@@ -26,7 +27,7 @@ import (
 	"github.com/dagger/dagger/engine/server"
 )
 
-func setupDebugHandlers(addr string) error {
+func setupDebugHandlers(addr string, eng *server.Server) error {
 	m := http.NewServeMux()
 	m.Handle("/debug/vars", expvar.Handler())
 	m.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
@@ -43,13 +44,31 @@ func setupDebugHandlers(addr string) error {
 	// m.Handle("/debug/fgtrace", fgtrace.Config{})
 
 	// uncomment these to get data from /mutex and /block
-	// runtime.SetMutexProfileFraction(1)
-	// runtime.SetBlockProfileRate(1)
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()
 		debug.FreeOSMemory()
 		logrus.Debugf("triggered GC from debug endpoint")
+	}))
+	m.Handle("/debug/dagql/egraph", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		snapshot := eng.DagqlDebugSnapshot()
+		if snapshot == nil {
+			http.Error(rw, "dagql cache not available", http.StatusServiceUnavailable)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(rw)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(snapshot); err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}))
 
 	// setting debugaddr is opt-in. permission is defined by listener address

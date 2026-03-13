@@ -25,7 +25,7 @@ func ResourceTransferPostCall(
 	secretsByDgst := map[digest.Digest]dagql.ID[*Secret]{}
 	socketsByDgst := map[digest.Digest]dagql.ID[*Socket]{}
 	for _, id := range ids {
-		walked, err := dagql.WalkID(&id.ID, false)
+		walked, err := dagql.WalkID(id.ID, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to walk ID: %w", err)
 		}
@@ -183,7 +183,6 @@ func ResourceTransferPostCall(
 				// secrets also staying in cache.
 				secretDigest := SecretDigest(secret.inst)
 				cacheKeyID := secret.inst.ID().
-					WithDigest(secretDigest).
 					With(call.WithContentDigest(secretDigest))
 				_, err = destDag.Cache.GetOrInitCall(ctx, dagql.CacheKey{ID: cacheKeyID}, func(context.Context) (dagql.AnyResult, error) {
 					return secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall), nil

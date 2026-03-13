@@ -2,10 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -54,6 +57,19 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 	}
 }
 
+func newModuleObjectResultForCurrentID(
+	ctx context.Context,
+	mod *Module,
+	typeDef *ObjectTypeDef,
+	fields map[string]any,
+) (dagql.AnyResult, error) {
+	return dagql.NewResultForCurrentID(ctx, &ModuleObject{
+		Module:  mod,
+		TypeDef: typeDef,
+		Fields:  fields,
+	})
+}
+
 func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
 	if value == nil {
 		return nil, nil
@@ -99,6 +115,10 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return content.CollectJSONable(nil)
 	}
 
+	var runtimeObjType dagql.ObjectType
+	if objVal, ok := value.(dagql.AnyObjectResult); ok {
+		runtimeObjType = objVal.ObjectType()
+	}
 	var objFields map[string]any
 	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
 		objFields = obj.Fields
@@ -136,8 +156,26 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 			fieldTypeDef.TypeDef.ToType(),
 			fieldTypeDef.Name,
 			call.WithView(curID.View()),
-			call.WithModule(curID.Module()),
 		)
+		if runtimeObjType != nil {
+			if runtimeFieldSpec, found := runtimeObjType.FieldSpec(fieldTypeDef.Name, curID.View()); found {
+				inputArgs, err := dagql.ExtractIDArgs(runtimeFieldSpec.Args, fieldID)
+				if err != nil {
+					return fmt.Errorf("failed to decode field %q identity args: %w", k, err)
+				}
+				identityOpt, err := runtimeFieldSpec.IdentityOpt(ctx, inputArgs)
+				if err != nil {
+					return fmt.Errorf("failed to resolve field %q identity: %w", k, err)
+				}
+				fieldID = fieldID.With(identityOpt)
+			} else {
+				// Best-effort fallback for field specs unavailable from runtime object type.
+				fieldID = fieldID.With(call.WithModule(curID.Module()))
+			}
+		} else {
+			// Best-effort fallback for non-object runtime values.
+			fieldID = fieldID.With(call.WithModule(curID.Module()))
+		}
 		ctx := dagql.ContextWithID(ctx, fieldID)
 
 		typed, err := modType.ConvertFromSDKResult(ctx, v)
@@ -165,7 +203,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error)
+	DynamicInputsForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -202,6 +240,326 @@ type ModuleObject struct {
 
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
+
+	persistedResultID uint64
+}
+
+const (
+	persistedModuleObjectValueKindNull      = "null"
+	persistedModuleObjectValueKindResultRef = "result_id"
+	persistedModuleObjectValueKindCallID    = "call_id"
+	persistedModuleObjectValueKindScalar    = "scalar_json"
+	persistedModuleObjectValueKindArray     = "array"
+	persistedModuleObjectValueKindObject    = "object"
+)
+
+type persistedModuleObjectValue struct {
+	Kind       string                                `json:"kind"`
+	ResultID   uint64                                `json:"resultID,omitempty"`
+	CallID     string                                `json:"callID,omitempty"`
+	ScalarJSON json.RawMessage                       `json:"scalarJSON,omitempty"`
+	Items      []persistedModuleObjectValue          `json:"items,omitempty"`
+	Fields     map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+}
+
+type persistedModuleObjectPayload struct {
+	Fields map[string]persistedModuleObjectValue `json:"fields,omitempty"`
+}
+
+func (obj *ModuleObject) PersistedResultID() uint64 {
+	if obj == nil {
+		return 0
+	}
+	return obj.persistedResultID
+}
+
+func (obj *ModuleObject) SetPersistedResultID(resultID uint64) {
+	if obj != nil {
+		obj.persistedResultID = resultID
+	}
+}
+
+func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if obj == nil || len(obj.Fields) == 0 {
+		return json.Marshal(persistedModuleObjectPayload{})
+	}
+	payload := persistedModuleObjectPayload{
+		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
+	}
+	fieldNames := slices.Collect(maps.Keys(obj.Fields))
+	slices.Sort(fieldNames)
+	for _, name := range fieldNames {
+		encoded, err := encodePersistedModuleObjectValue(ctx, cache, obj.Fields[name])
+		if err != nil {
+			return nil, fmt.Errorf("encode persisted module object field %q: %w", name, err)
+		}
+		payload.Fields[name] = encoded
+	}
+	return json.Marshal(payload)
+}
+
+func (obj *ModuleObject) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ *call.ID,
+	jsonBytes json.RawMessage,
+) (dagql.Typed, error) {
+	if obj == nil || obj.Module == nil || obj.TypeDef == nil {
+		return nil, fmt.Errorf("decode persisted module object: missing module/type definition")
+	}
+	var payload persistedModuleObjectPayload
+	if len(jsonBytes) > 0 {
+		if err := json.Unmarshal(jsonBytes, &payload); err != nil {
+			return nil, fmt.Errorf("decode persisted module object fields: %w", err)
+		}
+	}
+	fields := make(map[string]any, len(payload.Fields))
+	for name, encoded := range payload.Fields {
+		decoded, err := decodePersistedModuleObjectValue(ctx, dag, encoded)
+		if err != nil {
+			return nil, fmt.Errorf("decode persisted module object field %q: %w", name, err)
+		}
+		fields[name] = decoded
+	}
+	return &ModuleObject{
+		Module:  obj.Module,
+		TypeDef: obj.TypeDef,
+		Fields:  fields,
+	}, nil
+}
+
+func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.PersistedObjectCache, val any) (persistedModuleObjectValue, error) {
+	if val == nil {
+		return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
+	}
+
+	switch x := val.(type) {
+	case dagql.AnyResult:
+		resultID, err := encodePersistedObjectRef(cache, x, "module object value")
+		if err != nil {
+			return persistedModuleObjectValue{}, err
+		}
+		return persistedModuleObjectValue{
+			Kind:     persistedModuleObjectValueKindResultRef,
+			ResultID: resultID,
+		}, nil
+	case dagql.PersistedResultIDHolder:
+		resultID, err := encodePersistedObjectRef(cache, x, "module object value")
+		if err != nil {
+			return persistedModuleObjectValue{}, err
+		}
+		return persistedModuleObjectValue{
+			Kind:     persistedModuleObjectValueKindResultRef,
+			ResultID: resultID,
+		}, nil
+	case dagql.IDable:
+		id := x.ID()
+		if id == nil {
+			return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
+		}
+		encodedID, err := encodePersistedCallID(id)
+		if err != nil {
+			return persistedModuleObjectValue{}, err
+		}
+		return persistedModuleObjectValue{
+			Kind:   persistedModuleObjectValueKindCallID,
+			CallID: encodedID,
+		}, nil
+	case *call.ID:
+		if x == nil {
+			return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
+		}
+		encodedID, err := encodePersistedCallID(x)
+		if err != nil {
+			return persistedModuleObjectValue{}, err
+		}
+		return persistedModuleObjectValue{
+			Kind:   persistedModuleObjectValueKindCallID,
+			CallID: encodedID,
+		}, nil
+	case call.ID:
+		id := x
+		encodedID, err := encodePersistedCallID(&id)
+		if err != nil {
+			return persistedModuleObjectValue{}, err
+		}
+		return persistedModuleObjectValue{
+			Kind:   persistedModuleObjectValueKindCallID,
+			CallID: encodedID,
+		}, nil
+	case json.RawMessage:
+		return persistedModuleObjectScalarValue(x)
+	case []byte:
+		return persistedModuleObjectScalarValue(x)
+	case map[string]any:
+		fields := make(map[string]persistedModuleObjectValue, len(x))
+		fieldNames := slices.Collect(maps.Keys(x))
+		slices.Sort(fieldNames)
+		for _, name := range fieldNames {
+			encoded, err := encodePersistedModuleObjectValue(ctx, cache, x[name])
+			if err != nil {
+				return persistedModuleObjectValue{}, fmt.Errorf("field %q: %w", name, err)
+			}
+			fields[name] = encoded
+		}
+		return persistedModuleObjectValue{
+			Kind:   persistedModuleObjectValueKindObject,
+			Fields: fields,
+		}, nil
+	case []any:
+		items := make([]persistedModuleObjectValue, 0, len(x))
+		for i, item := range x {
+			encoded, err := encodePersistedModuleObjectValue(ctx, cache, item)
+			if err != nil {
+				return persistedModuleObjectValue{}, fmt.Errorf("item %d: %w", i, err)
+			}
+			items = append(items, encoded)
+		}
+		return persistedModuleObjectValue{
+			Kind:  persistedModuleObjectValueKindArray,
+			Items: items,
+		}, nil
+	}
+
+	rv := reflect.ValueOf(val)
+	if !rv.IsValid() {
+		return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
+	}
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if rv.IsNil() {
+			return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
+		}
+		return encodePersistedModuleObjectValue(ctx, cache, rv.Elem().Interface())
+	case reflect.Slice, reflect.Array:
+		if rv.Type().Elem().Kind() == reflect.Uint8 {
+			return persistedModuleObjectScalarValue(val)
+		}
+		items := make([]persistedModuleObjectValue, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			encoded, err := encodePersistedModuleObjectValue(ctx, cache, rv.Index(i).Interface())
+			if err != nil {
+				return persistedModuleObjectValue{}, fmt.Errorf("item %d: %w", i, err)
+			}
+			items = append(items, encoded)
+		}
+		return persistedModuleObjectValue{
+			Kind:  persistedModuleObjectValueKindArray,
+			Items: items,
+		}, nil
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String {
+			return persistedModuleObjectValue{}, fmt.Errorf("unsupported map key type %s", rv.Type().Key())
+		}
+		fields := make(map[string]persistedModuleObjectValue, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			name := iter.Key().String()
+			encoded, err := encodePersistedModuleObjectValue(ctx, cache, iter.Value().Interface())
+			if err != nil {
+				return persistedModuleObjectValue{}, fmt.Errorf("field %q: %w", name, err)
+			}
+			fields[name] = encoded
+		}
+		return persistedModuleObjectValue{
+			Kind:   persistedModuleObjectValueKindObject,
+			Fields: fields,
+		}, nil
+	case reflect.Struct:
+		fields := make(map[string]persistedModuleObjectValue)
+		rt := rv.Type()
+		for i := 0; i < rv.NumField(); i++ {
+			field := rt.Field(i)
+			name, ok := persistedModuleObjectFieldName(field)
+			if !ok {
+				continue
+			}
+			encoded, err := encodePersistedModuleObjectValue(ctx, cache, rv.Field(i).Interface())
+			if err != nil {
+				return persistedModuleObjectValue{}, fmt.Errorf("field %q: %w", name, err)
+			}
+			fields[name] = encoded
+		}
+		return persistedModuleObjectValue{
+			Kind:   persistedModuleObjectValueKindObject,
+			Fields: fields,
+		}, nil
+	default:
+		return persistedModuleObjectScalarValue(val)
+	}
+}
+
+func persistedModuleObjectScalarValue(val any) (persistedModuleObjectValue, error) {
+	raw, err := json.Marshal(val)
+	if err != nil {
+		return persistedModuleObjectValue{}, err
+	}
+	return persistedModuleObjectValue{
+		Kind:       persistedModuleObjectValueKindScalar,
+		ScalarJSON: raw,
+	}, nil
+}
+
+func decodePersistedModuleObjectValue(ctx context.Context, dag *dagql.Server, val persistedModuleObjectValue) (any, error) {
+	switch val.Kind {
+	case "", persistedModuleObjectValueKindNull:
+		return nil, nil
+	case persistedModuleObjectValueKindResultRef:
+		return loadPersistedCallIDByResultID(ctx, dag, val.ResultID, "module object value")
+	case persistedModuleObjectValueKindCallID:
+		return decodePersistedCallID(val.CallID)
+	case persistedModuleObjectValueKindScalar:
+		var decoded any
+		if len(val.ScalarJSON) == 0 {
+			return nil, nil
+		}
+		if err := json.Unmarshal(val.ScalarJSON, &decoded); err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	case persistedModuleObjectValueKindArray:
+		items := make([]any, 0, len(val.Items))
+		for i, item := range val.Items {
+			decoded, err := decodePersistedModuleObjectValue(ctx, dag, item)
+			if err != nil {
+				return nil, fmt.Errorf("item %d: %w", i, err)
+			}
+			items = append(items, decoded)
+		}
+		return items, nil
+	case persistedModuleObjectValueKindObject:
+		fields := make(map[string]any, len(val.Fields))
+		fieldNames := slices.Collect(maps.Keys(val.Fields))
+		slices.Sort(fieldNames)
+		for _, name := range fieldNames {
+			decoded, err := decodePersistedModuleObjectValue(ctx, dag, val.Fields[name])
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", name, err)
+			}
+			fields[name] = decoded
+		}
+		return fields, nil
+	default:
+		return nil, fmt.Errorf("unsupported kind %q", val.Kind)
+	}
+}
+
+func persistedModuleObjectFieldName(field reflect.StructField) (string, bool) {
+	if field.PkgPath != "" {
+		return "", false
+	}
+	if tag, ok := field.Tag.Lookup("json"); ok {
+		name := strings.Split(tag, ",")[0]
+		switch name {
+		case "-":
+			return "", false
+		case "":
+			return field.Name, true
+		default:
+			return name, true
+		}
+	}
+	return field.Name, true
 }
 
 func (obj *ModuleObject) Type() *ast.Type {
@@ -249,7 +607,10 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields := obj.fields()
+	fields, err := obj.fields(ctx)
+	if err != nil {
+		return err
+	}
 
 	funs, err := obj.functions(ctx, dag)
 	if err != nil {
@@ -266,14 +627,17 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
 	objDef := obj.TypeDef
 	mod := obj.Module
+	moduleID, err := obj.Module.IDModule(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve module identity for object %q constructor: %w", objDef.Name, err)
+	}
 
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
 			Name:             gqlFieldName(mod.Name()),
 			Type:             obj,
-			Module:           obj.Module.IDModule(),
-			GetCacheConfig:   mod.CacheConfigForCall,
+			Module:           moduleID,
 			DeprecatedReason: objDef.Deprecated,
 		}
 
@@ -284,11 +648,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		dag.Root().ObjectType().Extend(
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
-				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-					Module:  mod,
-					TypeDef: objDef,
-					Fields:  map[string]any{},
-				})
+				return newModuleObjectResultForCurrentID(ctx, mod, objDef, map[string]any{})
 			},
 		)
 		return nil
@@ -315,8 +675,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = gqlFieldName(mod.Name())
-	spec.Module = obj.Module.IDModule()
-	spec.GetCacheConfig = fn.CacheConfigForCall
+	spec.Module = moduleID
+	spec.GetDynamicInput = fn.DynamicInputsForCall
+	spec.ImplicitInputs = append(spec.ImplicitInputs, fn.cacheImplicitInputs()...)
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -340,11 +701,15 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	return nil
 }
 
-func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
+func (obj *ModuleObject) fields(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
 	for _, field := range obj.TypeDef.Fields {
-		fields = append(fields, objField(obj.Module, field))
+		objField, err := objField(ctx, obj.Module, field)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, objField)
 	}
-	return
+	return fields, nil
 }
 
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
@@ -371,13 +736,16 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	return
 }
 
-func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
+func objField(ctx context.Context, mod *Module, field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
+	moduleID, err := mod.IDModule(ctx)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
+	}
 	spec := &dagql.FieldSpec{
 		Name:             field.Name,
 		Description:      field.Description,
 		Type:             field.TypeDef.ToTyped(),
-		Module:           mod.IDModule(),
-		GetCacheConfig:   mod.CacheConfigForCall,
+		Module:           moduleID,
 		DeprecatedReason: field.Deprecated,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
@@ -404,7 +772,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
-	}
+	}, nil
 }
 
 // objFun creates a dagql.Field for a function defined on a module object type.
@@ -442,8 +810,13 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
-	spec.Module = mod.IDModule()
-	spec.GetCacheConfig = modFun.CacheConfigForCall
+	moduleID, err := mod.IDModule(ctx)
+	if err != nil {
+		return f, fmt.Errorf("failed to resolve module identity for function %q: %w", fun.Name, err)
+	}
+	spec.Module = moduleID
+	spec.GetDynamicInput = modFun.DynamicInputsForCall
+	spec.ImplicitInputs = append(spec.ImplicitInputs, modFun.cacheImplicitInputs()...)
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
@@ -497,12 +870,14 @@ func (f *CallableField) ArgType(argName string) (ModType, error) {
 	return nil, fmt.Errorf("field cannot have argument %q", argName)
 }
 
-func (f *CallableField) CacheConfigForCall(
+func (f *CallableField) DynamicInputsForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	return f.Module.CacheConfigForCall(ctx, parent, args, view, req)
+	req dagql.DynamicInputRequest,
+) (*dagql.DynamicInputResponse, error) {
+	return &dagql.DynamicInputResponse{
+		CacheKey: req.CacheKey,
+	}, nil
 }

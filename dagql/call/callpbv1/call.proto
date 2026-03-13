@@ -72,17 +72,31 @@ message Call {
   // called in.
   string view = 10;
 
-  // Whether the digest was set to a custom value, as opposed to the default
-  // "recipe-based" digest
-  bool isCustomDigest = 11;
-
-  // An optional digest of the "content" of this call, which is typically based
-  // on e.g. filesystem contents rather than the "recipe" of the call. This field
-  // does not affect the call's digest.
-  string contentDigest = 12;
-
   // Effect IDs associated with this call. These do not affect the call's digest.
   repeated string effectIds = 13;
+
+  // Extra digests attached to this call.
+  //
+  // The call's recipe digest is authoritative call identity.
+  // Extra digests are annotations that may be used by cache and equivalence
+  // systems, but do not affect the recipe digest.
+  repeated ExtraDigest extraDigests = 14;
+
+  // Implicit inputs are engine-computed call inputs that are not explicit
+  // GraphQL field arguments, but still contribute to recipe identity.
+  // During cache checking, ID-able implicit inputs are treated as equivalence
+  // set inputs, same as ID-able explicit arguments.
+  repeated Argument implicitInputs = 15;
+}
+
+// ExtraDigest is an attached digest annotation for a call.
+//
+// The label is informative and should not affect identity/hashing semantics.
+message ExtraDigest {
+  // digest value, e.g. "sha256:..."
+  string digest = 1;
+  // informative label, e.g. "content"
+  string label = 2;
 }
 
 // Module represents a self-contained logical module that can be dynamically
@@ -106,6 +120,15 @@ message Argument {
   Literal value = 2;
 }
 
+// A string literal with a digest fact used for call identity and equivalence.
+//
+// The value is runtime payload; digest is the identity input lane for this
+// literal.
+message DigestedString {
+  string value = 1;
+  string digest = 2;
+}
+
 // A value passed to an argument or contained in a list.
 message Literal {
   oneof value {
@@ -118,6 +141,7 @@ message Literal {
     string string = 7;
     List list = 8;
     Object object = 9;
+    DigestedString digestedString = 10;
   }
 }
 

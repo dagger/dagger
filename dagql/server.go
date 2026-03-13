@@ -94,7 +94,6 @@ type InstallHook interface {
 // soon.
 type AroundFunc func(
 	context.Context,
-	AnyObjectResult,
 	*call.ID,
 ) (context.Context, func(res AnyResult, cached bool, err *error))
 
@@ -675,7 +674,115 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	return s.toSelectable(res)
 }
 
+func (s *Server) loadNthValue(
+	ctx context.Context,
+	parent AnyResult,
+	nth int,
+	nullAsError bool,
+	opts ...CacheCallOpt,
+) (AnyResult, error) {
+	if parent == nil {
+		if nullAsError {
+			return nil, fmt.Errorf("item %d is null from enumerable", nth)
+		}
+		return nil, nil
+	}
+
+	parentID := parent.ID()
+	if parentID == nil {
+		return nil, fmt.Errorf("nth %d: parent enumerable has no ID", nth)
+	}
+	nthID := parentID.SelectNth(nth)
+	callCtx := srvToContext(idToContext(ctx, nthID), s)
+
+	if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: nthID,
+	}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}, opts...); err == nil {
+		return res, nil
+	}
+
+	res, err := parent.NthValue(nth)
+	if err != nil {
+		return nil, fmt.Errorf("nth %d: %w", nth, err)
+	}
+	if res == nil {
+		if nullAsError {
+			return nil, fmt.Errorf("item %d is null from enumerable", nth)
+		}
+		return nil, nil
+	}
+
+	res, ok := res.DerefValue()
+	if !ok || res == nil {
+		if nullAsError {
+			return nil, fmt.Errorf("item %d is null from enumerable", nth)
+		}
+		return nil, nil
+	}
+
+	return s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: nthID,
+	}, func(context.Context) (AnyResult, error) {
+		return res, nil
+	}, opts...)
+}
+
+func (s *Server) promoteDerivedObjectResult(
+	ctx context.Context,
+	res AnyResult,
+	opts ...CacheCallOpt,
+) (AnyResult, error) {
+	if res == nil || !s.isObjectType(res.Type().Name()) {
+		return res, nil
+	}
+	shared := res.cacheSharedResult()
+	if shared != nil && shared.cache != nil {
+		return res, nil
+	}
+
+	id := res.ID()
+	if id == nil {
+		return nil, fmt.Errorf("derived object result has no ID")
+	}
+	callCtx := srvToContext(idToContext(ctx, id), s)
+
+	if hit, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: id,
+	}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}, opts...); err == nil {
+		return hit, nil
+	}
+
+	return s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: id,
+	}, func(context.Context) (AnyResult, error) {
+		return res, nil
+	}, opts...)
+}
+
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	callCtx := srvToContext(idToContext(ctx, id), s)
+
+	// Before recursing, check if we already have a cached result for this ID.
+	var opts []CacheCallOpt
+	if s.telemetry != nil {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+			return s.telemetry(ctx, id)
+		}))
+		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
+		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))
+	}
+	if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
+		ID: id,
+	}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}, opts...); err == nil {
+		return res, nil
+	}
+
 	var base AnyResult
 	var err error
 	if id.Receiver() != nil {
@@ -688,25 +795,13 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		} else {
 			// we are selecting the nth element of an enumerable, load the list
 			// we are selecting from and then select the nth element from it rather
-			// than trying to call the field on the object
+			// than trying to call the field on the object. Promote the nth ID into
+			// a real cached result the first time it is materialized.
 			baseValue, err := s.LoadType(ctx, id.Receiver())
 			if err != nil {
 				return nil, fmt.Errorf("load base enumerable: %w", err)
 			}
-
-			res, err := baseValue.NthValue(nth)
-			if err != nil {
-				return nil, fmt.Errorf("nth %d: %w", nth, err)
-			}
-
-			var ok bool
-			res, ok = res.DerefValue()
-			if !ok {
-				// the nth element is nil, maybe this should be allowed but for now error out
-				return nil, fmt.Errorf("item %d is null from enumerable", nth)
-			}
-
-			return res, nil
+			return s.loadNthValue(ctx, baseValue, nth, true, opts...)
 		}
 	} else {
 		base = s.root
@@ -716,8 +811,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("toSelectable: %w", err)
 	}
-
-	return baseObj.Call(ctx, s, id)
+	return baseObj.Call(callCtx, s, id)
 }
 
 // Select evaluates a series of chained field selections starting from the
@@ -752,9 +846,9 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		}
 
 		if nth != 0 {
-			res, err = res.NthValue(nth)
+			res, err = s.loadNthValue(ctx, res, nth, true)
 			if err != nil {
-				return fmt.Errorf("nth %d: %w", nth, err)
+				return err
 			}
 		}
 
@@ -777,12 +871,11 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
 			for nth := 1; nth <= enum.Len(); nth++ {
-				val, err := res.NthValue(nth)
+				val, err := s.loadNthValue(ctx, res, nth, false)
 				if err != nil {
-					return fmt.Errorf("nth %d: %w", nth, err)
+					return err
 				}
-				val, ok := val.DerefValue()
-				if !ok {
+				if val == nil {
 					if err := appendAssign(destV, nil); err != nil {
 						return err
 					}
@@ -1038,16 +1131,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		if len(sel.Subselections) == 0 {
 			// No subselections - resolve serially (fast path, no goroutine overhead)
 			for nth := 1; nth <= length; nth++ {
-				elemVal, err := val.NthValue(nth)
+				elemVal, err := s.loadNthValue(ctx, val, nth, false)
 				if err != nil {
 					return nil, err
 				}
 				if elemVal == nil {
-					results[nth-1] = nil
-					continue
-				}
-				elemVal, ok := elemVal.DerefValue()
-				if !ok || elemVal == nil {
 					results[nth-1] = nil
 					continue
 				}
@@ -1058,16 +1146,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 			p := pool.New().WithErrors()
 			for nth := 1; nth <= length; nth++ {
 				p.Go(func() error {
-					elemVal, err := val.NthValue(nth)
+					elemVal, err := s.loadNthValue(ctx, val, nth, false)
 					if err != nil {
 						return err
 					}
 					if elemVal == nil {
-						results[nth-1] = nil
-						return nil
-					}
-					elemVal, ok := elemVal.DerefValue()
-					if !ok || elemVal == nil {
 						results[nth-1] = nil
 						return nil
 					}

@@ -50,17 +50,22 @@ func (content *CollectedContent) Digest() digest.Digest {
 }
 
 // CollectID collects an ID, indicating whether it came from an unknown field.
-func (content *CollectedContent) CollectID(idp call.ID, unknown bool) {
+func (content *CollectedContent) CollectID(idp *call.ID, unknown bool) error {
+	if idp == nil {
+		return nil
+	}
 	rid := &resource.ID{
 		ID:       idp,
 		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
 	}
 	content.IDs[idp.Digest()] = rid
-	dgst := rid.ContentDigest()
-	if dgst == "" {
-		dgst = rid.Digest()
-	}
+	// TODO: deeper integration with dagql/cache would be preferable but ContentPreferredDigest works
+	// for current workspace requirements.
+	// Deeper integration would allow full equivalence set cache hits on any IDs, whereas this approach
+	// is specific to just "content hash" extra digests.
+	dgst := rid.ID.ContentPreferredDigest()
 	content.hasher.WithString(string(dgst))
+	return nil
 }
 
 // CollectUnknown naively walks a typically JSON-decoded value, e.g. from a
@@ -91,8 +96,7 @@ func (content *CollectedContent) CollectUnknown(value any) error {
 	case string:
 		var idp call.ID
 		if err := idp.Decode(value); err == nil {
-			content.CollectID(idp, true)
-			return nil
+			return content.CollectID(&idp, true)
 		} else {
 			return content.CollectJSONable(value)
 		}

@@ -85,15 +85,10 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // It is meant for consumption from modules, which have some APIs hidden from their codegen.
 func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (inst dagql.Result[*File], _ error) {
-	schema, err := d.lazilyLoadSchema(ctx)
+	dag, err := d.Schema(ctx)
 	if err != nil {
 		return inst, err
 	}
-	dagqlCache, err := d.root.Cache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get cache: %w", err)
-	}
-	dag := schema.WithCache(dagqlCache)
 
 	// Generate the JSON file using the cached server. The dagql Select cache
 	// (CachePerSchema) handles caching per-args, so different hiddenTypes
@@ -223,14 +218,17 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
+			ifaceModule, err := ifaceType.mod.IDModule(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve module identity for interface %q: %w", iface.Name, err)
+			}
 			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
 			class.Extend(
 				dagql.FieldSpec{
-					Name:           asIfaceFieldName,
-					Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:           &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:         ifaceType.mod.IDModule(),
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
+					Name:        asIfaceFieldName,
+					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
+					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
+					Module:      ifaceModule,
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)

@@ -6,18 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/util/hashutil"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type Module struct {
@@ -67,6 +66,8 @@ type Module struct {
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
 
+	persistedResultID uint64
+
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
@@ -84,9 +85,25 @@ func (*Module) TypeDescription() string {
 }
 
 var _ Mod = (*Module)(nil)
+var _ dagql.PersistedObject = (*Module)(nil)
+var _ dagql.PersistedObjectDecoder = (*Module)(nil)
+var _ dagql.HasOwnedResults = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
+}
+
+func (mod *Module) PersistedResultID() uint64 {
+	if mod == nil {
+		return 0
+	}
+	return mod.persistedResultID
+}
+
+func (mod *Module) SetPersistedResultID(resultID uint64) {
+	if mod != nil {
+		mod.persistedResultID = resultID
+	}
 }
 
 // isToolchainModule checks if a Mod is a toolchain Module.
@@ -158,73 +175,28 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-func (mod *Module) ContentDigestCacheKey() string {
-	contextSource := mod.ContextSource.Value.Self()
-	contentDigest := ""
-	contentCacheScope := ""
-	if contextSource != nil {
-		contentDigest = contextSource.Digest
-		contentCacheScope = contextSource.ContentCacheScope()
+// SourceContentScopedID is an ID of the module with cache scope to just parts
+// that matter to SDK operations and function calls. E.g. it is scoped to the
+// source code and dependencies but not client-specific values like specific git
+// git commits or local source paths the module was sourced from.
+// Use with caution as providing it to an operation that dependes on any client-specific
+// values may result in unexpected cache collisions.
+func (mod *Module) SourceContentScopedID(ctx context.Context) (*call.ID, error) {
+	if !mod.Source.Valid {
+		return nil, fmt.Errorf("no module source available for function content-scoped ID")
 	}
-
-	return hashutil.HashStrings(
-		contentDigest,
-		contentCacheScope,
-		"asModule",
-	).String()
-}
-
-// GetModuleFromContentDigest loads a module based on the same content+provenance key used
-// in ModuleSource.asModule. We sometimes can't directly load a Module because the current
-// caching logic will result in that Module being re-loaded by clients (due to it being
-// CachePerClient) and then possibly trying to load it from the wrong context (in the case
-// of a cached result including a _contextDirectory call).
-func GetModuleFromContentDigest(
-	ctx context.Context,
-	dag *dagql.Server,
-	modName string,
-	dgst string,
-) (inst dagql.ObjectResult[*Module], err error) {
-	md, err := engine.ClientMetadataFromContext(ctx)
+	sourceDigest, err := mod.Source.Value.Self().ContentDigestForSDK(ctx)
 	if err != nil {
-		return inst, err
+		return nil, fmt.Errorf("failed to get source content digest: %w", err)
 	}
-	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
-	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
-		return nil, fmt.Errorf("module not found: %s", modName)
-	})
-	if err != nil {
-		return inst, err
-	}
-	if cacheRes == nil {
-		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
-	}
-	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
-	if !ok {
-		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
-	}
-
-	return inst, nil
-}
-
-// CacheModuleByContentDigest caches the given module instance using its content+provenance
-// key + session ID, corresponding to the getter above (GetModuleFromContentDigest).
-func CacheModuleByContentDigest(
-	ctx context.Context,
-	dag *dagql.Server,
-	mod dagql.ObjectResult[*Module],
-) error {
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
-	perSessionContentCacheKey := hashutil.HashStrings(mod.Self().ContentDigestCacheKey(), md.SessionID).String()
-	_, err = dag.Cache.GetOrInitArbitrary(ctx, perSessionContentCacheKey, dagql.ArbitraryValueFunc(mod))
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return mod.ResultID.Append(
+		mod.ResultID.Type().ToAST(),
+		"_sourceContentScoped",
+		call.WithContentDigest(hashutil.HashStrings(
+			"_sourceContentScoped",
+			"source:"+sourceDigest.String(),
+		)),
+	), nil
 }
 
 // Return all user defaults for this module
@@ -261,9 +233,16 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 	return modDefaults.Namespace(ctx, objName)
 }
 
-func (mod *Module) IDModule() *call.Module {
+// IDModule defines the call.Module field that will be set on call.IDs that represent calls on fields
+// from this module. The module field on call.IDs contribute to the recipe digest and also serve as
+// an input to calls when checking cache (so the digests included on the return call.Module.ID here
+// impact function call caching)
+func (mod *Module) IDModule(ctx context.Context) (*call.Module, error) {
+	if mod.ResultID == nil {
+		return nil, fmt.Errorf("module ID is not set")
+	}
 	if !mod.Source.Valid {
-		panic("no module source")
+		return nil, fmt.Errorf("no module source")
 	}
 	src := mod.Source.Value.Self()
 
@@ -283,24 +262,396 @@ func (mod *Module) IDModule() *call.Module {
 		pin = src.Git.Commit
 
 	case ModuleSourceKindDir:
-		// FIXME: this is better than nothing, but no other code handles refs that
-		// are an encoded ID right now
-		var err error
-		ref, err = src.ContextDirectory.ID().Encode()
-		if err != nil {
-			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
-		}
+		// no need to set ref/pin, the ID itself defines the module entirely
 
 	default:
-		panic(fmt.Sprintf("unexpected module source kind %q", src.Kind))
+		return nil, fmt.Errorf("unexpected module source kind %q", src.Kind)
 	}
 
-	contentCacheKey := mod.ContentDigestCacheKey()
-	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
+	contentScopedID, err := mod.SourceContentScopedID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get function content scoped ID for module: %w", err)
+	}
+
+	return call.NewModule(
+		// Scope function call cache to module implementation source content.
+		// Contextual inputs (workspace/defaultPath/etc.) are modeled as explicit call inputs
+		// and should not invalidate unrelated function calls via module identity.
+		contentScopedID,
+		mod.Name(), ref, pin,
+	), nil
 }
 
-func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (mod *Module) Evaluate(context.Context) error {
+	return nil
+}
+
+func (mod *Module) Sync(ctx context.Context) error {
+	return mod.Evaluate(ctx)
+}
+
+func (mod *Module) AttachOwnedResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if mod == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 3)
+
+	if mod.Source.Valid && mod.Source.Value.ID() != nil {
+		attached, err := attach(mod.Source.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module source: unexpected result %T", attached)
+		}
+		mod.Source = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if mod.ContextSource.Valid && mod.ContextSource.Value.ID() != nil {
+		attached, err := attach(mod.ContextSource.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach module context source: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
+		if !ok {
+			return nil, fmt.Errorf("attach module context source: unexpected result %T", attached)
+		}
+		mod.ContextSource = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if mod.Runtime.Valid && mod.Runtime.Value.ID() != nil {
+		attached, err := attach(mod.Runtime.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach module runtime: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Container])
+		if !ok {
+			return nil, fmt.Errorf("attach module runtime: unexpected result %T", attached)
+		}
+		mod.Runtime = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	var srv *dagql.Server
+	attachModuleRef := func(child *Module) (*Module, dagql.AnyResult, error) {
+		if child == nil || child.ResultID == nil {
+			return child, nil, nil
+		}
+		if mod.ResultID != nil && child.ResultID.Digest() == mod.ResultID.Digest() {
+			return child, nil, nil
+		}
+		if srv == nil {
+			var err error
+			srv, err = CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		ref, err := dagql.NewObjectResultForID(child, srv, child.ResultID)
+		if err != nil {
+			return nil, nil, err
+		}
+		attached, err := attach(ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, nil, fmt.Errorf("unexpected result %T", attached)
+		}
+		return typed.Self(), typed, nil
+	}
+
+	if mod.Deps != nil {
+		for i, dep := range mod.Deps.Mods {
+			depMod, ok := dep.(*Module)
+			if !ok || depMod == nil {
+				continue
+			}
+			attachedMod, attachedRes, err := attachModuleRef(depMod)
+			if err != nil {
+				return nil, fmt.Errorf("attach module dependency %q: %w", depMod.Name(), err)
+			}
+			if attachedRes == nil {
+				continue
+			}
+			mod.Deps.Mods[i] = attachedMod
+			owned = append(owned, attachedRes)
+		}
+	}
+	if mod.Toolchains != nil {
+		for name, entry := range mod.Toolchains.entries {
+			if entry == nil || entry.Module == nil {
+				continue
+			}
+			attachedMod, attachedRes, err := attachModuleRef(entry.Module)
+			if err != nil {
+				return nil, fmt.Errorf("attach module toolchain %q: %w", name, err)
+			}
+			if attachedRes == nil {
+				continue
+			}
+			entry.Module = attachedMod
+			owned = append(owned, attachedRes)
+		}
+	}
+
+	return owned, nil
+}
+
+type persistedModulePayload struct {
+	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
+	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
+	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
+	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
+	ToolchainsInitialized         bool                            `json:"toolchainsInitialized,omitempty"`
+	ToolchainEntries              []persistedModuleToolchainEntry `json:"toolchainEntries,omitempty"`
+	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
+	NameField                     string                          `json:"nameField,omitempty"`
+	OriginalName                  string                          `json:"originalName,omitempty"`
+	SDKConfig                     *SDKConfig                      `json:"sdkConfig,omitempty"`
+	Description                   string                          `json:"description,omitempty"`
+	ObjectDefs                    []*TypeDef                      `json:"objectDefs,omitempty"`
+	InterfaceDefs                 []*TypeDef                      `json:"interfaceDefs,omitempty"`
+	EnumDefs                      []*TypeDef                      `json:"enumDefs,omitempty"`
+	IsToolchain                   bool                            `json:"isToolchain,omitempty"`
+	DisableDefaultFunctionCaching bool                            `json:"disableDefaultFunctionCaching,omitempty"`
+}
+
+type persistedModuleToolchainEntry struct {
+	Name             string                          `json:"name,omitempty"`
+	ModuleResultID   uint64                          `json:"moduleResultID,omitempty"`
+	FieldName        string                          `json:"fieldName,omitempty"`
+	ArgumentConfigs  []*modules.ModuleConfigArgument `json:"argumentConfigs,omitempty"`
+	IgnoreChecks     []string                        `json:"ignoreChecks,omitempty"`
+	IgnoreGenerators []string                        `json:"ignoreGenerators,omitempty"`
+}
+
+func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	var persisted persistedModulePayload
+	if mod.Source.Valid {
+		sourceID, err := encodePersistedObjectRef(cache, mod.Source.Value, "module source")
+		if err != nil {
+			return nil, err
+		}
+		persisted.SourceResultID = sourceID
+	}
+	if mod.ContextSource.Valid {
+		contextSourceID, err := encodePersistedObjectRef(cache, mod.ContextSource.Value, "module context source")
+		if err != nil {
+			return nil, err
+		}
+		persisted.ContextSourceResultID = contextSourceID
+	}
+	if mod.Runtime.Valid {
+		runtimeID, err := encodePersistedObjectRef(cache, mod.Runtime.Value, "module runtime")
+		if err != nil {
+			return nil, err
+		}
+		persisted.RuntimeResultID = runtimeID
+	}
+
+	if mod.Deps != nil {
+		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods))
+		for _, dep := range mod.Deps.Mods {
+			depMod, ok := dep.(*Module)
+			if !ok || depMod == nil {
+				continue
+			}
+			if mod.ResultID != nil && depMod.ResultID.Digest() == mod.ResultID.Digest() {
+				persisted.IncludeSelfInDeps = true
+				continue
+			}
+			if depMod.ResultID == nil {
+				return nil, fmt.Errorf("encode persisted module dependency %q: missing result ID", depMod.Name())
+			}
+			if depMod.PersistedResultID() == 0 {
+				return nil, fmt.Errorf("encode persisted module dependency %q: missing persisted result ID", depMod.Name())
+			}
+			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depMod.PersistedResultID())
+		}
+	}
+
+	persisted.ToolchainsInitialized = mod.Toolchains != nil
+	if mod.Toolchains != nil {
+		toolchainNames := make([]string, 0, len(mod.Toolchains.entries))
+		for name := range mod.Toolchains.entries {
+			toolchainNames = append(toolchainNames, name)
+		}
+		sort.Strings(toolchainNames)
+		persisted.ToolchainEntries = make([]persistedModuleToolchainEntry, 0, len(toolchainNames))
+		for _, name := range toolchainNames {
+			entry := mod.Toolchains.entries[name]
+			if entry == nil || entry.Module == nil || entry.Module.ResultID == nil {
+				return nil, fmt.Errorf("encode persisted module toolchain %q: missing module result ID", name)
+			}
+			if entry.Module.PersistedResultID() == 0 {
+				return nil, fmt.Errorf("encode persisted module toolchain %q: missing persisted module result ID", name)
+			}
+			persisted.ToolchainEntries = append(persisted.ToolchainEntries, persistedModuleToolchainEntry{
+				Name:             name,
+				ModuleResultID:   entry.Module.PersistedResultID(),
+				FieldName:        entry.FieldName,
+				ArgumentConfigs:  entry.ArgumentConfigs,
+				IgnoreChecks:     entry.IgnoreChecks,
+				IgnoreGenerators: entry.IgnoreGenerators,
+			})
+		}
+	}
+
+	persisted.NameField = mod.NameField
+	persisted.OriginalName = mod.OriginalName
+	persisted.SDKConfig = mod.SDKConfig
+	persisted.Description = mod.Description
+	persisted.ObjectDefs = mod.ObjectDefs
+	persisted.InterfaceDefs = mod.InterfaceDefs
+	persisted.EnumDefs = mod.EnumDefs
+	persisted.IsToolchain = mod.IsToolchain
+	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
+
+	objectSummaries := make([]string, 0, len(mod.ObjectDefs))
+	for _, def := range mod.ObjectDefs {
+		if !def.AsObject.Valid {
+			continue
+		}
+		obj := def.AsObject.Value
+		fnNames := make([]string, 0, len(obj.Functions))
+		for _, fn := range obj.Functions {
+			fnNames = append(fnNames, fn.Name)
+		}
+		objectSummaries = append(objectSummaries, fmt.Sprintf("%s:%v", obj.Name, fnNames))
+	}
+	slog.Info(
+		"cache-debug module persist encode",
+		"module", mod.Name(),
+		"result_id", mod.ResultID,
+		"object_defs", len(mod.ObjectDefs),
+		"objects", objectSummaries,
+	)
+
+	jsonBytes, err := json.Marshal(persisted)
+	if err != nil {
+		return nil, fmt.Errorf("encode persisted module payload: %w", err)
+	}
+	return jsonBytes, nil
+}
+
+func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedModulePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted module payload: %w", err)
+	}
+
+	sourceRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.SourceResultID, "module source")
+	if err != nil {
+		return nil, err
+	}
+	contextSourceRes, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.ContextSourceResultID, "module context source")
+	if err != nil {
+		return nil, err
+	}
+	runtimeRes, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.RuntimeResultID, "module runtime")
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := persistedDecodeQuery(dag)
+	if err != nil {
+		return nil, fmt.Errorf("decode persisted module query: %w", err)
+	}
+	deps, err := query.DefaultDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
+	}
+
+	loadedDepMods := make(map[uint64]*Module, len(persisted.DepModuleResultIDs))
+	for _, depID := range persisted.DepModuleResultIDs {
+		depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, depID, "module dependency")
+		if err != nil {
+			return nil, err
+		}
+		depMod := depRes.Self()
+		deps = deps.Append(depMod)
+		loadedDepMods[depID] = depMod
+	}
+
+	mod := &Module{
+		NameField:                     persisted.NameField,
+		OriginalName:                  persisted.OriginalName,
+		SDKConfig:                     persisted.SDKConfig,
+		Deps:                          deps,
+		Description:                   persisted.Description,
+		ObjectDefs:                    persisted.ObjectDefs,
+		InterfaceDefs:                 persisted.InterfaceDefs,
+		EnumDefs:                      persisted.EnumDefs,
+		IsToolchain:                   persisted.IsToolchain,
+		ResultID:                      id,
+		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
+	}
+	if mod.SDKConfig == nil {
+		mod.SDKConfig = &SDKConfig{}
+	}
+	if sourceRes.ID() != nil {
+		mod.Source = dagql.NonNull(sourceRes)
+	}
+	if contextSourceRes.ID() != nil {
+		mod.ContextSource = dagql.NonNull(contextSourceRes)
+	}
+	if runtimeRes.ID() != nil {
+		mod.Runtime = dagql.NonNull(runtimeRes)
+	}
+	if persisted.IncludeSelfInDeps {
+		mod.Deps = mod.Deps.Append(mod)
+	}
+	if persisted.ToolchainsInitialized {
+		mod.Toolchains = NewToolchainRegistry(mod)
+		for _, persistedEntry := range persisted.ToolchainEntries {
+			tcMod := loadedDepMods[persistedEntry.ModuleResultID]
+			if tcMod == nil {
+				tcRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persistedEntry.ModuleResultID, "module toolchain")
+				if err != nil {
+					return nil, err
+				}
+				tcMod = tcRes.Self()
+				mod.Deps = mod.Deps.Append(tcMod)
+				loadedDepMods[persistedEntry.ModuleResultID] = tcMod
+			}
+			mod.Toolchains.entries[persistedEntry.Name] = &ToolchainEntry{
+				Module:           tcMod,
+				FieldName:        persistedEntry.FieldName,
+				ArgumentConfigs:  persistedEntry.ArgumentConfigs,
+				IgnoreChecks:     persistedEntry.IgnoreChecks,
+				IgnoreGenerators: persistedEntry.IgnoreGenerators,
+			}
+		}
+	}
+
+	objectSummaries := make([]string, 0, len(mod.ObjectDefs))
+	for _, def := range mod.ObjectDefs {
+		if !def.AsObject.Valid {
+			continue
+		}
+		obj := def.AsObject.Value
+		fnNames := make([]string, 0, len(obj.Functions))
+		for _, fn := range obj.Functions {
+			fnNames = append(fnNames, fn.Name)
+		}
+		objectSummaries = append(objectSummaries, fmt.Sprintf("%s:%v", obj.Name, fnNames))
+	}
+	slog.Info(
+		"cache-debug module persist decode",
+		"module", mod.Name(),
+		"result_id", mod.ResultID,
+		"object_defs", len(mod.ObjectDefs),
+		"objects", objectSummaries,
+	)
+
+	return mod, nil
 }
 
 func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
@@ -406,36 +757,6 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 
 func (mod *Module) View() (call.View, bool) {
 	return "", false
-}
-
-func (mod *Module) CacheConfigForCall(
-	ctx context.Context,
-	_ dagql.AnyResult,
-	_ map[string]dagql.Input,
-	_ call.View,
-	req dagql.GetCacheConfigRequest,
-) (*dagql.GetCacheConfigResponse, error) {
-	// Function calls on a module should be cached based on the module's content hash, not
-	// the module ID digest (which has a per-client cache key in order to deal with
-	// local dir and git repo loading)
-	id := dagql.CurrentID(ctx)
-	curIDNoMod := id.With(
-		call.WithModule(nil),
-		call.WithCustomDigest(""),
-	)
-
-	resp := &dagql.GetCacheConfigResponse{
-		CacheKey: req.CacheKey,
-	}
-	if resp.CacheKey.ID == nil {
-		resp.CacheKey.ID = curIDNoMod
-	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
-		curIDNoMod.Digest().String(),
-		mod.Source.Value.Self().Digest,
-		mod.NameField, // the module source content digest only includes the original name
-	))
-	return resp, nil
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
@@ -890,15 +1211,11 @@ func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[
 		return runtime, fmt.Errorf("no runtime implemented")
 	}
 
-	var src dagql.ObjectResult[*ModuleSource]
 	if !mod.Source.Valid {
 		return runtime, fmt.Errorf("no source")
 	}
 
-	src = mod.Source.Value
-	scopedSourceDigest := src.Self().ContentScopedDigest()
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
-	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, mod.Source.Value)
 	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)
 	}
@@ -965,6 +1282,10 @@ func (mod Module) Clone() *Module {
 
 	if cp.SDKConfig != nil {
 		cp.SDKConfig = cp.SDKConfig.Clone()
+	}
+
+	if cp.Toolchains != nil {
+		cp.Toolchains = cp.Toolchains.Clone(&cp)
 	}
 
 	return &cp

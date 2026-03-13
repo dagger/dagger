@@ -7,8 +7,7 @@ import (
 	"os"
 
 	"github.com/containerd/containerd/v2/core/content"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -123,10 +122,10 @@ type Server interface {
 	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
-	EngineLocalCachePolicy() *bkclient.PruneInfo
+	EngineLocalCachePolicy() *dagql.CachePrunePolicy
 
 	// Gets the buildkit cache manager
-	BuildkitCache() bkcache.Manager
+	BuildkitCache() bkcache.SnapshotManager
 
 	// Gets the buildkit session manager
 	BuildkitSession() *bksession.Manager
@@ -184,6 +183,13 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 }
 
 func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
+	// Prefer the dagql server explicitly attached to this resolver context.
+	// This is required for dynamic schemas (e.g. SDKs implemented as modules)
+	// that run selections against a server different from the session's default.
+	if srv := dagql.CurrentDagqlServer(ctx); srv != nil {
+		return srv, nil
+	}
+
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)
@@ -196,6 +202,10 @@ func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
 }
 
 func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
+	if srv := dagql.CurrentDagqlServer(ctx); srv != nil && srv.Cache != nil {
+		return srv.Cache, nil
+	}
+
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)
@@ -247,18 +257,23 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	if err != nil {
 		return nil, fmt.Errorf("default deps: %w", err)
 	}
-
-	bootstrap, err := defaultDeps.Schema(ctx)
+	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}
+
 	deps := defaultDeps
 	for _, modID := range id.Modules() {
-		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modID.ID().Digest()))
+		inst, err := dagql.NewID[*Module](modID.ID()).Load(ctx, dag)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("loading module from ID: %w", err)
 		}
 		deps = deps.Append(inst.Self())
+		if inst.Self().Toolchains != nil {
+			for _, entry := range inst.Self().Toolchains.Entries() {
+				deps = deps.Append(entry.Module)
+			}
+		}
 	}
 	return deps, nil
 }

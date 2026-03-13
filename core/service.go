@@ -18,21 +18,16 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
-	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bkcontainer "github.com/dagger/dagger/internal/buildkit/frontend/gateway/container"
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	bkmounts "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
@@ -94,15 +89,19 @@ func (svc *Service) Clone() *Service {
 	cp := *svc
 	cp.Args = slices.Clone(cp.Args)
 	if cp.Container != nil {
-		cp.Container = cp.Container.Clone()
+		cp.Container = cloneContainerForTerminal(cp.Container)
 	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
 	return &cp
 }
 
-func (svc *Service) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (svc *Service) Evaluate(ctx context.Context) error {
+	return nil
+}
+
+func (svc *Service) Sync(ctx context.Context) error {
+	return svc.Evaluate(ctx)
 }
 
 func (svc *Service) WithHostname(hostname string) *Service {
@@ -135,7 +134,16 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
 		len(svc.HostSockets) > 0: // container=>host
-		return network.HostHash(id.Digest()), nil
+		if id == nil {
+			return "", errors.New("service ID is nil")
+		}
+		// Hostname identity follows output-equivalence identity so equivalent
+		// services can converge and share bindings.
+		hostDigest := id.ContentPreferredDigest()
+		if hostDigest == "" {
+			hostDigest = id.Digest()
+		}
+		return network.HostHash(hostDigest), nil
 	default:
 		return "", errors.New("unknown service type")
 	}
@@ -220,7 +228,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			}
 			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
 			if !ok {
-				return "", fmt.Errorf("socket not found: %s", svc.HostSockets[0].IDDigest)
+				return "", fmt.Errorf("service endpoint: socket not found: %s", svc.HostSockets[0].IDDigest)
 			}
 			port = portForward.FrontendOrBackendPort()
 		}
@@ -376,7 +384,11 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
+		modID, err := mod.SourceContentScopedID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module source content scoped ID: %w", err)
+		}
+		domain = network.ModuleDomain(modID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with
@@ -397,82 +409,22 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, _, refs, _, err := getAllContainerMounts(ctx, ctr)
-	if err != nil {
-		return nil, fmt.Errorf("could not get mounts: %w", err)
-	}
-
-	inputs := make([]bkcache.ImmutableRef, len(states))
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, pbmount := range pbmounts {
-		if pbmount.Input == pb.Empty {
-			continue
-		}
-
-		if ref := refs[pbmount.Input]; ref != nil {
-			inputs[pbmount.Input] = ref
-			continue
-		}
-
-		st := states[pbmount.Input]
-		def, err := st.Marshal(egctx)
-		if err != nil {
-			return nil, err
-		}
-		if def == nil {
-			continue
-		}
-
-		eg.Go(func() error {
-			res, err := bk.Solve(egctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: def.ToPB(),
-			})
-			if err != nil {
-				return err
-			}
-			ref, err := res.Ref.Result(egctx)
-			if err != nil {
-				return err
-			}
-			if ref != nil {
-				inputs[pbmount.Input] = ref.Sys().(*worker.WorkerRef).ImmutableRef
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	workerRefs := make([]*worker.WorkerRef, 0, len(inputs))
-	for _, ref := range inputs {
-		workerRefs = append(workerRefs, &worker.WorkerRef{ImmutableRef: ref})
-	}
-
 	svcID := identity.NewID()
 
-	name := fmt.Sprintf("container %s", svcID)
-	mm := bkmounts.NewMountManager(name, cache, session)
-
 	bkSessionGroup := bksession.NewGroup(bk.ID())
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+	p, err := prepareMounts(ctx, ctr, nil, nil, nil, cache, session, bkSessionGroup, "", runtime.GOOS, func(_ string, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		return cache.New(ctx, ref, bkSessionGroup)
-	}, runtime.GOOS)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("prepare mounts: %w", err)
 	}
 
-	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
-		cleanup.Add("release active ref", func() error {
-			return active.Ref.Release(context.WithoutCancel(ctx))
-		})
-	}
-	for _, o := range p.OutputRefs {
-		cleanup.Add("release output ref", func() error {
-			return o.Ref.Release(context.WithoutCancel(ctx))
-		})
-	}
+	cleanup.Add("release active refs", func() error {
+		return p.releaseActives(context.WithoutCancel(ctx))
+	})
+	cleanup.Add("release output refs", func() error {
+		return p.releaseOutputRefs(context.WithoutCancel(ctx))
+	})
 
 	meta := svc.ExecMeta
 	if meta == nil {
@@ -547,11 +499,10 @@ func (svc *Service) startContainer(
 	meta.Env = append(meta.Env, secretEnv...)
 
 	worker := bk.Worker.ExecWorker(svc.Creator, *execMD)
-	exec := worker.Executor()
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err := exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
+		_, err := worker.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
 			Meta:   *meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriters,
@@ -570,7 +521,7 @@ func (svc *Service) startContainer(
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(exec, svcID, ctr, svc.Creator)
+		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, svc.Creator)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
@@ -672,7 +623,7 @@ func (svc *Service) startContainer(
 			stderrWriter = sio.Stderr
 			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
 		}
-		err = exec.Exec(ctx, svcID, executor.ProcessInfo{
+		err = worker.Exec(ctx, svcID, executor.ProcessInfo{
 			Meta:   meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
@@ -701,7 +652,7 @@ func (svc *Service) startContainer(
 			var gwErr *gwpb.ExitError
 			if errors.As(exitErr, &gwErr) {
 				// Create ExecError with available service information
-				return nil, &buildkit.ExecError{
+				return nil, &ExecError{
 					Err:      telemetry.TrackOrigin(gwErr, svc.Creator),
 					Cmd:      meta.Args,
 					ExitCode: int(gwErr.ExitCode),
@@ -915,7 +866,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	for _, sock := range svc.HostSockets {
 		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
 		if !ok {
-			return nil, fmt.Errorf("socket not found: %s", sock.IDDigest)
+			return nil, fmt.Errorf("service reverse tunnel: socket not found: %s", sock.IDDigest)
 		}
 		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
@@ -1064,8 +1015,8 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
 	}
 
-	// release unconditionally here, since we Clone it using the __immutableRef
-	// API call below
+	// Release unconditionally here, since we take our own cloned ref for the
+	// returned directory object below.
 	defer immutableRef.Release(ctx)
 
 	// Create a new mutable ref to leave the service with, to prevent further
@@ -1108,25 +1059,21 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	var snapshot dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
-		Field: "__immutableRef",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "ref",
-				Value: dagql.String(immutableRef.ID()),
-			},
-		},
-	}); err != nil {
+	snapshot := &Directory{
+		Dir:       source.Dir,
+		Platform:  source.Platform,
+		Services:  slices.Clone(source.Services),
+		LazyState: NewLazyState(),
+		Snapshot:  immutableRef.Clone(),
+	}
+	snapshot.LazyInitComplete = true
+
+	inst, err := dagql.NewObjectResultForCurrentID(ctx, srv, snapshot)
+	if err != nil {
 		return res, false, err
 	}
 
-	// ensure we actually run the __immutableRef DagOp that does a Clone()
-	if _, err := snapshot.Self().Evaluate(ctx); err != nil {
-		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
-	}
-
-	return snapshot, true, nil
+	return inst, true, nil
 }
 
 func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {
