@@ -1,15 +1,23 @@
-# Workspace.commit — Git Worktree-Based Branch Commit API
+# Workspace & Worktree — Git-Aware Agent Commit API
 
 ## Summary
 
-Add `Workspace.withBranch` and `Workspace.commit` so that LLM agents running
-inside the Dagger engine can commit changesets to Git branches on the user's
-host — without disrupting the user's checked-out working tree.
+Provide a two-tier API for LLM agents to read from and commit to Git branches
+on the user's host:
 
-Every branch gets its own **`git worktree`** on the host filesystem. This means
-all existing Workspace operations (`glob`, `search`, `file`, `directory`,
-`exists`, `findUp`) work identically on any branch, and the user can `cd` into
-any worktree to watch agents work in real-time.
+- **`Workspace`** — read-only view of the user's repository. Detects the repo
+  root and current branch. Provides `directory`, `file`, `glob`, `search`,
+  `exists`, `findUp`.
+
+- **`Worktree`** — read-write handle for a specific branch, returned by
+  `Workspace.worktree(branch)`. Tracks pending changesets applied via
+  `withChanges`, and commits them atomically with `commit`. Each branch gets
+  its own **`git worktree`** on the host filesystem.
+
+The `Worktree` type is functional: `withChanges` returns a new `Worktree` with
+the changeset applied to the host and appended to the pending list. `commit`
+creates a Git commit from exactly the accumulated changesets, then returns a
+clean `Worktree` with no pending changes.
 
 ## Motivation
 
@@ -17,70 +25,154 @@ An autonomous LLM agent hierarchy needs to commit parallel work back to the
 user's Git repository so the user can observe progress. Multiple agents may
 work on different branches simultaneously. The design must:
 
-1. **Never disrupt the user's checked-out state** (unless they are on that branch).
-2. **Minimize data transfer** between engine and client.
-3. Let existing Workspace read operations (`glob`, `search`, etc.) work on any
-   branch without special-casing.
+1. **Never disrupt the user's checked-out state** (unless they target that
+   branch).
+2. **Commit precisely the changeset** — never sweep in unrelated user edits.
+3. Let existing Workspace read operations work on any branch without
+   special-casing.
 4. Let the user observe agent work in real-time via normal filesystem tools.
+5. **Coexist with local user changes** — the user may have work-in-progress in
+   the same worktree. The commit flow must preserve it.
 
 ## API
 
-### New Fields
+### Workspace (read-only)
 
 ```graphql
 type Workspace {
-  """The Git branch this workspace is on."""
+  "The Git branch this workspace is on."
   branch: String!
-  # ... existing fields: root, clientId
+  "Absolute path to the workspace root directory."
+  root: String!
+  "The client ID that owns this workspace's host filesystem."
+  clientId: String!
+
+  "Return a Worktree for the given branch."
+  worktree(
+    "The branch name (e.g. \"agent/auth\")."
+    branch: String!
+  ): Worktree!
+
+  # ... existing read methods unchanged:
+  directory(path: String!, ...): Directory!
+  file(path: String!): File!
+  exists(path: String!, ...): Boolean!
+  glob(pattern: String!): [String!]!
+  search(...): [SearchResult!]!
+  findUp(name: String!, from: String): String
 }
 ```
 
-### New Methods
+`Workspace.worktree(branch)` creates (or reuses) a git worktree for the given
+branch on the host. If `branch` matches the workspace's current branch, the
+worktree points at the main checkout. If the branch doesn't exist yet, it is
+created from the current branch tip.
+
+### Worktree (read-write)
 
 ```graphql
-extend type Workspace {
-  """
-  Return a Workspace for the given branch. If the branch is different from
-  the currently checked-out branch, a git worktree is created on the host.
-  If the branch does not exist, it is created from the current branch tip.
-  """
-  withBranch(
-    """The branch name (e.g. "agent/auth")."""
-    branch: String!
-  ): Workspace!
+type Worktree {
+  "The Git branch this worktree is on."
+  branch: String!
 
   """
-  Export a Changeset to the workspace's branch and create a Git commit.
-  The changeset files are written to the worktree and committed with the
-  given message. This is a side-effect operation.
+  Apply a Changeset to the worktree and track it for the next commit.
+  Files are written (added/modified) and removed on disk immediately.
+  Returns a new Worktree with the changeset appended to the pending list.
   """
-  commit(
-    """The changes to commit."""
-    changes: Changeset!
-    """The commit message."""
-    message: String!
-  ): Void!
+  withChanges(changes: Changeset!): Worktree!
+
+  """
+  Commit all pending changesets to the branch. The commit contains exactly
+  the accumulated changes from prior withChanges calls — nothing more.
+  Returns a new Worktree with an empty pending list.
+  """
+  commit(message: String!): Worktree!
+
+  # Read methods (same signatures as Workspace, operating on the worktree root):
+  directory(path: String!, ...): Directory!
+  file(path: String!): File!
+  exists(path: String!, ...): Boolean!
+  glob(pattern: String!): [String!]!
+  search(...): [SearchResult!]!
+  findUp(name: String!, from: String): String
 }
 ```
 
-### Semantics
+### Typical Usage (Dang)
 
-- **`currentWorkspace`** is augmented to detect the current branch via
-  `git symbolic-ref --short HEAD`. The `Branch` field is populated
-  automatically.
+```dang
+type Agent {
+  new(ws: Workspace!) {
+    let wt = ws.worktree("agent/feature")
 
-- **`withBranch(branch)`** where `branch` equals the workspace's current
-  branch is a no-op (returns self). Otherwise it asks the client to run
-  `git worktree add` and returns a new Workspace whose `Root` points at the
-  worktree directory.
+    // First change
+    let before = wt.directory(".")
+    let after = before.withNewFile("hello.txt", contents: "hello world")
+    let wt2 = wt.withChanges(after.changes(before))
 
-- **`commit(changes, message)`** exports the changeset to the workspace root
-  (same mechanism as `Changeset.export`) then runs `git add -A` and
-  `git commit -m <message>` in the worktree directory on the client side.
+    // Second change
+    let before2 = wt2.directory(".")
+    let after2 = before2.withNewFile("bye.txt", contents: "goodbye")
+    let wt3 = wt2.withChanges(after2.changes(before2))
 
-- All existing Workspace operations are **unchanged**. They already operate on
-  `ws.Root`, which for a worktree simply points at a different directory on the
-  host.
+    // Single commit covering both changes
+    wt3.commit(message: "feat: add greeting files")
+
+    self
+  }
+}
+```
+
+## Semantics
+
+### `Workspace.worktree(branch)`
+
+1. If `branch` equals the workspace's current branch, return a `Worktree`
+   whose root is the main checkout (`ws.Root`).
+2. Otherwise, ask the client to `git worktree add` at the conventional path
+   (see Worktree Layout). If the branch doesn't exist, create it with `-b`.
+3. Return a `Worktree` with an empty pending changeset list.
+
+### `Worktree.withChanges(changes)`
+
+1. Export the changeset to the worktree root on the host (same mechanism as
+   `Changeset.export` — merge-mode write of the diff layer, removal of deleted
+   paths).
+2. Return a new `Worktree` with `changes` appended to the internal pending
+   list.
+
+The changeset is applied to disk immediately so that:
+- The user can see progress in real-time.
+- Subsequent `wt.directory(".")` calls reflect the applied changes.
+
+### `Worktree.commit(message)`
+
+1. Merge all pending changesets into a single combined changeset (using the
+   existing `Changeset.withChanges` / `withChangesets` machinery if needed, or
+   simply accumulating paths).
+2. Generate a patch from the combined changeset.
+3. Export the patch to a temp file on the client (outside the repo).
+4. Apply the patch and create the commit via git plumbing:
+   - `git stash --include-untracked` (if local user changes exist)
+   - Create a temp `GIT_INDEX_FILE`
+   - `git read-tree HEAD` into the temp index
+   - `git apply --cached <patch>` into the temp index
+   - `git write-tree` → `git commit-tree` → `git update-ref HEAD`
+   - `git reset --hard HEAD` to update the worktree
+   - `git stash pop` (if stashed)
+   - Clean up temp files
+5. Return a new `Worktree` with an empty pending list.
+
+This ensures the commit contains **exactly** the accumulated changesets,
+regardless of what else exists in the working tree.
+
+### Read methods on `Worktree`
+
+`directory`, `file`, `exists`, `glob`, `search`, and `findUp` all delegate to
+the same host-filesystem implementations used by `Workspace`, but rooted at the
+worktree's path. They are `CachePerClient` (not persistently cached) so they
+always reflect the current disk state.
 
 ## Worktree Layout
 
@@ -101,210 +193,90 @@ Path derivation:
 
 Rationale for this location:
 - **Outside the repo tree** — avoids `glob` and `search` on the main workspace
-  accidentally traversing into worktree directories. (The host-side `glob` uses
-  `filepath.WalkDir` which does not respect `.gitignore`; `search` defaults to
-  `--no-ignore`.)
+  accidentally traversing into worktree directories.
 - **Discoverable** — sits right next to the repo, easy to `cd` into.
 - **No `.gitignore` management** — nothing added inside the main repo.
 
 ## Implementation
 
-### 1. Workspace struct (`core/workspace.go`)
+### 1. New `Worktree` type (`core/worktree.go`)
 
-Add two fields:
+```go
+type Worktree struct {
+    // Root is the absolute path to the worktree directory on the host.
+    Root     string `field:"true"`
+    // ClientID routes host operations through the correct client session.
+    ClientID string `field:"true"`
+    // Branch is the Git branch this worktree tracks.
+    Branch   string `field:"true"`
+    // RepoRoot is the path to the main repo (where .git/ lives).
+    RepoRoot string
+
+    // Pending is the list of changesets applied since the last commit.
+    // Accumulated by withChanges, consumed by commit.
+    Pending []*Changeset
+}
+```
+
+### 2. Workspace changes (`core/workspace.go`)
+
+Remove `withBranch`, `apply`, `commit` from Workspace. Add `worktree`.
+
+`Branch` and `RepoRoot` stay on Workspace for detection purposes. The
+`worktree` method creates the git worktree (if needed) and returns a
+`Worktree`.
 
 ```go
 type Workspace struct {
     Root     string `field:"true"`
     ClientID string `field:"true"`
-    Branch   string `field:"true" doc:"The Git branch this workspace is on."`
-
-    // RepoRoot is the path to the main repo (where .git/ lives).
-    // Not exposed in the schema. Needed to create worktrees.
+    Branch   string `field:"true"`
     RepoRoot string
 }
 ```
 
-When `withBranch` creates a worktree, the new Workspace has a different `Root`
-(the worktree path) but the same `RepoRoot` (the original repo).
+### 3. Schema resolvers (`core/schema/workspace.go`, `core/schema/worktree.go`)
 
-### 2. Client-side operations via session attachables
+#### On `Workspace`:
 
-Three new operation types routed through the existing `DiffCopy` gRPC streams.
+- **`worktree(branch)`** — creates/reuses git worktree via `GitWorktreeAdd`,
+  returns `Worktree` with empty `Pending`.
 
-#### 2a. Detect current branch (`LocalImportOpts` / `FileSyncSource`)
+#### On `Worktree`:
 
-New field on `LocalImportOpts` in `engine/opts.go`:
+- **`withChanges(changes)`** — wraps with `DagOpWrapper`. Loads the changeset,
+  calls `changeset.Export(ctx, wt.Root)` to apply files, returns a new
+  `Worktree` with the changeset appended to `Pending`.
 
-```go
-GitBranchDetect bool
-```
+- **`commit(message)`** — wraps with `DagOpWrapper`. Merges pending changesets,
+  generates a patch, exports to temp file, applies via git plumbing, returns
+  clean `Worktree`.
 
-Client handler in `engine/client/filesync.go` `FilesyncSource.DiffCopy`:
+- **`directory`, `file`, `exists`, `glob`, `search`, `findUp`** — same
+  implementations as `Workspace` but rooted at `wt.Root`.
 
-```go
-case opts.GitBranchDetect:
-    cmd := exec.CommandContext(ctx, "git", "symbolic-ref", "--short", "HEAD")
-    cmd.Dir = absPath
-    out, err := cmd.Output()
-    // Return trimmed branch name as BytesMessage
-```
+### 4. Client-side operations (unchanged from current impl)
 
-Engine-side wrapper in `engine/buildkit/filesync.go`:
+| Operation | Mechanism |
+|-----------|-----------|
+| Detect branch | `diffcopy` import with `GitBranchDetect` |
+| Create worktree | `diffcopy` import with `GitWorktreeAdd` |
+| Export changeset to disk | `CopyToCaller` (dir export, merge mode) |
+| Apply patch + commit | `diffcopy` import with `GitApplyAndCommit` |
+| Export patch temp file | `LocalFileExport` to `/tmp/dagger-changeset-*.patch` |
 
-```go
-func (c *Client) GitBranch(ctx context.Context, repoDir string) (string, error)
-```
-
-#### 2b. Create worktree (`LocalImportOpts` / `FileSyncSource`)
-
-New field on `LocalImportOpts`:
-
-```go
-GitWorktreeAdd *GitWorktreeAddOpts
-```
-
-```go
-type GitWorktreeAddOpts struct {
-    Branch       string
-    WorktreePath string
-}
-```
-
-Client handler:
-
-1. If `WorktreePath` already exists and is a valid worktree, return it as-is.
-2. Try `git worktree add <path> <branch>` (existing branch).
-3. If the branch doesn't exist, `git worktree add -b <branch> <path>` (create).
-4. Return the resolved absolute path as `BytesMessage`.
-
-Engine-side wrapper:
-
-```go
-func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePath string) (string, error)
-```
-
-#### 2c. Commit in worktree (`LocalExportOpts` / `FilesyncTarget`)
-
-New field on `LocalExportOpts`:
-
-```go
-GitCommit *GitCommitOpts
-```
-
-```go
-type GitCommitOpts struct {
-    Message string
-}
-```
-
-When `GitCommit` is set, `FilesyncTarget.DiffCopy`:
-
-1. Receives the directory export as usual (file writes via `fsutil.Receive`),
-   applying it to the export `Path` (which is the worktree root).
-2. After the filesystem write completes, runs in the same directory:
-   ```
-   git add -A
-   git commit --allow-empty -m "<message>"
-   ```
-3. Returns success/error.
-
-This piggybacks on the existing `LocalDirExport` flow — the only addition is
-the post-write git commit step.
-
-Engine-side: modify `LocalDirExport` or add a new method:
-
-```go
-func (c *Client) GitCommitChangeset(
-    ctx context.Context,
-    srcPath string,
-    destPath string,
-    merge bool,
-    removePaths []string,
-    message string,
-) error
-```
-
-### 3. Schema resolvers (`core/schema/workspace.go`)
-
-#### `currentWorkspace` (modified)
-
-After detecting the repo root, also detect the branch:
-
-```go
-branch, err := bk.GitBranch(ctx, repoRoot)
-if err != nil {
-    branch = "HEAD" // detached HEAD fallback
-}
-result := &core.Workspace{
-    Root:     repoRoot,
-    ClientID: clientMetadata.ClientID,
-    Branch:   branch,
-    RepoRoot: repoRoot,
-}
-```
-
-#### `withBranch` (new)
-
-```go
-func (s *workspaceSchema) withBranch(
-    ctx context.Context,
-    parent *core.Workspace,
-    args struct{ Branch string },
-) (*core.Workspace, error) {
-    if parent.Branch == args.Branch {
-        return parent, nil
-    }
-    worktreePath := parent.RepoRoot + "-worktrees/" + sanitizeBranch(args.Branch)
-    actualPath, err := bk.GitWorktreeAdd(ctx, parent.RepoRoot, args.Branch, worktreePath)
-    if err != nil {
-        return nil, err
-    }
-    return &core.Workspace{
-        Root:     actualPath,
-        ClientID: parent.ClientID,
-        Branch:   args.Branch,
-        RepoRoot: parent.RepoRoot,
-    }, nil
-}
-```
-
-#### `commit` (new)
-
-```go
-func (s *workspaceSchema) commit(
-    ctx context.Context,
-    parent dagql.ObjectResult[*core.Workspace],
-    args struct {
-        Changes dagql.ID[*core.Changeset]
-        Message string
-    },
-) (core.Void, error) {
-    ws := parent.Self()
-    changeset := /* load args.Changes */
-
-    // Export changeset + git commit via the combined operation
-    err := bk.GitCommitChangeset(ctx,
-        srcRoot,     // mounted changeset diff
-        ws.Root,     // worktree path
-        true,        // merge
-        removePaths, // from changeset
-        args.Message,
-    )
-    return core.Void{}, err
-}
-```
-
-### 4. Files to modify
+### 5. Files to modify
 
 | File | Change |
 |------|--------|
-| `core/workspace.go` | Add `Branch`, `RepoRoot` fields |
-| `core/schema/workspace.go` | Add `withBranch`, `commit` resolvers; branch detection in `currentWorkspace` |
-| `engine/opts.go` | Add `GitBranchDetect`, `GitWorktreeAddOpts`, `GitCommitOpts` |
-| `engine/client/filesync.go` | Handle git-branch-detect, git-worktree-add in `FileSyncSource.DiffCopy`; handle git-commit in `FileSyncTarget.DiffCopy` |
-| `engine/buildkit/filesync.go` | Add `GitBranch()`, `GitWorktreeAdd()`, `GitCommitChangeset()` |
-| `core/integration/workspace_test.go` | Tests for the new API |
+| `core/worktree.go` | **New.** `Worktree` struct, type methods. |
+| `core/workspace.go` | Remove `RepoRoot` if not needed; keep `Branch`. |
+| `core/schema/worktree.go` | **New.** Schema resolvers for `Worktree`. |
+| `core/schema/workspace.go` | Replace `withBranch`/`commit`/`apply` with `worktree`. Move read method impls to shared helpers. |
+| `core/integration/workspace_test.go` | Rewrite commit/apply tests to use `Worktree` API. |
+| `engine/buildkit/filesync.go` | No change (existing `GitCommitChangeset`). |
+| `engine/client/filesync.go` | No change (existing `gitApplyAndCommit`). |
+| `engine/opts.go` | No change. |
 
 ## Data Flow
 
@@ -314,22 +286,28 @@ Agent (engine)                        Host (client)
 
 ws = currentWorkspace()
   ── GitBranch ────────────────────►  git symbolic-ref --short HEAD
-  ◄── "main" ──────────────────────   ← returns branch name
+  ◄── "main" ──────────────────────
 
-ws2 = ws.withBranch("agent/auth")
-  ── GitWorktreeAdd ───────────────►  git worktree add
+wt = ws.worktree("agent/auth")
+  ── GitWorktreeAdd ───────────────►  git worktree add -b agent/auth
                                         ~/src/project-worktrees/agent-auth
-                                        -b agent/auth
-  ◄── "/home/.../agent-auth" ──────   ← returns resolved path
+  ◄── "/home/.../agent-auth" ──────
 
-ws2.glob("**/*.go")                ►  WalkDir in ~/src/project-worktrees/agent-auth/
-ws2.search(pattern: "TODO")        ►  rg in ~/src/project-worktrees/agent-auth/
-ws2.file("main.go")                ►  read from ~/src/project-worktrees/agent-auth/
+wt.directory(".").withNewFile(...)   (engine-side, pure)
 
-ws2.commit(changes, "feat: auth")
+wt2 = wt.withChanges(changeset)
   ── Changeset.Export ─────────────►  write files to ~/src/project-worktrees/agent-auth/
-     + GitCommit                       git add -A
-                                       git commit -m "feat: auth"
+                                       (merge mode, removals applied)
+
+wt2.directory(".")                 ►  read from ~/src/project-worktrees/agent-auth/
+                                       (reflects applied changes)
+
+wt3 = wt2.commit("feat: auth")
+  ── LocalFileExport ──────────────►  write /tmp/dagger-changeset-xxxx.patch
+  ── GitApplyAndCommit ────────────►  stash → temp index → apply --cached
+                                       → write-tree → commit-tree
+                                       → update-ref → reset --hard → stash pop
+  ◄── "<commit-hash>" ────────────
 ```
 
 ## User Experience
@@ -340,10 +318,6 @@ ws2.commit(changes, "feat: auth")
 * main
 
 # Agents start working — worktrees appear as siblings
-$ ls ~/src/
-project/
-project-worktrees/
-
 $ ls ~/src/project-worktrees/
 agent-auth/
 agent-tests/
@@ -351,50 +325,46 @@ agent-tests/
 # Watch an agent work in real-time
 $ cd ~/src/project-worktrees/agent-auth
 $ watch git log --oneline -5
-$ code .   # open in editor
 
 # When done, merge from the main repo
 $ cd ~/src/project
 $ git merge agent/auth
-$ git merge agent/tests
 ```
 
 ## Edge Cases
 
 1. **Branch already exists locally**: `git worktree add <path> <branch>` (no
    `-b`). If the branch is already checked out in another worktree, git errors
-   — this is correct, we already have a Workspace for it.
+   — this is correct, we already have a Worktree for it.
 
 2. **Worktree directory already exists**: Check whether it's a valid worktree
-   for the requested branch. If yes, reuse it. If it's stale or for a different
-   branch, clean up and recreate.
+   for the requested branch. If yes, reuse it. If stale, clean up and recreate.
 
-3. **Committing to the main workspace**: When `ws.Branch` is the checked-out
-   branch of the main repo, `ws.Root == ws.RepoRoot`, and commit operates
-   directly on the main checkout. This is intentional — if you're on that
-   branch, you see the changes.
+3. **Working on the main checkout**: `ws.worktree(ws.branch)` returns a
+   Worktree whose root is the main checkout. Commits go directly to the
+   checked-out branch. The stash/pop flow preserves any user WIP.
 
 4. **Detached HEAD**: `currentWorkspace` falls back to `"HEAD"` for the branch
-   name. `withBranch` always creates a named branch.
+   name. `worktree` always creates a named branch.
 
-5. **Empty changeset**: `git commit --allow-empty` with the message succeeds.
-   Alternatively we could detect and return an error. TBD.
+5. **Empty changeset**: `git apply --cached` on an empty patch is a no-op.
+   `commit-tree` still creates a commit (equivalent to `--allow-empty`).
 
 6. **Concurrent agents on different branches**: Each worktree has its own index
-   file, so `git add` / `git commit` don't interfere.
+   file, so commits don't interfere.
 
-7. **Concurrent agents on the same branch**: The git index lock
-   (`.git/worktrees/<name>/index.lock`) serializes access. Second agent's
-   `git add` blocks until the first completes.
+7. **Multiple `withChanges` before `commit`**: The pending list accumulates all
+   changesets. At `commit` time they are merged into one patch. If changesets
+   conflict with each other, the merge fails with a clear error.
 
-8. **Patch conflicts**: The changeset is exported as a file-level diff. If the
-   worktree has diverged from the changeset's `Before` state, the file writes
-   may produce incorrect results. Agents should base their changesets on the
-   current state of the branch (read via `ws.directory(".")`).
+8. **User edits in the worktree**: The commit flow stashes user changes before
+   updating the worktree and restores them after. If the stash pop conflicts,
+   the error surfaces to the agent.
 
 9. **Worktree cleanup**: Not addressed in this spec. Future work could add
-   `Workspace.remove()` or automatic cleanup when the Dagger session ends.
+   cleanup when the Dagger session ends.
 
-10. **Windows / non-Unix paths**: The worktree path derivation uses
-    filepath-safe operations. Branch name sanitization replaces `/` with `-`.
-    Further special characters may need handling.
+10. **`withChanges` without `commit`**: Perfectly valid. The changes are on disk
+    (visible to the user) but not committed. A subsequent `commit` will capture
+    them. If the Worktree is discarded, the changes remain as uncommitted
+    modifications in the worktree.
