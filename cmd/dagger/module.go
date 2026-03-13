@@ -139,6 +139,7 @@ func init() {
 	moduleAddFlags(shellCmd, shellCmd.PersistentFlags(), true)
 	shellAddFlags(shellCmd)
 	moduleAddFlags(checksCmd, checksCmd.PersistentFlags(), false)
+	moduleAddFlags(generateCmd, generateCmd.PersistentFlags(), false)
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 
