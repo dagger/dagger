@@ -37,7 +37,7 @@ func parseTemplateFiles(t *testing.T, schema *introspection.Schema, paths ...str
 	if len(paths) == 0 {
 		t.Fatalf("parseTemplateFiles requires at least one template path")
 	}
-	funcs := GoTemplateFuncs(t.Context(), schema, "v0.0.0", generator.Config{}, nil, nil, 0)
+	funcs := GoTemplateFuncs(t.Context(), schema, nil, "v0.0.0", generator.Config{}, nil, nil, 0)
 	fullPaths := make([]string, len(paths))
 	for i, path := range paths {
 		fullPaths[i] = filepath.Join("src", path)
