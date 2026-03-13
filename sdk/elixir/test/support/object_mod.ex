@@ -152,6 +152,20 @@ defmodule CacheAttribute do
   end
 end
 
+defmodule CheckAttribute do
+  @moduledoc false
+  use Dagger.Mod.Object, name: "CheckAttribute"
+
+  @check true
+  defn checked_function() :: Dagger.Void.t() do
+    :ok
+  end
+
+  defn unchecked_function() :: Dagger.Void.t() do
+    :ok
+  end
+end
+
 defmodule ReturnVoid do
   @moduledoc false
   use Dagger.Mod.Object, name: "ReturnVoid"

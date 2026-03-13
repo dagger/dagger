@@ -198,6 +198,7 @@ defmodule Dagger.Mod.Object do
       Module.register_attribute(__MODULE__, :function, accumulate: true, persist: true)
       Module.register_attribute(__MODULE__, :field, accumulate: true, persist: true)
       Module.register_attribute(__MODULE__, :cache, accumulate: false, persist: true)
+      Module.register_attribute(__MODULE__, :check, accumulate: false, persist: true)
 
       @before_compile Dagger.Mod.Object
 
@@ -239,10 +240,17 @@ defmodule Dagger.Mod.Object do
       cache_attr =
         Module.get_attribute(__MODULE__, :cache)
 
+      check_attr =
+        Module.get_attribute(__MODULE__, :check)
+
+      Module.put_attribute(__MODULE__, :cache, nil)
+      Module.put_attribute(__MODULE__, :check, nil)
+
       @function {unquote(name),
                  %Dagger.Mod.Object.FunctionDef{
                    self: unquote(has_self?),
                    cache_policy: cache_attr,
+                   check: check_attr,
                    args: unquote(arg_defs),
                    return: unquote(return_def)
                  }}
