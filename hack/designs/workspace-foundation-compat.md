@@ -16,6 +16,10 @@ The target is not "zero UI". The target is "no new primary workspace UX":
 This document is the running source of truth for the branch. Update it after every
 substantive change so an interruption can be resumed from the filesystem alone.
 
+Temporary cross-branch rollout tracking for the Workspace API path contract lives in
+[workspace-api-rollout-tracker.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-api-rollout-tracker.md).
+The canonical contract itself currently lives in the `workspace` PR description.
+
 ## Why This Split
 
 The earlier lockfile split candidate was technically possible only for boring
