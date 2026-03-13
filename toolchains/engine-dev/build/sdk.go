@@ -130,10 +130,12 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			"src/**/*.ts",
+			"telemetry",
 			"LICENSE",
 			"README.md",
 			"runtime",
 			"package.json",
+			"yarn.lock",
 			"tsconfig.json",
 			"rollup.dts.config.mjs",
 			"dagger.json",
@@ -146,22 +148,25 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 
 	bunBuilderCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
-		// NodeJS is required to run tsc.
-		WithExec([]string{"apk", "add", "nodejs"}).
-		// Install tsc binary.
-		WithExec([]string{"bun", "install", "-g", "typescript"}).
+		WithExec([]string{"bun", "install", "-g", "npm"}).
 		// We cannot mount the directory because bun will struggle with symlinks when compiling
 		// the introspector binary.
 		WithDirectory("/src", rootfs).
-		WithWorkdir("/src").
+		WithWorkdir("/src/telemetry").
 		WithExec([]string{"bun", "install"}).
+		WithExec([]string{"bun", "run", "build"}).
+		WithWorkdir("/src").
+		// avoid conflicts with the yarn.lock that has the remote package installed
+		WithExec([]string{"bun", "remove", "@dagger.io/telemetry"}).
+		WithExec([]string{"npm", "pkg", "set", `dependencies[@dagger.io/telemetry]=./telemetry`}).
+		WithExec([]string{"bun", "install", "--omit=peer"}).
 		// Create introspector binary
 		WithExec([]string{"bun", "build", "src/module/entrypoint/introspection_entrypoint.ts", "--compile", "--outfile", "/bin/ts-introspector"}).
 		// Build the SDK bundled that contains the whole static library + default client
 		// The bundle works for all runtimes as long as we target node since deno & bun have compatibility API for node.
 		WithExec([]string{"bun", "build", "./src/index.ts", "--external=typescript", "--target=node", "--outfile", "/out-node/core.js"}).
 		// Emit type declaration for these files
-		WithExec([]string{"tsc", "--emitDeclarationOnly"}).
+		WithExec([]string{"bunx", "tsc", "--emitDeclarationOnly"}).
 		WithExec([]string{"bun", "x", "rollup", "-c", "rollup.dts.config.mjs", "-o", "/out-node/core.d.ts"})
 
 	sdkCtrTarball := dag.Container().
