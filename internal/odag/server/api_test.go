@@ -4165,6 +4165,8 @@ func TestV2FunctionsAndCallLinkage(t *testing.T) {
 	withContainerHex := "5555555555555555"
 	coreConnectHex := "6666666666666666"
 	withWorkdirHex := "7777777777777777"
+	queryModuleHex := "8888888888888888"
+	hostDirectoryHex := "9999999999999999"
 
 	functionState := func(name, originalName, parentOriginalName, returnType string) map[string]any {
 		fields := map[string]any{
@@ -4361,6 +4363,56 @@ func TestV2FunctionsAndCallLinkage(t *testing.T) {
 								},
 								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
 							},
+							{
+								TraceId:           mustDecodeHex(t, moduleTrace),
+								SpanId:            mustDecodeHex(t, queryModuleHex),
+								ParentSpanId:      mustDecodeHex(t, moduleConnectHex),
+								Name:              "Query.module",
+								StartTimeUnixNano: 33,
+								EndTimeUnixNano:   38,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, moduleClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, moduleSessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-query-module"),
+									kvString(t, telemetry.DagOutputAttr, "state-module"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, map[string]any{"type": "Module", "fields": map[string]any{}})),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-query-module",
+										Field:  "module",
+										Type:   &callpbv1.Type{NamedType: "Module"},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
+							{
+								TraceId:           mustDecodeHex(t, moduleTrace),
+								SpanId:            mustDecodeHex(t, hostDirectoryHex),
+								ParentSpanId:      mustDecodeHex(t, moduleConnectHex),
+								Name:              "Host.directory",
+								StartTimeUnixNano: 39,
+								EndTimeUnixNano:   46,
+								Attributes: []*commonpb.KeyValue{
+									kvString(t, telemetry.EngineClientIDAttr, moduleClientID),
+									kvString(t, telemetry.EngineSessionIDAttr, moduleSessionID),
+									kvString(t, telemetry.DagDigestAttr, "call-host-directory"),
+									kvString(t, telemetry.DagOutputAttr, "state-host-directory"),
+									kvString(t, telemetry.DagOutputStateAttr, encodeOutputStateB64(t, map[string]any{"type": "Directory", "fields": map[string]any{}})),
+									kvString(t, telemetry.DagOutputStateVersionAttr, telemetry.DagOutputStateVersionV2),
+									kvString(t, telemetry.DagCallAttr, encodeCallB64(t, &callpbv1.Call{
+										Digest: "call-host-directory",
+										Field:  "directory",
+										Type:   &callpbv1.Type{NamedType: "Directory"},
+										Args: []*callpbv1.Argument{
+											{
+												Name:  "path",
+												Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "/tmp/ws"}},
+											},
+										},
+									})),
+								},
+								Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+							},
 						},
 					},
 				},
@@ -4525,6 +4577,16 @@ func TestV2FunctionsAndCallLinkage(t *testing.T) {
 		t.Fatalf("unexpected Container.withWorkdir function row: %#v", row)
 	}
 
+	coreQueryModuleID := v2FunctionID("Query.module", v2CoreModuleRef)
+	if row, ok := functionsByID[coreQueryModuleID]; !ok || row.CallCount != 1 || row.ModuleRef != v2CoreModuleRef {
+		t.Fatalf("unexpected Query.module function row: %#v", row)
+	}
+
+	coreHostDirectoryID := v2FunctionID("Host.directory", v2CoreModuleRef)
+	if row, ok := functionsByID[coreHostDirectoryID]; !ok || row.CallCount != 1 || row.ModuleRef != v2CoreModuleRef || !sameStrings(row.ArgNames, []string{"path"}) {
+		t.Fatalf("unexpected Host.directory function row: %#v", row)
+	}
+
 	callsReq := httptest.NewRequest(http.MethodGet, "/api/v2/calls?limit=50", nil)
 	callsRec := httptest.NewRecorder()
 	srv.http.Handler.ServeHTTP(callsRec, callsReq)
@@ -4554,6 +4616,12 @@ func TestV2FunctionsAndCallLinkage(t *testing.T) {
 	}
 	if got := callFunctionIDs["Container.withWorkdir"]; got != coreMethodID {
 		t.Fatalf("unexpected Container.withWorkdir function id: got=%q want=%q", got, coreMethodID)
+	}
+	if got := callFunctionIDs["Query.module"]; got != coreQueryModuleID {
+		t.Fatalf("unexpected Query.module function id: got=%q want=%q", got, coreQueryModuleID)
+	}
+	if got := callFunctionIDs["Host.directory"]; got != coreHostDirectoryID {
+		t.Fatalf("unexpected Host.directory function id: got=%q want=%q", got, coreHostDirectoryID)
 	}
 }
 

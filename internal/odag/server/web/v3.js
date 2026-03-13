@@ -715,6 +715,20 @@ const workspaceScopeCache = new WeakMap();
 const deviceScopeCache = new WeakMap();
 const moduleSnapshotCanonicalCache = new WeakMap();
 let autoTableCounter = 0;
+const nonPageObjectTypeNames = new Set([
+  "Boolean",
+  "Env",
+  "Function",
+  "Host",
+  "Int",
+  "Module",
+  "ModuleSource",
+  "ModuleSourceKind",
+  "Query",
+  "String",
+  "TypeDef",
+  "Void",
+]);
 
 const sessionHubEntityIDs = [
   "clients",
@@ -6789,13 +6803,26 @@ function objectTypeLinkFromName(typeName, typeID = "") {
   const directID = String(typeID || "").trim();
   if (directID) {
     const row = objectTypeRowByID(directID);
-    return entityInlineLink("object-types", directID, row?.name || text);
+    if (row) {
+      return entityInlineLink("object-types", row.routeID, row.name || text);
+    }
+    if (isNonPageObjectTypeName(text)) {
+      return detailCode(text);
+    }
   }
   const row = objectTypeRowByName(text);
   if (!row) {
     return detailCode(text);
   }
   return entityInlineLink("object-types", row.routeID, row.name);
+}
+
+function isNonPageObjectTypeName(typeName) {
+  const text = String(typeName || "").trim();
+  if (!text) {
+    return false;
+  }
+  return nonPageObjectTypeNames.has(text);
 }
 
 function objectSummaryLink(dagqlID, label = "") {

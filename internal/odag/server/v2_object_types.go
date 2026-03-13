@@ -50,15 +50,26 @@ type v2TraceObjectTypeClassifier struct {
 }
 
 var v2KnownCoreObjectTypeNames = map[string]struct{}{
-	"CacheVolume":   {},
-	"Changeset":     {},
-	"Container":     {},
-	"Directory":     {},
-	"File":          {},
-	"GitRef":        {},
-	"GitRepository": {},
-	"Secret":        {},
-	"Service":       {},
+	"Boolean":          {},
+	"CacheVolume":      {},
+	"Changeset":        {},
+	"Container":        {},
+	"Directory":        {},
+	"Env":              {},
+	"File":             {},
+	"Function":         {},
+	"GitRef":           {},
+	"GitRepository":    {},
+	"Host":             {},
+	"Int":              {},
+	"Module":           {},
+	"ModuleSource":     {},
+	"ModuleSourceKind": {},
+	"Secret":           {},
+	"Service":          {},
+	"String":           {},
+	"TypeDef":          {},
+	"Void":             {},
 }
 
 func (s *Server) handleV2ObjectTypes(w http.ResponseWriter, r *http.Request) {
