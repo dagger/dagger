@@ -16,3 +16,13 @@ query CheckGroupRunStatuses($checkGroup: CheckGroupID!) {
     }
   }
 }
+
+query CheckGroupRunStatusesFailFast($checkGroup: CheckGroupID!) {
+  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
+    run(failFast: true) {
+      list {
+        passed
+      }
+    }
+  }
+}

@@ -1447,9 +1447,20 @@ func (r *CheckGroup) Report() *File {
 	}
 }
 
+// CheckGroupRunOpts contains options for CheckGroup.Run
+type CheckGroupRunOpts struct {
+	FailFast bool
+}
+
 // Execute all selected checks
-func (r *CheckGroup) Run() *CheckGroup {
+func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `failFast` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FailFast) {
+			q = q.Arg("failFast", opts[i].FailFast)
+		}
+	}
 
 	return &CheckGroup{
 		query: q,
