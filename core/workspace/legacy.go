@@ -3,6 +3,8 @@ package workspace
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/dagger/dagger/core/modules"
 )
 
 // LegacyToolchain represents a toolchain extracted from a legacy dagger.json,
@@ -12,6 +14,7 @@ type LegacyToolchain struct {
 	Source         string
 	Pin            string
 	ConfigDefaults map[string]any
+	Customizations []*modules.ModuleConfigArgument
 }
 
 // LegacyBlueprint represents a blueprint extracted from a legacy dagger.json.
@@ -50,35 +53,35 @@ func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
 	}
 	result := make([]LegacyToolchain, len(cfg.Toolchains))
 	for i, tc := range cfg.Toolchains {
+		if tc == nil {
+			continue
+		}
 		result[i] = LegacyToolchain{
 			Name:           tc.Name,
 			Source:         tc.Source,
 			Pin:            tc.Pin,
 			ConfigDefaults: extractConfigDefaults(tc.Customizations),
+			Customizations: cloneCustomizations(tc.Customizations),
 		}
 	}
 	return result, nil
 }
 
 // parseLegacyConfig parses a legacy dagger.json into the internal representation.
-func parseLegacyConfig(data []byte) (*legacyConfig, error) {
-	var cfg legacyConfig
+func parseLegacyConfig(data []byte) (*modules.ModuleConfig, error) {
+	var cfg modules.ModuleConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing legacy config: %w", err)
-	}
-	// Normalize: if SDK is set but Source isn't, Source was implicitly "."
-	if cfg.SDK != nil && cfg.SDK.Source != "" && cfg.Source == "" {
-		cfg.Source = "."
 	}
 	return &cfg, nil
 }
 
 // extractConfigDefaults extracts constructor arg defaults from legacy customizations.
 // Only constructor-level customizations with a non-empty Default value are included.
-func extractConfigDefaults(customizations []*legacyCustomization) map[string]any {
+func extractConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any {
 	config := make(map[string]any)
 	for _, cust := range customizations {
-		if cust.IsConstructor() && cust.Default != "" {
+		if cust != nil && len(cust.Function) == 0 && cust.Default != "" {
 			config[cust.Argument] = cust.Default
 		}
 	}
@@ -88,112 +91,23 @@ func extractConfigDefaults(customizations []*legacyCustomization) map[string]any
 	return config
 }
 
-// legacyConfig is the dagger.json config format used before the workspace model.
-type legacyConfig struct {
-	Name          string              `json:"name"`
-	EngineVersion string              `json:"engineVersion"`
-	SDK           *legacySDK          `json:"sdk,omitempty"`
-	Source        string              `json:"source,omitempty"`
-	Blueprint     *legacyDependency   `json:"blueprint,omitempty"`
-	Toolchains    []*legacyDependency `json:"toolchains,omitempty"`
-	Dependencies  []*legacyDependency `json:"dependencies,omitempty"`
-	Include       []string            `json:"include,omitempty"`
-	Codegen       json.RawMessage     `json:"codegen,omitempty"`
-	Clients       json.RawMessage     `json:"clients,omitempty"`
-}
-
-// legacySDK represents the sdk field in dagger.json.
-// Supports both string and object forms for backwards compat.
-type legacySDK struct {
-	Source string         `json:"source"`
-	Config map[string]any `json:"config,omitempty"`
-}
-
-func (sdk *legacySDK) UnmarshalJSON(data []byte) error {
-	if sdk == nil {
-		return fmt.Errorf("cannot unmarshal into nil legacySDK")
-	}
-	if len(data) == 0 {
-		sdk.Source = ""
-		return nil
-	}
-	// Legacy format: sdk was a string like "go"
-	if data[0] == '"' {
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return fmt.Errorf("unmarshal sdk as string: %w", err)
+func cloneCustomizations(customizations []*modules.ModuleConfigArgument) []*modules.ModuleConfigArgument {
+	result := make([]*modules.ModuleConfigArgument, 0, len(customizations))
+	for _, cust := range customizations {
+		if cust == nil {
+			continue
 		}
-		*sdk = legacySDK{Source: s}
+		result = append(result, &modules.ModuleConfigArgument{
+			Function:       append([]string(nil), cust.Function...),
+			Argument:       cust.Argument,
+			Default:        cust.Default,
+			DefaultPath:    cust.DefaultPath,
+			DefaultAddress: cust.DefaultAddress,
+			Ignore:         append([]string(nil), cust.Ignore...),
+		})
+	}
+	if len(result) == 0 {
 		return nil
 	}
-	type alias legacySDK
-	var tmp alias
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return fmt.Errorf("unmarshal sdk as struct: %w", err)
-	}
-	*sdk = legacySDK(tmp)
-	return nil
-}
-
-// legacyDependency represents a dependency/toolchain entry in dagger.json.
-type legacyDependency struct {
-	Name           string                 `json:"name"`
-	Source         string                 `json:"source"`
-	Pin            string                 `json:"pin,omitempty"`
-	Customizations []*legacyCustomization `json:"customizations,omitempty"`
-	IgnoreChecks   []string               `json:"ignoreChecks,omitempty"`
-}
-
-func (dep *legacyDependency) UnmarshalJSON(data []byte) error {
-	if dep == nil {
-		return fmt.Errorf("cannot unmarshal into nil legacyDependency")
-	}
-	if len(data) == 0 {
-		dep.Source = ""
-		return nil
-	}
-	// Legacy format: deps were just strings like "./path"
-	if data[0] == '"' {
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return fmt.Errorf("unmarshal dependency as string: %w", err)
-		}
-		*dep = legacyDependency{Source: s}
-		return nil
-	}
-	type alias legacyDependency
-	var tmp alias
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return fmt.Errorf("unmarshal dependency: %w", err)
-	}
-	*dep = legacyDependency(tmp)
-	return nil
-}
-
-// legacyCustomization represents a toolchain customization entry.
-type legacyCustomization struct {
-	Function    []string `json:"function,omitempty"`
-	Argument    string   `json:"argument"`
-	Default     string   `json:"default,omitempty"`
-	DefaultPath string   `json:"defaultPath,omitempty"`
-	Ignore      []string `json:"ignore,omitempty"`
-}
-
-// IsConstructor returns true if this customization applies to the constructor
-// (i.e. Function is empty or nil).
-func (c *legacyCustomization) IsConstructor() bool {
-	return len(c.Function) == 0
-}
-
-// newModuleJSON is the cleaned-up dagger.json for a migrated module.
-// Source and Toolchains are removed; dependency paths are rewritten.
-type newModuleJSON struct {
-	Name          string              `json:"name"`
-	EngineVersion string              `json:"engineVersion,omitempty"`
-	SDK           *legacySDK          `json:"sdk,omitempty"`
-	Source        string              `json:"source,omitempty"`
-	Dependencies  []*legacyDependency `json:"dependencies,omitempty"`
-	Include       []string            `json:"include,omitempty"`
-	Codegen       json.RawMessage     `json:"codegen,omitempty"`
-	Clients       json.RawMessage     `json:"clients,omitempty"`
+	return result
 }
