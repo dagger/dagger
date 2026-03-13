@@ -562,9 +562,8 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 		})
 
 		t.Run("env (legacy implicit)", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "shhh", out)
+			_, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
+			require.Error(t, err)
 		})
 
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
@@ -1411,11 +1410,11 @@ import (
 type Test struct{}
 
 type SocketIDResponse struct {
-	Host struct{ 
-		UnixSocket struct{ 
-			Id string 
-		} 
-	} 
+	Host struct{
+		UnixSocket struct{
+			Id string
+		}
+	}
 }
 
 func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string) error {
@@ -2628,7 +2627,7 @@ from dagger import dag
 
 @dagger.enum_type
 class Language(enum.Enum):
-    GO = "GO" 
+    GO = "GO"
     PYTHON = "PYTHON"
     TYPESCRIPT = "TYPESCRIPT"
     PHP = "PHP"
