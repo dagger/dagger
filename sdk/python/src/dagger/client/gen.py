@@ -2570,6 +2570,7 @@ class Container(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
+        permissions: int | None = None,
         expand: bool | None = False,
     ) -> Self:
         """Return a new container snapshot, with a directory added to its
@@ -2594,6 +2595,9 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        permissions:
+            Permission given to the copied directory and contents (e.g.,
+            0755).
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -2606,6 +2610,7 @@ class Container(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
+            Arg("permissions", permissions, None),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withDirectory", _args)
@@ -3008,6 +3013,7 @@ class Container(Type):
         source: "Directory",
         *,
         owner: str | None = "",
+        read_only: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a directory mounted at the given path.
@@ -3023,6 +3029,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        read_only:
+            Mount the directory read-only.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3032,6 +3040,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("readOnly", read_only, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedDirectory", _args)
@@ -4433,6 +4442,7 @@ class Directory(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
+        permissions: int | None = None,
     ) -> Self:
         """Return a snapshot with a directory added
 
@@ -4455,6 +4465,9 @@ class Directory(Type):
             The user and group must be an ID (1000:1000), not a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        permissions:
+            Permission given to the copied directory and contents (e.g.,
+            0755).
         """
         _args = [
             Arg("path", path),
@@ -4463,6 +4476,7 @@ class Directory(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -12106,6 +12120,7 @@ class Client(Root):
         *,
         name: str | None = None,
         permissions: int | None = None,
+        checksum: str | None = None,
         auth_header: "Secret | None" = None,
         experimental_service_host: "Service | None" = None,
     ) -> File:
@@ -12120,6 +12135,8 @@ class Client(Root):
             URL.
         permissions:
             Permissions to set on the file.
+        checksum:
+            Expected digest of the downloaded content (e.g., "sha256:...").
         auth_header:
             Secret used to populate the Authorization HTTP header
         experimental_service_host:
@@ -12129,6 +12146,7 @@ class Client(Root):
             Arg("url", url),
             Arg("name", name, None),
             Arg("permissions", permissions, None),
+            Arg("checksum", checksum, None),
             Arg("authHeader", auth_header, None),
             Arg("experimentalServiceHost", experimental_service_host, None),
         ]

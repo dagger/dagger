@@ -926,6 +926,9 @@ type Container {
     """
     owner: String = ""
 
+    """Permission given to the copied directory and contents (e.g., 0755)."""
+    permissions: Int
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1230,6 +1233,9 @@ type Container {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Mount the directory read-only."""
+    readOnly: Boolean = false
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -1997,6 +2003,9 @@ type Directory {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Permission given to the copied directory and contents (e.g., 0755)."""
+    permissions: Int
   ): Directory!
 
   """Raise an error."""
@@ -4893,6 +4902,9 @@ type Query {
 
     """Permissions to set on the file."""
     permissions: Int
+
+    """Expected digest of the downloaded content (e.g., "sha256:...")."""
+    checksum: String
 
     """Secret used to populate the Authorization HTTP header"""
     authHeader: SecretID
