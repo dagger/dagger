@@ -115,7 +115,7 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focusedIdx int
+	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
@@ -2675,7 +2675,7 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 	} else {
 		fe.renderStepError(out, r, row, prefix)
 	}
-	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+	fe.renderDebug(out, row.Span, prefix+BorderLeft+" ", false)
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
@@ -2959,7 +2959,14 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 				return nil
 			}
 			r.fancyIndent(out, row, false, false)
-			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+			var bar termenv.Style
+			if span.LLMThinking {
+				bar = LLMThinkingPrefix.Style(out)
+			} else if span.LLMRole == telemetry.LLMRoleAssistant {
+				bar = LLMResponsePrefix.Style(out)
+			} else {
+				bar = LLMUserPrefix.Style(out)
+			}
 			if isFocused {
 				bar = hl(bar)
 			}
@@ -3035,12 +3042,18 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	r.fancyIndent(out, row, false, true)
 
 	if row.Span.LLMRole != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
-		case telemetry.LLMRoleAssistant:
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+		var bar termenv.Style
+		if span.LLMThinking {
+			bar = LLMThinkingPrefix.Style(out)
+		} else if span.LLMRole == telemetry.LLMRoleAssistant {
+			bar = LLMResponsePrefix.Style(out)
+		} else {
+			bar = LLMUserPrefix.Style(out)
 		}
+		if isFocused {
+			bar = hl(bar)
+		}
+		fmt.Fprint(out, bar)
 		fmt.Fprint(out, " ")
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
@@ -3257,11 +3270,19 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	span := row.Span
 	depth := row.Depth
 
-	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	// Sync thinking flag from span snapshot on every render, since the span
+	// attribute may arrive after the Vterm was first created by the log exporter.
+	logs.Thinking = span.LLMThinking
+
 	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+
+	var pipe termenv.Style
 	if span.LLMThinking {
-		pipe = out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack).Faint()
-		dashed = out.String(VertBoldDash3).Foreground(termenv.ANSIBrightBlack).Faint()
+		pipe = LLMThinkingPrefix.Style(out)
+	} else if span.LLMRole == telemetry.LLMRoleAssistant {
+		pipe = LLMResponsePrefix.Style(out)
+	} else {
+		pipe = LLMUserPrefix.Style(out)
 	}
 	if focused {
 		pipe = hl(pipe)
@@ -3446,10 +3467,6 @@ func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 		term = NewVterm(l.Profile)
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
-		}
-		// Check if this span is a thinking span
-		if span, ok := l.DB.Spans.Map[spanID]; ok && span.LLMThinking {
-			term.Thinking = true
 		}
 		l.Logs[spanID] = term
 	}

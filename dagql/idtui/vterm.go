@@ -254,8 +254,8 @@ func (term *Vterm) View() string {
 var MarkdownStyle = styles.LightStyleConfig
 
 // ThinkingMarkdownStyle is used for LLM thinking/reasoning output.
-// It renders text dim and italic to visually distinguish it from
-// normal assistant output.
+// All text is rendered in a dim gray (ANSIBrightBlack equivalent)
+// and italic to visually distinguish it from normal assistant output.
 var ThinkingMarkdownStyle ansi.StyleConfig
 
 func init() {
@@ -269,17 +269,16 @@ func init() {
 	// No real point setting a custom foreground, it just looks weird.
 	MarkdownStyle.Document.Color = nil
 
-	// Build thinking style: clone the base style and set Faint+Italic
-	// on the document so all text inherits it.
+	// Build thinking style: clone the base style and set all text to
+	// a dim gray + italic. We use ANSI 90 which is "bright black" —
+	// the same color as termenv.ANSIBrightBlack.
 	ThinkingMarkdownStyle = MarkdownStyle
 	t := true
-	ThinkingMarkdownStyle.Document.StylePrimitive.Italic = &t
-	ThinkingMarkdownStyle.Document.StylePrimitive.Faint = &t
-	// Also dim the foreground color for dark backgrounds
-	dimColor := "245" // ANSI 256-color gray
+	dimColor := "8" // ANSI color index 8 = termenv.ANSIBrightBlack
 	ThinkingMarkdownStyle.Document.StylePrimitive.Color = &dimColor
+	ThinkingMarkdownStyle.Document.StylePrimitive.Italic = &t
+	ThinkingMarkdownStyle.Paragraph.Color = &dimColor
 	ThinkingMarkdownStyle.Paragraph.Italic = &t
-	ThinkingMarkdownStyle.Paragraph.Faint = &t
 }
 
 func (term *Vterm) redraw() {
