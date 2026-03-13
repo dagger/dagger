@@ -4644,6 +4644,7 @@ function renderClientDetail(entity, row) {
   const callTable = renderTableHTML({
     columns: [
       { label: "Call", render: (item) => linkedCallCell(callSignatureText(item), callTableSubtitle(item), entityPath("calls", item.routeID)) },
+      { label: "Function", render: (item) => callFunctionCell(item) },
       { label: "Return Type", render: (item) => objectTypeLinkFromName(item.returnType, item.returnTypeID) },
       { label: "Return value", render: (item) => callReturnValueCell(item) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
@@ -5444,6 +5445,12 @@ function callsTableModel(entity, sectionID) {
             render: (row) => linkedCallCell(callSignatureText(row), callTableSubtitle(row), entityPath(entity.id, row.routeID)),
             sortValue: (row) => callSignatureText(row),
             filterValue: (row) => `${callSignatureText(row)} ${callTableSubtitle(row)}`,
+          },
+          {
+            label: "Function",
+            render: (row) => callFunctionCell(row),
+            sortValue: (row) => callFunctionLabel(row),
+            filterValue: (row) => callFunctionLabel(row),
           },
           { label: "Return Type", render: (row) => objectTypeLinkFromName(row.returnType, row.returnTypeID) },
           { label: "Return value", render: (row) => callReturnValueCell(row) },
@@ -6691,6 +6698,23 @@ function callReturnValueCell(row) {
     return entityInlineLink("objects", output.routeID, objectTitle(output));
   }
   return detailCode(shortDagqlID(dagqlID));
+}
+
+function callFunctionLabel(row) {
+  const functionRow = functionRowForCall(row);
+  if (functionRow) {
+    return functionTitle(functionRow);
+  }
+  return callFieldName(row);
+}
+
+function callFunctionCell(row) {
+  const functionRow = functionRowForCall(row);
+  if (functionRow) {
+    return entityInlineLink("functions", functionRow.routeID, functionTitle(functionRow));
+  }
+  const fallback = callFieldName(row);
+  return fallback ? detailCode(fallback) : "None";
 }
 
 function callSummaryLink(callID, label = "") {
