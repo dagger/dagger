@@ -173,7 +173,7 @@ type LocalImportOpts struct {
 	GitBranchDetect      bool                `json:"git_branch_detect,omitempty"`
 	GitRevParseHead      bool                `json:"git_rev_parse_head,omitempty"`
 	GitWorktreeAdd       *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
-	GitAddAndCommit      *GitCommitOpts      `json:"git_add_and_commit,omitempty"`
+	GitApplyAndCommit    *GitApplyCommitOpts `json:"git_apply_and_commit,omitempty"`
 }
 
 // GitWorktreeAddOpts configures a git worktree add operation on the client.
@@ -287,9 +287,13 @@ type LocalExportOpts struct {
 	RemovePaths []string `json:"remove_paths"`
 }
 
-// GitCommitOpts configures a git add + commit operation on the client.
-type GitCommitOpts struct {
-	Message string `json:"message"`
+// GitApplyCommitOpts configures a git commit from a patch file on the client.
+// The commit is built entirely via git plumbing (temporary index + apply --cached
+// + write-tree + commit-tree + update-ref) so it never touches the user's
+// working tree or normal index.
+type GitApplyCommitOpts struct {
+	Message   string `json:"message"`
+	PatchFile string `json:"patch_file"` // absolute path to the patch file on the client
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

@@ -133,25 +133,12 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		}
 		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
 
-	case opts.GitAddAndCommit != nil:
-		cmd := exec.CommandContext(ctx, "git", "add", "-A")
-		cmd.Dir = absPath
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git add -A: %w: %s", err, out)
-		}
-		cmd = exec.CommandContext(ctx, "git", "commit", "--allow-empty", "-m", opts.GitAddAndCommit.Message)
-		cmd.Dir = absPath
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git commit: %w: %s", err, out)
-		}
-		// Return the commit hash
-		cmd = exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
-		cmd.Dir = absPath
-		out, err := cmd.Output()
+	case opts.GitApplyAndCommit != nil:
+		commitHash, err := gitApplyAndCommit(ctx, absPath, opts.GitApplyAndCommit)
 		if err != nil {
-			return fmt.Errorf("git rev-parse HEAD: %w", err)
+			return err
 		}
-		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
+		return stream.SendMsg(&filesync.BytesMessage{Data: []byte(commitHash)})
 
 	case opts.GitWorktreeAdd != nil:
 		wopts := opts.GitWorktreeAdd
@@ -848,4 +835,120 @@ func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) e
 	}
 
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
+}
+
+// gitApplyAndCommit creates a git commit by applying a patch via plumbing
+// commands, without touching the user's working tree or normal index.
+//
+// Flow:
+//  1. Create a temporary index file
+//  2. git read-tree HEAD into the temp index
+//  3. git apply --cached the patch into the temp index
+//  4. git write-tree to create a tree object
+//  5. git commit-tree to create the commit
+//  6. git update-ref HEAD to advance the branch
+//  7. Reset the worktree to match the new HEAD
+//  8. Clean up the temp patch and index files
+func gitApplyAndCommit(ctx context.Context, repoDir string, opts *engine.GitApplyCommitOpts) (_ string, rerr error) {
+	patchFile := opts.PatchFile
+
+
+
+	tmpIndex, err := os.CreateTemp("", "dagger-index-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp index: %w", err)
+	}
+	tmpIndex.Close()
+	defer os.Remove(tmpIndex.Name())
+
+	// Helper that runs git against the real index/worktree.
+	realGit := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	// Helper that runs git against a temporary index so we never touch
+	// the user's real index or worktree during the commit build.
+	gitEnv := append(os.Environ(), "GIT_INDEX_FILE="+tmpIndex.Name())
+	git := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoDir
+		cmd.Env = gitEnv
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	// Populate the temp index from the current HEAD tree.
+	if _, err := git("read-tree", "HEAD"); err != nil {
+		return "", err
+	}
+
+	// Apply the patch to the temp index only (--cached = index, not worktree).
+	patchStat, err := os.Stat(patchFile)
+	if err != nil {
+		return "", fmt.Errorf("stat patch file: %w", err)
+	}
+	if patchStat.Size() > 0 {
+		if _, err := git("apply", "--cached", patchFile); err != nil {
+			return "", err
+		}
+	}
+
+	// Write the index as a tree object.
+	tree, err := git("write-tree")
+	if err != nil {
+		return "", err
+	}
+
+	// Create the commit object.
+	commitHash, err := git("commit-tree", tree, "-p", "HEAD", "-m", opts.Message)
+	if err != nil {
+		return "", err
+	}
+
+	// The patch file lives in the worktree; remove it before we inspect
+	// status so it doesn't get swept into the stash.
+	os.Remove(patchFile)
+
+	// Stash any local user changes BEFORE we move HEAD. The real index
+	// is still in sync with the current HEAD, so git status only reports
+	// genuine user edits — not artifacts of the HEAD move.
+	status, err := realGit("status", "--porcelain")
+	if err != nil {
+		return "", fmt.Errorf("check working tree: %w", err)
+	}
+	hasLocalChanges := status != ""
+	if hasLocalChanges {
+		if _, err := realGit("stash", "--include-untracked"); err != nil {
+			return "", fmt.Errorf("stash local changes: %w", err)
+		}
+	}
+
+	// Advance the branch ref.
+	if _, err := git("update-ref", "HEAD", commitHash); err != nil {
+		return "", err
+	}
+
+	// Fast-forward the worktree and real index to the new HEAD.
+	if _, err := realGit("reset", "--hard", "HEAD"); err != nil {
+		return "", fmt.Errorf("update worktree: %w", err)
+	}
+
+	// Restore the user's changes on top. If their edits conflict with
+	// the committed changeset that's a real conflict and should surface.
+	if hasLocalChanges {
+		if _, err := realGit("stash", "pop"); err != nil {
+			return "", fmt.Errorf("restore local changes (conflict?): %w", err)
+		}
+	}
+
+	return commitHash, nil
 }

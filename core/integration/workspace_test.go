@@ -1048,6 +1048,75 @@ type Multi {
 		require.NoError(t, err)
 		require.Equal(t, "second", out)
 	})
+
+	t.Run("commit preserves local changes", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("preserver", `
+type Preserver {
+  pub hash: String!
+
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/preserve")
+    let before = ws2.directory(".")
+    let after = before.withNewFile("agent-file.txt", contents: "from agent")
+    let changeset = after.changes(before)
+    self.hash = ws2.commit(changes: changeset, message: "feat: agent change")
+    self
+  }
+}
+`))
+
+		// Simulate local user edits in the worktree BEFORE running the
+		// module. We first create the worktree so the user can put files
+		// there, then run dagger call which commits on top.
+		ctr = ctr.
+			WithExec([]string{"git", "worktree", "add", "-b", "agent/preserve",
+				"/work-worktrees/agent-preserve"}).
+			WithExec([]string{"sh", "-c",
+				"echo user wip > /work-worktrees/agent-preserve/user-wip.txt"})
+
+		committed := ctr.With(daggerCall("preserver", "hash"))
+		hashOut, err := committed.Stdout(ctx)
+		require.NoError(t, err)
+		hash := strings.TrimSpace(hashOut)
+		require.Len(t, hash, 40, "expected full sha1 commit hash, got %q", hash)
+
+		// Agent's committed file should be on disk.
+		agentFile, err := committed.
+			WithWorkdir("/work-worktrees/agent-preserve").
+			WithExec([]string{"cat", "agent-file.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from agent", agentFile)
+
+		// User's local (uncommitted) file should still be there.
+		userFile, err := committed.
+			WithWorkdir("/work-worktrees/agent-preserve").
+			WithExec([]string{"cat", "user-wip.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "user wip\n", userFile)
+
+		// The git log should show the agent commit, not the user's file.
+		logOut, err := committed.
+			WithWorkdir("/work-worktrees/agent-preserve").
+			WithExec([]string{"git", "log", "--oneline", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, logOut, "feat: agent change")
+
+		// User's file should NOT be committed.
+		statusOut, err := committed.
+			WithWorkdir("/work-worktrees/agent-preserve").
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, statusOut, "user-wip.txt",
+			"user's uncommitted file should show in git status")
+	})
 }
 
 // TestWorkspaceContentAddressed verifies that when a module constructor takes

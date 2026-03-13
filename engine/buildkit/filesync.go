@@ -3,6 +3,8 @@ package buildkit
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -193,38 +195,39 @@ func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePa
 	return string(msg.Data), nil
 }
 
-// GitCommitChangeset exports a directory to the client host, creates a git
-// commit, and returns the commit hash.
+// GitCommitChangeset applies a changeset patch to the given git directory on
+// the client host and creates a commit, returning the commit hash.
+//
+// The commit is built entirely via git plumbing commands (temporary index,
+// git apply --cached, write-tree, commit-tree, update-ref) so it never
+// touches the user's working tree or normal index. After the commit is
+// created, the worktree is updated to match.
 func (c *Client) GitCommitChangeset(
 	ctx context.Context,
-	srcPath string,
+	patchSrcPath string,
 	destPath string,
-	merge bool,
-	removePaths []string,
 	message string,
 ) (string, error) {
 	cleanDest := path.Clean(destPath)
 
-	// Step 1: Export files to the worktree
-	err := c.localDirExportWithOpts(ctx, srcPath, engine.LocalExportOpts{
-		Path:        cleanDest,
-		Merge:       merge,
-		RemovePaths: removePaths,
-	})
-	if err != nil {
-		return "", fmt.Errorf("export changeset: %w", err)
+	// Step 1: Export the patch file to a temp location on the client,
+	// outside the repo so it never appears in git status.
+	patchDest := fmt.Sprintf("/tmp/dagger-changeset-%s.patch", randomHex(8))
+	if err := c.LocalFileExport(ctx, patchSrcPath, "changeset.patch", patchDest, false); err != nil {
+		return "", fmt.Errorf("export patch file: %w", err)
 	}
 
-	// Step 2: Run git add + commit via a separate diffcopy call
+	// Step 2: Apply the patch and commit via git plumbing.
 	msg := filesync.BytesMessage{}
-	err = c.diffcopy(ctx, engine.LocalImportOpts{
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
 		Path: cleanDest,
-		GitAddAndCommit: &engine.GitCommitOpts{
-			Message: message,
+		GitApplyAndCommit: &engine.GitApplyCommitOpts{
+			Message:   message,
+			PatchFile: patchDest,
 		},
 	}, &msg)
 	if err != nil {
-		return "", fmt.Errorf("git commit: %w", err)
+		return "", fmt.Errorf("git apply+commit: %w", err)
 	}
 	return string(msg.Data), nil
 }
@@ -440,4 +443,10 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		return fmt.Errorf("unexpected closing recv msg: %w", err)
 	}
 	return nil
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
