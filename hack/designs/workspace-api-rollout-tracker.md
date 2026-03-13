@@ -98,6 +98,48 @@ Branch docs:
   surface.
 - `ws.address` is not exposed yet and will need to be added in the shared
   implementation pass.
+- Workspace-side shared implementation is now in progress in a dedicated
+  `workspace` worktree at
+  `/Users/shykes/git/github.com/dagger/dagger_workspace_shared`.
+- Shared implementation changes currently staged there:
+  - `core/workspace.go`
+    - add public `Address`
+    - tighten `Path` doc to "workspace directory path relative to boundary"
+  - `engine/server/session.go`
+    - compute canonical local and remote workspace addresses
+    - thread address population through workspace construction
+  - `core/schema/workspace.go`
+    - document the new contract on `directory`, `file`, and `findUp`
+    - return absolute boundary-rooted paths from `findUp`
+    - stop `findUp` at the workspace boundary
+  - `core/schema/workspace_test.go`
+    - unit tests for resolver behavior and public path formatting
+  - `engine/server/session_lock_test.go`
+    - focused tests for local/remote workspace address formatting
+  - `core/integration/workspace_test.go`
+    - update `findUp` expectations
+    - add a nested-workspace contract test
+- Verified green on the shared implementation:
+  - `toolchains/engine-dev test --pkg=./core/schema --run='Test(ResolveWorkspacePath|WorkspaceAPIPath|MatchWorkspaceInclude)$'`
+  - earlier focused `engine/server` address tests were green before the latest
+    integration-helper iteration; reruns are still noisy and expensive
+- New implementation detail discovered:
+  - adding `Workspace.address` is a public schema change and will require generated
+    schema/SDK updates on `workspace`
+  - likely files:
+    - `docs/docs-graphql/schema.graphqls`
+    - `sdk/go/dagger.gen.go`
+    - `sdk/typescript/src/api/client.gen.ts`
+    - `sdk/python/src/dagger/client/gen.py`
+    - `sdk/rust/crates/dagger-sdk/src/gen.rs`
+    - `sdk/php/generated/Workspace.php`
+- Current blocker while validating task `3` end-to-end:
+  - the existing `workspace` integration helper pattern that scaffolds workspace
+    modules under `.dagger/modules/<name>` is not a clean signal for this batch
+  - path-contract tests that only need a callable module should use standalone module
+    init instead of depending on workspace-module authoring
+  - do not treat this helper/authoring mismatch as part of the Workspace path
+    contract itself
 
 ## Rollout Order
 
@@ -110,7 +152,7 @@ Branch docs:
    - reference the `workspace` PR description as canonical
    - record plumbing-specific implications only
 
-3. Implement the shared Workspace path semantics on `workspace`.
+3. [~] Implement the shared Workspace path semantics on `workspace`.
    - resolver behavior for relative vs absolute paths
    - `ws.path`
    - `ws.address`
