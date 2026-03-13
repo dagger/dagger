@@ -717,6 +717,7 @@ const moduleSnapshotCanonicalCache = new WeakMap();
 let autoTableCounter = 0;
 
 const sessionHubEntityIDs = [
+  "clients",
   "pipelines",
   "repls",
   "shells",
@@ -901,6 +902,7 @@ function bindEvents() {
     state.importTraceOpen = false;
     sanitizeSessionFilterSelection();
     render();
+    void ensureActiveEntityData();
   });
 
   window.addEventListener("popstate", () => {
@@ -1070,7 +1072,7 @@ async function ensureActiveEntityData() {
     void shellHydration;
     return;
   }
-  await ensureLiveDomainData(config);
+  await ensureLiveDomainData(config, activeSessionFetchScope());
   void shellHydration;
 }
 
@@ -1084,10 +1086,14 @@ function ensureShellHydration() {
 }
 
 async function ensureSessionDetailData() {
+  await ensureLiveDomainData(liveDomainConfigs.sessions);
+  const sessionEntity = materializedEntityByID("sessions");
+  const sessionRow = currentDetailItem(sessionEntity);
+  const scope = sessionRow?.id ? { sessionID: String(sessionRow.id || "") } : null;
   const jobs = ["sessions", ...sessionHubEntityIDs]
     .map((entityID) => liveDomainConfigs[entityID])
     .filter(Boolean)
-    .map((config) => ensureLiveDomainData(config));
+    .map((config) => ensureLiveDomainData(config, config.stateKey === "sessions" ? null : scope));
   await Promise.all(jobs);
 }
 
@@ -1100,18 +1106,23 @@ async function ensureDeviceDetailData() {
 }
 
 async function ensureClientDetailData() {
+  await ensureLiveDomainData(liveDomainConfigs.clients, activeSessionFetchScope());
+  const clientEntity = materializedEntityByID("clients");
+  const clientRow = currentDetailItem(clientEntity);
+  const scope = clientRow?.sessionID ? { sessionID: String(clientRow.sessionID || "") } : activeSessionFetchScope();
   const jobs = clientDetailEntityIDs
     .map((entityID) => liveDomainConfigs[entityID])
     .filter(Boolean)
-    .map((config) => ensureLiveDomainData(config));
+    .map((config) => ensureLiveDomainData(config, config.stateKey === "devices" ? null : scope));
   await Promise.all(jobs);
 }
 
 async function ensureSubstrateDetailData() {
+  const scope = activeSessionFetchScope();
   const jobs = substrateDetailEntityIDs
     .map((entityID) => liveDomainConfigs[entityID])
     .filter(Boolean)
-    .map((config) => ensureLiveDomainData(config));
+    .map((config) => ensureLiveDomainData(config, scope));
   await Promise.all(jobs);
 }
 
@@ -1123,31 +1134,86 @@ async function ensureOverviewData() {
   await Promise.all(jobs);
 }
 
-async function ensureLiveDomainData(config) {
+async function ensureLiveDomainData(config, scope = null) {
   if (!config) {
     return;
   }
   const entry = state.live[config.stateKey];
-  if (entry.status === "loading" || entry.status === "loaded") {
+  const normalizedScope = normalizeLiveScope(scope);
+  const scopeKey = liveScopeKey(normalizedScope);
+  if ((entry.status === "loading" || entry.status === "loaded") && String(entry.scopeKey || "") === scopeKey) {
     return;
   }
   entry.status = "loading";
   entry.error = "";
+  entry.scopeKey = scopeKey;
   render();
   try {
-    const res = await fetch(config.endpoint);
+    const res = await fetch(liveEndpointWithScope(config.endpoint, normalizedScope));
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
     const payload = await res.json();
+    if (String(entry.scopeKey || "") !== scopeKey) {
+      return;
+    }
     entry.items = Array.isArray(payload.items) ? payload.items : [];
     entry.status = "loaded";
     entry.error = "";
   } catch (err) {
+    if (String(entry.scopeKey || "") !== scopeKey) {
+      return;
+    }
     entry.status = "error";
     entry.error = err instanceof Error ? err.message : String(err || "unknown error");
   }
   render();
+}
+
+function activeSessionFetchScope() {
+  const sessionRow = currentSessionFilterRow();
+  const sessionID = String(sessionRow?.id || "");
+  if (!sessionID || state.entityID === "sessions") {
+    return null;
+  }
+  return { sessionID };
+}
+
+function normalizeLiveScope(scope) {
+  const normalized = {
+    traceID: String(scope?.traceID || "").trim(),
+    sessionID: String(scope?.sessionID || "").trim(),
+    clientID: String(scope?.clientID || "").trim(),
+    functionID: String(scope?.functionID || "").trim(),
+  };
+  return Object.values(normalized).some(Boolean) ? normalized : null;
+}
+
+function liveScopeKey(scope) {
+  if (!scope) {
+    return "";
+  }
+  return [scope.traceID, scope.sessionID, scope.clientID, scope.functionID].join("|");
+}
+
+function liveEndpointWithScope(endpoint, scope) {
+  if (!scope) {
+    return endpoint;
+  }
+  const url = new URL(endpoint, window.location.origin);
+  if (scope.traceID) {
+    url.searchParams.set("traceID", scope.traceID);
+  }
+  if (scope.sessionID) {
+    url.searchParams.set("sessionID", scope.sessionID);
+  }
+  if (scope.clientID) {
+    url.searchParams.set("clientID", scope.clientID);
+  }
+  if (scope.functionID) {
+    url.searchParams.set("functionID", scope.functionID);
+  }
+  return `${url.pathname}?${url.searchParams.toString()}`;
 }
 
 function syncSessionFilterFromRoute() {
@@ -1382,6 +1448,7 @@ function renderSessionFilter() {
       state.sessionFilterOpen = false;
       state.sessionFilterQuery = "";
       render();
+      void ensureActiveEntityData();
     });
   }
 
@@ -1398,6 +1465,7 @@ function resetLiveData() {
     entry.status = "idle";
     entry.items = [];
     entry.error = "";
+    entry.scopeKey = "";
   }
   state.detailGraphs.pipelines = {};
 }
@@ -2744,13 +2812,13 @@ function renderDetail(entity) {
 
   if (!detailItem) {
     document.title = `ODAG ${detailLabel}`;
-    els.tableMeta.textContent = state.detailID;
+    els.tableMeta.textContent = detailLabel;
     commitDetail(renderDetailState(entity, detailLabel, "missing"));
     return;
   }
 
-  document.title = `ODAG ${detailLabel} ${detailItem.routeID}`;
-  els.tableMeta.textContent = detailItem.routeID;
+  document.title = `ODAG ${detailLabel}: ${detailPageTitle(entity, detailItem)}`;
+  els.tableMeta.textContent = detailPageMeta(entity, detailItem);
 
   if (entity.dynamicKind === "pipelines") {
     const graph = ensurePipelineGraph(detailItem);
@@ -2850,6 +2918,7 @@ function renderPipelineDetail(entity, row, graph) {
   const moduleItem = pipelineModuleRecapItem(graph?.data);
   return `
     <div class="v3-detail-stack">
+      ${backLink(entity)}
       <section class="v3-detail-card v3-pipeline-recap">
         <div class="v3-pipeline-recap-command">
           <p class="v3-foot-label">Command</p>
@@ -2862,6 +2931,7 @@ function renderPipelineDetail(entity, row, graph) {
           ${pipelineRecapItem("Output Type", escapeHTML(pipelineOutputTypeLabel(row)))}
           ${pipelineRecapItem("Device", deviceSummaryForEntity("pipelines", row))}
           ${pipelineRecapItem("Session", pipelineSessionSummary(row))}
+          ${pipelineRecapItem("Client", pipelineClientSummary(row))}
           ${moduleItem}
         </div>
       </section>
@@ -2894,7 +2964,11 @@ function pipelineModuleRecapItem(payload) {
   if (!moduleRef) {
     return "";
   }
-  return pipelineRecapItem("Module", detailCode(moduleRef));
+  return pipelineRecapItem("Module", moduleSummaryLink(moduleRef));
+}
+
+function pipelineClientSummary(row) {
+  return row?.clientID ? clientLinkByID(row.clientID) : row?.rootClientID ? clientLinkByID(row.rootClientID) : "Unknown";
 }
 
 function renderPipelineGraph(row, graph) {
@@ -2970,11 +3044,10 @@ function renderWorkspaceOpDetail(entity, row) {
           ${workspaceOpDetailItem("Kind", escapeHTML(row.kind || "unknown"))}
           ${workspaceOpDetailItem("Target Type", escapeHTML(row.targetType || "Unknown"))}
           ${workspaceOpDetailItem("Device", deviceSummaryForEntity("workspace-ops", row))}
-          ${workspaceOpDetailItem("Receiver", row.receiverDagqlID ? detailCode(row.receiverDagqlID) : "None")}
-          ${workspaceOpDetailItem("Output", row.outputDagqlID ? detailCode(row.outputDagqlID) : "None")}
-          ${workspaceOpDetailItem("Root Client", row.rootClientID ? detailCode(row.rootClientID) : "Unknown")}
-          ${workspaceOpDetailItem("Client", row.clientID ? detailCode(row.clientID) : "Unknown")}
-          ${workspaceOpDetailItem("Trace", row.traceID ? detailCode(row.traceID) : "Unknown")}
+          ${workspaceOpDetailItem("Receiver", row.receiverDagqlID ? objectSummaryLink(row.receiverDagqlID) : "None")}
+          ${workspaceOpDetailItem("Output", row.outputDagqlID ? objectSummaryLink(row.outputDagqlID) : "None")}
+          ${workspaceOpDetailItem("Root Client", row.rootClientID ? clientLinkByID(row.rootClientID) : "Unknown")}
+          ${workspaceOpDetailItem("Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown")}
         </div>
       </section>
     </div>
@@ -3056,7 +3129,7 @@ function renderRegistryDetail(entity, row) {
 function renderServiceDetail(entity, row) {
   const activityTable = renderTableHTML({
     columns: [
-      { label: "Call", render: (item) => primaryCell(item.name, "") },
+      { label: "Call", render: (item) => callSummaryLink(item.callID, item.name) || escapeHTML(item.name || "Call") },
       { label: "Role", render: (item) => tonePill("neutral", item.role || "activity") },
       { label: "Status", render: (item) => statusOrbCell(item.status) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.startUnixNano)) },
@@ -3078,19 +3151,18 @@ function renderServiceDetail(entity, row) {
           ${pipelineRecapItem("Kind", tonePill("neutral", row.kind || "service"))}
           ${pipelineRecapItem("Session", serviceSessionSummary(row))}
           ${pipelineRecapItem("Last Activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano)))}
-          ${pipelineRecapItem("Created By", detailCode(row.createdByCallName || "Unknown"))}
+          ${pipelineRecapItem("Created By", row.createdByCallID ? callSummaryLink(row.createdByCallID, row.createdByCallName || "Call") : detailCode(row.createdByCallName || "Unknown"))}
           ${pipelineRecapItem("Pipeline", servicePipelineSummary(row))}
-          ${pipelineRecapItem("DAGQL ID", detailCode(row.dagqlID || "Unknown"))}
+          ${pipelineRecapItem("Image", row.imageRef ? detailCode(row.imageRef) : tonePill("neutral", "Synthetic"))}
         </div>
       </section>
       <div class="v3-detail-grid">
         ${detailCard(
           "Definition",
           detailList([
-            ["Image", row.imageRef ? detailCode(row.imageRef) : "Unknown"],
             ["Hostname", row.customHostname ? detailCode(row.customHostname) : "None"],
-            ["Container", row.containerDagqlID ? detailCode(row.containerDagqlID) : "None"],
-            ["Tunnel Upstream", row.tunnelUpstreamDagqlID ? detailCode(row.tunnelUpstreamDagqlID) : "None"],
+            ["Container", row.containerDagqlID ? objectSummaryLink(row.containerDagqlID) : "None"],
+            ["Tunnel Upstream", row.tunnelUpstreamDagqlID ? objectSummaryLink(row.tunnelUpstreamDagqlID) : "None"],
           ]),
         )}
         ${detailCard(
@@ -3099,7 +3171,7 @@ function renderServiceDetail(entity, row) {
             ["Calls", escapeHTML(String((row.activity || []).length))],
             ["Started", escapeHTML(relativeTimeFromNow(row.startUnixNano))],
             ["Last activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano))],
-            ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
+            ["Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown"],
             ["Pipeline Command", row.pipelineCommand ? detailCode(row.pipelineCommand) : "None"],
           ]),
         )}
@@ -3827,6 +3899,7 @@ function renderSessionDetail(entity, row) {
   const cards = renderSessionDomainCards(row);
   return `
     <div class="v3-detail-stack">
+      ${backLink(entity)}
       <section class="v3-detail-card v3-session-recap">
         <div class="v3-pipeline-recap-grid">
           ${pipelineRecapItem("Status", statusPill(sessionStatusLabel(row)))}
@@ -3834,8 +3907,7 @@ function renderSessionDetail(entity, row) {
           ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)))}
           ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
           ${pipelineRecapItem("Device", deviceSummaryForEntity("sessions", row))}
-          ${pipelineRecapItem("Root Client", row.rootClientID ? detailCode(shortID(row.rootClientID)) : "Unknown")}
-          ${pipelineRecapItem("Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown")}
+          ${pipelineRecapItem("Root Client", row.rootClientID ? clientLinkByID(row.rootClientID) : "Unknown")}
         </div>
       </section>
       ${cards}
@@ -4261,6 +4333,8 @@ function rowMatchesScopeSets(row, scope) {
 
 function sessionDomainItemLabel(entity, row) {
   switch (entity.id) {
+    case "clients":
+      return clientCommandText(row);
     case "pipelines":
       return row.command || row.name || "Pipeline";
     case "repls":
@@ -4298,6 +4372,8 @@ function sessionDomainItemStatus(entity, row) {
 
 function sessionDomainItemSubtitle(entity, row) {
   switch (entity.id) {
+    case "clients":
+      return clientCommandSubtitle(row) || "";
     case "pipelines":
       return row.terminalReturnType || "";
     case "repls":
@@ -4425,8 +4501,8 @@ function renderTerminalDetail(entity, row) {
           ${pipelineRecapItem("Session", terminalSessionSummary(row))}
           ${pipelineRecapItem("Call", detailCode(row.callName || "Container.terminal"))}
           ${pipelineRecapItem("Activities", escapeHTML(String(row.activityCount || 0)))}
-          ${pipelineRecapItem("Input Container", row.receiverDagqlID ? detailCode(row.receiverDagqlID) : "Unknown")}
-          ${pipelineRecapItem("Output Container", row.outputDagqlID ? detailCode(row.outputDagqlID) : "Unknown")}
+          ${pipelineRecapItem("Input Container", row.receiverDagqlID ? objectSummaryLink(row.receiverDagqlID) : "Unknown")}
+          ${pipelineRecapItem("Output Container", row.outputDagqlID ? objectSummaryLink(row.outputDagqlID) : "Unknown")}
         </div>
       </section>
       ${detailSection("Activity", activityTable)}
@@ -4484,15 +4560,9 @@ function renderCheckDetail(entity, row) {
           ${pipelineRecapItem("Started", escapeHTML(relativeTimeFromNow(row.startUnixNano)))}
           ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status)))}
           ${pipelineRecapItem("Session", checkSessionSummary(row))}
+          ${pipelineRecapItem("Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown")}
           ${pipelineRecapItem("Span", row.spanName ? detailCode(row.spanName) : "Unknown")}
-          ${pipelineRecapItem("Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown")}
         </div>
-      </section>
-      <section class="v3-detail-card">
-        ${detailList([
-          ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
-          ["Span ID", row.spanID ? detailCode(row.spanID) : "Unknown"],
-        ])}
       </section>
     </div>
   `;
@@ -4501,7 +4571,7 @@ function renderCheckDetail(entity, row) {
 function renderWorkspaceDetail(entity, row) {
   const opsTable = renderTableHTML({
     columns: [
-      { label: "Op", render: (item) => primaryCell(item.callName || item.name, item.path || item.kind || "") },
+      { label: "Op", render: (item) => linkedPrimaryCell(item.callName || item.name, item.path || item.kind || "", entityPath("workspace-ops", item.routeID)) },
       { label: "Direction", render: (item) => tonePill("neutral", item.direction || "op") },
       { label: "Session", render: (item) => workspaceOpSessionCell(item) },
       { label: "Pipeline", render: (item) => workspaceOpPipelineCell(item) },
@@ -4694,8 +4764,6 @@ function renderClientDetail(entity, row) {
           ["Parent Client", nested && row.parentClientID ? clientLinkByID(row.parentClientID) : "None"],
           ["Root Client", row.rootClientID && row.rootClientID !== row.id ? clientLinkByID(row.rootClientID) : "Self"],
           ["Primary Module", clientPrimaryModuleCell(row)],
-          ["Trace", row.traceID ? detailCode(shortID(row.traceID)) : "Unknown"],
-          ["Client ID", row.id ? detailCode(row.id) : "Unknown"],
         ]),
       )}
       ${detailSection("Calls", callTable)}
@@ -4736,8 +4804,9 @@ function renderCallDetail(entity, row) {
           ${pipelineRecapItem("Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.statusCode || "completed")))}
           ${pipelineRecapItem("Device", deviceSummaryForEntity("calls", row))}
           ${pipelineRecapItem("Session", row.sessionID ? pipelineSessionSummary({ traceID: row.traceID, sessionID: row.sessionID }) : "None")}
+          ${pipelineRecapItem("Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown")}
           ${pipelineRecapItem("Function", functionRow ? entityInlineLink("functions", functionRow.routeID, functionTitle(functionRow)) : detailCode(row.name || "Unknown"))}
-          ${pipelineRecapItem("Output", output ? entityInlineLink("objects", output.routeID, objectTitle(output)) : "None")}
+          ${pipelineRecapItem("Return Value", output ? entityInlineLink("objects", output.routeID, objectTitle(output)) : "None")}
           ${pipelineRecapItem("Module", moduleCell)}
         </div>
       </section>
@@ -4747,11 +4816,9 @@ function renderCallDetail(entity, row) {
           ["Function", functionRow ? entityInlineLink("functions", functionRow.routeID, functionTitle(functionRow)) : "None"],
           ["Parent Call", parentCall ? entityInlineLink("calls", parentCall.routeID, callTitle(parentCall)) : "None"],
           ["Receiver", receiver ? entityInlineLink("objects", receiver.routeID, objectTitle(receiver)) : row.receiverIsQuery ? tonePill("neutral", "Query") : "None"],
-          ["Output", output ? entityInlineLink("objects", output.routeID, objectTitle(output)) : "None"],
+          ["Return Value", output ? entityInlineLink("objects", output.routeID, objectTitle(output)) : "None"],
+          ["Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown"],
           ["Module", moduleCell],
-          ["Call ID", detailCode(row.id || "Unknown")],
-          ["Trace", detailCode(row.traceID || "Unknown")],
-          ["Client", row.clientID ? detailCode(row.clientID) : "Unknown"],
         ]),
       )}
       ${detailSection("Arguments", argTable)}
@@ -4813,9 +4880,6 @@ function renderFunctionDetail(entity, row) {
           ["Call Name", row.callName ? detailCode(row.callName) : detailCode(functionTitle(row))],
           ["Return Type", objectTypeLinkFromName(row.returnType, row.returnTypeID)],
           ["Original Name", row.originalName ? detailCode(row.originalName) : "None"],
-          ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
-          ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
-          ["Client Set", detailInlineList(row.clientIDs || [], "None")],
         ]),
       )}
       ${row.description ? detailCard("Description", `<p>${escapeHTML(row.description)}</p>`) : ""}
@@ -4841,8 +4905,16 @@ function renderObjectDetail(entity, row) {
   }
   relationshipItems.push(
     ["Modules", typeRow ? detailLinkList(objectTypeModuleLinks(typeRow), "None") : "None"],
-    ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
-    ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
+    [
+      "Produced By",
+      detailLinkList(
+        (Array.isArray(row?.producedByCallIDs) ? row.producedByCallIDs : [])
+          .map((id) => callRowByID(id))
+          .filter(Boolean)
+          .map((call) => entityInlineLink("calls", call.routeID, callSignatureText(call))),
+        "None",
+      ),
+    ],
   );
   const fieldTable = renderTableHTML({
     columns: [
@@ -4892,7 +4964,7 @@ function renderObjectDetail(entity, row) {
 
 function renderObjectTypeDetail(entity, row) {
   const snapshots = objectRowsForType(row);
-  const functions = functionRowsForType(row);
+  const functions = objectTypeRelatedFunctionRows(row);
   const snapshotTable = renderTableHTML({
     columns: [
       { label: "Snapshot", render: (item) => linkedPrimaryCell(objectTitle(item), item.typeName || "Object", entityPath("objects", item.routeID)) },
@@ -4905,12 +4977,13 @@ function renderObjectTypeDetail(entity, row) {
   const functionTable = renderTableHTML({
     columns: [
       { label: "Function", render: (item) => linkedPrimaryCell(functionTitle(item), functionSubtitle(item), entityPath("functions", item.routeID)) },
+      { label: "Relationship", render: (item) => tonePill("neutral", item.typeRole || "related") },
       { label: "Module", render: (item) => functionModuleCell(item) },
       { label: "Calls", render: (item) => escapeHTML(String(item.callCount || 0)) },
       { label: "Last Seen", render: (item) => escapeHTML(relativeTimeFromNow(item.lastSeenUnixNano)) },
     ],
     rows: functions,
-    emptyMessage: "No functions returning this type were recorded.",
+    emptyMessage: "No functions currently point at this type.",
   });
 
   return `
@@ -4931,13 +5004,11 @@ function renderObjectTypeDetail(entity, row) {
       ${detailCard(
         "Relationships",
         detailList([
-          ["Module Dependencies", detailLinkList(objectTypeModuleLinks(row), "None")],
-          ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
-          ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
+          ["Module", detailLinkList(objectTypeModuleLinks(row), "Core")],
         ]),
       )}
       ${detailSection("Snapshots", snapshotTable)}
-      ${detailSection("Returning Functions", functionTable)}
+      ${detailSection("Functions", functionTable)}
     </div>
   `;
 }
@@ -4947,6 +5018,7 @@ function renderModuleDetail(entity, row) {
   const typeRows = moduleTypeRows(row);
   const functionRows = moduleFunctionRows(row);
   const snapshotRows = moduleSnapshotRows(row);
+  const clientRowsForModuleRef = moduleClientRows(row);
   const preludeTable = renderTableHTML({
     columns: [
       { label: "Call", render: (item) => linkedPrimaryCell(callTitle(item), callSubtitle(item), entityPath("calls", item.routeID)) },
@@ -4983,6 +5055,16 @@ function renderModuleDetail(entity, row) {
     rows: functionRows,
     emptyMessage: "No functions currently depend on this module.",
   });
+  const clientTable = renderTableHTML({
+    columns: [
+      { label: "Client", render: (item) => linkedPrimaryCell(clientCommandText(item), clientCommandSubtitle(item), entityPath("clients", item.routeID)) },
+      { label: "SDK", render: (item) => clientSDKCell(item) },
+      { label: "Nested", render: (item) => clientYesNoCell(clientIsNested(item)) },
+      { label: "Calls", render: (item) => clientCallsCell(item) },
+    ],
+    rows: clientRowsForModuleRef,
+    emptyMessage: "No clients currently declare this as their primary module.",
+  });
 
   return `
     <div class="v3-detail-stack">
@@ -5006,13 +5088,12 @@ function renderModuleDetail(entity, row) {
       ${detailCard(
         "Relationships",
         detailList([
-          ["Trace Set", detailInlineList(row.traceIDs || [], "None")],
-          ["Session Set", detailInlineList(row.sessionIDs || [], "None")],
-          ["Client Set", detailInlineList(row.clientIDs || [], "None")],
+          ["Resolved Refs", detailInlineList(row.resolvedRefs || [], "None")],
         ]),
       )}
       ${detailSection("Concrete Module Snapshots", snapshotTable)}
       ${detailSection("Prelude Calls", preludeTable)}
+      ${detailSection("Clients", clientTable)}
       ${detailSection("Functions", functionTable)}
       ${detailSection("Dependent Object Types", typeTable)}
     </div>
@@ -6009,6 +6090,17 @@ function moduleRows() {
   return Array.isArray(rows) ? rows : [];
 }
 
+function moduleClientRows(moduleRow) {
+  const ref = String(moduleRow?.ref || "").trim();
+  if (!ref) {
+    return [];
+  }
+  return clientRows()
+    .filter((row) => String(row?.primaryModuleRef || "").trim() === ref)
+    .slice()
+    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+}
+
 function clientRowByID(clientID) {
   return clientRows().find((row) => String(row?.id || "") === String(clientID || "")) || null;
 }
@@ -6178,6 +6270,9 @@ function objectSubtitle(row) {
 
 function moduleTitle(row) {
   const ref = String(row?.ref || "").trim();
+  if (ref === "core") {
+    return "Core";
+  }
   if (!ref) {
     return "Module";
   }
@@ -6187,6 +6282,9 @@ function moduleTitle(row) {
 
 function moduleSubtitle(row) {
   const ref = String(row?.ref || "").trim();
+  if (ref === "core") {
+    return "Built-in Dagger module";
+  }
   const latestResolved = Array.isArray(row?.resolvedRefs) && row.resolvedRefs.length ? row.resolvedRefs[row.resolvedRefs.length - 1] : "";
   return latestResolved || ref || "";
 }
@@ -6201,8 +6299,11 @@ function functionModuleText(row) {
 
 function functionModuleCell(row) {
   const ref = String(row?.moduleRef || "").trim();
-  if (!ref || ref === "core") {
+  if (!ref) {
     return tonePill("neutral", "Core");
+  }
+  if (ref === "core") {
+    return entityInlineLink("modules", "core", "Core");
   }
   const module = moduleRowByRef(ref);
   return module ? entityInlineLink("modules", module.routeID, module.ref) : detailCode(ref);
@@ -6221,6 +6322,9 @@ function functionReceiverTypeCell(row) {
 
 function objectTypeModuleLinks(row) {
   const ref = objectTypeModuleRef(row);
+  if (ref === "core") {
+    return [entityInlineLink("modules", "core", "Core")];
+  }
   const module = moduleRowByRef(ref);
   return module ? [entityInlineLink("modules", module.routeID, module.ref)] : [];
 }
@@ -6580,16 +6684,30 @@ function objectRowsForType(typeRow) {
   return objectRows().filter((row) => ids.has(String(row?.dagqlID || "")));
 }
 
-function functionRowsForType(typeRow) {
+function objectTypeRelatedFunctionRows(typeRow) {
   const typeID = String(typeRow?.id || "").trim();
   const typeName = String(typeRow?.name || "").trim();
   return functionRows()
-    .filter((row) => {
-      if (typeID && String(row?.returnTypeID || "") === typeID) {
-        return true;
+    .map((row) => {
+      const returnsType = (typeID && String(row?.returnTypeID || "") === typeID) || (typeName && String(row?.returnType || "") === typeName);
+      const receivesType = (typeID && String(row?.receiverTypeID || "") === typeID) || (typeName && String(row?.receiverType || "") === typeName);
+      if (!returnsType && !receivesType) {
+        return null;
       }
-      return typeName && String(row?.returnType || "") === typeName;
+      let typeRole = "related";
+      if (returnsType && receivesType) {
+        typeRole = "receiver + return";
+      } else if (returnsType) {
+        typeRole = "return";
+      } else if (receivesType) {
+        typeRole = "receiver";
+      }
+      return {
+        ...row,
+        typeRole,
+      };
     })
+    .filter(Boolean)
     .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
 }
 
@@ -6727,7 +6845,7 @@ function callSummaryLink(callID, label = "") {
 
 function moduleSummaryLink(ref) {
   if (String(ref || "").trim() === "core") {
-    return tonePill("neutral", "Core");
+    return entityInlineLink("modules", "core", "Core");
   }
   const row = moduleRowByRef(ref);
   if (!row) {
@@ -7183,6 +7301,42 @@ function overviewItemStatus(entity, row) {
     return row.statusCode || "";
   }
   return row.status || "";
+}
+
+function detailPageTitle(entity, row) {
+  switch (entity.id) {
+    case "calls":
+      return callSignatureText(row);
+    case "functions":
+      return functionTitle(row);
+    case "clients":
+      return clientCommandText(row);
+    default:
+      return overviewItemLabel(entity, row);
+  }
+}
+
+function detailPageMeta(entity, row) {
+  switch (entity.id) {
+    case "calls":
+      return callTableSubtitle(row) || (row.returnType ? `returns ${row.returnType}` : "Function call");
+    case "functions":
+      return functionSubtitle(row) || "Function";
+    case "objects":
+      return row.typeName || "Object snapshot";
+    case "object-types":
+      return objectTypeModuleRef(row) || "Object type";
+    case "modules":
+      return moduleSubtitle(row) || "Module";
+    case "clients":
+      return clientCommandSubtitle(row) || "Client";
+    case "sessions":
+      return sessionStatusLabel(row) || "Session";
+    case "devices":
+      return deviceSubtitle(row) || "Device";
+    default:
+      return overviewItemStatus(entity, row) || entity.label;
+  }
 }
 
 function currentDetailItem(entity) {
@@ -7973,8 +8127,11 @@ function buildLiveModulesEntity(base, items) {
       routeID: String(item.ref || ""),
       name: moduleTitle(item),
     }))
-    .filter((item) => item.routeID)
-    .sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
+    .filter((item) => item.routeID);
+  if (!liveItems.some((item) => String(item.ref || "") === "core")) {
+    liveItems.push(syntheticCoreModuleItem());
+  }
+  liveItems.sort((a, b) => Number(b.lastSeenUnixNano || 0) - Number(a.lastSeenUnixNano || 0));
   return {
     ...base,
     dynamicKind: "modules",
@@ -8007,6 +8164,61 @@ function buildLiveModulesEntity(base, items) {
     evidence: [],
     relations: [],
     inventory: liveItems,
+  };
+}
+
+function syntheticCoreModuleItem() {
+  const functions = Array.isArray(state.live.functions?.items)
+    ? state.live.functions.items.filter((item) => String(item?.moduleRef || "").trim() === "core")
+    : [];
+  const objectTypes = Array.isArray(state.live.objectTypes?.items)
+    ? state.live.objectTypes.items.filter((item) => objectTypeModuleRef(item) === "core")
+    : [];
+  const traces = new Set();
+  const sessions = new Set();
+  const clients = new Set();
+  let firstSeenUnixNano = 0;
+  let lastSeenUnixNano = 0;
+  for (const item of [...functions, ...objectTypes]) {
+    for (const traceID of Array.isArray(item?.traceIDs) ? item.traceIDs : []) {
+      if (traceID) {
+        traces.add(String(traceID));
+      }
+    }
+    for (const sessionID of Array.isArray(item?.sessionIDs) ? item.sessionIDs : []) {
+      if (sessionID) {
+        sessions.add(String(sessionID));
+      }
+    }
+    for (const clientID of Array.isArray(item?.clientIDs) ? item.clientIDs : []) {
+      if (clientID) {
+        clients.add(String(clientID));
+      }
+    }
+    const itemFirst = Number(item?.firstSeenUnixNano || 0);
+    const itemLast = Number(item?.lastSeenUnixNano || 0);
+    if (!firstSeenUnixNano || (itemFirst > 0 && itemFirst < firstSeenUnixNano)) {
+      firstSeenUnixNano = itemFirst;
+    }
+    if (itemLast > lastSeenUnixNano) {
+      lastSeenUnixNano = itemLast;
+    }
+  }
+  return {
+    id: "module:core",
+    ref: "core",
+    routeID: "core",
+    name: "Core",
+    resolvedRefs: [],
+    traceIDs: Array.from(traces),
+    sessionIDs: Array.from(sessions),
+    clientIDs: Array.from(clients),
+    callIDs: [],
+    traceCount: traces.size,
+    sessionCount: sessions.size,
+    clientCount: clients.size,
+    firstSeenUnixNano,
+    lastSeenUnixNano,
   };
 }
 
