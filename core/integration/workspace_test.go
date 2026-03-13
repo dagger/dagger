@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1272,6 +1273,92 @@ type Overwrite {
 		lines := strings.Split(strings.TrimSpace(logAll), "\n")
 		require.Equal(t, 2, len(lines), "expected init + 1 commit, got: %s", logAll)
 		require.Contains(t, logAll, "feat: final version of foo")
+	})
+
+	t.Run("stage does not clobber user edits to same file", func(ctx context.Context, t *testctx.T) {
+		// A file has 5 lines. The user edits line 1 locally. The agent
+		// edits line 5. After stage+commit: the agent's line-5 edit is
+		// committed and staged; the user's line-1 edit survives on disk
+		// as an unstaged modification. Both edits coexist.
+		initialContent := "line1\nline2\nline3\nline4\nline5\n"
+		// Agent changes line 5 only.
+		agentContent := "line1\nline2\nline3\nline4\nagent-was-here\n"
+
+		ctr := workspaceBase(t, c).
+			WithNewFile("shared.txt", initialContent).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("clobber", fmt.Sprintf(`
+type Clobber {
+  pub hash: String!
+
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/clobber")
+    let before = ws2.directory(".")
+    let after = before.withNewFile("shared.txt", contents: %q)
+    ws2.stage(changes: after.changes(before))
+    self.hash = ws2.commit(message: "feat: agent edits shared")
+    self
+  }
+}
+`, agentContent)))
+
+		// Create the worktree, then simulate the user editing line 1.
+		userContent := "user-was-here\nline2\nline3\nline4\nline5\n"
+		ctr = ctr.
+			WithExec([]string{"git", "worktree", "add", "-b", "agent/clobber",
+				"/work-worktrees/agent-clobber"}).
+			WithExec([]string{"sh", "-c",
+				fmt.Sprintf(`printf '%%s' %q > /work-worktrees/agent-clobber/shared.txt`, userContent)})
+
+		committed := ctr.With(daggerCall("clobber", "hash"))
+		hashOut, err := committed.Stdout(ctx)
+		require.NoError(t, err)
+		hash := strings.TrimSpace(hashOut)
+		require.Len(t, hash, 40, "expected full sha1 commit hash, got %q", hash)
+
+		// The committed content should be the agent's version only
+		// (line 5 changed, line 1 unchanged).
+		commitShow, err := committed.
+			WithWorkdir("/work-worktrees/agent-clobber").
+			WithExec([]string{"git", "show", "HEAD:shared.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, agentContent, commitShow,
+			"committed content should be agent's version")
+
+		// The working tree should have BOTH edits merged:
+		// line 1 = user's edit, line 5 = agent's edit.
+		mergedContent := "user-was-here\nline2\nline3\nline4\nagent-was-here\n"
+		diskContent, err := committed.
+			WithWorkdir("/work-worktrees/agent-clobber").
+			WithExec([]string{"cat", "shared.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, mergedContent, diskContent,
+			"working tree should merge both user and agent edits")
+
+		// git diff --cached should show only the agent's edit (line 5).
+		cachedDiff, err := committed.
+			WithWorkdir("/work-worktrees/agent-clobber").
+			WithExec([]string{"git", "diff", "--cached"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cachedDiff, "-line5")
+		require.Contains(t, cachedDiff, "+agent-was-here")
+		require.NotContains(t, cachedDiff, "user-was-here",
+			"staged diff should not contain user's edit")
+
+		// git diff (unstaged) should show only the user's edit (line 1).
+		unstagedDiff, err := committed.
+			WithWorkdir("/work-worktrees/agent-clobber").
+			WithExec([]string{"git", "diff"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, unstagedDiff, "-line1")
+		require.Contains(t, unstagedDiff, "+user-was-here")
+		require.NotContains(t, unstagedDiff, "agent-was-here",
+			"unstaged diff should not contain agent's edit")
 	})
 
 	t.Run("stage preserves user unstaged changes", func(ctx context.Context, t *testctx.T) {
