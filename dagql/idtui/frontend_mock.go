@@ -28,6 +28,9 @@ var _ Frontend = &FrontendMock{}
 //			BackgroundFunc: func(cmd ExecCommand, raw bool) error {
 //				panic("mock out the Background method")
 //			},
+//			CloseFunc: func() error {
+//				panic("mock out the Close method")
+//			},
 //			GetLLMTokenMetricsFunc: func() *dagui.LLMTokenMetrics {
 //				panic("mock out the GetLLMTokenMetrics method")
 //			},
@@ -139,15 +142,15 @@ type FrontendMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// Close holds details about calls to the Close method.
-		Close []struct {
-		}
 		// Background holds details about calls to the Background method.
 		Background []struct {
 			// Cmd is the cmd argument value.
 			Cmd ExecCommand
 			// Raw is the raw argument value.
 			Raw bool
+		}
+		// Close holds details about calls to the Close method.
+		Close []struct {
 		}
 		// GetLLMTokenMetrics holds details about calls to the GetLLMTokenMetrics method.
 		GetLLMTokenMetrics []struct {
@@ -238,8 +241,8 @@ type FrontendMock struct {
 		SpanExporter []struct {
 		}
 	}
-	lockClose              sync.RWMutex
 	lockBackground         sync.RWMutex
+	lockClose              sync.RWMutex
 	lockGetLLMTokenMetrics sync.RWMutex
 	lockHandleForm         sync.RWMutex
 	lockHandlePrompt       sync.RWMutex
@@ -256,33 +259,6 @@ type FrontendMock struct {
 	lockSetVerbosity       sync.RWMutex
 	lockShell              sync.RWMutex
 	lockSpanExporter       sync.RWMutex
-}
-
-// Close calls CloseFunc.
-func (mock *FrontendMock) Close() error {
-	if mock.CloseFunc == nil {
-		panic("FrontendMock.CloseFunc: method is nil but Frontend.Close was just called")
-	}
-	callInfo := struct {
-	}{}
-	mock.lockClose.Lock()
-	mock.calls.Close = append(mock.calls.Close, callInfo)
-	mock.lockClose.Unlock()
-	return mock.CloseFunc()
-}
-
-// CloseCalls gets all the calls that were made to Close.
-// Check the length with:
-//
-//	len(mockedFrontend.CloseCalls())
-func (mock *FrontendMock) CloseCalls() []struct {
-} {
-	var calls []struct {
-	}
-	mock.lockClose.RLock()
-	calls = mock.calls.Close
-	mock.lockClose.RUnlock()
-	return calls
 }
 
 // Background calls BackgroundFunc.
@@ -318,6 +294,33 @@ func (mock *FrontendMock) BackgroundCalls() []struct {
 	mock.lockBackground.RLock()
 	calls = mock.calls.Background
 	mock.lockBackground.RUnlock()
+	return calls
+}
+
+// Close calls CloseFunc.
+func (mock *FrontendMock) Close() error {
+	if mock.CloseFunc == nil {
+		panic("FrontendMock.CloseFunc: method is nil but Frontend.Close was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockClose.Lock()
+	mock.calls.Close = append(mock.calls.Close, callInfo)
+	mock.lockClose.Unlock()
+	return mock.CloseFunc()
+}
+
+// CloseCalls gets all the calls that were made to Close.
+// Check the length with:
+//
+//	len(mockedFrontend.CloseCalls())
+func (mock *FrontendMock) CloseCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockClose.RLock()
+	calls = mock.calls.Close
+	mock.lockClose.RUnlock()
 	return calls
 }
 
