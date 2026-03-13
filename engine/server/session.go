@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1616,6 +1617,7 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 		client.bkClient.ReadCallerHostFile,
 		cwd,
 		resolveLocalRef,
+		nil,
 		true, // isLocal
 	)
 }
@@ -1734,6 +1736,9 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		parsedRef.workspaceSubdir,
 		resolveLocalRef,
+		func(ws *workspace.Workspace) string {
+			return remoteWorkspaceAddress(parsedRef.cloneRef, ws.Path, parsedRef.version)
+		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
 	)
@@ -1748,9 +1753,10 @@ func (srv *Server) detectAndLoadWorkspace(
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, isLocal, dagql.ObjectResult[*core.Directory]{})
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
 }
 
 // pendingModule represents a module to be loaded from compat parsing,
@@ -1857,6 +1863,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	readFile func(context.Context, string) ([]byte, error),
 	cwd string,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 ) error {
@@ -1893,7 +1900,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// Build + cache core.Workspace.
-	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs)
+	address := ""
+	if workspaceAddress != nil {
+		address = workspaceAddress(ws)
+	}
+	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, address)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
@@ -1971,6 +1982,7 @@ func (srv *Server) buildCoreWorkspace(
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+	address string,
 ) (*core.Workspace, error) {
 	// Capture the current client ID for routing host filesystem operations.
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -1979,8 +1991,14 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Path:     detected.Path,
-		ClientID: clientMetadata.ClientID,
+		Address:     address,
+		Path:        detected.Path,
+		Initialized: detected.Initialized,
+		HasConfig:   detected.Config != nil,
+		ClientID:    clientMetadata.ClientID,
+	}
+	if coreWS.Address == "" {
+		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
 	}
 
 	if isLocal {
@@ -1992,7 +2010,23 @@ func (srv *Server) buildCoreWorkspace(
 		coreWS.SetRootfs(prebuiltRootfs)
 	}
 
+	if detected.Config != nil {
+		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
+	}
+
 	return coreWS, nil
+}
+
+func localWorkspaceAddress(root, workspacePath string) string {
+	workspaceDir := filepath.Join(root, workspacePath)
+	return (&url.URL{
+		Scheme: "file",
+		Path:   filepath.ToSlash(workspaceDir),
+	}).String()
+}
+
+func remoteWorkspaceAddress(cloneRef, workspacePath, version string) string {
+	return core.GitRefString(cloneRef, workspacePath, version)
 }
 
 // cloneGitTree clones a git repository and returns its directory tree.
