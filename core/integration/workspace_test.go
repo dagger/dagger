@@ -802,7 +802,7 @@ type Wt {
   pub files: [String!]!
 
   new(ws: Workspace!) {
-    ws2 := ws.withBranch("agent/test")
+    let ws2 = ws.withBranch("agent/test")
     self.branch = ws2.branch
     self.root = ws2.root
     self.files = ws2.glob("*")
@@ -834,7 +834,7 @@ type Noop {
   pub same: Boolean!
 
   new(ws: Workspace!) {
-    ws2 := ws.withBranch(ws.branch)
+    let ws2 = ws.withBranch(ws.branch)
     self.same = ws.root == ws2.root
     self
   }
@@ -858,7 +858,7 @@ type Existing {
   pub files: [String!]!
 
   new(ws: Workspace!) {
-    ws2 := ws.withBranch("existing-branch")
+    let ws2 = ws.withBranch("existing-branch")
     self.branch = ws2.branch
     self.files = ws2.glob("*")
     self
@@ -887,22 +887,30 @@ func (WorkspaceSuite) TestCommit(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"git", "commit", "-m", "init"}).
 			With(initDangModule("committer", `
 type Committer {
+  pub hash: String!
+
   new(ws: Workspace!) {
-    ws2 := ws.withBranch("agent/work")
-    before := ws2.directory(".")
-    after := before.withNewFile("new-file.txt", "new content")
-    changeset := before.diff(after)
-    ws2.commit(changeset, "feat: add new file")
+    let ws2 = ws.withBranch("agent/work")
+    let before = ws2.directory(".")
+    let after = before.withNewFile("new-file.txt", contents: "new content")
+    let changeset = after.changes(before)
+    self.hash = ws2.commit(changes: changeset, message: "feat: add new file")
     self
   }
 }
 `))
-		// Run the module to trigger the commit
-		_, err := ctr.With(daggerCall("committer")).Stdout(ctx)
+		// Run the module to trigger the commit — chain all
+		// verification off this container so side effects are visible.
+		committed := ctr.With(daggerCall("committer", "hash"))
+
+		// The hash should be a full sha1
+		hashOut, err := committed.Stdout(ctx)
 		require.NoError(t, err)
+		hash := strings.TrimSpace(hashOut)
+		require.Len(t, hash, 40, "expected full sha1 commit hash, got %q", hash)
 
 		// Verify the commit was created in the worktree
-		logOut, err := ctr.
+		logOut, err := committed.
 			WithWorkdir("/work-worktrees/agent-work").
 			WithExec([]string{"git", "log", "--oneline", "-1"}).
 			Stdout(ctx)
@@ -910,7 +918,7 @@ type Committer {
 		require.Contains(t, logOut, "feat: add new file")
 
 		// Verify the file exists in the worktree
-		fileOut, err := ctr.
+		fileOut, err := committed.
 			WithWorkdir("/work-worktrees/agent-work").
 			WithExec([]string{"cat", "new-file.txt"}).
 			Stdout(ctx)
@@ -926,25 +934,26 @@ type Committer {
 			With(initDangModule("selfcommit", `
 type Selfcommit {
   new(ws: Workspace!) {
-    before := ws.directory(".")
-    after := before.withNewFile("committed.txt", "from agent")
-    changeset := before.diff(after)
-    ws.commit(changeset, "feat: self commit")
+    let before = ws.directory(".")
+    let after = before.withNewFile("committed.txt", contents: "from agent")
+    let changeset = after.changes(before)
+    ws.commit(changes: changeset, message: "feat: self commit")
     self
   }
 }
 `))
-		_, err := ctr.With(daggerCall("selfcommit")).Stdout(ctx)
+		committed := ctr.With(daggerCall("selfcommit"))
+		_, err := committed.Stdout(ctx)
 		require.NoError(t, err)
 
 		// Verify commit in the main repo
-		logOut, err := ctr.
+		logOut, err := committed.
 			WithExec([]string{"git", "log", "--oneline", "-1"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, logOut, "feat: self commit")
 
-		fileOut, err := ctr.
+		fileOut, err := committed.
 			WithExec([]string{"cat", "committed.txt"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -960,27 +969,28 @@ type Selfcommit {
 			With(initDangModule("remover", `
 type Remover {
   new(ws: Workspace!) {
-    ws2 := ws.withBranch("agent/cleanup")
-    before := ws2.directory(".")
-    after := before.withoutFile("remove.txt")
-    changeset := before.diff(after)
-    ws2.commit(changeset, "chore: remove file")
+    let ws2 = ws.withBranch("agent/cleanup")
+    let before = ws2.directory(".")
+    let after = before.withoutFile("remove.txt")
+    let changeset = after.changes(before)
+    ws2.commit(changes: changeset, message: "chore: remove file")
     self
   }
 }
 `))
-		_, err := ctr.With(daggerCall("remover")).Stdout(ctx)
+		committed := ctr.With(daggerCall("remover"))
+		_, err := committed.Stdout(ctx)
 		require.NoError(t, err)
 
 		// Verify file was removed
-		_, err = ctr.
+		_, err = committed.
 			WithWorkdir("/work-worktrees/agent-cleanup").
 			WithExec([]string{"test", "-f", "remove.txt"}).
 			Sync(ctx)
 		require.Error(t, err, "remove.txt should not exist")
 
 		// Verify keep.txt still exists
-		out, err := ctr.
+		out, err := committed.
 			WithWorkdir("/work-worktrees/agent-cleanup").
 			WithExec([]string{"cat", "keep.txt"}).
 			Stdout(ctx)
@@ -996,25 +1006,26 @@ type Remover {
 			With(initDangModule("multi", `
 type Multi {
   new(ws: Workspace!) {
-    ws2 := ws.withBranch("agent/multi")
+    let ws2 = ws.withBranch("agent/multi")
 
-    before1 := ws2.directory(".")
-    after1 := before1.withNewFile("first.txt", "first")
-    ws2.commit(before1.diff(after1), "feat: first commit")
+    let before1 = ws2.directory(".")
+    let after1 = before1.withNewFile("first.txt", contents: "first")
+    ws2.commit(changes: after1.changes(before1), message: "feat: first commit")
 
-    before2 := ws2.directory(".")
-    after2 := before2.withNewFile("second.txt", "second")
-    ws2.commit(before2.diff(after2), "feat: second commit")
+    let before2 = ws2.directory(".")
+    let after2 = before2.withNewFile("second.txt", contents: "second")
+    ws2.commit(changes: after2.changes(before2), message: "feat: second commit")
 
     self
   }
 }
 `))
-		_, err := ctr.With(daggerCall("multi")).Stdout(ctx)
+		committed := ctr.With(daggerCall("multi"))
+		_, err := committed.Stdout(ctx)
 		require.NoError(t, err)
 
 		// Verify both commits exist
-		logOut, err := ctr.
+		logOut, err := committed.
 			WithWorkdir("/work-worktrees/agent-multi").
 			WithExec([]string{"git", "log", "--oneline", "-2"}).
 			Stdout(ctx)
@@ -1023,14 +1034,14 @@ type Multi {
 		require.Contains(t, logOut, "feat: second commit")
 
 		// Verify both files exist
-		out, err := ctr.
+		out, err := committed.
 			WithWorkdir("/work-worktrees/agent-multi").
 			WithExec([]string{"cat", "first.txt"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "first", out)
 
-		out, err = ctr.
+		out, err = committed.
 			WithWorkdir("/work-worktrees/agent-multi").
 			WithExec([]string{"cat", "second.txt"}).
 			Stdout(ctx)

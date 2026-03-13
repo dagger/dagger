@@ -170,8 +170,10 @@ type LocalImportOpts struct {
 	GetAbsPathOnly       bool     `json:"get_abs_path_only"`
 	GlobPattern          string   `json:"glob_pattern"`
 	SearchOpts           *LocalSearchOpts `json:"search_opts,omitempty"`
-	GitBranchDetect      bool             `json:"git_branch_detect,omitempty"`
+	GitBranchDetect      bool                `json:"git_branch_detect,omitempty"`
+	GitRevParseHead      bool                `json:"git_rev_parse_head,omitempty"`
 	GitWorktreeAdd       *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
+	GitAddAndCommit      *GitCommitOpts      `json:"git_add_and_commit,omitempty"`
 }
 
 // GitWorktreeAddOpts configures a git worktree add operation on the client.
@@ -282,11 +284,10 @@ type LocalExportOpts struct {
 	// or to replace the target entirely such that it matches the source directory,
 	// which includes deleting any files that are not in the source directory
 	Merge       bool
-	RemovePaths []string       `json:"remove_paths"`
-	GitCommit   *GitCommitOpts `json:"git_commit,omitempty"`
+	RemovePaths []string `json:"remove_paths"`
 }
 
-// GitCommitOpts configures a git commit after exporting files.
+// GitCommitOpts configures a git add + commit operation on the client.
 type GitCommitOpts struct {
 	Message string `json:"message"`
 }

@@ -124,6 +124,35 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		}
 		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
 
+	case opts.GitRevParseHead:
+		cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+		cmd.Dir = absPath
+		out, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("git rev-parse HEAD: %w", err)
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
+
+	case opts.GitAddAndCommit != nil:
+		cmd := exec.CommandContext(ctx, "git", "add", "-A")
+		cmd.Dir = absPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git add -A: %w: %s", err, out)
+		}
+		cmd = exec.CommandContext(ctx, "git", "commit", "--allow-empty", "-m", opts.GitAddAndCommit.Message)
+		cmd.Dir = absPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git commit: %w: %s", err, out)
+		}
+		// Return the commit hash
+		cmd = exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+		cmd.Dir = absPath
+		out, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("git rev-parse HEAD: %w", err)
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
+
 	case opts.GitWorktreeAdd != nil:
 		wopts := opts.GitWorktreeAdd
 		wtPath := wopts.WorktreePath
@@ -279,6 +308,7 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		return fmt.Errorf("get local export opts: %w", err)
 	}
 
+
 	absPath, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path, false)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
@@ -318,19 +348,6 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 			return fmt.Errorf("failed to receive fs changes: %w", err)
 		}
 
-		// If GitCommit is set, run git add + commit after the file write
-		if opts.GitCommit != nil {
-			cmd := exec.Command("git", "add", "-A")
-			cmd.Dir = absPath
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("git add -A: %w: %s", err, out)
-			}
-			cmd = exec.Command("git", "commit", "--allow-empty", "-m", opts.GitCommit.Message)
-			cmd.Dir = absPath
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("git commit: %w: %s", err, out)
-			}
-		}
 
 		return nil
 	}

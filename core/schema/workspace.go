@@ -38,7 +38,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFuncWithCacheKey("commit", DagOpWrapper(srv, s.commit), dagql.CachePerClient).
 			DoNotCache("Writes to the local host.").
 			Doc(`Export a Changeset to the workspace's branch and create a Git commit.`,
-				`The changeset files are written to the worktree and committed with the given message.`).
+				`The changeset files are written to the worktree and committed with the given message.`,
+				`Returns the commit hash.`).
 			Args(
 				dagql.Arg("changes").Doc(`The changes to commit.`),
 				dagql.Arg("message").Doc(`The commit message.`),
@@ -569,29 +570,30 @@ func (s *workspaceSchema) commit(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
 	args workspaceCommitArgs,
-) (core.Void, error) {
+) (dagql.String, error) {
 	ws := parent.Self()
 
 	ctx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
-		return core.Void{}, err
+		return "", err
 	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return core.Void{}, err
+		return "", err
 	}
 
 	changeset, err := args.Changes.Load(ctx, srv)
 	if err != nil {
-		return core.Void{}, fmt.Errorf("load changeset: %w", err)
+		return "", fmt.Errorf("load changeset: %w", err)
 	}
 
-	if err := changeset.Self().GitCommit(ctx, ws.Root, args.Message); err != nil {
-		return core.Void{}, fmt.Errorf("commit: %w", err)
+	hash, err := changeset.Self().GitCommit(ctx, ws.Root, args.Message)
+	if err != nil {
+		return "", fmt.Errorf("commit: %w", err)
 	}
 
-	return core.Void{}, nil
+	return dagql.String(hash), nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

@@ -193,7 +193,8 @@ func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePa
 	return string(msg.Data), nil
 }
 
-// GitCommitChangeset exports a directory to the client host and creates a git commit.
+// GitCommitChangeset exports a directory to the client host, creates a git
+// commit, and returns the commit hash.
 func (c *Client) GitCommitChangeset(
 	ctx context.Context,
 	srcPath string,
@@ -201,15 +202,31 @@ func (c *Client) GitCommitChangeset(
 	merge bool,
 	removePaths []string,
 	message string,
-) error {
-	return c.localDirExportWithOpts(ctx, srcPath, engine.LocalExportOpts{
-		Path:        path.Clean(destPath),
+) (string, error) {
+	cleanDest := path.Clean(destPath)
+
+	// Step 1: Export files to the worktree
+	err := c.localDirExportWithOpts(ctx, srcPath, engine.LocalExportOpts{
+		Path:        cleanDest,
 		Merge:       merge,
 		RemovePaths: removePaths,
-		GitCommit: &engine.GitCommitOpts{
+	})
+	if err != nil {
+		return "", fmt.Errorf("export changeset: %w", err)
+	}
+
+	// Step 2: Run git add + commit via a separate diffcopy call
+	msg := filesync.BytesMessage{}
+	err = c.diffcopy(ctx, engine.LocalImportOpts{
+		Path: cleanDest,
+		GitAddAndCommit: &engine.GitCommitOpts{
 			Message: message,
 		},
-	})
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("git commit: %w", err)
+	}
+	return string(msg.Data), nil
 }
 
 func (c *Client) LocalDirExport(
@@ -233,6 +250,7 @@ func (c *Client) localDirExportWithOpts(
 ) (rerr error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", opts.Path))
 	bklog.G(ctx).Debug("exporting local dir")
+
 	defer func() {
 		lg := bklog.G(ctx)
 		if rerr != nil {

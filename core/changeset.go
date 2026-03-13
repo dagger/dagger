@@ -399,24 +399,25 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 }
 
 // GitCommit exports the changeset to the given path and creates a git commit.
-func (ch *Changeset) GitCommit(ctx context.Context, destPath string, message string) (rerr error) {
+// Returns the commit hash.
+func (ch *Changeset) GitCommit(ctx context.Context, destPath string, message string) (_ string, rerr error) {
 	paths, err := ch.ComputePaths(ctx)
 	if err != nil {
-		return fmt.Errorf("compute paths: %w", err)
+		return "", fmt.Errorf("compute paths: %w", err)
 	}
 
 	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("git commit changeset to %s", destPath))
@@ -424,13 +425,13 @@ func (ch *Changeset) GitCommit(ctx context.Context, destPath string, message str
 
 	root, closer, err := mountObj(ctx, dir)
 	if err != nil {
-		return fmt.Errorf("failed to mount directory: %w", err)
+		return "", fmt.Errorf("failed to mount directory: %w", err)
 	}
 	defer closer(false)
 
 	root, err = containerdfs.RootPath(root, dir.Dir)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	return bk.GitCommitChangeset(ctx, root, destPath, true, paths.Removed, message)
