@@ -1,0 +1,60 @@
+"""
+A Netlify site configuration
+"""
+type Site {
+  """
+  Path to the site config file
+  """
+  pub configPath: String!
+
+  """
+  Path to the site root directory
+  """
+  pub rootPath: String! {
+    configPath.trimSuffix("netlify.toml").trimSuffix("/")
+  }
+
+  # Accessor for this site's netlify.toml behavior.
+  pub config: Config! {
+    Config(path: configPath)
+  }
+
+  let token: Secret
+  let cliVersion: String!
+
+  """
+  Build a container with Netlify CLI installed and configured, and the site root mounted
+  """
+  pub sandbox(ws: Workspace!): Container! {
+    let workspaceInclude = [
+      rootPath,
+      configPath,
+      "**/.git/HEAD",
+      "**/.git/config",
+      "**/.git/refs/**",
+      "**/.git/packed-refs/**",
+    ]
+    let ctr = container
+      .from("node:18")
+      .withExec(["npm", "install", "netlify-cli@" + cliVersion, "-g"])
+      .withWorkdir("/workspace")
+      .withDirectory(".", ws.directory(ws.root, include: workspaceInclude))
+      .withWorkdir(rootPath)
+    if (token == null) {
+      ctr
+    } else {
+      ctr.withSecretVariable("NETLIFY_AUTH_TOKEN", token)
+    }
+  }
+
+  """
+  Return configured targets for this site.
+  When git is set, only matching targets are returned.
+  """
+  pub targets(ws: Workspace!, git: GitContext): [Target!]! {
+    config
+      .targets(ws, git)
+      .map { targetConfig => Target(site: self, config: targetConfig) } ?? []
+  }
+
+}

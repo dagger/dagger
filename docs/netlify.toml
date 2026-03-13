@@ -1,3 +1,13 @@
+[[targets]]
+git.branches = ["main"]
+deploy.site = "dev-docs-dagger-io"
+deploy.prod = true
+
+[[targets]]
+git.latestReleaseTag = true
+deploy.site = "docs-dagger-io"
+deploy.prod = true
+
 [build]
   command = "yarn run docusaurus build"
 

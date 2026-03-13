@@ -1,0 +1,479 @@
+---
+name: dang-dagger-modules
+description: Write and edit Dagger modules using the Dang programming language (.dang files). Dang is a statically typed scripting language for GraphQL that serves as a lightweight Dagger SDK. Use when creating, editing, or debugging .dang files for Dagger modules, when a dagger.json references the dang SDK (github.com/vito/dang/dagger-sdk), or when asked to write Dagger module code in Dang. Triggers on .dang files, "write in dang", "dang module", "dang SDK".
+---
+
+# Dang Dagger Modules
+
+Dang is a statically typed scripting language for GraphQL, used as a lightweight Dagger SDK. Types and functions are loaded directly from the Dagger GraphQL schema. No codegen phase is needed.
+
+## Mandatory Architecture Rules
+
+These are hard requirements for this skill:
+
+- **One file per type.** If you define `type Site`, it lives in `site.dang`. Never define multiple types in one file.
+- **Artifact-centric design first.** Start by modeling artifacts, their fields, and relationships. Add behavior only after data model is clear.
+- **Module purpose is extending the user's workspace UX.** Public API must match what users expect to discover and operate on in their repo.
+- **Support dynamic artifact discovery.** If a workspace may contain multiple apps/sites/packages/projects, discover them via file markers (`glob`) and return typed objects.
+- **Attach behavior to owning type.** Site-specific behavior on `Site`, target-specific behavior on `Target`, config parsing on `Config`. Avoid top-level pass-through wrappers unless explicitly requested.
+- **No raw JSON plumbing in behavior types.** Parse JSON at boundary types (for example `Config`) and pass typed config objects into behavior types.
+- **Workspace access is expensive.** Always constrain `ws.directory()` with `include`/`exclude`. Never broad-mount workspace by default.
+- **Top-level constructor args are UX schema.** Constructor args on the module object are user-facing workspace config. Keep them stable, minimal, and documented.
+
+## Required Workflow
+
+Before editing code:
+
+1. Write a short type map: `Type -> artifact -> responsibilities`.
+2. Confirm discovery strategy (marker files and include filters).
+3. Confirm module-level constructor args as UX/config schema.
+
+While editing:
+
+1. Make smallest architectural step.
+2. Compile-check immediately: `dagger call -m <module> --help`.
+3. Fix type/syntax errors before further refactors.
+
+Before finishing:
+
+1. Re-check object ownership boundaries.
+2. Remove accidental helper pyramids or pass-through wrappers.
+3. Re-run module load check.
+
+## Project Setup
+
+A Dang Dagger module requires:
+
+1. **`dagger.json`** pointing to the Dang SDK:
+
+```json
+{
+  "name": "my-module",
+  "engineVersion": "v0.19.11",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk@da6ed3337a2a18b0c9a371813ef62b880e1c6f5d"
+  },
+  "dependencies": []
+}
+```
+
+2. **One `.dang` file per type** (for example `netlify.dang`, `site.dang`, `target.dang`).
+
+## Language Reference
+
+- Syntax and grammar: [references/syntax.md](references/syntax.md)
+- Semantics, nullability, and module patterns: [references/language.md](references/language.md)
+
+## Dagger Module Patterns
+
+### Basic Module Structure
+
+```dang
+pub description = "My module description"
+
+type MyModule {
+  """
+  A public field exposed as a Dagger function.
+  """
+  pub greeting: String! = "hello"
+
+  """
+  A public method exposed as a Dagger function.
+  """
+  pub sayHello(name: String!): String! {
+    greeting + ", " + name + "!"
+  }
+}
+```
+
+- `type` declares a Dagger object type. The first `type` is the module's main object.
+- `pub` fields/methods become Dagger functions. `let` keeps them private.
+- `"""..."""` triple-quoted doc strings become Dagger function descriptions.
+- `pub description = "..."` at module level sets the module description.
+
+### Constructor Arguments
+
+Fields declared on a type without a body become constructor arguments:
+
+```dang
+type Builder {
+  pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "*"
+    "!src"
+    "!go.mod"
+    "!go.sum"
+  ])
+
+  pub version: String! = "latest"
+}
+```
+
+- `@defaultPath(path: "/")` -- load from workspace root by default
+- `@ignorePatterns(patterns: [...])` -- filter files (gitignore syntax)
+- Default values with `= "latest"`
+
+### Explicit Constructors
+
+Use `new(...)` when constructor args should NOT become fields (e.g. transient inputs, args that need transformation before storage). Args are scoped to the `new()` body and not serialized.
+
+```dang
+type MyModule {
+  pub source: Directory!
+
+  new(
+    src: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+      "*"
+      "!src"
+      "!go.mod"
+    ])
+  ) {
+    self.source = src
+  }
+}
+```
+
+- `new()` args are NOT exposed as fields -- only available inside the body
+- Assign fields with `self.field = value`
+- `new()` implicitly returns `self`
+- Directives (`@defaultPath`, etc.) go on the `new()` args
+- Arg names don't need to match field names
+- Runtime error if non-null fields aren't assigned
+- Types without `new()` derive constructors from fields (existing behavior)
+- Treat module-object constructor args as user-facing configuration schema/UX.
+
+### Nullable Value Handling
+
+Nullable vs non-null type mismatches are the most common source of errors in dang code. Understanding how nullability propagates is essential.
+
+**The contagious nullability rule:** When you access a field or call a method on a nullable receiver, the result is always nullable — even if the field itself is declared `Type!`. In other words: `field of (nullable thing) == nullable (field of thing)`.
+
+**The confusing error:** `cannot use String as String!` means you have a nullable `String` where a non-null `String!` is expected. The `!` denotes non-null.
+
+**Three patterns to fix it:**
+
+1. **Null coalescing `??`** — use when there's a sensible default:
+
+```dang
+# json.field(...).asString returns nullable String
+let name = json.field(["name"]).asString ?? "unknown"
+```
+
+2. **Flow-sensitive null check** — use when you need to branch on null vs non-null:
+
+```dang
+# After `if (x != null)`, x is narrowed to non-null inside the block
+let pkgJson = if (pkgDir.stat("package.json") != null) {
+  pkgDir.file("package.json").asJSON
+} else {
+  null
+}
+```
+
+3. **Guard early, access late** — check the nullable value for null *before* accessing its fields, so the fields come back non-null:
+
+```dang
+# WRONG: accessing fields on nullable json produces nullable results
+let pm = json.field(["packageManager"]).asString  # String, not String!
+
+# RIGHT: check json for null first, then access fields in non-null branch
+if (json == null) {
+  "npm"
+} else if (hasField(json, "packageManager") == false) {
+  "npm"
+} else {
+  let pmField = json.field(["packageManager"])
+  pmField.asString.split("@")[0] ?? "npm"
+}
+```
+
+**Common pattern: JSON field access.** `json.field(...)` returns nullable values. Chaining `.field().field().asString` on a nullable receiver produces a nullable string even when a function expects `String!`. Always check for null before accessing:
+
+```dang
+# Defensive JSON access pattern
+if (json == null) {
+  [] :: [String!]!
+} else if (hasField(json, "docusaurus") == false) {
+  [] :: [String!]!
+} else {
+  let docusaurus = json.field(["docusaurus"])
+  if (hasField(docusaurus, "include") == false) {
+    [] :: [String!]!
+  } else {
+    let include = docusaurus.field(["include"])
+    include.asArray.{asString}.map { item => item.asString }
+  }
+}
+```
+
+**Null narrowing limitations:**
+
+- Only simple `x == null` / `x != null` checks narrow types
+- Compound conditions (`and`, `or`) and negation (`!`) do not narrow
+- Only direct variable names are narrowed (not nested field access like `a.b`)
+- Function calls in conditions do not trigger narrowing
+
+### Container Building (Method Chaining)
+
+```dang
+pub build: Container! {
+  container
+    .from("golang:1.23-alpine")
+    .withDirectory("/src", source)
+    .withWorkdir("/src")
+    .withExec(["go", "build", "-o", "/app", "."])
+}
+```
+
+Leading dots for method chains. No parens for zero-arg calls (`container.sync` not `container.sync()`).
+
+### Checks and Generators
+
+```dang
+"""
+Run tests.
+"""
+pub test: Void @check {
+  container
+    .from("golang:1.23-alpine")
+    .withDirectory("/src", source)
+    .withWorkdir("/src")
+    .withExec(["go", "test", "./..."])
+    .sync
+
+  null
+}
+
+"""
+Generate client library.
+"""
+pub generate: Changeset! @generate {
+  let updated = container
+    .from("node:20-alpine")
+    .withDirectory("/src", source)
+    .withWorkdir("/src")
+    .withExec(["npm", "run", "codegen"])
+    .directory("/src")
+
+  updated.changes(source)
+}
+```
+
+- `@check` marks a function as a check (returns `Void`, use `null` at end)
+- `@generate` marks a function as a generator (returns `Changeset!`)
+- `Changeset` is produced by `newDir.changes(originalDir)`
+
+### Using Dependencies
+
+Dependencies declared in `dagger.json` are available by name (camelCase):
+
+```json
+{
+  "dependencies": [
+    { "name": "engine-dev", "source": "../engine-dev" },
+    { "name": "go", "source": "../go" }
+  ]
+}
+```
+
+```dang
+pub binary: File! {
+  go(source).binary("./cmd/myapp", noSymbols: true, noDwarf: true)
+}
+
+pub test: Void @check {
+  engineDev.test(run: "TestMyFeature", pkg: "./core/integration")
+}
+```
+
+### Workspace API
+
+The Workspace API replaces the legacy `@defaultPath`/`@ignorePatterns` pattern for accessing project files. Instead of eagerly loading directories via constructor fields, functions declare a `ws: Workspace!` argument and call `ws.directory()`/`ws.file()` to lazily access files.
+
+**Key rules:**
+
+- **`Workspace` must be a function argument, never a field.** The engine magically injects it. Storing it in a field is not supported.
+- **Any function that takes `ws: Workspace!` is never cached** — the engine can't know in advance which files will be accessed. Design accordingly: keep workspace-dependent functions thin, and push cacheable work into functions that take `Directory!` or `File!` instead.
+- **Always filter at the `ws.directory()` call** using `include:`/`exclude:` patterns. Never call `ws.directory(".")` without filters — that eagerly uploads the entire project.
+- **Push workspace access to the leaves** when possible. If a function only sometimes needs workspace files, or returns objects that may or may not need them, defer the `ws.directory()` call to the point of actual use. This avoids unnecessary uploads and keeps intermediate results cacheable.
+- **Prefer marker-file discovery for multi-artifact workspaces** (`glob` on config files, then map to typed objects).
+
+```dang
+type MyToolchain {
+  pub sourcePath: String! = "sdk/go"
+
+  """
+  Get filtered source from the workspace.
+  """
+  pub source(ws: Workspace!): Directory! {
+    ws.directory(sourcePath)
+  }
+
+  """
+  Bump the SDK version.
+  """
+  pub bump(ws: Workspace!, version: String!): Changeset! {
+    let v = version.trimPrefix("v")
+    let contents = "package version\n\nconst Version = \"" + v + "\"\n"
+    let workspace = ws.directory(".", include: [
+      sourcePath + "/**",
+    ])
+    workspace
+      .withNewFile(sourcePath + "/version.go", contents)
+      .changes(workspace)
+  }
+}
+```
+
+#### Lazy workspace access with helper types
+
+When a function discovers multiple items but each item may need workspace files, use a helper type that takes `ws: Workspace!` on its own methods rather than eagerly loading all directories upfront:
+
+```dang
+type Discoverer {
+  """
+  Discover sites by scanning for config files (lightweight).
+  """
+  pub sites(ws: Workspace!): [Site!]! {
+    # Only upload config files for discovery — not the full site dirs
+    let configs = ws.directory(".", include: ["**/config.json"])
+    let paths = configs.glob("**/config.json")
+    paths.map { path =>
+      let parts = path.split("/")
+      let dirParts = parts.filter { p => p != "config.json" }
+      let dirPath = if (dirParts.length == 0) { "." } else { dirParts.join("/") }
+      Site(path: dirPath, config: configs.file(path))
+    }
+  }
+}
+
+type Site {
+  """
+  Path to the site directory, relative to workspace root.
+  """
+  pub path: String!
+
+  """
+  The config file (already loaded, no workspace needed).
+  """
+  pub config: File!
+
+  """
+  The full site directory (lazy — only uploaded when called).
+  """
+  pub dir(ws: Workspace!): Directory! {
+    ws.directory(path)
+  }
+}
+```
+
+This pattern separates cheap discovery (scanning config files) from expensive access (uploading full directories). The caller can inspect `path` and `config` on each `Site` without triggering any large uploads. Only calling `site.dir(ws)` pays the cost, and only for that specific site.
+
+### Control Flow
+
+```dang
+# Conditionals
+let result = if (condition) { "yes" } else { "no" }
+
+# Multi-line conditionals
+if (dryRun == true) {
+  ctr = ctr.withExec(["echo", "dry run"])
+} else {
+  ctr = ctr.withExec(["deploy"])
+}
+
+# For loops (condition or infinite loop forms)
+let i = 0
+for (i < packages.length) {
+  i += 1
+}
+
+# Case expressions
+let arch = case (defaultPlatform) {
+  "linux/amd64" => "x86_64"
+  "linux/arm64" => "arm64"
+  else => "unknown"
+}
+```
+
+### Enums
+
+```dang
+enum Status {
+  PENDING
+  RUNNING
+  COMPLETED
+}
+
+type MyModule {
+  pub check(status: Status!): Boolean! {
+    status == Status.COMPLETED
+  }
+}
+```
+
+### Error Handling
+
+```dang
+pub result = try {
+  riskyOperation
+} catch {
+  err => "fallback: " + err.message
+}
+
+raise "something went wrong"
+```
+
+## Formatting Rules
+
+- Two-space indentation
+- Leading dots for method chains (NOT trailing dots)
+- Triple-quoted doc strings (`"""..."""`) — single-quoted `"..."` are NOT doc strings
+- No trailing commas in multi-line lists
+- No parens for zero-arg calls
+- One blank line between type members
+- 80 character line limit
+- Spaces around operators and after colons
+- Named arguments use `:` NOT `=` (e.g. `owner: "root"` not `owner="root"`)
+- `Void` return type is never `Void!`
+
+See [references/language.md](references/language.md) Common Pitfalls section for details.
+
+## Keeping Dang Syntax Current
+
+Dang syntax evolves quickly. This skill must be maintained proactively.
+
+Authoritative references:
+
+- Upstream grammar source: `pkg/dang/dang.peg` in `github.com/vito/dang`
+- Upstream executable syntax coverage: `tests/test_*.dang` in `github.com/vito/dang`
+- Local syntax reference: [references/syntax.md](references/syntax.md)
+- Local workflow and module patterns: this `SKILL.md`
+
+Update procedure for syntax-related changes:
+
+1. Get latest Dang commit: `git ls-remote https://github.com/vito/dang HEAD`.
+2. Inspect `pkg/dang/dang.peg` and relevant `tests/test_*.dang`.
+3. Update `references/syntax.md` first, including the sync commit line.
+4. Update any conflicting syntax examples in `SKILL.md`.
+5. Validate with module load checks (`dagger call -m <module> --help`).
+6. If docs conflict with compiler/tests, compiler/tests win; update docs immediately.
+
+## Keeping Dang SDK Current
+
+`dagger update` does **not** reliably manage a module's `sdk.source` pin for Dang modules.
+
+Use this procedure instead:
+
+1. Decide SDK policy per module: pinned commit (recommended for reproducibility) or floating ref.
+2. Update module `dagger.json`:
+   - `"sdk": { "source": "github.com/vito/dang/dagger-sdk@<commit-or-ref>" }`
+3. If syncing with repo baseline, inspect:
+   - `core/integration/workspace_test.go` (`const dangSDK = ...`)
+4. Find all Dang SDK refs to update consistently:
+   - `rg -n '"source": "github.com/vito/dang/dagger-sdk' -g 'dagger.json' modules toolchains`
+5. Validate each changed module loads:
+   - `dagger call -m ./modules/<name> --help`
+
+## Editor Setup
+
+See [references/editor-setup.md](references/editor-setup.md) for Zed LSP configuration.

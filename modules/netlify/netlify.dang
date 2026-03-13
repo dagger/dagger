@@ -1,0 +1,84 @@
+"""
+A Dagger module for deploying Netlify sites.
+"""
+type Netlify {
+  let token: Secret
+  let cliVersion: String!
+
+  # Configure module-level Netlify credentials and CLI version.
+  new(
+    # Netlify auth token used by CLI calls.
+    token: Secret = null,
+    # Netlify CLI version to install in helper containers.
+    cliVersion: String! = "latest",
+  ) {
+    self.token = token
+    self.cliVersion = cliVersion
+    self
+  }
+
+  """
+  Discover Netlify sites by locating netlify.toml files in the workspace.
+  """
+  pub sites(ws: Workspace!): [Site!]! {
+    ws
+      .directory(ws.root, include: ["**/netlify.toml"])
+      .glob("**/netlify.toml")
+      .map { configPath =>
+        Site(
+          configPath: configPath,
+          token: token,
+          cliVersion: cliVersion,
+        )
+      }
+  }
+
+  """
+  Return a site by its workspace path
+  """
+  pub site(ws: Workspace!, root: String!): Site! {
+    let match = sites(ws).filter { s => s.rootPath == root }[0]
+    if (match != null) {
+      match
+    } else {
+      raise "netlify site not found: " + root
+    }
+  }
+
+  """
+  Detect git context from the workspace and return it as a GitContext object.
+  """
+  pub gitContext(ws: Workspace!): GitContext! {
+    let out = container
+      .from("alpine/git")
+      .withDirectory(
+        "/workspace",
+        ws.directory(".", include: [
+          ".git",
+          ".git/**",
+        ]),
+      )
+      .withWorkdir("/workspace")
+      .withExec(
+        [
+          "sh",
+          "-lc",
+          "commit=$(git rev-parse HEAD 2>/dev/null || true) && branch=$(git symbolic-ref --short -q HEAD 2>/dev/null || true) && tag=$(git tag --points-at HEAD | head -n1 || true) && all_tags=$(git tag | paste -sd, - || true) && latest_release=$(git tag --sort=-version:refname | grep -E '^v?[0-9]+\\.[0-9]+\\.[0-9]+$' | head -n1 || true) && latest_pre=$(git tag --sort=-version:refname | grep -E '^v?[0-9]+\\.[0-9]+\\.[0-9]+-' | head -n1 || true) && printf '{\"commit\":\"%s\",\"currentBranch\":\"%s\",\"currentTag\":\"%s\",\"allTagsCSV\":\"%s\",\"latestReleaseTag\":\"%s\",\"latestPreReleaseTag\":\"%s\"}' \"$commit\" \"$branch\" \"$tag\" \"$all_tags\" \"$latest_release\" \"$latest_pre\"",
+        ],
+      )
+      .stdout
+
+    let data = Dagger
+      .json
+      .withContents(out :: JSON!)
+
+    GitContext(
+      commit: data.field(["commit"]).asString,
+      currentBranch: data.field(["currentBranch"]).asString,
+      currentTag: data.field(["currentTag"]).asString,
+      allTagsCSV: data.field(["allTagsCSV"]).asString,
+      latestReleaseTag: data.field(["latestReleaseTag"]).asString,
+      latestPreReleaseTag: data.field(["latestPreReleaseTag"]).asString,
+    )
+  }
+}
