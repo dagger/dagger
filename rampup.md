@@ -34,7 +34,7 @@ The design is split into two parts:
 ```toml
 [modules.ci]
 source = "modules/ci"
-alias = true              # promote functions to top-level commands
+blueprint = true           # designates this as the entrypoint module (see below)
 
 [modules.go]
 source = "github.com/dagger/go-toolchain@v1.0"
@@ -42,6 +42,14 @@ config.goVersion = "1.22"  # constructor arg default
 ```
 
 Paths in `source` are relative to `.dagger/` directory.
+
+**Entrypoint module:** The module marked `blueprint = true` becomes the workspace's "default
+module" — its functions appear at the top level in CLI commands. The engine exposes this via
+`Workspace.defaultModule`, and the CLI prepends it to queries. Schema-level aliasing (hoisting
+functions into the GraphQL Query type) was abandoned due to recursive call, dependency
+clobbering, and core API shadowing issues. The config syntax is expected to change from
+per-module `blueprint = true` to a top-level `entrypoint = "module-name"` — see
+`hack/designs/blueprint-to-workspace.md` for the current design state and open questions.
 
 ## Key files
 
@@ -72,7 +80,7 @@ Paths in `source` are relative to `.dagger/` directory.
 **Part 1 (Workspaces and Modules):**
 - Workspace detection, config parsing/serialization (TOML)
 - Module loading from config at connect time
-- Auto-aliases (`alias = true`), constructor arg defaults (`config.*`)
+- Entrypoint module (`blueprint = true` → `Workspace.defaultModule`), constructor arg defaults (`config.*`)
 - `dagger install`, `dagger module init`, `dagger workspace info`
 - `-C`/`--workdir` local path behavior
 - `dagger migrate` for legacy `dagger.json` projects
