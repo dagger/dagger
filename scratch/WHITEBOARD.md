@@ -196,6 +196,15 @@ Current posture:
 * keep it simple now
 * re-evaluate only when we actually need more
 
+### Frame creation / mutability rule
+
+Current explicit decision:
+
+* first writer wins
+* once a `sharedResult` has a frame in v1, treat that frame as immutable
+
+This keeps the one-frame-per-result model simple and avoids “best frame so far” churn.
+
 ### Current concrete shape of `resultCallFrame`
 
 Current direction:
@@ -540,6 +549,19 @@ These names are **not final**, but they are useful handles for discussion:
 
 Again: these are **discussion names**, not final API decisions.
 
+### Narrow exceptional policy for raw `call.ID` data
+
+Current explicit decision:
+
+* yes, there may be a **very narrow** exceptional raw-`call.ID` data case for now
+* but it is explicitly not the main model
+
+Important caution:
+
+* this exception does **not** need to be taken far
+* if implementation of that narrow exceptional case starts causing real complication, that is a tripwire
+* at that point we should stop and reassess rather than bending the design around it
+
 ### Shared internal expression / literal representation
 
 Current explicit decision:
@@ -645,6 +667,8 @@ So current rule:
 
 * ideal path: reconstruct via frame + frontier + current boundary
 * fallback: raw `.ID()`
+
+This is intentionally the only fallback.
 
 ### What “frontier” means right now
 
@@ -1374,3 +1398,362 @@ So current expectation is:
 
 * reconstruction happens before crossing into the around-func telemetry boundary
 * not inside telemetry itself
+
+## First Draft Phased Implementation Plan
+
+This is the first concrete implementation plan derived from the design above.
+
+Goals for the plan:
+
+* split the work into a small number of large-but-reviewable phases
+* keep each phase conceptually coherent
+* avoid “halfway” migrations where old and new models are both half-alive
+* call out the exact code seams that are expected to move
+* call out the tripwires that should stop implementation rather than inviting improvisation
+
+Current proposed shape:
+
+* **Phase 1:** add the `resultCallFrame` substrate and populate it for cache-backed results
+* **Phase 2:** add `IDForCaller(...)` and move runtime caller-facing reconstruction / synthetic-node creation onto frames
+* **Phase 3:** hard-cut module-object and other semantic ID-valued data to internal result refs
+* **Phase 4:** hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
+
+That is intentionally only four phases. Each one is still substantial, but each one should also have a clear review boundary.
+
+### Phase 1: Add `resultCallFrame` as a real `sharedResult` substrate
+
+Purpose:
+
+* introduce the internal frame model without yet changing persistence or caller-facing behavior
+* make every newly cache-backed result capable of carrying a frame
+* establish the one-frame-per-result, first-writer-wins invariant in code
+
+Primary files / seams:
+
+* `dagql/cache.go`
+  * `sharedResult` struct needs a new `resultCallFrame` field
+  * detached-payload clone paths like `withDetachedPayload()` need to preserve/copy frame state appropriately
+  * `attachResult(...)` and result materialization paths need to enforce “cache-backed results should end up with a frame”
+* `dagql/cache_egraph.go`
+  * any place that creates, imports, or deletes cache-backed results needs to preserve/reset frame state correctly
+  * this includes the same lifecycle cluster that currently manages `sharedResult.id` and `resultCanonicalIDs`
+* `dagql/server.go`
+  * `loadNthValue(...)`
+  * `promoteDerivedObjectResult(...)`
+  * `toSelectable(...)`
+  * these are important because they create/promote detached/synthetic results that later become cache-backed
+* `dagql/nullables.go`
+  * deref promotion paths currently build detached results from `call.ID`
+  * they need a frame story when those results later become cache-backed
+* `core/sdk/utils.go`
+  * `scopeSourceForSDKOperation(...)`
+  * `ScopeModuleForSDKOperation(...)`
+  * these are the clearest current synthetic/scoped result constructors
+
+New code expected:
+
+* a new internal frame representation, probably in a new dagql-local file such as `dagql/result_call_frame.go`
+* likely types:
+  * `resultCallFrame`
+  * `resultCallFrameArg`
+  * `resultCallFrameLiteral`
+  * `resultFrameRef`
+  * a small explicit node-kind concept for synthetic/internal nodes
+* frame-literal support for:
+  * scalar values
+  * `DigestedString`
+  * list/object recursion
+  * internal result refs instead of public `call.ID`
+
+Expected implementation strategy for v1:
+
+* build the first frame from the result’s currently available `call.ID`
+* that means:
+  * use current IDs as the source of truth for deriving frame node metadata
+  * convert result-valued inputs into internal result refs during capture
+  * keep scalar/literal structure by value
+* this is acceptable as a transitional implementation strategy because the frame becomes the durable internal representation, not the old full public ID
+
+Important explicit invariant to encode in this phase:
+
+* once a cache-backed `sharedResult` gets a frame, it is immutable in v1
+* first writer wins
+
+Important synthetic-node work in this phase:
+
+* do **not** leave synthetic/scoped/promotion results as “same old value but with magical ID surgery”
+* give them real explicit frame nodes:
+  * nth projection
+  * deref projection
+  * SDK source-content scoping
+  * SDK module scoping
+  * module/source content-scoped synthetic nodes such as `_sourceContentScoped`
+
+Phase-1 test focus:
+
+* unit tests in `dagql/cache_test.go` for:
+  * frame creation on normal cache-backed results
+  * first-writer-wins immutability
+  * nth promotion frame creation
+  * deref promotion frame creation
+  * at least one SDK-scoped or source-content-scoped synthetic result getting an explicit synthetic frame node
+
+Phase-1 review boundary:
+
+* after this phase, cache-backed results should have frames
+* but no caller-facing behavior, telemetry behavior, or persistence schema should have changed yet
+
+Phase-1 tripwire:
+
+* if deriving a frame from the current `call.ID` cannot reliably resolve result-valued inputs to internal result refs for cache-backed results, stop and escalate
+* that would mean the current result-creation path is still missing information we assumed would be available
+
+### Phase 2: Add `IDForCaller(...)` and move runtime presentation onto frames
+
+Purpose:
+
+* make frames actually useful at runtime
+* stop relying on raw historical `.ID()` for presentation-sensitive behavior
+* move synthetic/scoped/promotion call reconstruction onto the new model
+
+Primary files / seams:
+
+* `dagql/cache.go`
+  * `Result[T]` / `ObjectResult[T]` get `IDForCaller(ctx)` on the existing wrapper types
+  * the raw `.ID()` method remains, but becomes the explicit fallback only
+* the new dagql frame file (from Phase 1)
+  * add the reconstruction algorithm
+  * add the frontier map logic
+  * add the explicit fallback to raw `.ID()`
+* `core/telemetry.go`
+  * this file should remain mostly unaware of the internal redesign
+  * the important change is upstream: callers should supply `IDForCaller(...)` before crossing the around-func boundary
+* `dagql/server.go`
+* `dagql/objects.go`
+  * these are the two current wiring points for the around-func / telemetry callback
+  * both need to be updated so that user-facing telemetry is rooted in `IDForCaller(...)`, not raw `.ID()`
+* `core/container.go`
+  * child selection synthesis paths around `UpdatedRootFS(...)` / related helpers currently depend on `OpID`
+  * these should move onto frame-based caller-facing reconstruction
+* `core/schema/container.go`
+* `core/schema/host.go`
+* `core/builtincontainer.go`
+* `core/modfunc.go`
+  * these are the main places that currently set or carry `Container.OpID`
+  * they will likely need to move to “real frame node + `IDForCaller(...)`” instead of persisted raw op IDs
+* `core/sdk/utils.go`
+  * once frames exist, SDK scoping should no longer be treated as just ID surgery
+  * this phase is where runtime caller-facing reconstruction for those scoped values becomes meaningful
+* `core/schema/module.go`
+* `core/schema/modulesource.go`
+  * `_sourceContentScoped` and related module/source synthetic values need to be represented honestly through frames
+
+What `IDForCaller(...)` should concretely do in this phase:
+
+* live on existing `Result` / `ObjectResult`
+* seed reconstruction from the wrapper’s current public `.ID()`
+* maintain a caller-local `frontier map[sharedResultID]*call.ID`
+* walk `resultCallFrame`s recursively only when needed
+* use raw `.ID()` as the only fallback
+
+Important explicit behavior for this phase:
+
+* we are **not** doing cache-wide client/session-specific best-ID selection yet
+* v1 uses the current wrapper/boundary binding plus the frame graph
+* if that is insufficient, later phases can refine the selection policy
+
+Phase-2 test focus:
+
+* direct unit tests for `IDForCaller(...)`
+  * simple projected child selection
+  * nth / deref cases
+  * synthetic scope node cases
+* telemetry-focused tests where the around-func path sees frame-derived IDs rather than raw historical IDs
+* targeted reproductions for:
+  * cached container child selection
+  * function-cache returns lazy container, then later forcing shows inner op structure under the current caller boundary
+
+Phase-2 review boundary:
+
+* after this phase, runtime caller-facing reconstruction should be frame-based in the selected high-signal paths
+* persistence should still still be using the old `canonical_id` storage at this point
+
+Phase-2 tripwire:
+
+* if replacing `Container.OpID` with frame-based reconstruction exposes some operation shape that cannot be represented as a real frame node, stop and escalate
+* that would mean we missed a category of synthetic/internal operation in the design
+
+### Phase 3: Hard-cut module-object and semantic ID-valued data to internal result refs
+
+Purpose:
+
+* remove the biggest remaining “stored absolute recipe DAG as data” smell
+* make module-object / function-cache object values use internal result refs in memory
+* make those refs retain their targets explicitly
+
+Primary files / seams:
+
+* `core/object.go`
+  * this is the center of the cut
+  * `persistedModuleObjectValueKindResultRef` is the direction
+  * `persistedModuleObjectValueKindCallID` is the smell
+  * module-object field storage and persistence logic need to stop decoding semantic refs back to raw public `call.ID`s
+* `core/interface.go`
+  * interface/module-object bridging currently synthesizes module objects and still leans on raw IDs in some paths
+* `core/typedef.go`
+  * `DynamicID` and object/interface conversion assumptions still treat caller-facing IDs as the semantic representation
+* `core/modtypes.go`
+  * `CollectedContent` currently mines raw IDs out of module-object data and even raw strings that decode as IDs
+* `dagql/cache.go`
+  * module-object semantic result refs should become explicit retained deps
+  * this likely means either:
+    * extending owned-result attachment/normalization to module objects
+    * or adding a dedicated normalization/retention pass for module-object semantic refs
+* `dagql/types.go`
+  * may need extension if `HasOwnedResults` is broadened or a sibling interface is needed for module-object semantic refs
+
+Concrete cut in this phase:
+
+* for module-object fields that semantically represent dagql object/value references:
+  * store internal result refs in memory
+  * persist them as `result_id`
+  * do **not** decode them back into raw canonical `call.ID`s
+* these refs must retain their targets as explicit deps
+
+Important nuance preserved from the design:
+
+* a very narrow exceptional raw-`call.ID` data case may still exist
+* but it is explicitly **not** the main model
+* if keeping that exception starts to complicate implementation materially, stop and escalate
+
+Important explicit consequence:
+
+* this phase should also tighten the SDK/type-conversion boundary so that we are no longer casually treating semantic stored refs as raw historical public IDs
+
+Phase-3 test focus:
+
+* module-object round-trip tests:
+  * store semantic refs
+  * persist/import
+  * surface them back through caller-facing APIs via `IDForCaller(...)`
+* function-cache tests involving module-object fields that previously serialized raw IDs
+* retention tests showing that module-object stored result refs keep their targets alive
+
+Phase-3 review boundary:
+
+* after this phase, the worst remaining “absolute recipe as stored data” path should be gone
+* persistence can still still be using `canonical_id` on `results` for everything else
+
+Phase-3 tripwire:
+
+* if there are widespread truly opaque private/internal `call.ID` payloads that turn out not to be rare exceptions, stop and escalate
+* that would mean our “module-object semantic refs vs narrow raw-ID exception” split is too optimistic
+
+### Phase 4: Hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
+
+Purpose:
+
+* make the database reflect the new model fully
+* stop persisting full caller-facing absolute IDs per result
+* make import reconstruct internal frame/ref state directly
+
+Primary files / seams:
+
+* `dagql/persistdb/schema.sql`
+  * remove `results.canonical_id`
+  * add `results.call_frame_json` (or equivalent)
+* `dagql/persistdb/mirror_state.go`
+  * `MirrorResult.CanonicalID` becomes frame payload
+  * update insert/select SQL
+* `dagql/cache.go`
+  * remove `resultCanonicalIDs`
+  * keep frame state on `sharedResult`
+  * bump `cachePersistenceSchemaVersion`
+* `dagql/cache_egraph.go`
+  * stop lifecycle/reset logic from managing `resultCanonicalIDs`
+  * ensure result lifecycle preserves/deletes frames appropriately
+* `dagql/cache_persistence_contracts.go`
+  * `persistResultSnapshot` should carry frame data rather than canonical ID
+* `dagql/cache_persistence_worker.go`
+  * snapshot export should read frames from results, not `resultCanonicalIDs`
+  * persisted row write should store frame JSON
+* `dagql/cache_persistence_import.go`
+  * import should load results shell-first
+  * decode/store frames after result shells exist
+  * wire internal frame refs by `sharedResultID`
+* `dagql/cache_persistence_resolver.go`
+  * persisted lookup by result ID must stop assuming there is a stored canonical full ID
+  * result reconstruction should be frame-backed instead
+* `dagql/cache_persistence_self.go`
+  * persisted self envelopes still currently store and decode full IDs
+  * this phase should stop treating envelope-level IDs as authoritative
+* `core/persisted_object.go`
+  * persisted object helpers that currently ask for `PersistedCallIDByResultID` need to move to result/frame-based reconstruction
+
+Important import strategy:
+
+* do **not** topo sort
+* do shell-first import:
+  * create all `sharedResult` shells by result ID first
+  * import terms/eq classes/deps/snapshot links as today
+  * then decode and wire `resultCallFrame`s by result ID
+* this works because the targets of frame refs already exist as shells by the time we wire them
+
+Important persistence rule preserved from the design:
+
+* `resultCallFrame` is not a liveness graph
+* frame refs do **not** become dep rows automatically
+* only explicit dep edges / snapshot links / existing retention mechanisms should drive liveness
+
+Important likely follow-on simplification in this phase:
+
+* once persistence is frame-backed, persisted object/data fields that now use internal result refs get more uniform:
+  * internal graph edges use result IDs
+  * caller-facing IDs are reconstructed on demand
+
+Phase-4 test focus:
+
+* persistence worker snapshot tests
+* import shell-first reconstruction tests
+* persisted object decode/load tests by result ID
+* full `TestEngine/TestDiskPersistenceAcrossRestart` rerun
+* focused function-cache and cache-volume restart repros via subagents
+
+Phase-4 review boundary:
+
+* after this phase, the persistence model should match the current design directly
+* `canonical_id` should be gone from the mirrored DB and in-memory persistence bookkeeping
+
+Phase-4 tripwire:
+
+* if some persisted object decode path genuinely still requires a stored full public `call.ID` rather than a result/frame-based reconstruction, stop and escalate
+* at that point we need to decide whether the object decoder is modeling a true public recipe handle or whether the decode API still needs redesign
+
+## Cross-phase notes / guardrails
+
+### Pruning
+
+Current explicit plan:
+
+* do **not** redesign pruning as part of this work
+* only add new explicit dep/retention behavior where the design already clearly requires it
+  * example: module-object stored result refs
+
+### Telemetry rollout scope
+
+We are intentionally **not** fully locking the exact first rollout scope yet.
+
+What the plan assumes for now:
+
+* phase 2 should definitely cover the around-func / telemetry boundary and the synthetic/projection paths that are already known to be problematic
+* a broader “replace every user-facing raw `.ID()` callsite” audit can happen after the first targeted rollout if needed
+
+### Hard cut only
+
+This entire plan assumes:
+
+* no backward compatibility
+* no support for old persisted states with no frame
+* no attempt to preserve the old `canonical_id` model as a fallback storage layer
+
+If we hit a situation where implementation seems to “need” compatibility glue, that is a tripwire and we should stop.
