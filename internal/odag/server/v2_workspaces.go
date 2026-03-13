@@ -132,6 +132,13 @@ func (s *Server) staleDerivedWorkspaceTraceIDs(ctx context.Context, traceIDs []s
 		if summary.WorkspaceOpCount > 0 {
 			continue
 		}
+		traceMeta, err := s.store.GetTrace(ctx, traceID)
+		if err != nil {
+			return nil, err
+		}
+		if summary.RefreshedUnixNano >= traceMeta.LastSeenUnixNano {
+			continue
+		}
 		spans, err := s.store.ListTraceSpans(ctx, traceID)
 		if err != nil {
 			return nil, err

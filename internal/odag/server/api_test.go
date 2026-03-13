@@ -4112,11 +4112,28 @@ func TestV2WorkspacesSelfHealRelativeOnlyProjection(t *testing.T) {
 		t.Fatalf("expected no materialized workspace ops for relative-only trace, got %#v", materializedOps)
 	}
 
+	staleTraceIDs, err := srv.staleDerivedWorkspaceTraceIDs(context.Background(), []string{traceIDHex})
+	if err != nil {
+		t.Fatalf("check fresh relative workspace projection: %v", err)
+	}
+	if len(staleTraceIDs) != 0 {
+		t.Fatalf("expected fresh zero-op workspace projection to stay trusted, got stale=%v", staleTraceIDs)
+	}
+
 	if err := srv.store.ReplaceDerivedWorkspaceProjection(context.Background(), traceIDHex, nil, store.DerivedWorkspaceTraceRecord{
-		TraceID:        traceIDHex,
-		WorkspaceCount: 0,
+		TraceID:           traceIDHex,
+		RefreshedUnixNano: 1,
+		WorkspaceCount:    0,
 	}); err != nil {
 		t.Fatalf("replace stale relative workspace projection: %v", err)
+	}
+
+	staleTraceIDs, err = srv.staleDerivedWorkspaceTraceIDs(context.Background(), []string{traceIDHex})
+	if err != nil {
+		t.Fatalf("check stale relative workspace projection: %v", err)
+	}
+	if len(staleTraceIDs) != 1 || staleTraceIDs[0] != traceIDHex {
+		t.Fatalf("expected stale zero-op projection to self-heal, got stale=%v", staleTraceIDs)
 	}
 
 	workspacesReq := httptest.NewRequest(http.MethodGet, "/api/workspaces?traceID="+traceIDHex, nil)
