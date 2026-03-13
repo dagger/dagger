@@ -11372,6 +11372,15 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The blueprint referenced by the module source.
+    pub fn blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("blueprint");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
@@ -11541,6 +11550,15 @@ impl ModuleSource {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The toolchains referenced by the module source.
+    pub fn toolchains(&self) -> Vec<ModuleSource> {
+        let query = self.selection.select("toolchains");
+        vec![ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// User-defined defaults read from local .env files
     pub fn user_defaults(&self) -> EnvFile {
         let query = self.selection.select("userDefaults");
@@ -11554,6 +11572,26 @@ impl ModuleSource {
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Set a blueprint for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `blueprint` - The blueprint module to set.
+    pub fn with_blueprint(&self, blueprint: impl IntoID<ModuleSourceId>) -> ModuleSource {
+        let mut query = self.selection.select("withBlueprint");
+        query = query.arg_lazy(
+            "blueprint",
+            Box::new(move || {
+                let blueprint = blueprint.clone();
+                Box::pin(async move { blueprint.into_id().await.unwrap().quote() })
+            }),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Update the module source with a new client to generate.
     ///
@@ -11682,6 +11720,29 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add toolchains to the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `toolchains` - The toolchain modules to add.
+    pub fn with_toolchains(&self, toolchains: Vec<ModuleSourceId>) -> ModuleSource {
+        let mut query = self.selection.select("withToolchains");
+        query = query.arg("toolchains", toolchains);
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Update the blueprint module to the latest version.
+    pub fn with_update_blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("withUpdateBlueprint");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update one or more module dependencies.
     ///
     /// # Arguments
@@ -11692,6 +11753,26 @@ impl ModuleSource {
         query = query.arg(
             "dependencies",
             dependencies
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Update one or more toolchains.
+    ///
+    /// # Arguments
+    ///
+    /// * `toolchains` - The toolchains to update.
+    pub fn with_update_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withUpdateToolchains");
+        query = query.arg(
+            "toolchains",
+            toolchains
                 .into_iter()
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
@@ -11716,6 +11797,15 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the current blueprint from the module source.
+    pub fn without_blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("withoutBlueprint");
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -11767,6 +11857,26 @@ impl ModuleSource {
     ) -> ModuleSource {
         let mut query = self.selection.select("withoutExperimentalFeatures");
         query = query.arg("features", features);
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the provided toolchains from the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `toolchains` - The toolchains to remove.
+    pub fn without_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withoutToolchains");
+        query = query.arg(
+            "toolchains",
+            toolchains
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -14538,7 +14648,7 @@ pub struct WorkspaceDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
-    /// Path to start the search from, relative to the workspace root.
+    /// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
     #[builder(setter(into, strip_option), default)]
     pub from: Option<&'a str>,
 }
@@ -14549,6 +14659,11 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 impl Workspace {
+    /// Canonical Dagger address of the workspace directory.
+    pub async fn address(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("address");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return all checks from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -14583,17 +14698,22 @@ impl Workspace {
         let query = self.selection.select("clientId");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Path to config.toml relative to the workspace boundary (empty if not initialized).
+    pub async fn config_path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("configPath");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
     pub async fn default_module(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("defaultModule");
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a Directory from the workspace.
-    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
+    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -14605,11 +14725,11 @@ impl Workspace {
         }
     }
     /// Returns a Directory from the workspace.
-    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
+    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
         &self,
@@ -14634,11 +14754,11 @@ impl Workspace {
         }
     }
     /// Returns a File from the workspace.
-    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.
+    /// * `path` - Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -14649,8 +14769,9 @@ impl Workspace {
         }
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the path relative to the workspace root if found, or null if not found.
-    /// The search stops at the workspace root and will not traverse above it.
+    /// Returns the absolute workspace path if found, or null if not found.
+    /// Relative start paths resolve from the workspace directory.
+    /// The search stops at the workspace boundary and will not traverse above it.
     ///
     /// # Arguments
     ///
@@ -14662,8 +14783,9 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the path relative to the workspace root if found, or null if not found.
-    /// The search stops at the workspace root and will not traverse above it.
+    /// Returns the absolute workspace path if found, or null if not found.
+    /// Relative start paths resolve from the workspace directory.
+    /// The search stops at the workspace boundary and will not traverse above it.
     ///
     /// # Arguments
     ///
@@ -14710,12 +14832,22 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Whether a config.toml file exists in the workspace.
+    pub async fn has_config(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("hasConfig");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<WorkspaceId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Workspace path relative to root.
+    /// Whether .dagger/config.toml exists.
+    pub async fn initialized(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("initialized");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Workspace directory path relative to the workspace boundary.
     pub async fn path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await

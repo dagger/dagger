@@ -1991,11 +1991,9 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Address:     address,
-		Path:        detected.Path,
-		Initialized: detected.Initialized,
-		HasConfig:   detected.Config != nil,
-		ClientID:    clientMetadata.ClientID,
+		Address:  address,
+		Path:     detected.Path,
+		ClientID: clientMetadata.ClientID,
 	}
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
@@ -2008,10 +2006,6 @@ func (srv *Server) buildCoreWorkspace(
 	} else {
 		// Remote: store the cloned git tree.
 		coreWS.SetRootfs(prebuiltRootfs)
-	}
-
-	if detected.Config != nil {
-		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.WorkspaceDirName, workspace.ConfigFileName)
 	}
 
 	return coreWS, nil

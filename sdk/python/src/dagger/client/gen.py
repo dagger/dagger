@@ -10780,6 +10780,12 @@ class ModuleSource(Type):
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str)
 
+    def blueprint(self) -> Self:
+        """The blueprint referenced by the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("blueprint", _args)
+        return ModuleSource(_ctx)
+
     async def clone_ref(self) -> str:
         """The ref to clone the root of the git repo from. Only valid for git
         sources.
@@ -11235,6 +11241,12 @@ class ModuleSource(Type):
     def __await__(self):
         return self.sync().__await__()
 
+    async def toolchains(self) -> list["ModuleSource"]:
+        """The toolchains referenced by the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("toolchains", _args)
+        return await _ctx.execute_object_list(ModuleSource)
+
     def user_defaults(self) -> EnvFile:
         """User-defined defaults read from local .env files"""
         _args: list[Arg] = []
@@ -11261,6 +11273,20 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
+
+    def with_blueprint(self, blueprint: Self) -> Self:
+        """Set a blueprint for the module source.
+
+        Parameters
+        ----------
+        blueprint:
+            The blueprint module to set.
+        """
+        _args = [
+            Arg("blueprint", blueprint),
+        ]
+        _ctx = self._select("withBlueprint", _args)
+        return ModuleSource(_ctx)
 
     def with_client(self, generator: str, output_dir: str) -> Self:
         """Update the module source with a new client to generate.
@@ -11383,6 +11409,26 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
+    def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
+        """Add toolchains to the module source.
+
+        Parameters
+        ----------
+        toolchains:
+            The toolchain modules to add.
+        """
+        _args = [
+            Arg("toolchains", toolchains),
+        ]
+        _ctx = self._select("withToolchains", _args)
+        return ModuleSource(_ctx)
+
+    def with_update_blueprint(self) -> Self:
+        """Update the blueprint module to the latest version."""
+        _args: list[Arg] = []
+        _ctx = self._select("withUpdateBlueprint", _args)
+        return ModuleSource(_ctx)
+
     def with_update_dependencies(self, dependencies: list[str]) -> Self:
         """Update one or more module dependencies.
 
@@ -11397,6 +11443,20 @@ class ModuleSource(Type):
         _ctx = self._select("withUpdateDependencies", _args)
         return ModuleSource(_ctx)
 
+    def with_update_toolchains(self, toolchains: list[str]) -> Self:
+        """Update one or more toolchains.
+
+        Parameters
+        ----------
+        toolchains:
+            The toolchains to update.
+        """
+        _args = [
+            Arg("toolchains", toolchains),
+        ]
+        _ctx = self._select("withUpdateToolchains", _args)
+        return ModuleSource(_ctx)
+
     def with_updated_clients(self, clients: list[str]) -> Self:
         """Update one or more clients.
 
@@ -11409,6 +11469,12 @@ class ModuleSource(Type):
             Arg("clients", clients),
         ]
         _ctx = self._select("withUpdatedClients", _args)
+        return ModuleSource(_ctx)
+
+    def without_blueprint(self) -> Self:
+        """Remove the current blueprint from the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutBlueprint", _args)
         return ModuleSource(_ctx)
 
     def without_client(self, path: str) -> Self:
@@ -11455,6 +11521,20 @@ class ModuleSource(Type):
             Arg("features", features),
         ]
         _ctx = self._select("withoutExperimentalFeatures", _args)
+        return ModuleSource(_ctx)
+
+    def without_toolchains(self, toolchains: list[str]) -> Self:
+        """Remove the provided toolchains from the module source.
+
+        Parameters
+        ----------
+        toolchains:
+            The toolchains to remove.
+        """
+        _args = [
+            Arg("toolchains", toolchains),
+        ]
+        _ctx = self._select("withoutToolchains", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
@@ -14101,6 +14181,27 @@ class TypeDef(Type):
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
+    async def address(self) -> str:
+        """Canonical Dagger address of the workspace directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("address", _args)
+        return await _ctx.execute(str)
+
     def checks(
         self,
         *,
@@ -14140,6 +14241,28 @@ class Workspace(Type):
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
 
+    async def config_path(self) -> str:
+        """Path to config.toml relative to the workspace boundary (empty if not
+        initialized).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("configPath", _args)
+        return await _ctx.execute(str)
+
     async def default_module(self) -> str:
         """The default module to focus on (blueprint or standalone module name).
         Empty when ambiguous.
@@ -14172,15 +14295,15 @@ class Workspace(Type):
     ) -> Directory:
         """Returns a Directory from the workspace.
 
-        Relative paths resolve from the workspace root. Absolute paths resolve
-        from the rootfs root.
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
 
         Parameters
         ----------
         path:
             Location of the directory to retrieve. Relative paths (e.g.,
-            "src") resolve from workspace root; absolute paths (e.g., "/src")
-            resolve from sandbox root.
+            "src") resolve from the workspace directory; absolute paths (e.g.,
+            "/src") resolve from the workspace boundary.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -14202,15 +14325,15 @@ class Workspace(Type):
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
 
-        Relative paths resolve from the workspace root. Absolute paths resolve
-        from the rootfs root.
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
 
         Parameters
         ----------
         path:
             Location of the file to retrieve. Relative paths (e.g., "go.mod")
-            resolve from workspace root; absolute paths (e.g., "/go.mod")
-            resolve from sandbox root.
+            resolve from the workspace directory; absolute paths (e.g.,
+            "/go.mod") resolve from the workspace boundary.
         """
         _args = [
             Arg("path", path),
@@ -14227,17 +14350,21 @@ class Workspace(Type):
         """Search for a file or directory by walking up from the start path
         within the workspace.
 
-        Returns the path relative to the workspace root if found, or null if
-        not found.
+        Returns the absolute workspace path if found, or null if not found.
 
-        The search stops at the workspace root and will not traverse above it.
+        Relative start paths resolve from the workspace directory.
+
+        The search stops at the workspace boundary and will not traverse above
+        it.
 
         Parameters
         ----------
         name:
             The name of the file or directory to search for.
         from_:
-            Path to start the search from, relative to the workspace root.
+            Path to start the search from. Relative paths resolve from the
+            workspace directory; absolute paths resolve from the workspace
+            boundary.
 
         Returns
         -------
@@ -14278,6 +14405,25 @@ class Workspace(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
+    async def has_config(self) -> bool:
+        """Whether a config.toml file exists in the workspace.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasConfig", _args)
+        return await _ctx.execute(bool)
+
     async def id(self) -> WorkspaceID:
         """A unique identifier for this Workspace.
 
@@ -14302,8 +14448,27 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(WorkspaceID)
 
+    async def initialized(self) -> bool:
+        """Whether .dagger/config.toml exists.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("initialized", _args)
+        return await _ctx.execute(bool)
+
     async def path(self) -> str:
-        """Workspace path relative to root.
+        """Workspace directory path relative to the workspace boundary.
 
         Returns
         -------
