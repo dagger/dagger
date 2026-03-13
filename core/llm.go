@@ -111,15 +111,34 @@ type LLMClient interface {
 	IsRetryable(err error) bool
 }
 
+// LLMResponse is the internal result returned by a provider's SendQuery.
+// It carries content blocks and token usage but is not exposed in the API;
+// the evaluation loop converts it into LLMMessage history entries.
 type LLMResponse struct {
-	Content    string
-	ToolCalls  []*LLMToolCall
+	Content []*LLMContentBlock
 	TokenUsage LLMTokenUsage
+}
 
-	// Thinking content from models that support extended thinking (e.g. Anthropic).
-	// Must be preserved in history for the API to accept subsequent requests.
-	Thinking          string
-	ThinkingSignature string
+// TextContent returns the concatenation of all text blocks.
+func (r *LLMResponse) TextContent() string {
+	var sb strings.Builder
+	for _, b := range r.Content {
+		if b.Kind == LLMContentText {
+			sb.WriteString(b.Text)
+		}
+	}
+	return sb.String()
+}
+
+// ToolCalls returns just the tool-call content blocks.
+func (r *LLMResponse) ToolCalls() []*LLMContentBlock {
+	var calls []*LLMContentBlock
+	for _, b := range r.Content {
+		if b.Kind == LLMContentToolCall {
+			calls = append(calls, b)
+		}
+	}
+	return calls
 }
 
 type LLMTokenUsage struct {
@@ -137,23 +156,76 @@ func (*LLMTokenUsage) Type() *ast.Type {
 	}
 }
 
-// LLMMessage represents a generic message in the LLM conversation
+// LLMContentBlockKind identifies the kind of content in an LLMContentBlock.
+type LLMContentBlockKind string
+
+var LLMContentBlockKinds = dagql.NewEnum[LLMContentBlockKind]()
+
+var (
+	LLMContentText       = LLMContentBlockKinds.Register("TEXT", "Plain text content.")
+	LLMContentThinking   = LLMContentBlockKinds.Register("THINKING", "Model thinking/reasoning content (e.g. Anthropic extended thinking).")
+	LLMContentToolCall   = LLMContentBlockKinds.Register("TOOL_CALL", "A tool/function call from the model.")
+	LLMContentToolResult = LLMContentBlockKinds.Register("TOOL_RESULT", "A tool/function result.")
+	// Future: IMAGE, AUDIO, etc.
+)
+
+func (LLMContentBlockKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContentBlockKind",
+		NonNull:   true,
+	}
+}
+
+func (t LLMContentBlockKind) TypeDescription() string {
+	return "The kind of content in a message block."
+}
+
+func (t LLMContentBlockKind) Decoder() dagql.InputDecoder {
+	return LLMContentBlockKinds
+}
+
+func (t LLMContentBlockKind) ToLiteral() call.Literal {
+	return LLMContentBlockKinds.Literal(t)
+}
+
+// LLMContentBlock is a single piece of content within an LLMMessage.
+// The Kind field determines which other fields are populated.
+type LLMContentBlock struct {
+	Kind LLMContentBlockKind `field:"true" json:"kind"`
+
+	// Text content (Kind=TEXT, THINKING, or TOOL_RESULT)
+	Text string `field:"true" json:"text,omitempty"`
+
+	// Tool call fields (Kind=TOOL_CALL)
+	CallID    string `field:"true" json:"call_id,omitempty"`
+	ToolName  string `field:"true" json:"tool_name,omitempty"`
+	Arguments JSON   `field:"true" json:"arguments,omitempty"`
+
+	// Tool result fields (Kind=TOOL_RESULT)
+	// CallID is reused from above.
+	Errored bool `field:"true" json:"errored,omitempty"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	// Not exposed as a field — must be preserved in history but is
+	// meaningless to users.
+	Signature string `json:"signature,omitempty"`
+}
+
+func (*LLMContentBlock) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContentBlock",
+		NonNull:   true,
+	}
+}
+
+// LLMMessage represents a single message in the LLM conversation history.
+// Content is a list of typed content blocks, supporting multi-modal and
+// multi-part messages (e.g. thinking + text + tool calls in one turn).
 type LLMMessage struct {
-	Role        LLMMessageRole `field:"true" json:"role"`
-	Content     string         `field:"true" json:"content"`
-	ToolCalls   []*LLMToolCall `field:"true" json:"tool_calls,omitempty"`
-	ToolCallID  string         `field:"true" json:"tool_call_id,omitempty"`
-	ToolErrored bool           `field:"true" json:"tool_errored,omitempty"`
+	Role    LLMMessageRole     `field:"true" json:"role"`
+	Content []*LLMContentBlock `field:"true" json:"content"`
 
-	// Thinking content from models that support extended thinking.
-	// Not exposed as a field — opaque to the user, but must be preserved
-	// in history for provider APIs that require it (e.g. Anthropic).
-	Thinking          string `json:"thinking,omitempty"`
-	ThinkingSignature string `json:"thinking_signature,omitempty"`
-
-	// NB: this isn't exposed as a field, since it will only be present on
-	// response messages, but shamefully initially because it's annoying to make
-	// it a pointer
+	// Token usage for this message (only set on assistant responses).
 	TokenUsage LLMTokenUsage `json:"token_usage,omitzero"`
 }
 
@@ -162,6 +234,58 @@ func (*LLMMessage) Type() *ast.Type {
 		NamedType: "LLMMessage",
 		NonNull:   true,
 	}
+}
+
+// TextContent returns the concatenation of all text blocks in this message.
+func (m *LLMMessage) TextContent() string {
+	var sb strings.Builder
+	for _, b := range m.Content {
+		if b.Kind == LLMContentText {
+			sb.WriteString(b.Text)
+		}
+	}
+	return sb.String()
+}
+
+// ToolCalls returns the tool-call content blocks.
+func (m *LLMMessage) ToolCalls() []*LLMContentBlock {
+	var calls []*LLMContentBlock
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolCall {
+			calls = append(calls, b)
+		}
+	}
+	return calls
+}
+
+// IsToolResult returns true if this message is a tool result (has a TOOL_RESULT block).
+func (m *LLMMessage) IsToolResult() bool {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return true
+		}
+	}
+	return false
+}
+
+// ToolResultCallID returns the call ID from the first TOOL_RESULT block, if any.
+func (m *LLMMessage) ToolResultCallID() string {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return b.CallID
+		}
+	}
+	return ""
+}
+
+// ToolResultErrored returns whether the first TOOL_RESULT block is an error.
+func (m *LLMMessage) ToolResultErrored() bool {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return b.Errored
+		}
+	}
+	return false
 }
 
 type LLMMessageRole string
@@ -197,10 +321,22 @@ func (role LLMMessageRole) String() string {
 	return string(role)
 }
 
+// LLMToolCall is kept as a convenience type for the MCP layer and provider
+// interfaces that work with tool calls as a flat list.
 type LLMToolCall struct {
-	CallID    string `field:"true" json:"id"`
-	Name      string `field:"true" json:"name"`
-	Arguments JSON   `field:"true" json:"arguments"`
+	CallID    string `json:"id"`
+	Name      string `json:"name"`
+	Arguments JSON   `json:"arguments"`
+}
+
+// ToContentBlock converts to the canonical content block representation.
+func (tc *LLMToolCall) ToContentBlock() *LLMContentBlock {
+	return &LLMContentBlock{
+		Kind:      LLMContentToolCall,
+		CallID:    tc.CallID,
+		ToolName:  tc.Name,
+		Arguments: tc.Arguments,
+	}
 }
 
 func (*LLMToolCall) Type() *ast.Type {
@@ -838,8 +974,11 @@ func (llm *LLM) WithPrompt(
 	})
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:    LLMMessageRoleUser,
-		Content: prompt,
+		Role: LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{
+			Kind: LLMContentText,
+			Text: prompt,
+		}},
 	})
 	return llm
 }
@@ -876,21 +1015,23 @@ func (llm *LLM) WithoutSystemPrompts() *LLM {
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:    LLMMessageRoleSystem,
-		Content: prompt,
+		Role: LLMMessageRoleSystem,
+		Content: []*LLMContentBlock{{
+			Kind: LLMContentText,
+			Text: prompt,
+		}},
 	})
 	return llm
 }
 
-// Append an assistant response message to the history
-func (llm *LLM) WithResponse(content string, tokenUsage LLMTokenUsage, thinking, thinkingSignature string) *LLM {
+// WithResponse appends an assistant response to the message history.
+// The content blocks come directly from the LLMResponse.
+func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:              LLMMessageRoleAssistant,
-		Content:           content,
-		TokenUsage:        tokenUsage,
-		Thinking:          thinking,
-		ThinkingSignature: thinkingSignature,
+		Role:       LLMMessageRoleAssistant,
+		Content:    blocks,
+		TokenUsage: tokenUsage,
 	})
 	return llm
 }
@@ -898,12 +1039,13 @@ func (llm *LLM) WithResponse(content string, tokenUsage LLMTokenUsage, thinking,
 // Append a tool call to the last assistant message in the history
 func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
 	llm = llm.Clone()
-	// Find the last assistant message and append the tool call to it
+	// Find the last assistant message and append the tool call block to it
 	for i := len(llm.Messages) - 1; i >= 0; i-- {
 		if llm.Messages[i].Role == LLMMessageRoleAssistant {
-			llm.Messages[i].ToolCalls = append(llm.Messages[i].ToolCalls, &LLMToolCall{
+			llm.Messages[i].Content = append(llm.Messages[i].Content, &LLMContentBlock{
+				Kind:      LLMContentToolCall,
 				CallID:    callID,
-				Name:      tool,
+				ToolName:  tool,
 				Arguments: arguments,
 			})
 			break
@@ -916,10 +1058,13 @@ func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
 func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:        LLMMessageRoleUser,
-		Content:     content,
-		ToolCallID:  callID,
-		ToolErrored: errored,
+		Role: LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{
+			Kind:    LLMContentToolResult,
+			Text:    content,
+			CallID:  callID,
+			Errored: errored,
+		}},
 	})
 	return llm
 }
@@ -965,7 +1110,7 @@ func (llm *LLM) LastReply() (string, bool) {
 		if msg.Role != LLMMessageRoleAssistant {
 			continue
 		}
-		txt := msg.Content
+		txt := msg.TextContent()
 		if len(txt) == 0 {
 			continue
 		}
@@ -982,8 +1127,11 @@ func (llm *LLM) messagesWithSystemPrompt() []*LLMMessage {
 	}
 	if systemPrompt != "" {
 		return append([]*LLMMessage{{
-			Role:    LLMMessageRoleSystem,
-			Content: systemPrompt,
+			Role: LLMMessageRoleSystem,
+			Content: []*LLMContentBlock{{
+				Kind: LLMContentText,
+				Text: systemPrompt,
+			}},
 		}}, llm.Messages...)
 	}
 	return llm.Messages
@@ -1025,7 +1173,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	var newMessages []*LLMMessage
 	for _, msg := range slices.Backward(messagesToSend) {
-		if msg.Role == LLMMessageRoleAssistant || msg.ToolCallID != "" {
+		if msg.Role == LLMMessageRoleAssistant || msg.IsToolResult() {
 			// only display messages appended since the last response
 			break
 		}
@@ -1053,7 +1201,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 				log.String(telemetry.ContentTypeAttr, "text/markdown"))
 			defer stdio.Close()
-			fmt.Fprint(stdio.Stdout, msg.Content)
+			fmt.Fprint(stdio.Stdout, msg.TextContent())
 		}()
 	}
 
@@ -1095,10 +1243,15 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	var sels []dagql.Selector
 	{
+		// Serialize content blocks as JSON for the withResponse selector.
+		contentJSON, err := json.Marshal(res.Content)
+		if err != nil {
+			return inst, fmt.Errorf("marshaling response content: %w", err)
+		}
 		args := []dagql.NamedInput{
 			{
 				Name:  "content",
-				Value: dagql.NewString(res.Content),
+				Value: JSON(contentJSON),
 			},
 		}
 		if res.TokenUsage.InputTokens != 0 {
@@ -1131,58 +1284,38 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				Value: dagql.NewInt(res.TokenUsage.TotalTokens),
 			})
 		}
-		if res.Thinking != "" {
-			args = append(args, dagql.NamedInput{
-				Name:  "thinking",
-				Value: dagql.NewString(res.Thinking),
-			})
-		}
-		if res.ThinkingSignature != "" {
-			args = append(args, dagql.NamedInput{
-				Name:  "thinkingSignature",
-				Value: dagql.NewString(res.ThinkingSignature),
-			})
-		}
 		sels = append(sels, dagql.Selector{
 			Field: "withResponse",
 			Args:  args,
 		})
 	}
-	for _, call := range res.ToolCalls {
-		sels = append(sels, dagql.Selector{
-			Field: "withToolCall",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "call",
-					Value: dagql.NewString(call.CallID),
-				},
-				{
-					Name:  "tool",
-					Value: dagql.NewString(call.Name),
-				},
-				{
-					Name:  "arguments",
-					Value: call.Arguments,
-				},
-			},
-		})
+	// Extract tool calls from response content blocks for the MCP layer.
+	var toolCalls []*LLMToolCall
+	for _, block := range res.Content {
+		if block.Kind == LLMContentToolCall {
+			toolCalls = append(toolCalls, &LLMToolCall{
+				CallID:    block.CallID,
+				Name:      block.ToolName,
+				Arguments: block.Arguments,
+			})
+		}
 	}
 	beforeObjs := maps.Clone(llm.mcp.objsByID)
-	for _, msg := range llm.mcp.CallBatch(ctx, tools, res.ToolCalls) {
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "call",
-					Value: dagql.NewString(msg.ToolCallID),
+					Value: dagql.NewString(msg.ToolResultCallID()),
 				},
 				{
 					Name:  "content",
-					Value: dagql.NewString(msg.Content),
+					Value: dagql.NewString(msg.TextContent()),
 				},
 				{
 					Name:  "errored",
-					Value: dagql.NewBoolean(msg.ToolErrored),
+					Value: dagql.NewBoolean(msg.ToolResultErrored()),
 				},
 			},
 		})
@@ -1406,27 +1539,34 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 			history = append(history, "")
 			lastRole = msg.Role
 		}
-		content := squash(msg.Content)
 		switch msg.Role {
 		case LLMMessageRoleUser:
-			var item string
-			if msg.ToolCallID != "" {
-				item += "🛠️ 💬 "
-			} else {
-				item += "🧑 💬 "
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					item := "🛠️ 💬 "
+					if block.Errored {
+						item += "ERROR: "
+					}
+					item += squash(block.Text)
+					history = append(history, item)
+				case LLMContentText:
+					history = append(history, "🧑 💬 "+squash(block.Text))
+				}
 			}
-			if msg.ToolErrored {
-				item += "ERROR: "
-			}
-			item += content
-			history = append(history, item)
 		case LLMMessageRoleAssistant:
-			if len(content) > 0 {
-				history = append(history, "🤖 💬 "+content)
-			}
-			for _, call := range msg.ToolCalls {
-				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Name, call.Arguments)
-				history = append(history, item)
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentThinking:
+					history = append(history, "💭 "+squash(block.Text))
+				case LLMContentText:
+					if len(block.Text) > 0 {
+						history = append(history, "🤖 💬 "+squash(block.Text))
+					}
+				case LLMContentToolCall:
+					item := fmt.Sprintf("🤖 🛠️ %s %s", block.ToolName, block.Arguments)
+					history = append(history, item)
+				}
 			}
 		}
 		if msg.TokenUsage.InputTokens > 0 || msg.TokenUsage.OutputTokens > 0 {

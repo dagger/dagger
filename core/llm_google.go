@@ -8,6 +8,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -92,39 +93,38 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 			return nil, nil, fmt.Errorf("unexpected role %s", msg.Role)
 		}
 
-		// message was a tool call
-		if msg.ToolCallID != "" {
-			// find the function name
-			content.Parts = append(content.Parts, &genai.Part{
-				FunctionResponse: &genai.FunctionResponse{
-					Name: msg.ToolCallID,
-					// Genai expects a json format response
-					Response: map[string]any{
-						"response": msg.Content,
-						"error":    msg.ToolErrored,
+		for _, block := range msg.Content {
+			switch block.Kind {
+			case LLMContentToolResult:
+				content.Parts = append(content.Parts, &genai.Part{
+					FunctionResponse: &genai.FunctionResponse{
+						Name: block.CallID,
+						Response: map[string]any{
+							"response": block.Text,
+							"error":    block.Errored,
+						},
 					},
-				},
-			})
-		} else { // just content
-			c := msg.Content
-			if c == "" {
-				c = " "
+				})
+			case LLMContentText:
+				text := block.Text
+				if text == "" {
+					text = " "
+				}
+				content.Parts = append(content.Parts, &genai.Part{Text: text})
+			case LLMContentToolCall:
+				var args map[string]any
+				if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
+					return nil, nil, err
+				}
+				content.Parts = append(content.Parts, &genai.Part{
+					FunctionCall: &genai.FunctionCall{
+						Name: block.CallID,
+						Args: args,
+					},
+				})
+			case LLMContentThinking:
+				// Gemini doesn't support thinking blocks; skip them
 			}
-			content.Parts = append(content.Parts, &genai.Part{Text: c})
-		}
-
-		// add tool calls
-		for _, call := range msg.ToolCalls {
-			var args map[string]any
-			if err := json.Unmarshal(call.Arguments.Bytes(), &args); err != nil {
-				return nil, nil, err
-			}
-			content.Parts = append(content.Parts, &genai.Part{
-				FunctionCall: &genai.FunctionCall{
-					Name: call.CallID,
-					Args: args,
-				},
-			})
 		}
 
 		if content.Role != "system" {
@@ -143,15 +143,16 @@ func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
 	stdout io.Writer,
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
-) (content string, toolCalls []*LLMToolCall, tokenUsage LLMTokenUsage, err error) {
+) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
+	var textContent strings.Builder
 	for res, err := range stream {
 		if err != nil {
 			if apiErr, ok := err.(*apierror.APIError); ok {
 				err = fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
-				return content, toolCalls, tokenUsage, err
+				return contentBlocks, tokenUsage, err
 			}
 
-			return content, toolCalls, tokenUsage, err
+			return contentBlocks, tokenUsage, err
 		}
 
 		if res.UsageMetadata != nil {
@@ -160,26 +161,27 @@ func (c *GenaiClient) processStreamResponse(
 
 		if len(res.Candidates) == 0 {
 			err = &ModelFinishedError{Reason: "no response from model"}
-			return content, toolCalls, tokenUsage, err
+			return contentBlocks, tokenUsage, err
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
 			err = &ModelFinishedError{Reason: string(candidate.FinishReason)}
-			return content, toolCalls, tokenUsage, err
+			return contentBlocks, tokenUsage, err
 		}
 
 		for _, part := range candidate.Content.Parts {
 			if x := part.Text; x != "" {
 				fmt.Fprint(stdout, x)
-				content += x
+				textContent.WriteString(x)
 			} else if x := part.FunctionCall; x != nil {
 				bytes, err := json.Marshal(x.Args)
 				if err != nil {
-					return content, toolCalls, tokenUsage, err
+					return contentBlocks, tokenUsage, err
 				}
-				toolCalls = append(toolCalls, &LLMToolCall{
+				contentBlocks = append(contentBlocks, &LLMContentBlock{
+					Kind:      LLMContentToolCall,
 					CallID:    x.Name,
-					Name:      x.Name,
+					ToolName:  x.Name,
 					Arguments: JSON(bytes),
 				})
 			} else {
@@ -187,7 +189,14 @@ func (c *GenaiClient) processStreamResponse(
 			}
 		}
 	}
-	return content, toolCalls, tokenUsage, nil
+	// Prepend text content if any was accumulated
+	if textContent.Len() > 0 {
+		contentBlocks = append([]*LLMContentBlock{{
+			Kind: LLMContentText,
+			Text: textContent.String(),
+		}}, contentBlocks...)
+	}
+	return contentBlocks, tokenUsage, nil
 }
 
 var _ LLMClient = (*GenaiClient)(nil)
@@ -304,7 +313,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return usageSummary
 	}
 
-	content, toolCalls, tokenUsage, err := c.processStreamResponse(
+	contentBlocks, tokenUsage, err := c.processStreamResponse(
 		stream,
 		stdio.Stdout,
 		tokenHandler,
@@ -314,8 +323,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	}
 
 	return &LLMResponse{
-		Content:    content,
-		ToolCalls:  toolCalls,
+		Content:    contentBlocks,
 		TokenUsage: tokenUsage,
 	}, nil
 }

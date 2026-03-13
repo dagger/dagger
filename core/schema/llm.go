@@ -2,6 +2,8 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -140,8 +142,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 	dagql.Fields[*core.LLMMessage]{}.Install(srv)
+	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
 	dagql.Fields[*core.LLMToolCall]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv)
+	core.LLMContentBlockKinds.Install(srv)
 }
 
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
@@ -203,22 +207,24 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 }
 
 func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
-	Content           string
-	InputTokens       int64  `default:"0"`
-	OutputTokens      int64  `default:"0"`
-	CachedTokenReads  int64  `default:"0"`
-	CachedTokenWrites int64  `default:"0"`
-	TotalTokens       int64  `default:"0"`
-	Thinking          string `default:""`
-	ThinkingSignature string `default:""`
+	Content           core.JSON
+	InputTokens       int64 `default:"0"`
+	OutputTokens      int64 `default:"0"`
+	CachedTokenReads  int64 `default:"0"`
+	CachedTokenWrites int64 `default:"0"`
+	TotalTokens       int64 `default:"0"`
 }) (*core.LLM, error) {
-	return llm.WithResponse(args.Content, core.LLMTokenUsage{
+	var blocks []*core.LLMContentBlock
+	if err := json.Unmarshal(args.Content.Bytes(), &blocks); err != nil {
+		return nil, fmt.Errorf("unmarshaling content blocks: %w", err)
+	}
+	return llm.WithResponse(blocks, core.LLMTokenUsage{
 		InputTokens:       args.InputTokens,
 		OutputTokens:      args.OutputTokens,
 		CachedTokenReads:  args.CachedTokenReads,
 		CachedTokenWrites: args.CachedTokenWrites,
 		TotalTokens:       args.TotalTokens,
-	}, args.Thinking, args.ThinkingSignature), nil
+	}), nil
 }
 
 func (s *llmSchema) withToolCall(ctx context.Context, llm *core.LLM, args struct {

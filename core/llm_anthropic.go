@@ -121,45 +121,36 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	var systemPrompts []anthropic.TextBlockParam
 	var cachedBlocks int
 	for _, msg := range history {
+		if msg.Role == LLMMessageRoleSystem {
+			systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: msg.TextContent()})
+			continue
+		}
+
 		var blocks []anthropic.ContentBlockParamUnion
-
-		// Anthropic's API sometimes returns an empty content whilst not accepting it:
-		// anthropic.BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'messages: text content blocks must be non-empty'}}
-		// This workaround overwrites the empty content to space character
-		// As soon as this issue is resolved, we can remove this hack
-		// https://github.com/anthropics/anthropic-sdk-python/issues/461#issuecomment-2141882744
-		content := msg.Content
-		if content == "" {
-			content = " "
-		}
-
-		if msg.ToolCallID != "" {
-			blocks = append(blocks, anthropic.NewToolResultBlock(
-				msg.ToolCallID,
-				content,
-				msg.ToolErrored,
-			))
-		} else {
-			// For assistant messages with thinking, include the thinking block
-			// before the text block. Anthropic requires this for multi-turn
-			// conversations with extended thinking enabled.
-			if msg.Role == LLMMessageRoleAssistant && msg.Thinking != "" {
-				blocks = append(blocks, anthropic.NewThinkingBlock(
-					msg.ThinkingSignature,
-					msg.Thinking,
-				))
+		for _, block := range msg.Content {
+			switch block.Kind {
+			case LLMContentText:
+				text := block.Text
+				// Anthropic's API sometimes returns empty content but rejects it on input.
+				if text == "" {
+					text = " "
+				}
+				blocks = append(blocks, anthropic.NewTextBlock(text))
+			case LLMContentThinking:
+				blocks = append(blocks, anthropic.NewThinkingBlock(block.Signature, block.Text))
+			case LLMContentToolCall:
+				var args map[string]any
+				if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
+					return nil, err
+				}
+				blocks = append(blocks, anthropic.NewToolUseBlock(block.CallID, args, block.ToolName))
+			case LLMContentToolResult:
+				text := block.Text
+				if text == "" {
+					text = " "
+				}
+				blocks = append(blocks, anthropic.NewToolResultBlock(block.CallID, text, block.Errored))
 			}
-			blocks = append(blocks, anthropic.NewTextBlock(content))
-		}
-
-		// add tool usage blocks first so they get cached when setting
-		// CacheControl below
-		for _, call := range msg.ToolCalls {
-			var args map[string]any
-			if err := json.Unmarshal(call.Arguments.Bytes(), &args); err != nil {
-				return nil, err
-			}
-			blocks = append(blocks, anthropic.NewToolUseBlock(call.CallID, args, call.Name))
 		}
 
 		// enable caching based on simple token usage heuristic
@@ -178,6 +169,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				lastBlock.OfToolUse.CacheControl = cacheControl
 			case lastBlock.OfToolResult != nil:
 				lastBlock.OfToolResult.CacheControl = cacheControl
+			// ThinkingBlockParam doesn't support CacheControl
 			}
 		}
 
@@ -186,9 +178,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			messages = append(messages, anthropic.NewUserMessage(blocks...))
 		case LLMMessageRoleAssistant:
 			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
-		case LLMMessageRoleSystem:
-			// Collect all system prompt messages.
-			systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: msg.Content})
 		}
 	}
 
@@ -403,31 +392,33 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		}
 	}
 
-	// Process the accumulated content into a generic LLMResponse.
-	var content string
-	var thinking, thinkingSignature string
-	var toolCalls []*LLMToolCall
+	// Process the accumulated content into content blocks.
+	var contentBlocks []*LLMContentBlock
 	for _, block := range acc.Content {
 		switch b := block.AsAny().(type) {
 		case anthropic.ThinkingBlock:
-			thinking = b.Thinking
-			thinkingSignature = b.Signature
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind:      LLMContentThinking,
+				Text:      b.Thinking,
+				Signature: b.Signature,
+			})
 		case anthropic.TextBlock:
-			content += b.Text
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind: LLMContentText,
+				Text: b.Text,
+			})
 		case anthropic.ToolUseBlock:
-			toolCalls = append(toolCalls, &LLMToolCall{
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind:      LLMContentToolCall,
 				CallID:    b.ID,
-				Name:      b.Name,
+				ToolName:  b.Name,
 				Arguments: JSON(b.Input),
 			})
 		}
 	}
 
 	return &LLMResponse{
-		Content:           content,
-		ToolCalls:         toolCalls,
-		Thinking:          thinking,
-		ThinkingSignature: thinkingSignature,
+		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
 			InputTokens:       acc.Usage.InputTokens,
 			OutputTokens:      acc.Usage.OutputTokens,

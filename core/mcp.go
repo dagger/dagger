@@ -1193,10 +1193,13 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(ctx, tools, call)
 		allResults = append(allResults, &LLMMessage{
-			Role:        LLMMessageRoleUser,
-			Content:     result,
-			ToolCallID:  call.CallID,
-			ToolErrored: isError,
+			Role: LLMMessageRoleUser,
+			Content: []*LLMContentBlock{{
+				Kind:    LLMContentToolResult,
+				Text:    result,
+				CallID:  call.CallID,
+				Errored: isError,
+			}},
 		})
 	}
 
@@ -1286,10 +1289,13 @@ func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls [
 		toolCallsPool.Go(func() *LLMMessage {
 			content, isError := m.Call(ctx, tools, toolCall)
 			return &LLMMessage{
-				Role:        LLMMessageRoleUser,
-				Content:     content,
-				ToolCallID:  toolCall.CallID,
-				ToolErrored: isError,
+				Role: LLMMessageRoleUser,
+				Content: []*LLMContentBlock{{
+					Kind:    LLMContentToolResult,
+					Text:    content,
+					CallID:  toolCall.CallID,
+					Errored: isError,
+				}},
 			}
 		})
 	}

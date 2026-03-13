@@ -90,29 +90,31 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
 
 	for _, msg := range history {
-		if msg.ToolCallID != "" {
-			content := msg.Content
-			if msg.ToolErrored {
-				content = "error: " + content
+		// Handle tool result messages
+		if msg.IsToolResult() {
+			text := msg.TextContent()
+			if msg.ToolResultErrored() {
+				text = "error: " + text
 			}
-			openAIMessages = append(openAIMessages, openai.ToolMessage(content, msg.ToolCallID))
+			openAIMessages = append(openAIMessages, openai.ToolMessage(text, msg.ToolResultCallID()))
 			continue
 		}
-		var blocks []openai.ChatCompletionContentPartUnionParam
 		switch msg.Role {
 		case LLMMessageRoleUser:
-			blocks = append(blocks, openai.TextContentPart(msg.Content))
+			var blocks []openai.ChatCompletionContentPartUnionParam
+			blocks = append(blocks, openai.TextContentPart(msg.TextContent()))
 			openAIMessages = append(openAIMessages, openai.UserMessage(blocks))
 		case LLMMessageRoleAssistant:
-			assistantMsg := openai.AssistantMessage(msg.Content)
-			calls := make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
-			for i, call := range msg.ToolCalls {
+			assistantMsg := openai.AssistantMessage(msg.TextContent())
+			toolCalls := msg.ToolCalls()
+			calls := make([]openai.ChatCompletionMessageToolCallUnionParam, len(toolCalls))
+			for i, block := range toolCalls {
 				calls[i] = openai.ChatCompletionMessageToolCallUnionParam{
 					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-						ID: call.CallID,
+						ID: block.CallID,
 						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-							Name:      call.Name,
-							Arguments: call.Arguments.String(),
+							Name:      block.ToolName,
+							Arguments: block.Arguments.String(),
 						},
 					},
 				}
@@ -122,7 +124,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
 		case LLMMessageRoleSystem:
-			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
+			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.TextContent()))
 		}
 	}
 
@@ -169,21 +171,34 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 
 	choice := chatCompletion.Choices[0]
 
-	toolCalls, err := convertOpenAIToolCalls(choice.Message.ToolCalls)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
+	var contentBlocks []*LLMContentBlock
+	if choice.Message.Content != "" {
+		contentBlocks = append(contentBlocks, &LLMContentBlock{
+			Kind: LLMContentText,
+			Text: choice.Message.Content,
+		})
+	}
+	for _, call := range choice.Message.ToolCalls {
+		if call.Function.Name == "" {
+			slog.Warn("skipping tool call with empty name", "toolCall", call)
+			continue
+		}
+		contentBlocks = append(contentBlocks, &LLMContentBlock{
+			Kind:      LLMContentToolCall,
+			CallID:    call.ID,
+			ToolName:  call.Function.Name,
+			Arguments: JSON(call.Function.Arguments),
+		})
 	}
 
-	if choice.Message.Content == "" && len(toolCalls) == 0 {
+	if len(contentBlocks) == 0 {
 		return nil, &ModelFinishedError{
 			Reason: choice.FinishReason,
 		}
 	}
 
-	// Convert OpenAI response to generic LLMResponse
 	return &LLMResponse{
-		Content:   choice.Message.Content,
-		ToolCalls: toolCalls,
+		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
 			InputTokens:      chatCompletion.Usage.PromptTokens,
 			OutputTokens:     chatCompletion.Usage.CompletionTokens,
@@ -274,18 +289,4 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	return compl, nil
 }
 
-func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCallUnion) ([]*LLMToolCall, error) {
-	var toolCalls []*LLMToolCall
-	for _, call := range calls {
-		if call.Function.Name == "" {
-			slog.Warn("skipping tool call with empty name", "toolCall", call)
-			continue
-		}
-		toolCalls = append(toolCalls, &LLMToolCall{
-			CallID:    call.ID,
-			Name:      call.Function.Name,
-			Arguments: JSON(call.Function.Arguments),
-		})
-	}
-	return toolCalls, nil
-}
+

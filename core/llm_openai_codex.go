@@ -131,7 +131,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	defer stream.Close()
 
 	var content strings.Builder
-	var toolCalls []*LLMToolCall
+	var contentBlocks []*LLMContentBlock
 	var usage LLMTokenUsage
 
 	for stream.Next() {
@@ -171,9 +171,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 					}
 				case "function_call":
 					fc := item.AsFunctionCall()
-					toolCalls = append(toolCalls, &LLMToolCall{
+					contentBlocks = append(contentBlocks, &LLMContentBlock{
+						Kind:      LLMContentToolCall,
 						CallID:    fc.CallID,
-						Name:      fc.Name,
+						ToolName:  fc.Name,
 						Arguments: JSON(fc.Arguments),
 					})
 				}
@@ -185,15 +186,22 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		return nil, stream.Err()
 	}
 
-	if content.Len() == 0 && len(toolCalls) == 0 {
+	// Prepend text content block if we got any text
+	if content.Len() > 0 {
+		contentBlocks = append([]*LLMContentBlock{{
+			Kind: LLMContentText,
+			Text: content.String(),
+		}}, contentBlocks...)
+	}
+
+	if len(contentBlocks) == 0 {
 		return nil, &ModelFinishedError{
 			Reason: "no response from model",
 		}
 	}
 
 	return &LLMResponse{
-		Content:    content.String(),
-		ToolCalls:  toolCalls,
+		Content:    contentBlocks,
 		TokenUsage: usage,
 	}, nil
 }
@@ -204,54 +212,60 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 	var systemParts []string
 
 	for _, msg := range history {
-		switch {
-		case msg.Role == "system":
-			systemParts = append(systemParts, msg.Content)
+		switch msg.Role {
+		case LLMMessageRoleSystem:
+			systemParts = append(systemParts, msg.TextContent())
 
-		case msg.ToolCallID != "":
-			// Tool result
-			output := msg.Content
-			if msg.ToolErrored {
-				output = "error: " + output
+		case LLMMessageRoleUser:
+			// Check if this is a tool result
+			if msg.IsToolResult() {
+				for _, block := range msg.Content {
+					if block.Kind == LLMContentToolResult {
+						output := block.Text
+						if block.Errored {
+							output = "error: " + output
+						}
+						items = append(items, responses.ResponseInputItemUnionParam{
+							OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+								CallID: block.CallID,
+								Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+									OfString: param.NewOpt(output),
+								},
+							},
+						})
+					}
+				}
+			} else {
+				items = append(items, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Role: responses.EasyInputMessageRoleUser,
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfString: param.NewOpt(msg.TextContent()),
+						},
+					},
+				})
 			}
-			items = append(items, responses.ResponseInputItemUnionParam{
-				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: msg.ToolCallID,
-					Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-						OfString: param.NewOpt(output),
-					},
-				},
-			})
 
-		case msg.Role == "user":
-			items = append(items, responses.ResponseInputItemUnionParam{
-				OfMessage: &responses.EasyInputMessageParam{
-					Role: responses.EasyInputMessageRoleUser,
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: param.NewOpt(msg.Content),
-					},
-				},
-			})
-
-		case msg.Role == "assistant":
+		case LLMMessageRoleAssistant:
 			// Add text content
-			if msg.Content != "" {
+			text := msg.TextContent()
+			if text != "" {
 				items = append(items, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
 						Role: responses.EasyInputMessageRoleAssistant,
 						Content: responses.EasyInputMessageContentUnionParam{
-							OfString: param.NewOpt(msg.Content),
+							OfString: param.NewOpt(text),
 						},
 					},
 				})
 			}
 			// Add tool calls as function_call items
-			for _, tc := range msg.ToolCalls {
+			for _, block := range msg.ToolCalls() {
 				items = append(items, responses.ResponseInputItemUnionParam{
 					OfFunctionCall: &responses.ResponseFunctionToolCallParam{
-						CallID:    tc.CallID,
-						Name:      tc.Name,
-						Arguments: tc.Arguments.String(),
+						CallID:    block.CallID,
+						Name:      block.ToolName,
+						Arguments: block.Arguments.String(),
 					},
 				})
 			}

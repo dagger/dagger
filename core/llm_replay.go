@@ -31,7 +31,7 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	}
 	for i, message := range history {
 		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if scrub.Stabilize(message.Content) != scrub.Stabilize(c.messages[i].Content) || message.Role != c.messages[i].Role {
+		if scrub.Stabilize(message.TextContent()) != scrub.Stabilize(c.messages[i].TextContent()) || message.Role != c.messages[i].Role {
 			return nil, fmt.Errorf(
 				"message history diverges at index %d:\n%s",
 				i,
@@ -43,7 +43,6 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tool
 
 	return &LLMResponse{
 		Content:    msg.Content,
-		ToolCalls:  msg.ToolCalls,
 		TokenUsage: msg.TokenUsage,
 	}, nil
 }
