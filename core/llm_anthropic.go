@@ -140,6 +140,15 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				msg.ToolErrored,
 			))
 		} else {
+			// For assistant messages with thinking, include the thinking block
+			// before the text block. Anthropic requires this for multi-turn
+			// conversations with extended thinking enabled.
+			if msg.Role == LLMMessageRoleAssistant && msg.Thinking != "" {
+				blocks = append(blocks, anthropic.NewThinkingBlock(
+					msg.ThinkingSignature,
+					msg.Thinking,
+				))
+			}
 			blocks = append(blocks, anthropic.NewTextBlock(content))
 		}
 
@@ -229,10 +238,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	maxTokens := int64(8192)
 
 	// Configure thinking/reasoning if requested
-	var thinking anthropic.ThinkingConfigParamUnion
+	var thinkingConfig anthropic.ThinkingConfigParamUnion
 	switch c.endpoint.ThinkingMode {
 	case "adaptive":
-		thinking = anthropic.ThinkingConfigParamUnion{
+		thinkingConfig = anthropic.ThinkingConfigParamUnion{
 			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
 		}
 		// Anthropic requires MaxTokens >= 1024+BudgetTokens for thinking
@@ -244,7 +253,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		if budget < 1024 {
 			budget = 10000 // reasonable default
 		}
-		thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(budget)
 		if maxTokens < budget+1024 {
 			maxTokens = budget + 1024
 		}
@@ -256,7 +265,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		Messages:  messages,
 		Tools:     toolsConfig,
 		System:    systemPrompts,
-		Thinking:  thinking,
+		Thinking:  thinkingConfig,
 	}
 
 	// Start a streaming request.
@@ -396,14 +405,16 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 	// Process the accumulated content into a generic LLMResponse.
 	var content string
+	var thinking, thinkingSignature string
 	var toolCalls []*LLMToolCall
 	for _, block := range acc.Content {
 		switch b := block.AsAny().(type) {
+		case anthropic.ThinkingBlock:
+			thinking = b.Thinking
+			thinkingSignature = b.Signature
 		case anthropic.TextBlock:
-			// Append text from text blocks.
 			content += b.Text
 		case anthropic.ToolUseBlock:
-			// Map tool-use blocks to our generic tool call structure.
 			toolCalls = append(toolCalls, &LLMToolCall{
 				CallID:    b.ID,
 				Name:      b.Name,
@@ -413,8 +424,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	}
 
 	return &LLMResponse{
-		Content:   content,
-		ToolCalls: toolCalls,
+		Content:           content,
+		ToolCalls:         toolCalls,
+		Thinking:          thinking,
+		ThinkingSignature: thinkingSignature,
 		TokenUsage: LLMTokenUsage{
 			InputTokens:       acc.Usage.InputTokens,
 			OutputTokens:      acc.Usage.OutputTokens,

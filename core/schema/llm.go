@@ -204,11 +204,13 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 
 func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
 	Content           string
-	InputTokens       int64 `default:"0"`
-	OutputTokens      int64 `default:"0"`
-	CachedTokenReads  int64 `default:"0"`
-	CachedTokenWrites int64 `default:"0"`
-	TotalTokens       int64 `default:"0"`
+	InputTokens       int64  `default:"0"`
+	OutputTokens      int64  `default:"0"`
+	CachedTokenReads  int64  `default:"0"`
+	CachedTokenWrites int64  `default:"0"`
+	TotalTokens       int64  `default:"0"`
+	Thinking          string `default:""`
+	ThinkingSignature string `default:""`
 }) (*core.LLM, error) {
 	return llm.WithResponse(args.Content, core.LLMTokenUsage{
 		InputTokens:       args.InputTokens,
@@ -216,7 +218,7 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 		CachedTokenReads:  args.CachedTokenReads,
 		CachedTokenWrites: args.CachedTokenWrites,
 		TotalTokens:       args.TotalTokens,
-	}), nil
+	}, args.Thinking, args.ThinkingSignature), nil
 }
 
 func (s *llmSchema) withToolCall(ctx context.Context, llm *core.LLM, args struct {

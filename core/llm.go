@@ -115,6 +115,11 @@ type LLMResponse struct {
 	Content    string
 	ToolCalls  []*LLMToolCall
 	TokenUsage LLMTokenUsage
+
+	// Thinking content from models that support extended thinking (e.g. Anthropic).
+	// Must be preserved in history for the API to accept subsequent requests.
+	Thinking          string
+	ThinkingSignature string
 }
 
 type LLMTokenUsage struct {
@@ -139,6 +144,12 @@ type LLMMessage struct {
 	ToolCalls   []*LLMToolCall `field:"true" json:"tool_calls,omitempty"`
 	ToolCallID  string         `field:"true" json:"tool_call_id,omitempty"`
 	ToolErrored bool           `field:"true" json:"tool_errored,omitempty"`
+
+	// Thinking content from models that support extended thinking.
+	// Not exposed as a field — opaque to the user, but must be preserved
+	// in history for provider APIs that require it (e.g. Anthropic).
+	Thinking          string `json:"thinking,omitempty"`
+	ThinkingSignature string `json:"thinking_signature,omitempty"`
 
 	// NB: this isn't exposed as a field, since it will only be present on
 	// response messages, but shamefully initially because it's annoying to make
@@ -872,12 +883,14 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 }
 
 // Append an assistant response message to the history
-func (llm *LLM) WithResponse(content string, tokenUsage LLMTokenUsage) *LLM {
+func (llm *LLM) WithResponse(content string, tokenUsage LLMTokenUsage, thinking, thinkingSignature string) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:       LLMMessageRoleAssistant,
-		Content:    content,
-		TokenUsage: tokenUsage,
+		Role:              LLMMessageRoleAssistant,
+		Content:           content,
+		TokenUsage:        tokenUsage,
+		Thinking:          thinking,
+		ThinkingSignature: thinkingSignature,
 	})
 	return llm
 }
@@ -1053,13 +1066,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	client := ep.Client
 	err = backoff.Retry(func() error {
 		var sendErr error
-		ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-		))
 		res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
-		telemetry.EndWithCause(span, &sendErr)
 		if sendErr != nil {
 			var finished *ModelFinishedError
 			if errors.As(sendErr, &finished) {
@@ -1122,6 +1129,18 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			args = append(args, dagql.NamedInput{
 				Name:  "totalTokens",
 				Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			})
+		}
+		if res.Thinking != "" {
+			args = append(args, dagql.NamedInput{
+				Name:  "thinking",
+				Value: dagql.NewString(res.Thinking),
+			})
+		}
+		if res.ThinkingSignature != "" {
+			args = append(args, dagql.NamedInput{
+				Name:  "thinkingSignature",
+				Value: dagql.NewString(res.ThinkingSignature),
 			})
 		}
 		sels = append(sels, dagql.Selector{
