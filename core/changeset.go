@@ -398,6 +398,44 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	return bk.LocalDirExport(ctx, root, destPath, true, paths.Removed)
 }
 
+// GitCommit exports the changeset to the given path and creates a git commit.
+func (ch *Changeset) GitCommit(ctx context.Context, destPath string, message string) (rerr error) {
+	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("compute paths: %w", err)
+	}
+
+	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	if err != nil {
+		return err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("git commit changeset to %s", destPath))
+	defer telemetry.EndWithCause(span, &rerr)
+
+	root, closer, err := mountObj(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("failed to mount directory: %w", err)
+	}
+	defer closer(false)
+
+	root, err = containerdfs.RootPath(root, dir.Dir)
+	if err != nil {
+		return err
+	}
+
+	return bk.GitCommitChangeset(ctx, root, destPath, true, paths.Removed, message)
+}
+
 type ChangeType int
 
 const (

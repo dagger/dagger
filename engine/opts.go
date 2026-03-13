@@ -170,6 +170,14 @@ type LocalImportOpts struct {
 	GetAbsPathOnly       bool     `json:"get_abs_path_only"`
 	GlobPattern          string   `json:"glob_pattern"`
 	SearchOpts           *LocalSearchOpts `json:"search_opts,omitempty"`
+	GitBranchDetect      bool             `json:"git_branch_detect,omitempty"`
+	GitWorktreeAdd       *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
+}
+
+// GitWorktreeAddOpts configures a git worktree add operation on the client.
+type GitWorktreeAddOpts struct {
+	Branch       string `json:"branch"`
+	WorktreePath string `json:"worktree_path"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
@@ -274,7 +282,13 @@ type LocalExportOpts struct {
 	// or to replace the target entirely such that it matches the source directory,
 	// which includes deleting any files that are not in the source directory
 	Merge       bool
-	RemovePaths []string `json:"remove_paths"`
+	RemovePaths []string       `json:"remove_paths"`
+	GitCommit   *GitCommitOpts `json:"git_commit,omitempty"`
+}
+
+// GitCommitOpts configures a git commit after exporting files.
+type GitCommitOpts struct {
+	Message string `json:"message"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

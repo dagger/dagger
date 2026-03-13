@@ -28,6 +28,21 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFuncWithCacheKey("withBranch", s.withBranch, dagql.CachePerClient).
+			Doc(`Return a Workspace for the given branch. If the branch is different from`,
+				`the currently checked-out branch, a git worktree is created on the host.`,
+				`If the branch does not exist, it is created from the current branch tip.`).
+			Args(
+				dagql.Arg("branch").Doc(`The branch name (e.g. "agent/auth").`),
+			),
+		dagql.NodeFuncWithCacheKey("commit", DagOpWrapper(srv, s.commit), dagql.CachePerClient).
+			DoNotCache("Writes to the local host.").
+			Doc(`Export a Changeset to the workspace's branch and create a Git commit.`,
+				`The changeset files are written to the worktree and committed with the given message.`).
+			Args(
+				dagql.Arg("changes").Doc(`The changes to commit.`),
+				dagql.Arg("message").Doc(`The commit message.`),
+			),
 		dagql.NodeFuncWithCacheKey("directory",
 			DagOpDirectoryWrapper(
 				srv, s.directory,
@@ -123,9 +138,16 @@ func (s *workspaceSchema) currentWorkspace(
 		return nil, fmt.Errorf("client metadata: %w", err)
 	}
 
+	branch, err := bk.GitBranch(ctx, repoRoot)
+	if err != nil {
+		branch = "HEAD" // detached HEAD fallback
+	}
+
 	result := &core.Workspace{
 		Root:     repoRoot,
 		ClientID: clientMetadata.ClientID,
+		Branch:   branch,
+		RepoRoot: repoRoot,
 	}
 
 	return result, nil
@@ -491,6 +513,85 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	return none, nil
+}
+
+// sanitizeBranch replaces "/" with "-" for use in filesystem paths.
+func sanitizeBranch(branch string) string {
+	return strings.ReplaceAll(branch, "/", "-")
+}
+
+func (s *workspaceSchema) withBranch(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct{ Branch string },
+) (*core.Workspace, error) {
+	ws := parent.Self()
+	if ws.Branch == args.Branch {
+		return ws, nil
+	}
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	worktreePath := ws.RepoRoot + "-worktrees/" + sanitizeBranch(args.Branch)
+	actualPath, err := bk.GitWorktreeAdd(ctx, ws.RepoRoot, args.Branch, worktreePath)
+	if err != nil {
+		return nil, fmt.Errorf("create worktree: %w", err)
+	}
+
+	return &core.Workspace{
+		Root:     actualPath,
+		ClientID: ws.ClientID,
+		Branch:   args.Branch,
+		RepoRoot: ws.RepoRoot,
+	}, nil
+}
+
+type workspaceCommitArgs struct {
+	Changes dagql.ID[*core.Changeset]
+	Message string
+
+	RawDagOpInternalArgs
+}
+
+func (s *workspaceSchema) commit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceCommitArgs,
+) (core.Void, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return core.Void{}, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return core.Void{}, err
+	}
+
+	changeset, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return core.Void{}, fmt.Errorf("load changeset: %w", err)
+	}
+
+	if err := changeset.Self().GitCommit(ctx, ws.Root, args.Message); err != nil {
+		return core.Void{}, fmt.Errorf("commit: %w", err)
+	}
+
+	return core.Void{}, nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

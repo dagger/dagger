@@ -115,6 +115,51 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 	}
 
 	switch {
+	case opts.GitBranchDetect:
+		cmd := exec.CommandContext(ctx, "git", "symbolic-ref", "--short", "HEAD")
+		cmd.Dir = absPath
+		out, err := cmd.Output()
+		if err != nil {
+			return stream.SendMsg(&filesync.BytesMessage{Data: []byte("HEAD")})
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
+
+	case opts.GitWorktreeAdd != nil:
+		wopts := opts.GitWorktreeAdd
+		wtPath := wopts.WorktreePath
+		if !filepath.IsAbs(wtPath) {
+			wtPath = filepath.Join(absPath, wtPath)
+		}
+
+		// Check if worktree already exists and is valid
+		if _, err := os.Stat(filepath.Join(wtPath, ".git")); err == nil {
+			// Worktree directory exists, verify it's valid
+			cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
+			cmd.Dir = wtPath
+			if err := cmd.Run(); err == nil {
+				// Valid worktree, return as-is
+				absWT, _ := filepath.Abs(wtPath)
+				return stream.SendMsg(&filesync.BytesMessage{Data: []byte(absWT)})
+			}
+			// Invalid, remove and recreate
+			os.RemoveAll(wtPath)
+		}
+
+		// Try to add worktree for existing branch
+		cmd := exec.CommandContext(ctx, "git", "worktree", "add", wtPath, wopts.Branch)
+		cmd.Dir = absPath
+		if err := cmd.Run(); err != nil {
+			// Branch doesn't exist, create it
+			cmd = exec.CommandContext(ctx, "git", "worktree", "add", "-b", wopts.Branch, wtPath)
+			cmd.Dir = absPath
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("git worktree add -b %s %s: %w: %s", wopts.Branch, wtPath, err, out)
+			}
+		}
+
+		absWT, _ := filepath.Abs(wtPath)
+		return stream.SendMsg(&filesync.BytesMessage{Data: []byte(absWT)})
+
 	case opts.GetAbsPathOnly:
 		return stream.SendMsg(&fstypes.Stat{
 			Path: filepath.ToSlash(absPath),
@@ -272,6 +317,21 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		if err != nil {
 			return fmt.Errorf("failed to receive fs changes: %w", err)
 		}
+
+		// If GitCommit is set, run git add + commit after the file write
+		if opts.GitCommit != nil {
+			cmd := exec.Command("git", "add", "-A")
+			cmd.Dir = absPath
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("git add -A: %w: %s", err, out)
+			}
+			cmd = exec.Command("git", "commit", "--allow-empty", "-m", opts.GitCommit.Message)
+			cmd.Dir = absPath
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("git commit: %w: %s", err, out)
+			}
+		}
+
 		return nil
 	}
 

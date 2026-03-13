@@ -164,14 +164,74 @@ func (c *Client) GlobCallerHostPath(ctx context.Context, dir string, pattern str
 	return matches, nil
 }
 
+// GitBranch detects the current git branch in the given directory on the client host.
+func (c *Client) GitBranch(ctx context.Context, repoDir string) (string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:            repoDir,
+		GitBranchDetect: true,
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to detect git branch: %w", err)
+	}
+	return string(msg.Data), nil
+}
+
+// GitWorktreeAdd creates a git worktree on the client host.
+func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePath string) (string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path: repoDir,
+		GitWorktreeAdd: &engine.GitWorktreeAddOpts{
+			Branch:       branch,
+			WorktreePath: worktreePath,
+		},
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to add git worktree: %w", err)
+	}
+	return string(msg.Data), nil
+}
+
+// GitCommitChangeset exports a directory to the client host and creates a git commit.
+func (c *Client) GitCommitChangeset(
+	ctx context.Context,
+	srcPath string,
+	destPath string,
+	merge bool,
+	removePaths []string,
+	message string,
+) error {
+	return c.localDirExportWithOpts(ctx, srcPath, engine.LocalExportOpts{
+		Path:        path.Clean(destPath),
+		Merge:       merge,
+		RemovePaths: removePaths,
+		GitCommit: &engine.GitCommitOpts{
+			Message: message,
+		},
+	})
+}
+
 func (c *Client) LocalDirExport(
 	ctx context.Context,
 	srcPath string,
 	destPath string,
 	merge bool,
 	removePaths []string,
+) error {
+	return c.localDirExportWithOpts(ctx, srcPath, engine.LocalExportOpts{
+		Path:        path.Clean(destPath),
+		Merge:       merge,
+		RemovePaths: removePaths,
+	})
+}
+
+func (c *Client) localDirExportWithOpts(
+	ctx context.Context,
+	srcPath string,
+	opts engine.LocalExportOpts,
 ) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", opts.Path))
 	bklog.G(ctx).Debug("exporting local dir")
 	defer func() {
 		lg := bklog.G(ctx)
@@ -202,12 +262,7 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 
-	destPath = path.Clean(destPath)
-	ctx = engine.LocalExportOpts{
-		Path:        destPath,
-		Merge:       merge,
-		RemovePaths: removePaths,
-	}.AppendToOutgoingContext(ctx)
+	ctx = opts.AppendToOutgoingContext(ctx)
 
 	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, nil); err != nil {
 		return err
