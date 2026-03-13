@@ -82,7 +82,7 @@ func (p Prefix) Style(out TermOutput) termenv.Style {
 
 var LLMUserPrefix = Prefix{
 	Symbol: Block,
-	Fg:     termenv.ANSIMagenta,
+	Fg:     termenv.ANSIBrightMagenta,
 }
 
 var LLMThinkingPrefix = Prefix{
