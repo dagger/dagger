@@ -145,9 +145,11 @@ type v2Mutation struct {
 
 type v2Session struct {
 	ID                string `json:"id"`
+	Name              string `json:"name,omitempty"`
 	TraceID           string `json:"traceID"`
 	RootClientID      string `json:"rootClientID,omitempty"`
 	Fallback          bool   `json:"fallback,omitempty"`
+	ClientCount       int    `json:"clientCount"`
 	Status            string `json:"status"`
 	Open              bool   `json:"open"`
 	FirstSeenUnixNano int64  `json:"firstSeenUnixNano"`
@@ -846,6 +848,17 @@ func (s *Server) handleV2Sessions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("load trace %s: %v", traceID, err), http.StatusInternalServerError)
 			return
 		}
+		clientCountBySession := map[string]int{}
+		rootNameBySession := map[string]string{}
+		for _, client := range scopeIdx.Clients {
+			if client.SessionID == "" {
+				continue
+			}
+			clientCountBySession[client.SessionID]++
+			if client.ID == client.RootClientID && rootNameBySession[client.SessionID] == "" {
+				rootNameBySession[client.SessionID] = client.Name
+			}
+		}
 		for _, session := range scopeIdx.Sessions {
 			if !intersectsTime(session.FirstSeenUnixNano, session.LastSeenUnixNano, q.FromUnixNano, q.ToUnixNano) {
 				continue
@@ -856,11 +869,17 @@ func (s *Server) handleV2Sessions(w http.ResponseWriter, r *http.Request) {
 			if q.ClientID != "" && scopeIdx.SessionIDForClient(q.ClientID) != session.ID {
 				continue
 			}
+			name := strings.TrimSpace(rootNameBySession[session.ID])
+			if name == "" && session.RootClientID != "" {
+				name = strings.TrimSpace(scopeIdx.ClientByID[session.RootClientID].Name)
+			}
 			items = append(items, v2Session{
 				ID:                session.ID,
+				Name:              name,
 				TraceID:           trace.TraceID,
 				RootClientID:      session.RootClientID,
 				Fallback:          session.Fallback,
+				ClientCount:       clientCountBySession[session.ID],
 				Status:            trace.Status,
 				Open:              trace.Status == "ingesting",
 				FirstSeenUnixNano: session.FirstSeenUnixNano,

@@ -5351,11 +5351,16 @@ function sessionsTableModel(entity, sectionID) {
         meta: `${rows.length} real sessions`,
         emptyMessage: "No sessions detected yet.",
         columns: [
-          { label: "Session", render: (row) => linkedPrimaryCell(shortID(row.id), "", entityPath(entity.id, row.routeID)) },
+          {
+            label: "Session",
+            render: (row) => linkedPrimaryCell(sessionDisplayName(row), sessionDisplaySubtitle(row), entityPath(entity.id, row.routeID)),
+            sortValue: (row) => sessionDisplayName(row),
+            filterValue: (row) => [sessionDisplayName(row), row?.name, row?.rootClientID].filter(Boolean).join(" "),
+          },
           { label: "Status", render: (row) => statusOrbCell(sessionStatusLabel(row)) },
           { label: "Started", render: (row) => escapeHTML(relativeTimeFromNow(row.firstSeenUnixNano)) },
           { label: "Duration", render: (row) => escapeHTML(durationLabel(row.firstSeenUnixNano, row.lastSeenUnixNano, row.open ? "running" : row.status)) },
-          { label: "Root Client", render: (row) => detailCode(row.rootClientID || "Unknown") },
+          { label: "Root Client", render: (row) => row.rootClientID ? clientLinkByID(row.rootClientID) : "Unknown" },
           { label: "Trace", render: (row) => detailCode(shortID(row.traceID)) },
         ],
         rows,
@@ -7300,7 +7305,7 @@ function overviewItemLabel(entity, row) {
     case "modules":
       return moduleTitle(row);
     case "sessions":
-      return shortID(row.id);
+      return sessionDisplayName(row);
     case "workspaces":
       return row.name || row.root || "Workspace";
     case "git-remotes":
@@ -7318,6 +7323,28 @@ function overviewItemLabel(entity, row) {
     default:
       return row.name || row.id || entity.label;
   }
+}
+
+function sessionDisplayName(row) {
+  const explicit = String(row?.name || "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  return shortID(row?.id) || "Session";
+}
+
+function sessionDisplaySubtitle(row) {
+  const parts = [];
+  const clientCount = Number(row?.clientCount || 0);
+  if (clientCount > 0) {
+    parts.push(`${clientCount} client${clientCount === 1 ? "" : "s"}`);
+  }
+  const explicit = String(row?.name || "").trim();
+  const short = shortID(row?.id);
+  if (explicit && short) {
+    parts.push(short);
+  }
+  return parts.join(" · ");
 }
 
 function overviewItemStatus(entity, row) {
@@ -8318,7 +8345,6 @@ function buildLiveSessionsEntity(base, items) {
   const liveItems = items
     .map((item) => ({
       ...item,
-      name: shortID(item.id),
       routeID: sessionRouteID(item.traceID, item.id),
     }))
     .sort((a, b) => Number(b.firstSeenUnixNano || 0) - Number(a.firstSeenUnixNano || 0));
@@ -8350,7 +8376,7 @@ function buildLiveSessionsEntity(base, items) {
       },
     ],
     highlights: liveItems.slice(0, 3).map((item) => ({
-      title: shortID(item.id),
+      title: sessionDisplayName(item),
       value: String(sessionStatusLabel(item)).toUpperCase(),
       note: `${shortID(item.rootClientID)} root client in trace ${shortID(item.traceID)}`,
     })),

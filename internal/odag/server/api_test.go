@@ -468,6 +468,7 @@ func TestV2DerivesSessionsClientsAndCallOwnership(t *testing.T) {
 				Resource: &resourcepb.Resource{
 					Attributes: []*commonpb.KeyValue{
 						kvString(t, "service.name", "dagger-cli"),
+						kvStringList(t, "process.command_args", []string{"dagger", "call", "container"}),
 					},
 				},
 				ScopeSpans: []*tracepb.ScopeSpans{
@@ -594,7 +595,9 @@ func TestV2DerivesSessionsClientsAndCallOwnership(t *testing.T) {
 	var sessionsResp struct {
 		Items []struct {
 			ID           string `json:"id"`
+			Name         string `json:"name"`
 			RootClientID string `json:"rootClientID"`
+			ClientCount  int    `json:"clientCount"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(sessionsRec.Body.Bytes(), &sessionsResp); err != nil {
@@ -602,6 +605,9 @@ func TestV2DerivesSessionsClientsAndCallOwnership(t *testing.T) {
 	}
 	if len(sessionsResp.Items) != 1 || sessionsResp.Items[0].ID != sessionID || sessionsResp.Items[0].RootClientID != rootClientID {
 		t.Fatalf("unexpected sessions response: %#v", sessionsResp.Items)
+	}
+	if sessionsResp.Items[0].Name != "dagger call container" || sessionsResp.Items[0].ClientCount != 2 {
+		t.Fatalf("unexpected session metadata: %#v", sessionsResp.Items[0])
 	}
 
 	clientsReq := httptest.NewRequest(http.MethodGet, "/api/v2/clients?traceID="+traceIDHex, nil)
