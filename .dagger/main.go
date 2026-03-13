@@ -22,15 +22,20 @@ func (dev *DaggerDev) Generated(ctx context.Context) error {
 		return err
 	} else if !empty {
 		changes := generated.Changes()
-		rawPatch, err := changes.AsPatch().Contents(ctx)
+		diffStat, err := changes.DiffStat(ctx)
 		if err != nil {
 			return err
 		}
-		preview, err := patchpreview.SummarizeString(ctx, rawPatch, changes)
-		if err != nil {
-			return err
+		entries := make([]patchpreview.Entry, len(diffStat))
+		for i, s := range diffStat {
+			entries[i] = patchpreview.Entry{
+				Path:    s.Path,
+				Kind:    s.Kind,
+				Added:   s.AddedLines,
+				Removed: s.RemovedLines,
+			}
 		}
-		fmt.Fprintln(os.Stderr, preview)
+		fmt.Fprintln(os.Stderr, patchpreview.SummarizeString(entries, 80))
 		return errors.New("generated files are not up-to-date")
 	}
 	return nil
