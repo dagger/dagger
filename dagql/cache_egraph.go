@@ -1119,6 +1119,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	if requestID != nil && c.resultCanonicalIDs[res.id] == nil {
 		c.resultCanonicalIDs[res.id] = requestID.With()
 	}
+	if err := c.ensureResultCallFrameLocked(ctx, res, requestID); err != nil {
+		return fmt.Errorf("derive result call frame: %w", err)
+	}
 	setTypedPersistedResultID(res.self, res.id)
 	c.traceResultCreated(ctx, res)
 

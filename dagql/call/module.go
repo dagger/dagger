@@ -31,6 +31,20 @@ func (m *Module) Name() string {
 	return m.pb.Name
 }
 
+func (m *Module) Ref() string {
+	if m == nil || m.pb == nil {
+		return ""
+	}
+	return m.pb.Ref
+}
+
+func (m *Module) Pin() string {
+	if m == nil || m.pb == nil {
+		return ""
+	}
+	return m.pb.Pin
+}
+
 func (m *Module) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if m == nil {
 		return

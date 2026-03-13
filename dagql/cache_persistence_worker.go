@@ -423,6 +423,7 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			shared: &sharedResult{
 				self:                   res.self,
 				objType:                res.objType,
+				resultCallFrame:        res.resultCallFrame.clone(),
 				hasValue:               res.hasValue,
 				safeToPersistCache:     res.safeToPersistCache,
 				depOfPersistedResult:   res.depOfPersistedResult,

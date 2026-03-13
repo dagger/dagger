@@ -470,6 +470,10 @@ type sharedResult struct {
 	// Immutable payload shared by all per-call Result values.
 	self    Typed
 	objType ObjectType
+	// resultCallFrame is the non-lossy presentational call-node metadata for
+	// this materialized result. It is used for caller-facing ID reconstruction
+	// and telemetry hierarchy reconstruction, not execution or liveness.
+	resultCallFrame *ResultCallFrame
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
 	postCall PostCallFunc
@@ -698,6 +702,7 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 		r.shared = &sharedResult{
 			self:                   r.shared.self,
 			objType:                r.shared.objType,
+			resultCallFrame:        r.shared.resultCallFrame.clone(),
 			hasValue:               r.shared.hasValue,
 			postCall:               r.shared.postCall,
 			safeToPersistCache:     r.shared.safeToPersistCache,
@@ -724,6 +729,12 @@ func (r Result[T]) WithPostCall(fn PostCallFunc) AnyResult {
 func (r Result[T]) ResultWithPostCall(fn PostCallFunc) Result[T] {
 	r = r.withDetachedPayload()
 	r.shared.postCall = fn
+	return r
+}
+
+func (r Result[T]) ResultWithCallFrame(frame *ResultCallFrame) Result[T] {
+	r = r.withDetachedPayload()
+	r.shared.resultCallFrame = frame.clone()
 	return r
 }
 
@@ -849,6 +860,11 @@ func (r ObjectResult[T]) WithContentDigestAny(customDigest digest.Digest) AnyRes
 
 func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[T] {
 	r.Result = r.Result.ResultWithPostCall(fn)
+	return r
+}
+
+func (r ObjectResult[T]) ObjectResultWithCallFrame(frame *ResultCallFrame) ObjectResult[T] {
+	r.Result = r.Result.ResultWithCallFrame(frame)
 	return r
 }
 
@@ -1227,6 +1243,7 @@ func (c *cache) GetOrInitCall(
 
 		detached := &sharedResult{
 			self:               val.Unwrap(),
+			resultCallFrame:    val.cacheSharedResult().resultCallFrame.clone(),
 			hasValue:           true,
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
@@ -1447,6 +1464,9 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 			resWasCacheBacked = true
 		} else {
 			oc.res.self = oc.val.Unwrap()
+			if shared := oc.val.cacheSharedResult(); shared != nil {
+				oc.res.resultCallFrame = shared.resultCallFrame.clone()
+			}
 			oc.res.hasValue = true
 			oc.res.postCall = oc.val.PostCall
 			oc.res.safeToPersistCache = oc.val.IsSafeToPersistCache()

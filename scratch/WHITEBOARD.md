@@ -1073,14 +1073,13 @@ For things like:
 
 the frame should explicitly express:
 
-* base result ref
 * scope label / operation name
 * scope digest or equivalent scalar scope metadata
 * resulting type
 
 Meaning:
 
-* “this value is the SDK-scoped/source-content-scoped projection of that base value”
+* “this value is the SDK-scoped/source-content-scoped projection produced for operation X”
 
 This is much more honest than pretending it is just the original raw recipe.
 
@@ -1092,19 +1091,42 @@ For things like:
 
 the frame should explicitly express:
 
-* base module result ref
 * scope label / operation name
 * source-content scope digest or equivalent scalar scope metadata
 * resulting type / module metadata
 
 Meaning:
 
-* “this module result is the scoped projection of that base module for operation X”
+* “this module result is the scoped projection produced for operation X”
 
 Again, the key point is:
 
 * explicit scoping frame node
 * not magical rewritten public ID
+
+Important refinement:
+
+* scoped/synthetic frame nodes do **not** need to force-attach a base result just to carry a backlink
+* if a base internal result ref is already naturally available, it is fine to record it
+* but it is **not** a requirement for the node to be valid
+
+Concrete example:
+
+* `scopeSourceForSDKOperation(...)`
+  * starts from an attached `ObjectResult[*ModuleSource]`
+  * but we still do **not** need to record a base-result backlink just because one happens to be available
+  * the honest v1 node is just the synthetic scoping operation plus its scalar metadata
+* `ScopeModuleForSDKOperation(...)`
+  * starts from `*Module` plus `mod.ResultID`
+  * the important cache identity is the new `scopedID`
+  * the old `mod.ResultID` is primarily an input to deriving that `scopedID`
+  * therefore we do **not** want to force-attach the original module just to populate a base-result ref on the scoped frame
+
+So the v1 rule is:
+
+* synthetic/scoped frame nodes must honestly describe the synthetic operation that produced the result
+* they may optionally include a base internal result ref when that ref is already naturally available
+* they should **not** introduce extra attachment behavior solely to satisfy frame structure
 
 ### Promotion/projection nodes
 
@@ -1413,7 +1435,7 @@ Goals for the plan:
 
 Current proposed shape:
 
-* **Phase 1:** add the `resultCallFrame` substrate and populate it for cache-backed results
+* **Phase 1:** add the `resultCallFrame` substrate and populate it for cache-backed results **(completed)**
 * **Phase 2:** add `IDForCaller(...)` and move runtime caller-facing reconstruction / synthetic-node creation onto frames
 * **Phase 3:** hard-cut module-object and other semantic ID-valued data to internal result refs
 * **Phase 4:** hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
@@ -1421,6 +1443,10 @@ Current proposed shape:
 That is intentionally only four phases. Each one is still substantial, but each one should also have a clear review boundary.
 
 ### Phase 1: Add `resultCallFrame` as a real `sharedResult` substrate
+
+Status:
+
+* completed
 
 Purpose:
 
@@ -1489,6 +1515,12 @@ Important synthetic-node work in this phase:
   * SDK module scoping
   * module/source content-scoped synthetic nodes such as `_sourceContentScoped`
 
+Refinement for SDK/module scoping in this phase:
+
+* do **not** force-attach an original/base module result solely so that a scoped synthetic frame can point back to it
+* for v1, the scoped frame node only needs to honestly represent the synthetic scoping operation and its scalar metadata
+* if a natural base internal ref is already available, it is fine to include it, but it is not required
+
 Phase-1 test focus:
 
 * unit tests in `dagql/cache_test.go` for:
@@ -1507,6 +1539,8 @@ Phase-1 tripwire:
 
 * if deriving a frame from the current `call.ID` cannot reliably resolve result-valued inputs to internal result refs for cache-backed results, stop and escalate
 * that would mean the current result-creation path is still missing information we assumed would be available
+* however, this tripwire does **not** apply to synthetic/scoped nodes whose honest v1 representation does not actually require a base internal result ref
+  * SDK/module scoping is the concrete example here
 
 ### Phase 2: Add `IDForCaller(...)` and move runtime presentation onto frames
 

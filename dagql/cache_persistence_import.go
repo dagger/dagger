@@ -347,6 +347,19 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 		}
 	}
 
+	for resultID, res := range c.resultsByID {
+		if res == nil || res.resultCallFrame != nil {
+			continue
+		}
+		canonicalID := c.resultCanonicalIDs[resultID]
+		if canonicalID == nil {
+			return fmt.Errorf("import result %d call frame: missing canonical ID", resultID)
+		}
+		if err := c.ensureResultCallFrameLocked(ctx, res, canonicalID); err != nil {
+			return fmt.Errorf("import result %d call frame: %w", resultID, err)
+		}
+	}
+
 	c.nextSharedResultID = maxResultID + 1
 	c.nextEgraphTermID = maxTermID + 1
 	c.nextEgraphClassID = maxEqClassID + 1

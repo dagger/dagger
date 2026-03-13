@@ -3632,6 +3632,99 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	assert.Assert(t, childRetained)
 }
 
+func TestCacheResultCallFrameDerivedFromRequestID(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	childID := call.New().Append(Int(0).Type(), "frameChild")
+	childRes, err := c.GetOrInitCall(ctx, CacheKey{ID: childID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(childID, 7), nil
+	})
+	assert.NilError(t, err)
+	childShared := childRes.cacheSharedResult()
+	assert.Assert(t, childShared != nil)
+	assert.Assert(t, childShared.id != 0)
+
+	parentID := call.New().Append(
+		Int(0).Type(),
+		"frameParent",
+		call.WithArgs(
+			call.NewArgument("child", call.NewLiteralID(childID), false),
+			call.NewArgument("payload", call.NewLiteralDigestedString("same", digest.FromString("frame-payload")), false),
+		),
+	)
+
+	parentRes, err := c.GetOrInitCall(ctx, CacheKey{ID: parentID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(parentID, 8), nil
+	})
+	assert.NilError(t, err)
+	parentShared := parentRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+	assert.Assert(t, parentShared.resultCallFrame != nil)
+
+	frame := parentShared.resultCallFrame
+	assert.Equal(t, ResultCallFrameKindField, frame.Kind)
+	assert.Equal(t, "frameParent", frame.Field)
+	assert.Assert(t, frame.Type != nil)
+	assert.Equal(t, "Int", frame.Type.NamedType)
+	assert.Equal(t, 2, len(frame.Args))
+	assert.Equal(t, "child", frame.Args[0].Name)
+	assert.Assert(t, frame.Args[0].Value != nil)
+	assert.Equal(t, ResultCallFrameLiteralKindResultRef, frame.Args[0].Value.Kind)
+	assert.Assert(t, frame.Args[0].Value.ResultRef != nil)
+	assert.Equal(t, uint64(childShared.id), frame.Args[0].Value.ResultRef.ResultID)
+	assert.Equal(t, "payload", frame.Args[1].Name)
+	assert.Assert(t, frame.Args[1].Value != nil)
+	assert.Equal(t, ResultCallFrameLiteralKindDigestedString, frame.Args[1].Value.Kind)
+	assert.Equal(t, "same", frame.Args[1].Value.DigestedStringValue)
+	assert.Equal(t, digest.FromString("frame-payload"), frame.Args[1].Value.DigestedStringDigest)
+}
+
+func TestCacheResultCallFrameFirstWriterWins(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	id := cacheTestID("frame-first-writer")
+	firstFrame := &ResultCallFrame{
+		Kind:        ResultCallFrameKindSynthetic,
+		SyntheticOp: "first",
+		Type:        NewResultCallFrameType(Int(0).Type()),
+	}
+	secondFrame := &ResultCallFrame{
+		Kind:        ResultCallFrameKindSynthetic,
+		SyntheticOp: "second",
+		Type:        NewResultCallFrameType(Int(0).Type()),
+	}
+
+	first, err := c.GetOrInitCall(ctx, CacheKey{ID: id}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(id, 1).(Result[Int]).ResultWithCallFrame(firstFrame), nil
+	})
+	assert.NilError(t, err)
+	firstShared := first.cacheSharedResult()
+	assert.Assert(t, firstShared != nil)
+	assert.Assert(t, firstShared.resultCallFrame != nil)
+	assert.Equal(t, "first", firstShared.resultCallFrame.SyntheticOp)
+
+	second, err := c.GetOrInitCall(ctx, CacheKey{ID: id}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(id, 2).(Result[Int]).ResultWithCallFrame(secondFrame), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, second.HitCache())
+
+	secondShared := second.cacheSharedResult()
+	assert.Assert(t, secondShared != nil)
+	assert.Assert(t, secondShared.resultCallFrame != nil)
+	assert.Equal(t, "first", secondShared.resultCallFrame.SyntheticOp)
+}
+
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

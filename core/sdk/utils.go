@@ -37,6 +37,24 @@ func scopeSourceForSDKOperation(
 	if err != nil {
 		return inst, err
 	}
+	scopedSrc = scopedSrc.ObjectResultWithCallFrame(&dagql.ResultCallFrame{
+		Kind:        dagql.ResultCallFrameKindSynthetic,
+		SyntheticOp: "sdk_scope_source",
+		Type:        dagql.NewResultCallFrameType(src.Type()),
+		Args: []*dagql.ResultCallFrameArg{
+			{
+				Name:  "op",
+				Value: &dagql.ResultCallFrameLiteral{Kind: dagql.ResultCallFrameLiteralKindString, StringValue: op},
+			},
+			{
+				Name: "scopeDigest",
+				Value: &dagql.ResultCallFrameLiteral{
+					Kind:        dagql.ResultCallFrameLiteralKindString,
+					StringValue: srcContentDigestForSDK.String(),
+				},
+			},
+		},
+	})
 	scopedSrc = scopedSrc.WithContentDigest(scopedContentDigest)
 	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
 		ID: scopedSrc.ID(),
@@ -83,6 +101,24 @@ func ScopeModuleForSDKOperation(
 	if err != nil {
 		return inst, err
 	}
+	scopedModInst = scopedModInst.ObjectResultWithCallFrame(&dagql.ResultCallFrame{
+		Kind:        dagql.ResultCallFrameKindSynthetic,
+		SyntheticOp: "sdk_scope_module",
+		Type:        dagql.NewResultCallFrameType(scopedMod.Type()),
+		Args: []*dagql.ResultCallFrameArg{
+			{
+				Name:  "op",
+				Value: &dagql.ResultCallFrameLiteral{Kind: dagql.ResultCallFrameLiteralKindString, StringValue: op},
+			},
+			{
+				Name: "scopeDigest",
+				Value: &dagql.ResultCallFrameLiteral{
+					Kind:        dagql.ResultCallFrameLiteralKindString,
+					StringValue: srcContentDigestForSDK.String(),
+				},
+			},
+		},
+	})
 	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
 		ID: scopedModInst.ID(),
 	}, dagql.ValueFunc(scopedModInst))
