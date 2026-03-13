@@ -287,7 +287,15 @@ Confirmed diagnosis on `workspace-plumbing` after the path-contract rollout:
       needed for `defaultPath` / `defaultAddress` / `ignore` on already-loaded
       modules
     - do not reintroduce a second module-loading path
-- current local remediation status:
+  - current local remediation status:
+  - parser cleanup completed:
+    - `core/workspace/legacy.go` now unmarshals legacy `dagger.json` into the
+      authoritative `core/modules.ModuleConfig` types instead of maintaining a
+      private duplicate schema in the workspace package
+    - `legacy.go` remains a narrow compat extractor only; it does not load
+      modules or define an alternate config authority
+    - this reduces schema drift risk while keeping workspace detection free of
+      the stricter `modules.ParseModuleConfig(...)` version-compat gate
   - code changes are in progress in:
     - `core/workspace/legacy.go`
     - `engine/server/session.go`
