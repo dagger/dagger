@@ -2966,11 +2966,7 @@ function pipelineRecapItem(label, value) {
 }
 
 function pipelineSessionSummary(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+  return sessionInlineLinkByID(row?.sessionID, row?.traceID);
 }
 
 function pipelineModuleRecapItem(payload) {
@@ -4640,7 +4636,7 @@ function renderDeviceDetail(entity, row) {
   });
   const sessionTable = renderTableHTML({
     columns: [
-      { label: "Session", render: (item) => linkedPrimaryCell(shortID(item.id), "", entityPath("sessions", item.routeID)) },
+      { label: "Session", render: (item) => linkedPrimaryCell(sessionDisplayName(item), sessionDisplaySubtitle(item), entityPath("sessions", item.routeID)) },
       { label: "Status", render: (item) => statusOrbCell(sessionStatusLabel(item)) },
       { label: "Started", render: (item) => escapeHTML(relativeTimeFromNow(item.firstSeenUnixNano)) },
       { label: "Duration", render: (item) => escapeHTML(durationLabel(item.firstSeenUnixNano, item.lastSeenUnixNano, item.open ? "running" : item.status)) },
@@ -4762,7 +4758,7 @@ function renderClientDetail(entity, row) {
           ${pipelineRecapItem("Nested", clientYesNoCell(nested))}
           ${pipelineRecapItem("Module", clientYesNoCell(moduleRuntime))}
           ${pipelineRecapItem("Device", clientDeviceCell(row))}
-          ${pipelineRecapItem("Session", sessionHref ? linkedPrimaryCell(shortID(row.sessionID), "", sessionHref) : "Unknown")}
+          ${pipelineRecapItem("Session", sessionHref ? sessionCellByID(row.sessionID, row.traceID) : "Unknown")}
           ${pipelineRecapItem("Platform", escapeHTML(deviceClientPlatform(row) || "Unknown"))}
           ${pipelineRecapItem("Calls", escapeHTML(String(row.callCount || 0)))}
           ${pipelineRecapItem("Top-Level Calls", escapeHTML(String(row.topLevelCallCount || 0)))}
@@ -5149,7 +5145,7 @@ function renderShellDetail(entity, row) {
             ["Duration", escapeHTML(durationLabel(row.startUnixNano, row.endUnixNano, row.status))],
             ["Entry", detailCode(row.entryLabel || row.command || row.name)],
             ["Trace", detailCode(row.traceID)],
-            ["Session", detailCode(row.sessionID || "Unknown")],
+            ["Session", row.sessionID ? sessionInlineLinkByID(row.sessionID, row.traceID) : "Unknown"],
             ["Client", detailCode(row.clientID || "Unknown")],
           ]),
         )}
@@ -6073,6 +6069,23 @@ function deviceRows() {
   return Array.isArray(rows) ? rows : [];
 }
 
+function sessionRows() {
+  const rows = materializedEntityByID("sessions")?.liveItems;
+  if (Array.isArray(rows)) {
+    return rows;
+  }
+  const liveRows = state.live.sessions?.items;
+  return Array.isArray(liveRows) ? liveRows : [];
+}
+
+function sessionRowByID(sessionID) {
+  const id = String(sessionID || "").trim();
+  if (!id) {
+    return null;
+  }
+  return sessionRows().find((row) => String(row?.id || "") === id) || null;
+}
+
 function clientRows() {
   const rows = materializedEntityByID("clients")?.liveItems;
   if (Array.isArray(rows)) {
@@ -6140,6 +6153,25 @@ function objectRowByID(dagqlID) {
 
 function objectTypeRowByID(typeID) {
   return objectTypeRows().find((row) => String(row.id || "") === String(typeID || "")) || null;
+}
+
+function sessionCellByID(sessionID, traceID, fallback = "Unknown") {
+  if (!sessionID) {
+    return fallback;
+  }
+  const href = entityPath("sessions", sessionRouteID(traceID, sessionID));
+  const session = sessionRowByID(sessionID);
+  return linkedPrimaryCell(session ? sessionDisplayName(session) : shortID(sessionID), session ? sessionDisplaySubtitle(session) : "", href);
+}
+
+function sessionInlineLinkByID(sessionID, traceID, fallback = "None") {
+  if (!sessionID) {
+    return fallback;
+  }
+  const href = entityPath("sessions", sessionRouteID(traceID, sessionID));
+  const session = sessionRowByID(sessionID);
+  const label = session ? sessionDisplayName(session) : shortID(sessionID);
+  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(label)}</a>`;
 }
 
 function objectTypeRowByName(name) {
@@ -7130,13 +7162,7 @@ function deviceClientPlatform(client) {
 }
 
 function deviceClientSessionCell(client) {
-  const sessionID = String(client?.sessionID || "");
-  const traceID = String(client?.traceID || "");
-  if (!sessionID) {
-    return "";
-  }
-  const href = entityPath("sessions", sessionRouteID(traceID, sessionID));
-  return linkedPrimaryCell(shortID(sessionID), "", href);
+  return sessionCellByID(client?.sessionID, client?.traceID, "");
 }
 
 function shortMachineID(value, width = 6) {
@@ -8722,11 +8748,7 @@ function pipelineFollowupCell(row) {
 }
 
 function pipelineSessionCell(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID, "None");
 }
 
 function gitRemotePipelineCountCell(row) {
@@ -8746,11 +8768,7 @@ function gitRemotePipelineSummaryCell(row) {
 }
 
 function gitRemotePipelineSessionCell(row) {
-  if (!row?.sessionID || !row?.traceID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID, "None");
 }
 
 function registryPipelineCountCell(row) {
@@ -8772,19 +8790,11 @@ function registryActivityPipelineCell(row) {
 }
 
 function terminalSessionCell(row) {
-  if (!row?.sessionID) {
-    return "Unknown";
-  }
-  const href = entityPath("sessions", shortRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID);
 }
 
 function terminalSessionSummary(row) {
-  if (!row?.sessionID) {
-    return "Unknown";
-  }
-  const href = entityPath("sessions", shortRouteID(row.traceID, row.sessionID));
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+  return sessionInlineLinkByID(row?.sessionID, row?.traceID, "Unknown");
 }
 
 function terminalActivityCell(row) {
@@ -8800,35 +8810,19 @@ function serviceCreatedByCell(row) {
 }
 
 function serviceSessionCell(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID, "None");
 }
 
 function serviceSessionSummary(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+  return sessionInlineLinkByID(row?.sessionID, row?.traceID);
 }
 
 function checkSessionCell(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID, "None");
 }
 
 function checkSessionSummary(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+  return sessionInlineLinkByID(row?.sessionID, row?.traceID);
 }
 
 function servicePipelineSummary(row) {
@@ -8848,19 +8842,11 @@ function servicePipelineLabel(row) {
 }
 
 function workspaceOpSessionCell(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID, "None");
 }
 
 function workspaceOpSessionSummary(row) {
-  if (!row.sessionID) {
-    return "None";
-  }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+  return sessionInlineLinkByID(row?.sessionID, row?.traceID);
 }
 
 function workspaceOpPipelineCell(row) {
@@ -9077,16 +9063,14 @@ function replSessionCell(row) {
   if (!row.sessionID) {
     return primaryCell("Trace-local", shortID(row.traceID));
   }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return linkedPrimaryCell(shortID(row.sessionID), row.rootClientID ? shortID(row.rootClientID) : "", href);
+  return sessionCellByID(row?.sessionID, row?.traceID);
 }
 
 function replSessionSummary(row) {
   if (!row.sessionID) {
     return detailCode(shortID(row.traceID) || "Unknown");
   }
-  const href = entityPath("sessions", sessionRouteID(row.traceID, row.sessionID));
-  return `<a class="v3-inline-link" href="${escapeHTML(href)}" data-route-path="${escapeHTML(href)}">${escapeHTML(shortID(row.sessionID))}</a>`;
+  return sessionInlineLinkByID(row?.sessionID, row?.traceID);
 }
 
 function replCommandHistoryCell(row) {
@@ -9130,7 +9114,8 @@ function shellDescendantCell(row) {
 
 function shellScopeCell(row) {
   const title = row.clientName || row.clientID || "unknown client";
-  const detail = row.sessionID ? `session ${shortID(row.sessionID)}` : `trace ${shortID(row.traceID)}`;
+  const session = sessionRowByID(row?.sessionID);
+  const detail = session ? sessionDisplayName(session) : row.sessionID ? `session ${shortID(row.sessionID)}` : `trace ${shortID(row.traceID)}`;
   return primaryCell(title, detail);
 }
 
