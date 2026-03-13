@@ -17,19 +17,20 @@ func TestWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
 }
 
-const dangSDK = "github.com/vito/dang/dagger-sdk@2de20f19b971dad3ee6038e6728736ef1f9a056b"
+const dangSDK = "github.com/vito/dang/dagger-sdk@9f1c9666cb33d6989ea53a07ceac6d153151226a"
 
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
 func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return c.Container().From(golangImage).
-		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"apk", "add", "git", "ripgrep"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
 		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		WithExec([]string{"git", "init"})
+		WithExec([]string{"git", "init"}).
+		With(daggerExec("init"))
 }
 
 // initDangModule creates a Dang module in the workspace with the given name
@@ -43,7 +44,6 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
-			With(daggerExec("init")).
 			With(daggerExec("toolchain", "install", "./toolchains/"+name))
 	}
 }
@@ -449,26 +449,25 @@ func (WorkspaceSuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) {
 		WithNewFile("docs/readme.md", "# Hello\n\nThis is a hello world project.\n").
 		With(initDangModule("searcher", `
 type Searcher {
-  pub file_paths: [String!]!
+  pub filePaths: [String!]!
 
   new(ws: Workspace!, pattern: String!) {
-    results := ws.search(pattern: pattern)
-    self.file_paths = []
-    for result in results {
-      self.file_paths = self.file_paths + [result.filePath + ":" + "\(result.lineNumber)"]
+    self.filePaths = []
+    ws.search(pattern: pattern).{filePath, lineNumber}.each { result =>
+      self.filePaths += [result.filePath + ":" + toString(result.lineNumber)]
     }
     self
   }
 }
-
+`)).
+		With(initDangModule("files-searcher", `
 type FilesSearcher {
   pub files: [String!]!
 
-  new(ws: Workspace!, pattern: String!, globs: [String!]) {
-    results := ws.search(pattern: pattern, filesOnly: true, globs: globs)
+  new(ws: Workspace!, pattern: String!, globs: [String!]! = []) {
     self.files = []
-    for result in results {
-      self.files = self.files + [result.filePath]
+    ws.search(pattern: pattern, filesOnly: true, globs: globs).{filePath}.each { result =>
+      self.files += [result.filePath]
     }
     self
   }
@@ -479,16 +478,17 @@ type FilesSearcher {
 		out, err := base.With(daggerCall("searcher", "--pattern=hello", "file-paths")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.TrimSpace(out)
-		require.Contains(t, lines, "hello.txt:1")
+		require.NotContains(t, lines, "hello.txt:1") // case sensitive
 		require.Contains(t, lines, "src/main.go:4")
 		require.Contains(t, lines, "src/util.go:4")
+		require.Contains(t, lines, "docs/readme.md:3")
 	})
 
 	t.Run("files only", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "files")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.TrimSpace(out)
-		require.Contains(t, lines, "hello.txt")
+		require.NotContains(t, lines, "hello.txt") // case sensitive
 		require.Contains(t, lines, "src/main.go")
 		require.Contains(t, lines, "src/util.go")
 		require.Contains(t, lines, "docs/readme.md")

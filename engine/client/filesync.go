@@ -704,6 +704,9 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 			// No matches
 			return []engine.LocalSearchResult{}, nil
 		}
+		if errBuf.Len() > 0 {
+			return nil, fmt.Errorf("grep error: %w: %s", err, errBuf.String())
+		}
 		return nil, fmt.Errorf("grep error: %w", err)
 	}
 
