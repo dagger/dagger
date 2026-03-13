@@ -34,6 +34,22 @@ For this branch, that means:
 - compat/runtime fixes in this branch must conform to that contract rather than
   bending the contract around legacy `defaultPath` behavior
 
+Current implementation status:
+
+- shared path-contract source commit on `workspace`:
+  - `5e0b1e4a7` `workspace: adopt path contract`
+- cherry-picked onto `workspace-plumbing`:
+  - `bc8d8668e` `workspace: adopt path contract`
+- two plumbing-specific cherry-pick repairs were needed before repo-root official
+  generators would run:
+  - restore the missing `strings` import in
+    [workspace.go](/Users/shykes/git/github.com/dagger/dagger_workspace/core/schema/workspace.go)
+  - remove `workspace`-branch-only config-state references from
+    [session.go](/Users/shykes/git/github.com/dagger/dagger_workspace/engine/server/session.go)
+- the public schema/SDK/docs surface has been regenerated on this branch through
+  official repo-root `dagger generate -y ...` functions and trimmed back to the
+  Workspace path-contract-related files only
+
 ## Why This Split
 
 The earlier lockfile split candidate was technically possible only for boring

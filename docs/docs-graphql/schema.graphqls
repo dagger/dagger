@@ -4350,6 +4350,9 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
+  """The blueprint referenced by the module source."""
+  blueprint: ModuleSource!
+
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
@@ -4471,11 +4474,20 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
+  """The toolchains referenced by the module source."""
+  toolchains: [ModuleSource!]!
+
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
 
   """The specified version of the git repo this source points to."""
   version: String!
+
+  """Set a blueprint for the module source."""
+  withBlueprint(
+    """The blueprint module to set."""
+    blueprint: ModuleSourceID!
+  ): ModuleSource!
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4535,10 +4547,25 @@ type ModuleSource {
     path: String!
   ): ModuleSource!
 
+  """Add toolchains to the module source."""
+  withToolchains(
+    """The toolchain modules to add."""
+    toolchains: [ModuleSourceID!]!
+  ): ModuleSource!
+
+  """Update the blueprint module to the latest version."""
+  withUpdateBlueprint: ModuleSource!
+
   """Update one or more module dependencies."""
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
+  ): ModuleSource!
+
+  """Update one or more toolchains."""
+  withUpdateToolchains(
+    """The toolchains to update."""
+    toolchains: [String!]!
   ): ModuleSource!
 
   """Update one or more clients."""
@@ -4546,6 +4573,9 @@ type ModuleSource {
     """The clients to update"""
     clients: [String!]!
   ): ModuleSource!
+
+  """Remove the current blueprint from the module source."""
+  withoutBlueprint: ModuleSource!
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4565,6 +4595,12 @@ type ModuleSource {
   withoutExperimentalFeatures(
     """The experimental features to disable."""
     features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
+  """Remove the provided toolchains from the module source."""
+  withoutToolchains(
+    """The toolchains to remove."""
+    toolchains: [String!]!
   ): ModuleSource!
 }
 
@@ -5701,6 +5737,9 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """Canonical Dagger address of the workspace directory."""
+  address: String!
+
   """Return all checks from modules loaded in the workspace."""
   checks(
     """Only include checks matching the specified patterns"""
@@ -5711,6 +5750,11 @@ type Workspace {
   clientId: String!
 
   """
+  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  """
+  configPath: String!
+
+  """
   The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
   """
   defaultModule: String!
@@ -5718,13 +5762,13 @@ type Workspace {
   """
   Returns a Directory from the workspace.
 
-  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   directory(
     """
     Location of the directory to retrieve. Relative paths (e.g., "src") resolve
-    from workspace root; absolute paths (e.g., "/src") resolve from sandbox
-    root.
+    from the workspace directory; absolute paths (e.g., "/src") resolve from the
+    workspace boundary.
     """
     path: String!
 
@@ -5745,13 +5789,13 @@ type Workspace {
   """
   Returns a File from the workspace.
 
-  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   file(
     """
     Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
-    from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox
-    root.
+    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
+    the workspace boundary.
     """
     path: String!
   ): File!
@@ -5759,15 +5803,20 @@ type Workspace {
   """
   Search for a file or directory by walking up from the start path within the workspace.
 
-  Returns the path relative to the workspace root if found, or null if not found.
+  Returns the absolute workspace path if found, or null if not found.
 
-  The search stops at the workspace root and will not traverse above it.
+  Relative start paths resolve from the workspace directory.
+
+  The search stops at the workspace boundary and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
     name: String!
 
-    """Path to start the search from, relative to the workspace root."""
+    """
+    Path to start the search from. Relative paths resolve from the workspace
+    directory; absolute paths resolve from the workspace boundary.
+    """
     from: String = "."
   ): String
 
@@ -5777,10 +5826,16 @@ type Workspace {
     include: [String!]
   ): GeneratorGroup!
 
+  """Whether a config.toml file exists in the workspace."""
+  hasConfig: Boolean!
+
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
-  """Workspace path relative to root."""
+  """Whether .dagger/config.toml exists."""
+  initialized: Boolean!
+
+  """Workspace directory path relative to the workspace boundary."""
   path: String!
 }
 

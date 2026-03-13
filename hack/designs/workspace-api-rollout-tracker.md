@@ -140,6 +140,37 @@ Branch docs:
     init instead of depending on workspace-module authoring
   - do not treat this helper/authoring mismatch as part of the Workspace path
     contract itself
+- Completed rollout task `3` on `workspace`.
+- Shared source commit on `workspace`:
+  - `5e0b1e4a7` `workspace: adopt path contract`
+- Cherry-picked the shared implementation into `workspace-plumbing`:
+  - `bc8d8668e` `workspace: adopt path contract`
+- The plumbing cherry-pick required two follow-up merge repairs before official
+  generation could run cleanly:
+  - `core/schema/workspace.go`
+    - restored the missing `strings` import for `workspaceAPIPath`
+  - `engine/server/session.go`
+    - removed references to `workspace`-branch-only config state
+      (`detected.Initialized`, `detected.Config`, `WorkspaceDirName`,
+      `ConfigFileName`) while preserving the shared `ws.address` / `ws.path`
+      contract on the public `core.Workspace`
+- Regenerated the public surface on `workspace-plumbing` using official repo-root
+  `dagger generate -y ...` functions, then trimmed unrelated stale-generator churn
+  so this batch only carries the shared Workspace path-contract surface:
+  - `docs/docs-graphql/schema.graphqls`
+  - `docs/static/api/reference/index.html`
+  - `docs/static/reference/php/Dagger/Workspace.html`
+  - `sdk/go/dagger.gen.go`
+  - `sdk/php/generated/Workspace.php`
+  - `sdk/python/src/dagger/client/gen.py`
+  - `sdk/rust/crates/dagger-sdk/src/gen.rs`
+  - `sdk/typescript/src/api/client.gen.ts`
+- Important note:
+  - the regenerated plumbing outputs are not byte-identical to the `workspace`
+    source commit, which confirms `workspace-plumbing` still has branch-specific
+    public surface outside the shared path contract
+  - for this batch, we are keeping only the Workspace-path-contract-related
+    generated refresh instead of broad generator cleanup
 
 ## Rollout Order
 
@@ -152,20 +183,23 @@ Branch docs:
    - reference the `workspace` PR description as canonical
    - record plumbing-specific implications only
 
-3. [~] Implement the shared Workspace path semantics on `workspace`.
+3. [x] Implement the shared Workspace path semantics on `workspace`.
    - resolver behavior for relative vs absolute paths
    - `ws.path`
    - `ws.address`
    - unit tests for the contract
    - dogfood/integration updates as needed
 
-4. Cherry-pick the shared implementation commits into `workspace-plumbing`.
+4. [x] Cherry-pick the shared implementation commits into `workspace-plumbing`.
    - cherry-pick only the genuinely shared path-contract commits
    - do not blindly transplant branch-specific glue or broad test churn
 
-5. Adapt `workspace-plumbing` to the new contract.
+5. [~] Adapt `workspace-plumbing` to the new contract.
    - wire the shared semantics into the current plumbing/session architecture
    - keep workspace traversal as the runtime path
+   - shared path contract and generated public surface are in place
+   - remaining work is branch-specific runtime compat (`defaultPath`, generator
+     include matching, and other ledger items)
 
 6. Fix remaining plumbing regressions against the new contract.
    - first: legacy `defaultPath` resolution

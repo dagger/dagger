@@ -2734,7 +2734,7 @@ export type WorkspaceDirectoryOpts = {
 
 export type WorkspaceFindUpOpts = {
   /**
-   * Path to start the search from, relative to the workspace root.
+   * Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
    */
   from?: string
 }
@@ -10859,6 +10859,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The blueprint referenced by the module source.
+   */
+  blueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("blueprint")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * The ref to clone the root of the git repo from. Only valid for git sources.
    */
   cloneRef = async (): Promise<string> => {
@@ -11197,6 +11205,23 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The toolchains referenced by the module source.
+   */
+  toolchains = async (): Promise<ModuleSource[]> => {
+    type toolchains = {
+      id: ModuleSourceID
+    }
+
+    const ctx = this._ctx.select("toolchains").select("id")
+
+    const response: Awaited<toolchains[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+    )
+  }
+
+  /**
    * User-defined defaults read from local .env files
    */
   userDefaults = (): EnvFile => {
@@ -11217,6 +11242,15 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Set a blueprint for the module source.
+   * @param blueprint The blueprint module to set.
+   */
+  withBlueprint = (blueprint: ModuleSource): ModuleSource => {
+    const ctx = this._ctx.select("withBlueprint", { blueprint })
+    return new ModuleSource(ctx)
   }
 
   /**
@@ -11295,6 +11329,23 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Add toolchains to the module source.
+   * @param toolchains The toolchain modules to add.
+   */
+  withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
+    const ctx = this._ctx.select("withToolchains", { toolchains })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Update the blueprint module to the latest version.
+   */
+  withUpdateBlueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateBlueprint")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update one or more module dependencies.
    * @param dependencies The dependencies to update.
    */
@@ -11304,11 +11355,28 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update one or more toolchains.
+   * @param toolchains The toolchains to update.
+   */
+  withUpdateToolchains = (toolchains: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update one or more clients.
    * @param clients The clients to update
    */
   withUpdatedClients = (clients: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdatedClients", { clients })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Remove the current blueprint from the module source.
+   */
+  withoutBlueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("withoutBlueprint")
     return new ModuleSource(ctx)
   }
 
@@ -11338,6 +11406,15 @@ export class ModuleSource extends BaseClient {
     features: ModuleSourceExperimentalFeature[],
   ): ModuleSource => {
     const ctx = this._ctx.select("withoutExperimentalFeatures", { features })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Remove the provided toolchains from the module source.
+   * @param toolchains The toolchains to remove.
+   */
+  withoutToolchains = (toolchains: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withoutToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
@@ -13647,9 +13724,13 @@ export class TypeDef extends BaseClient {
  */
 export class Workspace extends BaseClient {
   private readonly _id?: WorkspaceID = undefined
+  private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
+  private readonly _configPath?: string = undefined
   private readonly _defaultModule?: string = undefined
   private readonly _findUp?: string = undefined
+  private readonly _hasConfig?: boolean = undefined
+  private readonly _initialized?: boolean = undefined
   private readonly _path?: string = undefined
 
   /**
@@ -13658,17 +13739,25 @@ export class Workspace extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: WorkspaceID,
+    _address?: string,
     _clientId?: string,
+    _configPath?: string,
     _defaultModule?: string,
     _findUp?: string,
+    _hasConfig?: boolean,
+    _initialized?: boolean,
     _path?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._address = _address
     this._clientId = _clientId
+    this._configPath = _configPath
     this._defaultModule = _defaultModule
     this._findUp = _findUp
+    this._hasConfig = _hasConfig
+    this._initialized = _initialized
     this._path = _path
   }
 
@@ -13683,6 +13772,21 @@ export class Workspace extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<WorkspaceID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Canonical Dagger address of the workspace directory.
+   */
+  address = async (): Promise<string> => {
+    if (this._address) {
+      return this._address
+    }
+
+    const ctx = this._ctx.select("address")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -13712,6 +13816,21 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Path to config.toml relative to the workspace boundary (empty if not initialized).
+   */
+  configPath = async (): Promise<string> => {
+    if (this._configPath) {
+      return this._configPath
+    }
+
+    const ctx = this._ctx.select("configPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
    */
   defaultModule = async (): Promise<string> => {
@@ -13729,8 +13848,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a Directory from the workspace.
    *
-   * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
-   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -13743,8 +13862,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a File from the workspace.
    *
-   * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
-   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -13754,11 +13873,13 @@ export class Workspace extends BaseClient {
   /**
    * Search for a file or directory by walking up from the start path within the workspace.
    *
-   * Returns the path relative to the workspace root if found, or null if not found.
+   * Returns the absolute workspace path if found, or null if not found.
    *
-   * The search stops at the workspace root and will not traverse above it.
+   * Relative start paths resolve from the workspace directory.
+   *
+   * The search stops at the workspace boundary and will not traverse above it.
    * @param name The name of the file or directory to search for.
-   * @param opts.from Path to start the search from, relative to the workspace root.
+   * @param opts.from Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
    */
   findUp = async (
     name: string,
@@ -13785,7 +13906,37 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Workspace path relative to root.
+   * Whether a config.toml file exists in the workspace.
+   */
+  hasConfig = async (): Promise<boolean> => {
+    if (this._hasConfig) {
+      return this._hasConfig
+    }
+
+    const ctx = this._ctx.select("hasConfig")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether .dagger/config.toml exists.
+   */
+  initialized = async (): Promise<boolean> => {
+    if (this._initialized) {
+      return this._initialized
+    }
+
+    const ctx = this._ctx.select("initialized")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Workspace directory path relative to the workspace boundary.
    */
   path = async (): Promise<string> => {
     if (this._path) {

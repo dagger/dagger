@@ -14250,10 +14250,14 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
+	address       *string
 	clientId      *string
+	configPath    *string
 	defaultModule *string
 	findUp        *string
+	hasConfig     *bool
 	id            *WorkspaceID
+	initialized   *bool
 	path          *string
 }
 
@@ -14261,6 +14265,19 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
 		query: q,
 	}
+}
+
+// Canonical Dagger address of the workspace directory.
+func (r *Workspace) Address(ctx context.Context) (string, error) {
+	if r.address != nil {
+		return *r.address, nil
+	}
+	q := r.query.Select("address")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // WorkspaceChecksOpts contains options for Workspace.Checks
@@ -14297,6 +14314,19 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Path to config.toml relative to the workspace boundary (empty if not initialized).
+func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
+	if r.configPath != nil {
+		return *r.configPath, nil
+	}
+	q := r.query.Select("configPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
 func (r *Workspace) DefaultModule(ctx context.Context) (string, error) {
 	if r.defaultModule != nil {
@@ -14322,7 +14352,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14348,7 +14378,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14360,7 +14390,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from, relative to the workspace root.
+	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
 	//
 	// Default: "."
 	From string
@@ -14368,9 +14398,11 @@ type WorkspaceFindUpOpts struct {
 
 // Search for a file or directory by walking up from the start path within the workspace.
 //
-// Returns the path relative to the workspace root if found, or null if not found.
+// Returns the absolute workspace path if found, or null if not found.
 //
-// The search stops at the workspace root and will not traverse above it.
+// Relative start paths resolve from the workspace directory.
+//
+// The search stops at the workspace boundary and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -14409,6 +14441,19 @@ func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup 
 	return &GeneratorGroup{
 		query: q,
 	}
+}
+
+// Whether a config.toml file exists in the workspace.
+func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
+	if r.hasConfig != nil {
+		return *r.hasConfig, nil
+	}
+	q := r.query.Select("hasConfig")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Workspace.
@@ -14451,7 +14496,20 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Workspace path relative to root.
+// Whether .dagger/config.toml exists.
+func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
+	if r.initialized != nil {
+		return *r.initialized, nil
+	}
+	q := r.query.Select("initialized")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace directory path relative to the workspace boundary.
 func (r *Workspace) Path(ctx context.Context) (string, error) {
 	if r.path != nil {
 		return *r.path, nil
