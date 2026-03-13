@@ -112,13 +112,7 @@ type Container struct {
 	// DefaultArgs have been explicitly set by the user
 	DefaultArgs bool
 
-	Parent dagql.ObjectResult[*Container]
 	LazyState
-
-	// OpID is the operation call ID that should be used as the base when
-	// synthesizing updated container child selection IDs (e.g. rootfs, file,
-	// directory) after operations like exec/import.
-	OpID *call.ID
 
 	persistedResultID uint64
 }
@@ -157,7 +151,6 @@ func NewContainer(platform Platform) *Container {
 func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 	if parent.Self() == nil {
 		return &Container{
-			Parent:    parent,
 			LazyState: NewLazyState(),
 		}
 	}
@@ -175,12 +168,10 @@ func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
-	cp.Parent = parent
 	cp.LazyState = NewLazyState()
 	if cp.MetaSnapshot != nil {
 		cp.MetaSnapshot = cp.MetaSnapshot.Clone()
 	}
-	cp.OpID = nil
 	return &cp
 }
 
@@ -315,13 +306,6 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		}
 		payload.FSResultID = encoded
 	}
-	if container.OpID != nil {
-		encoded, err := encodePersistedCallID(container.OpID)
-		if err != nil {
-			return nil, fmt.Errorf("encode persisted container op ID: %w", err)
-		}
-		payload.OpID = encoded
-	}
 
 	for _, mnt := range container.Mounts {
 		encoded := persistedContainerMountPayload{
@@ -358,7 +342,6 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	if container.FS != nil && container.FS.ID() != nil {
 		slog.Info(
 			"cache-debug container persist encode",
-			"op_id", container.OpID,
 			"rootfs_id_digest", container.FS.ID().Digest(),
 			"rootfs_content_digest", container.FS.ID().ContentDigest(),
 			"mounts", len(container.Mounts),
@@ -418,17 +401,6 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		mounts = append(mounts, mnt)
 	}
 
-	var opID *call.ID
-	if persisted.OpID != "" {
-		decodedOpID, err := decodePersistedCallID(persisted.OpID)
-		if err != nil {
-			return nil, fmt.Errorf("decode persisted container op ID: %w", err)
-		}
-		opID = decodedOpID
-	} else {
-		opID = id
-	}
-
 	var metaSnapshot bkcache.ImmutableRef
 	links, err := loadPersistedSnapshotLinksForID(ctx, dag, id)
 	if err != nil {
@@ -448,7 +420,6 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	if rootfs != nil && rootfs.ID() != nil {
 		slog.Info(
 			"cache-debug container persist decode",
-			"op_id", opID,
 			"rootfs_id_digest", rootfs.ID().Digest(),
 			"rootfs_content_digest", rootfs.ID().ContentDigest(),
 			"mounts", len(mounts),
@@ -469,7 +440,6 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
 		DefaultArgs:        persisted.DefaultArgs,
 		LazyState:          NewLazyState(),
-		OpID:               opID,
 	}, nil
 }
 
@@ -607,7 +577,6 @@ type persistedContainerPayload struct {
 	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
-	OpID               string                              `json:"opID,omitempty"`
 }
 
 func (container *Container) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
@@ -2910,7 +2879,7 @@ func (terminal *TerminalLegacy) Sync(ctx context.Context) error {
 }
 
 // UpdatedRootFS returns an updated rootfs for a given directory after an exec/import/etc.
-// The returned ObjectResult uses owner.OpID as the operation ID base.
+// The returned ObjectResult uses the current container operation ID as the presentation base.
 func UpdatedRootFS(
 	ctx context.Context,
 	owner *Container,
@@ -2924,7 +2893,7 @@ func UpdatedRootFS(
 }
 
 // updatedDirMount returns an updated mount for a given directory after an exec/import/etc.
-// The returned ObjectResult uses owner.OpID as the operation ID base.
+// The returned ObjectResult uses the current container operation ID as the presentation base.
 func updatedDirMount(
 	ctx context.Context,
 	owner *Container,
@@ -2940,7 +2909,7 @@ func updatedDirMount(
 }
 
 // updatedFileMount returns an updated mount for a given file after an exec/import/etc.
-// The returned ObjectResult uses owner.OpID as the operation ID base.
+// The returned ObjectResult uses the current container operation ID as the presentation base.
 func updatedFileMount(
 	ctx context.Context,
 	owner *Container,
@@ -2965,8 +2934,13 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	if owner == nil {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("missing container owner for %s selection", fieldName)
 	}
-	if owner.OpID == nil {
-		return dagql.ObjectResult[T]{}, fmt.Errorf("missing operation ID on container for %s selection", fieldName)
+	// WARNING: this relies on UpdatedRootFS/updatedDirMount/updatedFileMount only
+	// being called in the active container operation context, not from a later
+	// lazy callback. If that changes in the future, this presentation-ID base
+	// needs to be revisited.
+	opID := dagql.CurrentID(ctx)
+	if opID == nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("missing current operation ID on container for %s selection", fieldName)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -2977,7 +2951,7 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	if err != nil {
 		return dagql.ObjectResult[T]{}, err
 	}
-	view := owner.OpID.View()
+	view := opID.View()
 	objType, ok := curSrv.ObjectType("Container")
 	if !ok {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("object type Container not found in server")
@@ -2986,7 +2960,7 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	if !ok {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("field spec for %s not found in object type Container", fieldName)
 	}
-	newID := owner.OpID.Append(
+	newID := opID.Append(
 		fieldSpec.Type.Type(),
 		fieldName,
 		call.WithView(view),

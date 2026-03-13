@@ -645,6 +645,13 @@ func (r Result[T]) ID() *call.ID {
 	return r.id
 }
 
+func (r Result[T]) IDForCaller(ctx context.Context) (*call.ID, error) {
+	if r.shared == nil || r.shared.cache == nil || r.shared.id == 0 {
+		return r.id, nil
+	}
+	return r.shared.cache.idForCaller(ctx, r.shared.id, r.id), nil
+}
+
 func (r Result[T]) Self() T {
 	var zero T
 	if r.shared == nil || r.shared.self == nil {
@@ -866,6 +873,10 @@ func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[
 func (r ObjectResult[T]) ObjectResultWithCallFrame(frame *ResultCallFrame) ObjectResult[T] {
 	r.Result = r.Result.ResultWithCallFrame(frame)
 	return r
+}
+
+func (r ObjectResult[T]) IDForCaller(ctx context.Context) (*call.ID, error) {
+	return r.Result.IDForCaller(ctx)
 }
 
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {

@@ -402,7 +402,16 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
-	newID := r.ID().Append(
+	receiverID, err := r.IDForCaller(ctx)
+	if err != nil {
+		typ := r.Type()
+		if typ == nil {
+			return nil, fmt.Errorf("failed to reconstruct caller ID for <nil>.%s: %w", sel.Field, err)
+		}
+		return nil, fmt.Errorf("failed to reconstruct caller ID for %s.%s: %w", typ.Name(), sel.Field, err)
+	}
+
+	newID := receiverID.Append(
 		astType,
 		sel.Field,
 		call.WithView(view),
@@ -547,7 +556,7 @@ func (r ObjectResult[T]) call(
 	ctx = srvToContext(ctx, s)
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
 			return s.telemetry(ctx, newID)
 		}))
 	}

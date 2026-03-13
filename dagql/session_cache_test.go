@@ -160,10 +160,14 @@ func TestSessionCacheTelemetryBehavior(t *testing.T) {
 
 	var beginCalls atomic.Int32
 	var doneCalls atomic.Int32
+	var beginSawResult atomic.Bool
 	var cachedValsMu sync.Mutex
 	var cachedVals []bool
-	telemetryOpt := WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+	telemetryOpt := WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
 		beginCalls.Add(1)
+		if res != nil {
+			beginSawResult.Store(true)
+		}
 		return ctx, func(_ AnyResult, cached bool, _ *error) {
 			doneCalls.Add(1)
 			cachedValsMu.Lock()
@@ -194,6 +198,7 @@ func TestSessionCacheTelemetryBehavior(t *testing.T) {
 
 	assert.Equal(t, int32(3), beginCalls.Load())
 	assert.Equal(t, int32(3), doneCalls.Load())
+	assert.Assert(t, !beginSawResult.Load())
 	assert.DeepEqual(t, []bool{false, false, true}, cachedVals)
 }
 
@@ -210,10 +215,14 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 
 	var beginCalls atomic.Int32
 	var doneCalls atomic.Int32
+	var beginSawResult atomic.Bool
 	var cachedValsMu sync.Mutex
 	var cachedVals []bool
-	telemetryOpt := WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+	telemetryOpt := WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
 		beginCalls.Add(1)
+		if res != nil {
+			beginSawResult.Store(true)
+		}
 		return ctx, func(_ AnyResult, cached bool, _ *error) {
 			doneCalls.Add(1)
 			cachedValsMu.Lock()
@@ -234,6 +243,7 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, int32(1), beginCalls.Load())
 	assert.Equal(t, int32(1), doneCalls.Load())
+	assert.Assert(t, beginSawResult.Load())
 	assert.DeepEqual(t, []bool{true}, cachedVals)
 
 	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {

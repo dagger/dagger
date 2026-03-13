@@ -1542,7 +1542,7 @@ Phase-1 tripwire:
 * however, this tripwire does **not** apply to synthetic/scoped nodes whose honest v1 representation does not actually require a base internal result ref
   * SDK/module scoping is the concrete example here
 
-### Phase 2: Add `IDForCaller(...)` and move runtime presentation onto frames
+### Phase 2: Add `IDForCaller(...)` and move runtime presentation onto frames *(completed)*
 
 Purpose:
 
@@ -1567,14 +1567,15 @@ Primary files / seams:
   * these are the two current wiring points for the around-func / telemetry callback
   * both need to be updated so that user-facing telemetry is rooted in `IDForCaller(...)`, not raw `.ID()`
 * `core/container.go`
-  * child selection synthesis paths around `UpdatedRootFS(...)` / related helpers currently depend on `OpID`
-  * these should move onto frame-based caller-facing reconstruction
+  * child selection synthesis paths around `UpdatedRootFS(...)` / related helpers no longer need a stored `OpID`
+  * the current preferred direction is to use `dagql.CurrentID(ctx)` directly at the `Updated*` use site
+  * add an explicit warning comment there that this relies on those helpers never being invoked from a later lazy callback
 * `core/schema/container.go`
 * `core/schema/host.go`
 * `core/builtincontainer.go`
 * `core/modfunc.go`
-  * these are the main places that currently set or carry `Container.OpID`
-  * they will likely need to move to “real frame node + `IDForCaller(...)`” instead of persisted raw op IDs
+  * these were the main places that used to set or carry `Container.OpID`
+  * the new hard cut is to stop storing `OpID` on `Container` entirely and rely on `dagql.CurrentID(ctx)` at the child-selection synthesis site
 * `core/sdk/utils.go`
   * once frames exist, SDK scoping should no longer be treated as just ID surgery
   * this phase is where runtime caller-facing reconstruction for those scoped values becomes meaningful
@@ -1612,10 +1613,26 @@ Phase-2 review boundary:
 * after this phase, runtime caller-facing reconstruction should be frame-based in the selected high-signal paths
 * persistence should still still be using the old `canonical_id` storage at this point
 
+Phase-2 progress so far:
+
+* `Result` / `ObjectResult` now have `IDForCaller(ctx)`
+* `resultCallFrame` can now be turned back into caller-facing `call.ID`s using:
+  * caller-local frontier seeding from the wrapper's current raw ID
+  * recursive frame/literal reconstruction
+  * reattaching all known labeled extra digests from the result's output eq class via `eqClassExtraDigests`
+  * raw `.ID()` fallback when reconstruction is unavailable
+* the cache-hit telemetry callback shape now accepts the hit result at begin-time, which lets the `LoadType(...)` cache-hit path pass `callerFacingID(...)` instead of blindly using the raw historical ID
+* `ObjectResult.preselect(...)`, `Server.loadNthValue(...)`, and `Server.promoteDerivedObjectResult(...)` now use caller-facing IDs instead of raw stored IDs
+* `Container.OpID` has been removed
+  * `UpdatedRootFS(...)` / `updatedDirMount(...)` / `updatedFileMount(...)` now derive their presentation base directly from `dagql.CurrentID(ctx)`
+  * the code now carries an explicit warning comment that this relies on those helpers not being invoked from a later lazy callback
+* the schema-visible `_sourceContentScoped` module result now stamps an explicit synthetic frame node instead of relying only on raw ID surgery
+* with that, the selected high-signal runtime presentation paths for this phase are now frame-based
+
 Phase-2 tripwire:
 
-* if replacing `Container.OpID` with frame-based reconstruction exposes some operation shape that cannot be represented as a real frame node, stop and escalate
-* that would mean we missed a category of synthetic/internal operation in the design
+* if any future caller tries to invoke the `UpdatedRootFS(...)` / mount update helpers outside a real dagql call context, the direct `dagql.CurrentID(ctx)` assumption will fail and that is a tripwire
+* do **not** reintroduce stored presentation state on `Container` as an ad hoc workaround
 
 ### Phase 3: Hard-cut module-object and semantic ID-valued data to internal result refs
 

@@ -37,7 +37,7 @@ type CacheCallOpts struct {
 	TelemetryPolicy TelemetryPolicy
 }
 
-type TelemetryFunc func(context.Context) (context.Context, func(AnyResult, bool, *error))
+type TelemetryFunc func(context.Context, AnyResult) (context.Context, func(AnyResult, bool, *error))
 
 // TelemetryPolicy controls when telemetry is emitted for a cache call.
 type TelemetryPolicy int
@@ -142,7 +142,7 @@ func (c *SessionCache) GetOrInitCall(
 				// see dupes when e.g. IDs returned out of the "bubble" are loaded
 				c.seenKeys.Store(callKey, struct{}{})
 
-				_, done := o.Telemetry(ctx)
+				_, done := o.Telemetry(ctx, res)
 				done(res, true, &err)
 			}
 		}
@@ -154,7 +154,7 @@ func (c *SessionCache) GetOrInitCall(
 			// see dupes when e.g. IDs returned out of the "bubble" are loaded
 			c.seenKeys.Store(callKey, struct{}{})
 
-			telemetryCtx, done := o.Telemetry(ctx)
+			telemetryCtx, done := o.Telemetry(ctx, nil)
 			defer func() {
 				var cached bool
 				if res != nil {

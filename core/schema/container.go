@@ -909,10 +909,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
 		ctr := core.NewContainerChild(parent)
-		ctr.OpID = dagql.CurrentID(ctx)
-		if ctr.OpID == nil {
-			return inst, fmt.Errorf("missing operation ID for container.from")
-		}
 
 		refStr := refName.String()
 		_, _, cfgBytes, err := bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
@@ -1140,13 +1136,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		md = args.ExecMD.Self
 	}
 
-	opID := dagql.CurrentID(ctx)
-	if opID == nil {
-		return inst, fmt.Errorf("missing operation ID for withExec")
-	}
-
 	ctr := core.NewContainerChild(parent)
-	ctr.OpID = opID
 	err = ctr.WithExec(ctx, args.ContainerExecOpts, md, false)
 	if err != nil {
 		return inst, err
@@ -2903,11 +2893,6 @@ func (s *containerSchema) import_(ctx context.Context, parent dagql.ObjectResult
 	defer func() {
 		slog.ExtraDebug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
 	}()
-	opID := dagql.CurrentID(ctx)
-	if opID == nil {
-		return nil, fmt.Errorf("missing operation ID for import")
-	}
-
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2925,7 +2910,6 @@ func (s *containerSchema) import_(ctx context.Context, parent dagql.ObjectResult
 	defer r.Close()
 
 	ctr := core.NewContainerChild(parent)
-	ctr.OpID = opID
 	return ctr.Import(ctx, r, args.Tag)
 }
 

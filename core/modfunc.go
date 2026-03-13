@@ -784,10 +784,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// execution is an internal flow with bespoke metadata plumbing; using the
 	// schema-level selector adds indirection and identity machinery we don't need.
 	execCtr := NewContainerChild(ctr)
-	execCtr.OpID = dagql.CurrentID(hideCtx)
-	if execCtr.OpID == nil {
-		return nil, fmt.Errorf("missing operation ID for module function exec")
-	}
 	err = execCtr.WithExec(hideCtx, ContainerExecOpts{
 		Args:                          []string{},
 		UseEntrypoint:                 true,

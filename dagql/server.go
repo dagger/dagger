@@ -688,7 +688,7 @@ func (s *Server) loadNthValue(
 		return nil, nil
 	}
 
-	parentID := parent.ID()
+	parentID := callerFacingID(ctx, parent)
 	if parentID == nil {
 		return nil, fmt.Errorf("nth %d: parent enumerable has no ID", nth)
 	}
@@ -742,7 +742,7 @@ func (s *Server) promoteDerivedObjectResult(
 		return res, nil
 	}
 
-	id := res.ID()
+	id := callerFacingID(ctx, res)
 	if id == nil {
 		return nil, fmt.Errorf("derived object result has no ID")
 	}
@@ -769,8 +769,12 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	// Before recursing, check if we already have a cached result for this ID.
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, id)
+		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
+			presentedID := id
+			if rebound := callerFacingID(ctx, res); rebound != nil {
+				presentedID = rebound
+			}
+			return s.telemetry(ctx, presentedID)
 		}))
 		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
 		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))

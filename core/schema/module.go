@@ -1220,11 +1220,35 @@ func (s *moduleSchema) moduleSourceContentScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source content scoped ID for module: %w", err)
 	}
+	if !parentMod.Self().Source.Valid {
+		return inst, fmt.Errorf("failed to get source content digest for module: no module source available")
+	}
+	sourceDigest, err := parentMod.Self().Source.Value.Self().ContentDigestForSDK(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get source content digest for module: %w", err)
+	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	return dagql.NewObjectResultForID(parentMod.Self(), dag, contentScopedID)
+	inst, err = dagql.NewObjectResultForID(parentMod.Self(), dag, contentScopedID)
+	if err != nil {
+		return inst, err
+	}
+	return inst.ObjectResultWithCallFrame(&dagql.ResultCallFrame{
+		Kind:        dagql.ResultCallFrameKindSynthetic,
+		SyntheticOp: "_sourceContentScoped",
+		Type:        dagql.NewResultCallFrameType(parentMod.Type()),
+		Args: []*dagql.ResultCallFrameArg{
+			{
+				Name: "scopeDigest",
+				Value: &dagql.ResultCallFrameLiteral{
+					Kind:        dagql.ResultCallFrameLiteralKindString,
+					StringValue: sourceDigest.String(),
+				},
+			},
+		},
+	}), nil
 }
 
 func (s *moduleSchema) contextDirectory(

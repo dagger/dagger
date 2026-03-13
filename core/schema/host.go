@@ -619,11 +619,6 @@ type hostContainerArgs struct {
 }
 
 func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResult[*core.Host], args hostContainerArgs) (inst dagql.Result[*core.Container], err error) {
-	opID := dagql.CurrentID(ctx)
-	if opID == nil {
-		return inst, fmt.Errorf("missing operation ID for host.containerImage")
-	}
-
 	refName, err := reference.ParseNormalizedNamed(args.Name)
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Name, err)
@@ -676,7 +671,6 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 		}
 
 		ctr := core.NewContainer(query.Platform())
-		ctr.OpID = opID
 		ctr, err = ctr.FromInternal(ctx, *target)
 		if err != nil {
 			return inst, err
@@ -689,7 +683,6 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 		defer src.Close()
 
 		ctr := core.NewContainer(query.Platform())
-		ctr.OpID = opID
 		ctr, err := ctr.Import(ctx, src, "")
 		if err != nil {
 			return inst, err

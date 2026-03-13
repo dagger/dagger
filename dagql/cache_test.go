@@ -3725,6 +3725,269 @@ func TestCacheResultCallFrameFirstWriterWins(t *testing.T) {
 	assert.Equal(t, "first", secondShared.resultCallFrame.SyntheticOp)
 }
 
+func TestResultCallFrameReconstructsCallerIDFromFrontier(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	childCurrentID := call.New().Append(Int(0).Type(), "currentChild")
+	rootFrame := &ResultCallFrame{
+		Kind:  ResultCallFrameKindField,
+		Type:  NewResultCallFrameType(Int(0).Type()),
+		Field: "parent",
+		Args: []*ResultCallFrameArg{{
+			Name: "child",
+			Value: &ResultCallFrameLiteral{
+				Kind:      ResultCallFrameLiteralKindResultRef,
+				ResultRef: &ResultCallFrameRef{ResultID: 1},
+			},
+		}},
+	}
+
+	rebuilt, ok := c.idForCallerFromFrame(ctx, 2, rootFrame, callerIDFrontier{
+		1: childCurrentID,
+	}, map[sharedResultID]struct{}{})
+	assert.Assert(t, ok)
+	assert.Assert(t, rebuilt != nil)
+
+	expected := call.New().Append(
+		Int(0).Type(),
+		"parent",
+		call.WithArgs(call.NewArgument("child", call.NewLiteralID(childCurrentID), false)),
+	)
+	assert.Equal(t, expected.Digest(), rebuilt.Digest())
+	assert.Equal(t, expected.DisplaySelf(), rebuilt.DisplaySelf())
+}
+
+func TestResultIDForCallerFallsBackToRawIDOnMissingFrameRef(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	rawID := call.New().Append(
+		Int(0).Type(),
+		"parent",
+		call.WithArgs(call.NewArgument("child", call.NewLiteralID(cacheTestID("raw-child")), false)),
+	)
+
+	shared := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     Int(1),
+		hasValue: true,
+		resultCallFrame: &ResultCallFrame{
+			Kind:  ResultCallFrameKindField,
+			Type:  NewResultCallFrameType(Int(0).Type()),
+			Field: "parent",
+			Args: []*ResultCallFrameArg{{
+				Name: "child",
+				Value: &ResultCallFrameLiteral{
+					Kind:      ResultCallFrameLiteralKindResultRef,
+					ResultRef: &ResultCallFrameRef{ResultID: 99},
+				},
+			}},
+		},
+	}
+	c.egraphMu.Lock()
+	if c.resultsByID == nil {
+		c.resultsByID = map[sharedResultID]*sharedResult{}
+	}
+	c.resultsByID[shared.id] = shared
+	c.egraphMu.Unlock()
+
+	res := Result[Int]{
+		shared: shared,
+		id:     rawID,
+	}
+	rebuilt, err := res.IDForCaller(ctx)
+	assert.NilError(t, err)
+	assert.Assert(t, rebuilt != nil)
+	assert.Equal(t, rawID.Digest(), rebuilt.Digest())
+	assert.Equal(t, rawID.DisplaySelf(), rebuilt.DisplaySelf())
+}
+
+func TestCallerIDFrontierSeedsReceiverBinding(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+	srv := cacheTestServer(t, c)
+
+	parentID := call.New().Append((&cacheTestObject{}).Type(), "parent")
+	parentRes, err := c.GetOrInitCall(ctx, CacheKey{ID: parentID}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, parentID, 42, nil), nil
+	})
+	assert.NilError(t, err)
+	parentShared := parentRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+
+	childID := parentID.Append(Int(0).Type(), "value")
+	childRes, err := c.GetOrInitCall(ctx, CacheKey{ID: childID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(childID, 42), nil
+	})
+	assert.NilError(t, err)
+	childShared := childRes.cacheSharedResult()
+	assert.Assert(t, childShared != nil)
+
+	c.egraphMu.RLock()
+	frontier := callerIDFrontier{}
+	seedCallerIDFrontier(childShared.resultCallFrame, childID, frontier)
+	reconstructed, ok := c.idForCallerFromFrame(ctx, parentShared.id, parentShared.resultCallFrame, frontier, map[sharedResultID]struct{}{})
+	c.egraphMu.RUnlock()
+	assert.Assert(t, ok)
+	assert.Assert(t, reconstructed != nil)
+	assert.Equal(t, parentID.Digest(), reconstructed.Digest())
+}
+
+func TestCallerIDFrontierSeedsLiteralResultRefBinding(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	childID := call.New().Append(Int(0).Type(), "frontierChild")
+	childRes, err := c.GetOrInitCall(ctx, CacheKey{ID: childID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(childID, 7), nil
+	})
+	assert.NilError(t, err)
+	childShared := childRes.cacheSharedResult()
+	assert.Assert(t, childShared != nil)
+
+	parentID := call.New().Append(
+		Int(0).Type(),
+		"frontierParent",
+		call.WithArgs(call.NewArgument("child", call.NewLiteralID(childID), false)),
+	)
+	parentRes, err := c.GetOrInitCall(ctx, CacheKey{ID: parentID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(parentID, 8), nil
+	})
+	assert.NilError(t, err)
+	parentShared := parentRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+
+	c.egraphMu.RLock()
+	frontier := callerIDFrontier{}
+	seedCallerIDFrontier(parentShared.resultCallFrame, parentID, frontier)
+	reconstructed, ok := c.idForCallerFromFrame(ctx, childShared.id, childShared.resultCallFrame, frontier, map[sharedResultID]struct{}{})
+	c.egraphMu.RUnlock()
+	assert.Assert(t, ok)
+	assert.Assert(t, reconstructed != nil)
+	assert.Equal(t, childID.Digest(), reconstructed.Digest())
+}
+
+func TestResultIDForCallerRebuildsSyntheticFrame(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	rawID := cacheTestID("raw-scoped-id")
+	scopeDigest := digest.FromString("sdk-scope")
+	res, err := c.GetOrInitCall(ctx, CacheKey{ID: rawID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(rawID, 1).(Result[Int]).ResultWithCallFrame(&ResultCallFrame{
+			Kind:        ResultCallFrameKindSynthetic,
+			SyntheticOp: "sdk_scope_module",
+			Type:        NewResultCallFrameType(Int(0).Type()),
+			Args: []*ResultCallFrameArg{
+				{
+					Name:  "op",
+					Value: &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindString, StringValue: "moduleRuntime"},
+				},
+				{
+					Name: "scopeDigest",
+					Value: &ResultCallFrameLiteral{
+						Kind:        ResultCallFrameLiteralKindString,
+						StringValue: scopeDigest.String(),
+					},
+				},
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	presentedID, err := res.IDForCaller(ctx)
+	assert.NilError(t, err)
+	assert.Assert(t, presentedID != nil)
+	assert.Equal(t, "sdk_scope_module", presentedID.Field())
+	args := map[string]*call.Argument{}
+	for _, arg := range presentedID.Args() {
+		args[arg.Name()] = arg
+	}
+	assert.Assert(t, args["op"] != nil)
+	opLit, ok := args["op"].Value().(*call.LiteralString)
+	assert.Assert(t, ok)
+	assert.Equal(t, "moduleRuntime", opLit.Value())
+	assert.Assert(t, args["scopeDigest"] != nil)
+	scopeLit, ok := args["scopeDigest"].Value().(*call.LiteralString)
+	assert.Assert(t, ok)
+	assert.Equal(t, scopeDigest.String(), scopeLit.Value())
+}
+
+func TestResultIDForCallerReappliesEqClassExtraDigests(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	rawID := cacheTestID("raw-extra-reapply")
+	contentExtra := call.ExtraDigest{
+		Label:  call.ExtraDigestLabelContent,
+		Digest: digest.FromString("content-extra"),
+	}
+	scopeExtra := call.ExtraDigest{
+		Label:  "sdk_scope",
+		Digest: digest.FromString("sdk-scope-extra"),
+	}
+
+	res, err := c.GetOrInitCall(ctx, CacheKey{ID: rawID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(rawID, 1).(Result[Int]).ResultWithCallFrame(&ResultCallFrame{
+			Kind:        ResultCallFrameKindSynthetic,
+			SyntheticOp: "sdk_scope_module",
+			Type:        NewResultCallFrameType(Int(0).Type()),
+		}), nil
+	})
+	assert.NilError(t, err)
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil)
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	outputEqClasses := c.resultOutputEqClasses[shared.id]
+	if outputEqClasses == nil {
+		outputEqClasses = make(map[eqClassID]struct{})
+		c.resultOutputEqClasses[shared.id] = outputEqClasses
+	}
+	eqID := c.ensureEqClassForDigestLocked(ctx, rawID.Digest().String())
+	outputEqClasses[eqID] = struct{}{}
+	extras := c.eqClassExtraDigests[eqID]
+	if extras == nil {
+		extras = make(map[call.ExtraDigest]struct{})
+		c.eqClassExtraDigests[eqID] = extras
+	}
+	extras[contentExtra] = struct{}{}
+	extras[scopeExtra] = struct{}{}
+	c.egraphMu.Unlock()
+
+	presentedID, err := res.IDForCaller(ctx)
+	assert.NilError(t, err)
+	assert.Assert(t, presentedID != nil)
+	assert.DeepEqual(t, []call.ExtraDigest{contentExtra, scopeExtra}, presentedID.ExtraDigests())
+}
+
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
