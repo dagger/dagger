@@ -30,26 +30,27 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
 			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
-				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
+				`Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.`),
+				dagql.Arg("path").Doc(`Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
-				`Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.`).
+				`Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.`),
+				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.`),
 			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
-				`Returns the path relative to the workspace root if found, or null if not found.`,
-				`The search stops at the workspace root and will not traverse above it.`).
+				`Returns the absolute workspace path if found, or null if not found.`,
+				`Relative start paths resolve from the workspace directory.`,
+				`The search stops at the workspace boundary and will not traverse above it.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
-				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
+				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
@@ -238,17 +239,27 @@ func (s *workspaceSchema) file(
 	return inst, nil
 }
 
-// resolveWorkspacePath resolves a path within the workspace root:
-//   - Relative paths resolve from the workspace root (root/workspacePath/).
-//   - Absolute paths resolve from the root (sandbox root).
+// resolveWorkspacePath resolves a workspace API path into a boundary-relative path:
+//   - Relative paths resolve from the workspace directory (workspacePath/).
+//   - Absolute paths resolve from the workspace boundary (/).
 //
-// Returns a path relative to the root.
-func resolveWorkspacePath(path, workspacePath string) string {
-	clean := filepath.Clean(path)
+// Returns a path relative to the workspace boundary.
+func resolveWorkspacePath(pathArg, workspacePath string) string {
+	clean := filepath.Clean(pathArg)
 	if filepath.IsAbs(clean) {
+		// Absolute path: relative to workspace boundary (strip leading /).
 		return clean[1:]
 	}
+	// Relative path: relative to workspace directory within boundary.
 	return filepath.Join(workspacePath, clean)
+}
+
+func workspaceAPIPath(resolvedPath string) string {
+	clean := path.Clean(filepath.ToSlash(resolvedPath))
+	if clean == "." || clean == "" {
+		return "/"
+	}
+	return "/" + strings.TrimPrefix(clean, "/")
 }
 
 // workspaceHostPath returns the absolute host path for a workspace-relative path.
@@ -291,35 +302,49 @@ func (s *workspaceSchema) findUp(
 		return none, fmt.Errorf("buildkit: %w", err)
 	}
 
-	wsRoot := filepath.Join(ws.HostPath(), ws.Path)
-	absStart, err := pathutil.SandboxedRelativePath(args.From, wsRoot)
-	if err != nil {
-		return none, err
+	resolvedFrom := resolveWorkspacePath(args.From, ws.Path)
+	curDir := path.Clean(filepath.ToSlash(resolvedFrom))
+	if curDir == "" {
+		curDir = "."
 	}
 
-	statFS := core.NewCallerStatFS(bk)
-	cleanRoot := path.Clean(wsRoot)
-	curDir := absStart
+	var statFS core.StatFS
+	pathForStat := func(candidate string) (string, error) {
+		return candidate, nil
+	}
+	if ws.HostPath() != "" {
+		statFS = core.NewCallerStatFS(bk)
+		boundaryRoot := ws.HostPath()
+		pathForStat = func(candidate string) (string, error) {
+			return pathutil.SandboxedRelativePath(candidate, boundaryRoot)
+		}
+	} else {
+		statFS = &core.DirectoryStatFS{Dir: ws.Rootfs()}
+	}
+
+	// Walk up from the resolved start path, stopping at the workspace boundary.
 	for {
 		candidate := path.Join(curDir, args.Name)
-		_, exists, err := core.StatFSExists(ctx, statFS, candidate)
+		statPath, err := pathForStat(candidate)
+		if err != nil {
+			return none, err
+		}
+		_, exists, err := core.StatFSExists(ctx, statFS, statPath)
 		if err != nil {
 			return none, fmt.Errorf("stat %s: %w", candidate, err)
 		}
 		if exists {
-			relPath, err := pathutil.LexicalRelativePath(cleanRoot, candidate)
-			if err != nil {
-				return none, fmt.Errorf("compute relative path: %w", err)
-			}
-			return dagql.NonNull(dagql.NewString(relPath)), nil
+			return dagql.NonNull(dagql.NewString(workspaceAPIPath(candidate))), nil
 		}
 
-		if path.Clean(curDir) == cleanRoot {
+		// Stop at workspace boundary.
+		if path.Clean(curDir) == "." {
 			break
 		}
 
 		nextDir := path.Dir(curDir)
 		if nextDir == curDir {
+			// hit filesystem root (shouldn't happen since we check workspace boundary first)
 			break
 		}
 		curDir = nextDir

@@ -46,6 +46,16 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	}
 }
 
+// initStandaloneDangModule creates a standalone Dang module in the current
+// working directory and overwrites main.dang with the provided source.
+func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
+			WithNewFile("main.dang", source)
+	}
+}
+
 // initDangBlueprint creates a Dang blueprint module and an app module that
 // uses it. The blueprint source is written to blueprints/<name>/ and the app
 // module is initialized at the workspace root with --blueprint pointing to it.
@@ -90,11 +100,11 @@ type Greeter {
 }
 
 // TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
-// start path and stops at the workspace root.
+// start path and stops at the workspace boundary.
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
+	base := gitBase(t, c).
 		WithNewFile("root.txt", "at root").
 		WithNewFile("a/target.txt", "in a").
 		WithNewFile("a/b/other.txt", "in a/b").
@@ -102,7 +112,7 @@ func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 		WithNewFile("a/b/c/leaf.txt", "leaf").
 		WithExec([]string{"mkdir", "-p", "a/somedir"}).
 		WithNewFile("a/somedir/hi.txt", "hi").
-		With(initDangModule("finder", `
+		With(initStandaloneDangModule("finder", `
 type Finder {
   pub result: String!
 
@@ -116,25 +126,25 @@ type Finder {
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
+		require.Equal(t, "/a/b/other.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
+		require.Equal(t, "/a/target.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "root.txt", strings.TrimSpace(out))
+		require.Equal(t, "/root.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/somedir", strings.TrimSpace(out))
+		require.Equal(t, "/a/somedir", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
@@ -148,6 +158,56 @@ type Finder {
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
+}
+
+// TestNestedWorkspacePaths verifies that relative paths use the workspace
+// directory while absolute paths and upward search use the workspace boundary.
+func (WorkspaceSuite) TestNestedWorkspacePaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := gitBase(t, c).
+		WithExec([]string{"mkdir", "-p", "app"}).
+		WithNewFile("repo.txt", "hello from boundary").
+		WithNewFile("app/app.txt", "hello from workspace").
+		WithWorkdir("/work/app").
+		With(initStandaloneDangModule("paths", `
+type Paths {
+  pub workspaceValue: String!
+  pub boundaryValue: String!
+  pub foundValue: String!
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+
+  new(ws: Workspace!) {
+    self.workspaceValue = ws.file("app.txt").contents
+    self.boundaryValue = ws.file("/repo.txt").contents
+    self.foundValue = ws.findUp(name: "repo.txt", from: ".") ?? ""
+    self.workspacePath = ws.path
+    self.workspaceAddress = ws.address
+    self
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("paths", "workspaceValue")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("paths", "boundaryValue")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from boundary", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("paths", "foundValue")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/repo.txt", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("paths", "workspacePath")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "app", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("paths", "workspaceAddress")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace
@@ -343,11 +403,11 @@ type Subdir {
 func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
+	base := gitBase(t, c).
 		WithNewFile("legit.txt", "legit")
 
 	t.Run("directory traversal with ..", func(ctx context.Context, t *testctx.T) {
-		ctr := base.With(initDangModule("escape-dir", `
+		ctr := base.With(initStandaloneDangModule("escape-dir", `
 type EscapeDir {
   pub source: Directory!
 
@@ -367,7 +427,7 @@ type EscapeDir {
 	})
 
 	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
-		ctr := base.With(initDangModule("escape-file", `
+		ctr := base.With(initStandaloneDangModule("escape-file", `
 type EscapeFile {
   pub content: String!
 
@@ -386,12 +446,10 @@ type EscapeFile {
 		requireErrOut(t, err, "resolves outside root")
 	})
 
-	t.Run("absolute path treated as relative", func(ctx context.Context, t *testctx.T) {
-		// Absolute paths are relative to workspace root, not the host root.
-		// /sub should resolve to <workspace>/sub, not /sub on the host.
+	t.Run("absolute path resolves from workspace boundary", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
 			WithNewFile("sub/inner.txt", "inner").
-			With(initDangModule("abs-rel", `
+			With(initStandaloneDangModule("abs-rel", `
 type AbsRel {
   pub source: Directory!
 

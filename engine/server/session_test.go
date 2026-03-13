@@ -188,6 +188,20 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	})
 }
 
+func TestLocalWorkspaceAddress(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "file:///repo", localWorkspaceAddress("/repo", "."))
+	require.Equal(t, "file:///repo/services/payment", localWorkspaceAddress("/repo", "services/payment"))
+}
+
+func TestRemoteWorkspaceAddress(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "https://github.com/dagger/dagger@main", remoteWorkspaceAddress("https://github.com/dagger/dagger", ".", "main"))
+	require.Equal(t, "https://github.com/dagger/dagger/services/payment@main", remoteWorkspaceAddress("https://github.com/dagger/dagger", "services/payment", "main"))
+}
+
 func TestParseWorkspaceRemoteRef(t *testing.T) {
 	t.Parallel()
 
