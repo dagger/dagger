@@ -82,7 +82,7 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if p := fe.telemetryError.Load(); p != nil {
 		handleTelemetryErrorOutput(fe.out, fe.out, *p)
 	}
-	return runErr
+	return normalizeFrontendExit(runErr, fe.db)
 }
 
 func (fe *frontendLogs) Opts() *dagui.FrontendOpts {

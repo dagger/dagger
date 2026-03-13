@@ -486,7 +486,7 @@ func main() {
 		var exit idtui.ExitError
 		switch {
 		case errors.As(err, &exit):
-			os.Exit(exit.Code)
+			os.Exit(exit.Code())
 		case errors.Is(err, idtui.ErrShellExited):
 			os.Exit(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):

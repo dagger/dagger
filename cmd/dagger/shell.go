@@ -55,7 +55,7 @@ var shellCmd = &cobra.Command{
 			// and doesn't print a redundant error message.
 			var es interp.ExitStatus
 			if handler.tty && errors.As(err, &es) {
-				return idtui.ExitError{Code: int(es), Original: err}
+				return idtui.ExitError{OriginalCode: int(es), Original: err}
 			}
 
 			return err

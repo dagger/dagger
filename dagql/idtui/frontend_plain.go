@@ -219,7 +219,7 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
-	return runErr
+	return normalizeFrontendExit(runErr, fe.db)
 }
 
 func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
