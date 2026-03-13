@@ -86,8 +86,13 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 					Type:        ID[T]{inner: opts.Typed},
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
-					id := NewDynamicID[T](self.ID(), opts.Typed)
-					return NewResultForCurrentID(ctx, id)
+					selfID, err := self.IDForCaller(ctx)
+					if err != nil {
+						return nil, fmt.Errorf("resolve caller-facing ID: %w", err)
+					}
+					id := NewDynamicID[T](selfID, opts.Typed)
+					idSelectionID := selfID.Append(id.Type(), "id", call.WithView(view))
+					return NewResultForID(id, idSelectionID)
 				},
 			},
 		)
@@ -402,13 +407,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
-	receiverID, err := r.IDForCaller(ctx)
-	if err != nil {
+	receiverID := r.ID()
+	if receiverID == nil {
 		typ := r.Type()
 		if typ == nil {
-			return nil, fmt.Errorf("failed to reconstruct caller ID for <nil>.%s: %w", sel.Field, err)
+			return nil, fmt.Errorf("failed to resolve raw ID for <nil>.%s", sel.Field)
 		}
-		return nil, fmt.Errorf("failed to reconstruct caller ID for %s.%s: %w", typ.Name(), sel.Field, err)
+		if typ.Name() != "Query" {
+			return nil, fmt.Errorf("failed to resolve raw ID for %s.%s", typ.Name(), sel.Field)
+		}
 	}
 
 	newID := receiverID.Append(

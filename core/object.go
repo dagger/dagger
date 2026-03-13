@@ -273,19 +273,15 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		switch value := value.(type) {
 		case nil:
 			return nil, nil
-		case dagql.AnyResult:
-			curID := dagql.CurrentID(ctx)
-			if curID == nil {
-				id, err := value.IDForCaller(ctx)
-				if err != nil {
-					return nil, err
-				}
-				if id == nil {
-					return nil, nil
-				}
-				return id.Encode()
+	case dagql.AnyResult:
+		curID := dagql.CurrentID(ctx)
+		if curID == nil {
+			if value.ID() == nil {
+				return nil, nil
 			}
-			return curID.Encode()
+			return value.ID().Encode()
+		}
+		return curID.Encode()
 		case dagql.IDable:
 			curID := dagql.CurrentID(ctx)
 			if curID == nil {
@@ -352,14 +348,10 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 	case nil:
 		return nil, nil
 	case dagql.AnyResult:
-		id, err := value.IDForCaller(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if id == nil {
+		if value.ID() == nil {
 			return nil, nil
 		}
-		return id.Encode()
+		return value.ID().Encode()
 	case dagql.IDable:
 		if value.ID() == nil {
 			return nil, nil
@@ -438,12 +430,9 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 			return fmt.Errorf("could not find mod type for field %q", k)
 		}
 
-		curID, err := value.IDForCaller(ctx)
-		if err != nil {
-			return fmt.Errorf("resolve field %q caller-facing id: %w", k, err)
-		}
+		curID := value.ID()
 		if curID == nil {
-			return fmt.Errorf("resolve field %q caller-facing id: nil", k)
+			return fmt.Errorf("resolve field %q raw id: nil", k)
 		}
 		fieldID := curID.Append(
 			fieldTypeDef.TypeDef.ToType(),

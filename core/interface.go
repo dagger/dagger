@@ -176,12 +176,9 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		if !ok {
 			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
 		}
-		id, err := value.IDForCaller(ctx)
-		if err != nil {
-			return fmt.Errorf("resolve interface value caller-facing id: %w", err)
-		}
+		id := value.ID()
 		if id == nil {
-			return fmt.Errorf("resolve interface value caller-facing id: nil")
+			return fmt.Errorf("resolve interface value raw id: nil")
 		}
 
 		obj, err := dagql.NewResultForID(&ModuleObject{
@@ -197,12 +194,9 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 	}
 
 	if _, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		id, err := value.IDForCaller(ctx)
-		if err != nil {
-			return fmt.Errorf("resolve interface implementation caller-facing id: %w", err)
-		}
+		id := value.ID()
 		if id == nil {
-			return fmt.Errorf("resolve interface implementation caller-facing id: nil")
+			return fmt.Errorf("resolve interface implementation raw id: nil")
 		}
 		loadedImpl, err := iface.loadImpl(ctx, id)
 		if err != nil {
@@ -221,10 +215,7 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.T
 	}
 	switch value := value.(type) {
 	case dagql.AnyObjectResult:
-		id, err := value.IDForCaller(ctx)
-		if err != nil {
-			return nil, err
-		}
+		id := value.ID()
 		if id == nil {
 			return nil, nil
 		}

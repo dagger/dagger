@@ -76,11 +76,7 @@ func (content *CollectedContent) CollectID(idp *call.ID, unknown bool) error {
 func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) error {
 	switch value := value.(type) {
 	case dagql.AnyResult:
-		id, err := value.IDForCaller(ctx)
-		if err != nil {
-			return err
-		}
-		return content.CollectID(id, true)
+		return content.CollectID(value.ID(), true)
 	case dagql.IDable:
 		return content.CollectID(value.ID(), true)
 	case *call.ID:
@@ -292,10 +288,7 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 			continue
 		}
 
-		itemID, err := item.IDForCaller(ctx)
-		if err != nil {
-			return err
-		}
+		itemID := item.ID()
 		if itemID == nil {
 			continue
 		}

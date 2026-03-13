@@ -494,14 +494,10 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	case dagql.Input:
 		return x, nil
 	case dagql.AnyResult:
-		id, err := x.IDForCaller(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if id == nil {
+		if x.ID() == nil {
 			return nil, nil
 		}
-		return id.Encode()
+		return x.ID().Encode()
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: unknown type %T", obj, value)
 	}
@@ -515,11 +511,7 @@ func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyRes
 	case dagql.Input:
 		return content.CollectJSONable(x)
 	case dagql.AnyResult:
-		id, err := x.IDForCaller(ctx)
-		if err != nil {
-			return err
-		}
-		return content.CollectID(id, false)
+		return content.CollectID(x.ID(), false)
 	default:
 		return content.CollectJSONable(value.Unwrap())
 	}

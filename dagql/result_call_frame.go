@@ -367,17 +367,6 @@ func (c *cache) ensureResultCallFrameLocked(ctx context.Context, res *sharedResu
 
 type callerIDFrontier map[sharedResultID]*call.ID
 
-func callerFacingID(ctx context.Context, res AnyResult) *call.ID {
-	if res == nil {
-		return nil
-	}
-	id, err := res.IDForCaller(ctx)
-	if err == nil && id != nil {
-		return id
-	}
-	return res.ID()
-}
-
 func (c *cache) resultCallFrameSnapshot(resultID sharedResultID) *ResultCallFrame {
 	if resultID == 0 {
 		return nil

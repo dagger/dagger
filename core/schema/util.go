@@ -20,9 +20,14 @@ func Syncer[T core.Syncable]() dagql.Field[T] {
 		if err != nil {
 			return res, err
 		}
-		id := dagql.NewID[T](self.ID())
-		return dagql.NewResultForCurrentID(ctx, id)
-	})
+		selfID, err := self.IDForCaller(ctx)
+		if err != nil {
+			return res, fmt.Errorf("resolve caller-facing ID: %w", err)
+		}
+		id := dagql.NewID[T](selfID)
+		syncID := selfID.Append(id.Type(), "sync")
+		return dagql.NewResultForID(id, syncID)
+	}).DoNotCache("we need to ensure we return caller-facing IDs and each sync implementation on objects already has its own degree of caching via lazy states, so layering more caching on it is just confusing to say the least")
 }
 
 func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {
