@@ -76,7 +76,7 @@ type Greeter {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -92,7 +92,7 @@ type Greeter {
 }
 
 // TestWorkspaceFindUp verifies that Workspace.findUp searches up from the
-// start path and stops at the workspace root.
+// start path and stops at the workspace access boundary.
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -116,40 +116,101 @@ type Finder {
 `))
 
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/b/other.txt", strings.TrimSpace(out))
+		require.Equal(t, "/work/a/b/other.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/target.txt", strings.TrimSpace(out))
+		require.Equal(t, "/work/a/target.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "root.txt", strings.TrimSpace(out))
+		require.Equal(t, "/work/root.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a/somedir", strings.TrimSpace(out))
+		require.Equal(t, "/work/a/somedir", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find file in child directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
 
 	t.Run("do not find non-existent file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=/work/a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
+}
+
+// TestWorkspaceRootIsRepoRoot verifies that Workspace.root resolves to the
+// workspace access boundary, not the caller's nested working directory.
+func (WorkspaceSuite) TestRootIsRepoRoot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithExec([]string{"mkdir", "-p", "sub/dir"}).
+		With(initDangModule("rooter", `
+type Rooter {
+  pub value: String!
+
+  new(ws: Workspace!) {
+    self.value = ws.root
+    self
+  }
+
+  pub root: String! {
+    value
+  }
+}
+`))
+
+	out, err := base.
+		WithWorkdir("/work/sub/dir").
+		With(daggerCallAt("../..", "rooter", "root")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/work", strings.TrimSpace(out))
+}
+
+// TestWorkspaceNoWorkspaceRootSandbox verifies that absolute paths are
+// resolved directly (not remapped as workspace-root-relative).
+func (WorkspaceSuite) TestNoWorkspaceRootSandbox(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithExec([]string{"mkdir", "-p", "sub/dir"}).
+		WithNewFile("root.txt", "at repo root").
+		With(initDangModule("nonsandbox", `
+type Nonsandbox {
+  pub value: String!
+
+  new(ws: Workspace!) {
+    self.value = ws.file("/work/root.txt").contents
+    self
+  }
+
+  pub read: String! {
+    value
+  }
+}
+`))
+
+	out, err := base.
+		WithWorkdir("/work/sub/dir").
+		With(daggerCallAt("../..", "nonsandbox", "read")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "at repo root", strings.TrimSpace(out))
 }
 
 // TestWorkspaceArg verifies that a module function accepting a Workspace
@@ -164,7 +225,7 @@ type Greeter {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -193,7 +254,7 @@ type Lister {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -224,7 +285,7 @@ type Filtered {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*.log"])
+    self.source = source.directory("/work", exclude: ["*.log"])
     self
   }
 
@@ -255,7 +316,7 @@ type Cachechk {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -293,7 +354,7 @@ type Reader {
   pub content: String!
 
   new(ws: Workspace!) {
-    self.content = ws.file("data.txt").contents
+    self.content = ws.file("/work/data.txt").contents
     self
   }
 
@@ -321,7 +382,7 @@ type Subdir {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory("sub")
+    self.source = source.directory("/work/sub")
     self
   }
 
@@ -340,15 +401,15 @@ type Subdir {
 	require.NotContains(t, entries, "sub/")
 }
 
-// TestWorkspacePathTraversal verifies that a module cannot use Workspace to
-// escape the workspace root and access arbitrary host paths.
+// TestWorkspacePathTraversal verifies that, by default, a module cannot use
+// Workspace to access arbitrary host paths outside the workspace access boundary.
 func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
 		WithNewFile("legit.txt", "legit")
 
-	t.Run("directory traversal with ..", func(ctx context.Context, t *testctx.T) {
+	t.Run("relative directory path is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.With(initDangModule("escape-dir", `
 type EscapeDir {
   pub source: Directory!
@@ -362,13 +423,13 @@ type EscapeDir {
     source.entries
   }
 }
-`))
+		`))
 		_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "resolves outside root")
+		requireErrOut(t, err, "must be absolute")
 	})
 
-	t.Run("file traversal with ..", func(ctx context.Context, t *testctx.T) {
+	t.Run("relative file path is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.With(initDangModule("escape-file", `
 type EscapeFile {
   pub content: String!
@@ -382,15 +443,33 @@ type EscapeFile {
     content
   }
 }
-`))
+		`))
 		_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "resolves outside root")
+		requireErrOut(t, err, "must be absolute")
 	})
 
-	t.Run("absolute path treated as relative", func(ctx context.Context, t *testctx.T) {
-		// Absolute paths are relative to workspace root, not the host root.
-		// /sub should resolve to <workspace>/sub, not /sub on the host.
+	t.Run("relative findUp from path is rejected", func(ctx context.Context, t *testctx.T) {
+		ctr := base.With(initDangModule("escape-findup", `
+type EscapeFindup {
+  pub result: String!
+
+  new(source: Workspace!) {
+    self.result = source.findUp(name: "legit.txt", from: "sub") ?? ""
+    self
+  }
+
+  pub read: String! {
+    result
+  }
+}
+		`))
+		_, err := ctr.With(daggerCall("escape-findup", "read")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "must be absolute")
+	})
+
+	t.Run("absolute path outside access boundary is rejected", func(ctx context.Context, t *testctx.T) {
 		ctr := base.
 			WithNewFile("sub/inner.txt", "inner").
 			With(initDangModule("abs-rel", `
@@ -407,7 +486,29 @@ type AbsRel {
   }
 }
 `))
-		out, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
+		_, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "outside workspace access boundary")
+	})
+
+	t.Run("absolute path inside repo is allowed", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			WithNewFile("sub/inner.txt", "inner").
+			With(initDangModule("absinrepo", `
+type Absinrepo {
+  pub source: Directory!
+
+  new(source: Workspace!, path: String!) {
+    self.source = source.directory(path)
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("absinrepo", "--path=/work/sub", "ls")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "inner.txt")
 	})
@@ -426,7 +527,7 @@ type Magic {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -469,7 +570,7 @@ type GiRoot {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".", gitignore: true)
+    self.source = source.directory("/work", gitignore: true)
     self
   }
 
@@ -493,7 +594,7 @@ type GiSub {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory("src", gitignore: true)
+    self.source = source.directory("/work/src", gitignore: true)
     self
   }
 
@@ -515,7 +616,7 @@ type GiOff {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".")
+    self.source = source.directory("/work")
     self
   }
 
@@ -567,7 +668,7 @@ type Cacheme {
   pub source: Directory!
 
   new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*", "!included-file"])
+    self.source = source.directory("/work", exclude: ["*", "!included-file"])
     self
   }
 
@@ -631,7 +732,7 @@ type Cacheme {
   pub source: File!
 
   new(source: Workspace!) {
-    self.source = source.file("included-file")
+    self.source = source.file("/work/included-file")
     self
   }
 
@@ -695,7 +796,7 @@ type Cacheme {
   pub source: String!
 
   new(source: Workspace!) {
-    self.source = source.file("included-file").contents
+    self.source = source.file("/work/included-file").contents
     self
   }
 

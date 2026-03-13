@@ -5736,12 +5736,12 @@ type Workspace {
   """
   Returns a Directory from the workspace.
 
-  Path is relative to workspace root. Use "." for the root directory.
+  Path must be absolute in host/repo context.
+
+  By default, paths outside the workspace access boundary are rejected.
   """
   directory(
-    """
-    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
-    """
+    """Location of the directory to retrieve. Must be an absolute path."""
     path: String!
 
     """
@@ -5761,28 +5761,28 @@ type Workspace {
   """
   Returns a File from the workspace.
 
-  Path is relative to workspace root.
+  Path must be absolute in host/repo context.
+
+  By default, paths outside the workspace access boundary are rejected.
   """
   file(
-    """
-    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
-    """
+    """Absolute location of the file to retrieve in host/repo context."""
     path: String!
   ): File!
 
   """
   Search for a file or directory by walking up from the start path within the workspace.
 
-  Returns the path relative to the workspace root if found, or null if not found.
+  Returns the absolute path if found, or null if not found.
 
-  The search stops at the workspace root and will not traverse above it.
+  The search stops at the workspace access boundary and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
     name: String!
 
-    """Path to start the search from, relative to the workspace root."""
-    from: String = "."
+    """Absolute path to start the search from in host/repo context."""
+    from: String!
   ): String
 
   """A unique identifier for this Workspace."""
@@ -5796,5 +5796,4 @@ type Workspace {
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 """
 scalar WorkspaceID
-
 

@@ -14635,12 +14635,6 @@ pub struct WorkspaceDirectoryOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceFindUpOpts<'a> {
-    /// Path to start the search from, relative to the workspace root.
-    #[builder(setter(into, strip_option), default)]
-    pub from: Option<&'a str>,
-}
 impl Workspace {
     /// The client ID that owns this workspace's host filesystem.
     pub async fn client_id(&self) -> Result<String, DaggerError> {
@@ -14648,11 +14642,12 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a Directory from the workspace.
-    /// Path is relative to workspace root. Use "." for the root directory.
+    /// Path must be absolute in host/repo context.
+    /// By default, paths outside the workspace access boundary are rejected.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    /// * `path` - Location of the directory to retrieve. Must be an absolute path.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -14664,11 +14659,12 @@ impl Workspace {
         }
     }
     /// Returns a Directory from the workspace.
-    /// Path is relative to workspace root. Use "." for the root directory.
+    /// Path must be absolute in host/repo context.
+    /// By default, paths outside the workspace access boundary are rejected.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    /// * `path` - Location of the directory to retrieve. Must be an absolute path.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
         &self,
@@ -14693,11 +14689,12 @@ impl Workspace {
         }
     }
     /// Returns a File from the workspace.
-    /// Path is relative to workspace root.
+    /// Path must be absolute in host/repo context.
+    /// By default, paths outside the workspace access boundary are rejected.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    /// * `path` - Absolute location of the file to retrieve in host/repo context.
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -14708,36 +14705,21 @@ impl Workspace {
         }
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the path relative to the workspace root if found, or null if not found.
-    /// The search stops at the workspace root and will not traverse above it.
+    /// Returns the absolute path if found, or null if not found.
+    /// The search stops at the workspace access boundary and will not traverse above it.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the file or directory to search for.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn find_up(&self, name: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("findUp");
-        query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the path relative to the workspace root if found, or null if not found.
-    /// The search stops at the workspace root and will not traverse above it.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the file or directory to search for.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn find_up_opts<'a>(
+    /// * `from` - Absolute path to start the search from in host/repo context.
+    pub async fn find_up(
         &self,
         name: impl Into<String>,
-        opts: WorkspaceFindUpOpts<'a>,
+        from: impl Into<String>,
     ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("findUp");
         query = query.arg("name", name.into());
-        if let Some(from) = opts.from {
-            query = query.arg("from", from);
-        }
+        query = query.arg("from", from.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Workspace.

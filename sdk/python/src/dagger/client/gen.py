@@ -14189,13 +14189,14 @@ class Workspace(Type):
     ) -> Directory:
         """Returns a Directory from the workspace.
 
-        Path is relative to workspace root. Use "." for the root directory.
+        Path must be absolute in host/repo context.
+
+        By default, paths outside the workspace access boundary are rejected.
 
         Parameters
         ----------
         path:
-            Location of the directory to retrieve, relative to the workspace
-            root (e.g., "src", ".").
+            Location of the directory to retrieve. Must be an absolute path.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -14217,13 +14218,14 @@ class Workspace(Type):
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
 
-        Path is relative to workspace root.
+        Path must be absolute in host/repo context.
+
+        By default, paths outside the workspace access boundary are rejected.
 
         Parameters
         ----------
         path:
-            Location of the file to retrieve, relative to the workspace root
-            (e.g., "go.mod").
+            Absolute location of the file to retrieve in host/repo context.
         """
         _args = [
             Arg("path", path),
@@ -14231,26 +14233,21 @@ class Workspace(Type):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    async def find_up(
-        self,
-        name: str,
-        *,
-        from_: str | None = ".",
-    ) -> str | None:
+    async def find_up(self, name: str, from_: str) -> str | None:
         """Search for a file or directory by walking up from the start path
         within the workspace.
 
-        Returns the path relative to the workspace root if found, or null if
-        not found.
+        Returns the absolute path if found, or null if not found.
 
-        The search stops at the workspace root and will not traverse above it.
+        The search stops at the workspace access boundary and will not
+        traverse above it.
 
         Parameters
         ----------
         name:
             The name of the file or directory to search for.
         from_:
-            Path to start the search from, relative to the workspace root.
+            Absolute path to start the search from in host/repo context.
 
         Returns
         -------
@@ -14268,7 +14265,7 @@ class Workspace(Type):
         """
         _args = [
             Arg("name", name),
-            Arg("from", from_, "."),
+            Arg("from", from_),
         ]
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)

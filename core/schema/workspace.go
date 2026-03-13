@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -32,26 +33,28 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				WithHashContentDir[*core.Workspace, workspaceDirectoryArgs](),
 			), dagql.CachePerClient).
 			Doc(`Returns a Directory from the workspace.`,
-				`Path is relative to workspace root. Use "." for the root directory.`).
+				`Path must be absolute in host/repo context.`,
+				`By default, paths outside the workspace access boundary are rejected.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").`),
+				dagql.Arg("path").Doc(`Location of the directory to retrieve. Must be an absolute path.`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
 			),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Returns a File from the workspace.`,
-				`Path is relative to workspace root.`).
+				`Path must be absolute in host/repo context.`,
+				`By default, paths outside the workspace access boundary are rejected.`).
 			Args(
-				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
+				dagql.Arg("path").Doc(`Absolute location of the file to retrieve in host/repo context.`),
 			),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
-				`Returns the path relative to the workspace root if found, or null if not found.`,
-				`The search stops at the workspace root and will not traverse above it.`).
+				`Returns the absolute path if found, or null if not found.`,
+				`The search stops at the workspace access boundary and will not traverse above it.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
-				dagql.Arg("from").Doc(`Path to start the search from, relative to the workspace root.`),
+				dagql.Arg("from").Doc(`Absolute path to start the search from in host/repo context.`),
 			),
 	}.Install(srv)
 }
@@ -77,15 +80,17 @@ func (s *workspaceSchema) currentWorkspace(
 	if err != nil {
 		return nil, fmt.Errorf("cwd: %w", err)
 	}
+	cwd = normalizeWorkspacePath(cwd)
 
 	statFS := core.NewCallerStatFS(bk)
-	repoRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
+	boundaryRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
 	if err != nil {
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
 	if !found {
-		repoRoot = cwd
+		boundaryRoot = cwd
 	}
+	boundaryRoot = normalizeWorkspacePath(boundaryRoot)
 
 	// Capture the current client ID so that when this workspace is passed to
 	// a module function, the directory/file resolvers can route host filesystem
@@ -96,7 +101,7 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	result := &core.Workspace{
-		Root:     repoRoot,
+		Root:     boundaryRoot,
 		ClientID: clientMetadata.ClientID,
 	}
 
@@ -117,6 +122,64 @@ func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
 	return dagql.CacheTypePerClient
 }
 
+func normalizeWorkspacePath(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	p = path.Clean(p)
+	if p == "" {
+		return "."
+	}
+	return p
+}
+
+func isAbsoluteWorkspacePath(p string) bool {
+	p = normalizeWorkspacePath(p)
+	return pathutil.GetDrive(p) != "" || strings.HasPrefix(p, "/")
+}
+
+func requireAbsoluteWorkspacePath(name, userPath string) (string, error) {
+	clean := normalizeWorkspacePath(userPath)
+	if !isAbsoluteWorkspacePath(clean) {
+		return "", fmt.Errorf("%s %q must be absolute", name, userPath)
+	}
+	return clean, nil
+}
+
+func isPathWithinPrefix(targetPath, prefix string) bool {
+	targetPath = normalizeWorkspacePath(targetPath)
+	prefix = normalizeWorkspacePath(prefix)
+
+	targetDrive := pathutil.GetDrive(targetPath)
+	prefixDrive := pathutil.GetDrive(prefix)
+	if targetDrive != "" && prefixDrive != "" && targetDrive != prefixDrive {
+		return false
+	}
+
+	if targetPath == prefix {
+		return true
+	}
+	if prefix == "/" {
+		return strings.HasPrefix(targetPath, "/")
+	}
+	return strings.HasPrefix(targetPath, prefix+"/")
+}
+
+func workspaceAccessBoundary(ws *core.Workspace) string {
+	return normalizeWorkspacePath(ws.Root)
+}
+
+func (s *workspaceSchema) enforceAccessBoundary(ws *core.Workspace, absPath string) error {
+	accessBoundary := workspaceAccessBoundary(ws)
+	if accessBoundary == "" || accessBoundary == "." {
+		return nil
+	}
+
+	if isPathWithinPrefix(absPath, accessBoundary) {
+		return nil
+	}
+
+	return fmt.Errorf("path %q is outside workspace access boundary %q", absPath, accessBoundary)
+}
+
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	ws := parent.Self()
 
@@ -134,8 +197,11 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		return inst, err
 	}
 
-	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
+	absPath, err := requireAbsoluteWorkspacePath("path", args.Path)
 	if err != nil {
+		return inst, err
+	}
+	if err := s.enforceAccessBoundary(ws, absPath); err != nil {
 		return inst, err
 	}
 
@@ -157,11 +223,10 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 		dirArgs = append(dirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
 	}
 	if args.Gitignore {
+		gitIgnoreRoot := workspaceAccessBoundary(ws)
 		dirArgs = append(dirArgs,
 			dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)},
-			// The workspace root is already the repo root, so pass it
-			// directly to avoid a redundant .git search.
-			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(ws.Root)},
+			dagql.NamedInput{Name: "gitIgnoreRoot", Value: dagql.NewString(gitIgnoreRoot)},
 		)
 	}
 
@@ -197,8 +262,11 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, err
 	}
 
-	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
+	absPath, err := requireAbsoluteWorkspacePath("path", args.Path)
 	if err != nil {
+		return inst, err
+	}
+	if err := s.enforceAccessBoundary(ws, absPath); err != nil {
 		return inst, err
 	}
 	fileDir, fileName := path.Split(absPath)
@@ -227,7 +295,7 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 
 type workspaceFindUpArgs struct {
 	Name string
-	From string `default:"."`
+	From string
 }
 
 func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
@@ -252,31 +320,28 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 		return none, fmt.Errorf("buildkit: %w", err)
 	}
 
-	// Resolve start path relative to workspace root
-	absStart, err := pathutil.SandboxedRelativePath(args.From, ws.Root)
+	absStart, err := requireAbsoluteWorkspacePath("from", args.From)
 	if err != nil {
+		return none, err
+	}
+	if err := s.enforceAccessBoundary(ws, absStart); err != nil {
 		return none, err
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	cleanRoot := path.Clean(ws.Root)
+	cleanAccessBoundary := path.Clean(workspaceAccessBoundary(ws))
 
-	// Walk up from absStart, stopping at workspace root
+	// Walk up from absStart, stopping at workspace access boundary.
 	curDir := absStart
 	for {
 		candidate := path.Join(curDir, args.Name)
 		_, _, err := statFS.Stat(ctx, candidate)
 		if err == nil {
-			// Found it — return path relative to workspace root
-			relPath, err := pathutil.LexicalRelativePath(cleanRoot, candidate)
-			if err != nil {
-				return none, fmt.Errorf("compute relative path: %w", err)
-			}
-			return dagql.NonNull(dagql.NewString(relPath)), nil
+			return dagql.NonNull(dagql.NewString(normalizeWorkspacePath(candidate))), nil
 		}
 
-		// Stop at workspace root
-		if path.Clean(curDir) == cleanRoot {
+		// Stop at workspace access boundary.
+		if path.Clean(curDir) == cleanAccessBoundary {
 			break
 		}
 
