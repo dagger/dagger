@@ -272,6 +272,53 @@ Confirmed diagnosis on `workspace-plumbing` after the path-contract rollout:
     restored top-level `dagger init`
   - this is test-only drift from the shared `workspace` cherry-pick, not part of
     the runtime fix itself
+- after fixing the test-only blocker:
+  - `TestBlueprint/TestBlueprintUseLocal/use_local_blueprint` is now green
+  - the next remaining targeted failure is
+    `TestToolchain/TestToolchainsWithConfiguration/override constructor defaultPath argument`
+  - diagnosis: legacy toolchain constructor customizations are still only
+    carrying primitive `default` values through `ConfigDefaults`; constructor
+    `defaultPath` customizations are dropped during legacy parsing, so the
+    module still uses its original `./app-config.txt` instead of the customized
+    `./custom-config.txt`
+  - fix direction:
+    - keep the root-`/` sandbox fix
+    - restore only the minimal legacy constructor-customization threading
+      needed for `defaultPath` / `defaultAddress` / `ignore` on already-loaded
+      modules
+    - do not reintroduce a second module-loading path
+- current local remediation status:
+  - code changes are in progress in:
+    - `core/workspace/legacy.go`
+    - `engine/server/session.go`
+    - `core/module.go`
+    - `core/workspace/legacy_test.go`
+    - `engine/server/session_test.go`
+  - there is also one test-only compile fix in:
+    - `core/integration/workspace_test.go`
+    - this is stale helper drift from the earlier shared `workspace` cherry-pick,
+      not part of the runtime compat design
+  - current compile status of the local patch:
+    - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core/workspace`
+      -> green
+    - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./engine/server`
+      -> green
+    - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core`
+      -> green
+    - `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core/integration`
+      -> green
+    - `env GOCACHE=/tmp/go-build go test ./core/workspace -run TestParseLegacyPins -count=1`
+      -> green
+  - current validation gap:
+    - the exact runtime repro for
+      `TestToolchain/TestToolchainsWithConfiguration/override constructor defaultPath argument`
+      still needs a decisive green/red result
+    - direct host `go test ./core/integration ...` is blocked on Darwin by the
+      known `engine/buildkit` Linux-only build constraints
+    - the `toolchains/engine-dev` harness run gets past the old immediate
+      failure, but is too slow/noisy for a fast validation loop
+  - no commit should be made for this batch until that runtime validation is
+    complete
 
 This bug should be fixed **after** the new Workspace path contract lands, but
 without bending the contract around the legacy behavior.
