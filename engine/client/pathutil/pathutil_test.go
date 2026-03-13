@@ -123,6 +123,18 @@ func TestSandboxedRelativePath(t *testing.T) {
 			expected: "/home/user/project/sub/dir",
 		},
 		{
+			name:     "root slash allows relative child",
+			userPath: "app",
+			root:     "/",
+			expected: "/app",
+		},
+		{
+			name:     "root slash allows absolute child",
+			userPath: "/app/config.txt",
+			root:     "/",
+			expected: "/app/config.txt",
+		},
+		{
 			name:     "dotdot within bounds",
 			userPath: "a/b/../c",
 			root:     "/home/user/project",
