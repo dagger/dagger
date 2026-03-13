@@ -736,6 +736,309 @@ type GiOff {
 	})
 }
 
+// TestWorkspaceBranch verifies that Workspace.branch returns the current git branch.
+func (WorkspaceSuite) TestBranch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("detects current branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("brancher", `
+type Brancher {
+  pub branch: String!
+
+  new(ws: Workspace!) {
+    self.branch = ws.branch
+    self
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("brancher", "branch")).Stdout(ctx)
+		require.NoError(t, err)
+		// git init creates "master" by default
+		branch := strings.TrimSpace(out)
+		require.True(t, branch == "master" || branch == "main",
+			"expected 'master' or 'main', got %q", branch)
+	})
+
+	t.Run("detects non-default branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			WithExec([]string{"git", "checkout", "-b", "feature/test"}).
+			With(initDangModule("brancher", `
+type Brancher {
+  pub branch: String!
+
+  new(ws: Workspace!) {
+    self.branch = ws.branch
+    self
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("brancher", "branch")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "feature/test", strings.TrimSpace(out))
+	})
+}
+
+// TestWorkspaceWithBranch verifies that Workspace.withBranch creates a git
+// worktree and returns a workspace pointing to it.
+func (WorkspaceSuite) TestWithBranch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("creates worktree for new branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("wt", `
+type Wt {
+  pub branch: String!
+  pub root: String!
+  pub files: [String!]!
+
+  new(ws: Workspace!) {
+    ws2 := ws.withBranch("agent/test")
+    self.branch = ws2.branch
+    self.root = ws2.root
+    self.files = ws2.glob("*")
+    self
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("wt", "branch")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "agent/test", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("wt", "root")).Stdout(ctx)
+		require.NoError(t, err)
+		root := strings.TrimSpace(out)
+		require.Contains(t, root, "-worktrees/agent-test")
+
+		out, err = ctr.With(daggerCall("wt", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello.txt")
+	})
+
+	t.Run("same branch is no-op", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("noop", `
+type Noop {
+  pub same: Boolean!
+
+  new(ws: Workspace!) {
+    ws2 := ws.withBranch(ws.branch)
+    self.same = ws.root == ws2.root
+    self
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("noop", "same")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
+
+	t.Run("worktree for existing branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			// Create a branch but stay on master
+			WithExec([]string{"git", "branch", "existing-branch"}).
+			With(initDangModule("existing", `
+type Existing {
+  pub branch: String!
+  pub files: [String!]!
+
+  new(ws: Workspace!) {
+    ws2 := ws.withBranch("existing-branch")
+    self.branch = ws2.branch
+    self.files = ws2.glob("*")
+    self
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("existing", "branch")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "existing-branch", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("existing", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello.txt")
+	})
+}
+
+// TestWorkspaceCommit verifies that Workspace.commit writes changeset files
+// and creates a git commit in the workspace.
+func (WorkspaceSuite) TestCommit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("commit changeset to worktree branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("committer", `
+type Committer {
+  new(ws: Workspace!) {
+    ws2 := ws.withBranch("agent/work")
+    before := ws2.directory(".")
+    after := before.withNewFile("new-file.txt", "new content")
+    changeset := before.diff(after)
+    ws2.commit(changeset, "feat: add new file")
+    self
+  }
+}
+`))
+		// Run the module to trigger the commit
+		_, err := ctr.With(daggerCall("committer")).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Verify the commit was created in the worktree
+		logOut, err := ctr.
+			WithWorkdir("/work-worktrees/agent-work").
+			WithExec([]string{"git", "log", "--oneline", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, logOut, "feat: add new file")
+
+		// Verify the file exists in the worktree
+		fileOut, err := ctr.
+			WithWorkdir("/work-worktrees/agent-work").
+			WithExec([]string{"cat", "new-file.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new content", fileOut)
+	})
+
+	t.Run("commit to current branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("selfcommit", `
+type Selfcommit {
+  new(ws: Workspace!) {
+    before := ws.directory(".")
+    after := before.withNewFile("committed.txt", "from agent")
+    changeset := before.diff(after)
+    ws.commit(changeset, "feat: self commit")
+    self
+  }
+}
+`))
+		_, err := ctr.With(daggerCall("selfcommit")).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Verify commit in the main repo
+		logOut, err := ctr.
+			WithExec([]string{"git", "log", "--oneline", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, logOut, "feat: self commit")
+
+		fileOut, err := ctr.
+			WithExec([]string{"cat", "committed.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "from agent", fileOut)
+	})
+
+	t.Run("commit with removed files", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("remove.txt", "remove me").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("remover", `
+type Remover {
+  new(ws: Workspace!) {
+    ws2 := ws.withBranch("agent/cleanup")
+    before := ws2.directory(".")
+    after := before.withoutFile("remove.txt")
+    changeset := before.diff(after)
+    ws2.commit(changeset, "chore: remove file")
+    self
+  }
+}
+`))
+		_, err := ctr.With(daggerCall("remover")).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Verify file was removed
+		_, err = ctr.
+			WithWorkdir("/work-worktrees/agent-cleanup").
+			WithExec([]string{"test", "-f", "remove.txt"}).
+			Sync(ctx)
+		require.Error(t, err, "remove.txt should not exist")
+
+		// Verify keep.txt still exists
+		out, err := ctr.
+			WithWorkdir("/work-worktrees/agent-cleanup").
+			WithExec([]string{"cat", "keep.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep", out)
+	})
+
+	t.Run("multiple commits to same branch", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("multi", `
+type Multi {
+  new(ws: Workspace!) {
+    ws2 := ws.withBranch("agent/multi")
+
+    before1 := ws2.directory(".")
+    after1 := before1.withNewFile("first.txt", "first")
+    ws2.commit(before1.diff(after1), "feat: first commit")
+
+    before2 := ws2.directory(".")
+    after2 := before2.withNewFile("second.txt", "second")
+    ws2.commit(before2.diff(after2), "feat: second commit")
+
+    self
+  }
+}
+`))
+		_, err := ctr.With(daggerCall("multi")).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Verify both commits exist
+		logOut, err := ctr.
+			WithWorkdir("/work-worktrees/agent-multi").
+			WithExec([]string{"git", "log", "--oneline", "-2"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, logOut, "feat: first commit")
+		require.Contains(t, logOut, "feat: second commit")
+
+		// Verify both files exist
+		out, err := ctr.
+			WithWorkdir("/work-worktrees/agent-multi").
+			WithExec([]string{"cat", "first.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "first", out)
+
+		out, err = ctr.
+			WithWorkdir("/work-worktrees/agent-multi").
+			WithExec([]string{"cat", "second.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "second", out)
+	})
+}
+
 // TestWorkspaceContentAddressed verifies that when a module constructor takes
 // a Workspace argument, the result is content-addressed: calling a function
 // twice with the same workspace content should be cached (the function body
