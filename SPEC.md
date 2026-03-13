@@ -1,10 +1,11 @@
-# Workspace.commit — Git Worktree-Based Branch Commit API
+# Workspace Git Commit API
 
 ## Summary
 
-Add `Workspace.withBranch` and `Workspace.commit` so that LLM agents running
-inside the Dagger engine can commit changesets to Git branches on the user's
-host — without disrupting the user's checked-out working tree.
+Add `Workspace.withBranch`, `Workspace.stage`, and `Workspace.commit` so that
+LLM agents running inside the Dagger engine can commit changesets to Git
+branches on the user's host — without disrupting the user's checked-out
+working tree.
 
 Every branch gets its own **`git worktree`** on the host filesystem. This means
 all existing Workspace operations (`glob`, `search`, `file`, `directory`,
@@ -17,25 +18,31 @@ An autonomous LLM agent hierarchy needs to commit parallel work back to the
 user's Git repository so the user can observe progress. Multiple agents may
 work on different branches simultaneously. The design must:
 
-1. **Never disrupt the user's checked-out state** (unless they are on that branch).
-2. **Minimize data transfer** between engine and client.
+1. **Never disrupt the user's checked-out state** (unless they are on that
+   branch).
+2. **Commit precisely the changeset** — never sweep in unrelated user edits.
 3. Let existing Workspace read operations (`glob`, `search`, etc.) work on any
    branch without special-casing.
 4. Let the user observe agent work in real-time via normal filesystem tools.
+5. **Coexist with local user changes** — the user may have work-in-progress in
+   the same worktree. Only changeset paths are staged and committed.
 
 ## API
 
-### New Fields
+### Fields
 
 ```graphql
 type Workspace {
   """The Git branch this workspace is on."""
   branch: String!
-  # ... existing fields: root, clientId
+  """Absolute path to the workspace root directory."""
+  root: String!
+  """The client ID that owns this workspace's host filesystem."""
+  clientId: String!
 }
 ```
 
-### New Methods
+### Methods
 
 ```graphql
 extend type Workspace {
@@ -50,37 +57,95 @@ extend type Workspace {
   ): Workspace!
 
   """
-  Export a Changeset to the workspace's branch and create a Git commit.
-  The changeset files are written to the worktree and committed with the
-  given message. This is a side-effect operation.
+  Apply a Changeset to the workspace and stage the affected paths in git.
+  Files are written (added/modified) and removed on disk, then precisely
+  the changed paths are staged via git add / git rm.
+  Returns true if any changes were staged, false if the changeset was empty.
+  """
+  stage(
+    """The changes to apply and stage."""
+    changes: Changeset!
+  ): Boolean!
+
+  """
+  Commit whatever is currently staged in the workspace's git index.
+  Returns the commit hash. Fails if there is nothing staged.
   """
   commit(
-    """The changes to commit."""
-    changes: Changeset!
     """The commit message."""
     message: String!
-  ): Void!
+  ): String!
 }
 ```
 
-### Semantics
+### Typical Usage (Dang)
 
-- **`currentWorkspace`** is augmented to detect the current branch via
-  `git symbolic-ref --short HEAD`. The `Branch` field is populated
-  automatically.
+```dang
+type Agent {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/feature")
 
-- **`withBranch(branch)`** where `branch` equals the workspace's current
-  branch is a no-op (returns self). Otherwise it asks the client to run
-  `git worktree add` and returns a new Workspace whose `Root` points at the
-  worktree directory.
+    // First change
+    let before = ws2.directory(".")
+    let after1 = before.withNewFile("hello.txt", contents: "hello world")
+    ws2.stage(changes: after1.changes(before))
 
-- **`commit(changes, message)`** exports the changeset to the workspace root
-  (same mechanism as `Changeset.export`) then runs `git add -A` and
-  `git commit -m <message>` in the worktree directory on the client side.
+    // Second change (reads current state which includes hello.txt)
+    let before2 = ws2.directory(".")
+    let after2 = before2.withNewFile("bye.txt", contents: "goodbye")
+    ws2.stage(changes: after2.changes(before2))
 
-- All existing Workspace operations are **unchanged**. They already operate on
-  `ws.Root`, which for a worktree simply points at a different directory on the
-  host.
+    // Single commit covering both staged changes
+    ws2.commit(message: "feat: add greeting files")
+
+    self
+  }
+}
+```
+
+## Semantics
+
+### `stage(changes)`
+
+1. Compute the changeset's added, modified, and removed paths.
+2. Export the changeset diff to the workspace root on the host (merge-mode
+   write of added/modified files, deletion of removed files — same mechanism
+   as `Changeset.export`).
+3. Stage precisely the affected paths:
+   - `git add -- <added paths> <modified paths>`
+   - `git rm -- <removed paths>`
+4. Return `true` if any paths were staged, `false` if the changeset was empty.
+
+Because only the changeset's paths are staged, any unrelated user edits in the
+working tree remain unstaged and are not included in the next commit.
+
+### `commit(message)`
+
+1. Run `git commit -m <message>`. Since `stage` already staged the changes,
+   no further staging is needed.
+2. Return the commit hash via `git rev-parse HEAD`.
+
+This is intentionally simple — all the precision lives in `stage`. The `commit`
+method is just `git commit`.
+
+### Incremental workflow
+
+`stage` and `commit` are independent operations. You can call `stage` multiple
+times to build up a set of changes, then `commit` once. Or stage and commit
+one-at-a-time. The git index is the only state — no internal bookkeeping.
+
+```dang
+// Stage several changesets, commit once:
+ws.stage(changes: changeset1)
+ws.stage(changes: changeset2)
+ws.commit(message: "feat: both changes")
+
+// Or stage and commit individually:
+ws.stage(changes: changeset1)
+ws.commit(message: "feat: first change")
+ws.stage(changes: changeset2)
+ws.commit(message: "feat: second change")
+```
 
 ## Worktree Layout
 
@@ -101,17 +166,13 @@ Path derivation:
 
 Rationale for this location:
 - **Outside the repo tree** — avoids `glob` and `search` on the main workspace
-  accidentally traversing into worktree directories. (The host-side `glob` uses
-  `filepath.WalkDir` which does not respect `.gitignore`; `search` defaults to
-  `--no-ignore`.)
+  accidentally traversing into worktree directories.
 - **Discoverable** — sits right next to the repo, easy to `cd` into.
 - **No `.gitignore` management** — nothing added inside the main repo.
 
 ## Implementation
 
 ### 1. Workspace struct (`core/workspace.go`)
-
-Add two fields:
 
 ```go
 type Workspace struct {
@@ -125,186 +186,133 @@ type Workspace struct {
 }
 ```
 
-When `withBranch` creates a worktree, the new Workspace has a different `Root`
-(the worktree path) but the same `RepoRoot` (the original repo).
-
 ### 2. Client-side operations via session attachables
 
-Three new operation types routed through the existing `DiffCopy` gRPC streams.
+Four operation types routed through `DiffCopy` gRPC streams:
 
-#### 2a. Detect current branch (`LocalImportOpts` / `FileSyncSource`)
+| Operation | Direction | Opts field | Handler |
+|-----------|-----------|------------|---------|
+| Detect branch | import (source) | `GitBranchDetect` | `git symbolic-ref --short HEAD` |
+| Create worktree | import (source) | `GitWorktreeAdd` | `git worktree add` |
+| Stage changeset | import (source) | `GitStageChangeset` | `git add` / `git rm` specific paths |
+| Commit | import (source) | `GitCommit` | `git commit -m` / `git rev-parse HEAD` |
 
-New field on `LocalImportOpts` in `engine/opts.go`:
+The changeset export (writing files to the worktree) uses the existing
+`LocalDirExport` mechanism via `CopyToCaller`.
 
-```go
-GitBranchDetect bool
-```
-
-Client handler in `engine/client/filesync.go` `FilesyncSource.DiffCopy`:
-
-```go
-case opts.GitBranchDetect:
-    cmd := exec.CommandContext(ctx, "git", "symbolic-ref", "--short", "HEAD")
-    cmd.Dir = absPath
-    out, err := cmd.Output()
-    // Return trimmed branch name as BytesMessage
-```
-
-Engine-side wrapper in `engine/buildkit/filesync.go`:
-
-```go
-func (c *Client) GitBranch(ctx context.Context, repoDir string) (string, error)
-```
-
-#### 2b. Create worktree (`LocalImportOpts` / `FileSyncSource`)
+#### Stage operation (`GitStageChangeset`)
 
 New field on `LocalImportOpts`:
 
 ```go
-GitWorktreeAdd *GitWorktreeAddOpts
+GitStageChangeset *GitStageChangesetOpts `json:"git_stage_changeset,omitempty"`
 ```
 
 ```go
-type GitWorktreeAddOpts struct {
-    Branch       string
-    WorktreePath string
+type GitStageChangesetOpts struct {
+    Added    []string `json:"added"`
+    Modified []string `json:"modified"`
+    Removed  []string `json:"removed"`
 }
 ```
 
 Client handler:
-
-1. If `WorktreePath` already exists and is a valid worktree, return it as-is.
-2. Try `git worktree add <path> <branch>` (existing branch).
-3. If the branch doesn't exist, `git worktree add -b <branch> <path>` (create).
-4. Return the resolved absolute path as `BytesMessage`.
-
-Engine-side wrapper:
-
 ```go
-func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePath string) (string, error)
+case opts.GitStageChangeset != nil:
+    paths := opts.GitStageChangeset
+    if len(paths.Added) + len(paths.Modified) > 0 {
+        args := append([]string{"add", "--"}, paths.Added...)
+        args = append(args, paths.Modified...)
+        git(args...)
+    }
+    if len(paths.Removed) > 0 {
+        args := append([]string{"rm", "-f", "--"}, paths.Removed...)
+        git(args...)
+    }
+    staged := len(paths.Added) + len(paths.Modified) + len(paths.Removed) > 0
+    // Return "true" or "false"
+    stream.SendMsg(&BytesMessage{Data: []byte(strconv.FormatBool(staged))})
 ```
 
-#### 2c. Commit in worktree (`LocalExportOpts` / `FilesyncTarget`)
+#### Commit operation (`GitCommit`)
 
-New field on `LocalExportOpts`:
+New field on `LocalImportOpts`:
 
 ```go
-GitCommit *GitCommitOpts
+GitCommit *GitCommitOpts `json:"git_commit,omitempty"`
 ```
 
 ```go
 type GitCommitOpts struct {
-    Message string
+    Message string `json:"message"`
 }
 ```
 
-When `GitCommit` is set, `FilesyncTarget.DiffCopy`:
-
-1. Receives the directory export as usual (file writes via `fsutil.Receive`),
-   applying it to the export `Path` (which is the worktree root).
-2. After the filesystem write completes, runs in the same directory:
-   ```
-   git add -A
-   git commit --allow-empty -m "<message>"
-   ```
-3. Returns success/error.
-
-This piggybacks on the existing `LocalDirExport` flow — the only addition is
-the post-write git commit step.
-
-Engine-side: modify `LocalDirExport` or add a new method:
-
+Client handler:
 ```go
-func (c *Client) GitCommitChangeset(
-    ctx context.Context,
-    srcPath string,
-    destPath string,
-    merge bool,
-    removePaths []string,
-    message string,
-) error
+case opts.GitCommit != nil:
+    git("commit", "-m", opts.GitCommit.Message)
+    hash := git("rev-parse", "HEAD")
+    stream.SendMsg(&BytesMessage{Data: []byte(hash)})
 ```
 
 ### 3. Schema resolvers (`core/schema/workspace.go`)
 
-#### `currentWorkspace` (modified)
+#### `stage` (new)
 
-After detecting the repo root, also detect the branch:
+Wrapped with `DagOpWrapper` (needs buildkit session to mount changeset).
 
 ```go
-branch, err := bk.GitBranch(ctx, repoRoot)
-if err != nil {
-    branch = "HEAD" // detached HEAD fallback
-}
-result := &core.Workspace{
-    Root:     repoRoot,
-    ClientID: clientMetadata.ClientID,
-    Branch:   branch,
-    RepoRoot: repoRoot,
+func (s *workspaceSchema) stage(ctx context.Context, parent, args) (dagql.Boolean, error) {
+    changeset := args.Changes.Load(ctx, srv)
+    paths := changeset.ComputePaths(ctx)
+
+    // Step 1: Export diff to worktree (merge mode, handles removals)
+    dir := changeset.Before.Diff(changeset.After)
+    bk.LocalDirExport(ctx, mountedDir, ws.Root, true, paths.Removed)
+
+    // Step 2: Stage the specific paths
+    staged := bk.GitStageChangeset(ctx, ws.Root, paths)
+    return dagql.Boolean(staged), nil
 }
 ```
 
-#### `withBranch` (new)
+#### `commit` (simplified)
+
+Wrapped with `DagOpWrapper`.
 
 ```go
-func (s *workspaceSchema) withBranch(
-    ctx context.Context,
-    parent *core.Workspace,
-    args struct{ Branch string },
-) (*core.Workspace, error) {
-    if parent.Branch == args.Branch {
-        return parent, nil
-    }
-    worktreePath := parent.RepoRoot + "-worktrees/" + sanitizeBranch(args.Branch)
-    actualPath, err := bk.GitWorktreeAdd(ctx, parent.RepoRoot, args.Branch, worktreePath)
-    if err != nil {
-        return nil, err
-    }
-    return &core.Workspace{
-        Root:     actualPath,
-        ClientID: parent.ClientID,
-        Branch:   args.Branch,
-        RepoRoot: parent.RepoRoot,
-    }, nil
+func (s *workspaceSchema) commit(ctx context.Context, parent, args) (dagql.String, error) {
+    hash := bk.GitCommit(ctx, ws.Root, args.Message)
+    return dagql.String(hash), nil
 }
 ```
 
-#### `commit` (new)
+### 4. Removed complexity
 
-```go
-func (s *workspaceSchema) commit(
-    ctx context.Context,
-    parent dagql.ObjectResult[*core.Workspace],
-    args struct {
-        Changes dagql.ID[*core.Changeset]
-        Message string
-    },
-) (core.Void, error) {
-    ws := parent.Self()
-    changeset := /* load args.Changes */
+The following are no longer needed:
+- **Patch generation** (`AsPatch`) for commits — `stage` uses direct export +
+  `git add`.
+- **Temp `GIT_INDEX_FILE`** — staging goes into the real index.
+- **`git apply --cached`** — files are written by `LocalDirExport`, then staged
+  with `git add`.
+- **Stash/pop** — `stage` only touches changeset paths, so user WIP is never
+  affected.
+- **`GitApplyAndCommit`** import option — replaced by separate `GitStageChangeset`
+  and `GitCommit` options.
+- **Patch temp file export** — no patch files at all.
 
-    // Export changeset + git commit via the combined operation
-    err := bk.GitCommitChangeset(ctx,
-        srcRoot,     // mounted changeset diff
-        ws.Root,     // worktree path
-        true,        // merge
-        removePaths, // from changeset
-        args.Message,
-    )
-    return core.Void{}, err
-}
-```
-
-### 4. Files to modify
+### 5. Files to modify
 
 | File | Change |
 |------|--------|
-| `core/workspace.go` | Add `Branch`, `RepoRoot` fields |
-| `core/schema/workspace.go` | Add `withBranch`, `commit` resolvers; branch detection in `currentWorkspace` |
-| `engine/opts.go` | Add `GitBranchDetect`, `GitWorktreeAddOpts`, `GitCommitOpts` |
-| `engine/client/filesync.go` | Handle git-branch-detect, git-worktree-add in `FileSyncSource.DiffCopy`; handle git-commit in `FileSyncTarget.DiffCopy` |
-| `engine/buildkit/filesync.go` | Add `GitBranch()`, `GitWorktreeAdd()`, `GitCommitChangeset()` |
-| `core/integration/workspace_test.go` | Tests for the new API |
+| `core/workspace.go` | No change. |
+| `core/changeset.go` | Remove `GitCommit` method (no longer needed). |
+| `core/schema/workspace.go` | Replace `apply` with `stage`; simplify `commit` to just `git commit`. |
+| `engine/opts.go` | Replace `GitApplyCommitOpts` with `GitStageChangesetOpts` and `GitCommitOpts`. Remove `GitRevParseHead`. |
+| `engine/client/filesync.go` | Replace `gitApplyAndCommit` with `gitStageChangeset` and `gitCommit` handlers. |
+| `engine/buildkit/filesync.go` | Replace `GitCommitChangeset` with `GitStageChangeset` and `GitCommit`. Remove `randomHex`. |
+| `core/integration/workspace_test.go` | Rewrite tests for `stage` + `commit` API. |
 
 ## Data Flow
 
@@ -314,22 +322,24 @@ Agent (engine)                        Host (client)
 
 ws = currentWorkspace()
   ── GitBranch ────────────────────►  git symbolic-ref --short HEAD
-  ◄── "main" ──────────────────────   ← returns branch name
+  ◄── "main" ──────────────────────
 
 ws2 = ws.withBranch("agent/auth")
-  ── GitWorktreeAdd ───────────────►  git worktree add
+  ── GitWorktreeAdd ───────────────►  git worktree add -b agent/auth
                                         ~/src/project-worktrees/agent-auth
-                                        -b agent/auth
-  ◄── "/home/.../agent-auth" ──────   ← returns resolved path
+  ◄── "/home/.../agent-auth" ──────
 
-ws2.glob("**/*.go")                ►  WalkDir in ~/src/project-worktrees/agent-auth/
-ws2.search(pattern: "TODO")        ►  rg in ~/src/project-worktrees/agent-auth/
-ws2.file("main.go")                ►  read from ~/src/project-worktrees/agent-auth/
+ws2.stage(changes: changeset)
+  ── LocalDirExport ───────────────►  write changed files to worktree
+                                       (merge mode, removals applied)
+  ── GitStageChangeset ────────────►  git add -- new.txt modified.txt
+                                       git rm -- deleted.txt
+  ◄── "true" ──────────────────────
 
-ws2.commit(changes, "feat: auth")
-  ── Changeset.Export ─────────────►  write files to ~/src/project-worktrees/agent-auth/
-     + GitCommit                       git add -A
-                                       git commit -m "feat: auth"
+ws2.commit(message: "feat: auth")
+  ── GitCommit ────────────────────►  git commit -m "feat: auth"
+                                       git rev-parse HEAD
+  ◄── "abc1234..." ────────────────
 ```
 
 ## User Experience
@@ -340,10 +350,6 @@ ws2.commit(changes, "feat: auth")
 * main
 
 # Agents start working — worktrees appear as siblings
-$ ls ~/src/
-project/
-project-worktrees/
-
 $ ls ~/src/project-worktrees/
 agent-auth/
 agent-tests/
@@ -351,12 +357,10 @@ agent-tests/
 # Watch an agent work in real-time
 $ cd ~/src/project-worktrees/agent-auth
 $ watch git log --oneline -5
-$ code .   # open in editor
 
 # When done, merge from the main repo
 $ cd ~/src/project
 $ git merge agent/auth
-$ git merge agent/tests
 ```
 
 ## Edge Cases
@@ -366,35 +370,31 @@ $ git merge agent/tests
    — this is correct, we already have a Workspace for it.
 
 2. **Worktree directory already exists**: Check whether it's a valid worktree
-   for the requested branch. If yes, reuse it. If it's stale or for a different
-   branch, clean up and recreate.
+   for the requested branch. If yes, reuse it. If stale, clean up and recreate.
 
-3. **Committing to the main workspace**: When `ws.Branch` is the checked-out
-   branch of the main repo, `ws.Root == ws.RepoRoot`, and commit operates
-   directly on the main checkout. This is intentional — if you're on that
-   branch, you see the changes.
+3. **Working on the main checkout**: When `ws.Branch` equals the checked-out
+   branch, `ws.Root == ws.RepoRoot`, and `stage`/`commit` operate directly on
+   the main checkout. Only changeset paths are staged, so user edits to other
+   files are safe.
 
 4. **Detached HEAD**: `currentWorkspace` falls back to `"HEAD"` for the branch
    name. `withBranch` always creates a named branch.
 
-5. **Empty changeset**: `git commit --allow-empty` with the message succeeds.
-   Alternatively we could detect and return an error. TBD.
+5. **Empty changeset**: `stage` returns `false`. A subsequent `commit` would
+   fail with "nothing to commit" unless something else was staged.
 
 6. **Concurrent agents on different branches**: Each worktree has its own index
-   file, so `git add` / `git commit` don't interfere.
+   file, so staging and commits don't interfere.
 
-7. **Concurrent agents on the same branch**: The git index lock
-   (`.git/worktrees/<name>/index.lock`) serializes access. Second agent's
-   `git add` blocks until the first completes.
+7. **Concurrent agents on the same branch**: The git index lock serializes
+   access. Second agent's `git add` blocks until the first completes.
 
-8. **Patch conflicts**: The changeset is exported as a file-level diff. If the
-   worktree has diverged from the changeset's `Before` state, the file writes
-   may produce incorrect results. Agents should base their changesets on the
-   current state of the branch (read via `ws.directory(".")`).
+8. **Commit with nothing staged**: `git commit` fails. The error surfaces to
+   the agent. Use `stage` first.
 
-9. **Worktree cleanup**: Not addressed in this spec. Future work could add
-   `Workspace.remove()` or automatic cleanup when the Dagger session ends.
+9. **User has staged changes in the same worktree**: Those changes will be
+   included in the next `commit`. For agent-owned worktrees (via `withBranch`)
+   this is unlikely. For the main checkout, agents should be aware.
 
-10. **Windows / non-Unix paths**: The worktree path derivation uses
-    filepath-safe operations. Branch name sanitization replaces `/` with `-`.
-    Further special characters may need handling.
+10. **Worktree cleanup**: Not addressed in this spec. Future work could add
+    cleanup when the Dagger session ends.
