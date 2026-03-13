@@ -57,6 +57,7 @@ import (
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/engine/session/pipe"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
@@ -254,6 +255,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 			return nil, fmt.Errorf("failed to connect to dagger: %w", err)
 		}
 		return c, nil
+	}
+
+	// Refresh any expired OAuth tokens before connecting to the engine.
+	// This ensures the engine always gets a valid token.
+	if err := llmconfig.RefreshOAuthTokensIfNeeded(); err != nil {
+		slog.Warn("failed to refresh OAuth tokens", "error", err)
 	}
 
 	// Check if any of the upstream cache importers/exporters are enabled.
@@ -1394,6 +1401,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		ConfigPath:                llmconfig.ConfigFile,
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
 		CloudAuth:                 c.CloudAuth,

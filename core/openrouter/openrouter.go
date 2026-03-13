@@ -54,16 +54,96 @@ type Model struct {
 	SupportedParams []string     `json:"supported_parameters"`
 }
 
-var daggerToOpenRouter = map[string]string{
-	"claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
-	"claude-sonnet-4-0": "anthropic/claude-sonnet-4",
+// knownProviderPrefixes maps model name prefixes to OpenRouter provider slugs.
+var knownProviderPrefixes = []struct {
+	prefix   string
+	provider string
+}{
+	{"claude-", "anthropic"},
+	{"gpt-", "openai"},
+	{"o1-", "openai"},
+	{"o3-", "openai"},
+	{"o4-", "openai"},
+	{"gemini-", "google"},
+}
+
+// daggerToOpenRouter converts a Dagger-style model name (no provider prefix,
+// hyphens for version separators) into an OpenRouter model ID
+// (provider/name with dots for version separators).
+//
+// Examples:
+//
+//	claude-sonnet-4-5       → anthropic/claude-sonnet-4.5
+//	claude-sonnet-4-0       → anthropic/claude-sonnet-4
+//	gpt-5-2                 → openai/gpt-5.2
+//	gemini-2-5-flash        → google/gemini-2.5-flash
+//	anthropic/claude-opus-4 → anthropic/claude-opus-4 (already qualified)
+func daggerToOpenRouter(name string) string {
+	// Already has a provider prefix — leave it alone.
+	if strings.Contains(name, "/") {
+		return name
+	}
+
+	// Detect provider from known prefixes.
+	provider := ""
+	for _, pp := range knownProviderPrefixes {
+		if strings.HasPrefix(name, pp.prefix) {
+			provider = pp.provider
+			break
+		}
+	}
+	if provider == "" {
+		return name // unknown provider, return as-is
+	}
+
+	// Convert version-style hyphens to dots.
+	// Walk the parts split by "-" and join digit-digit boundaries with "."
+	// instead of "-", but drop trailing "-0" (e.g. "4-0" → "4").
+	//
+	// "claude-sonnet-4-5"  → ["claude","sonnet","4","5"]  → "claude-sonnet-4.5"
+	// "gemini-2-5-flash"   → ["gemini","2","5","flash"]   → "gemini-2.5-flash"
+	// "gpt-5-2-chat"       → ["gpt","5","2","chat"]       → "gpt-5.2-chat"
+	// "claude-sonnet-4-0"  → ["claude","sonnet","4","0"]   → "claude-sonnet-4"
+	parts := strings.Split(name, "-")
+	var result []string
+	for i, part := range parts {
+		if i > 0 && isDigit(parts[i-1]) && isDigit(part) {
+			// Digit follows digit: use dot separator.
+			// Drop trailing ".0" — "4-0" becomes just "4".
+			if part == "0" && (i == len(parts)-1 || !isDigit(safeGet(parts, i+1))) {
+				continue
+			}
+			result[len(result)-1] += "." + part
+		} else {
+			result = append(result, part)
+		}
+	}
+
+	return provider + "/" + strings.Join(result, "-")
+}
+
+func isDigit(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+func safeGet(parts []string, i int) string {
+	if i < len(parts) {
+		return parts[i]
+	}
+	return ""
 }
 
 func (m Models) Lookup(idOrName string) *Model {
-	if converted, ok := daggerToOpenRouter[idOrName]; ok {
-		idOrName = converted
-	}
+	converted := daggerToOpenRouter(idOrName)
 	for _, model := range m {
+		if model.ID == converted {
+			return &model
+		}
 		if model.ID == idOrName {
 			return &model
 		}
@@ -72,7 +152,7 @@ func (m Models) Lookup(idOrName string) *Model {
 		case "anthropic", "openai", "google":
 			// Only do this for grandfathered-in models before we switched to explicit
 			// IDs.
-			if name == idOrName {
+			if name == idOrName || name == converted {
 				return &model
 			}
 		default:

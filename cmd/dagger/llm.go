@@ -21,6 +21,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -82,6 +83,8 @@ type LLMSession struct {
 
 	autoCompact  bool
 	autoCompactL *sync.Mutex
+
+	subscriptionLabelCache string // cached OAuth subscription label
 }
 
 func NewLLMSession(
@@ -279,62 +282,126 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	return nil
 }
 
+// subscriptionLabel returns a display label for the OAuth subscription type
+// of the currently active provider, or empty string if not using OAuth.
+// Cached after first lookup.
+func (s *LLMSession) subscriptionLabel() string {
+	if s.subscriptionLabelCache != "" {
+		return s.subscriptionLabelCache
+	}
+	cfg, err := llmconfig.Load()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	// Only show subscription label for the default provider
+	defaultProvider := cfg.LLM.DefaultProvider
+	if defaultProvider == "" {
+		return ""
+	}
+	provider, ok := cfg.LLM.Providers[defaultProvider]
+	if !ok || !provider.IsOAuth() || provider.SubscriptionType == "" {
+		return ""
+	}
+	s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
+	return s.subscriptionLabelCache
+}
+
 func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
-	inputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
+	// Get current session token usage from API (for this thread only)
+	sessionInputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	outputTokens, err := llm.TokenUsage().OutputTokens(s.plumbingCtx)
+	sessionOutputTokens, err := llm.TokenUsage().OutputTokens(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	cacheReads, err := llm.TokenUsage().CachedTokenReads(s.plumbingCtx)
+	sessionCacheReads, err := llm.TokenUsage().CachedTokenReads(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	cacheWrites, err := llm.TokenUsage().CachedTokenWrites(s.plumbingCtx)
+	sessionCacheWrites, err := llm.TokenUsage().CachedTokenWrites(s.plumbingCtx)
 	if err != nil {
 		return err
-	}
-	lines := []string{
-		termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String(),
 	}
 
+	// Get aggregated token metrics from DB (includes all spans/sub-agents)
+	llmMetrics := s.frontend.GetLLMTokenMetrics()
+	
+	// Calculate total cost across all models
+	var totalCost float64
+	for model, metrics := range llmMetrics.ByModel {
+		if m := s.models.Lookup(model); m != nil {
+			inputCost := m.Pricing.Prompt.Cost(int(metrics.InputTokens))
+			outputCost := m.Pricing.Completion.Cost(int(metrics.OutputTokens))
+			cacheReadCost := m.Pricing.InputCacheRead.Cost(int(metrics.CachedTokenReads))
+			cacheWriteCost := m.Pricing.InputCacheWrite.Cost(int(metrics.CachedTokenWrites))
+			totalCost += inputCost + outputCost + cacheReadCost + cacheWriteCost
+		}
+	}
+	
+	// Build the model line, optionally with subscription badge
+	modelLine := termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String()
+	if label := s.subscriptionLabel(); label != "" {
+		modelLine += " " + termenv.String("("+label+")").Foreground(termenv.ANSICyan).String()
+	}
+
+	lines := []string{modelLine}
+
 	if opts.Verbosity > dagui.ShowInternalVerbosity {
-		if inputTokens > 0 {
+		if sessionInputTokens > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
 					"Tokens In: ",
-					inputTokens))
+					sessionInputTokens))
 		}
-		if outputTokens > 0 {
+		if sessionOutputTokens > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
 					"Tokens Out:",
-					outputTokens))
+					sessionOutputTokens))
 		}
-		if cacheReads > 0 {
+		if sessionCacheReads > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
 					"Cache Reads: ",
-					cacheReads))
+					sessionCacheReads))
 		}
-		if cacheWrites > 0 {
+		if sessionCacheWrites > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
 					"Cache Writes:",
-					cacheWrites))
+					sessionCacheWrites))
 		}
 	}
 
 	if m := s.models.Lookup(s.model); m != nil {
-		inputCost := m.Pricing.Prompt.Cost(inputTokens)
-		outputCost := m.Pricing.Completion.Cost(outputTokens)
-		cacheReadCost := m.Pricing.InputCacheRead.Cost(cacheReads)
-		cacheWriteCost := m.Pricing.InputCacheWrite.Cost(cacheWrites)
-		totalCost := inputCost + outputCost + cacheReadCost + cacheWriteCost
-		if totalCost > 0 {
-			contextUsage := int(float64(inputTokens) / float64(m.ContextLength) * 100)
+		// Calculate session cost from current thread
+		sessionInputCost := m.Pricing.Prompt.Cost(sessionInputTokens)
+		sessionOutputCost := m.Pricing.Completion.Cost(sessionOutputTokens)
+		sessionCacheReadCost := m.Pricing.InputCacheRead.Cost(sessionCacheReads)
+		sessionCacheWriteCost := m.Pricing.InputCacheWrite.Cost(sessionCacheWrites)
+		sessionCost := sessionInputCost + sessionOutputCost + sessionCacheReadCost + sessionCacheWriteCost
+
+		// Show costs
+		if sessionCost > 0 && totalCost > sessionCost {
+			// Show both session and total when they differ
+			lines = append(lines,
+				fmt.Sprintf("Session: "+termenv.String("$%0.2f").Bold().String(), sessionCost),
+				fmt.Sprintf("Total: "+termenv.String("$%0.2f").Bold().String(), totalCost))
+		} else if sessionCost > 0 {
+			// Only show session cost if that's all we have
+			lines = append(lines,
+				fmt.Sprintf("Cost: "+termenv.String("$%0.2f").Bold().String(), sessionCost))
+		} else if totalCost > 0 {
+			// Only show total cost if session is 0 but total > 0
+			lines = append(lines,
+				fmt.Sprintf("Total: "+termenv.String("$%0.2f").Bold().String(), totalCost))
+		}
+
+		// Context percentage based on current session
+		if sessionInputTokens > 0 {
+			contextUsage := int(float64(sessionInputTokens) / float64(m.ContextLength) * 100)
 			contextStyle := termenv.String("%d%%").Bold()
 			if contextUsage > 80 {
 				contextStyle = contextStyle.Foreground(termenv.ANSIYellow)
@@ -346,11 +413,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 				contextStyle = contextStyle.Foreground(termenv.ANSIBrightRed)
 			}
 			lines = append(lines,
-				fmt.Sprintf("Cost: "+termenv.String("$%0.2f").Bold().String(),
-					totalCost),
-				fmt.Sprintf("Context: "+contextStyle.String(),
-					contextUsage),
-			)
+				fmt.Sprintf("Context: "+contextStyle.String(), contextUsage))
 		}
 	}
 

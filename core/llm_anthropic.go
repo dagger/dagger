@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -22,13 +23,27 @@ type AnthropicClient struct {
 }
 
 func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
-	if endpoint.Key != "" {
+	var opts []option.RequestOption
+
+	if endpoint.IsOAuth {
+		// Claude Code OAuth: use bearer token auth with Claude Code headers
+		opts = append(opts,
+			option.WithAuthToken(endpoint.AuthToken),
+			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
+			option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
+			option.WithHeader("x-app", "cli"),
+		)
+	} else if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
 	}
+
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
+	// Inject OTel tracing HTTP client to capture LLM request/response bodies
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("anthropic")))
+
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,
@@ -68,11 +83,9 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 
 //nolint:gocyclo
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	markdownW := telemetry.NewWriter(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	// parentCtx is the context we create sibling spans from (thinking, response).
+	// Each phase of the streaming response gets its own span.
+	parentCtx := ctx
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -201,13 +214,49 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		})
 	}
 
+	// When using OAuth (Claude Code subscription), prepend the Claude Code
+	// identity system prompt. This is required for the OAuth endpoint to
+	// accept the request.
+	if c.endpoint.IsOAuth {
+		claudeCodePrompt := anthropic.TextBlockParam{
+			Text:         "You are Claude Code, Anthropic's official CLI for Claude.",
+			CacheControl: ephemeral,
+		}
+		systemPrompts = append([]anthropic.TextBlockParam{claudeCodePrompt}, systemPrompts...)
+	}
+
 	// Prepare parameters for the streaming call.
+	maxTokens := int64(8192)
+
+	// Configure thinking/reasoning if requested
+	var thinking anthropic.ThinkingConfigParamUnion
+	switch c.endpoint.ThinkingMode {
+	case "adaptive":
+		thinking = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}
+		// Anthropic requires MaxTokens >= 1024+BudgetTokens for thinking
+		if maxTokens < 16384 {
+			maxTokens = 16384
+		}
+	case "enabled":
+		budget := c.endpoint.ThinkingBudget
+		if budget < 1024 {
+			budget = 10000 // reasonable default
+		}
+		thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+		if maxTokens < budget+1024 {
+			maxTokens = budget + 1024
+		}
+	}
+
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.endpoint.Model),
-		MaxTokens: int64(8192),
+		MaxTokens: maxTokens,
 		Messages:  messages,
 		Tools:     toolsConfig,
 		System:    systemPrompts,
+		Thinking:  thinking,
 	}
 
 	// Start a streaming request.
@@ -219,6 +268,72 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	}
 
 	acc := new(anthropic.Message)
+
+	// Phase-based span management: thinking and response are sibling spans
+	// created from parentCtx. Each content block maps to a phase; phases
+	// open/close spans lazily as streaming content arrives. This supports
+	// interleaved thinking/response blocks (thinking → text → thinking → text).
+	type phase struct {
+		span       trace.Span
+		stdio      telemetry.SpanStreams
+		markdownW  io.Writer
+		isThinking bool
+	}
+	phases := map[int64]*phase{}
+
+	startPhase := func(idx int64, thinking bool) *phase {
+		if p, ok := phases[idx]; ok {
+			return p
+		}
+		var p phase
+		p.isThinking = thinking
+		if thinking {
+			phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "thinking",
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+					attribute.Bool("llm.thinking", true),
+				),
+			)
+			p.span = span
+			p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, "text/markdown"),
+				log.Bool("llm.thinking", true),
+			)
+		} else {
+			phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "LLM response",
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+				),
+			)
+			p.span = span
+			p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary)
+			p.markdownW = telemetry.NewWriter(phaseCtx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		}
+		phases[idx] = &p
+		return &p
+	}
+
+	endPhase := func(idx int64) {
+		if p, ok := phases[idx]; ok {
+			p.stdio.Close()
+			telemetry.EndWithCause(p.span, &rerr)
+			delete(phases, idx)
+		}
+	}
+
+	defer func() {
+		for idx := range phases {
+			endPhase(idx)
+		}
+	}()
+
 	for stream.Next() {
 		event := stream.Current()
 		acc.Accumulate(event)
@@ -237,12 +352,34 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
 		}
 
-		// Check if the event delta contains text and trace it.
-		if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-			if delta.Delta.Text != "" {
-				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(markdownW, delta.Delta.Text)
+		switch ev := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			switch ev.ContentBlock.Type {
+			case "thinking":
+				startPhase(ev.Index, true)
+			case "text":
+				startPhase(ev.Index, false)
 			}
+
+		case anthropic.ContentBlockDeltaEvent:
+			switch ev.Delta.Type {
+			case "thinking_delta":
+				if p := phases[ev.Index]; p != nil {
+					fmt.Fprint(p.stdio.Stdout, ev.Delta.Thinking)
+				}
+			case "text_delta":
+				p := phases[ev.Index]
+				if p == nil {
+					// Lazily create a response phase if we get text without a start event
+					p = startPhase(ev.Index, false)
+				}
+				if p.markdownW != nil {
+					fmt.Fprint(p.markdownW, ev.Delta.Text)
+				}
+			}
+
+		case anthropic.ContentBlockStopEvent:
+			endPhase(ev.Index)
 		}
 	}
 

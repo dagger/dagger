@@ -115,7 +115,7 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focusedIdx int
+	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
@@ -542,6 +542,10 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	}
 }
 
+func (fe *frontendPretty) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.dispatch(func() {
 		title := section.Title
@@ -736,11 +740,18 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 }
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
-	done := make(chan struct{}, 1)
+	type formResult struct {
+		err error
+	}
+	done := make(chan formResult, 1)
 
 	fe.dispatch(func() {
 		fe.handlePromptForm(form, func(f *huh.Form) {
-			close(done)
+			if f.State == huh.StateAborted {
+				done <- formResult{err: huh.ErrUserAborted}
+			} else {
+				done <- formResult{}
+			}
 		})
 		fe.Update()
 	})
@@ -748,9 +759,16 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
-		return nil
+	case res := <-done:
+		return res.err
 	}
+}
+
+// PrintAbove writes text into the terminal scrollback buffer above the
+// TUI content. The text is not subject to TUI word-wrapping, making it
+// suitable for clickable URLs and other content that must stay on one line.
+func (fe *frontendPretty) PrintAbove(text string) {
+	fe.tui.PrintAbove(text)
 }
 
 // blankLine is a trivial component that renders a single empty line.
@@ -2389,7 +2407,6 @@ func (fe *frontendPretty) syncPrompt() {
 // runShellAsync runs a shell handler function in a background goroutine,
 // then dispatches a prompt refresh + re-render back to the UI thread.
 func (fe *frontendPretty) runShellAsync(work func()) {
-	fe.syncPrompt()
 	go func() {
 		work()
 		fe.dispatch(func() {
@@ -2658,7 +2675,7 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 	} else {
 		fe.renderStepError(out, r, row, prefix)
 	}
-	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+	fe.renderDebug(out, row.Span, prefix+BorderLeft+" ", false)
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
@@ -2942,7 +2959,14 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 				return nil
 			}
 			r.fancyIndent(out, row, false, false)
-			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+			var bar termenv.Style
+			if span.LLMThinking {
+				bar = LLMThinkingPrefix.Style(out)
+			} else if span.LLMRole == telemetry.LLMRoleAssistant {
+				bar = LLMResponsePrefix.Style(out)
+			} else {
+				bar = LLMUserPrefix.Style(out)
+			}
 			if isFocused {
 				bar = hl(bar)
 			}
@@ -3018,12 +3042,18 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	r.fancyIndent(out, row, false, true)
 
 	if row.Span.LLMRole != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
-		case telemetry.LLMRoleAssistant:
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+		var bar termenv.Style
+		if span.LLMThinking {
+			bar = LLMThinkingPrefix.Style(out)
+		} else if span.LLMRole == telemetry.LLMRoleAssistant {
+			bar = LLMResponsePrefix.Style(out)
+		} else {
+			bar = LLMUserPrefix.Style(out)
 		}
+		if isFocused {
+			bar = hl(bar)
+		}
+		fmt.Fprint(out, bar)
 		fmt.Fprint(out, " ")
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, isFocused)
@@ -3240,8 +3270,20 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	span := row.Span
 	depth := row.Depth
 
-	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	// Sync thinking flag from span snapshot on every render, since the span
+	// attribute may arrive after the Vterm was first created by the log exporter.
+	logs.Thinking = span.LLMThinking
+
 	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+
+	var pipe termenv.Style
+	if span.LLMThinking {
+		pipe = LLMThinkingPrefix.Style(out)
+	} else if span.LLMRole == telemetry.LLMRoleAssistant {
+		pipe = LLMResponsePrefix.Style(out)
+	} else {
+		pipe = LLMUserPrefix.Style(out)
+	}
 	if focused {
 		pipe = hl(pipe)
 		dashed = hl(dashed)

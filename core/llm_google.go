@@ -28,7 +28,8 @@ type GenaiClient struct {
 func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	ctx := context.Background() // FIXME: should we wire this through from somewhere else?
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: endpoint.Key,
+		APIKey:     endpoint.Key,
+		HTTPClient: newLLMOTelHTTPClient("google"),
 	})
 	if err != nil {
 		return nil, err
@@ -206,6 +207,13 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
+
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()

@@ -23,7 +23,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/agext/levenshtein v1.2.3
 	github.com/alecthomas/chroma/v2 v2.20.0
-	github.com/anthropics/anthropic-sdk-go v1.14.0
+	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.31.13
@@ -122,7 +122,6 @@ require (
 	github.com/morikuni/aec v1.0.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.12.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runc v1.2.9
@@ -198,6 +197,8 @@ require (
 	mvdan.cc/sh/v3 v3.12.0
 	resenje.org/singleflight v0.4.3
 )
+
+require github.com/openai/openai-go/v3 v3.26.0
 
 require (
 	charm.land/lipgloss/v2 v2.0.1 // indirect
@@ -365,6 +366,7 @@ require (
 )
 
 replace (
+	github.com/vito/tuist => ../tuist
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.16.0
 	go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.16.0

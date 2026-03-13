@@ -20,12 +20,14 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
+	toml "github.com/pelletier/go-toml"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -37,11 +39,12 @@ func init() {
 }
 
 const (
-	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_5)
+	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_6)
 	modelDefaultGoogle    = "gemini-2.5-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
+	modelDefaultCodex     = "gpt-5.3-codex"
 )
 
 func resolveModelAlias(maybeAlias string) string {
@@ -89,6 +92,15 @@ type LLMEndpoint struct {
 	Key      string
 	Provider LLMProvider
 	Client   LLMClient
+
+	// OAuth fields for Claude Code subscription auth
+	AuthToken        string // OAuth bearer token (used instead of Key when set)
+	IsOAuth          bool   // Whether this endpoint uses OAuth authentication
+	SubscriptionType string // "pro", "max", "team", "enterprise" (OAuth only)
+
+	// Thinking / reasoning configuration
+	ThinkingMode   string // "adaptive", "enabled", "disabled" (Anthropic) or reasoning effort (OpenAI)
+	ThinkingBudget int64  // Max thinking tokens (Anthropic, when mode == "enabled")
 }
 
 type LLMProvider string
@@ -188,26 +200,37 @@ func (*LLMToolCall) Type() *ast.Type {
 }
 
 const (
-	OpenAI    LLMProvider = "openai"
-	Anthropic LLMProvider = "anthropic"
-	Google    LLMProvider = "google"
-	Meta      LLMProvider = "meta"
-	Mistral   LLMProvider = "mistral"
-	DeepSeek  LLMProvider = "deepseek"
-	Other     LLMProvider = "other"
+	OpenAI      LLMProvider = "openai"
+	OpenAICodex LLMProvider = "openai-codex"
+	Anthropic   LLMProvider = "anthropic"
+	Google      LLMProvider = "google"
+	Meta        LLMProvider = "meta"
+	Mistral     LLMProvider = "mistral"
+	DeepSeek    LLMProvider = "deepseek"
+	Other       LLMProvider = "other"
 )
 
 // A LLM routing configuration
 type LLMRouter struct {
-	AnthropicAPIKey  string
-	AnthropicBaseURL string
-	AnthropicModel   string
+	AnthropicAPIKey           string
+	AnthropicBaseURL          string
+	AnthropicModel            string
+	AnthropicAuthToken        string // OAuth bearer token for Claude Code subscription
+	AnthropicIsOAuth          bool   // Whether Anthropic auth uses OAuth
+	AnthropicSubscriptionType string // "pro", "max", etc. (OAuth only)
+	AnthropicThinkingMode     string // "adaptive", "enabled", "disabled"
+	AnthropicThinkingBudget   int64  // Max thinking tokens (when mode == "enabled")
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
 	OpenAIBaseURL          string
 	OpenAIModel            string
 	OpenAIDisableStreaming bool
+
+	// OpenAI Codex (ChatGPT subscription) fields
+	OpenAICodexAuthToken    string // OAuth bearer token
+	OpenAICodexModel        string
+	OpenAICodexThinkingMode string // Reasoning effort: "none", "low", "medium", "high", "xhigh"
 
 	GeminiAPIKey  string
 	GeminiBaseURL string
@@ -216,6 +239,10 @@ type LLMRouter struct {
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
 	return strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "anthropic/")
+}
+
+func (r *LLMRouter) isCodexModel(model string) bool {
+	return strings.Contains(model, "codex") || strings.HasPrefix(model, "openai-codex/")
 }
 
 func (r *LLMRouter) isOpenAIModel(model string) bool {
@@ -255,12 +282,29 @@ func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:  r.AnthropicBaseURL,
-		Key:      r.AnthropicAPIKey,
-		Provider: Anthropic,
+		BaseURL:          r.AnthropicBaseURL,
+		Key:              r.AnthropicAPIKey,
+		Provider:         Anthropic,
+		AuthToken:        r.AnthropicAuthToken,
+		IsOAuth:          r.AnthropicIsOAuth,
+		SubscriptionType: r.AnthropicSubscriptionType,
+		ThinkingMode:     r.AnthropicThinkingMode,
+		ThinkingBudget:   r.AnthropicThinkingBudget,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
+	return endpoint
+}
+
+func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
+	endpoint := &LLMEndpoint{
+		BaseURL:      "https://chatgpt.com/backend-api",
+		AuthToken:    r.OpenAICodexAuthToken,
+		IsOAuth:      true,
+		Provider:     OpenAICodex,
+		ThinkingMode: r.OpenAICodexThinkingMode,
+	}
+	endpoint.Client = newOpenAICodexClient(endpoint)
 	return endpoint
 }
 
@@ -314,15 +358,18 @@ func (r *LLMRouter) routeReplayModel(model string) (*LLMEndpoint, error) {
 
 // Return a default model, if configured
 func (r *LLMRouter) DefaultModel() string {
-	for _, model := range []string{r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
+	for _, model := range []string{r.OpenAICodexModel, r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
 		if model != "" {
 			return model
 		}
 	}
+	if r.OpenAICodexAuthToken != "" {
+		return modelDefaultCodex
+	}
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
 	}
-	if r.AnthropicAPIKey != "" {
+	if r.AnthropicAPIKey != "" || r.AnthropicAuthToken != "" {
 		return modelDefaultAnthropic
 	}
 	if r.OpenAIBaseURL != "" {
@@ -347,6 +394,8 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	switch {
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
+	case r.isCodexModel(model):
+		endpoint = r.routeCodexModel()
 	case r.isOpenAIModel(model):
 		endpoint = r.routeOpenAIModel()
 	case r.isGoogleModel(model):
@@ -444,6 +493,119 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	return nil
 }
 
+// LoadFromConfig populates router from config file (base layer).
+// Only sets fields that are currently empty, allowing env vars to take priority.
+func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
+	if cfg == nil {
+		return
+	}
+
+	for name, provider := range cfg.LLM.Providers {
+		if !provider.Enabled {
+			continue
+		}
+
+		switch name {
+		case "openrouter":
+			// OpenRouter uses OpenAI-compatible API
+			if r.OpenAIAPIKey == "" {
+				r.OpenAIAPIKey = provider.APIKey
+			}
+			if r.OpenAIBaseURL == "" {
+				r.OpenAIBaseURL = "https://openrouter.ai/api/v1"
+				if provider.BaseURL != "" {
+					r.OpenAIBaseURL = provider.BaseURL
+				}
+			}
+		case "anthropic":
+			if provider.IsOAuth() {
+				// OAuth takes precedence over API key
+				if r.AnthropicAuthToken == "" {
+					r.AnthropicAuthToken = provider.AuthToken
+					r.AnthropicIsOAuth = true
+					r.AnthropicSubscriptionType = provider.SubscriptionType
+				}
+			} else if r.AnthropicAPIKey == "" {
+				r.AnthropicAPIKey = provider.APIKey
+			}
+			if r.AnthropicBaseURL == "" && provider.BaseURL != "" {
+				r.AnthropicBaseURL = provider.BaseURL
+			}
+			if provider.ThinkingMode != "" {
+				r.AnthropicThinkingMode = provider.ThinkingMode
+				r.AnthropicThinkingBudget = provider.ThinkingBudget
+			}
+		case "openai":
+			if r.OpenAIAPIKey == "" {
+				r.OpenAIAPIKey = provider.APIKey
+			}
+			if r.OpenAIBaseURL == "" && provider.BaseURL != "" {
+				r.OpenAIBaseURL = provider.BaseURL
+			}
+		case "openai-codex":
+			if provider.IsOAuth() && r.OpenAICodexAuthToken == "" {
+				r.OpenAICodexAuthToken = provider.AuthToken
+			}
+			if provider.ThinkingMode != "" {
+				r.OpenAICodexThinkingMode = provider.ThinkingMode
+			}
+		case "google":
+			if r.GeminiAPIKey == "" {
+				r.GeminiAPIKey = provider.APIKey
+			}
+		}
+	}
+
+	// Set default model for the default provider if not already set
+	if cfg.LLM.DefaultModel != "" {
+		switch cfg.LLM.DefaultProvider {
+		case "openrouter", "openai":
+			if r.OpenAIModel == "" {
+				r.OpenAIModel = cfg.LLM.DefaultModel
+			}
+		case "anthropic":
+			if r.AnthropicModel == "" {
+				r.AnthropicModel = cfg.LLM.DefaultModel
+			}
+		case "openai-codex":
+			if r.OpenAICodexModel == "" {
+				r.OpenAICodexModel = cfg.LLM.DefaultModel
+			}
+		case "google":
+			if r.GeminiModel == "" {
+				r.GeminiModel = cfg.LLM.DefaultModel
+			}
+		}
+	}
+}
+
+// IsEmpty returns true if no LLM configuration is available.
+func (r *LLMRouter) IsEmpty() bool {
+	return r.OpenAIAPIKey == "" &&
+		r.AnthropicAPIKey == "" &&
+		r.AnthropicAuthToken == "" &&
+		r.GeminiAPIKey == ""
+}
+
+// ErrNoLLMConfig is returned when no LLM configuration is found.
+type ErrNoLLMConfig struct{}
+
+func (e *ErrNoLLMConfig) Error() string {
+	return `No LLM configuration found.
+
+To get started, run:
+    dagger llm setup
+
+Or set environment variables:
+    export ANTHROPIC_API_KEY=sk-ant-...
+    export OPENAI_API_KEY=sk-...
+    export GEMINI_API_KEY=AIza...
+
+For unified access to all models with a single key:
+    https://openrouter.ai/keys
+`
+}
+
 func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
 	router := new(LLMRouter)
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
@@ -469,13 +631,49 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
+
+	// Priority order:
+	// 1. Config file (~/.config/dagger/config.toml) - base layer
+	// 2. .env file - middle layer (legacy support)
+	// 3. Environment variables - top layer (overrides everything)
+
+	// First: Try loading from config file via the client's filesystem.
+	// The config path is resolved client-side (via xdg.ConfigHome) and passed
+	// in ClientMetadata so it works cross-platform (Unix, macOS, Windows).
+	configPath := ""
+	if clientMD, err := engine.ClientMetadataFromContext(ctx); err == nil && clientMD.ConfigPath != "" {
+		configPath = clientMD.ConfigPath
+	}
+	if configPath != "" {
+		if configData, err := loadSecret(ctx, "file://"+configPath); err == nil && configData != "" {
+			var cfg llmconfig.Config
+			if err := toml.Unmarshal([]byte(configData), &cfg); err == nil {
+				if cfg.LLM.Providers == nil {
+					cfg.LLM.Providers = make(map[string]llmconfig.Provider)
+				}
+				// Resolve API keys that may be secret references (e.g. op://vault/item/field)
+				for name, provider := range cfg.LLM.Providers {
+					if provider.APIKey != "" {
+						if resolved, err := loadSecret(ctx, provider.APIKey); err == nil {
+							provider.APIKey = resolved
+							cfg.LLM.Providers[name] = provider
+						}
+					}
+				}
+				router.LoadFromConfig(&cfg)
+			}
+		}
+	}
+
+	// Second: Load .env from current directory, if it exists
 	env := make(map[string]string)
-	// Load .env from current directory, if it exists
 	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
 		if e, err := godotenv.Unmarshal(envFile); err == nil {
 			env = e
 		}
 	}
+
+	// Third: Load environment variables (highest priority, overrides everything)
 	err := router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
@@ -488,7 +686,11 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 		}
 		return "", nil
 	})
-	return router, err
+	if err != nil {
+		return nil, err
+	}
+
+	return router, nil
 }
 
 func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {

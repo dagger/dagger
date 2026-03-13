@@ -6,9 +6,9 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/azure"
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/azure"
+	"github.com/openai/openai-go/v3/option"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -29,6 +29,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		if endpoint.Key != "" {
 			opts = append(opts, azure.WithAPIKey(endpoint.Key))
 		}
+		opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-azure")))
 		c := openai.NewClient(opts...)
 		return &OpenAIClient{client: c, endpoint: endpoint}
 	}
@@ -39,6 +40,9 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
+	// Inject OTel tracing HTTP client to capture LLM request/response bodies
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai")))
 
 	c := openai.NewClient(opts...)
 	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}
@@ -52,6 +56,13 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
+
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
@@ -94,13 +105,15 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			openAIMessages = append(openAIMessages, openai.UserMessage(blocks))
 		case LLMMessageRoleAssistant:
 			assistantMsg := openai.AssistantMessage(msg.Content)
-			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
+			calls := make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
 			for i, call := range msg.ToolCalls {
-				calls[i] = openai.ChatCompletionMessageToolCallParam{
-					ID: call.CallID,
-					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name:      call.Name,
-						Arguments: call.Arguments.String(),
+				calls[i] = openai.ChatCompletionMessageToolCallUnionParam{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: call.CallID,
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name:      call.Name,
+							Arguments: call.Arguments.String(),
+						},
 					},
 				}
 			}
@@ -121,14 +134,16 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	}
 
 	if len(tools) > 0 {
-		var toolParams []openai.ChatCompletionToolParam
+		var toolParams []openai.ChatCompletionToolUnionParam
 		for _, tool := range tools {
-			toolParams = append(toolParams, openai.ChatCompletionToolParam{
-				Function: openai.FunctionDefinitionParam{
-					Name:        tool.Name,
-					Description: openai.Opt(tool.Description),
-					Parameters:  openai.FunctionParameters(tool.Schema),
-					Strict:      openai.Opt(tool.Strict),
+			toolParams = append(toolParams, openai.ChatCompletionToolUnionParam{
+				OfFunction: &openai.ChatCompletionFunctionToolParam{
+					Function: openai.FunctionDefinitionParam{
+						Name:        tool.Name,
+						Description: openai.Opt(tool.Description),
+						Parameters:  openai.FunctionParameters(tool.Schema),
+						Strict:      openai.Opt(tool.Strict),
+					},
 				},
 			})
 		}
@@ -259,7 +274,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	return compl, nil
 }
 
-func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]*LLMToolCall, error) {
+func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCallUnion) ([]*LLMToolCall, error) {
 	var toolCalls []*LLMToolCall
 	for _, call := range calls {
 		if call.Function.Name == "" {
