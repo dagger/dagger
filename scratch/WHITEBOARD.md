@@ -1695,6 +1695,31 @@ Phase-3 review boundary:
 * after this phase, the worst remaining “absolute recipe as stored data” path should be gone
 * persistence can still still be using `canonical_id` on `results` for everything else
 
+Phase-3 progress so far:
+
+* module-object field normalization is now result-centric
+  * `ModuleObjectType.ConvertFromSDKResult(...)` no longer just preserves field maps blindly
+  * known object/interface/list/nullable fields are normalized so semantic refs become live dagql results in memory instead of raw recipe strings
+* module-object and interface-annotated values now participate in owned-result attachment
+  * both implement `dagql.HasOwnedResults`
+  * nested stored result refs are recursively attached and returned as explicit deps
+  * this means cached module-object values now retain their semantic child results through the normal dagql dependency machinery
+* module-object persistence now treats semantic refs as `result_id`
+  * persisted `result_id` values decode back to live dagql results, not raw `call.ID`s
+  * the old `call_id` path is now just the narrow exceptional raw-ID escape hatch rather than the main model
+* module-object export back to SDK input is now current-boundary-driven
+  * known fields are re-serialized from the current field path instead of leaking stale stored child wrapper IDs
+  * nested module-object structures recurse through the same field-aware conversion path
+  * private/unknown fields keep their best-effort raw-ID behavior as the intentional narrow exception
+* `CollectedContent.CollectUnknown(...)` now treats stored dagql results and idables as IDs instead of opaque garbage
+  * this keeps private-field best-effort content collection working after the in-memory model change
+* focused unit coverage now exists for:
+  * recursive owned-result attachment in module-object fields
+  * decoding persisted module-object `result_id` values back to live results
+  * converting module-object fields back to SDK input using the current field path instead of a stale stored ID
+  * persisted module-object round-trips preserving semantic refs as `result_id`
+  * `CollectedContent` best-effort handling of unknown stored results
+
 Phase-3 tripwire:
 
 * if there are widespread truly opaque private/internal `call.ID` payloads that turn out not to be rare exceptions, stop and escalate

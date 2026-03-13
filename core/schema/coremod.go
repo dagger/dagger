@@ -424,38 +424,66 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		slog.ExtraDebug("CoreModObject.ConvertFromSDKResult: got nil value")
 		return nil, nil
 	}
-	id, ok := value.(string)
-	if !ok {
-		return nil, fmt.Errorf("expected string, got %T", value)
-	}
-	var idp call.ID
-	if err := idp.Decode(id); err != nil {
-		return nil, err
-	}
+	switch value := value.(type) {
+	case dagql.AnyResult:
+		if value.Type() == nil || value.Type().Name() != obj.name {
+			return nil, fmt.Errorf("unexpected core object result type %T for %q", value, obj.name)
+		}
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			return dagql.RebindResultID(value, curID), nil
+		}
+		return value, nil
+	case dagql.IDable:
+		if value.ID() == nil {
+			return nil, nil
+		}
+		return obj.ConvertFromSDKResult(ctx, value.ID())
+	case *call.ID:
+		if value == nil {
+			return nil, nil
+		}
+		enc, err := value.Encode()
+		if err != nil {
+			return nil, err
+		}
+		return obj.ConvertFromSDKResult(ctx, enc)
+	case call.ID:
+		return obj.ConvertFromSDKResult(ctx, &value)
+	case string:
+		var idp call.ID
+		if err := idp.Decode(value); err != nil {
+			return nil, err
+		}
 
-	q, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("current query: %w", err)
-	}
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("current dagql server: %w", err)
-	}
-	if len(idp.Modules()) > 0 {
-		deps, err := q.IDDeps(ctx, &idp)
+		q, err := core.CurrentQuery(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get result dependencies: %w", err)
+			return nil, fmt.Errorf("current query: %w", err)
 		}
-		dag, err = deps.Schema(ctx)
+		dag, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("get schema from dependencies: %w", err)
+			return nil, fmt.Errorf("current dagql server: %w", err)
 		}
+		if len(idp.Modules()) > 0 {
+			deps, err := q.IDDeps(ctx, &idp)
+			if err != nil {
+				return nil, fmt.Errorf("get result dependencies: %w", err)
+			}
+			dag, err = deps.Schema(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("get schema from dependencies: %w", err)
+			}
+		}
+		val, err := dag.Load(ctx, &idp)
+		if err != nil {
+			return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
+		}
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			return dagql.RebindResultID(val, curID), nil
+		}
+		return val, nil
+	default:
+		return nil, fmt.Errorf("expected object ID or result, got %T", value)
 	}
-	val, err := dag.Load(ctx, &idp)
-	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
-	}
-	return val, nil
 }
 
 func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -466,7 +494,14 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	case dagql.Input:
 		return x, nil
 	case dagql.AnyResult:
-		return x.ID().Encode()
+		id, err := x.IDForCaller(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if id == nil {
+			return nil, nil
+		}
+		return id.Encode()
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: unknown type %T", obj, value)
 	}
@@ -480,7 +515,11 @@ func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyRes
 	case dagql.Input:
 		return content.CollectJSONable(x)
 	case dagql.AnyResult:
-		return content.CollectID(x.ID(), false)
+		id, err := x.IDForCaller(ctx)
+		if err != nil {
+			return err
+		}
+		return content.CollectID(id, false)
 	default:
 		return content.CollectJSONable(value.Unwrap())
 	}

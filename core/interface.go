@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -53,10 +55,55 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 			return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
 		}
 
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			rebound, ok := dagql.RebindResultID(loadedImpl.val, curID).(dagql.AnyObjectResult)
+			if !ok {
+				return nil, fmt.Errorf("rebind interface implementation %q: unexpected result type %T", typeName, loadedImpl.val)
+			}
+			return rebound, nil
+		}
 		return loadedImpl.val, nil
 	}
 
 	switch value := value.(type) {
+	case dagql.AnyObjectResult:
+		typeName := value.Type().Name()
+		loadedImpl := &loadedIfaceImpl{val: value}
+		var err error
+		loadedImpl.valType, _, err = iface.mod.Deps.ModTypeFor(ctx, &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.NonNull(&ObjectTypeDef{
+				Name: typeName,
+			}),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve interface implementation type: %w", err)
+		}
+		if loadedImpl.valType == nil {
+			loadedImpl.valType, _, err = iface.mod.Deps.ModTypeFor(ctx, &TypeDef{
+				Kind: TypeDefKindInterface,
+				AsInterface: dagql.NonNull(&InterfaceTypeDef{
+					Name: typeName,
+				}),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("resolve interface implementation type: %w", err)
+			}
+		}
+		if loadedImpl.valType == nil {
+			return nil, fmt.Errorf("could not find object or interface type for %q", typeName)
+		}
+		if ok := loadedImpl.valType.TypeDef().IsSubtypeOf(iface.TypeDef()); !ok {
+			return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
+		}
+		if curID := dagql.CurrentID(ctx); curID != nil {
+			rebound, ok := dagql.RebindResultID(value, curID).(dagql.AnyObjectResult)
+			if !ok {
+				return nil, fmt.Errorf("rebind interface implementation %q: unexpected result type %T", typeName, value)
+			}
+			return rebound, nil
+		}
+		return value, nil
 	case string:
 		var id call.ID
 		if err := id.Decode(value); err != nil {
@@ -129,12 +176,19 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		if !ok {
 			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
 		}
+		id, err := value.IDForCaller(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve interface value caller-facing id: %w", err)
+		}
+		if id == nil {
+			return fmt.Errorf("resolve interface value caller-facing id: nil")
+		}
 
 		obj, err := dagql.NewResultForID(&ModuleObject{
 			Module:  mod,
 			TypeDef: interfaceValue.UnderlyingType.TypeDef().AsObject.Value,
 			Fields:  interfaceValue.Fields,
-		}, value.ID())
+		}, id)
 		if err != nil {
 			return fmt.Errorf("create module object from interface value: %w", err)
 		}
@@ -143,7 +197,14 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 	}
 
 	if _, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		loadedImpl, err := iface.loadImpl(ctx, value.ID())
+		id, err := value.IDForCaller(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve interface implementation caller-facing id: %w", err)
+		}
+		if id == nil {
+			return fmt.Errorf("resolve interface implementation caller-facing id: nil")
+		}
+		loadedImpl, err := iface.loadImpl(ctx, id)
 		if err != nil {
 			return fmt.Errorf("load interface implementation: %w", err)
 		}
@@ -159,6 +220,15 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.T
 		return nil, nil
 	}
 	switch value := value.(type) {
+	case dagql.AnyObjectResult:
+		id, err := value.IDForCaller(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if id == nil {
+			return nil, nil
+		}
+		return id.Encode()
 	case DynamicID:
 		return value.ID().Encode()
 	default:
@@ -461,6 +531,7 @@ type InterfaceAnnotatedValue struct {
 }
 
 var _ dagql.InterfaceValue = (*InterfaceAnnotatedValue)(nil)
+var _ dagql.HasOwnedResults = (*InterfaceAnnotatedValue)(nil)
 
 func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
 	userModObjType, ok := iface.UnderlyingType.(*ModuleObjectType)
@@ -472,6 +543,25 @@ func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
 		TypeDef: userModObjType.typeDef,
 		Fields:  iface.Fields,
 	}, nil
+}
+
+func (iface *InterfaceAnnotatedValue) AttachOwnedResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if iface == nil || len(iface.Fields) == 0 {
+		return nil, nil
+	}
+	owned := make([]dagql.AnyResult, 0)
+	for _, name := range slices.Sorted(maps.Keys(iface.Fields)) {
+		updated, deps, err := attachModuleObjectValue(attach, iface.Fields[name])
+		if err != nil {
+			return nil, fmt.Errorf("attach interface field %q: %w", name, err)
+		}
+		iface.Fields[name] = updated
+		owned = append(owned, deps...)
+	}
+	return owned, nil
 }
 
 var _ dagql.Typed = (*InterfaceAnnotatedValue)(nil)

@@ -626,7 +626,14 @@ func (c *cache) resolveFrameRefIDForCaller(
 	}
 	visiting[refID] = struct{}{}
 	defer delete(visiting, refID)
-	return c.idForCallerFromFrame(ctx, refID, frame, frontier, visiting)
+	rebuilt, ok := c.idForCallerFromFrame(ctx, refID, frame, frontier, visiting)
+	if !ok || rebuilt == nil {
+		return nil, false
+	}
+	for _, extra := range c.resultCallFrameExtraDigestsSnapshot(refID) {
+		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
+	}
+	return rebuilt, true
 }
 
 func (c *cache) callArgsForCallerFromFrame(

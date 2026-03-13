@@ -816,6 +816,11 @@ func (r Result[T]) cacheSharedResult() *sharedResult {
 	return r.shared
 }
 
+func (r Result[T]) rebindID(id *call.ID) AnyResult {
+	r.id = id
+	return r
+}
+
 type ObjectResult[T Typed] struct {
 	Result[T]
 	class Class[T]
@@ -881,6 +886,18 @@ func (r ObjectResult[T]) IDForCaller(ctx context.Context) (*call.ID, error) {
 
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 	return r.shared
+}
+
+func (r ObjectResult[T]) rebindID(id *call.ID) AnyResult {
+	r.Result.id = id
+	return r
+}
+
+func RebindResultID(res AnyResult, id *call.ID) AnyResult {
+	if res == nil || id == nil {
+		return res
+	}
+	return res.rebindID(id)
 }
 
 type cacheContextKey struct {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -177,6 +178,66 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 				}
 			})
 		}
+	})
+
+	t.Run("module object field id rebinds on function-cache hit", func(ctx context.Context, t *testctx.T) {
+		moduleSrc := `package main
+
+import (
+	"crypto/rand"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+type Obj struct {
+	Dir *dagger.Directory
+	Token string
+}
+
+func (*Test) Wrap(dir *dagger.Directory) *Obj {
+	return &Obj{
+		Dir: dir,
+		Token: rand.Text(),
+	}
+}
+`
+
+		callMod := func(c *dagger.Client, dirPath string, selection ...string) (string, error) {
+			args := append([]string{"wrap", "--dir", dirPath}, selection...)
+			ctr := goGitBase(t, c).
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", moduleSrc).
+				WithNewFile("input-a/same.txt", "same-content\n").
+				WithNewFile("input-b/same.txt", "same-content\n").
+				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				With(daggerCall(args...))
+			stdout, err := ctr.Stdout(ctx)
+			if err == nil {
+				return stdout, nil
+			}
+			var execErr *dagger.ExecError
+			if errors.As(err, &execErr) {
+				return "", fmt.Errorf("%w\nstdout: %s\nstderr: %s", err, execErr.Stdout, execErr.Stderr)
+			}
+			return "", err
+		}
+
+		c1 := connect(ctx, t)
+		tokenA, err := callMod(c1, "./input-a", "token")
+		require.NoError(t, err)
+		dirIDA, err := callMod(c1, "./input-a", "dir", "sync")
+		require.NoError(t, err)
+
+		c2 := connect(ctx, t)
+		tokenB, err := callMod(c2, "./input-b", "token")
+		require.NoError(t, err)
+		require.Equal(t, tokenA, tokenB, "module object function result should hit cache for equivalent directory input")
+
+		dirIDB, err := callMod(c2, "./input-b", "dir", "sync")
+		require.NoError(t, err)
+		require.NotEqual(t, dirIDA, dirIDB, "module object field should present the current caller's directory ID, not leak the earlier caller's path")
 	})
 
 	t.Run("same schema but different implementations", func(ctx context.Context, t *testctx.T) {

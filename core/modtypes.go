@@ -73,12 +73,24 @@ func (content *CollectedContent) CollectID(idp *call.ID, unknown bool) error {
 // encounters into IDs, and hashes everything into the rolling content hash.
 //
 // It is also used to content encode anything that is known to be JSONable.
-func (content *CollectedContent) CollectUnknown(value any) error {
+func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) error {
 	switch value := value.(type) {
+	case dagql.AnyResult:
+		id, err := value.IDForCaller(ctx)
+		if err != nil {
+			return err
+		}
+		return content.CollectID(id, true)
+	case dagql.IDable:
+		return content.CollectID(value.ID(), true)
+	case *call.ID:
+		return content.CollectID(value, true)
+	case call.ID:
+		return content.CollectID(&value, true)
 	case []any:
 		for i, value := range value {
 			if err := content.CollectIndexed(i, func() error {
-				return content.CollectUnknown(value)
+				return content.CollectUnknown(ctx, value)
 			}); err != nil {
 				return err
 			}
@@ -87,7 +99,7 @@ func (content *CollectedContent) CollectUnknown(value any) error {
 	case map[string]any:
 		for _, k := range slices.Sorted(maps.Keys(value)) {
 			if err := content.CollectKeyed(k, func() error {
-				return content.CollectUnknown(value[k])
+				return content.CollectUnknown(ctx, value[k])
 			}); err != nil {
 				return err
 			}
@@ -280,7 +292,14 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 			continue
 		}
 
-		ctx := dagql.ContextWithID(ctx, item.ID())
+		itemID, err := item.IDForCaller(ctx)
+		if err != nil {
+			return err
+		}
+		if itemID == nil {
+			continue
+		}
+		ctx := dagql.ContextWithID(ctx, itemID)
 
 		if err := content.CollectIndexed(i, func() error {
 			return t.Underlying.CollectContent(ctx, item, content)

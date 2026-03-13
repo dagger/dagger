@@ -3988,6 +3988,70 @@ func TestResultIDForCallerReappliesEqClassExtraDigests(t *testing.T) {
 	assert.DeepEqual(t, []call.ExtraDigest{contentExtra, scopeExtra}, presentedID.ExtraDigests())
 }
 
+func TestResultIDForCallerReappliesNestedReceiverExtraDigests(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	parentRawID := cacheTestID("nested-receiver-parent")
+	contentExtra := call.ExtraDigest{
+		Label:  call.ExtraDigestLabelContent,
+		Digest: digest.FromString("nested-parent-content"),
+	}
+	scopeExtra := call.ExtraDigest{
+		Label:  "sdk_scope",
+		Digest: digest.FromString("nested-parent-scope"),
+	}
+
+	parentRes, err := c.GetOrInitCall(ctx, CacheKey{ID: parentRawID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(parentRawID, 1), nil
+	})
+	assert.NilError(t, err)
+	parentShared := parentRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	parentOutputEqClasses := c.resultOutputEqClasses[parentShared.id]
+	if parentOutputEqClasses == nil {
+		parentOutputEqClasses = make(map[eqClassID]struct{})
+		c.resultOutputEqClasses[parentShared.id] = parentOutputEqClasses
+	}
+	parentEqID := c.ensureEqClassForDigestLocked(ctx, parentRawID.Digest().String())
+	parentOutputEqClasses[parentEqID] = struct{}{}
+	parentExtras := c.eqClassExtraDigests[parentEqID]
+	if parentExtras == nil {
+		parentExtras = make(map[call.ExtraDigest]struct{})
+		c.eqClassExtraDigests[parentEqID] = parentExtras
+	}
+	parentExtras[contentExtra] = struct{}{}
+	parentExtras[scopeExtra] = struct{}{}
+	c.egraphMu.Unlock()
+
+	childRawID := cacheTestID("nested-receiver-child")
+	childFrame := &ResultCallFrame{
+		Kind:  ResultCallFrameKindField,
+		Type:  NewResultCallFrameType(Int(0).Type()),
+		Field: "child",
+		Receiver: &ResultCallFrameRef{
+			ResultID: uint64(parentShared.id),
+		},
+	}
+	childRes, err := c.GetOrInitCall(ctx, CacheKey{ID: childRawID}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(childRawID, 2).(Result[Int]).ResultWithCallFrame(childFrame), nil
+	})
+	assert.NilError(t, err)
+
+	presentedID, err := childRes.IDForCaller(ctx)
+	assert.NilError(t, err)
+	assert.Assert(t, presentedID != nil)
+	assert.Assert(t, presentedID.Receiver() != nil)
+	assert.DeepEqual(t, []call.ExtraDigest{contentExtra, scopeExtra}, presentedID.Receiver().ExtraDigests())
+}
+
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

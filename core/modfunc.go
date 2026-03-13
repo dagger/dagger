@@ -731,9 +731,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	fnCall := &FunctionCall{
-		Name:      fn.metadata.OriginalName,
-		Parent:    parentJSON,
-		ParentID:  callID.Receiver(),
+		Name:   fn.metadata.OriginalName,
+		Parent: parentJSON,
+		// TODO: ?
+		// ParentID:  callID.Receiver(),
+		ParentID:  opts.ParentTyped.ID(),
 		InputArgs: callInputs,
 	}
 	if envID, ok := EnvIDFromContext(ctx); ok {
@@ -778,7 +780,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
+		return nil, fmt.Errorf("mount function metadir: %w", err)
 	}
 	// Intentionally bypass the GraphQL withExec selector here. Module function
 	// execution is an internal flow with bespoke metadata plumbing; using the

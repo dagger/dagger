@@ -85,6 +85,25 @@ func loadPersistedCallIDByResultID(ctx context.Context, dag *dagql.Server, resul
 	return id, nil
 }
 
+func loadPersistedResultByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label string) (dagql.AnyResult, error) {
+	if resultID == 0 {
+		return nil, nil
+	}
+	query, err := persistedDecodeQuery(dag)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted %s query: %w", label, err)
+	}
+	cache, err := query.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted %s cache: %w", label, err)
+	}
+	res, err := cache.LoadPersistedResultByResultID(ctx, dag, resultID)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted %s result: %w", label, err)
+	}
+	return res, nil
+}
+
 func loadPersistedObjectResultByResultID[T dagql.Typed](ctx context.Context, dag *dagql.Server, resultID uint64, label string) (dagql.ObjectResult[T], error) {
 	if resultID == 0 {
 		return dagql.ObjectResult[T]{}, nil
