@@ -3145,6 +3145,25 @@ function renderRegistryDetail(entity, row) {
 }
 
 function renderServiceDetail(entity, row) {
+  const definitionItems = [];
+  if (row.customHostname) {
+    definitionItems.push(["Hostname", detailCode(row.customHostname)]);
+  }
+  if (row.containerDagqlID) {
+    definitionItems.push(["Container", objectSummaryLink(row.containerDagqlID)]);
+  }
+  if (row.tunnelUpstreamDagqlID) {
+    definitionItems.push(["Tunnel Upstream", objectSummaryLink(row.tunnelUpstreamDagqlID)]);
+  }
+  const activityItems = [
+    ["Calls", escapeHTML(String((row.activity || []).length))],
+    ["Started", escapeHTML(relativeTimeFromNow(row.startUnixNano))],
+    ["Last activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano))],
+    ["Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown"],
+  ];
+  if (row.pipelineCommand) {
+    activityItems.push(["Pipeline Command", detailCode(row.pipelineCommand)]);
+  }
   const activityTable = renderTableHTML({
     columns: [
       { label: "Call", render: (item) => callSummaryLink(item.callID, item.name) || escapeHTML(item.name || "Call") },
@@ -3175,23 +3194,10 @@ function renderServiceDetail(entity, row) {
         </div>
       </section>
       <div class="v3-detail-grid">
-        ${detailCard(
-          "Definition",
-          detailList([
-            ["Hostname", row.customHostname ? detailCode(row.customHostname) : "None"],
-            ["Container", row.containerDagqlID ? objectSummaryLink(row.containerDagqlID) : "None"],
-            ["Tunnel Upstream", row.tunnelUpstreamDagqlID ? objectSummaryLink(row.tunnelUpstreamDagqlID) : "None"],
-          ]),
-        )}
+        ${definitionItems.length > 0 ? detailCard("Definition", detailList(definitionItems)) : ""}
         ${detailCard(
           "Activity",
-          detailList([
-            ["Calls", escapeHTML(String((row.activity || []).length))],
-            ["Started", escapeHTML(relativeTimeFromNow(row.startUnixNano))],
-            ["Last activity", escapeHTML(relativeTimeFromNow(row.lastActivityUnixNano))],
-            ["Client", row.clientID ? clientLinkByID(row.clientID) : "Unknown"],
-            ["Pipeline Command", row.pipelineCommand ? detailCode(row.pipelineCommand) : "None"],
-          ]),
+          detailList(activityItems),
         )}
       </div>
       ${detailSection("Logs", renderServiceLogs(row.logs || []))}
