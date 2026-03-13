@@ -264,6 +264,14 @@ Confirmed diagnosis on `workspace-plumbing` after the path-contract rollout:
   - fix `SandboxedRelativePath(..., "/")`
   - add a focused unit test for the root-`/` case
   - then rerun the blueprint/toolchain regressions
+- targeted integration reruns immediately exposed an unrelated stale branch-test
+  blocker in
+  [workspace_test.go](/Users/shykes/git/github.com/dagger/dagger_workspace/core/integration/workspace_test.go):
+  - `gitBase` references no longer exist and should be `workspaceBase`
+  - one helper still shells out through `dagger module init` instead of the
+    restored top-level `dagger init`
+  - this is test-only drift from the shared `workspace` cherry-pick, not part of
+    the runtime fix itself
 
 This bug should be fixed **after** the new Workspace path contract lands, but
 without bending the contract around the legacy behavior.
