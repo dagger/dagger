@@ -25,7 +25,8 @@ work on different branches simultaneously. The design must:
    branch without special-casing.
 4. Let the user observe agent work in real-time via normal filesystem tools.
 5. **Coexist with local user changes** — the user may have work-in-progress in
-   the same worktree. Only changeset paths are staged and committed.
+   the same worktree. Agent changes end up staged; user changes remain
+   unstaged.
 
 ## API
 
@@ -59,7 +60,8 @@ extend type Workspace {
   """
   Apply a Changeset to the workspace and stage the affected paths in git.
   Files are written (added/modified) and removed on disk, then precisely
-  the changed paths are staged via git add / git rm.
+  the changed paths are staged via git add / git rm. Any pre-existing
+  unstaged user edits are preserved as unstaged changes.
   Returns true if any changes were staged, false if the changeset was empty.
   """
   stage(
@@ -107,17 +109,35 @@ type Agent {
 
 ### `stage(changes)`
 
-1. Compute the changeset's added, modified, and removed paths.
-2. Export the changeset diff to the workspace root on the host (merge-mode
-   write of added/modified files, deletion of removed files — same mechanism
-   as `Changeset.export`).
-3. Stage precisely the affected paths:
-   - `git add -- <added paths> <modified paths>`
-   - `git rm -- <removed paths>`
-4. Return `true` if any paths were staged, `false` if the changeset was empty.
+Applies a changeset to the worktree and stages exactly the affected paths,
+while preserving any pre-existing unstaged user edits. This uses the
+technique from [container-use PR #234](https://github.com/dagger/container-use/pull/234):
 
-Because only the changeset's paths are staged, any unrelated user edits in the
-working tree remain unstaged and are not included in the next commit.
+1. **Capture** user's unstaged changes: `git diff --binary` → save as patch.
+2. **Backup** all changes: `git stash create` → virtual stash ref (does not
+   pollute the stash list; serves as a safety net).
+3. **Reset** to pristine state: `git reset --hard HEAD`.
+4. **Export** the changeset diff to the worktree (merge-mode write of
+   added/modified files, deletion of removed files — same mechanism as
+   `Changeset.export`).
+5. **Stage** precisely the affected paths:
+   - `git add -- <added> <modified>`
+   - `git rm -- <removed>`
+6. If the user had unstaged changes:
+   a. `git commit -m "dagger: staging temp"` — temporarily commit the staged
+      state so it survives the next steps.
+   b. `git apply <user-patch>` — restore user's changes on disk.
+   c. `git reset` — unstage the user's re-applied changes (git apply stages
+      them by default).
+   d. `git reset --soft HEAD~1` — undo the temp commit, moving agent changes
+      back to the staging area.
+7. On error at any point: print recovery command
+   `git stash apply <stashRef>` so the user can recover their work.
+
+**End result:** agent's changes are staged, user's changes are unstaged. A
+subsequent `git commit` commits exactly the agent's work.
+
+Return `true` if any paths were staged, `false` if the changeset was empty.
 
 ### `commit(message)`
 
@@ -125,8 +145,7 @@ working tree remain unstaged and are not included in the next commit.
    no further staging is needed.
 2. Return the commit hash via `git rev-parse HEAD`.
 
-This is intentionally simple — all the precision lives in `stage`. The `commit`
-method is just `git commit`.
+This is intentionally simple — all the precision lives in `stage`.
 
 ### Incremental workflow
 
@@ -188,59 +207,85 @@ type Workspace struct {
 
 ### 2. Client-side operations via session attachables
 
-Four operation types routed through `DiffCopy` gRPC streams:
+The `stage` operation requires careful sequencing of the file export and git
+commands. It uses two client round-trips:
+
+1. **Pre-export setup** (`GitStageSetup` diffcopy): captures user's unstaged
+   changes, creates a virtual stash backup, and resets the worktree to a
+   pristine state. Returns the user's diff patch (may be empty).
+
+2. **File export** (`LocalDirExport`): writes changeset files to the now-clean
+   worktree.
+
+3. **Post-export staging** (`GitStageFinalize` diffcopy): stages the changeset
+   paths, then restores user's unstaged changes using the temp-commit technique
+   from container-use.
 
 | Operation | Direction | Opts field | Handler |
 |-----------|-----------|------------|---------|
 | Detect branch | import (source) | `GitBranchDetect` | `git symbolic-ref --short HEAD` |
 | Create worktree | import (source) | `GitWorktreeAdd` | `git worktree add` |
-| Stage changeset | import (source) | `GitStageChangeset` | `git add` / `git rm` specific paths |
+| Stage setup | import (source) | `GitStageSetup` | capture diff, stash create, reset --hard |
+| Stage finalize | import (source) | `GitStageFinalize` | git add/rm, temp commit, apply user patch, reset |
 | Commit | import (source) | `GitCommit` | `git commit -m` / `git rev-parse HEAD` |
 
-The changeset export (writing files to the worktree) uses the existing
-`LocalDirExport` mechanism via `CopyToCaller`.
-
-#### Stage operation (`GitStageChangeset`)
-
-New field on `LocalImportOpts`:
+#### Stage setup (`GitStageSetup`)
 
 ```go
-GitStageChangeset *GitStageChangesetOpts `json:"git_stage_changeset,omitempty"`
+type GitStageSetupOpts struct{}
 ```
 
+Client handler:
 ```go
-type GitStageChangesetOpts struct {
-    Added    []string `json:"added"`
-    Modified []string `json:"modified"`
-    Removed  []string `json:"removed"`
+case opts.GitStageSetup != nil:
+    // 1. Capture user's unstaged changes
+    userPatch := git("diff", "--binary")
+
+    // 2. Virtual stash as safety net (no stash list pollution)
+    stashRef := git("stash", "create")
+
+    // 3. Reset to pristine state
+    git("reset", "--hard", "HEAD")
+
+    // Return: stashRef + "\n" + userPatch
+    stream.SendMsg(&BytesMessage{Data: ...})
+```
+
+#### Stage finalize (`GitStageFinalize`)
+
+```go
+type GitStageFinalizeOpts struct {
+    Added     []string `json:"added"`
+    Modified  []string `json:"modified"`
+    Removed   []string `json:"removed"`
+    StashRef  string   `json:"stash_ref"`
+    UserPatch string   `json:"user_patch"`  // base64-encoded, may be empty
 }
 ```
 
 Client handler:
 ```go
-case opts.GitStageChangeset != nil:
-    paths := opts.GitStageChangeset
-    if len(paths.Added) + len(paths.Modified) > 0 {
-        args := append([]string{"add", "--"}, paths.Added...)
-        args = append(args, paths.Modified...)
-        git(args...)
+case opts.GitStageFinalize != nil:
+    // Stage the changeset paths
+    git("add", "--", added..., modified...)
+    git("rm", "-f", "--", removed...)
+
+    if userPatch != "" {
+        // Temp-commit the staged state
+        git("commit", "-m", "dagger: staging temp")
+        // Restore user's changes on disk
+        git("apply", userPatch)
+        // Unstage user's changes
+        git("reset")
+        // Undo temp commit, agent changes back to staging
+        git("reset", "--soft", "HEAD~1")
     }
-    if len(paths.Removed) > 0 {
-        args := append([]string{"rm", "-f", "--"}, paths.Removed...)
-        git(args...)
-    }
-    staged := len(paths.Added) + len(paths.Modified) + len(paths.Removed) > 0
-    // Return "true" or "false"
-    stream.SendMsg(&BytesMessage{Data: []byte(strconv.FormatBool(staged))})
+
+    staged := len(added) + len(modified) + len(removed) > 0
+    stream.SendMsg(&BytesMessage{Data: strconv.FormatBool(staged)})
 ```
 
 #### Commit operation (`GitCommit`)
-
-New field on `LocalImportOpts`:
-
-```go
-GitCommit *GitCommitOpts `json:"git_commit,omitempty"`
-```
 
 ```go
 type GitCommitOpts struct {
@@ -253,7 +298,7 @@ Client handler:
 case opts.GitCommit != nil:
     git("commit", "-m", opts.GitCommit.Message)
     hash := git("rev-parse", "HEAD")
-    stream.SendMsg(&BytesMessage{Data: []byte(hash)})
+    stream.SendMsg(&BytesMessage{Data: hash})
 ```
 
 ### 3. Schema resolvers (`core/schema/workspace.go`)
@@ -267,12 +312,15 @@ func (s *workspaceSchema) stage(ctx context.Context, parent, args) (dagql.Boolea
     changeset := args.Changes.Load(ctx, srv)
     paths := changeset.ComputePaths(ctx)
 
-    // Step 1: Export diff to worktree (merge mode, handles removals)
+    // Step 1: Pre-export setup — capture user changes, reset to clean state
+    stashRef, userPatch := bk.GitStageSetup(ctx, ws.Root)
+
+    // Step 2: Export diff to worktree (merge mode, handles removals)
     dir := changeset.Before.Diff(changeset.After)
     bk.LocalDirExport(ctx, mountedDir, ws.Root, true, paths.Removed)
 
-    // Step 2: Stage the specific paths
-    staged := bk.GitStageChangeset(ctx, ws.Root, paths)
+    // Step 3: Stage paths and restore user changes
+    staged := bk.GitStageFinalize(ctx, ws.Root, paths, stashRef, userPatch)
     return dagql.Boolean(staged), nil
 }
 ```
@@ -291,16 +339,11 @@ func (s *workspaceSchema) commit(ctx context.Context, parent, args) (dagql.Strin
 ### 4. Removed complexity
 
 The following are no longer needed:
-- **Patch generation** (`AsPatch`) for commits — `stage` uses direct export +
-  `git add`.
 - **Temp `GIT_INDEX_FILE`** — staging goes into the real index.
-- **`git apply --cached`** — files are written by `LocalDirExport`, then staged
+- **`git apply --cached`** — files are written by `LocalDirExport`, staged
   with `git add`.
-- **Stash/pop** — `stage` only touches changeset paths, so user WIP is never
-  affected.
-- **`GitApplyAndCommit`** import option — replaced by separate `GitStageChangeset`
-  and `GitCommit` options.
-- **Patch temp file export** — no patch files at all.
+- **`GitApplyAndCommit`** import option — replaced by separate setup/finalize
+  and commit options.
 
 ### 5. Files to modify
 
@@ -308,10 +351,10 @@ The following are no longer needed:
 |------|--------|
 | `core/workspace.go` | No change. |
 | `core/changeset.go` | Remove `GitCommit` method (no longer needed). |
-| `core/schema/workspace.go` | Replace `apply` with `stage`; simplify `commit` to just `git commit`. |
-| `engine/opts.go` | Replace `GitApplyCommitOpts` with `GitStageChangesetOpts` and `GitCommitOpts`. Remove `GitRevParseHead`. |
-| `engine/client/filesync.go` | Replace `gitApplyAndCommit` with `gitStageChangeset` and `gitCommit` handlers. |
-| `engine/buildkit/filesync.go` | Replace `GitCommitChangeset` with `GitStageChangeset` and `GitCommit`. Remove `randomHex`. |
+| `core/schema/workspace.go` | Replace `apply`/`commit` with `stage`/`commit`. |
+| `engine/opts.go` | Replace `GitApplyCommitOpts` with `GitStageSetupOpts`, `GitStageFinalizeOpts`, `GitCommitOpts`. |
+| `engine/client/filesync.go` | Replace `gitApplyAndCommit` with setup/finalize/commit handlers. |
+| `engine/buildkit/filesync.go` | Replace `GitCommitChangeset` with `GitStageSetup`, `GitStageFinalize`, `GitCommit`. Remove `randomHex`. |
 | `core/integration/workspace_test.go` | Rewrite tests for `stage` + `commit` API. |
 
 ## Data Flow
@@ -330,10 +373,19 @@ ws2 = ws.withBranch("agent/auth")
   ◄── "/home/.../agent-auth" ──────
 
 ws2.stage(changes: changeset)
-  ── LocalDirExport ───────────────►  write changed files to worktree
-                                       (merge mode, removals applied)
-  ── GitStageChangeset ────────────►  git add -- new.txt modified.txt
+  ── GitStageSetup ────────────────►  git diff --binary → userPatch
+                                       git stash create  → stashRef
+                                       git reset --hard HEAD
+  ◄── stashRef + userPatch ────────
+
+  ── LocalDirExport ───────────────►  write changed files to clean worktree
+
+  ── GitStageFinalize ─────────────►  git add -- new.txt modified.txt
                                        git rm -- deleted.txt
+                                       git commit -m "dagger: staging temp"
+                                       git apply <userPatch>
+                                       git reset
+                                       git reset --soft HEAD~1
   ◄── "true" ──────────────────────
 
 ws2.commit(message: "feat: auth")
@@ -358,6 +410,9 @@ agent-tests/
 $ cd ~/src/project-worktrees/agent-auth
 $ watch git log --oneline -5
 
+# User can edit files in the worktree — their changes stay unstaged
+$ echo "user note" >> ~/src/project-worktrees/agent-auth/notes.txt
+
 # When done, merge from the main repo
 $ cd ~/src/project
 $ git merge agent/auth
@@ -374,8 +429,8 @@ $ git merge agent/auth
 
 3. **Working on the main checkout**: When `ws.Branch` equals the checked-out
    branch, `ws.Root == ws.RepoRoot`, and `stage`/`commit` operate directly on
-   the main checkout. Only changeset paths are staged, so user edits to other
-   files are safe.
+   the main checkout. The stash-and-restore dance preserves user's unstaged
+   edits.
 
 4. **Detached HEAD**: `currentWorkspace` falls back to `"HEAD"` for the branch
    name. `withBranch` always creates a named branch.
@@ -392,9 +447,16 @@ $ git merge agent/auth
 8. **Commit with nothing staged**: `git commit` fails. The error surfaces to
    the agent. Use `stage` first.
 
-9. **User has staged changes in the same worktree**: Those changes will be
-   included in the next `commit`. For agent-owned worktrees (via `withBranch`)
-   this is unlikely. For the main checkout, agents should be aware.
+9. **User has unstaged changes to a changeset file**: The `reset --hard` wipes
+   the user's version, the export writes the changeset version, and the user
+   patch restores the user's changes as unstaged on top. If the user's patch
+   conflicts with the changeset, `git apply` fails and the error includes the
+   `git stash apply <ref>` recovery command.
 
-10. **Worktree cleanup**: Not addressed in this spec. Future work could add
+10. **Error recovery**: `git stash create` produces a ref that survives
+    indefinitely (until GC). On any error after `reset --hard`, the error
+    message includes `git stash apply <ref>` so the user can recover their
+    prior state manually.
+
+11. **Worktree cleanup**: Not addressed in this spec. Future work could add
     cleanup when the Dagger session ends.
