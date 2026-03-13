@@ -218,6 +218,38 @@ func (*LLMContentBlock) Type() *ast.Type {
 	}
 }
 
+// LLMContentBlockInput is the input object type for creating content blocks.
+type LLMContentBlockInput struct {
+	Kind      LLMContentBlockKind `doc:"The kind of content block."`
+	Text      string              `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
+	CallID    string              `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
+	ToolName  string              `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
+	Arguments JSON                `doc:"The arguments to pass to the tool (for TOOL_CALL kind)."`
+	Errored   bool                `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
+	Signature string              `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
+}
+
+func (LLMContentBlockInput) TypeName() string {
+	return "LLMContentBlockInput"
+}
+
+func (LLMContentBlockInput) TypeDescription() string {
+	return "A content block within an LLM message."
+}
+
+// ToLLMContentBlock converts the input object to an LLMContentBlock.
+func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
+	return &LLMContentBlock{
+		Kind:      in.Kind,
+		Text:      in.Text,
+		CallID:    in.CallID,
+		ToolName:  in.ToolName,
+		Arguments: in.Arguments,
+		Errored:   in.Errored,
+		Signature: in.Signature,
+	}
+}
+
 // LLMMessage represents a single message in the LLM conversation history.
 // Content is a list of typed content blocks, supporting multi-modal and
 // multi-part messages (e.g. thinking + text + tool calls in one turn).
@@ -1243,15 +1275,25 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	var sels []dagql.Selector
 	{
-		// Serialize content blocks as JSON for the withResponse selector.
-		contentJSON, err := json.Marshal(res.Content)
-		if err != nil {
-			return inst, fmt.Errorf("marshaling response content: %w", err)
+		// Build content block input objects for the withResponse selector.
+		contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
+		for i, block := range res.Content {
+			contentInputs[i] = dagql.InputObject[LLMContentBlockInput]{
+				Value: LLMContentBlockInput{
+					Kind:      block.Kind,
+					Text:      block.Text,
+					CallID:    block.CallID,
+					ToolName:  block.ToolName,
+					Arguments: block.Arguments,
+					Errored:   block.Errored,
+					Signature: block.Signature,
+				},
+			}
 		}
 		args := []dagql.NamedInput{
 			{
 				Name:  "content",
-				Value: JSON(contentJSON),
+				Value: contentInputs,
 			},
 		}
 		if res.TokenUsage.InputTokens != 0 {

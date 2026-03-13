@@ -2,8 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -146,6 +144,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.LLMToolCall]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv)
 	core.LLMContentBlockKinds.Install(srv)
+	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv)
 }
 
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
@@ -207,16 +206,16 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 }
 
 func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
-	Content           core.JSON
+	Content           []dagql.InputObject[core.LLMContentBlockInput]
 	InputTokens       int64 `default:"0"`
 	OutputTokens      int64 `default:"0"`
 	CachedTokenReads  int64 `default:"0"`
 	CachedTokenWrites int64 `default:"0"`
 	TotalTokens       int64 `default:"0"`
 }) (*core.LLM, error) {
-	var blocks []*core.LLMContentBlock
-	if err := json.Unmarshal(args.Content.Bytes(), &blocks); err != nil {
-		return nil, fmt.Errorf("unmarshaling content blocks: %w", err)
+	blocks := make([]*core.LLMContentBlock, len(args.Content))
+	for i, input := range args.Content {
+		blocks[i] = input.Value.ToLLMContentBlock()
 	}
 	return llm.WithResponse(blocks, core.LLMTokenUsage{
 		InputTokens:       args.InputTokens,
