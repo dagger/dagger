@@ -193,54 +193,25 @@ func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePa
 	return string(msg.Data), nil
 }
 
-// GitStageSetup captures user's unstaged changes, any previously staged changes,
-// creates a virtual stash backup, and resets the worktree to a pristine state.
-// Returns the stash ref, user's diff patch, and staged diff patch.
-func (c *Client) GitStageSetup(ctx context.Context, worktreeDir string) (stashRef string, userPatch string, stagedPatch string, err error) {
-	msg := filesync.BytesMessage{}
-	err = c.diffcopy(ctx, engine.LocalImportOpts{
-		Path:          path.Clean(worktreeDir),
-		GitStageSetup: &engine.GitStageSetupOpts{},
-	}, &msg)
-	if err != nil {
-		return "", "", "", fmt.Errorf("git stage setup: %w", err)
-	}
-	// Response format: stashRef + "\n" + base64(userPatch) + "\n" + base64(stagedPatch)
-	parts := bytes.SplitN(msg.Data, []byte("\n"), 3)
-	stashRef = string(parts[0])
-	if len(parts) > 1 {
-		userPatch = string(parts[1])
-	}
-	if len(parts) > 2 {
-		stagedPatch = string(parts[2])
-	}
-	return stashRef, userPatch, stagedPatch, nil
-}
-
-// GitStageFinalize stages the changeset paths and restores user's unstaged changes.
-// Returns true if any changes were staged.
-func (c *Client) GitStageFinalize(
+// GitStage stages the given paths in the git index using go-git.
+// Files must already exist on disk (from Export). This directly updates
+// the index without disturbing any other working tree state.
+func (c *Client) GitStage(
 	ctx context.Context,
 	worktreeDir string,
 	added, modified, removed []string,
-	stashRef string,
-	userPatch string,
-	stagedPatch string,
 ) (bool, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
 		Path: path.Clean(worktreeDir),
-		GitStageFinalize: &engine.GitStageFinalizeOpts{
-			Added:       added,
-			Modified:    modified,
-			Removed:     removed,
-			StashRef:    stashRef,
-			UserPatch:   userPatch,
-			StagedPatch: stagedPatch,
+		GitStage: &engine.GitStageOpts{
+			Added:    added,
+			Modified: modified,
+			Removed:  removed,
 		},
 	}, &msg)
 	if err != nil {
-		return false, fmt.Errorf("git stage finalize: %w", err)
+		return false, fmt.Errorf("git stage: %w", err)
 	}
 	return string(msg.Data) == "true", nil
 }

@@ -173,9 +173,8 @@ type LocalImportOpts struct {
 	GitBranchDetect      bool                `json:"git_branch_detect,omitempty"`
 	GitRevParseHead      bool                `json:"git_rev_parse_head,omitempty"`
 	GitWorktreeAdd       *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
-	GitStageSetup    *GitStageSetupOpts    `json:"git_stage_setup,omitempty"`
-	GitStageFinalize *GitStageFinalizeOpts `json:"git_stage_finalize,omitempty"`
-	GitCommit        *GitCommitOpts        `json:"git_commit,omitempty"`
+	GitStage  *GitStageOpts  `json:"git_stage,omitempty"`
+	GitCommit *GitCommitOpts `json:"git_commit,omitempty"`
 }
 
 // GitWorktreeAddOpts configures a git worktree add operation on the client.
@@ -184,17 +183,12 @@ type GitWorktreeAddOpts struct {
 	WorktreePath string `json:"worktree_path"`
 }
 
-// GitStageSetupOpts configures the pre-export setup for staging.
-type GitStageSetupOpts struct{}
-
-// GitStageFinalizeOpts configures the post-export staging finalization.
-type GitStageFinalizeOpts struct {
-	Added       []string `json:"added"`
-	Modified    []string `json:"modified"`
-	Removed     []string `json:"removed"`
-	StashRef    string   `json:"stash_ref"`
-	UserPatch   string   `json:"user_patch"`   // base64-encoded, may be empty
-	StagedPatch string   `json:"staged_patch"` // base64-encoded, may be empty; previously staged changes
+// GitStageOpts configures staging paths in the git index.
+// Uses go-git to directly update index entries without disturbing the working tree.
+type GitStageOpts struct {
+	Added    []string `json:"added"`
+	Modified []string `json:"modified"`
+	Removed  []string `json:"removed"`
 }
 
 // GitCommitOpts configures a git commit operation on the client.

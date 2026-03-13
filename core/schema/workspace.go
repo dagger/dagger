@@ -615,20 +615,17 @@ func (s *workspaceSchema) stage(
 		return false, fmt.Errorf("buildkit: %w", err)
 	}
 
-	// Step 1: Pre-export setup — capture user changes, reset to clean state
-	stashRef, userPatch, stagedPatch, err := bk.GitStageSetup(ctx, ws.Root)
-	if err != nil {
-		return false, fmt.Errorf("stage setup: %w", err)
-	}
-	// Step 2: Export diff to worktree (merge mode, handles removals)
+	// Step 1: Export changeset to worktree (writes files to disk, removes deleted files)
 	if err := changeset.Self().Export(ctx, ws.Root); err != nil {
-		return false, fmt.Errorf("export to worktree (recovery: git stash apply %s): %w", stashRef, err)
+		return false, fmt.Errorf("export to worktree: %w", err)
 	}
 
-	// Step 3: Stage paths and restore user changes
-	staged, err := bk.GitStageFinalize(ctx, ws.Root, paths.Added, paths.Modified, paths.Removed, stashRef, userPatch, stagedPatch)
+	// Step 2: Stage the affected paths in the git index.
+	// Uses go-git to directly update index entries — no stash, no patches,
+	// no temp commits. User's unstaged changes are untouched.
+	staged, err := bk.GitStage(ctx, ws.Root, paths.Added, paths.Modified, paths.Removed)
 	if err != nil {
-		return false, fmt.Errorf("stage finalize: %w", err)
+		return false, fmt.Errorf("stage: %w", err)
 	}
 
 	return dagql.Boolean(staged), nil
