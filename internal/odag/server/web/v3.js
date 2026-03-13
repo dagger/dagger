@@ -5039,6 +5039,10 @@ function renderModuleDetail(entity, row) {
   const functionRows = moduleFunctionRows(row);
   const snapshotRows = moduleSnapshotRows(row);
   const clientRowsForModuleRef = moduleClientRows(row);
+  const resolvedRefs = Array.isArray(row?.resolvedRefs)
+    ? Array.from(new Set(row.resolvedRefs.map((value) => String(value || "").trim()).filter(Boolean)))
+    : [];
+  const extraResolvedRefs = resolvedRefs.filter((value) => value !== String(row?.ref || "").trim());
   const preludeTable = renderTableHTML({
     columns: [
       { label: "Call", render: (item) => linkedPrimaryCell(callTitle(item), callSubtitle(item), entityPath("calls", item.routeID)) },
@@ -5096,7 +5100,7 @@ function renderModuleDetail(entity, row) {
         </div>
         <div class="v3-pipeline-recap-grid">
           ${pipelineRecapItem("Ref", detailCode(row.ref || "Unknown"))}
-          ${pipelineRecapItem("Resolved", detailInlineList(row.resolvedRefs || [], "None"))}
+          ${extraResolvedRefs.length > 0 ? pipelineRecapItem("Resolved", detailInlineList(extraResolvedRefs, "None")) : ""}
           ${pipelineRecapItem("Prelude Calls", escapeHTML(String(Array.isArray(row.callIDs) ? row.callIDs.length : 0)))}
           ${pipelineRecapItem("Snapshots", escapeHTML(String(snapshotRows.length)))}
           ${pipelineRecapItem("Sessions", escapeHTML(String(row.sessionCount || 0)))}
@@ -5105,12 +5109,14 @@ function renderModuleDetail(entity, row) {
           ${pipelineRecapItem("Last Seen", escapeHTML(relativeTimeFromNow(row.lastSeenUnixNano)))}
         </div>
       </section>
-      ${detailCard(
-        "Relationships",
-        detailList([
-          ["Resolved Refs", detailInlineList(row.resolvedRefs || [], "None")],
-        ]),
-      )}
+      ${extraResolvedRefs.length > 0
+        ? detailCard(
+            "Relationships",
+            detailList([
+              ["Resolved Refs", detailInlineList(extraResolvedRefs, "None")],
+            ]),
+          )
+        : ""}
       ${detailSection("Concrete Module Snapshots", snapshotTable)}
       ${detailSection("Prelude Calls", preludeTable)}
       ${detailSection("Clients", clientTable)}
