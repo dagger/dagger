@@ -45,1426 +45,1332 @@
 * A lot of eval'ing of lazy stuff is just triggered inline now; would be nice if dagql cache scheduler knew about these and could do that in parallel for ya
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
 
-## Persistence Redesign (Current Iteration)
+# Persistence Redesign (Current Iteration)
 
 * **THIS IS A NEW ITERATION OF THE PERSISTENCE DESIGN. PREVIOUS PERSISTENCE DESIGNS IN THIS FILE ARE OUTDATED AND SHOULD BE TREATED AS HISTORICAL CONTEXT ONLY.**
-  * In particular, older designs that avoided engine-local integer IDs in persisted state are no longer the target.
-  * The new goal is to persist a simple, direct reflection of the in-memory dagql cache / e-graph state so startup can reconstruct that state with minimal translation and minimal policy-specific cleverness.
 
-* New direction:
-  * persist engine-local numeric IDs directly for results / terms / eq classes
-  * make the DB schema mirror the in-memory structures as directly as possible
-  * prioritize simple export/import of current in-memory state over hypothetical future cross-engine import portability
-  * keep the lazy envelope/self rehydration wrinkle only where truly required by live server/object decoding
+## Current Design Read / Problem Statement
 
-* Design intent:
-  * when the engine shuts down cleanly, persistence should flush enough state that startup can recreate the same in-memory cache / e-graph structure and metadata that existed before shutdown
-  * avoid convoluted alternate identities / translation layers unless they are strictly required by the current in-memory model
+We are very close, but there is still a deep-model smell in the relationship between:
 
-### Clarification
+* `call.ID`
+* `term` / `eq class`
+* `sharedResult`
+* the `Result` / `ObjectResult` wrappers that bridge those worlds
 
-* Persist the full current in-memory completed cache / e-graph state, not just a retained subset.
-  * During shutdown, clients disconnect and sessions close first.
-  * That session-close path may prune non-retained results before the final flush.
-  * That is fine and desirable: the DB should mirror whatever state is still present after those in-memory retention rules run.
-* There is only one base dagql cache in the engine.
-  * Session caches are wrappers around that one base cache; they are not separate persistence graphs.
-  * Do not invent "different cache" identity checks inside persistence/export logic unless we explicitly redesign around multiple base caches.
-* Pointer equality checks are an extreme code smell and very rarely the right answer.
-  * In particular, using pointer equality as a proxy for semantic identity in cache/persistence code is almost always broken and should be treated with suspicion by default.
-* `IsPersistable` still matters for in-memory retention across session close.
-  * It no longer needs to directly gate whether some surviving state is or is not written to the DB.
-  * The DB mirrors the surviving state; it does not make an independent policy decision.
-* Persist only completed state.
-  * Do not attempt to mirror `ongoingCalls`, `ongoingArbitraryCalls`, or other in-flight state.
-* Hard-cut schema handling:
-  * if the stored schema version does not match the new schema version, wipe the DB and cold-start
-  * do not write migration or backward-compatibility code for the old persistence schema
+The categories themselves seem right. The smell is that their **boundaries are still muddled**.
 
-### Authoritative In-Memory State To Mirror
+Right now we effectively have three coordinate systems for talking about "the same thing":
 
-* Persist only authoritative in-memory state, not reverse/derived indexes.
-* Target authoritative structures:
-  * `resultsByID`
-  * `egraphTerms`
-  * term input eq-class lists + per-slot provenance
-  * eq-class digest membership + digest labels
-  * `resultOutputEqClasses`
-  * explicit `sharedResult.deps`
-  * persisted snapshot links
-  * cache usage / prune metadata that already lives on `sharedResult`
-* Do not persist derived indexes:
-  * `egraphDigestToClass`
-  * `eqClassToDigests` can be rebuilt from persisted eq-class digest rows
-  * `inputEqClassToTerms`
-  * `outputEqClassToTerms`
-  * `egraphResultsByDigest`
-  * `egraphTermsByTermDigest`
-  * union-find parent/rank arrays
+* `call.ID`
+  * caller-facing absolute recipe DAG
+  * specific to a caller/client/session view of the world
+  * what telemetry and user-facing identities naturally want to talk about
+* `term` + `eq class`
+  * symbolic congruence/reuse layer
+  * intentionally lossy
+  * abstracts call inputs into eq classes and exists to prove cache hits / interchangeability
+* `sharedResult`
+  * materialized value/liveness/persistence identity
+  * actual payload, refs, snapshots, cleanup, import/export, etc.
 
-### SharedResult Cleanup
+That split is fine.
 
-* Remove these persistence-era identity fields from in-memory `sharedResult`:
-  * `persistedResultKey`
-  * `idDigest`
-  * `originalRequestID`
-  * `outputDigest`
-  * `outputExtraDigests`
-* Also remove root-export bookkeeping from `sharedResult`:
-  * `pendingPersistExport`
-  * `pendingPersistWatchResults`
-* Keep for now:
-  * `outputEffectIDs`
-  * `persistedEnvelope` / lazy decode wrinkle
-  * `depOfPersistedResult` or whatever we rename that retention bit to during cleanup
-* Important wrinkle:
-  * removing `originalRequestID` does NOT remove the need for one canonical caller-facing ID per result for persistence / lazy rehydration
-  * simplest likely replacement is a separate cache-owned `resultCanonicalIDs map[sharedResultID]*call.ID` (or equivalent)
-  * strongly consider mirroring that directly in the DB as a `canonical_id` column on `results`
-  * current implementation choice: `canonical_id` is the first materializing request ID for a shared result, i.e. the direct replacement for the old `originalRequestID` semantics
+What is **not** fine is that interior materialized object graphs still store too many **bridge wrappers** (`Result` / `ObjectResult`) or raw `call.ID`s, which drags caller-specific recipe identity into places where we really want internal materialized-value references.
 
-### Schema Target
+This is the core smell:
 
-* Keep `meta` for schema version / clean shutdown marker.
-* Replace current persistence tables with a schema that mirrors in-memory state directly:
-  * `results`
-    * `id INTEGER PRIMARY KEY`
-    * `canonical_id TEXT NOT NULL`
-    * `self_payload BLOB NOT NULL`
-    * `output_effect_ids_json TEXT NOT NULL DEFAULT '[]'`
-    * `safe_to_persist_cache INTEGER NOT NULL`
-    * `dep_of_persisted_result INTEGER NOT NULL`
-    * `expires_at_unix INTEGER NOT NULL`
-    * `created_at_unix_nano INTEGER NOT NULL`
-    * `last_used_at_unix_nano INTEGER NOT NULL`
-    * `size_estimate_bytes INTEGER NOT NULL`
-    * `usage_identity TEXT NOT NULL`
-    * `record_type TEXT NOT NULL`
-    * `description TEXT NOT NULL`
-  * `terms`
-    * `id INTEGER PRIMARY KEY`
-    * `self_digest TEXT NOT NULL`
-    * `term_digest TEXT NOT NULL`
-    * `output_eq_class_id INTEGER NOT NULL`
-  * `term_inputs`
-    * `term_id INTEGER NOT NULL`
-    * `position INTEGER NOT NULL`
-    * `input_eq_class_id INTEGER NOT NULL`
-    * `provenance_kind TEXT NOT NULL`
-    * primary key `(term_id, position)`
+* `Result` / `ObjectResult` are not purely public IDs
+* they are not purely internal materialized refs
+* they are both at once
+* that is okay at boundaries
+* that is **not** okay as the long-term representation of owned child edges inside materialized values
+
+## Provisional Model We Have Converged On
+
+The current best design direction is:
+
+* `call.ID` remains the **public / caller-facing absolute recipe DAG**
+* `term` / `eq class` remain the **symbolic cache proof layer**
+* `sharedResult` remains the **materialized internal value identity**
+* we likely need one additional concept:
+  * a **non-lossy internal call/construction frame** for each materialized result
+
+Candidate names for that concept:
+
+* `resultCallFrame`
+* `constructionFrame`
+* `executionFrame`
+* `resultRecipeFrame`
+
+The current favorite is probably `resultCallFrame`.
+
+### Scope of `resultCallFrame`
+
+This needs to be explicit:
+
+* `resultCallFrame` is **not** an execution-closure structure
+* it is **not** for making results executable
+* it is **not** another cache-proof structure
+
+Current explicit decision:
+
+* `resultCallFrame` exists **only** for presentation/reconstruction purposes
+* specifically:
+  * recreating caller-facing `call.ID`s on cache hits
+  * recreating telemetry/span hierarchy for cached/lazy work
+  * especially for the function-cache and lazy-value cases we have been talking through
+
+So:
+
+* terms / eq classes remain the symbolic cache-proof layer
+* real payload/lazy execution state remains in the actual results/payloads
+* `resultCallFrame` is just the non-lossy internal call-node structure needed to present/reconstruct public IDs later
+
+### Important refinement: avoid a new public wrapper-type family if possible
+
+Current preference:
+
+* **do not** introduce a whole second public family of wrapper/result types unless we absolutely have to
+* keep `Result` / `ObjectResult`
+* add one new **internal** struct on `sharedResult`, most likely `resultCallFrame`
+* express the semantic split through:
+  * internal metadata on `sharedResult`
+  * stronger invariants
+  * new methods on existing wrapper types
+
+Rationale:
+
+* Go type proliferation here would be painful
+* it would create a lot of churn and ongoing maintenance cost
+* it would be annoying to teach and easy to misuse
+* the deeper problem is not really "we need more wrapper types"
+* the deeper problem is that `.ID()` is still being overused as if it were the one true identity in every context
+
+So the working direction is:
+
+* keep the existing wrapper types
+* make their intended roles clearer
+* add internal frame metadata
+* add explicit caller-facing ID reconstruction methods instead of relying on raw `.ID()` everywhere
+
+The key idea is:
+
+* do **not** store the entire absolute historical `call.ID` DAG on `sharedResult`
+* do **not** throw away all recipe structure either
+* instead, store enough non-lossy metadata on `sharedResult` to reconstruct the **call node** that produced it
+* that node should point to:
+  * internal child results / owned refs
+  * literals
+  * other needed call metadata
+* it should **not** point to one historical caller's absolute ID DAG
+
+So the stack becomes:
+
+1. `call.ID`
+   * public absolute recipe
+   * boundary type
+2. `resultCallFrame` (proposed)
+   * internal non-lossy construction/provenance node
+   * enough to reconstruct telemetry hierarchy and public IDs when needed
+3. `term` / `eq class`
+   * lossy symbolic congruence / cache proof
+4. `sharedResult`
+   * materialized value + lifecycle + persistence identity
+
+### Current multiplicity decision
+
+Current explicit decision for v1:
+
+* start with **one frame per `sharedResult`**
+* do **not** prepare for multiple frames yet
+
+Reason:
+
+* simpler
+* likely enough to get the design working
+* if later we add more client/session-specific “best presentation ID” logic, we can revisit whether one frame is enough at that time
+
+Current posture:
+
+* keep it simple now
+* re-evaluate only when we actually need more
+
+### Current concrete shape of `resultCallFrame`
+
+Current direction:
+
+* use `message Call` in `dagql/call/callpbv1/call.proto` as the conceptual basis
+* but make the frame distinct in one crucial way:
+  * where `Call` stores digests/call-digest references, `resultCallFrame` should store **internal refs**
+
+Current expected contents:
+
+* scalar-ish call-node metadata stored directly:
+  * `type`
+  * `field`
+  * `view`
+  * `nth`
+  * `effectIDs`
+* `receiver`
+  * internal result reference, not call digest
+* `module`
+  * likely:
+    * internal result reference to the module-producing result
+    * plus scalar module metadata (`name`, `ref`, `pin`) for clarity/reconstruction
+* `args`
+* `implicitInputs`
+
+Important nuance:
+
+* we do **not** think the frame should store the call node digests or other cache/e-graph digest indexes
+* those digests already live in cache/e-graph state
+* however, literal leaves like `DigestedString` are an exception:
+  * the digest on a `DigestedString` is part of the literal's own recipe structure
+  * so that digest **does** belong in the frame/literal representation
+
+### Current concrete shape of frame args / literals
+
+Current direction:
+
+* do **not** use raw `call.Literal` directly for `resultCallFrame`
+* instead use an internal literal tree with roughly the same shape, but with internal result refs instead of public ID/call-digest leaves
+
+Why:
+
+* trying too hard to reuse `call.Literal` right now would likely force the old caller-specific entanglement back in
+* we want something very close to that shape, but not literally the same type
+
+Current expected internal literal categories:
+
+* scalar leaves by value:
+  * null
+  * bool
+  * int
+  * float
+  * string
+  * enum
+* `DigestedString`-style leaf:
+  * value
+  * digest
+* result-ref leaf:
+  * internal result reference instead of a public `call.ID` / call digest
+* recursive forms:
+  * list
+  * object
+* for args / implicit inputs specifically:
+  * keep arg name
+  * keep `isSensitive`
+
+This means the frame can represent:
+
+* scalar args directly
+* ID-like args via internal result refs
+* implicit inputs using the same machinery
+
+That is currently the preferred direction.
+
+### Sensitive args / private-data handling in frames
+
+Current explicit decision:
+
+* the only truly special sensitive-arg case we care about right now is the plaintext argument to `set_secret`
+* we do **not** want that plaintext to be written to disk
+
+Current persistence rule:
+
+* keep writing the frame/result as normal
+* but for that specific sensitive scalar leaf, persist the empty string instead of the real plaintext
+
+So the current intended behavior is:
+
+* do not fail persistence/shutdown because of it
+* do not skip persisting the entire result/frame because of it
+* do not write the actual plaintext
+* just scrub that specific sensitive scalar leaf to `""`
+
+Current working theory:
+
+* if something involving a secret can legitimately hit cache across sessions, that should only happen because another caller already produced an equivalent `set_secret` value
+* so the necessary secret-bearing value should already exist in memory if such a hit is happening at all
+
+That theory is still a little muddy, so implementation should stay empirical, but the hard persistence rule above is already settled.
+
+For now:
+
+* do **not** treat hidden/private fields as a separate special case here
+* do **not** try to solve every current public-ID exposure quirk in this iteration
+* just handle the sensitive `set_secret` plaintext case as above
+
+### Important persistence implication of `resultCallFrame`
+
+This new frame concept likely affects persistence in a meaningful but **not** fundamentally disruptive way.
+
+Current expectation:
+
+* we do **not** need to blow up the new mirror-state persistence design and start over
+* we **do** likely need one important substitution in the persisted `results` row shape
+
+Most likely substitution:
+
+* remove `results.canonical_id`
+* add persisted `resultCallFrame`
+
+Why this is attractive:
+
+* `canonical_id` as a full public `call.ID` DAG is likely wasteful in space
+* over long chains it is prone to triangle-number / effectively quadratic growth because each stored ID contains the whole previous chain plus one more node
+* persisting one non-lossy call frame per result avoids that blowup and lines up with the new conceptual model much better
+
+Current preference:
+
+* persist the frame on the `results` row itself
+* likely as a single JSON/blob field such as:
+  * `call_frame_json`
+  * or similar
+
+Why a single field is preferred for now:
+
+* `resultCallFrame` is recursive
+* its internal literal tree is recursive
+* we do not currently need relational queries over frame internals
+* unlike eq classes / terms / deps / snapshot links, the frame is mostly write/load/debug state
+* trying to normalize every frame edge / literal leaf into many SQL tables is likely unnecessary complexity right now
+
+So the current likely DB direction is:
+
+* `results`
+  * drop `canonical_id`
+  * add `call_frame_json` (or equivalent)
+* keep the rest of the mirrored schema conceptually intact
+
+## Boundary Rule We Believe In
+
+Very important litmus test:
+
+* if a field means:
+  * "this value owns / points to / depends on that child value as part of its materialized state"
+  * then that field should **not** fundamentally be a public `call.ID`
+  * and probably should not be a full `Result` / `ObjectResult` bridge wrapper either
+  * it should be an internal owned/attached child reference
+* if a field means:
+  * "this value semantically stores a recipe/handle as data"
+  * then it is okay for that field to be recipe-like
+  * but it still should likely **not** be one historical caller's absolute public ID
+
+This gives us two distinct categories that we must not conflate:
+
+* **owned child value edge**
+* **ID/recipe-valued data**
+
+Today we still conflate them too often.
+
+## Why This Matters For Examples
+
+### Example: `Container.directory` / mounted directory / child selections
+
+If a caller hits cache for a `Container` and then selects `.directory` or another child field:
+
+* we do **not** want to resurface some old caller's absolute recipe
+* we do **not** need to
+* the caller-facing ID can simply be:
+  * current caller's container ID
+  * plus `.directory`
+
+That is a **caller-local projection** of the current boundary path.
+
+This is one of the strongest arguments that owned child values should not be stored as raw public IDs.
+
+### Example: function cache returns a lazy container
+
+This is the trickier and more important case.
+
+Suppose a function does a bunch of container work:
+
+* `withExec`
+* `withExec`
+* returns the resulting container
+
+But the container remains lazy and is only forced later by another caller after a function-cache hit.
+
+What telemetry should look like:
+
+* the outer root should belong to the **current caller's function-call path**
+* but the inner operation structure must still be preserved
+* we do **not** want "functionCall -> giant undifferentiated blob"
+* we want:
+  * `functionCall`
+  * inner container chain
+  * `withExec`
+  * `withExec`
+  * etc.
+
+This means:
+
+* some recipe-like structure **must** be retained
+* but it should not be a stale foreign caller DAG
+
+This is one of the main motivations for the proposed `resultCallFrame`:
+
+* the current caller owns the outer boundary
+* the inner hierarchy comes from stored internal construction frames
+
+### Example: host directories / secrets / caller-specific resources
+
+This is where absolute stored public IDs become especially weird.
+
+Suppose:
+
+* a cached function result involves a host directory or secret
+* a later caller hits cache through equivalence/content hashing
+* now we need to present a public ID and/or do lazy work
+
+Absolute historical caller IDs are wrong here because they may mention:
+
+* another caller's host filesystem recipe
+* another caller's secret recipe
+* other caller-specific paths/details that the current caller never issued
+
+The saving grace is:
+
+* functions cannot freely inline-load arbitrary host dirs/secrets/etc.
+* these values must flow through function args
+
+That means the frontier is explicit, which makes **rebinding** tractable.
+
+## Rebinding / Relative Recipe Idea
+
+We are still slightly nervous about a very abstract "rebindable ID" concept, but the current thinking is:
+
+* the right opposite of "stored absolute historical `call.ID`" is **not always** "no recipe at all"
+* sometimes the right opposite is:
+  * a **relative/rebindable recipe expression**
+  * grounded on internal owned results / inputs
+  * instantiated/projected for the current caller when needed
+
+This is especially relevant for:
+
+* ID-valued fields on user module objects
+* function-cache values that need to later surface IDs or reconstruct inner telemetry
+
+The current best concrete framing is:
+
+* `sharedResult` stores a non-lossy `resultCallFrame`
+* that frame points to internal owned child refs / literals, not one public DAG
+* when we need a public `call.ID`, we reconstruct it:
+  * starting from the current caller boundary
+  * recursively expanding the internal call frames
+  * rebinding frontier nodes to current caller-local equivalent IDs where possible
+
+This is very similar to:
+
+* closures / closure conversion
+* expression DAGs
+* "free variables" being rebound at instantiation time
+
+We suspect this is the right mental model.
+
+### Important refinement: for now, stage caller/session-specific “best” IDs
+
+One real concern is that in the ideal world we would like to present the **best caller-local ID** to a given caller.
+
+Example:
+
+* multiple callers may each load equivalent host directories with the same content digest
+* in the most ideal world, if caller B later gets a cached value, we would like to surface the host-directory-shaped ID that is most specific to caller B, not some arbitrary equivalent ID from caller A
+
+We think this concern is real.
+
+Current staged decision:
+
+* **do not** add cache-wide client/session-specific recipe indexes in the first cut
+* first build the design around:
+  * current boundary/root caller IDs
+  * `resultCallFrame`
+  * internal result-graph rebinding
+* if that proves insufficient, later add a more caller/session-specific preference layer
+
+Why stage it:
+
+* the core structural/design win comes from `resultCallFrame` and internal refs
+* in many important cases, especially function-cache hits, the current caller's root/boundary ID already gives us the right frontier bindings
+* jumping straight to cache-wide client/session indexing is a lot of extra machinery at a different level of the design
+
+So current plan:
+
+* v1 should use the best currently-available boundary/frontier bindings
+* future refinement can prefer more client/session-local equivalents if we find that necessary
+
+This staging decision also applies to persistence:
+
+* we are **not** currently planning to persist caller/session-specific preferred IDs
+* persisted state should persist the internal frame/ref structure
+* caller/session-specific “best presentation” remains a possible future refinement on top of that
+
+## Proposed / Suggested Types
+
+These names are **not final**, but they are useful handles for discussion:
+
+* `resultCallFrame`
+  * likely stored on `sharedResult`
+  * enough metadata to reconstruct the call node that created the result
+  * would likely include things like:
+    * field
+    * view
+    * module info
+    * nth
+    * args / implicit inputs
+    * receiver edge
+    * result/literal-valued inputs
+  * result-valued edges should point to internal refs, not absolute public IDs
+
+* `OwnedObjectRef[T]`
+* `AttachedObjectResult[T]`
+* `OwnedResultRef[T]`
+  * possible future interior type for owned attached child values
+  * narrower than a full boundary `ObjectResult`
+  * may just be a light wrapper around a cache-backed object result, but semantically much more constrained
+
+* `StoredIDExpr`
+* `RelativeIDExpr`
+* `RebindableID`
+  * possible future type for ID/recipe-valued data fields
+  * if a field semantically stores an ID, it should probably not store an absolute historical public ID
+  * instead it likely wants a relative/rebindable expression built on the same underlying machinery as `resultCallFrame`
+
+Again: these are **discussion names**, not final API decisions.
+
+### Shared internal expression / literal representation
+
+Current explicit decision:
+
+* yes, we want one shared internal expression/literal representation
+
+That representation should be reused for:
+
+* `resultCallFrame` args / implicit inputs
+* recipe-ish / ID-ish semantic data that needs the same rebinding machinery
+
+We do **not** want two separate, almost-the-same recursive trees for those purposes.
+
+### Current type preference
+
+Current preferred shape:
+
+* keep `Result` / `ObjectResult` as the boundary adapters
+* add `resultCallFrame` (or similar) internally on `sharedResult`
+* avoid inventing parallel public wrapper types like `OwnedObjectRef` unless we later prove they are truly necessary
+
+So:
+
+* possible "owned ref" names above are useful discussion handles
+* but they are **not** the preferred first implementation direction right now
+
+## Current preferred caller-facing ID API
+
+If we keep the existing wrapper types, then the important change is not a new type family.
+The important change is a new method family.
+
+Current favorite naming:
+
+* `IDForCaller(...)`
+
+This name is preferred because it is:
+
+* simple
+* descriptive
+* less abstract than `ReboundID(...)`
+
+Possible uses:
+
+* telemetry / span reconstruction
+* surfacing ID-valued fields from cached/persisted results
+* rebuilding caller-facing IDs for lazy cached values
+* any path where raw historical `.ID()` would be wrong or misleading
+
+Working interpretation:
+
+* `.ID()` remains the currently attached/public handle on the wrapper
+* `IDForCaller(...)` becomes the deliberate API for:
+  * "give me the correct caller-facing ID in this current context"
+
+This is a key part of avoiding hidden ambiguity while still keeping the existing wrapper types.
+
+### `IDForCaller(...)` lives on existing wrappers
+
+Current understanding:
+
+* yes, `IDForCaller(...)` should be a method on `Result` / `ObjectResult`
+* that is where the current caller/boundary-facing `.ID()` already lives
+* that wrapper is the natural place to seed reconstruction of caller-facing IDs
+
+Working shape:
+
+* public API:
+  * `IDForCaller(ctx context.Context) (*call.ID, error)`
+* internal helper(s):
+  * likely some helper that works from:
+    * `sharedResult`
+    * `resultCallFrame`
+    * a caller-local frontier map
+
+The public wrapper method is preferred because:
+
+* it can start from the wrapper's currently valid public `.ID()`
+* it avoids introducing yet another external helper abstraction just to ask the question
+
+### `IDForCaller(...)` fallback behavior
+
+Current explicit decision:
+
+* if `IDForCaller(...)` cannot do the ideal reconstruction/rebinding
+* the fallback should be **only**:
+  * the raw existing `.ID()`
+
+We do **not** want layered clever fallback behavior.
+
+Specifically:
+
+* do not invent a pile of alternative “best available” fallback heuristics
+* do not search wider cache history
+* do not try to get fancy
+
+Reason:
+
+* complex fallback logic becomes quicksand fast
+* the point of the new design is to make the primary path correct and understandable
+* if we need richer fallback later, we can revisit it deliberately
+
+So current rule:
+
+* ideal path: reconstruct via frame + frontier + current boundary
+* fallback: raw `.ID()`
+
+### What “frontier” means right now
+
+The word “frontier” is being used in a very concrete sense.
+
+Current meaning:
+
+* a map from internal `sharedResultID` to already-known caller-facing `*call.ID`
+* in the **current** reconstruction context
+
+In other words:
+
+* frontier is not some global cache-wide structure
+* frontier is not the full set of all IDs any caller has ever seen
+* frontier is just:
+  * "which internal results do we already know the right caller-facing public ID for in this current boundary context?"
+
+Current simplest seed:
+
+* if a wrapper already has:
+  * attached `sharedResult.id = X`
+  * current caller-facing `.ID() = Y`
+* then `IDForCaller(...)` can begin with:
+  * `frontier[X] = Y`
+
+Then, as reconstruction walks `resultCallFrame`s and projections, it can extend the frontier with new caller-local bindings.
+
+This is one of the main reasons we think we may get quite far **without** client/session indexes in the first cut.
+
+### Expected reconstruction behavior
+
+Current expected reconstruction model:
+
+* `IDForCaller(ctx)` starts from the wrapper's already-known public boundary `.ID()`
+* that seeds the initial frontier
+* `sharedResult.resultCallFrame` provides the non-lossy internal node structure
+* reconstruction walks those frames and:
+  * projects caller-local child IDs where possible
+  * reuses existing frontier bindings when known
+  * recursively reconstructs nested IDs only when needed
+
+This means:
+
+* not every field selection needs deep reconstruction
+* simple projected child selections like `.directory` can remain very cheap
+* harder lazy / cached / ID-valued cases can use the same machinery when necessary
+
+## Important Distinction About `Result` / `ObjectResult`
+
+Current thinking:
+
+* `Result` / `ObjectResult` are still good as **boundary adapters**
+* they bridge:
+  * public caller-facing `call.ID`
+  * materialized cache-backed value when present
+* but they should not be the long-term representation of owned child edges inside materialized values
+
+Restated bluntly:
+
+* boundary wrappers are fine at boundaries
+* letting them escape deep into interior object graphs is probably the last major entanglement left
+
+### Refinement to that statement
+
+We are **not** currently planning to ban storing `Result` / `ObjectResult` on core structs outright.
+
+Instead, the more precise rule is:
+
+* it is okay to keep storing `Result` / `ObjectResult`
+* but the stored wrapper must obey stronger invariants
+* and code must stop assuming raw `.ID()` is always the right thing to use
+
+That lets us avoid a giant public type explosion while still fixing the model.
+
+## Specific Design Concern Corrected During Discussion
+
+One earlier formulation was too sloppy:
+
+* saying that lazy hidden work from a cached function result should "belong to the current caller's path" is only partially true
+
+The refined position is:
+
+* the **outer boundary** should belong to the current caller's path
+* but the **inner operation hierarchy** still needs to be shown, preserved, and attributable as nested spans/ops
+* therefore we need enough retained internal call structure to expand that hierarchy later
+
+So:
+
+* not "reuse the stale historical absolute caller DAG"
+* not "throw away all inner recipe structure"
+* instead:
+  * keep internal non-lossy call frames
+  * project them under the current caller boundary when needed
+
+This is one of the strongest reasons we think `resultCallFrame` is necessary even if we keep the existing wrapper types.
+
+Another way to say it:
+
+* the current caller should own the **outer boundary**
+* the stored `resultCallFrame`s should supply the **inner operation hierarchy**
+* rebinding should project that internal hierarchy under the current caller's boundary/root IDs
+
+This is the exact intended use for function-cache hits that later force lazy work:
+
+* outer boundary comes from the current caller
+* inner `withExec` / etc. hierarchy comes from stored call frames
+
+## Concrete Open Questions For Next Iterations
+
+These are not settled yet:
+
+* What exact fields belong on `resultCallFrame`?
+* Is `resultCallFrame` one per `sharedResult`, or do we need to tolerate multiple equivalent frames?
+* How do we want to represent the receiver/arg edges:
+  * direct internal result refs
+  * integer result IDs
+  * lightweight owned-ref wrappers
+* How should synthetic/promoted results participate?
+  * nth/deref promotions
+  * imported/lazy-decoded results
+  * other synthetic construction paths
+* For ID-valued semantic fields:
+  * when should they be modeled as owned values instead?
+  * when do they truly need a relative/rebindable ID expression?
+* How much of the current `Result` / `ObjectResult` type survives as-is once we introduce a narrower interior owned-ref type?
+
+## Representative Examples To Keep Reusing
+
+We should keep testing the design against these examples:
+
+* cached `Container` child selection like `.directory`
+* function cache returning a lazy container that later forces hidden `withExec` work
+* host-directory / secret-like function args that must rebind to the current caller's equivalent frontier values
+* module object fields that semantically store IDs / recipe-like data
+
+These examples are the best way to tell if the next iteration is actually simpler and more correct, or if it just sounds nice in the abstract.
+
+### Additional concrete reading of those examples
+
+#### Cached container child selection
+
+This remains the easy/clean case.
+
+If the caller has a cached `Container` and selects `.directory`:
+
+* we should not reuse some stale historical child ID
+* the caller-facing ID can simply be:
+  * current container boundary ID
+  * projected with `.directory`
+
+This is one of the strongest arguments for:
+
+* not storing historical public child IDs on the object graph
+* and letting caller-facing IDs be projected from the current boundary where possible
+
+#### Function cache returning a lazy container
+
+Current refined reading:
+
+* the caller gets a function-cache hit
+* the caller-facing outer root should be the current caller's function-call path
+* if later forcing the lazy container triggers hidden inner `withExec` work:
+  * telemetry must still show the real inner hierarchy
+  * not just a generic blob under the function call
+
+This is the strongest example motivating `resultCallFrame`:
+
+* the current caller supplies the outer boundary/root
+* the stored call frames supply the inner structure
+
+#### ID-valued data on module objects
+
+Current refinement:
+
+* for fields that semantically store IDs, we do **not** currently think the right answer is:
+  * “only store a naked frame”
+  * or “store one historical public `call.ID`”
+* the current likely right answer is:
+  * store an internal result reference
+  * which in practice probably means the internal `sharedResultID`
+
+Why this is attractive:
+
+* that internal result already has:
+  * the materialized/shared result state
+  * the `resultCallFrame`
+  * the lifecycle/persistence guarantees that it remains available
+* so later, when we need to surface that field as a public ID:
+  * we can load the result by internal ref
+  * use its frame
+  * reconstruct the caller-facing ID through `IDForCaller(...)`
+
+This is currently the preferred direction for module-object ID-valued data.
+
+Important nuance:
+
+* we do **not** currently think that storing only a naked `resultCallFrame` for such fields is enough
+* the better representation is likely:
+  * the internal result reference
+* because once we have the result ref, we already have:
+  * the frame
+  * the materialized/liveness state
+  * the persistence/import guarantees for that result
+
+So the likely principle is:
+
+* if ID-valued semantic data corresponds to a real cached result, store the internal result ref
+* then use that result's frame plus the current frontier to reconstruct the public caller-facing ID
+
+Current additional explicit decision:
+
+* if a module-object field stores an internal result ref like this
+* that target must stay live as long as the parent object/result is valid
+
+In other words:
+
+* for module-object stored result refs, this is **not** an optional retention edge
+* we do **not** want callers later selecting a field and discovering that the referred-to result was pruned out from under the object
+
+So for this class of fields:
+
+* internal result ref
+* plus explicit dep/liveness retention semantics
+
+This is an important clarification from the more general “some semantic stored refs may imply deps” discussion:
+
+* for module-object stored result refs specifically, we currently believe the answer is **yes, retain them**
+
+### Additional clarification: this should be the in-memory model too
+
+Important nuance:
+
+* this should **not** be only a persistence-time transformation
+* it should become the in-memory model as well
+
+In other words:
+
+* if a module-object field semantically stores an object/value reference
+* then in memory that field should move away from absolute public `call.ID`
+* and toward the internal result reference model
+
+Reason:
+
+* if we only convert the representation during persistence encode, then persistence gets cleaner
+* but the in-memory model still carries the same conceptual smell
+* and runtime `IDForCaller(...)`, telemetry, liveness, and cache-hit behavior still have to paper over that smell
+
+So current hard-cut preference:
+
+* change the in-memory model first
+* then persistence naturally serializes the new internal representation
+
+### Current concrete implication for `ModuleObject`
+
+Looking at the current shape in `core/object.go`, persisted module object values already distinguish:
+
+* `result_id`
+* `call_id`
+* scalar / array / object forms
+
+Current design conclusion:
+
+* `result_id` is the direction
+* `call_id` is the lingering smell
+
+So the current likely hard cut is:
+
+* for module object values that semantically represent dagql object/value references:
+  * normalize them to internal result refs in memory
+  * persist them as result refs / result IDs
+* do **not** continue treating historical public `call.ID` blobs as the main representation for those fields
+
+This means the old `call_id` path should likely disappear or become a very narrow exceptional case later.
+
+### Current downsides / costs we accept
+
+This change does impose stronger invariants, but we currently think those are the right invariants:
+
+1. A module-object field that semantically stores an object/value reference must correspond to a real attached/cache-backed result.
+2. That target result must remain live as long as the parent module object remains valid.
+3. We lose the convenience of treating public `call.ID` as casual opaque data in those fields.
+
+Current read:
+
+* these are good costs to pay
+* they make the model more honest and prevent a lot of later weirdness
+
+### One remaining nuance
+
+There may still be some truly private/internal fields that stash arbitrary `call.ID` values as opaque implementation detail rather than semantic object references.
+
+Current stance:
+
+* do **not** let those rare cases define the main model
+* for user-visible module-object fields and function-cache-visible values, the correct direction is internal result refs plus retention
+
+## Discipline Rules If We Keep Existing Wrapper Types
+
+If we keep `Result` / `ObjectResult` instead of introducing new wrapper families, we need to be disciplined or the old confusion will just stay hidden.
+
+Current rules to enforce:
+
+1. If a core struct stores a `Result` / `ObjectResult` as an owned child, that result must be attached/cache-backed.
+   * No more "maybe detached, maybe historical wrapper, we will normalize it later" as the default model.
+
+2. Raw `.ID()` must not be the default for rebinding-sensitive or caller-facing reconstruction paths.
+   * If code is doing telemetry reconstruction, surfacing cached ID-valued fields, rebuilding lazy inner work hierarchy, or otherwise presenting an ID to a caller, it should be assumed that raw `.ID()` is probably wrong until proven otherwise.
+
+3. There must be an explicit API for caller-facing reconstruction.
+   * Current preferred name: `IDForCaller(...)`
+   * The existence of that explicit method is what keeps us from silently overloading `.ID()` forever.
+
+These rules are important enough that if we violate them casually, we are likely just reintroducing the same design smell in a subtler form.
+
+4. Any cache-backed result that can cross a public/cache boundary should eventually have a frame.
+   * This includes promoted/synthetic cache-backed results.
+   * We do not want `IDForCaller(...)` and telemetry to become a giant special-case maze.
+
+Current reading of some synthetic cases:
+
+* nth promotion
+  * straightforward: derive/update the frame from the nth selection
+* deref promotion
+  * same basic idea: derive/update the frame from the deref/select path that produced the promoted result
+* imported lazy-decoded results
+  * should import their frame from persistence
+* SDK-scoped / synthetic module-ish values
+  * current leaning: if they are cache-backed and can surface across a public boundary, they should also get a real frame derived from the operation that made them visible
+  * keep this simple and consistent rather than making a special “some cache-backed results just have no frame” exception model
+
+## SDK-scoped and synthetic/module-ish values
+
+Current explicit design direction:
+
+* SDK-scoped and other synthetic/module-ish cache-backed values should get **real `resultCallFrame`s**
+* the scoping/promotion/normalization transformation that created them should itself be modeled as the frame node
+* we should **not** keep treating them as:
+  * the same old value
+  * plus magical ID surgery on the side
+
+This is a very important simplification.
+
+### Why this is the right direction
+
+Today values like the ones created through SDK scoping in `core/sdk/utils.go` are already conceptually operations:
+
+* scope module source for SDK operation
+* scope module for SDK operation
+* carry forward source-content scoping / extra-digest scoping / operation-specific identity tweaks
+
+Those are already transformations.
+The design should admit that explicitly.
+
+Why this helps:
+
+* telemetry has a real operation hierarchy to show
+* `IDForCaller(...)` has a real frame node to reconstruct from
+* persistence/import has a real internal provenance node to store/load
+* we avoid continuing the “special-case magical ID rewrite” model
+
+### Current intended rule
+
+If a value is:
+
+* cache-backed
+* and can cross a public/cache boundary
+
+then it should have a real frame.
+
+This applies even if the value exists only because of:
+
+* SDK scoping
+* module scoping
+* nth promotion
+* deref promotion
+* other synthetic transformations
+
+In other words:
+
+* boundary-visible synthetic values are still real results
+* therefore they deserve real frames
+
+### Proposed synthetic frame-node categories
+
+Current conceptual categories:
+
+* normal schema field selection
+* nth projection
+* deref projection
+* internal scoped-ID transformation
+* possibly a small number of other imported/synthetic reconstruction nodes if truly needed later
+
+We do **not** need to finalize an enum or type taxonomy yet, but conceptually these are the kinds of frame nodes we are expecting.
+
+### Source/content scoping node
+
+For things like:
+
+* `scopeSourceForSDKOperation(...)`
+* source-content scoped IDs
+* source-content based synthetic source/module-ish values
+
+the frame should explicitly express:
+
+* base result ref
+* scope label / operation name
+* scope digest or equivalent scalar scope metadata
+* resulting type
+
+Meaning:
+
+* “this value is the SDK-scoped/source-content-scoped projection of that base value”
+
+This is much more honest than pretending it is just the original raw recipe.
+
+### Module scoping node
+
+For things like:
+
+* `ScopeModuleForSDKOperation(...)`
+
+the frame should explicitly express:
+
+* base module result ref
+* scope label / operation name
+* source-content scope digest or equivalent scalar scope metadata
+* resulting type / module metadata
+
+Meaning:
+
+* “this module result is the scoped projection of that base module for operation X”
+
+Again, the key point is:
+
+* explicit scoping frame node
+* not magical rewritten public ID
+
+### Promotion/projection nodes
+
+These remain the more straightforward synthetic cases:
+
+* nth promotion
+  * parent/base result ref
+  * nth index
+  * resulting type
+* deref promotion
+  * parent/base result ref
+  * deref/projection node kind
+  * resulting type
+
+Current read:
+
+* these are easy to frame explicitly
+* this is one reason we are confident the broader synthetic-frame direction is sound
+
+### We should not lie about synthetic nodes
+
+Current preference:
+
+* synthetic/internal frame nodes should not pretend to be ordinary schema-visible field names if they are not
+
+So if a node is really:
+
+* an internal scoping transformation
+
+then we would rather represent it honestly as that transformation than try to disguise it as an ordinary public field.
+
+This is an **internal frame**, not a public schema contract.
+Honesty matters more than prettiness here.
+
+### How `IDForCaller(...)` should treat synthetic nodes
+
+Current conceptual rule:
+
+* if the caller actually performed a public operation corresponding to the node, use that caller-local path directly
+* if the node is purely internal/synthetic, reconstruct it as an internal call-like node under the current caller boundary/root
+
+This is one of the main reasons explicit synthetic frame nodes are preferred:
+
+* they let us say what actually happened
+* without having to reuse a stale historical absolute ID
+
+### Are scoped/synthetic values distinct results?
+
+Current leaning:
+
+* yes, if they are cache-backed and boundary-visible, treat them as distinct cache-backed results in their own right
+* but let their frame explicitly reference the base result they were derived from
+
+That gives us the best of both worlds:
+
+* clear identity and lifecycle as a real result
+* explicit provenance back to the base result
+
+So a scoped module result is currently expected to look like:
+
+* real `sharedResult`
+* with its own frame
+* whose frame node says:
+  * this result came from scoping that base module for that operation with that scope metadata
+
+This is far cleaner than treating the scoped value as “the same thing but with an ID tweak”.
+
+### Why this matters
+
+Without this design, we keep generating the same family of questions:
+
+* what ID should the caller see?
+* what should telemetry show?
+* is this a real value or just an alias?
+* do we copy the old ID or derive a new one?
+
+With explicit synthetic frame nodes, these all reduce to one simpler question:
+
+* what frame node produced this result?
+
+That is the more cohesive model.
+
+## Persistence / Import Implications of the Current Design
+
+Current working belief:
+
+* this design does **not** require a fresh persistence redesign
+* it **does** require a meaningful update to the results-row representation
+
+### Likely schema changes
+
+Current expected changes:
+
+* **remove**
+  * `results.canonical_id`
+* **add**
+  * `results.call_frame_json` (or equivalent)
+
+Current expectation for the rest of the mirror-state schema:
+
+* keep:
   * `eq_classes`
-    * `id INTEGER PRIMARY KEY`
-    * no extra metadata required initially, but useful as the authoritative ID anchor and future extension point
   * `eq_class_digests`
-    * `eq_class_id INTEGER NOT NULL`
-    * `digest TEXT NOT NULL`
-    * `label TEXT NOT NULL DEFAULT ''`
-    * primary key `(eq_class_id, digest, label)`
-  * `result_output_eq_classes`
-    * `result_id INTEGER NOT NULL`
-    * `eq_class_id INTEGER NOT NULL`
-    * primary key `(result_id, eq_class_id)`
-  * `result_deps`
-    * `parent_result_id INTEGER NOT NULL`
-    * `dep_result_id INTEGER NOT NULL`
-    * primary key `(parent_result_id, dep_result_id)`
-  * `result_snapshot_links`
-    * `result_id INTEGER NOT NULL`
-    * `ref_key TEXT NOT NULL`
-    * `role TEXT NOT NULL`
-    * `slot TEXT NOT NULL DEFAULT ''`
-    * primary key `(result_id, ref_key, role, slot)`
-* Remove obsolete tables:
-  * `roots`
-  * `root_members`
-  * old `result_terms` subordinate-row model
-* Note on `eq_classes`:
-  * yes, keep an explicit table even if it initially stores only the ID
-  * that gives us an authoritative source of eq-class IDs, a clean FK anchor, and a simple way to restore `nextEgraphClassID = max(id)+1`
-
-### Export / Worker Rewrite
-
-* Replace the current root-scoped upsert/tombstone model entirely.
-* Preferred first cut:
-  * worker payload is a full-state persistence snapshot, not a per-root closure batch
-  * mutations still enqueue persistence work, but the queue may coalesce to "latest full snapshot wins"
-  * shutdown does a final synchronous flush of the latest full snapshot
-* New snapshot builder should capture the authoritative in-memory state listed above:
-  * all results
-  * all terms
-  * all term inputs + provenance
-  * all eq classes
-  * all eq-class digests/labels
-  * all result-output-eq-class rows
-  * all result deps
-  * all result snapshot links
-  * all canonical result IDs
-* Worker apply path should run one transaction that:
-  * clears mirror tables
-  * rewrites them from the snapshot
-  * updates clean-shutdown metadata as today
-* Hard cut goals for code deletion:
-  * delete `emitPersistUpsertForRootLocked`
-  * delete `emitPersistTombstonesForRootLocked`
-  * delete `snapshotPersistUpsertForRootLocked`
-  * delete root-member tombstone / closure-member bookkeeping
-  * delete `resultsByPersistKey` and old persist-result-key helpers if no longer needed
-
-### Import Rewrite
-
-* Startup import should read the mirror tables and reconstruct the same in-memory state.
-* Recreate authoritative state first:
-  * allocate results by persisted integer ID
-  * restore canonical IDs
-  * restore envelopes / eager-decoded payloads where possible
-  * restore terms
-  * restore term input eq IDs + provenance
-  * restore result-output-eq-class rows
-  * restore explicit deps
-  * restore snapshot links
-  * restore eq-class digest membership / labels
-* Then rebuild derived indexes:
-  * `egraphDigestToClass`
-  * `eqClassToDigests`
-  * `eqClassExtraDigests`
-  * `inputEqClassToTerms`
-  * `outputEqClassToTerms`
-  * `egraphTermsByTermDigest`
-  * `egraphResultsByDigest`
-* Reinitialize union-find as trivial singleton roots for each persisted eq class ID.
-  * no need to persist parent/rank state
-* Restore next-ID counters as:
-  * `nextSharedResultID = max(result.id)+1`
-  * `nextEgraphTermID = max(term.id)+1`
-  * `nextEgraphClassID = max(eq_class.id)+1`
-
-### Debug / Introspection / Tests
-
-* Update debug snapshot output to mirror the new authoritative structures and remove references to obsolete persisted keys / root closure concepts.
-* Update persistence tests to assert:
-  * restart recreates the same in-memory state shape
-  * integer IDs are restored and next-ID counters advance from max+1
-  * session-close pruning before shutdown results in the DB mirroring only the surviving in-memory state
-  * eq-class digest labels and result-output-eq-class mappings survive restart
-  * lazy envelope decode still works after import
-
-### Suggested Implementation Order
-
-1. Introduce the new schema side-by-side in code and bump schema version.
-2. Introduce/settle the in-memory replacement for `originalRequestID` / persisted result identity (likely `resultCanonicalIDs`).
-3. Rewrite import to target the new schema and reconstruct authoritative state + derived indexes.
-4. Rewrite snapshot/export worker to emit a full-state mirror snapshot and apply via replace-all transaction.
-5. Delete roots/root_members/tombstones/root-closure worker code.
-6. Remove old persistence-era fields from `sharedResult` and associated helper/index code.
-7. Update debug/test surfaces and verify restart reproduces pre-shutdown in-memory state.
-
-# Pruning support
-
-## Plan
-
-* Goal: implement cache pruning against dagql cache state (not buildkit), while preserving roughly the existing policy interface shape.
-* Keep current top-level behavior shape:
-  * automatic background gc entrypoint
-  * explicit `engine.localCache.prune(...)` entrypoint
-  * `useDefaultPolicy` + per-invocation space overrides
-* Define dagql-native prune policy model equivalent to current worker policy fields:
-  * `all`, `filters`, `keepDuration`, `reservedSpace`, `maxUsedSpace`, `minFreeSpace`, `targetSpace`
-* Build dagql-native usage accounting needed for policy evaluation:
-  * in-use vs releasable
-  * size accounting
-  * created/last-used timestamps
-  * enough metadata for future filter support
-* Implement policy application as ordered passes (like today’s list semantics), with deterministic candidate selection.
-* Integrate prune execution under existing server-level serialization (`gcmu`) so automatic and manual prune do not race.
-* Keep API return shape (`EngineCacheEntrySet`) but source entries from dagql cache state.
-* Follow-up after first cut: remove or isolate remaining buildkit-coupled pruning hooks once dagql prune is authoritative.
-
-## NOTES
-
-* Main prune-related entrypoints in current code:
-  * `Server.gc()` in `engine/server/gc.go`
-  * `Server.PruneEngineLocalCacheEntries(...)` in `engine/server/gc.go`
-* Main callers:
-  * `gc()` is scheduled through `srv.throttledGC`:
-    * initialized in `engine/server/server.go` as `throttle.After(time.Minute, srv.gc)`
-    * triggered once shortly after startup (`time.AfterFunc(time.Second, srv.throttledGC)`)
-    * triggered after session removal in `removeDaggerSession` (`time.AfterFunc(time.Second, srv.throttledGC)`)
-  * `PruneEngineLocalCacheEntries(...)` is called from GraphQL `engine.localCache.prune(...)` in `core/schema/engine.go`.
-* Current implementation is buildkit-worker based end-to-end:
-  * list entries: `srv.baseWorker.DiskUsage(...)`
-  * prune: `srv.baseWorker.Prune(..., pruneOpts...)`
-  * policy types: `bkclient.PruneInfo`
-* Current `engine.localCache` API behavior:
-  * `localCache` returns only one policy view (`EngineCache`) derived from `EngineLocalCachePolicy()` (the default/last policy).
-  * It does not expose the full policy list, filters, or keepDuration.
-  * `entrySet` has no filtering support yet.
-  * `prune` returns `Void`, not the pruned set (even though server prune computes a set).
-* `PruneEngineLocalCacheEntries` behavior details:
-  * serialized by `srv.gcmu`.
-  * when no active dagger sessions, calls `imageutil.CancelCacheLeases()`.
-  * resolves prune options via `resolveEngineLocalCachePruneOptions(...)`.
-  * executes worker prune and accumulates `UsageInfo` responses.
-  * if anything pruned, attempts `SolverCache.ReleaseUnreferenced(...)` (buildkit solver metadata cleanup path).
-  * returns `EngineCacheEntrySet` built from prune response items.
-* `gc()` behavior details:
-  * serialized by `srv.gcmu`.
-  * runs worker prune with `srv.baseWorker.GCPolicy()` (full policy list).
-  * sums pruned bytes and logs.
-  * if anything pruned, schedules `srv.throttledReleaseUnreferenced` (5-minute throttle), which calls `srv.SolverCache.ReleaseUnreferenced(...)`.
-* Policy resolution behavior today (`resolveEngineLocalCachePruneOptions`):
-  * default when `UseDefaultPolicy=false`: single policy `{All: true}` (prune all releasable entries).
-  * when `UseDefaultPolicy=true`: copy worker default policy list.
-  * per-call overrides (`maxUsedSpace`, `reservedSpace`, `minFreeSpace`, `targetSpace`) are parsed from string disk-space syntax and applied to every selected policy.
-  * tests in `engine/server/gc_test.go` verify:
-    * override behavior for both default and non-default paths
-    * no mutation of the default policy slice when overrides are applied
-    * invalid disk-space strings produce argument-specific errors
-* Default policy construction path:
-  * worker created with `GCPolicy: getGCPolicy(...)`.
-  * fallback order inside `getGCPolicy(...)`:
-    * explicit engine config policies
-    * converted buildkit config policies
-    * generated defaults (`defaultGCPolicy(...)`)
-  * `getDefaultGCPolicy(...)` currently means “last policy in list.”
-  * conversion includes `All`, `Filter`, `KeepDuration`, and space fields.
-  * when `SweepSize` is set, `TargetSpace` is derived from `MaxUsedSpace - SweepSize(...)` (clamped so it never uses 0, since 0 means “ignore”).
-* Buildkit-specific coupling still embedded in prune surface:
-  * `core.Query.EngineLocalCachePolicy()` returns `*bkclient.PruneInfo` (buildkit type leaks into core API interface).
-  * `EngineLocalCacheEntries`/`PruneEngineLocalCacheEntries` operate only on worker/buildkit cache records.
-  * comments note buildkit prune currently does not populate `RecordType` for pruned items.
-* Interaction with current dagql cache:
-  * dagql cache has its own `GCLoop`, but this is separate from engine prune APIs.
-  * after recent changes, `GCLoop` is effectively no-op-safe when db is nil; it is not the policy-based prune mechanism we need.
-* Key migration implication:
-  * current public-ish behavior shape is “policy-driven prune with optional one-off space overrides,” but concrete enforcement is entirely buildkit-worker.
-  * for hard cutover, dagql cache needs first-class policy evaluation + reclaim semantics; current interface can be preserved while swapping the backend implementation.
-
-## Implementation
-
-### Scope and constraints
-
-* Hard cutover target: pruning decisions and deletions are driven by dagql cache state, not buildkit worker disk-usage/prune APIs.
-* Keep external behavior shape roughly stable:
-  * `engine.localCache.entrySet`
-  * `engine.localCache.prune(useDefaultPolicy, maxUsedSpace, reservedSpace, minFreeSpace, targetSpace)`
-  * automatic background `gc()` path
-* Determinism requirement:
-  * candidate ordering must be deterministic for reproducibility and easier debugging.
-* Safety requirement:
-  * do not prune in-use results (active refs / active evaluation dependencies).
-  * prune execution must stay serialized with existing server gc lock (`gcmu`).
-* Cohesion requirement:
-  * one policy model used by both automatic gc and explicit prune API.
-
-### Phase 1: Dagql prune metadata and usage accounting
-
-* [x] Add/validate metadata on cache entries needed for pruning decisions:
-  * [x] created timestamp
-  * [x] last-used timestamp (updated on cache hit and post-initialization return)
-  * [x] current in-use status derivable from cache state/refcount
-  * [x] disk-space estimate/bytes tracked per entry (or explicit temporary approximation with TODO if exact accounting not ready)
-  * [x] stable type/category string for debugging and future filters
-* [x] Implement a locked snapshot method in dagql cache to enumerate usage entries with:
-  * [x] id
-  * [x] description/type
-  * [x] size bytes
-  * [x] created/lastUsed timestamps
-  * [x] in-use bool
-* [x] Ensure usage accounting includes retained persisted results (so they are visible candidates if policy says to reclaim).
-* [x] Add focused unit tests in `dagql/cache_test.go` for usage snapshot correctness.
-* [ ] REVIEW CHECKPOINT 1: stop and validate metadata/usage model before policy engine implementation.
-
-### Phase 2: Dagql-native prune policy model + option resolution
-
-* [x] Introduce dagql-native prune policy struct (server-local or core-owned) equivalent to current fields:
-  * [x] all
-  * [x] filters
-  * [x] keepDuration
-  * [x] reservedSpace
-  * [x] maxUsedSpace
-  * [x] minFreeSpace
-  * [x] targetSpace
-* [x] Port/replace `resolveEngineLocalCachePruneOptions` to produce dagql-native policies (same override semantics).
-* [x] Keep existing disk-space parsing behavior and error messages for overrides.
-* [x] Preserve “default policy list copy + do-not-mutate originals” semantics.
-* [x] Keep support for policy generation from engine config (`GC.Policies`, fallback defaults, sweep size behavior).
-* [x] Add/port tests currently in `engine/server/gc_test.go` to validate identical override behavior.
-* [ ] REVIEW CHECKPOINT 2: confirm policy compatibility and override parity before wiring prune execution.
-
-### Phase 3: Dagql prune execution engine
-
-* [x] Add a dagql cache API to apply ordered prune policies and return pruned-entry report.
-* [x] Implement policy pass execution:
-  * [x] Evaluate each policy in order against current in-memory usage snapshot.
-  * [x] Apply eligibility gates:
-    * [x] not actively used
-    * [x] keepDuration cutoff
-    * [x] `all`/filters behavior (initially minimal but explicit)
-  * [x] Compute reclaim target per policy using max/reserved/minFree/target semantics.
-  * [x] Sort candidates deterministically (e.g. oldest last-used, then oldest created, then stable id tie-break).
-  * [x] Prune until target satisfied or candidates exhausted.
-* [x] Ensure pruning removes e-graph/result state coherently:
-  * [x] remove indexes/associations
-  * [x] release payload resources/onRelease hooks as needed
-  * [x] maintain dependency and retained-state invariants
-* [x] Add detailed debug logging hooks for prune decisions (candidate selected/skipped reason, reclaimed bytes).
-* [x] Add focused unit tests:
-  * [x] keepDuration behavior
-  * [x] threshold behavior (`maxUsedSpace`/`targetSpace`)
-  * [x] in-use entries never pruned
-  * [x] deterministic selection order
-* [x] Add explicit support for resolver-produced additional output results so detached results do not leak past resolver completion.
-  * [x] Introduce a dagql interface for values that return additional resolver outputs that must be attached to cache once the main result is attached.
-    * [x] Proposed shape: `AdditionalOutputResults() []AnyResult` (name can adjust, behavior should not).
-    * [x] Additional outputs must be pure handles only; this method must never evaluate or materialize lazy values.
-  * [x] Wire `GetOrInitCall` completion path to attach additional outputs immediately after main result indexing/attachment (same request lifecycle, not deferred/post-call).
-    * [x] Do this after `initCompletedResult` has attached/indexed the parent result.
-    * [x] For each additional output:
-      * [x] Attach/reacquire via normal call-cache path using its existing ID (no synthetic IDs), so detached outputs become attached and cached outputs are ref-acquired consistently.
-      * [x] Preserve laziness; attachment should not force output evaluation.
-  * [x] Record explicit dependency edges from parent result -> attached additional outputs.
-    * [x] This is required so persisted parent liveness retains output snapshots transitively.
-    * [x] Do not rely only on term-input dependency indexing (that models child -> parent but not parent -> produced outputs).
-  * [x] Ensure this flow works for `Container.withExec` outputs specifically:
-    * [x] rootfs output directory result
-    * [x] writable mount output directory/file results
-    * [x] meta output directory result
-  * [x] Keep hard-cutover behavior:
-    * [x] no use of `PostCall` for this lifecycle step
-    * [x] no fallback to container-intrinsic size accounting
-    * [x] size accounting remains on snapshot-bearing types (Directory/File/CacheVolume)
-  * [x] Add focused dagql tests for the new attachment semantics:
-    * [x] detached additional outputs become attached after parent attach
-    * [x] attached additional outputs remain lazy until evaluated
-    * [x] parent result retains attached output deps in persisted-liveness traversal
-    * [x] accounting/prune sees output-backed size through attached outputs (without container size hooks)
-  * [x] Add integration assertions around `core/integration/localcache_test.go` scenarios that previously under-counted bytes.
-* [x] REVIEW CHECKPOINT 3: review prune semantics and invariants before server API switch.
-
-### Phase 4: Server integration and entrypoint cutover
-
-* [x] Switch `EngineLocalCacheEntries` from buildkit `DiskUsage` to dagql usage snapshot.
-* [x] Switch `PruneEngineLocalCacheEntries` from `baseWorker.Prune` to dagql prune execution.
-* [x] Keep existing `gcmu` serialization around explicit prune.
-* [x] Switch `gc()` to run dagql prune using default policy list.
-* [x] Remove buildkit-specific side effects from prune flow where no longer applicable:
-  * [x] `imageutil.CancelCacheLeases()` path
-  * [x] `SolverCache.ReleaseUnreferenced(...)` post-prune path
-* [x] Keep return type `EngineCacheEntrySet` populated from dagql prune results.
-* [x] REVIEW CHECKPOINT 4: verify server-level behavior (automatic gc + manual prune) before API cleanup.
-
-### Phase 5: API cleanup and compatibility polish
-
-* [x] Remove buildkit type leakage from query interface where possible:
-  * [x] replace `EngineLocalCachePolicy() *bkclient.PruneInfo` with dagql-native/core policy type
-  * [x] update schema resolver mapping accordingly
-* [x] Decide whether to expose full policy list in schema or keep current “default policy only” surface for now.
-  * [x] keep current “default policy only” surface for now (full list exposure deferred)
-* [x] Ensure docs/comments reflect dagql pruning, not buildkit pruning.
-* [x] Update/fix `core/integration/localcache_test.go` to pass while preserving original behavior intent:
-  * [x] do not weaken or “cheat” assertions
-  * [x] keep testing the same underlying pruning/local-cache semantics the tests originally covered
-  * [x] only adjust test mechanics where needed for dagql-prune cutover
-  * [x] end state for this phase: `core/integration/localcache_test.go` passing
-* [x] Add/adjust tests for `core/schema/engine.go` paths (`localCache`, `entrySet`, `prune`).
-* [x] REVIEW CHECKPOINT 5: ensure interface coherence and no lingering buildkit-prune assumptions.
-
-### Phase 6: Follow-up tasks (non-blocking for first cut)
-
-* [ ] Implement richer filter semantics (if needed) against dagql metadata categories.
-* [ ] Improve size accounting precision if first-cut uses approximations.
-* [ ] Add metrics for prune runs:
-  * [ ] candidates
-  * [ ] pruned count/bytes
-  * [ ] skip reasons
-* [ ] Prepare seam for future async on-disk persistence queue:
-  * [ ] prune should operate on in-memory graph of truth
-  * [ ] disk updates are best-effort reflection, never source of truth for prune eligibility
-
-# Snapshot Manager Cleanup
-
-## Goals
-
-* Hard-cut the copied BuildKit cache-manager behavior out of `engine/snapshots`.
-* Keep only minimal snapshot lifecycle functionality needed by current engine/core callsites.
-* Move lifecycle/dependency/persistence/pruning responsibility out of snapshot manager and into dagql/core (where we already model object dependencies and retention).
-* End state should look like a purpose-built Dagger snapshot primitive, not a partially-adapted BuildKit cache system.
-
-## Open questions to resolve during implementation
-
-* [ ] Do we still need `Merge`/`Diff` in snapshot manager at all for current callsites, or can those be removed in favor of higher-level APIs?
-* [ ] Which metadata fields must remain in-memory on refs for current UX/debug behavior (description/record type/etc.) versus can be deleted immediately?
-* [ ] For image export, should remote-descriptor construction stay in `engine/snapshots` or move entirely to exporter-side code now that lazy handling is gone?
-
-## Answered decisions
-
-* `Merge` / `Diff`: keep them for now; still expected to be used.
-* Metadata fields in memory:
-  * Keep straightforward fields where easy.
-  * If a field is difficult to preserve, verify whether it has active callsites; remove if unused.
-  * If used but hard to preserve in the current pass, leave a TODO and keep moving.
-* Image export remote descriptor construction:
-  * Bias toward moving to exporter-side construction if practical during cleanup.
-  * If unexpected complexity shows up, it is acceptable to leave it in `engine/snapshots` for now.
-
-# Size Accounting
-
-## Goals
-
-* Replace placeholder `estimateSharedResultSizeBytes` with real snapshot-backed size accounting.
-* Compute size only when it is useful for pruning decisions (avoid eager/always-on cost).
-* Include cache-volume snapshots (mutable refs) in accounting.
-* Prevent overestimation by deduplicating shared snapshots by snapshot record identity as part of first pass.
-* Keep implementation cohesive with current dagql e-graph retention/liveness model.
-
-## Design constraints
-
-* No fallback to synthetic constant estimates once real sizing is available.
-* Do not force expensive lazy evaluation purely for metrics.
-  * If a result does not currently expose a concrete snapshot without additional compute, leave size unknown until it does.
-* Dedupe by underlying snapshot record identity is mandatory in initial implementation.
-  * This is required to avoid counting same bytes multiple times when multiple retained results reference the same snapshot.
-* Mutable cache volume sizes must be represented and refreshed when they can change.
-* First cut should prioritize correctness and determinism over micro-optimizations.
-
-## Open questions
-
-* [ ] Best ownership model for mapping deduped snapshot bytes onto per-entry display fields when many entries share one snapshot.
-  * Keep deterministic and simple in first pass; revisit UX refinements later.
-* [ ] Whether to split usage view into:
-  * [ ] per-entry logical view
-  * [ ] global deduped physical view
-  * (not required for first pass, but may help explain accounting to users)
-* [ ] Consider measuring all snapshot sizes (including non-prunable) to support accurate engine total disk-usage visibility.
-  * Verify first whether this is actually needed and desired as a product/system goal before implementing.
-
-# Persistence Epic
-
-## Persistence Notes (applies across all passes, updated as needed)
-
-* `container.from` needs follow-up on scope behavior.
-  * End goal is that the digest-addressed invocation is persistable/reusable cross-session.
-  * Tag-addressed flows can remain session-scoped where appropriate.
-* Similar follow-up for `http` and any other per-client-scoped APIs that were marked persistable.
-  * They may get pinned in-memory but provide little/no cross-session reuse until ID scoping is adjusted.
-* TODO: function calls are now marked persistable unconditionally.
-  * Optimization follow-up: skip persistable marking for per-session and never-cache function policies.
-* There appears to be a race risk around ref-count reaching zero vs concurrent cache hits/acquires.
-  * Need to verify exact behavior in current egraph lifecycle and ensure retain-on-zero does not make it worse.
-* We need to integrate this with `safeToPersistCache`, but not yet.
-  * Follow-up likely requires flipping default `safeToPersistCache` from false to true, then explicitly opting out where needed.
-
-## Design (first pass)
-
-### Core model
-
-* In-memory dagql cache remains the single source of truth for all cache logic.
-* Persistence is asynchronous and event-driven; cache mutations never synchronously write to disk.
-* Persistence is represented as export/import of a portable DAG/e-graph shape (not engine-process-local numeric IDs).
-* Persisted state is rebuilt into in-memory structures on engine startup before serving requests.
-
-### Runtime architecture
-
-* `PersistenceEmitter` (inside dagql cache mutation paths):
-  * observes cache mutations that affect persistable state.
-  * emits normalized persistence events after in-memory mutation is committed.
-* `PersistenceQueue`:
-  * unbounded queue of persistence events (first cut).
-  * no drop policy in first cut.
-  * feeds a separate persistence worker goroutine.
-* `PersistenceWorker` (initially a goroutine, future remote service candidate):
-  * drains queue.
-  * first cut: no explicit coalescing/compaction optimization.
-  * writes durable records to persistent storage.
-* `PersistenceStore`:
-  * direct insert/upsert/delete/read primitives for persisted cache records.
-  * no append-only event log in first cut.
-  * initial backend target: SQLite (WAL mode).
-  * storage engine can change later without changing in-memory cache behavior.
-
-### Decisions from review
-
-* Graceful shutdown semantics are strict:
-  * on SIGTERM/SIGINT (or any graceful shutdown), queue must be fully drained and worker writes fully synced before process exit.
-* Ungraceful shutdown handling:
-  * startup detects ungraceful previous shutdown.
-  * if detected, persistence store is treated as untrusted and deleted/reset; rebuild from empty state.
-* Startup import behavior:
-  * only full rebuild is supported; no partial/degraded import mode.
-* Tombstones:
-  * prune/removal paths emit tombstones to persistence store.
-* Last-used persistence:
-  * do not persist last-used at all in first cut.
-* Graceful shutdown wait policy:
-  * wait indefinitely for queue drain + worker sync completion.
-* Queue/write optimization:
-  * skip coalescing/compaction optimizations for now; rely on direct SQLite upsert/delete behavior.
-* Ungraceful-shutdown marker choice (tentative implementation direction):
-  * store marker in SQLite metadata table (single source of truth, no extra sidecar file).
-* Startup import robustness (tentative implementation direction):
-  * load via one consistent SQLite read transaction/snapshot and rebuild in-memory from that.
-* Persisted scope:
-  * persist roots produced by persistable fields.
-  * also persist all direct/transitive dependencies required to materialize those roots.
-  * function-call result persistence must include anything referenced by the function-call result.
-* `sharedResult` persistence must include `self` payload/state (not just graph metadata).
-* Persistable type requirement:
-  * each persistable type (directory/file/cachevolume/container/function-returnable objects, etc.) must implement serialize/deserialize support.
-  * serialization must include enough snapshot metadata to restore mutable/immutable refs (snapshotter/content-store/lease integration shape).
-* E-graph rebuild strategy:
-  * avoid depending on engine-local numeric IDs as durable keys.
-* Unsafe dependency policy:
-  * if a persisted closure includes unsafe deps, persist anyway for now and emit warnings.
-* Import failure policy:
-  * if import is malformed/corrupt, wipe persistence store and continue startup from empty state.
-* `self` persistence interface:
-  * use one shared interface for all persistable `self` payloads.
-* `self` payload storage format:
-  * use opaque payload bytes + type discriminator in first cut.
-* Worker write strategy:
-  * allow batched writes with sane size/time defaults (tunable), while preserving graceful-shutdown full-drain guarantee.
-* Ungraceful marker implementation:
-  * strict/simple SQLite metadata row toggle.
-
-## Persistence Cleanup Feedback (feedback from reviewing first implementation)
-
-* Reassess the DB model entirely.
-  * It is not necessarily true that the goal should be a byte-for-byte / field-for-field persisted form of the exact in-memory e-graph.
-  * There is a legitimate longer-term goal of having a persisted/exported cache format that is engine-independent enough that one engine could export and another engine could import into its own cache.
-  * That means process-local/runtime-specific identifiers like incrementing in-memory int IDs are probably not the right long-term persisted identity surface.
-  * However, that does **not** excuse the current weirdness; if anything it raises the bar for the persisted model being coherent and self-sufficient.
-  * Right now the design feels stuck in an awkward middle ground:
-    * we are not persisting the in-memory e-graph directly
-    * but we are also not persisting one especially clean engine-independent model either
-  * Current weirdness to revisit as part of that DB-model reassessment:
-    * we persist a mix of symbolic fragments (`terms`, `term_results`, `eq_facts`), materialized rows (`results`), explicit edges (`deps`), and snapshot links, then replay merge/index logic on import
-    * `terms.input_digests_json` stores representative digests for input eq classes rather than persisting a true eq-class / union-find state
-    * `eq_facts` is owner-scoped and closure-filtered, which is a strange middle ground instead of a clean statement of equivalence state
-    * `results` is overloaded with durable request identity, output identity, payload serialization, retention flags, TTL, and prune metadata all in one table
-    * import/export is asymmetrical: export writes a self payload, but import only partially reconstructs state and still leaves object payloads in lazy `persistedEnvelope` form
-    * `snapshot_refs` currently looks under-modeled / placeholder-ish, with the key being the only obviously meaningful part
-    * export writes explicit `deps`, but import still recomputes more dependency edges from term inputs, which suggests the persisted representation is not actually self-sufficient
-    * `buildPersistUpsertBatchForRootLocked(...)` has become the real persistence brain, which concentrates too much semantics in one confusing place
-  * Cleanup target: decide what the durable model actually is supposed to mean first, then make both export and import faithfully implement *that* model rather than accreting more special-case reconstruction logic.
-
-* Runtime cache hits should not lazily load persisted payloads.
-  * `ensurePersistedHitValueLoaded(...)` being called from the steady-state cache-hit path is the wrong model.
-  * Import happens at engine startup; by the time normal runtime cache lookup is serving hits, persisted state should already be fully imported/reconstructed.
-  * Cleanup target: remove the runtime hit-time "load persisted value now" behavior and make startup import own the whole rehydration boundary explicitly.
-  * Important caveat for staging: making import fully eager is trickier than it sounds because many persisted decoders currently depend on having a dagql server available.
-  * Module-object-shaped persisted values are especially awkward because decoding them may require module-specific schema already being installed on the server, which creates a real bootstrap/catch-22 problem.
-  * So "full eager import at startup" is still the goal, but it likely requires an explicit import-time bootstrap/server/schema plan rather than just moving the current lazy decode call to an earlier place.
-* The cache completion + persistence setup flow in `dagql/cache.go` around the indexing/export path is far too convoluted.
-  * Persistability checks and persisted-dependency propagation are currently spread across multiple places, making the actual behavior hard to understand and likely hiding incorrect or inefficient work.
-  * In particular, `markResultAsDepOfPersistedLocked(...)` and related persistence-side effects currently appear from too many call sites, which makes it unclear what the single source of truth is for "this result is now part of persisted closure".
-  * Cleanup target: collapse this into one explicit, easy-to-follow flow for:
-    * indexing the completed result into the e-graph
-    * deciding whether the result is persistable
-    * computing/marking the persisted closure exactly once
-    * emitting persistence/export work from one clearly-owned place
-  * Strong suspicion: the current shape is at best inefficient and at worst semantically wrong/confused, so this area needs a serious redesign rather than incremental cleanup.
-* Naming cleanup is needed around the many different things currently called `ID`.
-  * Example: `sharedResultID` is a totally different kind of identity than `call.ID`, but the current naming makes that much harder to see than it should be.
-  * Lower priority than the semantic cleanup above, but still worth fixing because it actively obscures reasoning about the system.
-* `indexWaitResultInEgraphLocked(...)` should return an error instead of silently swallowing failure cases.
-  * In particular, places like the `derivePersistResultKey(...)` call during persist-key indexing should not just ignore errors and move on.
-  * Cleanup target: make indexing/reporting failures explicit and return them to the caller so persistence/index integrity issues fail loudly instead of disappearing into partial state.
-* `markResultAsDepOfPersistedLocked(...)` being called at the end of `indexWaitResultInEgraphLocked(...)` is not self-explanatory and needs justification or removal.
-  * Right now this looks like persistence-side closure propagation is being opportunistically retriggered from deep inside indexing, which makes the control flow hard to follow.
-  * Cleanup target: either eliminate this call as part of the broader persistence-flow simplification, or document the exact invariant it is repairing and why that repair belongs here rather than in one explicit persistence owner.
-* `emitPersistUpsertForRootLocked(...)` firing from the cache-hit upgrade path also needs reassessment.
-  * The current behavior of "mark this hit as dep-of-persisted and immediately emit a persist upsert for the root from deep inside lookup/indexing-related flow" feels suspicious and needs a harder look.
-  * Cleanup target: revisit whether persist-upsert emission has a single coherent owner, or whether we are currently smearing persistence-side writes across too many opportunistic paths.
-* In `sharedResult`, the `deps`, `heldDependencyResults`, and `persistedSnapshotLinks` fields feel overlap-y and need a dedicated ownership/lifecycle pass.
-  * It is not currently clear which of these are truly fundamental versus artifacts of layering multiple experiments and hacks on top of each other.
-  * Cleanup target: decide what concepts actually need to exist on `sharedResult`, what should be derived, and what should be owned elsewhere.
-* Lazy persisted-envelope decode on first cache hit should go away along with the broader hit-time import behavior.
-  * The whole import/reconstruction boundary should happen up front at engine startup rather than partially/lazily on the first runtime hit.
-  * Cleanup target: remove the `persistedEnvelope` lazy-hit path as part of the same import-up-front redesign.
-* `persistedClosureGraphLocked(...)` and related closure logic currently choosing only the first live result for an output eq class has a slightly suspicious smell and should be reassessed.
-  * It may be okay, but it is worth double-checking whether evolving/pruned graphs can make that choice inconsistent or brittle over time.
-  * Cleanup target: verify whether "first live result for output eq class" is actually a sound closure rule or just a convenient heuristic that happened to work so far.
-* `attachDependencyResults(...)` / `loadDependencyResults(...)` currently look especially ugly and overloaded.
-  * That path is not just recording symbolic dependency metadata; it is also doing live dependency materialization (`lookupCacheForID(...)` and even `srv.LoadType(...)`), validating cache-backed attachment, mutating explicit dependency edges, propagating persisted-liveness state, and taking over ref ownership via `heldDependencyResults`.
-  * Cleanup target: split apart the symbolic dependency model from live ref-management and persistence-side bookkeeping so result completion is not secretly doing a pile of dynamic graph work through one hard-to-follow helper.
-
-## Persistence Cleanup Implementation
-
-### Phase 1: Remove persisted-object-resolver context plumbing
-
-#### Goal
-
-* Remove `ContextWithPersistedObjectResolver(...)` / `currentPersistedObjectResolver(...)` entirely.
-* Keep current lazy persisted decode behavior for now; this phase is only about making the resolver/decode state explicit instead of smuggling it through `context.Context`.
-
-#### Non-goals
-
-* Do **not** solve the full eager-import-at-startup problem in this phase.
-* Do **not** redesign the DB model in this phase.
-* Do **not** change when lazy persisted payload decode happens yet.
-* Do **not** try to solve the module-object/schema bootstrap problem yet beyond keeping the new API shape compatible with solving it later.
-
-#### Implementation plan
-
-* Change the persisted-result decode API so persisted object resolution is passed explicitly instead of being recovered from `context.Context`.
-  * The cleanest first pass is likely to thread `PersistedObjectResolver` as an explicit argument through `PersistedSelfCodec.DecodeResult(...)` and the lower-level decode helpers, since object decoders already accept an explicit resolver today.
-* Update all decode call sites to pass the resolver explicitly.
-  * This includes the lazy persisted-hit path and any import-side eager decode helpers that currently rely on the context hack.
-* Delete the context helper functions and all context writes/reads for persisted object resolution.
-  * After this phase there should be no `ContextWithPersistedObjectResolver(...)` or `currentPersistedObjectResolver(...)` left.
-* Keep `CurrentDagqlServer(ctx)` usage as-is for now.
-  * This phase is specifically about removing the resolver-specific context hack, not about removing all ambient dagql-server context usage in one shot.
-
-#### Desired end state
-
-* Persisted decode paths are still lazy for now, but the data/control dependencies are explicit in function signatures.
-* The next phase can then tackle eager startup import/bootstrap separately without also carrying the resolver-context cleanup at the same time.
-
-#### Validation
-
-* `go test ./dagql -run 'TestPersistedSelfCodec|TestCachePersistenceImport' -count=1`
-* `go test ./dagql -run '^$' -count=1`
-* Grep check that no persisted-object-resolver context helper usages remain.
-
-### One-go hard cut: exact structural input refs + explicit exportability
-
-#### Goal
-
-* Replace the current lossy `SelfDigestAndInputs() -> []digest.Digest -> try to recover proof inputs later` flow with an explicit structural input model that never throws away the distinction between:
-  * real call IDs
-  * digest-only inputs
-* Remove all fallback behavior when deciding whether a proof input is represented as a result ref or a digest ref.
-* Make persistence observe runtime state transitions instead of causing them:
-  * persistable values may remain lazy in memory
-  * export must not force materialization
-  * export may only serialize values that are already explicitly exportable
-  * lazy but explicit/symbolic state is okay to export
-  * opaque lazy state is not exportable and must trigger deferred retry, not forced `Sync`
-
-#### Non-goals
-
-* Do **not** reintroduce `Sync`/`PreparePersistedObject` forcing.
-* Do **not** add compatibility shims for the old DB model.
-* Do **not** keep the old proof-capture path around in parallel.
-* Do **not** silently downgrade unresolved result-backed proof inputs to digest refs.
-* Do **not** solve full eager payload import/bootstrap in the same pass.
-
-#### Core design decisions
-
-* `SelfDigestAndInputs()` should stop returning only raw digests.
-* Replace it with an API that returns:
-  * the same `selfDigest`
-  * an ordered slice of input refs
-* Each input ref must preserve what kind of structural input it is:
-  * receiver call ID
-  * ID literal argument
-  * module call ID
-  * digest-only literal (`LiteralDigestedString`)
-* Downstream code is then responsible for explicitly deciding how each kind is persisted:
-  * receiver / ID literal / module input => result-backed structural input, must resolve to a real cached result or error
-  * digest-only literal => digest-backed structural input
-* There is no fallback path from result-backed input to digest-backed input.
-
-#### New call-layer shape
-
-* Add a new ordered input-ref representation in `dagql/call`, something like:
-  * `type StructuralInputRef struct { ID *ID; Digest digest.Digest }`
-  * exactly one of `ID` or `Digest` must be set
-* Add a new helper on `call.ID` that returns:
-  * `selfDigest`
-  * `[]StructuralInputRef`
-* The order must exactly match the current `SelfDigestAndInputs()` input order so term digest semantics do not change.
-* Explicit required behavior for that helper:
-  * receiver => `ID`
-  * `LiteralID` => `ID`
-  * module input => `ID`
-  * `LiteralDigestedString` => `Digest`
-* Keep `SelfDigestAndInputs()` only if truly needed elsewhere, but it should become a simple projection from the richer API rather than the source of truth.
-
-#### New proof-capture rules
-
-* Replace `exactProofInputsForDigestsLocked(...)` with a helper that consumes the new ordered structural input refs directly.
-* For each structural input ref:
-  * if it is `ID`, resolve it to the actual cached `sharedResult`
-    * if resolution fails, return an error immediately
-    * do **not** try another lookup surface and do **not** fall back to digest
-  * if it is `Digest`, emit a digest proof input directly
-* The result of that helper is the exact proof witness list stored on `egraphResultTermAssoc`.
-* `egraphResultTermAssoc` remains the per-result/per-term metadata carrier because the proof belongs to the association, not to the term alone and not to the result alone.
-
-#### New e-graph association semantics
-
-* Keep `egraphResultsByTermID` as the reverse lookup index for runtime hits.
-* Keep `egraphTermIDsByResult`, but as the richer association map carrying exact proof inputs.
-* Stop using `sharedResult.deps` for structural term proof edges.
-  * `deps` is only for explicit non-structural dependencies (attached dependency results, etc.).
-* `persistedClosureGraphLocked(...)` and any active-closure walk that needs structural proof must read it from `egraphResultTermAssoc.proofInputs`, not by heuristically picking “first live result for output eq class”.
-
-#### Exportability model
-
-* Export must be side-effect free.
-* `EncodePersistedObject(...)` must remain pure.
-* Exportability is a property of the current object state, not of the field spec alone.
-* Valid export cases:
-  * concrete realized state (snapshot-backed, etc.)
-  * explicit symbolic lazy state that already has a real serializable form
-* Invalid export case:
-  * opaque lazy state represented only by runtime `LazyInit` behavior with no explicit serializable form
-* Invalid exportability must return `ErrPersistStateNotReady`.
-* `ErrPersistStateNotReady` is not a cache/persistence failure; it means “this persistable root is not exportable yet in its current runtime state”.
-
-#### Deferred export model
-
-* Keep the cache-level deferred export approach.
-* When a persistable root completes and export hits `ErrPersistStateNotReady`:
-  * mark that root as pending persistence
-  * compute which closure members are currently not exportable
-  * register retry callbacks on those closure members' natural lazy-realization path
-* The callback must only:
-  * retry persistence for the original root
-  * never trigger materialization itself
-* De-duplicate retries:
-  * one root should not register multiple watchers for the same member
-  * repeated natural realizations should not spam repeated exports once persistence succeeds
-* Important detail for shared lazy gates like `WithExec`:
-  * the root itself may not be the thing that gets evaluated directly
-  * so we must continue registering on all non-exportable closure members, not just the root object
-
-#### DB model hard cut
-
-* Keep the new durable model we already cut to:
-  * `results`
-  * `roots`
-  * `root_members`
-  * `result_terms`
-  * `result_deps`
-  * `result_snapshot_links`
-  * plus `meta`
-* `result_terms` continues to be the durable statement of structural proof for one result/term association.
-* `input_refs_json` remains acceptable for this pass if it continues to faithfully encode ordered tagged refs.
-  * If we later want a normalized `result_term_inputs` table, that is a separate cleanup, not part of this hard cut.
-* No reintroduction of:
-  * `eq_facts`
   * `terms`
-  * `term_results`
-  * `snapshot_refs`
-
-#### Export implementation details
-
-* `buildPersistUpsertBatchForRootLocked(...)` should:
-  * walk the persisted closure
-  * write one `results` row per closure result
-  * write one `root_members` row per closure membership
-  * write one `result_terms` row per exact result-term association
-  * serialize exact proof inputs from `egraphResultTermAssoc.proofInputs`
-  * write explicit non-structural `result_deps`
-  * write `result_snapshot_links`
-* It should not synthesize any proof from digests at export time.
-* It should not “best effort” persist around a bad proof input.
-  * unresolved result-backed proof input => error
-  * opaque lazy non-exportable member => `ErrPersistStateNotReady`
-
-#### Import implementation details
-
-* Import should:
-  * load all durable results first
-  * seed digest equivalence from each result's own durable digests
-  * load `root_members`
-  * load explicit `result_deps`
-  * load `result_snapshot_links`
-  * load `result_terms`
-* For each `result_terms` row:
-  * decode ordered tagged refs
-  * for `result_ref`:
-    * resolve imported result by durable key
-    * use its output digest / eq class
-    * recreate `egraphProofInput{kind: result, resultID: ...}`
-  * for `digest_ref`:
-    * ensure eq class for that digest
-    * recreate `egraphProofInput{kind: digest, digest: ...}`
-* Then:
-  * rebuild the imported term
-  * rebuild the result-term association with the exact proof inputs
-  * rebuild the `egraphResultsByTermID` reverse index
-* Import should not heuristically infer structural proof from the live graph.
-
-#### The specific receiver-input bug we are fixing
-
-* Today the receiver-side structural input for things like `Container.withMountedDirectory` is flattened to a raw digest too early.
-* Later proof capture tries to reverse-map that digest to a result and may fail.
-* The current fallback then silently emits a `digest_ref`, which weakens the persisted proof and causes restart misses.
-* After this hard cut:
-  * receiver inputs are captured as actual `ID` refs up front
-  * proof capture resolves them directly to actual `sharedResult`s
-  * unresolved receiver result => immediate error
-  * therefore the wrong `digest_ref` can no longer be emitted for that class of bug
-
-#### Required validations
-
-* Focused unit/compile checks while iterating:
-  * `go test ./dagql -run '^$' -count=1`
-  * `go test ./core -run '^$' -count=1`
-  * `go test ./cmd/engine -run '^$' -count=1`
-* Focused persistence tests:
-  * `go test ./dagql -run 'TestPersistedSelfCodec|TestCachePersistenceImport|TestCachePersistenceWorker|TestCachePersistenceCleanShutdownToggleOnClose|TestCachePersistenceWorkerIdempotentUpsertAndTombstone|TestCachePersistenceWorkerRootDeleteKeepsSharedClosureMembers|TestCachePersistenceWorkerUsesTermGraphWhenDepsAreMissing' -count=1`
-* Focused integration repro:
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/container withExec output on host mount survives restart'`
-* Trace expectations for the integration repro:
-  * no `persist_batch_build_failed` for lazy directory/file exportability on the path under test
-  * no `Host` decode failures
-  * `Host.directory` may still be `DONE` on the second run
-  * `Container.withMountedDirectory` should become `CACHED` on the second run
-  * `Container.withExec` should become `CACHED` on the second run
-* If any of the following happen, stop and escalate:
-  * a structural input kind is ambiguous (unclear whether it should be `ID` or `Digest`)
-  * a receiver / module / literal ID input cannot be resolved to a cached result and it is not obvious whether that is a producer bug or a persistence-timing bug
-  * making `SelfDigestAndInputs()` a projection from the richer API would break some call-site semantics in a non-obvious way
-  * any producer appears to require a broader shared-lazy-gate abstraction rather than the per-member deferred-export model we already agreed on
-
-### One-go hard cut: on-demand `SelectNth` promotion into standalone cached results
-
-#### Goal
-
-* Keep the current no-fallback proof model intact:
-  * structural `ID` inputs must resolve to real cached `sharedResult`s
-  * digest-only literals remain `digest_ref`
-* Fix the `function cache control survives restart` failure by making `SelectNth`-derived IDs real cache-backed results when they are actually loaded.
-* Do this as a runtime identity/lifecycle fix, not as another persistence-model special case.
-
-#### Problem statement
-
-* Today array elements already have real IDs:
-  * `DynamicArrayOutput.NthValue(...)` returns `newDetachedResult(enumID.SelectNth(i), t)`
-  * module list conversion assigns `itemID := curID.SelectNth(i + 1)` before converting each element
-* But `LoadType(...)` currently treats `id.Nth() != 0` as a pure projection:
-  * it loads the parent enumerable
-  * calls `NthValue(nth)`
-  * dereferences the result
-  * returns it directly
-* That means the nth-element ID may never become a standalone cached `sharedResult`.
-* Later proof capture sees a real `StructuralInputRef{ID: ...}` for that nth-element receiver and correctly expects `resolveSharedResultForInputIDLocked(...)` to find a cached result.
-* In the failing `InputTypeDef.fields` case, it does not, and indexing errors before term association.
-
-#### Why this is the right fix class
-
-* The right invariant is:
-  * if something has a real structural `ID` and can later act as a receiver, it should be resolvable to a real cached result
-* That lets us keep the current clean proof rules:
-  * `ID` input => `result_ref`
-  * digest-only literal => `digest_ref`
-  * no fallback
-  * no third proof kind
-* This is more cohesive than inventing a special persisted `id_ref` just because nth-element receivers are currently projections instead of cache entries.
-
-#### Non-goals
-
-* Do **not** add a third structural proof kind for this pass.
-* Do **not** change persistence schema or `result_terms` encoding for this pass.
-* Do **not** add a `currentTypeDefs`-specific hack.
-* Do **not** eagerly fan out every array result into cached nth children by default.
-  * We want on-demand promotion, not unconditional eager explosion.
-
-#### Core implementation shape
-
-* Hard-cut server-side nth materialization so `SelectNth` IDs are always loaded through a real `GetOrInitCall(...)` path with a real initializer.
-* This applies to every place the server materializes nth elements, not just `LoadType(...)`.
-* The first time an nth-element ID is materialized:
-  * it becomes a real cache entry
-  * it gets indexed into the e-graph like any other completed call result
-* Every later load of that nth-element ID becomes a normal cache hit.
-* Downstream proof capture then works unchanged because `resolveSharedResultForInputIDLocked(...)` can now find that nth receiver result.
-
-#### Exact file/line plan
-
-* `dagql/server.go`
-  * At `LoadType(...)` around the current `callCtx := srvToContext(idToContext(ctx, id), s)` setup and the cache-probe block, keep the telemetry option construction intact.
-  * Add a dedicated nth-promotion path for `id.Receiver() != nil && id.Nth() != 0` before the existing hit-only `cache miss` probe.
-  * That path should call the shared nth-promotion logic instead of the current "probe then project" behavior.
-  * The nth-promotion logic should:
-    * call `GetOrInitCall(...)` for the nth ID
-    * materialize the parent enumerable
-    * select `NthValue(nth)`
-    * call `DerefValue()`
-    * preserve the current null/error behavior
-    * return the dereferenced nth result
-  * After adding that nth path, keep the existing hit-only `cache miss` probe for non-nth IDs only.
-  * Leave the non-nth receiver recursion and normal object-call path unchanged.
-  * Also update every other server-side nth materialization site to use the same nth-promotion logic rather than raw `NthValue(...)` projection:
-    * enumerable walk in `Resolve(...)`
-    * nth-selection / array enumeration in `Select(...)`
-  * This is required because nth-element receivers can be materialized by normal GraphQL traversal without ever going through `LoadType(...)`, and those sites must also promote nth IDs into real cached results.
-
-* `dagql/cache.go`
-  * Do not add a new code path here.
-  * Rely on the existing `initCompletedResult(...)` behavior where, if the initializer result is already cache-backed, it aliases the existing `sharedResult`; otherwise it materializes a new one.
-  * This is important because the nth-promotion path should reuse normal cache completion/indexing semantics instead of inventing a second result-installation mechanism.
-
-* `dagql/cache_egraph.go`
-  * Do not change `exactProofInputsForRefsLocked(...)`.
-  * Do not change `resolveSharedResultForInputIDLocked(...)`.
-  * The point of the runtime fix is that these functions should start succeeding for nth-element receiver IDs without any fallback or new proof kind.
-
-* `dagql/builtins.go`
-  * No code change planned.
-  * Keep relying on `DynamicArrayOutput.NthValue(...)` manufacturing `enumID.SelectNth(i)` detached results.
-  * Keep relying on `DynamicResultArrayOutput.NthValue(...)` returning the already-materialized per-element `AnyResult`.
-
-* `core/modtypes.go`
-  * No code change planned.
-  * Keep relying on module list conversion assigning `itemID := curID.SelectNth(i + 1)` before converting each element.
-  * That is already the correct identity model; the missing piece is promotion into the cache when that nth ID is actually loaded later.
-
-#### Why on-demand instead of eager fan-out
-
-* Eagerly caching every nth child when an array result is created would likely fix this class of bug too.
-* But it has real downsides:
-  * cache/index explosion for large arrays
-  * unnecessary persistence closure growth for array elements nobody ever uses
-  * noisier release/dependency ownership between parent arrays and all children
-* On-demand promotion keeps the same clean invariant without paying those costs:
-  * the nth child becomes real when the system actually materializes it as a value
-  * not before
-
-#### Detailed behavior after the change
-
-* First materialization of an nth ID:
-  * one of the server nth-materialization sites enters the shared nth-promotion path
-  * `GetOrInitCall(...)` misses for the nth ID
-  * initializer loads the parent enumerable, selects nth, dereferences it, returns it
-  * normal cache completion indexes that nth ID as a real result
-* Later field selection using the nth ID as receiver:
-  * proof capture sees `StructuralInputRef{ID: nthID}`
-  * `resolveSharedResultForInputIDLocked(...)` can now resolve it
-  * proof input is recorded as `result_ref`
-  * export/import path remains unchanged and now works correctly
-
-#### Focused test plan
-
-* Add a new targeted test in `dagql/dagql_test.go` near `TestSelectArray`.
-* The test should use a deterministic array-of-objects field, not a random one.
-* The test should:
-  * build the parent list ID
-  * build `nthID := listID.SelectNth(1)`
-  * call `srv.LoadType(ctx, nthID)` once and assert success
-  * call `srv.LoadType(ctx, nthID)` again and assert it is now a cache hit
-  * build a child field ID off that nth receiver
-  * call `srv.LoadType(ctx, childID)` and assert success
-  * call `srv.LoadType(ctx, childID)` again and assert it hits cache
-* This proves both:
-  * nth-element IDs are promoted into real cached results
-  * downstream proof capture on fields selected from nth receivers now succeeds
-
-#### Validation
-
-* Focused compile/unit checks while iterating:
-  * `go test ./dagql -run '^$' -count=1`
-  * focused new dagql nth-promotion test
-* Targeted integration repro:
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/function cache control survives restart' > /tmp/cache-debug-function-cache-control.log 2>&1`
-  * grep for `panic:|fatal error:|SIGSEGV|--- FAIL:|^FAIL\\s`
-* Full restart suite after the targeted repro goes green:
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart' > /tmp/cache-debug-disk-persistence-full.log 2>&1`
-
-#### Expected outcome
-
-* `InputTypeDef.fields` receiver IDs coming from `currentTypeDefs` array elements will resolve to cached nth-element results instead of erroring.
-* We keep the current clean proof model:
-  * real `ID` => real cached result => `result_ref`
-  * digest-only literal => `digest_ref`
-* No fallback behavior returns.
-* No DB/persistence special case is needed for this fix.
-
-### Handoff Packet
-
-#### Current status
-
-* The persistence rewrite and restart-debug sequence has made real progress in layers:
-  * `7bd18dbdd`
-    * hard-cut the DB model to `results`, `roots`, `root_members`, `result_terms`, `result_deps`, `result_snapshot_links`
-    * removed `eq_facts`, `terms`, `term_results`, `snapshot_refs`
-  * `44eff441f`
-    * hard-cut structural proof capture over to `StructuralInputRef`
-    * removed proof fallback from `ID` to digest
-    * fixed the host-mount restart miss by capturing exact `result_ref` proof instead of guessed `digest_ref`
-  * `2408374ce`
-    * promoted derived receiver IDs into cache-backed results
-    * fixed the class of restart failures where nth-derived or dereferenced object receivers had real IDs but no standalone cached `sharedResult`
-* After `2408374ce`, the old `function cache control survives restart` failure mode was gone:
-  * no more `resolve structural input ... no cached shared result found`
-  * no more proof-capture/indexing failure during `loading type definitions`
-* Then a new failure surfaced:
-  * persisted-hit decode of `Container.withMountedFile` failed because embedded persisted object refs inside container payloads were written using the wrong ID surface
-  * the payload pointed at a request/alias object ID while restart lookup expected the canonical persisted result identity
-* The current uncommitted work fixes that write-side bug by canonicalizing embedded persisted object references before encoding them:
-  * `dagql/cache_persistence_resolver.go`
-    * adds a `CanonicalPersistedCallID(...)` helper on cache/session cache
-  * `core/persisted_object.go`
-    * adds `encodePersistedObjectRefID(...)`
-  * `core/container.go`
-  * `core/directory.go`
-  * `core/file.go`
-  * `core/module.go`
-  * `core/modulesource.go`
-  * `core/object.go`
-* With those uncommitted changes applied:
-  * `go test ./dagql -run '^$' -count=1`
-  * `go test ./core -run '^$' -count=1`
-  * `go test ./cmd/engine -run '^$' -count=1`
-  * all pass
-* The latest targeted repro log is:
-  * `/tmp/cache-debug-function-cache-control-rerun3.log`
-* The old failures are gone in that log:
-  * no `resolve structural input ... no cached shared result found`
-  * no `decode persisted hit payload ... missing persisted result key`
-* The current blocker is now purely semantic:
-  * the test runs successfully on both sides of the restart
-  * module loading succeeds
-  * `test-always-cache` succeeds on both runs
-  * but the returned string differs across restart, so the function result is still being recomputed instead of reused
-
-#### Current blocker in plain English
-
-* We are past:
-  * structural proof capture problems
-  * nth/deref receiver promotion problems
-  * persisted object embedded-reference decode problems
-* We are now at the actual thing the test cares about:
-  * `Test.testAlwaysCache` returns random text
-  * after restart, the second run still computes a new random value instead of reusing the first-run result
-* So the next debugging question is:
-  * why is the actual function-cache result still missing across restart even though the surrounding module/runtime/container state is now successfully reconstructed?
-
-#### Current repro command
-
-* Use the exact integration command format from `debugging.md`:
-  * `dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/function cache control survives restart' > /tmp/cache-debug-function-cache-control-rerunN.log 2>&1`
-* Useful follow-up greps:
-  * `rg -n "panic:|fatal error:|SIGSEGV|--- FAIL:|^FAIL\\s" /tmp/cache-debug-function-cache-control-rerunN.log`
-  * `rg -n "resolve structural input|missing persisted result key|decode persisted hit payload|test-always-cache|Test\\.testAlwaysCache|loading type definitions|load module: \\." /tmp/cache-debug-function-cache-control-rerunN.log`
-* Current important logs to preserve as historical checkpoints:
-  * `/tmp/cache-debug-disk-persistence-IbLDTa.log`
-    * broad suite run showing the earlier failing subtests
-  * `/tmp/cache-debug-function-cache-control-rerun.log`
-    * first focused rerun while still failing on structural input resolution
-  * `/tmp/cache-debug-function-cache-control-rerun2.log`
-    * rerun showing the persisted-hit decode failure for embedded object refs
-  * `/tmp/cache-debug-function-cache-control-rerun3.log`
-    * latest rerun showing those old failures gone and the remaining semantic function-cache miss
-
-#### Effective subagent repro prompt
-
-* This was effective when the goal was just to rerun the test and report what changed:
-
-```text
-Please rerun the exact targeted repro for the function-cache-control restart failure in /home/sipsma/repo/github.com/sipsma/dagger.
-
-Before running, quickly re-read:
-- AGENTS.md
-- skills/cache-expert/references/debugging.md
-
-Then run exactly this, capturing the full output to a /tmp log:
-
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='TestEngine/TestDiskPersistenceAcrossRestart/function cache control survives restart' > /tmp/cache-debug-function-cache-control-rerun.log 2>&1
-
-After it finishes:
-1. report whether it passed or failed
-2. if failed, grep/summarize the first concrete failure and the first relevant dagql_egraph_trace divergence
-3. if passed, say that clearly and mention the key signs in the log that the previous failure is gone
-4. include the log path
-5. do not change code
-
-Focus especially on whether the previous known error is still present, and whether the latest code moved the failure forward.
-```
-
-#### Effective subagent analysis prompt
-
-* This was effective when the goal was deep log/code analysis without another blind rerun:
-
-```text
-Please do a deep-dive analysis of the current failure in /home/sipsma/repo/github.com/sipsma/dagger.
-
-First, refresh yourself on the current repo guidance and debugging workflow:
-- read AGENTS.md
-- read skills/cache-expert/references/debugging.md
-
-Then familiarize yourself with the relevant dagql code and especially the available debug trace surfaces. Read enough of these files to understand what the trace events mean and where they come from:
-- dagql/cache.go
-- dagql/cache_egraph.go
-- dagql/cache_debug.go
-- dagql/server.go
-- dagql/objects.go
-- dagql/cache_persistence_import.go
-- dagql/cache_persistence_self.go
-- core/persisted_object.go
-- any other directly-adjacent persistence/decode file needed for the exact failure
-
-Important context:
-- do not rerun unless absolutely necessary
-- start from the existing log and current code
-- current checkpoint commit and current uncommitted changes matter; inspect the live tree, not an older assumption
-
-Please answer these questions very concretely:
-1. What is the first real divergence now?
-2. What exact code path produces the current error or miss?
-3. What do the logs prove already about what succeeded before that point?
-4. What is your most specific theory on why the current failure is happening?
-5. Is the current observability sufficient to act, or do we need additional logs? If we need more logs, specify exactly where and what fields.
-6. If you can see the likely fix direction already, explain it, but do not edit code.
-
-Be explicit about the first bad event and the exact surrounding events that matter.
-```
-
-#### What the next agent should verify first
-
-* Before doing any more code changes:
-  * reread `AGENTS.md`
-  * reread `skills/cache-expert/references/debugging.md`
-  * inspect current uncommitted changes in:
-    * `dagql/cache_persistence_resolver.go`
-    * `core/persisted_object.go`
-    * `core/container.go`
-    * `core/directory.go`
-    * `core/file.go`
-    * `core/module.go`
-    * `core/modulesource.go`
-    * `core/object.go`
-  * confirm the latest targeted repro state from `/tmp/cache-debug-function-cache-control-rerun3.log`
-
-#### What the next agent should focus on
-
-* Do **not** re-debug the old structural-input failure unless current evidence says it came back.
-* Do **not** re-debug the old embedded persisted object reference decode failure unless current evidence says it came back.
-* Focus on the remaining semantic miss:
-  * why `Test.testAlwaysCache` still produces a new random value after restart
-  * even though module load, type-def load, and test execution all now succeed
-* The likely debugging seam is the actual persisted function result/hit path rather than object decode or receiver identity.
-
-## E-graph Observability
-
-### Goal
-
-* Make e-graph/cache behavior permanently debugable without having to add and later remove one-off targeted logs.
-* Preserve enough structured mutation history that, with enough patience, we can reconstruct how the e-graph evolved over a run.
-* Preserve a deterministic point-in-time snapshot facility so we can answer "what exists right now?" separately from "how did we get here?".
-
-### High-level design
-
-* Use two complementary mechanisms:
-  * structured mutation trace events written into the normal engine log stream
-  * deterministic e-graph snapshot dump exposed from a debug endpoint
-* Mutation trace answers:
-  * how did the graph evolve?
-  * what path created/merged/removed this result/term/eq-class edge?
-* Snapshot dump answers:
-  * what is the exact current in-memory graph state right now?
-* Both are needed; either one alone leaves big blind spots.
-
-### Logging direction
-
-* Do **not** create a separate side log file for the first cut.
-  * With ephemeral engines, operational friction for fetching a separate file is likely not worth it.
-* Instead, emit structured e-graph trace events through the same engine logs we already capture.
-* Gate them behind a simple compile-time boolean constant for now.
-  * Runtime configurability can come later.
-* Keep the events structured and machine-parseable, not ad hoc prose logging.
-  * Stable event names + stable field names are more important than pretty human wording.
-
-### Snapshot direction
-
-* Add a dedicated debug endpoint under the existing engine debug HTTP surface in `cmd/engine/debug.go`.
-* Proposed endpoint shape:
-  * `/debug/dagql/egraph`
-* Return deterministic JSON for the full current e-graph/cache state.
-* This should be point-in-time / pull-based rather than continuously logged.
-
-### Mutation trace event schema
-
-* Every event should include:
-  * `trace_format_version`
-  * `boot_id` / engine-start ID
-  * monotonic `seq`
-  * timestamp
-  * event type
-  * phase/source (`runtime`, `import`, `persist-export`, `persist-apply`, `prune`, etc.)
-  * correlation IDs when relevant:
-    * `batch_id`
-    * `import_run_id`
-    * `client_id`
-    * `session_id`
-    * request/call digest
-  * local in-memory IDs when useful:
-    * `shared_result_id`
-    * `term_id`
-    * `eq_class_id`
-  * durable identities when useful:
-    * `result_key`
-    * `id_digest`
-    * `output_digest`
-    * `output_extra_digests`
-  * lightweight metadata:
-    * `record_type`
-    * `description`
-    * object/graphql type when available
-  * exact proof inputs when relevant:
-    * `result_ref`
-    * `digest_ref`
-  * short reason/source field saying what code path emitted the event
-
-### Initial event set
-
-* `result_created`
-* `result_removed`
-* `result_digest_seeded`
-* `eq_class_created`
-* `eq_class_merged`
-* `term_created`
-* `term_removed`
-* `result_term_assoc_added`
-* `result_term_assoc_removed`
-* `result_term_assoc_updated`
-* `explicit_dep_added`
-* `explicit_dep_removed`
-* `ref_acquired`
-* `ref_released`
-* `term_inputs_repaired`
-* `term_digest_recomputed`
-* `term_rehomed_under_eq_classes`
-* `term_outputs_merged`
-* `persist_root_marked`
-* `persist_root_deferred`
-* `persist_member_not_ready`
-* `persist_retry_registered`
-* `persist_root_retry_triggered`
-* `persist_retry_succeeded`
-* `persist_batch_build_failed`
-* `persist_batch_built`
-* `persist_batch_applied`
-* `persisted_payload_imported_lazy`
-* `persisted_payload_imported_eager`
-* `persisted_payload_decoded`
-* `persisted_payload_decode_failed`
-* `persist_root_added`
-* `persist_root_member_added`
-* `persist_root_deleted`
-* `persist_root_member_removed`
-* `persist_orphan_gc_deleted`
-* `persist_store_wiped_schema_mismatch`
-* `persist_store_wiped_unclean_shutdown`
-* `persist_store_wiped_import_failure`
-* `import_result_loaded`
-* `import_root_member_loaded`
-* `import_result_term_loaded`
-* `import_result_dep_loaded`
-* `import_result_snapshot_link_loaded`
-* `lazy_realized`
-* `lookup_attempt`
-* `lookup_hit`
-* `lookup_miss_reason`
-* explicit no-op / skip decisions at important persistence/debug boundaries
-
-### Where to emit mutation logs
-
-* `dagql/cache_egraph.go`
-  * digest -> eq-class creation
-  * eq-class merges
-  * term creation/removal
-  * result-term association changes
-  * result removal from the e-graph
-  * persisted-closure propagation decisions
-* `dagql/cache.go`
-  * result creation/finalization in `initCompletedResult`
-  * explicit dependency attachment/removal
-  * deferred persist registration / retry trigger paths
-  * release paths that affect structural ownership
-* `dagql/cache_persistence_worker.go`
-  * persistence batch build/apply
-  * root delete/orphan GC
-* `dagql/cache_persistence_import.go`
-  * startup import reconstruction
-
-### Snapshot dump contents
-
-* All results:
-  * local result ID
-  * durable result key
-  * request/output digests
-  * extra digests/effects
-  * `ref_count`
-  * `has_value`
-  * payload state (`materialized`, `imported_lazy_envelope`, `nil`)
-  * retained/deferred-persist state
-  * current deferred-persist watch state
-  * explicit deps
-  * `held_dependency_results` count
-  * snapshot links
-  * basic metadata (`record_type`, `description`)
-* All terms:
-  * local term ID
-  * self digest
-  * canonical input eq-class IDs
-  * term digest
-  * output eq-class ID
-* All result-term associations:
-  * result ID
-  * term ID
-  * exact proof inputs
-* Digest -> eq-class mapping
-* Canonical eq-class membership view
-* Any pending deferred-persist state
-  * including which roots are pending and which members they are currently watching
-* Snapshot metadata:
-  * `trace_format_version`
-  * `boot_id`
-  * `captured_at_seq`
-  * `captured_at_time`
-
-### Important design principles
-
-* Log mutations, not reads/lookups by default.
-  * We want causal history without overwhelming noise.
-  * Exception: a small `lookup_attempt` / `lookup_hit` / `lookup_miss_reason`
-    family is worth including because it directly identifies first divergence
-    boundaries during cache-debug work.
-* Include both local IDs and durable keys/digests.
-  * Local IDs are needed to reconstruct one process's in-memory graph.
-  * Durable keys/digests are needed to correlate across export/import/restart boundaries.
-* Keep the trace facility generic and permanent.
-  * It should be useful for this bug and the next ten, not just the current host-mount restart miss.
-
-### Initial implementation proposal
-
-#### Phase 1
-
-* Add a tiny central e-graph trace helper in dagql cache code:
-  * no-op when the debug const is false
-  * emits one structured log event per mutation when enabled
-  * owns the monotonic sequence counter
-* Add the `/debug/dagql/egraph` endpoint in `cmd/engine/debug.go`.
-* Instrument the full mutation surface needed to reconstruct the e-graph with enough patience from one log:
-  * result create/remove
-  * digest -> eq-class creation
-  * eq-class merges
-  * term create/remove
-  * result-term assoc add/remove
-  * result-term assoc metadata updates
-  * term repair / rehome / digest recompute transitions
-  * output-eq merges caused by congruent term repair
-  * explicit dep add/remove
-  * retained/persisted-closure propagation changes
-  * deferred-persist not-ready / registration / retry / success / failure transitions
-  * exact deferred-watch registration / firing / clearing details
-  * persistence batch build/apply and build-failure transitions
-  * persisted-root and root-member add/remove transitions
-  * root delete/orphan-GC transitions
-  * persistence-store wipe/reset transitions at startup
-  * import-time result/root/member/term/dep/snapshot-link reconstruction events
-  * imported payload lazy/eager materialization state transitions
-  * successful natural lazy-realization completion events
-  * lookup attempt/hit/miss-reason events at the cache lookup boundary
-  * important skip/no-op decisions at persistence/debugging boundaries
-  * refcount/lifecycle transitions that affect retention/prune semantics
-* Make the dump deterministic enough that two snapshots can be diffed meaningfully.
-
-### Expected payoff
-
-* New cache/e-graph bugs should become debuggable from one captured engine log plus an optional debug dump, instead of requiring temporary ad hoc logging patches every time.
+  * `term_inputs`
+  * `result_output_eq_classes`
+  * `result_deps`
+  * `result_snapshot_links`
+
+Why those still stay:
+
+* `resultCallFrame`
+  * provenance / caller-facing ID reconstruction / telemetry structure
+* `term` / `eq class`
+  * symbolic cache proof / congruence
+* `result_deps`
+  * explicit lifetime/ownership edges
+* `snapshot_links`
+  * external reopen/bootstrap state
+
+These are still distinct roles and should remain distinct in the persisted model.
+
+### Why the frame likely belongs as a single encoded field
+
+Current preference is to encode the frame as a single structured field, not normalize it heavily in SQL.
+
+Reasons:
+
+* the frame is recursive
+* the frame-literal tree is recursive
+* we do not need to relationally query inside it right now
+* it is mostly:
+  * persisted
+  * imported
+  * debugged
+  * used in-memory for reconstruction
+
+So JSON/blob is currently the preferred first implementation direction.
+
+### Import strategy
+
+Current expectation:
+
+* import should be **multi-phase**, but it does **not** need a topological sort
+
+Likely shape:
+
+1. Load all result rows first.
+   * create `sharedResult` shells
+   * assign IDs
+   * assign payload/envelope metadata
+   * assign basic prune/lifetime metadata
+   * do **not** fully wire frame refs yet
+
+2. Load and rebuild the symbolic and lifetime graph as we already do:
+   * eq classes
+   * eq class digests
+   * terms
+   * term inputs
+   * result output eq classes
+   * explicit deps
+   * snapshot links
+
+3. Decode and attach `resultCallFrame`s.
+   * by this point all `sharedResult`s already exist by ID
+   * frame refs can resolve by result ID against those already-existing shells
+   * forward references are okay because the target shell already exists
+
+This is why we currently believe no topo sort is needed:
+
+* shell creation first
+* frame wiring later
+
+You only need topo ordering if creation of one node requires the *fully constructed* target node to exist first. That is not what we currently expect for frames.
+
+### Hard-cut / no-legacy import rule
+
+Current explicit decision:
+
+* do **not** design for importing legacy cached values that have no frame
+* do **not** add backward compatibility for older persistence state here
+
+This remains a hard cutover.
+
+Important reminder:
+
+* none of this persistence redesign is merged to main yet
+* any older persistence state is effectively dev/ephemeral history
+* we do not need to carry that forward
+
+So the rule is:
+
+* old persisted state without frames is invalid
+* schema/version mismatch or equivalent should wipe it
+* we do **not** spend design effort on frame-less legacy compatibility
+
+### Additional persistence simplification likely to follow
+
+If module-object ID-valued data and similar fields move to storing internal result refs, persisted object payloads may get simpler too.
+
+That would mean:
+
+* internal graph edges persist as result IDs
+* symbolic cache state persists as terms / eq classes
+* public caller-facing IDs are reconstructed, not stored verbatim
+
+This is a very good sign for the design.
+
+## Pruning Implications
+
+Current position:
+
+* pruning does **not** seem fundamentally impacted yet
+* we should leave pruning logic alone for now unless a specific case forces a redesign
+
+Important caveat:
+
+* `resultCallFrame` is **not** automatically a pruning/liveness graph
+* a frame pointing at another result does **not** by itself mean prune should retain that child forever
+
+Current role split should remain:
+
+* `resultCallFrame`
+  * provenance / reconstruction / telemetry
+* `result_deps`
+  * explicit lifetime/ownership edges
+* structural proof inputs / term provenance
+  * symbolic proof-driven retention behavior where already intended
+* snapshot links
+  * reopen/bootstrap state
+
+So the current rule is:
+
+* frame refs do **not** imply new pruning semantics by default
+
+However:
+
+* if we convert some semantic ID-valued data field to store an internal result ref
+* and that field must remain valid as long as the parent remains valid
+* then that relationship may need to become an explicit dep / retention edge
+
+So the staged plan is:
+
+* leave pruning alone for now
+* when converting specific semantic ID-valued fields, evaluate whether each one must also produce explicit dep/lifetime edges
+
+This keeps the design understandable and avoids accidentally turning the frame itself into a second liveness graph.
+
+Important clarification:
+
+* for module-object stored result refs, we currently believe that evaluation already comes out clearly:
+  * yes, they should retain their targets
+
+So the remaining “evaluate case by case” guidance mainly applies to other future semantic stored-ref uses, not that module-object case.
+
+## Current best summary of the likely next implementation direction
+
+If the design keeps feeling right after a few more iterations, the likely implementation shape is:
+
+* keep `Result` / `ObjectResult`
+* add `resultCallFrame` to `sharedResult`
+* model frame args/implicit inputs with an internal literal tree
+* let result-valued leaves point to internal result refs
+* add `IDForCaller(ctx)` to existing wrappers
+* seed reconstruction from the wrapper's current public `.ID()`
+* use a caller-local frontier map during reconstruction
+* stage caller/session-specific best-ID preference for later if needed
+* represent module-object ID-valued data via internal result refs rather than absolute stored public IDs
+
+That is the current most coherent version of the model we have reached so far.
+
+## Telemetry integration note
+
+Current intended integration point:
+
+* the place where engine/client telemetry is bridged today is `core/telemetry.go` via the around-func path
+* that around-func currently accepts a `call.ID`
+
+Current likely implementation direction:
+
+* any path that currently invokes the server's telemetry/around-func callback should first compute `IDForCaller(...)`
+* then pass that resulting caller-facing ID into the existing around-func boundary
+
+Why this is attractive:
+
+* it keeps telemetry’s outer interface largely unchanged
+* it localizes the new reconstruction logic at the callsites that already have the wrapper/result context
+* telemetry can remain mostly “none the wiser” and keep operating on a `call.ID`
+
+So current expectation is:
+
+* reconstruction happens before crossing into the around-func telemetry boundary
+* not inside telemetry itself

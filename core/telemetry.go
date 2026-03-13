@@ -17,11 +17,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-const (
-	// name of arg indicating whether the op should execute the "unlazy" dagop impl
-	IsDagOpArgName = "isDagOp"
-)
-
 var _ dagql.AroundFunc = AroundFunc
 
 func AroundFunc(
@@ -31,7 +26,7 @@ func AroundFunc(
 	context.Context,
 	func(res dagql.AnyResult, cached bool, rerr *error),
 ) {
-	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) || isDagOp(id) {
+	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
@@ -403,15 +398,6 @@ func isMeta(id *call.ID) bool {
 	default:
 		return false
 	}
-}
-
-func isDagOp(id *call.ID) bool {
-	for _, arg := range id.Args() {
-		if arg.Name() == IsDagOpArgName {
-			return true
-		}
-	}
-	return false
 }
 
 // anyReturns returns true if the call or any of its ancestors return any of

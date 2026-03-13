@@ -33,8 +33,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
-COMPILE ERROR TO PREVENT CI FROM LOOPING
-
 func init() {
 	// allow injection of custom dns resolver for go-git
 	customClient := &http.Client{
