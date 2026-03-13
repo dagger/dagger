@@ -1227,6 +1227,53 @@ type Multistage {
 		require.Equal(t, "second", out)
 	})
 
+	t.Run("stage same file twice overwrites prior staged version", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("overwrite", `
+type Overwrite {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/overwrite")
+
+    let before1 = ws2.directory(".")
+    let after1 = before1.withNewFile("foo.txt", contents: "foo 1")
+    ws2.stage(changes: after1.changes(before1))
+
+    let before2 = ws2.directory(".")
+    let after2 = before2.withNewFile("foo.txt", contents: "foo 2")
+    ws2.stage(changes: after2.changes(before2))
+
+    ws2.commit(message: "feat: final version of foo")
+
+    self
+  }
+}
+`))
+		committed := ctr.With(daggerCall("overwrite"))
+		_, err := committed.Stdout(ctx)
+		require.NoError(t, err)
+
+		// foo.txt should have the second version
+		out, err := committed.
+			WithWorkdir("/work-worktrees/agent-overwrite").
+			WithExec([]string{"cat", "foo.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo 2", out)
+
+		// Should be a single commit
+		logAll, err := committed.
+			WithWorkdir("/work-worktrees/agent-overwrite").
+			WithExec([]string{"git", "log", "--oneline"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(logAll), "\n")
+		require.Equal(t, 2, len(lines), "expected init + 1 commit, got: %s", logAll)
+		require.Contains(t, logAll, "feat: final version of foo")
+	})
+
 	t.Run("stage preserves user unstaged changes", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("hello.txt", "hello").

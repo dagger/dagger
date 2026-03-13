@@ -940,11 +940,46 @@ func gitStageFinalize(ctx context.Context, repoDir string, opts *engine.GitStage
 		}
 	}
 	if len(stagedPatchBytes) > 0 {
-		if err := writeTempAndApply(ctx, repoDir, git, stagedPatchBytes, "dagger-staged-patch-*"); err != nil {
+		// Apply to the index only (--cached) first. The working tree may
+		// already have some of these files from the current changeset's
+		// export, so a normal apply would fail with "already exists".
+		if err := writeTempAndApplyCached(ctx, repoDir, git, stagedPatchBytes, "dagger-staged-patch-*"); err != nil {
 			return "", fmt.Errorf("apply staged patch (recovery: git stash apply %s): %w", opts.StashRef, err)
 		}
-		if _, err := git("add", "-A"); err != nil {
-			return "", fmt.Errorf("re-stage prior changes (recovery: git stash apply %s): %w", opts.StashRef, err)
+		// Update the working tree from the index for files that the
+		// current export didn't write (non-overlapping prior staged files).
+		// We skip files in the current changeset since the export already
+		// wrote the correct (newer) version to disk.
+		currentPaths := make(map[string]struct{})
+		for _, p := range opts.Added {
+			currentPaths[p] = struct{}{}
+		}
+		for _, p := range opts.Modified {
+			currentPaths[p] = struct{}{}
+		}
+		for _, p := range opts.Removed {
+			currentPaths[p] = struct{}{}
+		}
+		// Get list of staged files from the index and checkout any that
+		// aren't part of the current changeset.
+		stagedFiles, _ := git("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+		if stagedFiles != "" {
+			var toCheckout []string
+			for _, f := range strings.Split(stagedFiles, "\n") {
+				f = strings.TrimSpace(f)
+				if f == "" {
+					continue
+				}
+				if _, overlap := currentPaths[f]; !overlap {
+					toCheckout = append(toCheckout, f)
+				}
+			}
+			if len(toCheckout) > 0 {
+				args := append([]string{"checkout-index", "-f", "--"}, toCheckout...)
+				if _, err := git(args...); err != nil {
+					return "", fmt.Errorf("checkout-index (recovery: git stash apply %s): %w", opts.StashRef, err)
+				}
+			}
 		}
 	}
 
@@ -1030,8 +1065,30 @@ func gitCommitOp(ctx context.Context, repoDir string, opts *engine.GitCommitOpts
 	return hash, nil
 }
 
+// writeTempAndApplyCached writes patch bytes to a temp file and runs git apply --cached
+// (index only, does not touch the working tree).
+func writeTempAndApplyCached(_ context.Context, _ string, git func(...string) (string, error), patchBytes []byte, pattern string) error {
+	tmpPatch, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return fmt.Errorf("create temp patch file: %w", err)
+	}
+	tmpPatchPath := tmpPatch.Name()
+	defer os.Remove(tmpPatchPath)
+
+	if _, err := tmpPatch.Write(patchBytes); err != nil {
+		tmpPatch.Close()
+		return fmt.Errorf("write patch: %w", err)
+	}
+	tmpPatch.Close()
+
+	if _, err := git("apply", "--cached", tmpPatchPath); err != nil {
+		return err
+	}
+	return nil
+}
+
 // writeTempAndApply writes patch bytes to a temp file and runs git apply.
-func writeTempAndApply(_ context.Context, repoDir string, git func(...string) (string, error), patchBytes []byte, pattern string) error {
+func writeTempAndApply(_ context.Context, _ string, git func(...string) (string, error), patchBytes []byte, pattern string) error {
 	tmpPatch, err := os.CreateTemp("", pattern)
 	if err != nil {
 		return fmt.Errorf("create temp patch file: %w", err)
