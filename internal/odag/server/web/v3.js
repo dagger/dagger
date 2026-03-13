@@ -1086,7 +1086,9 @@ async function ensureActiveEntityData() {
     void shellHydration;
     return;
   }
-  await ensureLiveDomainData(config, activeSessionFetchScope());
+  const scope = activeSessionFetchScope();
+  await ensureInventoryDependencyData(state.entityID, scope);
+  await ensureLiveDomainData(config, scope);
   void shellHydration;
 }
 
@@ -1146,6 +1148,12 @@ async function ensureOverviewData() {
     .filter(Boolean)
     .map((config) => ensureLiveDomainData(config));
   await Promise.all(jobs);
+}
+
+async function ensureInventoryDependencyData(entityID, scope) {
+  if (entityID === "objects") {
+    await ensureLiveDomainData(liveDomainConfigs.calls, scope);
+  }
 }
 
 async function ensureLiveDomainData(config, scope = null) {
@@ -7076,10 +7084,31 @@ function objectProducedBySummary(row) {
   if (!ids.length) {
     return "None";
   }
-  if (ids.length === 1) {
-    return callSummaryLink(ids[0]);
+  const groups = [];
+  const byLabel = new Map();
+  for (const id of ids) {
+    const call = callRowByID(id);
+    const label = call ? callTitle(call) : shortID(id);
+    if (byLabel.has(label)) {
+      byLabel.get(label).ids.push(id);
+      continue;
+    }
+    const entry = { label, ids: [id] };
+    byLabel.set(label, entry);
+    groups.push(entry);
   }
-  return detailLinkList(ids.slice(0, 3).map((id) => callSummaryLink(id, shortID(id))), `${ids.length} calls`);
+  if (groups.length === 1) {
+    const group = groups[0];
+    const label = group.ids.length > 1 ? `${group.label} ×${group.ids.length}` : group.label;
+    return callSummaryLink(group.ids[0], label);
+  }
+  return detailLinkList(
+    groups.slice(0, 3).map((group) => {
+      const label = group.ids.length > 1 ? `${group.label} ×${group.ids.length}` : group.label;
+      return callSummaryLink(group.ids[0], label);
+    }),
+    `${ids.length} calls`,
+  );
 }
 
 function objectFieldRows(row) {
