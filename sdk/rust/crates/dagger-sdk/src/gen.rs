@@ -14656,7 +14656,7 @@ pub struct WorkspaceDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
-    /// Path to start the search from, relative to the workspace root.
+    /// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
     #[builder(setter(into, strip_option), default)]
     pub from: Option<&'a str>,
 }
@@ -14694,6 +14694,11 @@ pub struct WorkspaceUpdateOpts<'a> {
     pub modules: Option<Vec<&'a str>>,
 }
 impl Workspace {
+    /// Canonical Dagger address of the workspace directory.
+    pub async fn address(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("address");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return all checks from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -14728,7 +14733,7 @@ impl Workspace {
         let query = self.selection.select("clientId");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Path to config.toml relative to root (empty if not initialized).
+    /// Path to config.toml relative to the workspace boundary (empty if not initialized).
     pub async fn config_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configPath");
         query.execute(self.graphql_client.clone()).await
@@ -14782,11 +14787,11 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a Directory from the workspace.
-    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
+    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -14798,11 +14803,11 @@ impl Workspace {
         }
     }
     /// Returns a Directory from the workspace.
-    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
+    /// * `path` - Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
         &self,
@@ -14827,11 +14832,11 @@ impl Workspace {
         }
     }
     /// Returns a File from the workspace.
-    /// Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.
+    /// * `path` - Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
@@ -14842,8 +14847,9 @@ impl Workspace {
         }
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the path relative to the workspace root if found, or null if not found.
-    /// The search stops at the workspace root and will not traverse above it.
+    /// Returns the absolute workspace path if found, or null if not found.
+    /// Relative start paths resolve from the workspace directory.
+    /// The search stops at the workspace boundary and will not traverse above it.
     ///
     /// # Arguments
     ///
@@ -14855,8 +14861,9 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// Search for a file or directory by walking up from the start path within the workspace.
-    /// Returns the path relative to the workspace root if found, or null if not found.
-    /// The search stops at the workspace root and will not traverse above it.
+    /// Returns the absolute workspace path if found, or null if not found.
+    /// Relative start paths resolve from the workspace directory.
+    /// The search stops at the workspace boundary and will not traverse above it.
     ///
     /// # Arguments
     ///
@@ -15008,7 +15015,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// Workspace path relative to root.
+    /// Workspace directory path relative to the workspace boundary.
     pub async fn path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("path");
         query.execute(self.graphql_client.clone()).await

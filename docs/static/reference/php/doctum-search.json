@@ -6009,6 +6009,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::address",
+			"p": "Dagger/Workspace.html#method_address",
+			"d": "<p>Canonical Dagger address of the workspace directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::checks",
 			"p": "Dagger/Workspace.html#method_checks",
 			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
@@ -6023,7 +6029,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::configPath",
 			"p": "Dagger/Workspace.html#method_configPath",
-			"d": "<p>Path to config.toml relative to root (empty if not initialized).</p>"
+			"d": "<p>Path to config.toml relative to the workspace boundary (empty if not initialized).</p>"
 		},
 		{
 			"t": "M",
@@ -6113,7 +6119,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::path",
 			"p": "Dagger/Workspace.html#method_path",
-			"d": "<p>Workspace path relative to root.</p>"
+			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"
 		},
 		{
 			"t": "M",

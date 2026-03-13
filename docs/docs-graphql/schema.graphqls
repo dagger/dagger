@@ -5730,6 +5730,9 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """Canonical Dagger address of the workspace directory."""
+  address: String!
+
   """Return all checks from modules loaded in the workspace."""
   checks(
     """Only include checks matching the specified patterns"""
@@ -5739,7 +5742,9 @@ type Workspace {
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
 
-  """Path to config.toml relative to root (empty if not initialized)."""
+  """
+  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  """
   configPath: String!
 
   """
@@ -5776,13 +5781,13 @@ type Workspace {
   """
   Returns a Directory from the workspace.
 
-  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   directory(
     """
     Location of the directory to retrieve. Relative paths (e.g., "src") resolve
-    from workspace root; absolute paths (e.g., "/src") resolve from sandbox
-    root.
+    from the workspace directory; absolute paths (e.g., "/src") resolve from the
+    workspace boundary.
     """
     path: String!
 
@@ -5803,13 +5808,13 @@ type Workspace {
   """
   Returns a File from the workspace.
 
-  Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   file(
     """
     Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
-    from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox
-    root.
+    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
+    the workspace boundary.
     """
     path: String!
   ): File!
@@ -5817,15 +5822,20 @@ type Workspace {
   """
   Search for a file or directory by walking up from the start path within the workspace.
 
-  Returns the path relative to the workspace root if found, or null if not found.
+  Returns the absolute workspace path if found, or null if not found.
 
-  The search stops at the workspace root and will not traverse above it.
+  Relative start paths resolve from the workspace directory.
+
+  The search stops at the workspace boundary and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
     name: String!
 
-    """Path to start the search from, relative to the workspace root."""
+    """
+    Path to start the search from. Relative paths resolve from the workspace
+    directory; absolute paths resolve from the workspace boundary.
+    """
     from: String = "."
   ): String
 
@@ -5882,7 +5892,7 @@ type Workspace {
   """List modules defined in the workspace configuration."""
   moduleList: [WorkspaceModule!]!
 
-  """Workspace path relative to root."""
+  """Workspace directory path relative to the workspace boundary."""
   path: String!
 
   """
@@ -5920,4 +5930,5 @@ type WorkspaceModule {
 The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
 """
 scalar WorkspaceModuleID
+
 

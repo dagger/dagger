@@ -14163,6 +14163,27 @@ class TypeDef(Type):
 class Workspace(Type):
     """A Dagger workspace detected from the current working directory."""
 
+    async def address(self) -> str:
+        """Canonical Dagger address of the workspace directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("address", _args)
+        return await _ctx.execute(str)
+
     def checks(
         self,
         *,
@@ -14203,7 +14224,8 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
     async def config_path(self) -> str:
-        """Path to config.toml relative to root (empty if not initialized).
+        """Path to config.toml relative to the workspace boundary (empty if not
+        initialized).
 
         Returns
         -------
@@ -14323,15 +14345,15 @@ class Workspace(Type):
     ) -> Directory:
         """Returns a Directory from the workspace.
 
-        Relative paths resolve from the workspace root. Absolute paths resolve
-        from the rootfs root.
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
 
         Parameters
         ----------
         path:
             Location of the directory to retrieve. Relative paths (e.g.,
-            "src") resolve from workspace root; absolute paths (e.g., "/src")
-            resolve from sandbox root.
+            "src") resolve from the workspace directory; absolute paths (e.g.,
+            "/src") resolve from the workspace boundary.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -14353,15 +14375,15 @@ class Workspace(Type):
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
 
-        Relative paths resolve from the workspace root. Absolute paths resolve
-        from the rootfs root.
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
 
         Parameters
         ----------
         path:
             Location of the file to retrieve. Relative paths (e.g., "go.mod")
-            resolve from workspace root; absolute paths (e.g., "/go.mod")
-            resolve from sandbox root.
+            resolve from the workspace directory; absolute paths (e.g.,
+            "/go.mod") resolve from the workspace boundary.
         """
         _args = [
             Arg("path", path),
@@ -14378,17 +14400,21 @@ class Workspace(Type):
         """Search for a file or directory by walking up from the start path
         within the workspace.
 
-        Returns the path relative to the workspace root if found, or null if
-        not found.
+        Returns the absolute workspace path if found, or null if not found.
 
-        The search stops at the workspace root and will not traverse above it.
+        Relative start paths resolve from the workspace directory.
+
+        The search stops at the workspace boundary and will not traverse above
+        it.
 
         Parameters
         ----------
         name:
             The name of the file or directory to search for.
         from_:
-            Path to start the search from, relative to the workspace root.
+            Path to start the search from. Relative paths resolve from the
+            workspace directory; absolute paths resolve from the workspace
+            boundary.
 
         Returns
         -------
@@ -14608,7 +14634,7 @@ class Workspace(Type):
         return await _ctx.execute_object_list(WorkspaceModule)
 
     async def path(self) -> str:
-        """Workspace path relative to root.
+        """Workspace directory path relative to the workspace boundary.
 
         Returns
         -------

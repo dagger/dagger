@@ -15748,6 +15748,10 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-address" href="#Workspace-address"><code>address</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Canonical Dagger address of the workspace directory. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
                         <td> Return all checks from modules loaded in the workspace. </td>
@@ -15771,7 +15775,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-configPath" href="#Workspace-configPath"><code>configPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Path to config.toml relative to root (empty if not initialized). </td>
+                        <td> Path to config.toml relative to the workspace boundary (empty if not initialized). </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-configRead" href="#Workspace-configRead"><code>configRead</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -15825,7 +15829,7 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
                           <p>Returns a Directory from the workspace.</p>
-                          <p>Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.</p>
+                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15835,7 +15839,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from workspace root; absolute paths (e.g., &quot;/src&quot;) resolve from sandbox root.</p>
+                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/src&quot;) resolve from the workspace boundary.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -15857,7 +15861,7 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-file" href="#Workspace-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td>
                           <p>Returns a File from the workspace.</p>
-                          <p>Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.</p>
+                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15867,7 +15871,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from workspace root; absolute paths (e.g., &quot;/go.mod&quot;) resolve from sandbox root.</p>
+                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/go.mod&quot;) resolve from the workspace boundary.</p>
                               </div>
                             </div>
                           </div>
@@ -15877,8 +15881,9 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-findUp" href="#Workspace-findUp"><code>findUp</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td>
                           <p>Search for a file or directory by walking up from the start path within the workspace.</p>
-                          <p>Returns the path relative to the workspace root if found, or null if not found.</p>
-                          <p>The search stops at the workspace root and will not traverse above it.</p>
+                          <p>Returns the absolute workspace path if found, or null if not found.</p>
+                          <p>Relative start paths resolve from the workspace directory.</p>
+                          <p>The search stops at the workspace boundary and will not traverse above it.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -15892,7 +15897,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Path to start the search from, relative to the workspace root.</p>
+                                <p>Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.</p>
                               </div>
                             </div>
                           </div>
@@ -15995,7 +16000,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-path" href="#Workspace-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Workspace path relative to root. </td>
+                        <td> Workspace directory path relative to the workspace boundary. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-update" href="#Workspace-update"><code>update</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>

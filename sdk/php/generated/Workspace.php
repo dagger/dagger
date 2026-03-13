@@ -14,6 +14,15 @@ namespace Dagger;
 class Workspace extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Canonical Dagger address of the workspace directory.
+     */
+    public function address(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('address');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'address');
+    }
+
+    /**
      * Return all checks from modules loaded in the workspace.
      */
     public function checks(?array $include = null): CheckGroup
@@ -35,7 +44,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Path to config.toml relative to root (empty if not initialized).
+     * Path to config.toml relative to the workspace boundary (empty if not initialized).
      */
     public function configPath(): string
     {
@@ -82,7 +91,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a Directory from the workspace.
      *
-     * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
      */
     public function directory(
         string $path,
@@ -107,7 +116,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a File from the workspace.
      *
-     * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
+     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
      */
     public function file(string $path): File
     {
@@ -119,9 +128,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Search for a file or directory by walking up from the start path within the workspace.
      *
-     * Returns the path relative to the workspace root if found, or null if not found.
+     * Returns the absolute workspace path if found, or null if not found.
      *
-     * The search stops at the workspace root and will not traverse above it.
+     * Relative start paths resolve from the workspace directory.
+     *
+     * The search stops at the workspace boundary and will not traverse above it.
      */
     public function findUp(string $name, ?string $from = '.'): string
     {
@@ -232,7 +243,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Workspace path relative to root.
+     * Workspace directory path relative to the workspace boundary.
      */
     public function path(): string
     {

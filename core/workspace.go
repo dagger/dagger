@@ -12,10 +12,11 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// Path is the workspace location within the rootfs/host root.
-	Path        string `field:"true" doc:"Workspace path relative to root."`
+	// Path is the workspace directory relative to the workspace boundary.
+	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
+	Address     string `field:"true" doc:"Canonical Dagger address of the workspace directory."`
 	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
-	ConfigPath  string `field:"true" doc:"Path to config.toml relative to root (empty if not initialized)."`
+	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`
 	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
 
 	// ClientID is the ID of the client that created this workspace.
@@ -28,7 +29,7 @@ type Workspace struct {
 	// module. For a standalone module, this is the module itself.
 	DefaultModule string `field:"true" name:"defaultModule" doc:"The default module to focus on (blueprint or standalone module name). Empty when ambiguous."`
 
-	// hostPath is the host filesystem path for the root.
+	// hostPath is the host filesystem path for the workspace boundary.
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by mutating operations (init, install, configWrite) that need
 	// to write to the host via buildkit client.
@@ -46,7 +47,7 @@ func (ws *Workspace) SetRootfs(r dagql.ObjectResult[*Directory]) {
 	ws.rootfs = r
 }
 
-// HostPath returns the internal host filesystem path for the workspace root.
+// HostPath returns the internal host filesystem path for the workspace boundary.
 // Returns empty string for remote workspaces (read-only).
 func (ws *Workspace) HostPath() string {
 	return ws.hostPath

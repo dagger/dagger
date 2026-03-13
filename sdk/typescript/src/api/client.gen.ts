@@ -2741,7 +2741,7 @@ export type WorkspaceDirectoryOpts = {
 
 export type WorkspaceFindUpOpts = {
   /**
-   * Path to start the search from, relative to the workspace root.
+   * Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
    */
   from?: string
 }
@@ -13743,6 +13743,7 @@ export class TypeDef extends BaseClient {
  */
 export class Workspace extends BaseClient {
   private readonly _id?: WorkspaceID = undefined
+  private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
   private readonly _configPath?: string = undefined
   private readonly _configRead?: string = undefined
@@ -13763,6 +13764,7 @@ export class Workspace extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: WorkspaceID,
+    _address?: string,
     _clientId?: string,
     _configPath?: string,
     _configRead?: string,
@@ -13780,6 +13782,7 @@ export class Workspace extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._address = _address
     this._clientId = _clientId
     this._configPath = _configPath
     this._configRead = _configRead
@@ -13811,6 +13814,21 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Canonical Dagger address of the workspace directory.
+   */
+  address = async (): Promise<string> => {
+    if (this._address) {
+      return this._address
+    }
+
+    const ctx = this._ctx.select("address")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
    */
@@ -13835,7 +13853,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Path to config.toml relative to root (empty if not initialized).
+   * Path to config.toml relative to the workspace boundary (empty if not initialized).
    */
   configPath = async (): Promise<string> => {
     if (this._configPath) {
@@ -13904,8 +13922,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a Directory from the workspace.
    *
-   * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
-   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from workspace root; absolute paths (e.g., "/src") resolve from sandbox root.
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -13918,8 +13936,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a File from the workspace.
    *
-   * Relative paths resolve from the workspace root. Absolute paths resolve from the rootfs root.
-   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from workspace root; absolute paths (e.g., "/go.mod") resolve from sandbox root.
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -13929,11 +13947,13 @@ export class Workspace extends BaseClient {
   /**
    * Search for a file or directory by walking up from the start path within the workspace.
    *
-   * Returns the path relative to the workspace root if found, or null if not found.
+   * Returns the absolute workspace path if found, or null if not found.
    *
-   * The search stops at the workspace root and will not traverse above it.
+   * Relative start paths resolve from the workspace directory.
+   *
+   * The search stops at the workspace boundary and will not traverse above it.
    * @param name The name of the file or directory to search for.
-   * @param opts.from Path to start the search from, relative to the workspace root.
+   * @param opts.from Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
    */
   findUp = async (
     name: string,
@@ -14067,7 +14087,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Workspace path relative to root.
+   * Workspace directory path relative to the workspace boundary.
    */
   path = async (): Promise<string> => {
     if (this._path) {
