@@ -290,6 +290,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
+	dagql.Fields[*core.ChangesetDiffStatEntry]{}.Install(srv)
 
 	dagql.Fields[*core.Changeset]{
 		Syncer[*core.Changeset]().
@@ -313,6 +314,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Files and directories that existed before and were updated in the newer directory.`),
 		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesetRemovedPaths)).
 			Doc(`Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.`),
+		dagql.NodeFunc("diffStat", DagOpWrapper(srv, s.changesetDiffStat)).
+			Doc(`Structured per-path diff statistics (kind and line counts) for this changeset.`),
 		dagql.NodeFunc("withChangeset", DagOpChangesetWrapper(srv, s.changesetWithChangeset)).
 			Doc(`Add changes to an existing changeset`,
 				`By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument`).
@@ -1127,6 +1130,14 @@ func (s *directorySchema) changesetRemovedPaths(ctx context.Context, parent dagq
 		return nil, err
 	}
 	return dagql.NewStringArray(paths.Removed...), nil
+}
+
+type changesetDiffStatArgs struct {
+	RawDagOpInternalArgs
+}
+
+func (s *directorySchema) changesetDiffStat(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], _ changesetDiffStatArgs) (dagql.Array[*core.ChangesetDiffStatEntry], error) {
+	return parent.Self().DiffStat(ctx)
 }
 
 type dirExportArgs struct {

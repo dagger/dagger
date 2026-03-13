@@ -244,6 +244,46 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, modifiedPaths, "dir/added.txt")
 	})
 
+	t.Run("diffStat basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("mod.txt", "one\nold\n").
+			WithNewFile("remove.txt", "gone\n")
+
+		newDir := c.Directory().
+			WithNewFile("mod.txt", "one\nnew\n").
+			WithNewFile("add.txt", "hello\n")
+
+		var diffStat []struct {
+			Path         string `json:"path"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("loadChangesetFromID").
+			Arg("id", newDir.Changes(oldDir)).
+			Select("diffStat").
+			Bind(&diffStat).Execute(ctx)
+		require.NoError(t, err)
+
+		// Results are sorted by path.
+		require.Len(t, diffStat, 3)
+		require.Equal(t, "add.txt", diffStat[0].Path)
+		require.Equal(t, "ADDED", diffStat[0].Kind)
+		require.Equal(t, 1, diffStat[0].AddedLines)
+
+		require.Equal(t, "mod.txt", diffStat[1].Path)
+		require.Equal(t, "MODIFIED", diffStat[1].Kind)
+		require.Equal(t, 1, diffStat[1].AddedLines)
+		require.Equal(t, 1, diffStat[1].RemovedLines)
+
+		require.Equal(t, "remove.txt", diffStat[2].Path)
+		require.Equal(t, "REMOVED", diffStat[2].Kind)
+		require.Equal(t, 1, diffStat[2].RemovedLines)
+	})
+
 	t.Run("layer basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -738,6 +778,8 @@ func (s ChangesetSuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
 		return dest.WithPatchFile(source.AsPatch())
 	}, true)
 }
+
+
 
 func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Directory, *dagger.Changeset) *dagger.Directory, leaveDirs bool) {
 	t.Run("basic usage with added, changed, and removed files", func(ctx context.Context, t *testctx.T) {
