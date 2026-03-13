@@ -80,6 +80,11 @@ func (p Prefix) Style(out TermOutput) termenv.Style {
 	return st
 }
 
+var LogsPrefix = Prefix{
+	Symbol: VertBoldBar,
+	Fg:     termenv.ANSIBrightBlack,
+}
+
 var LLMUserPrefix = Prefix{
 	Symbol: Block,
 	Fg:     termenv.ANSIBrightMagenta,

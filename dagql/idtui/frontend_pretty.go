@@ -3281,8 +3281,10 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 		pipe = LLMThinkingPrefix.Style(out)
 	} else if span.LLMRole == telemetry.LLMRoleAssistant {
 		pipe = LLMResponsePrefix.Style(out)
-	} else {
+	} else if span.LLMRole == telemetry.LLMRoleUser {
 		pipe = LLMUserPrefix.Style(out)
+	} else {
+		pipe = LogsPrefix.Style(out)
 	}
 	if focused {
 		pipe = hl(pipe)
