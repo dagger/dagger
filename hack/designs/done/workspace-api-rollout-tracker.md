@@ -1,20 +1,17 @@
 # Workspace API Rollout Tracker
 
-## Status: Temporary Working Note
+## Status: Archived
 
-This file is a temporary implementation tracker.
-
-It is **not** the canonical Workspace API spec.
+This temporary implementation tracker is complete.
 
 Canonical contract source:
 
 - the `workspace` PR description
 
-This tracker exists to coordinate the rollout across `workspace` and
-`workspace-plumbing` without copying the full spec into multiple docs.
+The Workspace API path-contract rollout is done.
 
-Delete or fold this file away once the path contract is implemented and reflected in
-the long-lived design/docs surface.
+Active legacy-loading / compatibility tracking now lives in
+[workspace-foundation-compat.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-foundation-compat.md).
 
 ## Why This Exists
 
