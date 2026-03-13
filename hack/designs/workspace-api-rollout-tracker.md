@@ -245,5 +245,25 @@ load contextual arg "config": load legacy default file "./app-config.txt":
 workspace file "./app-config.txt": path "app" resolves outside root "/"
 ```
 
-This bug should be fixed **after** the new Workspace path contract lands, not by
-bending the contract around the legacy behavior.
+Confirmed diagnosis on `workspace-plumbing` after the path-contract rollout:
+
+- this is **not** a new mismatch in the Workspace API contract itself
+- it is the pre-existing root-`/` sandbox bug in
+  [pathutil.go](/Users/shykes/git/github.com/dagger/dagger_workspace/engine/client/pathutil/pathutil.go)
+- in the failing integration container:
+  - workspace boundary is `/`
+  - workspace directory is `/app`
+  - legacy `defaultPath="./app-config.txt"` resolves to boundary-relative
+    `app/app-config.txt`
+  - `currentWorkspace.file(...)` then asks `SandboxedRelativePath("app", "/")`
+    for the parent directory
+  - the helper incorrectly checks for a `"//"` prefix when `root == "/"`, so
+    valid children like `/app` are rejected as escaping `/`
+- the correct fix is therefore:
+  - keep the new Workspace path contract unchanged
+  - fix `SandboxedRelativePath(..., "/")`
+  - add a focused unit test for the root-`/` case
+  - then rerun the blueprint/toolchain regressions
+
+This bug should be fixed **after** the new Workspace path contract lands, but
+without bending the contract around the legacy behavior.

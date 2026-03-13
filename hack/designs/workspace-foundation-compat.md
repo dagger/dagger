@@ -49,6 +49,11 @@ Current implementation status:
 - the public schema/SDK/docs surface has been regenerated on this branch through
   official repo-root `dagger generate -y ...` functions and trimmed back to the
   Workspace path-contract-related files only
+- next compat/runtime fix under that contract:
+  - legacy `defaultPath` failures are currently blocked by the root-`/`
+    sandbox bug in
+    [pathutil.go](/Users/shykes/git/github.com/dagger/dagger_workspace/engine/client/pathutil/pathutil.go),
+    not by a mismatch in the new Workspace path semantics
 
 ## Why This Split
 
