@@ -88,6 +88,16 @@ Branch docs:
   [workspace-foundation-compat.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-foundation-compat.md)
   with a short adoption note that references `workspace` PR `#11812` instead of
   duplicating the spec text.
+- Started rollout task `3` analysis on `workspace`.
+- Current `workspace` implementation still describes paths as:
+  - relative => workspace root
+  - absolute => rootfs root / sandbox root
+- Current `workspace` tests still encode the old semantics, including the expectation
+  that an absolute path like `/sub` resolves under the workspace root.
+- `core.Workspace.Path` already exists and appears reusable for the target `ws.path`
+  surface.
+- `ws.address` is not exposed yet and will need to be added in the shared
+  implementation pass.
 
 ## Rollout Order
 
