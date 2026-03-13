@@ -696,6 +696,26 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
+	// export to Dagger Cloud if the client has cloud auth
+	if client.clientMetadata.CloudAuth != nil {
+		cloudSpans, cloudLogs, cloudMetrics, err := enginetel.NewCloudExporters(ctx, client.clientMetadata.CloudAuth)
+		if err != nil {
+			slog.Warn("failed to configure cloud exporters for session", "error", err)
+		} else {
+			tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
+				telemetry.NewLiveSpanProcessor(cloudSpans),
+			))
+			loggerOpts = append(loggerOpts, sdklog.WithProcessor(
+				sdklog.NewBatchProcessor(cloudLogs,
+					sdklog.WithExportInterval(telemetry.NearlyImmediate)),
+			))
+			meterOpts = append(meterOpts, sdkmetric.WithReader(
+				sdkmetric.NewPeriodicReader(cloudMetrics,
+					sdkmetric.WithInterval(metricReaderInterval)),
+			))
+		}
+	}
+
 	// export to parent client DBs too
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(

@@ -110,13 +110,20 @@ func withEngine(
 
 		params.CloudURLCallback = Frontend.SetCloudURL
 
+		// only forward engine telemetry to the Frontend for TUI display.
+		// the engine sends its own telemetry to cloud directly.
 		params.EngineTrace = telemetry.SpanForwarder{
-			Processors: telemetry.SpanProcessors,
+			Processors: []sdktrace.SpanProcessor{
+				telemetry.NewLiveSpanProcessor(Frontend.SpanExporter()),
+			},
 		}
 		params.EngineLogs = telemetry.LogForwarder{
-			Processors: telemetry.LogProcessors,
+			Processors: []sdklog.Processor{
+				sdklog.NewBatchProcessor(Frontend.LogExporter(),
+					sdklog.WithExportInterval(telemetry.NearlyImmediate)),
+			},
 		}
-		params.EngineMetrics = telemetry.MetricExporters
+		params.EngineMetrics = []sdkmetric.Exporter{Frontend.MetricExporter()}
 
 		params.WithTerminal = withTerminal
 
