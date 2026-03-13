@@ -45,6 +45,10 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 - [Discord](https://discord.gg/dagger-io)
 - [GitHub Discussions](https://github.com/dagger/dagger/discussions)
 
+## ODAG
+
+The local trace explorer and web UI live under [`internal/odag`](./internal/odag/README.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md).
