@@ -193,24 +193,28 @@ func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePa
 	return string(msg.Data), nil
 }
 
-// GitStageSetup captures user's unstaged changes, creates a virtual stash backup,
-// and resets the worktree to a pristine state. Returns the stash ref and user's diff patch.
-func (c *Client) GitStageSetup(ctx context.Context, worktreeDir string) (stashRef string, userPatch string, err error) {
+// GitStageSetup captures user's unstaged changes, any previously staged changes,
+// creates a virtual stash backup, and resets the worktree to a pristine state.
+// Returns the stash ref, user's diff patch, and staged diff patch.
+func (c *Client) GitStageSetup(ctx context.Context, worktreeDir string) (stashRef string, userPatch string, stagedPatch string, err error) {
 	msg := filesync.BytesMessage{}
 	err = c.diffcopy(ctx, engine.LocalImportOpts{
 		Path:          path.Clean(worktreeDir),
 		GitStageSetup: &engine.GitStageSetupOpts{},
 	}, &msg)
 	if err != nil {
-		return "", "", fmt.Errorf("git stage setup: %w", err)
+		return "", "", "", fmt.Errorf("git stage setup: %w", err)
 	}
-	// Response format: stashRef + "\n" + base64(userPatch)
-	parts := bytes.SplitN(msg.Data, []byte("\n"), 2)
+	// Response format: stashRef + "\n" + base64(userPatch) + "\n" + base64(stagedPatch)
+	parts := bytes.SplitN(msg.Data, []byte("\n"), 3)
 	stashRef = string(parts[0])
 	if len(parts) > 1 {
 		userPatch = string(parts[1])
 	}
-	return stashRef, userPatch, nil
+	if len(parts) > 2 {
+		stagedPatch = string(parts[2])
+	}
+	return stashRef, userPatch, stagedPatch, nil
 }
 
 // GitStageFinalize stages the changeset paths and restores user's unstaged changes.
@@ -221,16 +225,18 @@ func (c *Client) GitStageFinalize(
 	added, modified, removed []string,
 	stashRef string,
 	userPatch string,
+	stagedPatch string,
 ) (bool, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
 		Path: path.Clean(worktreeDir),
 		GitStageFinalize: &engine.GitStageFinalizeOpts{
-			Added:     added,
-			Modified:  modified,
-			Removed:   removed,
-			StashRef:  stashRef,
-			UserPatch: userPatch,
+			Added:       added,
+			Modified:    modified,
+			Removed:     removed,
+			StashRef:    stashRef,
+			UserPatch:   userPatch,
+			StagedPatch: stagedPatch,
 		},
 	}, &msg)
 	if err != nil {

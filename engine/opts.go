@@ -189,11 +189,12 @@ type GitStageSetupOpts struct{}
 
 // GitStageFinalizeOpts configures the post-export staging finalization.
 type GitStageFinalizeOpts struct {
-	Added     []string `json:"added"`
-	Modified  []string `json:"modified"`
-	Removed   []string `json:"removed"`
-	StashRef  string   `json:"stash_ref"`
-	UserPatch string   `json:"user_patch"` // base64-encoded, may be empty
+	Added       []string `json:"added"`
+	Modified    []string `json:"modified"`
+	Removed     []string `json:"removed"`
+	StashRef    string   `json:"stash_ref"`
+	UserPatch   string   `json:"user_patch"`   // base64-encoded, may be empty
+	StagedPatch string   `json:"staged_patch"` // base64-encoded, may be empty; previously staged changes
 }
 
 // GitCommitOpts configures a git commit operation on the client.

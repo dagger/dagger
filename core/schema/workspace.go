@@ -616,18 +616,17 @@ func (s *workspaceSchema) stage(
 	}
 
 	// Step 1: Pre-export setup — capture user changes, reset to clean state
-	stashRef, userPatch, err := bk.GitStageSetup(ctx, ws.Root)
+	stashRef, userPatch, stagedPatch, err := bk.GitStageSetup(ctx, ws.Root)
 	if err != nil {
 		return false, fmt.Errorf("stage setup: %w", err)
 	}
-
 	// Step 2: Export diff to worktree (merge mode, handles removals)
 	if err := changeset.Self().Export(ctx, ws.Root); err != nil {
 		return false, fmt.Errorf("export to worktree (recovery: git stash apply %s): %w", stashRef, err)
 	}
 
 	// Step 3: Stage paths and restore user changes
-	staged, err := bk.GitStageFinalize(ctx, ws.Root, paths.Added, paths.Modified, paths.Removed, stashRef, userPatch)
+	staged, err := bk.GitStageFinalize(ctx, ws.Root, paths.Added, paths.Modified, paths.Removed, stashRef, userPatch, stagedPatch)
 	if err != nil {
 		return false, fmt.Errorf("stage finalize: %w", err)
 	}

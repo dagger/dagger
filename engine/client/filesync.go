@@ -865,31 +865,53 @@ func gitStageSetup(ctx context.Context, repoDir string) (string, error) {
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
+	// gitRaw returns output without trimming — needed for patches where
+	// trailing newlines are significant.
+	gitRaw := func(args ...string) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+		return out, nil
+	}
 
-	// 1. Capture user's unstaged changes
-	userPatch, err := git("diff", "--binary")
+	// 1. Capture user's unstaged changes (raw bytes, no trimming —
+	//    trailing newlines are significant for git apply)
+	userPatchRaw, err := gitRaw("diff", "--binary")
 	if err != nil {
 		return "", fmt.Errorf("capture user diff: %w", err)
 	}
 
-	// 2. Virtual stash as safety net (no stash list pollution)
+	// 2. Capture any previously staged changes (from prior stage calls)
+	stagedPatchRaw, err := gitRaw("diff", "--cached", "--binary")
+	if err != nil {
+		return "", fmt.Errorf("capture staged diff: %w", err)
+	}
+
+	// 3. Virtual stash as safety net (no stash list pollution)
 	stashRef, err := git("stash", "create")
 	if err != nil {
 		return "", fmt.Errorf("stash create: %w", err)
 	}
 
-	// 3. Reset to pristine state
+	// 4. Reset to pristine state
 	if _, err := git("reset", "--hard", "HEAD"); err != nil {
 		return "", fmt.Errorf("reset --hard: %w", err)
 	}
 
-	// Encode user patch as base64 since it may contain binary data
-	encodedPatch := ""
-	if userPatch != "" {
-		encodedPatch = base64.StdEncoding.EncodeToString([]byte(userPatch))
+	// Encode patches as base64 since they may contain binary data.
+	encodedUserPatch := ""
+	if len(bytes.TrimSpace(userPatchRaw)) > 0 {
+		encodedUserPatch = base64.StdEncoding.EncodeToString(userPatchRaw)
+	}
+	encodedStagedPatch := ""
+	if len(bytes.TrimSpace(stagedPatchRaw)) > 0 {
+		encodedStagedPatch = base64.StdEncoding.EncodeToString(stagedPatchRaw)
 	}
 
-	return stashRef + "\n" + encodedPatch, nil
+	return stashRef + "\n" + encodedUserPatch + "\n" + encodedStagedPatch, nil
 }
 
 // gitStageFinalize stages the changeset paths and restores user's unstaged changes
@@ -903,6 +925,24 @@ func gitStageFinalize(ctx context.Context, repoDir string, opts *engine.GitStage
 			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
 		}
 		return strings.TrimSpace(string(out)), nil
+	}
+
+	// Restore previously staged changes first (from prior stage calls)
+	var stagedPatchBytes []byte
+	if opts.StagedPatch != "" {
+		var err error
+		stagedPatchBytes, err = base64.StdEncoding.DecodeString(opts.StagedPatch)
+		if err != nil {
+			return "", fmt.Errorf("decode staged patch: %w", err)
+		}
+	}
+	if len(stagedPatchBytes) > 0 {
+		if err := writeTempAndApply(ctx, repoDir, git, stagedPatchBytes, "dagger-staged-patch-*"); err != nil {
+			return "", fmt.Errorf("apply staged patch (recovery: git stash apply %s): %w", opts.StashRef, err)
+		}
+		if _, err := git("add", "-A"); err != nil {
+			return "", fmt.Errorf("re-stage prior changes (recovery: git stash apply %s): %w", opts.StashRef, err)
+		}
 	}
 
 	addPaths := append(opts.Added, opts.Modified...)
@@ -940,22 +980,8 @@ func gitStageFinalize(ctx context.Context, repoDir string, opts *engine.GitStage
 			return "", fmt.Errorf("temp commit (recovery: git stash apply %s): %w", opts.StashRef, err)
 		}
 
-		// Write user patch to temp file and apply it
-		tmpPatch, err := os.CreateTemp("", "dagger-user-patch-*")
-		if err != nil {
-			return "", fmt.Errorf("create temp patch file: %w", err)
-		}
-		tmpPatchPath := tmpPatch.Name()
-		defer os.Remove(tmpPatchPath)
-
-		if _, err := tmpPatch.Write(userPatchBytes); err != nil {
-			tmpPatch.Close()
-			return "", fmt.Errorf("write user patch: %w", err)
-		}
-		tmpPatch.Close()
-
 		// Restore user's changes on disk
-		if _, err := git("apply", tmpPatchPath); err != nil {
+		if err := writeTempAndApply(ctx, repoDir, git, userPatchBytes, "dagger-user-patch-*"); err != nil {
 			return "", fmt.Errorf("apply user patch (recovery: git stash apply %s): %w", opts.StashRef, err)
 		}
 
@@ -999,4 +1025,25 @@ func gitCommitOp(ctx context.Context, repoDir string, opts *engine.GitCommitOpts
 	}
 
 	return hash, nil
+}
+
+// writeTempAndApply writes patch bytes to a temp file and runs git apply.
+func writeTempAndApply(_ context.Context, repoDir string, git func(...string) (string, error), patchBytes []byte, pattern string) error {
+	tmpPatch, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return fmt.Errorf("create temp patch file: %w", err)
+	}
+	tmpPatchPath := tmpPatch.Name()
+	defer os.Remove(tmpPatchPath)
+
+	if _, err := tmpPatch.Write(patchBytes); err != nil {
+		tmpPatch.Close()
+		return fmt.Errorf("write patch: %w", err)
+	}
+	tmpPatch.Close()
+
+	if _, err := git("apply", tmpPatchPath); err != nil {
+		return err
+	}
+	return nil
 }
