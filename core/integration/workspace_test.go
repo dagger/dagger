@@ -877,10 +877,125 @@ type Existing {
 
 // TestWorkspaceCommit verifies that Workspace.commit writes changeset files
 // and creates a git commit in the workspace.
+func (WorkspaceSuite) TestStage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("stage adds and modifies files", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("existing.txt", "original").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("stager", `
+type Stager {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/stage")
+    let before = ws2.directory(".")
+    let after = before.
+      withNewFile("new.txt", contents: "added").
+      withNewFile("existing.txt", contents: "modified")
+    ws2.stage(changes: after.changes(before))
+    self
+  }
+}
+`))
+		staged := ctr.With(daggerCall("stager"))
+		_, err := staged.Stdout(ctx)
+		require.NoError(t, err)
+
+		// New file should exist in the worktree.
+		out, err := staged.
+			WithWorkdir("/work-worktrees/agent-stage").
+			WithExec([]string{"cat", "new.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "added", out)
+
+		// Modified file should have new content.
+		out, err = staged.
+			WithWorkdir("/work-worktrees/agent-stage").
+			WithExec([]string{"cat", "existing.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified", out)
+
+		// Nothing should be committed yet.
+		logOut, err := staged.
+			WithWorkdir("/work-worktrees/agent-stage").
+			WithExec([]string{"git", "log", "--oneline", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, logOut, "init", "no new commit should exist")
+
+		// git status should show the changes as staged (added to index).
+		statusOut, err := staged.
+			WithWorkdir("/work-worktrees/agent-stage").
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, statusOut, "new.txt")
+		require.Contains(t, statusOut, "existing.txt")
+		// Verify they are staged (prefixed with A or M in first column)
+		for _, line := range strings.Split(statusOut, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			// First char is index status, should be A or M (staged)
+			require.True(t, line[0] == 'A' || line[0] == 'M',
+				"expected staged status, got %q", line)
+		}
+	})
+
+	t.Run("stage removes files", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("remove.txt", "gone").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("remstage", `
+type Remstage {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/remstage")
+    let before = ws2.directory(".")
+    let after = before.withoutFile("remove.txt")
+    ws2.stage(changes: after.changes(before))
+    self
+  }
+}
+`))
+		staged := ctr.With(daggerCall("remstage"))
+		_, err := staged.Stdout(ctx)
+		require.NoError(t, err)
+
+		// Removed file should be gone.
+		_, err = staged.
+			WithWorkdir("/work-worktrees/agent-remstage").
+			WithExec([]string{"test", "-f", "remove.txt"}).
+			Sync(ctx)
+		require.Error(t, err, "remove.txt should not exist")
+
+		// Kept file should still be there.
+		out, err := staged.
+			WithWorkdir("/work-worktrees/agent-remstage").
+			WithExec([]string{"cat", "keep.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep", out)
+
+		// Removal should be staged
+		statusOut, err := staged.
+			WithWorkdir("/work-worktrees/agent-remstage").
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, statusOut, "D  remove.txt")
+	})
+}
+
 func (WorkspaceSuite) TestCommit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("commit changeset to worktree branch", func(ctx context.Context, t *testctx.T) {
+	t.Run("stage and commit to worktree branch", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("hello.txt", "hello").
 			WithExec([]string{"git", "add", "."}).
@@ -893,8 +1008,8 @@ type Committer {
     let ws2 = ws.withBranch("agent/work")
     let before = ws2.directory(".")
     let after = before.withNewFile("new-file.txt", contents: "new content")
-    let changeset = after.changes(before)
-    self.hash = ws2.commit(changes: changeset, message: "feat: add new file")
+    ws2.stage(changes: after.changes(before))
+    self.hash = ws2.commit(message: "feat: add new file")
     self
   }
 }
@@ -926,7 +1041,7 @@ type Committer {
 		require.Equal(t, "new content", fileOut)
 	})
 
-	t.Run("commit to current branch", func(ctx context.Context, t *testctx.T) {
+	t.Run("stage and commit to current branch", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("hello.txt", "hello").
 			WithExec([]string{"git", "add", "."}).
@@ -936,8 +1051,8 @@ type Selfcommit {
   new(ws: Workspace!) {
     let before = ws.directory(".")
     let after = before.withNewFile("committed.txt", contents: "from agent")
-    let changeset = after.changes(before)
-    ws.commit(changes: changeset, message: "feat: self commit")
+    ws.stage(changes: after.changes(before))
+    ws.commit(message: "feat: self commit")
     self
   }
 }
@@ -960,7 +1075,7 @@ type Selfcommit {
 		require.Equal(t, "from agent", fileOut)
 	})
 
-	t.Run("commit with removed files", func(ctx context.Context, t *testctx.T) {
+	t.Run("stage and commit with removed files", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("keep.txt", "keep").
 			WithNewFile("remove.txt", "remove me").
@@ -972,8 +1087,8 @@ type Remover {
     let ws2 = ws.withBranch("agent/cleanup")
     let before = ws2.directory(".")
     let after = before.withoutFile("remove.txt")
-    let changeset = after.changes(before)
-    ws2.commit(changes: changeset, message: "chore: remove file")
+    ws2.stage(changes: after.changes(before))
+    ws2.commit(message: "chore: remove file")
     self
   }
 }
@@ -998,7 +1113,7 @@ type Remover {
 		require.Equal(t, "keep", out)
 	})
 
-	t.Run("multiple commits to same branch", func(ctx context.Context, t *testctx.T) {
+	t.Run("multiple stage+commit to same branch", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("hello.txt", "hello").
 			WithExec([]string{"git", "add", "."}).
@@ -1010,11 +1125,13 @@ type Multi {
 
     let before1 = ws2.directory(".")
     let after1 = before1.withNewFile("first.txt", contents: "first")
-    ws2.commit(changes: after1.changes(before1), message: "feat: first commit")
+    ws2.stage(changes: after1.changes(before1))
+    ws2.commit(message: "feat: first commit")
 
     let before2 = ws2.directory(".")
     let after2 = before2.withNewFile("second.txt", contents: "second")
-    ws2.commit(changes: after2.changes(before2), message: "feat: second commit")
+    ws2.stage(changes: after2.changes(before2))
+    ws2.commit(message: "feat: second commit")
 
     self
   }
@@ -1049,7 +1166,68 @@ type Multi {
 		require.Equal(t, "second", out)
 	})
 
-	t.Run("commit preserves local changes", func(ctx context.Context, t *testctx.T) {
+	t.Run("multiple stages then single commit", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", "hello").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("multistage", `
+type Multistage {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/multistage")
+
+    let before1 = ws2.directory(".")
+    let after1 = before1.withNewFile("first.txt", contents: "first")
+    ws2.stage(changes: after1.changes(before1))
+
+    let before2 = ws2.directory(".")
+    let after2 = before2.withNewFile("second.txt", contents: "second")
+    ws2.stage(changes: after2.changes(before2))
+
+    ws2.commit(message: "feat: both changes")
+
+    self
+  }
+}
+`))
+		committed := ctr.With(daggerCall("multistage"))
+		_, err := committed.Stdout(ctx)
+		require.NoError(t, err)
+
+		// Verify single commit with both files
+		logOut, err := committed.
+			WithWorkdir("/work-worktrees/agent-multistage").
+			WithExec([]string{"git", "log", "--oneline", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, logOut, "feat: both changes")
+
+		// Only one new commit (plus init)
+		logAll, err := committed.
+			WithWorkdir("/work-worktrees/agent-multistage").
+			WithExec([]string{"git", "log", "--oneline"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(logAll), "\n")
+		require.Equal(t, 2, len(lines), "expected init + 1 commit, got: %s", logAll)
+
+		// Verify both files exist
+		out, err := committed.
+			WithWorkdir("/work-worktrees/agent-multistage").
+			WithExec([]string{"cat", "first.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "first", out)
+
+		out, err = committed.
+			WithWorkdir("/work-worktrees/agent-multistage").
+			WithExec([]string{"cat", "second.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "second", out)
+	})
+
+	t.Run("stage preserves user unstaged changes", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("hello.txt", "hello").
 			WithExec([]string{"git", "add", "."}).
@@ -1062,8 +1240,8 @@ type Preserver {
     let ws2 = ws.withBranch("agent/preserve")
     let before = ws2.directory(".")
     let after = before.withNewFile("agent-file.txt", contents: "from agent")
-    let changeset = after.changes(before)
-    self.hash = ws2.commit(changes: changeset, message: "feat: agent change")
+    ws2.stage(changes: after.changes(before))
+    self.hash = ws2.commit(message: "feat: agent change")
     self
   }
 }
@@ -1071,12 +1249,13 @@ type Preserver {
 
 		// Simulate local user edits in the worktree BEFORE running the
 		// module. We first create the worktree so the user can put files
-		// there, then run dagger call which commits on top.
+		// there, then run dagger call which stages+commits on top.
 		ctr = ctr.
 			WithExec([]string{"git", "worktree", "add", "-b", "agent/preserve",
 				"/work-worktrees/agent-preserve"}).
+			// User edits a tracked file (will show as unstaged diff)
 			WithExec([]string{"sh", "-c",
-				"echo user wip > /work-worktrees/agent-preserve/user-wip.txt"})
+				"echo user edit >> /work-worktrees/agent-preserve/hello.txt"})
 
 		committed := ctr.With(daggerCall("preserver", "hash"))
 		hashOut, err := committed.Stdout(ctx)
@@ -1092,15 +1271,15 @@ type Preserver {
 		require.NoError(t, err)
 		require.Equal(t, "from agent", agentFile)
 
-		// User's local (uncommitted) file should still be there.
+		// User's local edit should still be there (unstaged).
 		userFile, err := committed.
 			WithWorkdir("/work-worktrees/agent-preserve").
-			WithExec([]string{"cat", "user-wip.txt"}).
+			WithExec([]string{"cat", "hello.txt"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "user wip\n", userFile)
+		require.Contains(t, userFile, "user edit")
 
-		// The git log should show the agent commit, not the user's file.
+		// The git log should show the agent commit.
 		logOut, err := committed.
 			WithWorkdir("/work-worktrees/agent-preserve").
 			WithExec([]string{"git", "log", "--oneline", "-1"}).
@@ -1108,14 +1287,17 @@ type Preserver {
 		require.NoError(t, err)
 		require.Contains(t, logOut, "feat: agent change")
 
-		// User's file should NOT be committed.
+		// User's edit should show as unstaged (modified in working tree).
 		statusOut, err := committed.
 			WithWorkdir("/work-worktrees/agent-preserve").
 			WithExec([]string{"git", "status", "--porcelain"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, statusOut, "user-wip.txt",
-			"user's uncommitted file should show in git status")
+		require.Contains(t, statusOut, "hello.txt",
+			"user's unstaged edit should show in git status")
+		// Should be unstaged modification (space + M)
+		require.Contains(t, statusOut, " M hello.txt",
+			"user's change should be unstaged (second column M)")
 	})
 }
 

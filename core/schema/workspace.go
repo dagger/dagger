@@ -35,13 +35,21 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("branch").Doc(`The branch name (e.g. "agent/auth").`),
 			),
+		dagql.NodeFuncWithCacheKey("stage", DagOpWrapper(srv, s.stage), dagql.CachePerClient).
+			DoNotCache("Writes to the local host.").
+			Doc(`Apply a Changeset to the workspace and stage the affected paths in git.`,
+				`Files are written (added/modified) and removed on disk, then precisely`,
+				`the changed paths are staged via git add / git rm. Any pre-existing`,
+				`unstaged user edits are preserved as unstaged changes.`,
+				`Returns true if any changes were staged, false if the changeset was empty.`).
+			Args(
+				dagql.Arg("changes").Doc(`The changes to apply and stage.`),
+			),
 		dagql.NodeFuncWithCacheKey("commit", DagOpWrapper(srv, s.commit), dagql.CachePerClient).
 			DoNotCache("Writes to the local host.").
-			Doc(`Export a Changeset to the workspace's branch and create a Git commit.`,
-				`The changeset files are written to the worktree and committed with the given message.`,
-				`Returns the commit hash.`).
+			Doc(`Commit whatever is currently staged in the workspace's git index.`,
+				`Returns the commit hash. Fails if there is nothing staged.`).
 			Args(
-				dagql.Arg("changes").Doc(`The changes to commit.`),
 				dagql.Arg("message").Doc(`The commit message.`),
 			),
 		dagql.NodeFuncWithCacheKey("directory",
@@ -559,8 +567,75 @@ func (s *workspaceSchema) withBranch(
 	}, nil
 }
 
-type workspaceCommitArgs struct {
+type workspaceStageArgs struct {
 	Changes dagql.ID[*core.Changeset]
+
+	RawDagOpInternalArgs
+}
+
+func (s *workspaceSchema) stage(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceStageArgs,
+) (dagql.Boolean, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return false, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	changeset, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return false, fmt.Errorf("load changeset: %w", err)
+	}
+
+	// Compute the changeset paths (added/modified/removed)
+	paths, err := changeset.Self().ComputePaths(ctx)
+	if err != nil {
+		return false, fmt.Errorf("compute paths: %w", err)
+	}
+
+	// Check if empty
+	if len(paths.Added) == 0 && len(paths.Modified) == 0 && len(paths.Removed) == 0 {
+		return false, nil
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return false, fmt.Errorf("buildkit: %w", err)
+	}
+
+	// Step 1: Pre-export setup — capture user changes, reset to clean state
+	stashRef, userPatch, err := bk.GitStageSetup(ctx, ws.Root)
+	if err != nil {
+		return false, fmt.Errorf("stage setup: %w", err)
+	}
+
+	// Step 2: Export diff to worktree (merge mode, handles removals)
+	if err := changeset.Self().Export(ctx, ws.Root); err != nil {
+		return false, fmt.Errorf("export to worktree (recovery: git stash apply %s): %w", stashRef, err)
+	}
+
+	// Step 3: Stage paths and restore user changes
+	staged, err := bk.GitStageFinalize(ctx, ws.Root, paths.Added, paths.Modified, paths.Removed, stashRef, userPatch)
+	if err != nil {
+		return false, fmt.Errorf("stage finalize: %w", err)
+	}
+
+	return dagql.Boolean(staged), nil
+}
+
+type workspaceCommitArgs struct {
 	Message string
 
 	RawDagOpInternalArgs
@@ -578,17 +653,16 @@ func (s *workspaceSchema) commit(
 		return "", err
 	}
 
-	srv, err := core.CurrentDagqlServer(ctx)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	changeset, err := args.Changes.Load(ctx, srv)
+	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return "", fmt.Errorf("load changeset: %w", err)
+		return "", fmt.Errorf("buildkit: %w", err)
 	}
 
-	hash, err := changeset.Self().GitCommit(ctx, ws.Root, args.Message)
+	hash, err := bk.GitCommit(ctx, ws.Root, args.Message)
 	if err != nil {
 		return "", fmt.Errorf("commit: %w", err)
 	}

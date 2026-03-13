@@ -398,43 +398,7 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	return bk.LocalDirExport(ctx, root, destPath, true, paths.Removed)
 }
 
-// GitCommit creates a git commit in the repository at destPath that applies
-// exactly the changes in this changeset. The commit is built via git plumbing
-// commands so it never disturbs the user's working tree or index.
-// Returns the commit hash.
-func (ch *Changeset) GitCommit(ctx context.Context, destPath string, message string) (_ string, rerr error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return "", err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("git commit changeset to %s", destPath))
-	defer telemetry.EndWithCause(span, &rerr)
-
-	// Generate the patch file from the changeset.
-	patchFile, err := ch.AsPatch(ctx)
-	if err != nil {
-		return "", fmt.Errorf("generate patch: %w", err)
-	}
-
-	// Mount the patch file so we can pass its path to the buildkit client.
-	root, closer, err := mountObj(ctx, patchFile)
-	if err != nil {
-		return "", fmt.Errorf("mount patch file: %w", err)
-	}
-	defer closer(false)
-
-	patchPath, err := containerdfs.RootPath(root, patchFile.File)
-	if err != nil {
-		return "", err
-	}
-
-	return bk.GitCommitChangeset(ctx, patchPath, destPath, message)
-}
 
 type ChangeType int
 

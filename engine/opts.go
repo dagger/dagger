@@ -173,13 +173,32 @@ type LocalImportOpts struct {
 	GitBranchDetect      bool                `json:"git_branch_detect,omitempty"`
 	GitRevParseHead      bool                `json:"git_rev_parse_head,omitempty"`
 	GitWorktreeAdd       *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
-	GitApplyAndCommit    *GitApplyCommitOpts `json:"git_apply_and_commit,omitempty"`
+	GitStageSetup    *GitStageSetupOpts    `json:"git_stage_setup,omitempty"`
+	GitStageFinalize *GitStageFinalizeOpts `json:"git_stage_finalize,omitempty"`
+	GitCommit        *GitCommitOpts        `json:"git_commit,omitempty"`
 }
 
 // GitWorktreeAddOpts configures a git worktree add operation on the client.
 type GitWorktreeAddOpts struct {
 	Branch       string `json:"branch"`
 	WorktreePath string `json:"worktree_path"`
+}
+
+// GitStageSetupOpts configures the pre-export setup for staging.
+type GitStageSetupOpts struct{}
+
+// GitStageFinalizeOpts configures the post-export staging finalization.
+type GitStageFinalizeOpts struct {
+	Added     []string `json:"added"`
+	Modified  []string `json:"modified"`
+	Removed   []string `json:"removed"`
+	StashRef  string   `json:"stash_ref"`
+	UserPatch string   `json:"user_patch"` // base64-encoded, may be empty
+}
+
+// GitCommitOpts configures a git commit operation on the client.
+type GitCommitOpts struct {
+	Message string `json:"message"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
@@ -285,15 +304,6 @@ type LocalExportOpts struct {
 	// which includes deleting any files that are not in the source directory
 	Merge       bool
 	RemovePaths []string `json:"remove_paths"`
-}
-
-// GitApplyCommitOpts configures a git commit from a patch file on the client.
-// The commit is built entirely via git plumbing (temporary index + apply --cached
-// + write-tree + commit-tree + update-ref) so it never touches the user's
-// working tree or normal index.
-type GitApplyCommitOpts struct {
-	Message   string `json:"message"`
-	PatchFile string `json:"patch_file"` // absolute path to the patch file on the client
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

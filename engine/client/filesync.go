@@ -1,9 +1,10 @@
 package client
 
 import (
-	"context"
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -133,12 +134,26 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		}
 		return stream.SendMsg(&filesync.BytesMessage{Data: bytes.TrimSpace(out)})
 
-	case opts.GitApplyAndCommit != nil:
-		commitHash, err := gitApplyAndCommit(ctx, absPath, opts.GitApplyAndCommit)
+	case opts.GitStageSetup != nil:
+		result, err := gitStageSetup(ctx, absPath)
 		if err != nil {
 			return err
 		}
-		return stream.SendMsg(&filesync.BytesMessage{Data: []byte(commitHash)})
+		return stream.SendMsg(&filesync.BytesMessage{Data: []byte(result)})
+
+	case opts.GitStageFinalize != nil:
+		result, err := gitStageFinalize(ctx, absPath, opts.GitStageFinalize)
+		if err != nil {
+			return err
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: []byte(result)})
+
+	case opts.GitCommit != nil:
+		hash, err := gitCommitOp(ctx, absPath, opts.GitCommit)
+		if err != nil {
+			return err
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: []byte(hash)})
 
 	case opts.GitWorktreeAdd != nil:
 		wopts := opts.GitWorktreeAdd
@@ -837,48 +852,13 @@ func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) e
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }
 
-// gitApplyAndCommit creates a git commit by applying a patch via plumbing
-// commands, without touching the user's working tree or normal index.
-//
-// Flow:
-//  1. Create a temporary index file
-//  2. git read-tree HEAD into the temp index
-//  3. git apply --cached the patch into the temp index
-//  4. git write-tree to create a tree object
-//  5. git commit-tree to create the commit
-//  6. git update-ref HEAD to advance the branch
-//  7. Reset the worktree to match the new HEAD
-//  8. Clean up the temp patch and index files
-func gitApplyAndCommit(ctx context.Context, repoDir string, opts *engine.GitApplyCommitOpts) (_ string, rerr error) {
-	patchFile := opts.PatchFile
-
-
-
-	tmpIndex, err := os.CreateTemp("", "dagger-index-*")
-	if err != nil {
-		return "", fmt.Errorf("create temp index: %w", err)
-	}
-	tmpIndex.Close()
-	defer os.Remove(tmpIndex.Name())
-
-	// Helper that runs git against the real index/worktree.
-	realGit := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = repoDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out)), nil
-	}
-
-	// Helper that runs git against a temporary index so we never touch
-	// the user's real index or worktree during the commit build.
-	gitEnv := append(os.Environ(), "GIT_INDEX_FILE="+tmpIndex.Name())
+// gitStageSetup captures user's unstaged changes, creates a virtual stash backup,
+// and resets the worktree to a pristine state.
+// Returns: stashRef + "\n" + base64(userPatch)
+func gitStageSetup(ctx context.Context, repoDir string) (string, error) {
 	git := func(args ...string) (string, error) {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = repoDir
-		cmd.Env = gitEnv
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
@@ -886,69 +866,137 @@ func gitApplyAndCommit(ctx context.Context, repoDir string, opts *engine.GitAppl
 		return strings.TrimSpace(string(out)), nil
 	}
 
-	// Populate the temp index from the current HEAD tree.
-	if _, err := git("read-tree", "HEAD"); err != nil {
-		return "", err
+	// 1. Capture user's unstaged changes
+	userPatch, err := git("diff", "--binary")
+	if err != nil {
+		return "", fmt.Errorf("capture user diff: %w", err)
 	}
 
-	// Apply the patch to the temp index only (--cached = index, not worktree).
-	patchStat, err := os.Stat(patchFile)
+	// 2. Virtual stash as safety net (no stash list pollution)
+	stashRef, err := git("stash", "create")
 	if err != nil {
-		return "", fmt.Errorf("stat patch file: %w", err)
+		return "", fmt.Errorf("stash create: %w", err)
 	}
-	if patchStat.Size() > 0 {
-		if _, err := git("apply", "--cached", patchFile); err != nil {
-			return "", err
+
+	// 3. Reset to pristine state
+	if _, err := git("reset", "--hard", "HEAD"); err != nil {
+		return "", fmt.Errorf("reset --hard: %w", err)
+	}
+
+	// Encode user patch as base64 since it may contain binary data
+	encodedPatch := ""
+	if userPatch != "" {
+		encodedPatch = base64.StdEncoding.EncodeToString([]byte(userPatch))
+	}
+
+	return stashRef + "\n" + encodedPatch, nil
+}
+
+// gitStageFinalize stages the changeset paths and restores user's unstaged changes
+// using the temp-commit technique.
+func gitStageFinalize(ctx context.Context, repoDir string, opts *engine.GitStageFinalizeOpts) (string, error) {
+	git := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	addPaths := append(opts.Added, opts.Modified...)
+	totalPaths := len(addPaths) + len(opts.Removed)
+
+	// Stage added/modified files
+	if len(addPaths) > 0 {
+		args := append([]string{"add", "--"}, addPaths...)
+		if _, err := git(args...); err != nil {
+			return "", fmt.Errorf("git add (recovery: git stash apply %s): %w", opts.StashRef, err)
 		}
 	}
 
-	// Write the index as a tree object.
-	tree, err := git("write-tree")
-	if err != nil {
-		return "", err
-	}
-
-	// Create the commit object.
-	commitHash, err := git("commit-tree", tree, "-p", "HEAD", "-m", opts.Message)
-	if err != nil {
-		return "", err
-	}
-
-	// The patch file lives in the worktree; remove it before we inspect
-	// status so it doesn't get swept into the stash.
-	os.Remove(patchFile)
-
-	// Stash any local user changes BEFORE we move HEAD. The real index
-	// is still in sync with the current HEAD, so git status only reports
-	// genuine user edits — not artifacts of the HEAD move.
-	status, err := realGit("status", "--porcelain")
-	if err != nil {
-		return "", fmt.Errorf("check working tree: %w", err)
-	}
-	hasLocalChanges := status != ""
-	if hasLocalChanges {
-		if _, err := realGit("stash", "--include-untracked"); err != nil {
-			return "", fmt.Errorf("stash local changes: %w", err)
+	// Stage removed files
+	if len(opts.Removed) > 0 {
+		args := append([]string{"rm", "-f", "-r", "--"}, opts.Removed...)
+		if _, err := git(args...); err != nil {
+			return "", fmt.Errorf("git rm (recovery: git stash apply %s): %w", opts.StashRef, err)
 		}
 	}
 
-	// Advance the branch ref.
-	if _, err := git("update-ref", "HEAD", commitHash); err != nil {
-		return "", err
-	}
-
-	// Fast-forward the worktree and real index to the new HEAD.
-	if _, err := realGit("reset", "--hard", "HEAD"); err != nil {
-		return "", fmt.Errorf("update worktree: %w", err)
-	}
-
-	// Restore the user's changes on top. If their edits conflict with
-	// the committed changeset that's a real conflict and should surface.
-	if hasLocalChanges {
-		if _, err := realGit("stash", "pop"); err != nil {
-			return "", fmt.Errorf("restore local changes (conflict?): %w", err)
+	// Decode user patch
+	var userPatchBytes []byte
+	if opts.UserPatch != "" {
+		var err error
+		userPatchBytes, err = base64.StdEncoding.DecodeString(opts.UserPatch)
+		if err != nil {
+			return "", fmt.Errorf("decode user patch: %w", err)
 		}
 	}
 
-	return commitHash, nil
+	if len(userPatchBytes) > 0 {
+		// Temp-commit the staged state
+		if _, err := git("commit", "-m", "dagger: staging temp"); err != nil {
+			return "", fmt.Errorf("temp commit (recovery: git stash apply %s): %w", opts.StashRef, err)
+		}
+
+		// Write user patch to temp file and apply it
+		tmpPatch, err := os.CreateTemp("", "dagger-user-patch-*")
+		if err != nil {
+			return "", fmt.Errorf("create temp patch file: %w", err)
+		}
+		tmpPatchPath := tmpPatch.Name()
+		defer os.Remove(tmpPatchPath)
+
+		if _, err := tmpPatch.Write(userPatchBytes); err != nil {
+			tmpPatch.Close()
+			return "", fmt.Errorf("write user patch: %w", err)
+		}
+		tmpPatch.Close()
+
+		// Restore user's changes on disk
+		if _, err := git("apply", tmpPatchPath); err != nil {
+			return "", fmt.Errorf("apply user patch (recovery: git stash apply %s): %w", opts.StashRef, err)
+		}
+
+		// Unstage user's re-applied changes
+		if _, err := git("reset"); err != nil {
+			return "", fmt.Errorf("reset after apply (recovery: git stash apply %s): %w", opts.StashRef, err)
+		}
+
+		// Undo temp commit, agent changes back to staging area
+		if _, err := git("reset", "--soft", "HEAD~1"); err != nil {
+			return "", fmt.Errorf("reset --soft HEAD~1 (recovery: git stash apply %s): %w", opts.StashRef, err)
+		}
+	}
+
+	staged := totalPaths > 0
+	if staged {
+		return "true", nil
+	}
+	return "false", nil
+}
+
+// gitCommitOp commits whatever is currently staged and returns the commit hash.
+func gitCommitOp(ctx context.Context, repoDir string, opts *engine.GitCommitOpts) (string, error) {
+	git := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	if _, err := git("commit", "-m", opts.Message); err != nil {
+		return "", err
+	}
+
+	hash, err := git("rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+
+	return hash, nil
 }

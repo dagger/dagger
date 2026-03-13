@@ -3,8 +3,6 @@ package buildkit
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -195,39 +193,63 @@ func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePa
 	return string(msg.Data), nil
 }
 
-// GitCommitChangeset applies a changeset patch to the given git directory on
-// the client host and creates a commit, returning the commit hash.
-//
-// The commit is built entirely via git plumbing commands (temporary index,
-// git apply --cached, write-tree, commit-tree, update-ref) so it never
-// touches the user's working tree or normal index. After the commit is
-// created, the worktree is updated to match.
-func (c *Client) GitCommitChangeset(
-	ctx context.Context,
-	patchSrcPath string,
-	destPath string,
-	message string,
-) (string, error) {
-	cleanDest := path.Clean(destPath)
-
-	// Step 1: Export the patch file to a temp location on the client,
-	// outside the repo so it never appears in git status.
-	patchDest := fmt.Sprintf("/tmp/dagger-changeset-%s.patch", randomHex(8))
-	if err := c.LocalFileExport(ctx, patchSrcPath, "changeset.patch", patchDest, false); err != nil {
-		return "", fmt.Errorf("export patch file: %w", err)
+// GitStageSetup captures user's unstaged changes, creates a virtual stash backup,
+// and resets the worktree to a pristine state. Returns the stash ref and user's diff patch.
+func (c *Client) GitStageSetup(ctx context.Context, worktreeDir string) (stashRef string, userPatch string, err error) {
+	msg := filesync.BytesMessage{}
+	err = c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:          path.Clean(worktreeDir),
+		GitStageSetup: &engine.GitStageSetupOpts{},
+	}, &msg)
+	if err != nil {
+		return "", "", fmt.Errorf("git stage setup: %w", err)
 	}
+	// Response format: stashRef + "\n" + base64(userPatch)
+	parts := bytes.SplitN(msg.Data, []byte("\n"), 2)
+	stashRef = string(parts[0])
+	if len(parts) > 1 {
+		userPatch = string(parts[1])
+	}
+	return stashRef, userPatch, nil
+}
 
-	// Step 2: Apply the patch and commit via git plumbing.
+// GitStageFinalize stages the changeset paths and restores user's unstaged changes.
+// Returns true if any changes were staged.
+func (c *Client) GitStageFinalize(
+	ctx context.Context,
+	worktreeDir string,
+	added, modified, removed []string,
+	stashRef string,
+	userPatch string,
+) (bool, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
-		Path: cleanDest,
-		GitApplyAndCommit: &engine.GitApplyCommitOpts{
-			Message:   message,
-			PatchFile: patchDest,
+		Path: path.Clean(worktreeDir),
+		GitStageFinalize: &engine.GitStageFinalizeOpts{
+			Added:     added,
+			Modified:  modified,
+			Removed:   removed,
+			StashRef:  stashRef,
+			UserPatch: userPatch,
 		},
 	}, &msg)
 	if err != nil {
-		return "", fmt.Errorf("git apply+commit: %w", err)
+		return false, fmt.Errorf("git stage finalize: %w", err)
+	}
+	return string(msg.Data) == "true", nil
+}
+
+// GitCommit commits whatever is currently staged and returns the commit hash.
+func (c *Client) GitCommit(ctx context.Context, worktreeDir string, message string) (string, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path: path.Clean(worktreeDir),
+		GitCommit: &engine.GitCommitOpts{
+			Message: message,
+		},
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("git commit: %w", err)
 	}
 	return string(msg.Data), nil
 }
@@ -445,8 +467,4 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	return nil
 }
 
-func randomHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
+
