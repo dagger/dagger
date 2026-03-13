@@ -3483,6 +3483,59 @@ body {
   color: #c8ccd2;
 }
 
+.v3-loading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.v3-loading.is-compact {
+  justify-content: center;
+  padding: 10px 4px;
+}
+
+.v3-loading-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(125, 132, 141, 0.3);
+  border-top-color: #f7d79a;
+  border-right-color: #8dc0ff;
+  border-radius: 999px;
+  animation: v3-spin 0.8s linear infinite;
+}
+
+.v3-loading-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.v3-loading-label {
+  color: #f2f5fa;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.v3-loading-note {
+  margin: 0;
+  color: #8f9399;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.v3-table-empty-state {
+  display: flex;
+  justify-content: center;
+}
+
+@keyframes v3-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .v3-service-log-list {
   display: flex;
   flex-direction: column;

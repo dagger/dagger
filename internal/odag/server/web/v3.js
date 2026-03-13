@@ -1858,10 +1858,12 @@ function renderMain() {
   const model = tableModel(entity, "inventory");
   model.tableID = `${entity.dynamicKind || entity.id}:inventory`;
   model.filterPlaceholder = `Filter ${String(entity.label || "rows").toLowerCase()}`;
+  const loadingAwareModel = withLiveEntityLoadingState(entity, model);
+  const live = liveStateForEntity(entity.id);
   document.title = `ODAG ${entity.label}`;
   els.tableTitle.textContent = entity.label;
-  els.tableMeta.textContent = model.meta;
-  renderTable(model);
+  els.tableMeta.textContent = live && live.status !== "loaded" && !loadingAwareModel.rows?.length ? (live.status === "error" ? "Unavailable" : "Loading") : model.meta;
+  renderTable(loadingAwareModel);
 }
 
 function renderOverview() {
@@ -1890,6 +1892,42 @@ function renderTable(model) {
   bindTableControls();
 }
 
+function liveStateForEntity(entityID) {
+  const config = liveDomainConfigs[String(entityID || "")];
+  return config ? state.live?.[config.stateKey] || null : null;
+}
+
+function loadingIndicatorHTML(title, note = "", compact = false) {
+  return `
+    <div class="v3-loading${compact ? " is-compact" : ""}" role="status" aria-live="polite">
+      <span class="v3-loading-spinner" aria-hidden="true"></span>
+      <div class="v3-loading-copy">
+        <strong class="v3-loading-label">${escapeHTML(title)}</strong>
+        ${note ? `<p class="v3-loading-note">${escapeHTML(note)}</p>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function loadingTableStateHTML(title, note = "") {
+  return `<div class="v3-table-empty-state">${loadingIndicatorHTML(title, note, true)}</div>`;
+}
+
+function withLiveEntityLoadingState(entity, model) {
+  const live = liveStateForEntity(entity?.id);
+  if (!live || (live.status !== "idle" && live.status !== "loading")) {
+    return model;
+  }
+  const rows = Array.isArray(model?.rows) ? model.rows : [];
+  if (rows.length) {
+    return model;
+  }
+  return {
+    ...model,
+    emptyHTML: loadingTableStateHTML(`Loading ${entity.label}`, `Waiting for ${String(entity.label || "rows").toLowerCase()} from the live API.`),
+  };
+}
+
 function renderTableHTML(model) {
   const interactive = model?.tableState ? model : interactiveTableModel(model);
   const head = interactive.columns.map((column) => `<th>${column.headerHTML || escapeHTML(column.label)}</th>`).join("");
@@ -1908,7 +1946,7 @@ function renderTableHTML(model) {
           return `<tr>${cells}</tr>`;
         })
         .join("")
-    : `<tr><td colspan="${interactive.columns.length}">${escapeHTML(interactive.emptyMessage || "No rows yet.")}</td></tr>`;
+    : `<tr><td colspan="${interactive.columns.length}">${interactive.emptyHTML || escapeHTML(interactive.emptyMessage || "No rows yet.")}</td></tr>`;
 
   return `
     <div class="v3-data-table" data-table-id="${escapeHTML(interactive.tableID || "")}">
@@ -2925,12 +2963,16 @@ function renderDetailState(entity, label, kind) {
     unavailable: `${label} data could not be loaded from the live API.`,
     missing: `${label} ${state.detailID} was not found in the current result set.`,
   };
+  const body =
+    kind === "loading"
+      ? loadingIndicatorHTML(`Loading ${label}`, copyByKind.loading)
+      : `<p class="v3-detail-empty">${escapeHTML(copyByKind[kind] || "No detail available.")}</p>`;
   return `
     <div class="v3-detail-stack">
       ${backLink(entity)}
       <div class="v3-detail-card">
         <p class="v3-foot-label">${escapeHTML(label)}</p>
-        <p class="v3-detail-empty">${escapeHTML(copyByKind[kind] || "No detail available.")}</p>
+        ${body}
       </div>
     </div>
   `;
@@ -3026,10 +3068,11 @@ function renderPipelineGraph(row, graph) {
 
 function renderPipelineGraphState(row, tone, message) {
   const toneClass = tone === "error" ? " is-error" : "";
+  const body = tone === "loading" ? loadingIndicatorHTML("Loading pipeline graph", message, true) : `<p>${escapeHTML(message)}</p>`;
   return `
     <div class="v3-graph-panel">
       <div class="v3-graph-empty${toneClass}">
-        <p>${escapeHTML(message)}</p>
+        ${body}
       </div>
     </div>
   `;
@@ -4745,6 +4788,10 @@ function renderClientDetail(entity, row) {
     ],
     rows: calls,
     emptyMessage: callEmptyMessage,
+    emptyHTML:
+      Number(row?.callCount || 0) > 0 && callEntry.status === "loading" && calls.length === 0
+        ? loadingTableStateHTML("Loading calls", "Fetching calls for this client.")
+        : "",
   });
   const childTable = renderTableHTML({
     columns: [
@@ -4875,6 +4922,10 @@ function renderFunctionDetail(entity, row) {
     ],
     rows: calls,
     emptyMessage: callEmptyMessage,
+    emptyHTML:
+      Number(row?.callCount || 0) > 0 && callEntry.status === "loading" && calls.length === 0
+        ? loadingTableStateHTML("Loading calls", "Fetching calls for this function.")
+        : "",
   });
   const snapshotTable = renderTableHTML({
     columns: [
