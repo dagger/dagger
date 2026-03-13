@@ -68,9 +68,25 @@ Branch docs:
 - `workspace-plumbing`: `workspace-foundation-compat.md` records adoption and compat
   consequences only
 
+## Progress Log
+
+### 2026-03-13
+
+- Completed rollout task `1`.
+- Updated `workspace` PR [#11812](https://github.com/dagger/dagger/pull/11812) with a
+  `Workspace API Path Contract` section.
+- The canonical contract now explicitly defines:
+  - `workspace directory`
+  - `workspace boundary`
+  - `.` / relative-path semantics
+  - `/` / absolute-path semantics
+  - `ws.path`
+  - `ws.address`
+  - no public `ws.root`
+
 ## Rollout Order
 
-1. Finalize the Workspace API contract in the `workspace` PR description.
+1. [x] Finalize the Workspace API contract in the `workspace` PR description.
    - terminology: workspace directory, workspace boundary
    - path semantics: `.` / relative vs `/` / absolute
    - metadata: `ws.path`, `ws.address`
