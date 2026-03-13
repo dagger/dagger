@@ -42,6 +42,7 @@ dagger [options] [subcommand | file...]
 * [dagger functions](#dagger-functions)	 - List available functions
 * [dagger init](#dagger-init)	 - Initialize a new module
 * [dagger install](#dagger-install)	 - Install a dependency
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
 * [dagger login](#dagger-login)	 - Log in to Dagger Cloud
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
@@ -385,6 +386,240 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger llm
+
+Manage LLM configuration
+
+### Synopsis
+
+Manage LLM provider configuration, API keys, and default models.
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger llm add-key](#dagger-llm-add-key)	 - Add or update API key for a provider
+* [dagger llm config](#dagger-llm-config)	 - Display current LLM configuration
+* [dagger llm remove-key](#dagger-llm-remove-key)	 - Remove API key for a provider
+* [dagger llm reset](#dagger-llm-reset)	 - Reset LLM configuration (removes all stored credentials)
+* [dagger llm set-default](#dagger-llm-set-default)	 - Set default provider and optionally model
+* [dagger llm setup](#dagger-llm-setup)	 - Configure LLM authentication interactively
+* [dagger llm show-config](#dagger-llm-show-config)	 - Show raw LLM configuration (JSON)
+
+## dagger llm add-key
+
+Add or update API key for a provider
+
+### Synopsis
+
+Add or update API key for a provider.
+
+Supported providers:
+  - openrouter: Unified access to 100+ models (https://openrouter.ai/keys)
+  - anthropic: Claude models (https://console.anthropic.com/settings/keys)
+  - openai: GPT models (https://platform.openai.com/api-keys)
+  - google: Gemini models (https://aistudio.google.com/app/apikey)
+
+
+```
+dagger llm add-key <provider>
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm config
+
+Display current LLM configuration
+
+```
+dagger llm config
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm remove-key
+
+Remove API key for a provider
+
+```
+dagger llm remove-key <provider>
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm reset
+
+Reset LLM configuration (removes all stored credentials)
+
+```
+dagger llm reset
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm set-default
+
+Set default provider and optionally model
+
+```
+dagger llm set-default <provider> [model]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm setup
+
+Configure LLM authentication interactively
+
+```
+dagger llm setup
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
+
+## dagger llm show-config
+
+Show raw LLM configuration (JSON)
+
+```
+dagger llm show-config
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger llm](#dagger-llm)	 - Manage LLM configuration
 
 ## dagger login
 

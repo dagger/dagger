@@ -335,6 +335,30 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// A content block within an LLM message.
+type LLMContentBlockInput struct {
+	// The arguments to pass to the tool (for TOOL_CALL kind).
+	Arguments JSON `json:"arguments"`
+
+	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+	CallID string `json:"callId,omitempty"`
+
+	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+	Errored bool `json:"errored,omitempty"`
+
+	// The kind of content block.
+	Kind LLMContentBlockKind `json:"kind"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	Signature string `json:"signature,omitempty"`
+
+	// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+	Text string `json:"text,omitempty"`
+
+	// The name of the tool to call (for TOOL_CALL kind).
+	ToolName string `json:"toolName,omitempty"`
+}
+
 // Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -9908,7 +9932,7 @@ type LLMWithResponseOpts struct {
 }
 
 // Append an assistant response to the message history
-func (r *LLM) WithResponse(content JSON, opts ...LLMWithResponseOpts) *LLM {
+func (r *LLM) WithResponse(content []LLMContentBlockInput, opts ...LLMWithResponseOpts) *LLM {
 	q := r.query.Select("withResponse")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `inputTokens` optional argument
