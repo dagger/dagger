@@ -83,6 +83,11 @@ Branch docs:
   - `ws.path`
   - `ws.address`
   - no public `ws.root`
+- Completed rollout task `2`.
+- Updated
+  [workspace-foundation-compat.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-foundation-compat.md)
+  with a short adoption note that references `workspace` PR `#11812` instead of
+  duplicating the spec text.
 
 ## Rollout Order
 
@@ -91,7 +96,7 @@ Branch docs:
    - path semantics: `.` / relative vs `/` / absolute
    - metadata: `ws.path`, `ws.address`
 
-2. Reflect that decision briefly in `workspace-plumbing`.
+2. [x] Reflect that decision briefly in `workspace-plumbing`.
    - reference the `workspace` PR description as canonical
    - record plumbing-specific implications only
 

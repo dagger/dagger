@@ -20,6 +20,20 @@ Temporary cross-branch rollout tracking for the Workspace API path contract live
 [workspace-api-rollout-tracker.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-api-rollout-tracker.md).
 The canonical contract itself currently lives in the `workspace` PR description.
 
+## Workspace API Contract Adoption
+
+`workspace-plumbing` adopts the Workspace API path contract defined in `workspace`
+PR [#11812](https://github.com/dagger/dagger/pull/11812).
+
+For this branch, that means:
+
+- `.` and relative paths are resolved from the workspace directory
+- `/` and absolute paths are resolved from the workspace boundary
+- `ws.path` and `ws.address` are the intended public metadata surface
+- no public `ws.root` should be reintroduced here
+- compat/runtime fixes in this branch must conform to that contract rather than
+  bending the contract around legacy `defaultPath` behavior
+
 ## Why This Split
 
 The earlier lockfile split candidate was technically possible only for boring
