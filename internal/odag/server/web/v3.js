@@ -4843,6 +4843,14 @@ function renderCallDetail(entity, row) {
 function renderFunctionDetail(entity, row) {
   const callEntry = ensureFunctionCallEntry(row);
   const calls = functionCallRows(row, callEntry);
+  const relationshipItems = [
+    ["Module", functionModuleCell(row)],
+    ["Receiver Type", functionReceiverTypeCell(row)],
+    ["Return Type", objectTypeLinkFromName(row.returnType, row.returnTypeID)],
+  ];
+  if (row.originalName && row.originalName !== row.name) {
+    relationshipItems.push(["Original Name", detailCode(row.originalName)]);
+  }
   let callEmptyMessage = "No calls were attached to this function row.";
   if (Number(row?.callCount || 0) > 0 && callEntry.status === "loading" && calls.length === 0) {
     callEmptyMessage = "Loading calls for this function...";
@@ -4888,13 +4896,7 @@ function renderFunctionDetail(entity, row) {
       </section>
       ${detailCard(
         "Relationships",
-        detailList([
-          ["Module", functionModuleCell(row)],
-          ["Receiver Type", functionReceiverTypeCell(row)],
-          ["Call Name", row.callName ? detailCode(row.callName) : detailCode(functionTitle(row))],
-          ["Return Type", objectTypeLinkFromName(row.returnType, row.returnTypeID)],
-          ["Original Name", row.originalName ? detailCode(row.originalName) : "None"],
-        ]),
+        detailList(relationshipItems),
       )}
       ${row.description ? detailCard("Description", `<p>${escapeHTML(row.description)}</p>`) : ""}
       ${detailSection("Calls", callTable)}
@@ -7334,17 +7336,11 @@ function sessionDisplayName(row) {
 }
 
 function sessionDisplaySubtitle(row) {
-  const parts = [];
   const clientCount = Number(row?.clientCount || 0);
   if (clientCount > 0) {
-    parts.push(`${clientCount} client${clientCount === 1 ? "" : "s"}`);
+    return `${clientCount} client${clientCount === 1 ? "" : "s"}`;
   }
-  const explicit = String(row?.name || "").trim();
-  const short = shortID(row?.id);
-  if (explicit && short) {
-    parts.push(short);
-  }
-  return parts.join(" · ");
+  return "";
 }
 
 function overviewItemStatus(entity, row) {
