@@ -56,6 +56,7 @@ type ChangesetPaths struct {
 	Modified   []string
 	Removed    []string
 	AllRemoved []string
+	Renamed    map[string]string // newPath → oldPath (also included in Added/Removed)
 }
 
 // ComputePaths computes the added, modified, and removed paths using git diff.
@@ -73,36 +74,49 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 	}
 
 	var result *ChangesetPaths
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		fileChanges, err := compareDirectories(ctx, beforeDir, afterDir)
-		if err != nil {
-			return err
-		}
-
-		beforeDirs, err := listSubdirectories(beforeDir)
-		if err != nil {
-			return fmt.Errorf("list before directories: %w", err)
-		}
-		afterDirs, err := listSubdirectories(afterDir)
-		if err != nil {
-			return fmt.Errorf("list after directories: %w", err)
-		}
-		addedDirs, removedDirs := diffStringSlices(beforeDirs, afterDirs)
-
-		allRemoved := slices.Concat(fileChanges.Removed, removedDirs)
-
-		result = &ChangesetPaths{
-			Added:      slices.Concat(fileChanges.Added, addedDirs),
-			Modified:   fileChanges.Modified,
-			Removed:    collapseChildPaths(allRemoved),
-			AllRemoved: allRemoved,
-		}
-		return nil
+	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
+		result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*ChangesetPaths, error) {
+	fc, err := compareDirectories(ctx, beforeDir, afterDir)
+	if err != nil {
+		return nil, err
+	}
+
+	beforeDirs, err := listSubdirectories(beforeDir)
+	if err != nil {
+		return nil, fmt.Errorf("list before directories: %w", err)
+	}
+	afterDirs, err := listSubdirectories(afterDir)
+	if err != nil {
+		return nil, fmt.Errorf("list after directories: %w", err)
+	}
+	addedDirs, removedDirs := diffStringSlices(beforeDirs, afterDirs)
+
+	// Expand renames into Added/Removed so addedPaths/removedPaths stay complete.
+	renamedNew := make([]string, 0, len(fc.Renamed))
+	renamedOld := make([]string, 0, len(fc.Renamed))
+	for newPath, oldPath := range fc.Renamed {
+		renamedNew = append(renamedNew, newPath)
+		renamedOld = append(renamedOld, oldPath)
+	}
+
+	allRemoved := slices.Concat(fc.Removed, renamedOld, removedDirs)
+
+	return &ChangesetPaths{
+		Added:      slices.Concat(fc.Added, renamedNew, addedDirs),
+		Modified:   fc.Modified,
+		Removed:    collapseChildPaths(allRemoved),
+		AllRemoved: allRemoved,
+		Renamed:    fc.Renamed,
+	}, nil
 }
 
 // withMountedDirs mounts the before and after directories and calls fn with their paths.
