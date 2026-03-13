@@ -16,8 +16,9 @@ The target is not "zero UI". The target is "no new primary workspace UX":
 This document is the running source of truth for the branch. Update it after every
 substantive change so an interruption can be resumed from the filesystem alone.
 
-Temporary cross-branch rollout tracking for the Workspace API path contract lives in
-[workspace-api-rollout-tracker.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/workspace-api-rollout-tracker.md).
+The Workspace API path-contract rollout is complete. Its temporary tracker is archived
+in
+[workspace-api-rollout-tracker.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/done/workspace-api-rollout-tracker.md).
 The canonical contract itself currently lives in the `workspace` PR description.
 
 ## Workspace API Contract Adoption
@@ -156,6 +157,40 @@ Legacy support in PR A is an adapter, not a parallel product model.
 
 This keeps legacy compatibility localized instead of turning it into a second set
 of semantics spread across the codebase
+
+## Legacy Conversion Contract
+
+For legacy `dagger.json` projects, the design target is:
+
+- detect one legacy project shape
+- convert that shape into one workspace module set
+- then load that module set through the normal module loader
+
+That converted module set should include:
+
+- the legacy root module itself, when the legacy project defines its own module via
+  `sdk` / `source`
+- the legacy blueprint, if any
+- the legacy toolchains, if any
+
+Important constraint:
+
+- generic implicit CWD-module loading is for non-legacy fallback only
+- it must not be the mechanism by which the legacy root module enters the workspace
+
+Current design debt:
+
+- both `workspace` and `workspace-plumbing` currently still use the split shortcut
+- legacy blueprint/toolchains come from compat extraction
+- the legacy root module still comes from generic implicit CWD-module loading
+
+History note:
+
+- `workspace` briefly had the cleaner detect-time conversion shape in
+  `4e92b04b0` and `a7982a72b`
+- the current split shortcut was restored in `dab41cfbe`
+
+This shortcut is now considered temporary implementation debt, not target behavior.
 
 ## Design Constraints
 
