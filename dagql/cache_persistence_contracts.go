@@ -31,7 +31,6 @@ func (prov cachePersistInputProvenance) validate() error {
 
 type persistResultSnapshot struct {
 	resultID            sharedResultID
-	live                *sharedResult
 	canonicalID         *call.ID
 	shared              *sharedResult
 	row                 persistdb.MirrorResult

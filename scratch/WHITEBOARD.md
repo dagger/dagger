@@ -1436,11 +1436,12 @@ Goals for the plan:
 Current proposed shape:
 
 * **Phase 1:** add the `resultCallFrame` substrate and populate it for cache-backed results **(completed)**
-* **Phase 2:** add `IDForCaller(...)` and move runtime caller-facing reconstruction / synthetic-node creation onto frames
-* **Phase 3:** hard-cut module-object and other semantic ID-valued data to internal result refs
-* **Phase 4:** hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
+* **Phase 2:** add `IDForCaller(...)` and move runtime caller-facing reconstruction / synthetic-node creation onto frames **(completed)**
+* **Phase 3:** hard-cut module-object and other semantic ID-valued data to internal result refs **(completed)**
+* **Phase 4:** reserved for the next persistence-architecture cut (to be designed)
+* **Phase 5:** hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
 
-That is intentionally only four phases. Each one is still substantial, but each one should also have a clear review boundary.
+That is intentionally only five phases. Each one is still substantial, but each one should also have a clear review boundary.
 
 ### Phase 1: Add `resultCallFrame` as a real `sharedResult` substrate
 
@@ -1636,6 +1637,10 @@ Phase-2 tripwire:
 
 ### Phase 3: Hard-cut module-object and semantic ID-valued data to internal result refs
 
+Status:
+
+* completed
+
 Purpose:
 
 * remove the biggest remaining “stored absolute recipe DAG as data” smell
@@ -1725,7 +1730,162 @@ Phase-3 tripwire:
 * if there are widespread truly opaque private/internal `call.ID` payloads that turn out not to be rare exceptions, stop and escalate
 * that would mean our “module-object semantic refs vs narrow raw-ID exception” split is too optimistic
 
-### Phase 4: Hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
+### Phase 4: Persistence architecture simplification before the frame persistence cut
+
+Status:
+
+* designed, not yet implemented
+
+Purpose:
+
+* remove the continuous/asynchronous persistence architecture that no longer matches the system we want
+* treat persistence as a shutdown-time full snapshot of the final surviving in-memory cache state
+* prune first, then persist exactly what remains
+* make runtime cache behavior faster and simpler by stopping background DB writes during normal engine operation
+
+Current architectural problem this phase addresses:
+
+* the current persistence worker / queued snapshot / continuous batch-write model is trying to maintain a near-live DB mirror while the engine is running
+* that creates:
+  * conceptual complexity
+  * lock/snapshot/cloning overhead during normal engine runtime
+  * repeated DB writes for entries that later get pruned away anyway
+  * a harder-to-reason-about shutdown story because background persistence and final prune/release semantics overlap
+* for the model we actually want, this tradeoff is backwards:
+  * we want a fast in-memory cache during runtime
+  * we accept that persistence only matters after a **graceful** shutdown
+  * if the engine dies uncleanly, losing the cache is acceptable
+
+New model for this phase:
+
+* engine startup:
+  * import persisted state from the DB as today
+  * mark the store unclean at startup
+* normal runtime:
+  * no continuous persistence writes
+  * no persistence worker loop trying to keep the DB in sync
+  * no queued/coalesced persistence snapshot writes
+  * the authoritative state is just the in-memory dagql cache/e-graph state
+* graceful shutdown:
+  1. close sessions / release session refs
+  2. run prune so only the final surviving cache state remains and disk-space limits are enforced
+  3. build one authoritative persisted snapshot from the surviving in-memory state
+  4. write that snapshot to the DB in one full transaction
+  5. mark the store clean
+  6. exit
+* unclean shutdown:
+  * no guarantee
+  * next startup still treats the store as unclean and wipes it
+
+Important explicit design consequence:
+
+* the persisted DB should now be thought of as:
+  * “the final surviving cache snapshot from the last clean shutdown”
+* it is **not**:
+  * a continuously updated secondary source of truth
+  * a near-live mirror that must track every mutation while the engine is running
+
+Why this is the right trade:
+
+* faster engine runtime matters more than faster graceful shutdown
+* any extra shutdown cost is acceptable if it buys:
+  * simpler architecture
+  * less runtime contention/cloning/serialization work
+  * a more deterministic persisted final state
+* the expensive/meaningful work is already cached in memory and lazy-state-backed during runtime
+* persisting that state only once, after prune, better matches the actual system contract
+
+Crucial nuance:
+
+* graceful shutdown persistence should happen **after** prune, not before
+* this is not just an optimization; it is part of the design
+* we want the DB to contain exactly the state we intentionally decided to keep:
+  * post-session-close
+  * post-retention cleanup
+  * post-size-budget enforcement
+
+Primary files / seams:
+
+* `dagql/cache.go`
+  * cache close/shutdown ordering
+  * clean/unclean marker writes
+  * prune invocation ordering relative to persistence
+* `dagql/cache_persistence_worker.go`
+  * this file is the main target of the simplification
+  * the background worker loop / queue / snapshot-flush machinery should be removed or collapsed into a shutdown-only full snapshot path
+* `dagql/cache_persistence_contracts.go`
+  * snapshot-building structs may survive, but their runtime-triggered batching semantics should be simplified
+* `dagql/cache_persistence_import.go`
+  * import remains important, but should no longer need to coexist with a continuously mutating persistence worker design
+* `dagql/persistdb/mirror_state.go`
+  * the full-state mirror write path remains the core durable write mechanism
+  * this becomes the only real write path, invoked at shutdown
+* `engine/server/server.go`
+  * shutdown ordering and where the final cache close/persist is triggered
+* any remaining persistence-trigger hooks in runtime mutation paths
+  * these should be removed so normal engine operation no longer tries to feed persistence continuously
+
+Likely concrete implementation shape:
+
+* remove the persistence worker goroutine and its timer/trigger loop
+* remove runtime “mark dirty and enqueue snapshot flush” behavior
+* keep or simplify one authoritative helper that can:
+  * snapshot the surviving in-memory cache/e-graph state
+  * write the full mirror tables in one transaction
+* call that helper only from the graceful shutdown path after prune
+
+What should remain after this phase:
+
+* import on startup
+* clean/unclean shutdown semantics
+* full-state mirror schema
+* full snapshot builder / exporter
+
+What should be gone or greatly reduced after this phase:
+
+* continuous runtime DB writes
+* background persistence worker loop
+* queued/coalesced runtime persistence snapshots
+* mutation-triggered persistence batching
+
+Expected benefits:
+
+* lower runtime overhead
+* simpler cache architecture
+* simpler mental model for persistence
+* more deterministic persisted final state
+* easier later Phase 5 work because the frame-persistence cut will only have one real write path to update
+
+Expected downsides (accepted by design):
+
+* graceful shutdown may take longer
+* no mid-run durability if the engine crashes before clean shutdown
+* shutdown ordering must be correct and explicit
+
+Why those downsides are acceptable:
+
+* this is a cache, not a database
+* runtime performance matters more than graceful shutdown latency
+* losing the cache on unclean shutdown is already an accepted property of the system
+
+Phase-4 review boundary:
+
+* after this phase, runtime engine operation should not be writing persistence continuously
+* the DB should only be rewritten during the graceful shutdown snapshot
+* import should still work the same way conceptually from the last clean snapshot
+
+Phase-4 tripwires:
+
+* if some code path still requires mid-run DB writes for correctness rather than convenience, stop and escalate
+  * that would mean we are still relying on the DB as a second live source of truth, which violates the design
+* if shutdown ordering cannot be made:
+  * sessions close -> prune -> persist full snapshot -> mark clean
+  then stop and escalate
+  * that ordering is foundational to this phase
+* do **not** introduce partial “mostly shutdown-only” persistence with a few runtime writes left behind as ad hoc exceptions
+  * if an exception seems necessary, stop and discuss it first
+
+### Phase 5: Hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
 
 Purpose:
 

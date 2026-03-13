@@ -180,19 +180,14 @@ func (c *cache) pruneResultLocked(ctx context.Context, resultID sharedResultID) 
 	if err := c.removeResultFromEgraphLocked(ctx, res); err != nil {
 		return nil, err
 	}
-	removedDeps := false
 	for _, remaining := range c.resultsByID {
 		if remaining == nil || len(remaining.deps) == 0 {
 			continue
 		}
 		if _, ok := remaining.deps[resultID]; ok {
 			c.traceExplicitDepRemoved(ctx, remaining.id, resultID, "prune")
-			removedDeps = true
 		}
 		delete(remaining.deps, resultID)
-	}
-	if removedDeps {
-		c.markPersistenceDirty()
 	}
 	return res.onRelease, nil
 }

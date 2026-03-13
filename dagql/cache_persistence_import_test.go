@@ -41,7 +41,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !resA.HitCache())
 	assert.NilError(t, resA.Release(ctx))
-	assert.NilError(t, cA.flushPersistenceWorker(ctx))
+	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
 	cacheB, err := NewCache(ctx, dbPath)
@@ -81,7 +81,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, resA != nil)
 	assert.NilError(t, resA.Release(rootCtxA))
-	assert.NilError(t, cA.flushPersistenceWorker(ctx))
+	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
 	cacheB, err := NewCache(ctx, dbPath)
@@ -124,7 +124,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.NilError(t, resA.Release(ctx))
-	assert.NilError(t, cA.flushPersistenceWorker(ctx))
+	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
 	db, q, err := prepareCacheDBs(ctx, dbPath)
@@ -170,7 +170,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.NilError(t, resA.Release(ctx))
-	assert.NilError(t, cA.flushPersistenceWorker(ctx))
+	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
 	db, q, err := prepareCacheDBs(ctx, dbPath)

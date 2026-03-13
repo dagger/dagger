@@ -38,7 +38,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.NilError(t, res.Release(ctx))
-	assert.NilError(t, c.flushPersistenceWorker(ctx))
+	assert.NilError(t, c.persistCurrentState(ctx))
 
 	var rowCount int
 	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results WHERE id = ?`, sharedID).Scan(&rowCount)
@@ -49,6 +49,34 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	err = c.sqlDB.QueryRowContext(ctx, `SELECT canonical_id FROM results WHERE id = ?`, sharedID).Scan(&storedCanonicalID)
 	assert.NilError(t, err)
 	assert.Check(t, cmp.Equal(storedCanonicalID, canonicalID))
+}
+
+func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheIface, err := NewCache(ctx, dbPath)
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+	defer func() {
+		assert.NilError(t, c.Close(context.Background()))
+	}()
+
+	key := cacheTestID("persist-runtime-no-write")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID:            key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 42).WithSafeToPersistCache(true), nil
+	})
+	assert.NilError(t, err)
+	assert.NilError(t, res.Release(ctx))
+
+	var rowCount int
+	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results`).Scan(&rowCount)
+	assert.NilError(t, err)
+	assert.Equal(t, 0, rowCount)
 }
 
 func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
@@ -70,7 +98,7 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.NilError(t, res.Release(ctx))
-	assert.NilError(t, c.flushPersistenceWorker(ctx))
+	assert.NilError(t, c.persistCurrentState(ctx))
 
 	var rowCount int
 	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results`).Scan(&rowCount)
@@ -110,7 +138,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 
 	assert.NilError(t, sourceRes.Release(ctx))
 	assert.NilError(t, rootRes.Release(ctx))
-	assert.NilError(t, c.flushPersistenceWorker(ctx))
+	assert.NilError(t, c.persistCurrentState(ctx))
 
 	var resultsCount int
 	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results`).Scan(&resultsCount)

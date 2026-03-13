@@ -6,285 +6,24 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 )
 
-type lazyCompletionNotifier interface {
-	OnEvaluateComplete(func(context.Context)) bool
-}
-
-const cachePersistFlushInterval = 250 * time.Millisecond
-
-func (c *cache) startPersistenceWorker() {
+func (c *cache) persistCurrentState(ctx context.Context) error {
 	if c.sqlDB == nil || c.pdb == nil {
-		return
-	}
-
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
-
-	if c.persistDone != nil {
-		return
-	}
-
-	c.persistNotify = make(chan struct{}, 1)
-	c.persistFlushRequests = make(chan chan error)
-	c.persistStop = make(chan struct{})
-	c.persistDone = make(chan struct{})
-	c.persistClosed = false
-	c.persistErr = nil
-	c.persistDirty = false
-	c.persistWatchResults = nil
-
-	go c.persistenceWorker()
-}
-
-func (c *cache) flushAndStopPersistenceWorker(ctx context.Context) error {
-	c.persistMu.Lock()
-	stopCh := c.persistStop
-	doneCh := c.persistDone
-	if doneCh == nil {
-		c.persistMu.Unlock()
-		return nil
-	}
-	c.persistClosed = true
-	c.persistMu.Unlock()
-
-	flushErr := c.flushPersistenceWorker(ctx)
-
-	close(stopCh)
-	select {
-	case <-doneCh:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
-	workerErr := c.persistErr
-	c.persistNotify = nil
-	c.persistFlushRequests = nil
-	c.persistStop = nil
-	c.persistDone = nil
-	c.persistWatchResults = nil
-	c.persistDirty = false
-	return errors.Join(flushErr, workerErr)
-}
-
-func (c *cache) flushPersistenceWorker(ctx context.Context) error {
-	c.persistMu.Lock()
-	flushReqCh := c.persistFlushRequests
-	doneCh := c.persistDone
-	c.persistMu.Unlock()
-	if flushReqCh == nil || doneCh == nil {
 		return nil
 	}
 
-	flushAck := make(chan error, 1)
-	select {
-	case flushReqCh <- flushAck:
-	case <-doneCh:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	select {
-	case err := <-flushAck:
+	snapshot, err := c.snapshotPersistState(ctx)
+	if err != nil {
 		return err
-	case <-doneCh:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	}
+	return c.applyPersistStateSnapshot(ctx, snapshot)
 }
 
-func (c *cache) persistenceWorker() {
-	defer close(c.persistDone)
-
-	ticker := time.NewTicker(cachePersistFlushInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.persistNotify:
-		case <-ticker.C:
-			c.setPersistErr(c.flushLatestPersistenceSnapshot(context.Background(), false))
-		case ack := <-c.persistFlushRequests:
-			err := c.flushLatestPersistenceSnapshot(context.Background(), true)
-			c.setPersistErr(err)
-			ack <- err
-		case <-c.persistStop:
-			err := c.flushLatestPersistenceSnapshot(context.Background(), true)
-			c.setPersistErr(err)
-			return
-		}
-	}
-}
-
-func (c *cache) setPersistErr(err error) {
-	if err == nil {
-		return
-	}
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
-	c.persistErr = errors.Join(c.persistErr, err)
-}
-
-func (c *cache) markPersistenceDirty() {
-	if c.sqlDB == nil || c.pdb == nil {
-		return
-	}
-
-	c.persistMu.Lock()
-	if c.persistClosed || c.persistNotify == nil {
-		c.persistMu.Unlock()
-		return
-	}
-	c.persistDirty = true
-	notify := c.persistNotify
-	c.persistMu.Unlock()
-
-	select {
-	case notify <- struct{}{}:
-	default:
-	}
-}
-
-func (c *cache) beginPersistenceFlush(force bool) bool {
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
-
-	if !force && !c.persistDirty {
-		return false
-	}
-	c.persistDirty = false
-	return true
-}
-
-func (c *cache) requeuePersistenceDirty() {
-	c.persistMu.Lock()
-	if c.persistClosed || c.persistNotify == nil {
-		c.persistMu.Unlock()
-		return
-	}
-	c.persistDirty = true
-	notify := c.persistNotify
-	c.persistMu.Unlock()
-
-	select {
-	case notify <- struct{}{}:
-	default:
-	}
-}
-
-func (c *cache) clearPersistenceWatchResults() {
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
-	c.persistWatchResults = nil
-}
-
-func (c *cache) clearPersistenceWatchResult(resultID sharedResultID) {
-	if resultID == 0 {
-		return
-	}
-	c.persistMu.Lock()
-	defer c.persistMu.Unlock()
-	if c.persistWatchResults == nil {
-		return
-	}
-	delete(c.persistWatchResults, resultID)
-	if len(c.persistWatchResults) == 0 {
-		c.persistWatchResults = nil
-	}
-}
-
-func (c *cache) registerPersistenceWatchResults(results []*sharedResult) ([]sharedResultID, error) {
-	if len(results) == 0 {
-		return nil, nil
-	}
-
-	toRegister := make([]*sharedResult, 0, len(results))
-	c.persistMu.Lock()
-	if c.persistWatchResults == nil {
-		c.persistWatchResults = make(map[sharedResultID]struct{}, len(results))
-	}
-	for _, res := range results {
-		if res == nil || res.id == 0 {
-			continue
-		}
-		if _, ok := c.persistWatchResults[res.id]; ok {
-			continue
-		}
-		c.persistWatchResults[res.id] = struct{}{}
-		toRegister = append(toRegister, res)
-	}
-	c.persistMu.Unlock()
-
-	unwatchable := make([]sharedResultID, 0)
-	for _, res := range toRegister {
-		notifier, ok := res.self.(lazyCompletionNotifier)
-		if !ok {
-			unwatchable = append(unwatchable, res.id)
-			continue
-		}
-		alreadyComplete := notifier.OnEvaluateComplete(func(ctx context.Context) {
-			c.tracePersistRetrySucceeded(ctx, res.id)
-			c.clearPersistenceWatchResult(res.id)
-			c.markPersistenceDirty()
-		})
-		if alreadyComplete {
-			c.tracePersistRetryTriggered(context.Background(), res.id)
-			c.clearPersistenceWatchResult(res.id)
-			c.markPersistenceDirty()
-		} else {
-			c.tracePersistRetryRegistered(context.Background(), res.id)
-		}
-	}
-	for _, resID := range unwatchable {
-		c.clearPersistenceWatchResult(resID)
-	}
-	if len(unwatchable) > 0 {
-		return unwatchable, fmt.Errorf("results not watchable for persistence retry: %v", unwatchable)
-	}
-	return nil, nil
-}
-
-func (c *cache) flushLatestPersistenceSnapshot(ctx context.Context, force bool) error {
-	for {
-		if !c.beginPersistenceFlush(force) {
-			return nil
-		}
-
-		snapshot, notReady, err := c.snapshotPersistState(ctx)
-		if errors.Is(err, ErrPersistStateNotReady) {
-			if _, watchErr := c.registerPersistenceWatchResults(notReady); watchErr != nil {
-				c.requeuePersistenceDirty()
-				return errors.Join(err, watchErr)
-			}
-			if force {
-				c.requeuePersistenceDirty()
-				return err
-			}
-			return nil
-		}
-		if err != nil {
-			c.requeuePersistenceDirty()
-			return err
-		}
-		if err := c.applyPersistStateSnapshot(ctx, snapshot); err != nil {
-			c.requeuePersistenceDirty()
-			return err
-		}
-		c.clearPersistenceWatchResults()
-		force = false
-	}
-}
-
-func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, []*sharedResult, error) {
+func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
 
 	c.egraphMu.RLock()
@@ -321,7 +60,7 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		inputProvenance := c.termInputProvenance[termID]
 		if len(inputProvenance) != len(term.inputEqIDs) {
 			c.egraphMu.RUnlock()
-			return persistStateSnapshot{}, nil, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
+			return persistStateSnapshot{}, fmt.Errorf("persist term %d: input provenance len %d does not match input eq IDs len %d", termID, len(inputProvenance), len(term.inputEqIDs))
 		}
 		inputEqIDs := make([]eqClassID, len(term.inputEqIDs))
 		copy(inputEqIDs, term.inputEqIDs)
@@ -418,7 +157,6 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:    resultID,
-			live:        res,
 			canonicalID: canonicalID,
 			shared: &sharedResult{
 				self:                   res.self,
@@ -490,33 +228,31 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 	c.egraphMu.RUnlock()
 
-	notReady := make([]*sharedResult, 0)
 	for i := range snapshot.results {
 		resultSnapshot := &snapshot.results[i]
 		if resultSnapshot.canonicalID == nil {
-			return persistStateSnapshot{}, nil, fmt.Errorf("persist result %d: missing canonical ID", resultSnapshot.resultID)
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing canonical ID", resultSnapshot.resultID)
 		}
 
 		env, err := c.persistResultEnvelope(ctx, resultSnapshot.shared, resultSnapshot.canonicalID)
 		switch {
 		case errors.Is(err, ErrPersistStateNotReady):
-			notReady = append(notReady, resultSnapshot.live)
-			continue
+			return persistStateSnapshot{}, err
 		case err != nil:
-			return persistStateSnapshot{}, nil, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
 		}
 
 		payload, err := json.Marshal(env)
 		if err != nil {
-			return persistStateSnapshot{}, nil, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
 		}
 		outputEffectIDs, err := json.Marshal(resultSnapshot.shared.outputEffectIDs)
 		if err != nil {
-			return persistStateSnapshot{}, nil, fmt.Errorf("persist result %d output effect IDs: %w", resultSnapshot.resultID, err)
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d output effect IDs: %w", resultSnapshot.resultID, err)
 		}
 		canonicalID, err := resultSnapshot.canonicalID.Encode()
 		if err != nil {
-			return persistStateSnapshot{}, nil, fmt.Errorf("persist result %d canonical ID: %w", resultSnapshot.resultID, err)
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d canonical ID: %w", resultSnapshot.resultID, err)
 		}
 
 		resultSnapshot.row = persistdb.MirrorResult{
@@ -535,11 +271,7 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			Description:          resultSnapshot.shared.description,
 		}
 	}
-	if len(notReady) > 0 {
-		return persistStateSnapshot{}, notReady, ErrPersistStateNotReady
-	}
-
-	return snapshot, nil, nil
+	return snapshot, nil
 }
 
 func (c *cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) error {

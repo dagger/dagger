@@ -15,7 +15,7 @@ type persistCodecRoot struct{}
 
 func (*persistCodecRoot) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "PersistCodecRoot",
+		NamedType: "Query",
 		NonNull:   true,
 	}
 }
@@ -59,7 +59,7 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 	baseCache := baseCacheIface.(*cache)
 	srv := NewServer(&persistCodecRoot{}, NewSessionCache(baseCache))
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
-	rootObjType, ok := srv.ObjectType("PersistCodecRoot")
+	rootObjType, ok := srv.ObjectType("Query")
 	assert.Assert(t, ok)
 	_, ok = rootObjType.(Class[*persistCodecRoot])
 	assert.Assert(t, ok)

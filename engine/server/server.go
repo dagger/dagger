@@ -42,6 +42,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
@@ -618,17 +619,32 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		s.stateMu.Unlock()
 	}
 
-	err = errors.Join(err, srv.worker.Close())
-
-	// Shutdown the global namespace worker pool
-	buildkit.ShutdownGlobalNamespaceWorkerPool()
+	if srv.baseDagqlCache != nil && len(srv.workerGCPolicies) > 0 {
+		srv.gcmu.Lock()
+		dstat, statErr := disk.GetDiskStat(srv.rootDir)
+		if statErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to get disk stats for graceful shutdown prune: %w", statErr))
+		} else {
+			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
+			for i := range prunePolicies {
+				prunePolicies[i].CurrentFreeSpace = dstat.Free
+			}
+			_, pruneErr := srv.baseDagqlCache.Prune(ctx, prunePolicies)
+			if pruneErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to prune dagql cache during graceful shutdown: %w", pruneErr))
+			}
+		}
+		srv.gcmu.Unlock()
+	}
 
 	if srv.baseDagqlCache != nil {
 		err = errors.Join(err, srv.baseDagqlCache.Close(ctx))
 	}
-	if err != nil {
-		return err
-	}
+
+	err = errors.Join(err, srv.worker.Close())
+
+	// Shutdown the global namespace worker pool
+	buildkit.ShutdownGlobalNamespaceWorkerPool()
 
 	var eg errgroup.Group
 	eg.Go(func() error {

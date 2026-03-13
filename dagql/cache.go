@@ -235,8 +235,6 @@ func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 		}
 		return nil, fmt.Errorf("mark clean_shutdown=0 at startup: %w", err)
 	}
-	c.startPersistenceWorker()
-
 	return c, nil
 }
 
@@ -407,16 +405,6 @@ type cache struct {
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
 	pdb *persistdb.Queries
-
-	persistMu            sync.Mutex
-	persistDirty         bool
-	persistNotify        chan struct{}
-	persistFlushRequests chan chan error
-	persistStop          chan struct{}
-	persistDone          chan struct{}
-	persistClosed        bool
-	persistErr           error
-	persistWatchResults  map[sharedResultID]struct{}
 
 	traceBootID       string
 	traceSeq          uint64
@@ -907,7 +895,7 @@ type cacheContextKey struct {
 
 func (c *cache) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
-		if err := c.flushAndStopPersistenceWorker(ctx); err != nil {
+		if err := c.persistCurrentState(ctx); err != nil {
 			c.closeErr = errors.Join(c.closeErr, err)
 		}
 		if c.closeErr != nil {
@@ -1614,13 +1602,6 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 
 	if err := c.attachOwnedResults(ctx, oc.res, oc.val); err != nil {
 		return err
-	}
-	if oc.isPersistable {
-		c.egraphMu.Lock()
-		c.markPersistenceDirty()
-		c.egraphMu.Unlock()
-	} else {
-		c.markPersistenceDirty()
 	}
 
 	return nil

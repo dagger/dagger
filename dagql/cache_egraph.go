@@ -846,9 +846,7 @@ func (c *cache) lookupCacheForID(
 		// releases do not drop it or its dependency chain. This avoids surprising
 		// misses for persistable callsites, but should be revisited when real
 		// persistence policy is finalized.
-		if c.markResultAsDepOfPersistedLocked(ctx, res) {
-			c.markPersistenceDirty()
-		}
+		c.markResultAsDepOfPersistedLocked(ctx, res)
 	}
 	newRefCount := atomic.AddInt64(&res.refCount, 1)
 	c.traceRefAcquired(ctx, res, newRefCount)
@@ -1437,8 +1435,6 @@ func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 		}
 		delete(c.outputEqClassToTerms, outputEqID)
 	}
-
-	c.markPersistenceDirty()
 	c.maybeResetEgraphLocked()
 	return nil
 }
