@@ -2108,6 +2108,42 @@ Locked next step:
 - use that wrapped run as the authoritative next signal for
   `TestWorkspace/TestBlueprintFunctionsIncludesOtherModules`
 
+### 2026-03-14: Wrapped Local Playground Run Failed During Source Resolution
+
+Ran the wrapped local-playground harness for the first retained test. The
+wrapper behaved as intended operationally:
+
+- heartbeat messages appeared every 30s
+- the run stayed observable/handoff-safe instead of going silent
+- the final failure included the trace tail rather than leaving an orphaned
+  background process
+
+Concrete result:
+
+- no inner `go test` output was reached
+- trace tail showed the failure happened earlier, while evaluating the local
+  `source=.` directory argument for the mounted repo:
+  - `✘ parsing command line arguments 5m31s ERROR`
+  - `failed to get value for argument "source": Post "http://dagger/query": read tcp 172.20.0.217:64869->64.6.38.39:444: read: operation timed out`
+
+Scope consequence:
+
+- the current blocker is no longer "entrypoint test may hang"; it is
+  "uploading or resolving the full repo as a `Directory` argument for the local
+  playground wrapper times out before the test even starts"
+- the wrapper itself is now validated as the right operational shape for this
+  branch because it surfaces that failure cleanly
+
+Locked next step:
+
+- retry the same wrapped local-playground harness with a narrower source
+  directory payload instead of raw `source=.`
+- start from the existing `toolchains/engine-dev` source filter as the baseline
+  include/exclude set, then add only the extra repo paths needed for
+  `go test ./core/integration`
+- keep the local CLI WIP untouched until the validation harness gets past this
+  source-resolution blocker and reaches the actual retained tests
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
