@@ -1892,6 +1892,39 @@ Takeover checkpoint before the next validation pass:
   - commit each substantive checkpoint separately so the branch can be handed
     off without relying on worktree-only context
 
+### 2026-03-14: Combined Entrypoint Hold-Bucket Rerun Still Opaque Locally
+
+Reran the exact combined hold-bucket command from the prior checkpoint:
+
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)' --test-verbose`
+
+Observed local behavior:
+
+- the command again progressed through engine connect, module load, and into:
+  - `EngineDev.test(run: "TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)", pkg: "./core/integration", testVerbose: true): Void`
+- after entering `EngineDev.test(...)`, no further test output or completion
+  signal arrived within a normal local validation window
+- this reproduces the earlier "started but did not finish in a reasonable local
+  validation window" caveat from the cherry-pick checkpoint rather than
+  producing a new pass/fail classification
+
+Worktree hygiene cleanup performed before continuing:
+
+- found and terminated three orphaned local `dagger ... engine-dev test` runs:
+  - the combined `TestWorkspace/(...)` rerun above
+  - an earlier `TestUserDefaults/TestLocalBlueprint/outer_envfile_outer_workdir`
+    rerun from takeover audit
+  - an earlier `TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir`
+    rerun from takeover audit
+
+Locked next step:
+
+- split the retained entrypoint hold bucket into individual `TestWorkspace/*`
+  reruns under the same harness so the branch gets attributable results instead
+  of another opaque long-running aggregate slice
+- keep the current local CLI WIP unverified until those individual reruns show
+  whether any explicit `-m` or Query-root focus regression is still active
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
