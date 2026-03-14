@@ -1788,6 +1788,11 @@ type pendingModule struct {
 	ConfigDefaults     map[string]any
 	DefaultsFromDotEnv bool
 	ArgCustomizations  []*modules.ModuleConfigArgument
+
+	// For legacy blueprints, the caller module's own .env should still behave
+	// like the "inner" env file even though the code now loads from the
+	// blueprint source tree.
+	LegacyCallerModuleDir string
 }
 
 type moduleLoadRequest struct {
@@ -1852,6 +1857,13 @@ func pendingLegacyModule(
 	return mod
 }
 
+func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
+	if !isLocal || moduleDir == "" {
+		return ""
+	}
+	return moduleDir
+}
+
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
 // and module gathering. It detects the current workspace root, applies legacy
 // dagger.json compat, and gathers all modules to be loaded later by
@@ -1888,6 +1900,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	var legacyToolchains []workspace.LegacyToolchain
 	var legacyBlueprint *workspace.LegacyBlueprint
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
 	if hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
@@ -1937,7 +1950,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// (1b) Legacy blueprint (from compat mode, extracted above)
 	if legacyBlueprint != nil {
-		pending = append(pending, pendingLegacyModule(
+		blueprint := pendingLegacyModule(
 			ws,
 			resolveLocalRef,
 			legacyBlueprint.Name,
@@ -1946,7 +1959,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			true,
 			nil,
 			nil,
-		))
+		)
+		blueprint.LegacyCallerModuleDir = legacyCallerDir
+		pending = append(pending, blueprint)
 	}
 
 	// (2) Implicit module (dagger.json near CWD)
@@ -2200,9 +2215,22 @@ func (srv *Server) resolveModule(
 		args = append(args, dagql.NamedInput{Name: "disableFindUp", Value: dagql.Boolean(true)})
 	}
 
-	var resolved dagql.ObjectResult[*core.Module]
-	err := dag.Select(ctx, dag.Root(), &resolved,
+	var src dagql.ObjectResult[*core.ModuleSource]
+	err := dag.Select(ctx, dag.Root(), &src,
 		dagql.Selector{Field: "moduleSource", Args: args},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
+	}
+
+	if mod.LegacyCallerModuleDir != "" && mod.Blueprint {
+		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
+			return nil, err
+		}
+	}
+
+	var resolved dagql.ObjectResult[*core.Module]
+	err = dag.Select(ctx, src, &resolved,
 		dagql.Selector{Field: "asModule"},
 	)
 	if err != nil {
@@ -2226,6 +2254,56 @@ func (srv *Server) resolveModule(
 	}
 
 	return resolved.Self(), nil
+}
+
+func (srv *Server) mergeLegacyCallerEnvDefaults(
+	ctx context.Context,
+	dag *dagql.Server,
+	src *core.ModuleSource,
+	callerModuleDir string,
+) error {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return fmt.Errorf("get current query for legacy caller env: %w", err)
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("get buildkit for legacy caller env: %w", err)
+	}
+
+	envPath := filepath.Join(callerModuleDir, ".env")
+	stat, err := bk.StatCallerHostPath(ctx, envPath, true)
+	switch {
+	case errors.Is(err, os.ErrNotExist), status.Code(err) == codes.NotFound:
+		return nil
+	case err != nil:
+		return fmt.Errorf("stat legacy caller env %q: %w", envPath, err)
+	case stat.IsDir():
+		return nil
+	}
+
+	var callerEnv *core.EnvFile
+	if err := dag.Select(ctx, dag.Root(), &callerEnv,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(envPath)},
+			},
+		},
+		dagql.Selector{
+			Field: "asEnvFile",
+			Args: []dagql.NamedInput{
+				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
+			},
+		},
+	); err != nil {
+		return fmt.Errorf("load legacy caller env %q: %w", envPath, err)
+	}
+
+	src.UserDefaults = core.NewEnvFile(true).WithEnvFiles(src.UserDefaults, callerEnv)
+	src.Digest = src.CalcDigest(ctx).String()
+	return nil
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.

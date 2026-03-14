@@ -1433,29 +1433,26 @@ Conclusion:
   failures; they have moved into the runtime-compat bucket below
 
 - `core/integration/TestUserDefaults`
-  - confirmed failing subtest:
-    - `TestUserDefaults/TestLocalBlueprint/inner_envfile`
-  - exact failure:
-    - expected: `salut-inner, monde-inner!`
-    - actual: `hello, world!`
-  - observed runtime signal:
-    - the engine warns `module "defaults" uses legacy-default-path; port to
-      workspace API and remove this flag`
-    - that means the legacy blueprint module is loading, but the caller's
-      `.env` defaults are not being applied to it
-  - `test-base` also reported
-    `TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir`; based on
-    the test shape, that likely belongs to the same dependency-default
-    propagation bug family
-  - known cause:
-    - precise code location still needs root-cause analysis
-    - behaviorally, user defaults from the caller/module scope are not being
-      propagated through the legacy blueprint/toolchain compatibility path
+  - the original focused failure,
+    `TestUserDefaults/TestLocalBlueprint/inner_envfile`, is now fixed locally;
+    see the later ledger update below
+  - the currently reproduced user-default failures are now:
+    - `TestUserDefaults/TestLocalBlueprint/outer_envfile_outer_workdir`
+    - `TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir`
+  - exact failures:
+    - `unknown command "message" for "dagger call"`
+    - `unknown command "defaults" for "dagger call"`
+  - current classification:
+    - these are `dagger -m ./app call ...` command-resolution failures
+    - treat them as entrypoint-sensitive hold items pending the upstream
+      schema-level entrypoint-module cherry-pick
   - current plan:
-    - fix this in the existing workspace/session/legacy loading path
-    - do not rewrite the test to accept workspace-specific output
+    - keep the legacy caller-`.env` compat fix in the existing
+      workspace/session/legacy loading path
     - do not add a second compat path under `ModuleSource.asModule()`
-  - fix stance: `implementation`
+    - defer the remaining outer-workdir user-default reruns until after the
+      upstream entrypoint change lands here
+  - fix stance: `partial implementation`
 
 - `core/integration/TestGenerators`
   - confirmed failing subtest:
@@ -1492,6 +1489,9 @@ Verification used to build this ledger:
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestBlueprint/TestBlueprintUseLocal/use_local_blueprint' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestChecks/TestChecksAsToolchain/typescript' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalBlueprint/inner_envfile' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalBlueprint' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalToolchain/inner_envfile' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=1`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=5`
@@ -1613,6 +1613,43 @@ What this means:
   blueprint path is no longer an active runtime issue on this branch
 - the narrow non-entrypoint runtime focus now shifts to legacy `.env` /
   user-default propagation and generator include matching
+
+### 2026-03-13: Legacy Blueprint Caller `.env` Compat Restored
+
+Implemented a focused compat fix in `engine/server/session.go`:
+
+- when loading a legacy blueprint module, record the caller module directory
+- before `ModuleSource.asModule()`, if that caller module has its own `.env`,
+  load it as an env file and merge it over the legacy blueprint module-source
+  defaults
+- recompute the module-source digest after the merge so codegen/runtime cache
+  identity follows the effective default set
+
+Focused verification:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalBlueprint/inner_envfile' --test-verbose`
+  - result: passes
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalBlueprint' --test-verbose`
+  - `inner_envfile`: passes
+  - `outer_envfile_inner_workdir`: passes
+  - `outer_envfile_outer_workdir`: still fails, but now as
+    `unknown command "message" for "dagger call"`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalToolchain/inner_envfile' --test-verbose`
+  - result: passes
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir' --test-verbose`
+  - still fails, but now as `unknown command "defaults" for "dagger call"`
+
+Scope consequence:
+
+- the reproduced non-entrypoint caller-`.env` / user-default propagation gap is
+  fixed for the legacy blueprint `inner_envfile` path
+- the remaining reproduced user-default failures are both
+  `dagger -m ./app call ...` command-resolution failures, so treat them as
+  entrypoint-sensitive hold items pending the upstream schema-level
+  entrypoint-module cherry-pick
+- the next active non-entrypoint runtime task is generator include matching,
+  unless a narrower non-entrypoint user-default regression appears in later
+  reruns
 
 ## User-Visible Breakage In The Foundation PR
 
