@@ -597,6 +597,50 @@ type BranchTest {
 		"main branch should still point at the init commit")
 }
 
+// TestToolResponse verifies that the LLM can see the return value of a tool
+// call. A tool returns a known string, and we ask the LLM to repeat it back.
+// This catches bugs where tool responses are sent as empty strings.
+func (LLMSuite) TestToolResponse(ctx context.Context, t *testctx.T) {
+	configPath := llmconfig.ConfigFile
+	if !llmconfig.LLMConfigured() {
+		t.Skip("no LLM config found; pass --config-file to engine-dev test")
+	}
+	c := connect(ctx, t, dagger.WithConfigPath(configPath))
+
+	base := workspaceBase(t, c).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init"}).
+		With(initDangModule("echo-test", `
+type EchoTest {
+  """
+  Run an LLM session that calls the secret-code tool and reports the result.
+  """
+  pub run(source: Workspace!): LLM! {
+    llm
+      .withEnv(env.withCurrentModule.withWorkspace(source))
+      .withPrompt("Call the EchoTest secretCode tool, then reply with ONLY the exact string it returned, nothing else.")
+      .loop
+  }
+
+  """
+  Returns a secret code word.
+  """
+  pub secretCode(): String! {
+    "flamingo-42"
+  }
+}
+`)).
+		WithMountedSecret("/root/.config/dagger/config.toml",
+			c.Secret("file://"+configPath))
+
+	result := base.With(daggerCall("echo-test", "run", "last-reply"))
+
+	reply, err := result.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(reply), "flamingo-42",
+		"LLM should have seen and repeated the tool's return value")
+}
+
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
 	name, err := program.Name(ctx)
 	require.NoError(t, err)
