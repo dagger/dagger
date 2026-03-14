@@ -1263,15 +1263,41 @@ func (fn *ModuleFunction) loadContextualArg(
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 }
 
-// loadWorkspaceArg loads a workspace argument by resolving it through the
-// currentWorkspace query. The workspace is automatically injected into
-// module functions that declare a Workspace parameter.
+// loadWorkspaceArg loads a workspace argument for injection into a module
+// function. When called during an LLM tool call, the workspace is taken from
+// the current Env (which holds the host-side workspace from the original
+// client). Otherwise it falls back to resolving currentWorkspace from the
+// calling context.
 func (fn *ModuleFunction) loadWorkspaceArg(
 	ctx context.Context,
 	dag *dagql.Server,
 ) (dagql.IDType, error) {
 	if dag == nil {
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
+	}
+
+	// Prefer the workspace from the current Env, which is the host-side
+	// workspace propagated from the original CLI client. This is critical
+	// when the function is called as an LLM tool — resolving
+	// currentWorkspace here would yield the module container's filesystem
+	// instead of the host's.
+	if envID, ok := EnvIDFromContext(ctx); ok {
+		var ws dagql.ObjectResult[*Workspace]
+		err := dag.Select(ctx, dag.Root(), &ws,
+			dagql.Selector{
+				Field: "loadEnvFromID",
+				Args: []dagql.NamedInput{
+					{Name: "id", Value: dagql.NewID[*Env](envID)},
+				},
+			},
+			dagql.Selector{
+				Field: "workspace",
+			},
+		)
+		if err == nil {
+			return dagql.NewID[*Workspace](ws.ID()), nil
+		}
+		// fall through to currentWorkspace if env lookup fails
 	}
 
 	var ws dagql.ObjectResult[*Workspace]
