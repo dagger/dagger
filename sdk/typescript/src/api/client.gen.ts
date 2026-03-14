@@ -126,6 +126,77 @@ export type ChangesetWithChangesetsOpts = {
 }
 
 /**
+ * The `ChangesetDiffStatEntryID` scalar type represents an identifier for an object of type ChangesetDiffStatEntry.
+ */
+export type ChangesetDiffStatEntryID = string & {
+  __ChangesetDiffStatEntryID: never
+}
+
+/**
+ * The type of change for a diff stat entry.
+ */
+export enum ChangesetDiffStatKind {
+  /**
+   * A file or directory was added.
+   */
+  Added = "ADDED",
+
+  /**
+   * A file was modified.
+   */
+  Modified = "MODIFIED",
+
+  /**
+   * A file or directory was removed.
+   */
+  Removed = "REMOVED",
+
+  /**
+   * A file was renamed.
+   */
+  Renamed = "RENAMED",
+}
+
+/**
+ * Utility function to convert a ChangesetDiffStatKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ChangesetDiffStatKindValueToName(
+  value: ChangesetDiffStatKind,
+): string {
+  switch (value) {
+    case ChangesetDiffStatKind.Added:
+      return "ADDED"
+    case ChangesetDiffStatKind.Modified:
+      return "MODIFIED"
+    case ChangesetDiffStatKind.Removed:
+      return "REMOVED"
+    case ChangesetDiffStatKind.Renamed:
+      return "RENAMED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ChangesetDiffStatKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ChangesetDiffStatKindNameToValue(name: string): ChangesetDiffStatKind {
+  switch (name) {
+    case "ADDED":
+      return ChangesetDiffStatKind.Added
+    case "MODIFIED":
+      return ChangesetDiffStatKind.Modified
+    case "REMOVED":
+      return ChangesetDiffStatKind.Removed
+    case "RENAMED":
+      return ChangesetDiffStatKind.Renamed
+    default:
+      return name as ChangesetDiffStatKind
+  }
+}
+/**
  * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
 export type ChangesetID = string & { __ChangesetID: never }
@@ -3003,6 +3074,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type ChangesetDiffStatEntry
+   */
+  asChangesetDiffStatEntry = (): ChangesetDiffStatEntry => {
+    const ctx = this._ctx.select("asChangesetDiffStatEntry")
+    return new ChangesetDiffStatEntry(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Check
    */
   asCheck = (): Check => {
@@ -3387,6 +3466,23 @@ export class Changeset extends BaseClient {
   }
 
   /**
+   * Structured per-path diff statistics (kind and line counts) for this changeset.
+   */
+  diffStat = async (): Promise<ChangesetDiffStatEntry[]> => {
+    type diffStat = {
+      id: ChangesetDiffStatEntryID
+    }
+
+    const ctx = this._ctx.select("diffStat").select("id")
+
+    const response: Awaited<diffStat[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadChangesetDiffStatEntryFromID(r.id),
+    )
+  }
+
+  /**
    * Applies the diff represented by this changeset to a path on the host.
    * @param path Location of the copied directory (e.g., "logs/").
    */
@@ -3519,6 +3615,109 @@ export class Changeset extends BaseClient {
    */
   with = (arg: (param: Changeset) => Changeset) => {
     return arg(this)
+  }
+}
+
+export class ChangesetDiffStatEntry extends BaseClient {
+  private readonly _id?: ChangesetDiffStatEntryID = undefined
+  private readonly _addedLines?: number = undefined
+  private readonly _kind?: ChangesetDiffStatKind = undefined
+  private readonly _path?: string = undefined
+  private readonly _removedLines?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ChangesetDiffStatEntryID,
+    _addedLines?: number,
+    _kind?: ChangesetDiffStatKind,
+    _path?: string,
+    _removedLines?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._addedLines = _addedLines
+    this._kind = _kind
+    this._path = _path
+    this._removedLines = _removedLines
+  }
+
+  /**
+   * A unique identifier for this ChangesetDiffStatEntry.
+   */
+  id = async (): Promise<ChangesetDiffStatEntryID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ChangesetDiffStatEntryID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Number of added lines for this path.
+   */
+  addedLines = async (): Promise<number> => {
+    if (this._addedLines) {
+      return this._addedLines
+    }
+
+    const ctx = this._ctx.select("addedLines")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Type of change.
+   */
+  kind = async (): Promise<ChangesetDiffStatKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<ChangesetDiffStatKind> = await ctx.execute()
+
+    return ChangesetDiffStatKindNameToValue(response)
+  }
+
+  /**
+   * Path of the changed file or directory.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Number of removed lines for this path.
+   */
+  removedLines = async (): Promise<number> => {
+    if (this._removedLines) {
+      return this._removedLines
+    }
+
+    const ctx = this._ctx.select("removedLines")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -6613,6 +6812,41 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type ChangesetDiffStatEntry in the environment
+   * @param name The name of the binding
+   * @param value The ChangesetDiffStatEntry value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withChangesetDiffStatEntryInput = (
+    name: string,
+    value: ChangesetDiffStatEntry,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesetDiffStatEntryInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ChangesetDiffStatEntry output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withChangesetDiffStatEntryOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesetDiffStatEntryOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -12147,6 +12381,16 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a ChangesetDiffStatEntry from its ID.
+   */
+  loadChangesetDiffStatEntryFromID = (
+    id: ChangesetDiffStatEntryID,
+  ): ChangesetDiffStatEntry => {
+    const ctx = this._ctx.select("loadChangesetDiffStatEntryFromID", { id })
+    return new ChangesetDiffStatEntry(ctx)
   }
 
   /**

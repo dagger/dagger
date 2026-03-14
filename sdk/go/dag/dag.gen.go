@@ -230,6 +230,12 @@ func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	return client.LoadCacheVolumeFromID(id)
 }
 
+// Load a ChangesetDiffStatEntry from its ID.
+func LoadChangesetDiffStatEntryFromID(id dagger.ChangesetDiffStatEntryID) *dagger.ChangesetDiffStatEntry {
+	client := initClient()
+	return client.LoadChangesetDiffStatEntryFromID(id)
+}
+
 // Load a Changeset from its ID.
 func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
 	client := initClient()

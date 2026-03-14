@@ -111,6 +111,45 @@ impl CacheVolumeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ChangesetDiffStatEntryId(pub String);
+impl From<&str> for ChangesetDiffStatEntryId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for ChangesetDiffStatEntryId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<ChangesetDiffStatEntryId> for ChangesetDiffStatEntry {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn core::future::Future<Output = Result<ChangesetDiffStatEntryId, DaggerError>> + Send,
+        >,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ChangesetDiffStatEntryId> for ChangesetDiffStatEntryId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn core::future::Future<Output = Result<ChangesetDiffStatEntryId, DaggerError>> + Send,
+        >,
+    > {
+        Box::pin(async move { Ok::<ChangesetDiffStatEntryId, DaggerError>(self) })
+    }
+}
+impl ChangesetDiffStatEntryId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ChangesetId(pub String);
 impl From<&str> for ChangesetId {
     fn from(value: &str) -> Self {
@@ -2365,6 +2404,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type ChangesetDiffStatEntry
+    pub fn as_changeset_diff_stat_entry(&self) -> ChangesetDiffStatEntry {
+        let query = self.selection.select("asChangesetDiffStatEntry");
+        ChangesetDiffStatEntry {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Check
     pub fn as_check(&self) -> Check {
         let query = self.selection.select("asCheck");
@@ -2685,6 +2733,15 @@ impl Changeset {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Structured per-path diff statistics (kind and line counts) for this changeset.
+    pub fn diff_stat(&self) -> Vec<ChangesetDiffStatEntry> {
+        let query = self.selection.select("diffStat");
+        vec![ChangesetDiffStatEntry {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// Applies the diff represented by this changeset to a path on the host.
     ///
     /// # Arguments
@@ -2820,6 +2877,39 @@ impl Changeset {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+#[derive(Clone)]
+pub struct ChangesetDiffStatEntry {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ChangesetDiffStatEntry {
+    /// Number of added lines for this path.
+    pub async fn added_lines(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("addedLines");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this ChangesetDiffStatEntry.
+    pub async fn id(&self) -> Result<ChangesetDiffStatEntryId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Type of change.
+    pub async fn kind(&self) -> Result<ChangesetDiffStatKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Path of the changed file or directory.
+    pub async fn path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Number of removed lines for this path.
+    pub async fn removed_lines(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("removedLines");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -7425,6 +7515,55 @@ impl Env {
         description: impl Into<String>,
     ) -> Env {
         let mut query = self.selection.select("withCacheVolumeOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ChangesetDiffStatEntry in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ChangesetDiffStatEntry value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_changeset_diff_stat_entry_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ChangesetDiffStatEntryId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withChangesetDiffStatEntryInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired ChangesetDiffStatEntry output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_changeset_diff_stat_entry_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withChangesetDiffStatEntryOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -12947,6 +13086,25 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a ChangesetDiffStatEntry from its ID.
+    pub fn load_changeset_diff_stat_entry_from_id(
+        &self,
+        id: impl IntoID<ChangesetDiffStatEntryId>,
+    ) -> ChangesetDiffStatEntry {
+        let mut query = self.selection.select("loadChangesetDiffStatEntryFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        ChangesetDiffStatEntry {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Changeset from its ID.
     pub fn load_changeset_from_id(&self, id: impl IntoID<ChangesetId>) -> Changeset {
         let mut query = self.selection.select("loadChangesetFromID");
@@ -15344,6 +15502,17 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ChangesetDiffStatKind {
+    #[serde(rename = "ADDED")]
+    Added,
+    #[serde(rename = "MODIFIED")]
+    Modified,
+    #[serde(rename = "REMOVED")]
+    Removed,
+    #[serde(rename = "RENAMED")]
+    Renamed,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ChangesetMergeConflict {

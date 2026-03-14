@@ -138,6 +138,32 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Create or update a binding of type ChangesetDiffStatEntry in the environment
+     */
+    public function withChangesetDiffStatEntryInput(
+        string $name,
+        ChangesetDiffStatEntryId|ChangesetDiffStatEntry $value,
+        string $description,
+    ): Env {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesetDiffStatEntryInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired ChangesetDiffStatEntry output to be assigned in the environment
+     */
+    public function withChangesetDiffStatEntryOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesetDiffStatEntryOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type Changeset in the environment
      */
     public function withChangesetInput(string $name, ChangesetId|Changeset $value, string $description): Env

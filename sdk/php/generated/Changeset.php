@@ -50,6 +50,15 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Structured per-path diff statistics (kind and line counts) for this changeset.
+     */
+    public function diffStat(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('diffStat');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'diffStat');
+    }
+
+    /**
      * Applies the diff represented by this changeset to a path on the host.
      */
     public function export(string $path): string

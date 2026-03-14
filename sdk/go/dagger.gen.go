@@ -139,6 +139,9 @@ type BindingID string
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
+// The `ChangesetDiffStatEntryID` scalar type represents an identifier for an object of type ChangesetDiffStatEntry.
+type ChangesetDiffStatEntryID string
+
 // The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
 type ChangesetID string
 
@@ -597,6 +600,15 @@ func (r *Binding) AsChangeset() *Changeset {
 	}
 }
 
+// Retrieve the binding value, as type ChangesetDiffStatEntry
+func (r *Binding) AsChangesetDiffStatEntry() *ChangesetDiffStatEntry {
+	q := r.query.Select("asChangesetDiffStatEntry")
+
+	return &ChangesetDiffStatEntry{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Check
 func (r *Binding) AsCheck() *Check {
 	q := r.query.Select("asCheck")
@@ -1041,6 +1053,39 @@ func (r *Changeset) Before() *Directory {
 	}
 }
 
+// Structured per-path diff statistics (kind and line counts) for this changeset.
+func (r *Changeset) DiffStat(ctx context.Context) ([]ChangesetDiffStatEntry, error) {
+	q := r.query.Select("diffStat")
+
+	q = q.Select("id")
+
+	type diffStat struct {
+		Id ChangesetDiffStatEntryID
+	}
+
+	convert := func(fields []diffStat) []ChangesetDiffStatEntry {
+		out := []ChangesetDiffStatEntry{}
+
+		for i := range fields {
+			val := ChangesetDiffStatEntry{id: &fields[i].Id}
+			val.query = q.Root().Select("loadChangesetDiffStatEntryFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []diffStat
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Applies the diff represented by this changeset to a path on the host.
 func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 	if r.export != nil {
@@ -1203,6 +1248,114 @@ func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithCh
 	return &Changeset{
 		query: q,
 	}
+}
+
+type ChangesetDiffStatEntry struct {
+	query *querybuilder.Selection
+
+	addedLines   *int
+	id           *ChangesetDiffStatEntryID
+	kind         *ChangesetDiffStatKind
+	path         *string
+	removedLines *int
+}
+
+func (r *ChangesetDiffStatEntry) WithGraphQLQuery(q *querybuilder.Selection) *ChangesetDiffStatEntry {
+	return &ChangesetDiffStatEntry{
+		query: q,
+	}
+}
+
+// Number of added lines for this path.
+func (r *ChangesetDiffStatEntry) AddedLines(ctx context.Context) (int, error) {
+	if r.addedLines != nil {
+		return *r.addedLines, nil
+	}
+	q := r.query.Select("addedLines")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ChangesetDiffStatEntry.
+func (r *ChangesetDiffStatEntry) ID(ctx context.Context) (ChangesetDiffStatEntryID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ChangesetDiffStatEntryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ChangesetDiffStatEntry) XXX_GraphQLType() string {
+	return "ChangesetDiffStatEntry"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ChangesetDiffStatEntry) XXX_GraphQLIDType() string {
+	return "ChangesetDiffStatEntryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ChangesetDiffStatEntry) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ChangesetDiffStatEntry) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Type of change.
+func (r *ChangesetDiffStatEntry) Kind(ctx context.Context) (ChangesetDiffStatKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response ChangesetDiffStatKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path of the changed file or directory.
+func (r *ChangesetDiffStatEntry) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Number of removed lines for this path.
+func (r *ChangesetDiffStatEntry) RemovedLines(ctx context.Context) (int, error) {
+	if r.removedLines != nil {
+		return *r.removedLines, nil
+	}
+	q := r.query.Select("removedLines")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 type Check struct {
@@ -5573,6 +5726,30 @@ func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description 
 // Declare a desired CacheVolume output to be assigned in the environment
 func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	q := r.query.Select("withCacheVolumeOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ChangesetDiffStatEntry in the environment
+func (r *Env) WithChangesetDiffStatEntryInput(name string, value *ChangesetDiffStatEntry, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withChangesetDiffStatEntryInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ChangesetDiffStatEntry output to be assigned in the environment
+func (r *Env) WithChangesetDiffStatEntryOutput(name string, description string) *Env {
+	q := r.query.Select("withChangesetDiffStatEntryOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -12239,6 +12416,16 @@ func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	}
 }
 
+// Load a ChangesetDiffStatEntry from its ID.
+func (r *Client) LoadChangesetDiffStatEntryFromID(id ChangesetDiffStatEntryID) *ChangesetDiffStatEntry {
+	q := r.query.Select("loadChangesetDiffStatEntryFromID")
+	q = q.Arg("id", id)
+
+	return &ChangesetDiffStatEntry{
+		query: q,
+	}
+}
+
 // Load a Changeset from its ID.
 func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
 	q := r.query.Select("loadChangesetFromID")
@@ -15042,6 +15229,77 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// The type of change for a diff stat entry.
+type ChangesetDiffStatKind string
+
+func (ChangesetDiffStatKind) IsEnum() {}
+
+func (v ChangesetDiffStatKind) Name() string {
+	switch v {
+	case ChangesetDiffStatKindAdded:
+		return "ADDED"
+	case ChangesetDiffStatKindModified:
+		return "MODIFIED"
+	case ChangesetDiffStatKindRemoved:
+		return "REMOVED"
+	case ChangesetDiffStatKindRenamed:
+		return "RENAMED"
+	default:
+		return ""
+	}
+}
+
+func (v ChangesetDiffStatKind) Value() string {
+	return string(v)
+}
+
+func (v *ChangesetDiffStatKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ChangesetDiffStatKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ADDED":
+		*v = ChangesetDiffStatKindAdded
+	case "MODIFIED":
+		*v = ChangesetDiffStatKindModified
+	case "REMOVED":
+		*v = ChangesetDiffStatKindRemoved
+	case "RENAMED":
+		*v = ChangesetDiffStatKindRenamed
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A file or directory was added.
+	ChangesetDiffStatKindAdded ChangesetDiffStatKind = "ADDED"
+
+	// A file was modified.
+	ChangesetDiffStatKindModified ChangesetDiffStatKind = "MODIFIED"
+
+	// A file or directory was removed.
+	ChangesetDiffStatKindRemoved ChangesetDiffStatKind = "REMOVED"
+
+	// A file was renamed.
+	ChangesetDiffStatKindRenamed ChangesetDiffStatKind = "RENAMED"
 )
 
 // Strategy to use when merging changesets with conflicting changes.
