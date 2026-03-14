@@ -53,14 +53,7 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 
 var ephemeral = anthropic.CacheControlEphemeralParam{Type: constant.Ephemeral("").Default()}
 
-// Anthropic's API only allows 4 cache breakpoints.
-const maxAnthropicCacheBlocks = 4
 
-// Set a reasonable threshold for when we should start caching.
-//
-// Sonnet's minimum is 1024, Haiku's is 2048. Better to err on the higher side
-// so we don't waste cache breakpoints.
-const anthropicCacheThreshold = 2048
 
 var _ LLMClient = (*AnthropicClient)(nil)
 
@@ -119,7 +112,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// Convert generic messages to Anthropic-specific message parameters.
 	var messages []anthropic.MessageParam
 	var systemPrompts []anthropic.TextBlockParam
-	var cachedBlocks int
 	for _, msg := range history {
 		if msg.Role == LLMMessageRoleSystem {
 			systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: msg.TextContent()})
@@ -153,31 +145,44 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			}
 		}
 
-		// enable caching based on simple token usage heuristic
-		var cacheControl anthropic.CacheControlEphemeralParam
-		if msg.TokenUsage.TotalTokens > anthropicCacheThreshold && cachedBlocks < maxAnthropicCacheBlocks {
-			cacheControl = ephemeral
-			cachedBlocks++
-		}
-
-		if len(blocks) > 0 {
-			lastBlock := &blocks[len(blocks)-1]
-			switch {
-			case lastBlock.OfText != nil:
-				lastBlock.OfText.CacheControl = cacheControl
-			case lastBlock.OfToolUse != nil:
-				lastBlock.OfToolUse.CacheControl = cacheControl
-			case lastBlock.OfToolResult != nil:
-				lastBlock.OfToolResult.CacheControl = cacheControl
-				// ThinkingBlockParam doesn't support CacheControl
-			}
-		}
-
 		switch msg.Role {
 		case LLMMessageRoleUser:
 			messages = append(messages, anthropic.NewUserMessage(blocks...))
 		case LLMMessageRoleAssistant:
 			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+		}
+	}
+
+	// Add cache_control breakpoints. Anthropic allows at most 4 cache
+	// breakpoints per request. We place them on:
+	//   1. The last system prompt block (stable across turns)
+	//   2. The last block of the last user message (so the next turn
+	//      gets a cache hit on all preceding content)
+	// This mirrors what Claude Code / pi do and stays well within the
+	// 4-breakpoint limit, even when OAuth adds its own cached system
+	// prompt.
+	if len(systemPrompts) > 0 {
+		systemPrompts[len(systemPrompts)-1].CacheControl = ephemeral
+	}
+	if len(messages) > 0 {
+		// Walk backwards to find the last user message.
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role != anthropic.MessageParamRoleUser {
+				continue
+			}
+			blocks := messages[i].Content
+			if len(blocks) > 0 {
+				lastBlock := &blocks[len(blocks)-1]
+				switch {
+				case lastBlock.OfText != nil:
+					lastBlock.OfText.CacheControl = ephemeral
+				case lastBlock.OfToolUse != nil:
+					lastBlock.OfToolUse.CacheControl = ephemeral
+				case lastBlock.OfToolResult != nil:
+					lastBlock.OfToolResult.CacheControl = ephemeral
+				}
+			}
+			break
 		}
 	}
 
