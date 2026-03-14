@@ -2023,6 +2023,55 @@ Locked next step:
 - do not classify the existing local CLI WIP until that more observable
   containerized rerun produces attributable results
 
+### 2026-03-14: Local Playground Wrapper Chosen As Next Validation Harness
+
+Exploration after the native-host failure:
+
+- confirmed the repo root exports `engine-dev` as a root module dependency
+  (`dagger.json` includes `"name": "engine-dev", "source": "toolchains/engine-dev"`)
+- confirmed `engine-dev playground` returns a plain `Container`, with the
+  expected container mutation surface available from the CLI:
+  - `with-directory`
+  - `with-mounted-directory`
+  - `with-exec`
+  - `stdout` / `stderr` / `combined-output`
+- confirmed the sibling `engine-dev-testing` skill still recommends
+  `playground` as the manual validation layer, with a wrapper script that adds:
+  - heartbeat output during long builds
+  - an outer timeout
+  - preserved inner command output plus trace tail on failure
+
+What did not work well enough directly:
+
+- raw `dagger call -m ./toolchains/engine-dev playground ...` probes remained
+  too silent/long-running to use directly as a reliable handoff-safe validation
+  surface
+- that made the wrapper behavior, not the underlying `playground` primitive,
+  the missing piece
+
+Locked next step:
+
+- run a local-playground wrapper modeled on `engine-dev-testing/with-playground.sh`
+  but pointed at this branch checkout for `src/dagger` instead of the remote
+  sample repo
+- use that wrapper to execute one retained `TestWorkspace/*` case at a time
+  with direct `go test` output and an outer watchdog timeout
+- only after that wrapper produces attributable test results should the local
+  CLI WIP be classified as required or stale
+
+Concrete command selected for the first retained test:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev playground --shared-cache with-mounted-directory --path=/src/dagger --source=. with-workdir --path=/src/dagger with-exec --args=sh --args=-lc --args='env GOCACHE=/tmp/go-build go test ./core/integration -run "^TestWorkspace/TestBlueprintFunctionsIncludesOtherModules$" -count=1 -v -timeout=3m' combined-output`
+
+Why this is the chosen next harness:
+
+- `toolchains/engine-dev/test.go` runs the inner test with
+  `WithExec(args).Sync(ctx)`, so it does not expose the inner `go test`
+  stdout/stderr directly
+- `playground` returns a plain `Container`, so ending the chain with
+  `combined-output` should expose the actual inner `go test` output from the
+  same Linux-native dev-engine environment
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
