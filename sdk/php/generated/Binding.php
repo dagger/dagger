@@ -38,6 +38,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type ChangesetDiffStatEntry
+     */
+    public function asChangesetDiffStatEntry(): ChangesetDiffStatEntry
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asChangesetDiffStatEntry');
+        return new \Dagger\ChangesetDiffStatEntry($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Check
      */
     public function asCheck(): Check
