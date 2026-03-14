@@ -1866,6 +1866,32 @@ Current stance after this landing:
   "rerun the entrypoint-sensitive hold bucket on top of this design and keep
   only the fixes that still reproduce here"
 
+### 2026-03-14: Entrypoint Hold-Bucket Rerun Checkpoint
+
+Takeover checkpoint before the next validation pass:
+
+- branch sync state at takeover:
+  - `workspace-plumbing` is at `origin/workspace-plumbing`
+  - there are no local commits ahead of origin yet
+- existing uncommitted worktree state at takeover:
+  - `cmd/dagger/module_inspect.go`
+  - `cmd/dagger/mcp.go`
+  - `core/integration/user_defaults_test.go`
+- current classification of that worktree state:
+  - `module_inspect.go` and `mcp.go` are an unverified attempt to repair
+    explicit `-m` CLI focus after the Query-root entrypoint cherry-pick
+  - `user_defaults_test.go` only adds nested stdout/stderr logging for the
+    existing user-default repros; it is debugging instrumentation, not a fix
+- locked next step:
+  - first rerun the retained entrypoint-sensitive hold bucket from the previous
+    checkpoint exactly as recorded there
+  - only after that rerun should any of the current local CLI WIP be kept,
+    rewritten, or discarded
+- handoff rule for this pass:
+  - keep the ledger updated after each substantive result
+  - commit each substantive checkpoint separately so the branch can be handed
+    off without relying on worktree-only context
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
