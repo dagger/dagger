@@ -23,9 +23,9 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/util/patchpreview"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -865,7 +865,6 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	summaryWidth := min(getViewWidth(), 80)
 
 	var descBuf strings.Builder
-	descBuf.WriteString("Apply generated changes to the current directory.\n\n")
 	patchpreview.Summarize(idtui.NewOutput(&descBuf), entries, summaryWidth)
 	description := descBuf.String()
 
