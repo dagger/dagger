@@ -2281,6 +2281,51 @@ Locked next step:
 - only after that concrete failure is visible should any local CLI code change
   be attempted
 
+### 2026-03-14: Remote Playground + `toolchains/go` Exposed The First Real Test Failure
+
+Reran the same remote playground + `toolchains/go` path with inner
+`dagger --progress=logs`, which finally surfaced the actual failing test output.
+
+Concrete test result:
+
+- `TestWorkspace/TestBlueprintFunctionsIncludesOtherModules` still did not reach
+  its entrypoint assertions
+- the failure happened at test setup time inside `connect(...)`:
+  - `failed to read session params: EOF`
+  - `start engine: driver for scheme "image" was not available`
+- the failing stack in the surfaced stdout pointed to:
+  - `core/integration/suite_test.go:71`
+  - `core/integration/workspace_test.go:812`
+
+What this means:
+
+- this is the first real `core/integration` failure text obtained during the
+  hold-bucket rerun effort
+- it is not yet evidence of an entrypoint regression in
+  `TestBlueprintFunctionsIncludesOtherModules`
+- instead, it shows that running the test through the remote playground plus a
+  nested `toolchains/go` container changes the environment enough that the test
+  cannot start the engine it expects
+
+Scope consequence:
+
+- the remote playground + `toolchains/go` path is now proven useful for
+  observability, but not yet equivalent enough to the intended integration
+  environment for this bucket
+- the blocker has narrowed again:
+  - not source transport
+  - not missing Go in the playground
+  - specifically the nested engine/runtime environment seen by the test
+
+Locked next step:
+
+- avoid making any local CLI behavior change based on this failure alone
+- either:
+  - construct a Go-capable `playground` base container so `go test` runs inside
+    the actual playground environment, or
+  - stop the rerun hunt here and treat the hold-bucket rerun as blocked on
+    integration-harness equivalence rather than product behavior
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
