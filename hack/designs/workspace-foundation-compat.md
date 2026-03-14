@@ -1579,8 +1579,8 @@ The targeted rerun for the legacy toolchain customization patch is now green:
 Scope consequence after that rerun:
 
 - the legacy toolchain customization thread is no longer an active failure lane
-- the next active non-entrypoint runtime bug is the legacy blueprint default-file
-  path failure in `TestBlueprint/TestBlueprintUseLocal/use_local_blueprint`
+- the next active non-entrypoint runtime bug is now the caller `.env` /
+  default-propagation failure in legacy blueprint/toolchain compat loading
 
 Parallel-work coordination rule:
 
@@ -1593,10 +1593,26 @@ Parallel-work coordination rule:
   deciding whether any local fix is still needed on `workspace-plumbing`
 - keep working meanwhile on runtime compatibility bugs that are not
   entrypoint-sensitive, especially:
-  - legacy default-file path resolution
   - caller `.env` / default propagation through legacy compat loading
   - generator include matching, unless a rerun later proves it is actually
     entrypoint-sensitive
+
+### 2026-03-13: Legacy Blueprint Default-File Repro Green
+
+The previously active blueprint default-file path failure is no longer
+reproducing.
+
+Focused rerun:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestBlueprint/TestBlueprintUseLocal/use_local_blueprint' --test-verbose`
+  - result: passes
+
+What this means:
+
+- the earlier `Workspace.file("./app-config.txt")` failure under the legacy
+  blueprint path is no longer an active runtime issue on this branch
+- the narrow non-entrypoint runtime focus now shifts to legacy `.env` /
+  user-default propagation and generator include matching
 
 ## User-Visible Breakage In The Foundation PR
 
