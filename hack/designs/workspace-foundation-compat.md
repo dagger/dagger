@@ -59,6 +59,33 @@ Current implementation status:
     during compat loading; the fix must stay inside the existing
     workspace/session loader path
 
+## Entrypoint Module Design
+
+The canonical entrypoint-module design now lives in the `workspace` PR
+description for [#11812](https://github.com/dagger/dagger/pull/11812).
+
+Design target:
+
+- one designated user entrypoint module at most
+- entrypoint methods appear directly at Query root for all clients
+- constructors and existing root fields win conflicts
+- conflicting entrypoint proxies are skipped rather than shadowing root fields
+- the namespaced module constructor remains the explicit escape hatch
+- schema construction, not client-specific `defaultModule` logic, is the source
+  of truth
+
+Implications for `workspace-plumbing`:
+
+- `Workspace.defaultModule` and CLI-side prefixing are temporary workarounds,
+  not target behavior
+- do not spend more implementation effort on client-specific root-entrypoint
+  fixes that the upstream schema-level entrypoint design will replace
+- when triaging remaining failures, separate:
+  - legacy/runtime compatibility bugs that are still worth fixing here
+  - root-entrypoint UX failures (`call`, `functions`, shell, and related
+    `defaultModule` behavior) that are likely to be superseded by the upstream
+    entrypoint-module work
+
 ## Why This Split
 
 The earlier lockfile split candidate was technically possible only for boring
