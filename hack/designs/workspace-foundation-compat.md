@@ -2357,11 +2357,20 @@ Current blocker summary:
   and not "is the upstream schema/runtime design obviously wrong"
 - the cherry-pick is landed, and the upstream schema/runtime implementation
   still appears coherent
+- preferred test harness guidance for the next session:
+  - use system `dagger` to build and test this repo
+  - for the integration suite, use `dagger check -l test-split`
+  - for targeted reruns, use `dagger call engine-dev test --run=TestSomethingSpecificHere`
+  - keep `dagger playground` for ad-hoc QA/manual commands, not for primary
+    integration-suite reruns
 - the active blocker is validating the retained entrypoint-sensitive tests in an
   environment equivalent enough to trust their result
 - the best observable validation lane found so far is:
   - remote `workspace-plumbing` playground
   - with the inner run delegated to `toolchains/go`
+- that playground/toolchains lane should now be treated as a fallback diagnostic
+  path, not the preferred rerun path, because it is easier to drift away from the
+  intended integration harness
 - that lane finally surfaced real test output, but the surfaced failure is still
   harness-specific:
   - `start engine: driver for scheme "image" was not available`
@@ -2369,12 +2378,12 @@ Current blocker summary:
 
 Recommended next step for the next session:
 
-- do not change CLI behavior just to satisfy the current surfaced failure
-- first decide whether to invest one more step in harness equivalence:
-  - build a Go-capable `playground`-equivalent environment so `go test` runs in
-    the real playground runtime rather than a nested `toolchains/go` container
-- if not, stop the rerun hunt there and treat the hold-bucket as blocked on
-  validation harness equivalence rather than product behavior
+- first rerun the retained entrypoint-sensitive tests through the intended harness:
+  `dagger check -l test-split` or targeted `dagger call engine-dev test --run=...`
+- do not change CLI behavior just to satisfy the current surfaced failure from the
+  playground/toolchains lane
+- only return to the playground/toolchains path if the direct system-`dagger`
+  rerun still cannot produce actionable output
 
 ## User-Visible Breakage In The Foundation PR
 
