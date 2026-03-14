@@ -46,7 +46,7 @@ func (dev *DaggerDev) Generated(ctx context.Context) error {
 			}
 			entries[i] = patchpreview.Entry{
 				Path:    path,
-				Kind:    kind,
+				Kind:    string(kind),
 				Added:   added,
 				Removed: removed,
 			}
