@@ -1459,7 +1459,6 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// This is where ALL component state mutations happen — prefix,
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
-
 }
 
 // syncSpanTreeState synchronizes the SpanTreeView component tree with
