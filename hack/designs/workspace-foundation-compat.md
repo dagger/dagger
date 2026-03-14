@@ -2396,6 +2396,22 @@ Recommended next step for the next session:
 - keep the currently passing root-field-conflict behavior as a regression guard
 - do not change tests; the rerun finally gives product-facing evidence to fix
 
+Implementation constraints for any CLI follow-up:
+
+- keep `-m` as connect-time module loading via `ExtraModules`; do not reintroduce a
+  second client-side targeting model
+- repair explicit `-m` by presenting the selected module's entrypoints as a
+  filtered Query-root view, not by refocusing `MainObject` to the module object
+- preserve namespaced constructor/default behavior for explicit module access
+  while repairing Query-root entrypoint visibility
+- do not fall back from explicit `-m` to an unfiltered raw `Query`
+- keep the now-passing root-field-conflict behavior intact while fixing the
+  remaining blueprint and constructor-arg regressions
+- drop the debug-only `user_defaults_test.go` logging before landing unless there
+  is an explicit reason to keep diagnostic output
+- do not change tests without discussion; the current failures are now reproduced
+  under the intended harness
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
