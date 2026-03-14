@@ -361,6 +361,94 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 }
 
+// TestWorkspaceStage verifies that an LLM tool that returns a Changeset
+// correctly stages changes in the host workspace. This exercises the full
+// path: LLM → module tool call → Changeset return → Workspace.stage.
+//
+// Without the fix to loadWorkspaceArg (preferring the Env's workspace over
+// currentWorkspace), this test hangs because the module resolves a workspace
+// pointing at its own container filesystem instead of the host's.
+func (LLMSuite) TestWorkspaceStage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a git repo with a Dang toolchain module that has a tool
+	// returning Changeset (which triggers workspace staging).
+	base := workspaceBase(t, c).
+		WithNewFile("existing.txt", "original content").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init"}).
+		With(initDangModule("writer", `
+type Writer {
+  """
+  Create a file in the workspace and return a Changeset.
+  """
+  pub write(
+    source: Workspace!,
+    """
+    Path of the file to create.
+    """
+    path: String!,
+    """
+    Content to write.
+    """
+    content: String!,
+  ): Changeset! {
+    let base = source.directory(".", exclude: ["*"])
+    base.withNewFile(path, contents: content).changes(base)
+  }
+}
+`))
+
+	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
+		return daggerShell(fmt.Sprintf(
+			`llm %s | with-env $(env | with-current-module) | with-prompt "Use the Writer write tool to create a file called 'hello.txt' with the content 'hello world'. Do not use any other tool." | loop | lastReply`,
+			llmFlags,
+		))
+	}
+
+	recording := "llmtest/workspace-stage.golden"
+	if golden.FlagUpdate() {
+		out, err := base.
+			With(daggerForwardSecrets(c)).
+			With(ctrFn("")).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		if dir := filepath.Dir(recording); dir != "." {
+			err := os.MkdirAll(dir, 0755)
+			require.NoError(t, err)
+		}
+		err = os.WriteFile(recording, []byte(out), 0644)
+		require.NoError(t, err)
+	}
+
+	replayData, err := os.ReadFile(recording)
+	require.NoError(t, err)
+	llmFlags := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
+
+	result := base.With(ctrFn(llmFlags))
+
+	// The LLM should have completed without error.
+	_, err = result.Stdout(ctx)
+	require.NoError(t, err)
+
+	// The file should have been staged in git.
+	statusOut, err := result.
+		WithExec([]string{"git", "status", "--porcelain"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, statusOut, "hello.txt",
+		"hello.txt should appear in git status after staging")
+
+	// The file should exist on disk.
+	fileOut, err := result.
+		WithExec([]string{"cat", "hello.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello world", fileOut,
+		"hello.txt should have the expected content")
+}
+
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
 	name, err := program.Name(ctx)
 	require.NoError(t, err)
