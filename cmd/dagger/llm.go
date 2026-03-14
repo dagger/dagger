@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
@@ -73,10 +72,6 @@ type LLMSession struct {
 	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
-
-	beforeFS     *dagger.Directory
-	beforeFSTime time.Time
-	afterFS      *dagger.Directory
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
@@ -422,38 +417,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		Content: strings.Join(lines, "\n"),
 	})
 
-	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Env().Workspace()
-		s.beforeFSTime = time.Now()
-	}
-
-	s.afterFS = llm.Env().Workspace()
-
-	dirDiff := s.afterFS.Changes(s.beforeFS)
-
-	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
-	if err != nil {
-		return err
-	}
-
-	if preview != nil {
-		s.frontend.SetSidebarContent(idtui.SidebarSection{
-			Title: "Changes",
-			ContentFunc: func(width int) string {
-				var buf strings.Builder
-				out := idtui.NewOutput(&buf)
-				if err := preview.Summarize(out, width); err != nil {
-					return "ERROR: " + err.Error()
-				}
-				return buf.String()
-			},
-			KeyMap: []key.Binding{
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-			},
-		})
-	}
-
-	return err
+	return nil
 }
 
 // maybeAutoCompact checks if the context usage exceeds 80% and automatically compacts if so
@@ -761,167 +725,7 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	return s, nil
 }
 
-func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
-	if s.llm == nil {
-		return fmt.Errorf("no LLM session active")
-	}
 
-	if s.beforeFSTime.IsZero() {
-		return nil
-	}
-
-	ctx, span := Tracer().Start(ctx, "syncing local changes",
-		telemetry.Reveal())
-	defer telemetry.EndWithCause(span, &rerr)
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-
-	var pathsToUpload []string
-
-	// Look for paths modified since the last sync, and only upload those.
-	if err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			// ignore errors
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
-				// don't recurse into .git
-				return filepath.SkipDir
-			}
-			// nothing to do for directories
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if info.ModTime().After(s.beforeFSTime) {
-			slog.Info(
-				"file changed since last sync",
-				"path", path,
-				"syncTime", s.beforeFSTime,
-				"mtime", info.ModTime(),
-			)
-			pathsToUpload = append(pathsToUpload, path)
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("walk looking for modifications: %w", err)
-	}
-
-	// The model's workspace has its own changes since last sync, so if we're
-	// syncing from local, we need to revert them
-	if s.afterFS != nil && s.beforeFS != nil {
-		changes := s.afterFS.Changes(s.beforeFS)
-		modified, err := changes.ModifiedPaths(ctx)
-		if err != nil {
-			return err
-		}
-		removed, err := changes.RemovedPaths(ctx)
-		if err != nil {
-			return err
-		}
-		if len(modified) > 0 {
-			slog.Info("reverting LLM-modified files", "modified", modified)
-			pathsToUpload = append(pathsToUpload, modified...)
-		}
-		if len(removed) > 0 {
-			slog.Info("restoring LLM-removed files", "removed", removed)
-			pathsToUpload = append(pathsToUpload, removed...)
-		}
-	}
-
-	if len(pathsToUpload) == 0 {
-		slog.Warn("no changes detected")
-		return nil
-	}
-
-	slog.Info("syncing changed files", "paths", pathsToUpload)
-
-	localChanges, err := s.dag.Host().Directory(".", dagger.HostDirectoryOpts{
-		Include:   pathsToUpload,
-		NoCache:   true,
-		Gitignore: true,
-	}).Sync(ctx)
-	if err != nil {
-		return nil
-	}
-
-	currentFS := s.afterFS
-	if currentFS == nil {
-		currentFS = s.beforeFS
-	}
-
-	withChanges := currentFS.WithDirectory(".", localChanges)
-
-	newLLM := s.llm.WithEnv(
-		s.llm.Env().WithWorkspace(withChanges),
-	)
-
-	dirDiff := withChanges.Changes(currentFS)
-
-	// Add an LLM prompt as a cue to the model so it knows what files changed.
-	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
-	if err != nil {
-		return err
-	}
-
-	if preview != nil {
-		var buf strings.Builder
-		out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
-		if err := preview.Summarize(out, 80); err != nil {
-			slog.Warn("failed to summarize uploaded changes", "error", err)
-		} else {
-			newLLM = newLLM.WithPrompt(
-				fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
-			)
-		}
-
-		// Show colorized summary to user.
-		_ = preview.Summarize(idtui.NewOutput(stdio.Stdout), 80)
-	}
-
-	s.updateLLMAndAgentVar(newLLM)
-
-	// reset before/after state
-	s.beforeFS = withChanges
-	s.beforeFSTime = time.Now()
-	s.afterFS = nil
-
-	// Update sidebar to show sync success
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title:   "Changes",
-		Content: "", // empty content will hide it
-	})
-
-	return nil
-}
-
-func (s *LLMSession) SyncToLocal(ctx context.Context) error {
-	if s.llm == nil {
-		return fmt.Errorf("no LLM session active")
-	}
-
-	if s.afterFS == nil {
-		return fmt.Errorf("nothing to sync")
-	}
-
-	if _, err := s.afterFS.Changes(s.beforeFS).Export(ctx, "."); err != nil {
-		return err
-	}
-
-	s.beforeFS = s.afterFS
-	s.beforeFSTime = time.Now()
-
-	// Update sidebar to show sync success
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title:   "Changes",
-		Content: "", // empty content will hide it
-	})
-
-	return nil
-}
 
 // sessionMetadata stores metadata about a saved LLM session
 type sessionMetadata struct {

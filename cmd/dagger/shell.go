@@ -569,11 +569,6 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 			idtui.KeyEnabled(h.mode == modeShell),
 		),
 		key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("ctrl+u", "upload changes"),
-			idtui.KeyEnabled(h.mode == modePrompt),
-		),
-		key.NewBinding(
 			key.WithKeys("ctrl+x"),
 			key.WithHelp("ctrl+x", autoCompactHelp),
 			idtui.KeyEnabled(h.llmSession != nil),
@@ -600,30 +595,6 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 		if h.llmSession != nil {
 			h.llmSession.ToggleAutocompact()
 			return noop
-		}
-	case key.MatchString("ctrl+s"):
-		if h.llmSession != nil {
-			return func() {
-				if err := h.llmSession.SyncToLocal(ctx); err != nil {
-					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
-					Frontend.SetSidebarContent(idtui.SidebarSection{
-						Title:   "Changes",
-						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
-					})
-				}
-			}
-		}
-	case key.MatchString("ctrl+u"):
-		if h.llmSession != nil {
-			return func() {
-				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
-					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
-					Frontend.SetSidebarContent(idtui.SidebarSection{
-						Title:   "Changes",
-						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
-					})
-				}
-			}
 		}
 	}
 	return nil
