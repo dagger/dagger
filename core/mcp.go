@@ -766,21 +766,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", nil
 	}
 
-	// NOTE: returning a Changeset stages it in the workspace's git index.
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
-		var staged dagql.Boolean
-		if err := srv.Select(ctx, m.env.Self().Workspace, &staged, dagql.Selector{
-			View:  srv.View,
-			Field: "stage",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "changes",
-					Value: dagql.NewID[*Changeset](changes.ID()),
-				},
-			},
-		}); err != nil {
-			return "", err
-		}
 		return m.summarizePatch(ctx, srv, changes)
 	}
 
@@ -1282,8 +1268,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	// MCP server changes are synced back through their own tool results
-	// (Changeset returns will be staged via the normal Changeset handling path).
+	// MCP server changes are synced back through their own tool results.
 
 	return results
 }
