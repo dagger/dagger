@@ -2363,27 +2363,38 @@ Current blocker summary:
   - for targeted reruns, use `dagger call engine-dev test --run=TestSomethingSpecificHere`
   - keep `dagger playground` for ad-hoc QA/manual commands, not for primary
     integration-suite reruns
-- the active blocker is validating the retained entrypoint-sensitive tests in an
-  environment equivalent enough to trust their result
-- the best observable validation lane found so far is:
-  - remote `workspace-plumbing` playground
-  - with the inner run delegated to `toolchains/go`
-- that playground/toolchains lane should now be treated as a fallback diagnostic
-  path, not the preferred rerun path, because it is easier to drift away from the
-  intended integration harness
-- that lane finally surfaced real test output, but the surfaced failure is still
-  harness-specific:
-  - `start engine: driver for scheme "image" was not available`
-  - therefore it is not yet evidence of an entrypoint regression in the branch
+- the direct rerun through the intended harness now works and supersedes the older
+  playground/toolchains investigation:
+  - `dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)'`
+  - trace: `https://dagger.cloud/dagger/traces/ba68601dbd7ba2f4fae511f47ac121c7`
+- important `engine-dev test` note:
+  - the function defaults `pkg` to `./...`
+  - for targeted hold-bucket reruns, pass `--pkg=./core/integration`
+  - otherwise unrelated package init failures can contaminate the result before the
+    targeted integration test verdict is useful
+  - this happened during an earlier direct rerun when
+    `cmd/codegen/generator/typescript/templates` panicked while loading a legacy
+    bare `dagger` dependency version
+- current hold-bucket result under the correct harness:
+  - `TestWorkspace/TestEntrypointProxySkipsRootFieldConflicts` passes
+  - `TestWorkspace/TestBlueprintFunctionsIncludesOtherModules` still fails in:
+    - `dagger_functions_shows_all_modules`
+    - `dagger_call_blueprint_function`
+    - `dagger_call_sibling_module_function`
+    - `query_root_exposes_blueprint_entrypoint_methods`
+  - `TestWorkspace/TestEntrypointProxySkipsConstructorArgConflicts` still fails in:
+    - `namespaced_method_still_accepts_both_args`
+- so the previous harness-equivalence blocker is cleared for this bucket; the
+  remaining failures are now real branch behavior, not a playground artifact
 
 Recommended next step for the next session:
 
-- first rerun the retained entrypoint-sensitive tests through the intended harness:
-  `dagger check -l test-split` or targeted `dagger call engine-dev test --run=...`
-- do not change CLI behavior just to satisfy the current surfaced failure from the
-  playground/toolchains lane
-- only return to the playground/toolchains path if the direct system-`dagger`
-  rerun still cannot produce actionable output
+- inspect the failing inner CLI invocations from the package-isolated direct rerun;
+  do not go back to the playground/toolchains path for this bucket
+- recover or discard the local CLI WIP only in response to the now-reproduced
+  failures above
+- keep the currently passing root-field-conflict behavior as a regression guard
+- do not change tests; the rerun finally gives product-facing evidence to fix
 
 ## User-Visible Breakage In The Foundation PR
 
