@@ -1567,6 +1567,37 @@ Current stance:
 - the next step after landing it is a decisive targeted rerun of the remaining
   toolchain integration repro
 
+### 2026-03-13: Toolchain Repro Green, Entrypoint Hold Rule
+
+The targeted rerun for the legacy toolchain customization patch is now green:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestToolchain/TestToolchainsWithConfiguration/override_constructor_defaultPath_argument' --test-verbose`
+  - result: passes
+- the restored legacy toolchain customizations now reach constructor
+  `defaultPath` loading correctly through the existing workspace/session path
+
+Scope consequence after that rerun:
+
+- the legacy toolchain customization thread is no longer an active failure lane
+- the next active non-entrypoint runtime bug is the legacy blueprint default-file
+  path failure in `TestBlueprint/TestBlueprintUseLocal/use_local_blueprint`
+
+Parallel-work coordination rule:
+
+- the `workspace` branch is still landing the upstream schema-level entrypoint
+  module change
+- until that change is cherry-picked here, defer any remaining failures whose
+  primary symptom is root-entrypoint selection or CLI focus behavior:
+  `call`, `functions`, shell, and related `defaultModule` expectations
+- after that cherry-pick lands, rerun those entrypoint-sensitive buckets before
+  deciding whether any local fix is still needed on `workspace-plumbing`
+- keep working meanwhile on runtime compatibility bugs that are not
+  entrypoint-sensitive, especially:
+  - legacy default-file path resolution
+  - caller `.env` / default propagation through legacy compat loading
+  - generator include matching, unless a rerun later proves it is actually
+    entrypoint-sensitive
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
