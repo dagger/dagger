@@ -2326,6 +2326,56 @@ Locked next step:
   - stop the rerun hunt here and treat the hold-bucket rerun as blocked on
     integration-harness equivalence rather than product behavior
 
+### 2026-03-14: Handoff Checkpoint After Entrypoint Hold-Bucket Investigation
+
+Current committed branch state:
+
+- the upstream entrypoint-module cherry-pick is already landed here:
+  - `bbdfa797e` `workspace: move entrypoints to Query root`
+- no new functional code has been committed during this investigation
+- all new commits since takeover are ledger-only checkpoints
+
+Current uncommitted local WIP:
+
+- `cmd/dagger/module_inspect.go`
+- `cmd/dagger/mcp.go`
+- `core/integration/user_defaults_test.go`
+
+Current classification of that WIP:
+
+- it appears to be an interrupted attempt to adapt explicit `-m` CLI focus to
+  the Query-root entrypoint design
+- it is not verified yet and should not be landed as-is
+- it does not yet satisfy the design/process bar because:
+  - the new filtered-Query helper is still unwired
+  - the current logic can still fall back to an unfiltered `Query`
+  - the test-file change is still debugging instrumentation only
+
+Current blocker summary:
+
+- the remaining uncertainty is not "did the entrypoint-module cherry-pick land"
+  and not "is the upstream schema/runtime design obviously wrong"
+- the cherry-pick is landed, and the upstream schema/runtime implementation
+  still appears coherent
+- the active blocker is validating the retained entrypoint-sensitive tests in an
+  environment equivalent enough to trust their result
+- the best observable validation lane found so far is:
+  - remote `workspace-plumbing` playground
+  - with the inner run delegated to `toolchains/go`
+- that lane finally surfaced real test output, but the surfaced failure is still
+  harness-specific:
+  - `start engine: driver for scheme "image" was not available`
+  - therefore it is not yet evidence of an entrypoint regression in the branch
+
+Recommended next step for the next session:
+
+- do not change CLI behavior just to satisfy the current surfaced failure
+- first decide whether to invest one more step in harness equivalence:
+  - build a Go-capable `playground`-equivalent environment so `go test` runs in
+    the real playground runtime rather than a nested `toolchains/go` container
+- if not, stop the rerun hunt there and treat the hold-bucket as blocked on
+  validation harness equivalence rather than product behavior
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
