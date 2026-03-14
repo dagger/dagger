@@ -1495,11 +1495,12 @@ Conclusion:
     - schema matcher coverage:
       - `dagger --progress=plain call -m ./toolchains/go test --pkgs=./core/schema --run='TestMatchWorkspaceInclude|TestFilterGeneratorsByInclude|TestResolveWorkspacePath|TestWorkspaceAPIPath'`
       - result: passes
-    - attempted fresh direct rerun:
+    - after restoring runtime-client module cache seeding:
       - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
-      - blocked by a separate `toolchains/engine-dev` self-context load failure while building `bin/codegen`:
-        `module not found: /Users/shykes/git/github.com/dagger/dagger_workspace-plumbing/toolchains/engine-dev`
-  - fix stance: `implemented; direct integration rerun currently blocked by separate engine-dev harness failure`
+      - result: passes
+      - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsBlueprint/java/generate' --test-verbose`
+      - result: passes
+  - fix stance: `implemented + verified`
 
 Verification used to build this ledger:
 
@@ -1512,6 +1513,8 @@ Verification used to build this ledger:
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsToolchain/go' --test-verbose`
 - `dagger --progress=plain call -m ./toolchains/go test --pkgs=./core/schema --run='TestMatchWorkspaceInclude|TestFilterGeneratorsByInclude|TestResolveWorkspacePath|TestWorkspaceAPIPath'`
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsBlueprint/java/generate' --test-verbose`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=1`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=5`
 
@@ -1689,22 +1692,58 @@ Focused verification:
 - schema-level matcher coverage:
   - `dagger --progress=plain call -m ./toolchains/go test --pkgs=./core/schema --run='TestMatchWorkspaceInclude|TestFilterGeneratorsByInclude|TestResolveWorkspacePath|TestWorkspaceAPIPath'`
   - result: passes
-- attempted fresh direct-SDK rerun:
+- fresh direct-SDK reruns after restoring runtime-client module cache seeding:
   - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
-  - currently blocked by a separate `toolchains/engine-dev` harness failure
-    while loading its own context for `bin/codegen`:
-    `module not found: /Users/shykes/git/github.com/dagger/dagger_workspace-plumbing/toolchains/engine-dev`
+  - result: passes
+  - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsBlueprint/java/generate' --test-verbose`
+  - result: passes
 
 Scope consequence:
 
 - the workspace generator filter now preserves legacy single-module include
   patterns like `generate-*` without reverting `generate` to the standalone
   module path
-- a fresh direct integration rerun still needs to happen once the separate
-  `engine-dev` harness failure is cleared
+- the direct and blueprint Java generator repros now confirm the fallback also
+  behaves correctly when only one loaded workspace module actually contributes
+  generators
 - with caller-`.env` propagation fixed and generator matching implemented, the
-  remaining previously reproduced failures on the list are either
-  entrypoint-sensitive hold items or blocked behind the separate harness issue
+  remaining previously reproduced failures on the list are entrypoint-sensitive
+  hold items rather than active non-entrypoint runtime regressions
+
+### 2026-03-13: Runtime Client Content-Digest Cache Restored
+
+The generator rerun block turned out not to be a generator-matching problem
+after all. It was a runtime client cache gap in `engine/server/session.go`:
+
+- module constructor `+defaultPath` directories resolve through
+  `_contextDirectory`
+- `_contextDirectory` rehydrates the originating module from the
+  content-digest cache before calling `LoadContextDir`
+- runtime clients created from `EncodedModuleID` were loading `client.mod`, but
+  not seeding that same content-digest cache in the new client server
+- that let plain field access like `engineDev.source.entries` work, while later
+  nested dependency calls such as `dag.Go(...).Binary("./cmd/codegen")` failed
+  trying to reload the same contextual directory
+
+Implemented fix:
+
+- after loading `client.mod` from `EncodedModuleID`, immediately call
+  `core.CacheModuleByContentDigest(...)` for the current runtime client
+
+Focused verification:
+
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
+  - result: passes
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsBlueprint/java/generate' --test-verbose`
+  - result: passes
+
+Scope consequence:
+
+- the previous `toolchains/engine-dev` self-context failure loading
+  `bin/codegen` is gone for the reproduced generator paths
+- the existing generator regression tests now serve as the end-to-end coverage
+  for both the workspace include fallback and the restored runtime-client
+  contextual-dir reload path
 
 ## User-Visible Breakage In The Foundation PR
 
