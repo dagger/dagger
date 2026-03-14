@@ -2213,6 +2213,40 @@ Locked next step:
 - only return to local-source validation after a real code fix exists that is
   not already represented by the remote branch contents
 
+### 2026-03-14: Remote Branch Playground Produced The First Actionable Failure
+
+Ran the wrapped playground harness against remote `workspace-plumbing` branch
+content for both:
+
+- the module under test (`-m github.com/dagger/dagger@workspace-plumbing`)
+- the mounted `src/dagger` source
+
+This changed the validation picture materially:
+
+- remote source avoided the local `Directory` upload bottleneck
+- the run completed far enough to build the dev engine, start the playground,
+  mount `src/dagger`, and execute the inner script
+- the first attributable failure from this path was no longer harness opacity:
+  - `env: can't execute 'go': No such file or directory`
+  - `withExec sh /tmp/inner.sh` exited `127`
+
+What this means:
+
+- the remote-playground path is now the first validation surface that is both:
+  - fast enough to get past harness setup in a reasonable window
+  - observable enough to yield a concrete inner-command failure
+- the next blocker is simple and local to the harness:
+  - the `playground` container does not include the Go toolchain needed to run
+    `go test` directly from `src/dagger`
+
+Locked next step:
+
+- keep the remote `workspace-plumbing` playground path
+- add Go into the playground container before running the inner test script
+- rerun `TestWorkspace/TestBlueprintFunctionsIncludesOtherModules` on that
+  adjusted remote harness before changing any branch behavior or classifying
+  the uncommitted local CLI WIP
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
