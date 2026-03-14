@@ -1027,6 +1027,95 @@ type SubdirStager {
 		require.NoError(t, err)
 		require.Contains(t, statusOut, "pkg/newpkg/hello.go")
 	})
+
+	t.Run("consecutive stages to same file accumulate", func(ctx context.Context, t *testctx.T) {
+		// Build a 50-line file; each stage edits a different distant line
+		// so the changes don't overlap in a diff context window.
+		var original strings.Builder
+		for i := 1; i <= 50; i++ {
+			fmt.Fprintf(&original, "line %d original\n", i)
+		}
+
+		// Build version with line 10 edited
+		var afterFirst strings.Builder
+		for i := 1; i <= 50; i++ {
+			if i == 10 {
+				fmt.Fprintln(&afterFirst, "line 10 FIRST EDIT")
+			} else {
+				fmt.Fprintf(&afterFirst, "line %d original\n", i)
+			}
+		}
+
+		// Build version with lines 10 AND 40 edited
+		var afterSecond strings.Builder
+		for i := 1; i <= 50; i++ {
+			switch i {
+			case 10:
+				fmt.Fprintln(&afterSecond, "line 10 FIRST EDIT")
+			case 40:
+				fmt.Fprintln(&afterSecond, "line 40 SECOND EDIT")
+			default:
+				fmt.Fprintf(&afterSecond, "line %d original\n", i)
+			}
+		}
+
+		// Place the "after" versions as sidecar files for the module to read.
+		ctr := workspaceBase(t, c).
+			WithNewFile("hello.txt", original.String()).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			WithNewFile("/tmp/after-first.txt", afterFirst.String()).
+			WithNewFile("/tmp/after-second.txt", afterSecond.String()).
+			With(initDangModule("accum-stager", `
+type AccumStager {
+  pub run(
+    ws: Workspace!,
+    first: File!,
+    second: File!,
+  ): String! {
+    let ws2 = ws.withBranch("agent/accum")
+
+    let before1 = ws2.directory(".")
+    let after1 = before1.withFile("hello.txt", first)
+    ws2.stage(changes: after1.changes(before1))
+
+    let before2 = ws2.directory(".")
+    let after2 = before2.withFile("hello.txt", second)
+    ws2.stage(changes: after2.changes(before2))
+
+    "done"
+  }
+}
+`))
+		staged := ctr.With(daggerCall(
+			"accum-stager", "run",
+			"--first", "/tmp/after-first.txt",
+			"--second", "/tmp/after-second.txt",
+		))
+		_, err := staged.Stdout(ctx)
+		require.NoError(t, err)
+
+		out, err := staged.
+			WithWorkdir("/work-worktrees/agent-accum").
+			WithExec([]string{"cat", "hello.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "line 10 FIRST EDIT",
+			"first stage edit should be present on disk")
+		require.Contains(t, out, "line 40 SECOND EDIT",
+			"second stage edit should be present on disk")
+
+		// Both edits should be staged — check git diff --cached
+		diffOut, err := staged.
+			WithWorkdir("/work-worktrees/agent-accum").
+			WithExec([]string{"git", "diff", "--cached"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, diffOut, "FIRST EDIT",
+			"first edit should appear in staged diff")
+		require.Contains(t, diffOut, "SECOND EDIT",
+			"second edit should appear in staged diff")
+	})
 }
 
 func (WorkspaceSuite) TestCommit(ctx context.Context, t *testctx.T) {
