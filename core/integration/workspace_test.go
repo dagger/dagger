@@ -801,3 +801,144 @@ type Cacheme {
 			"expected function to be re-executed on fourth call with changed workspace content")
 	})
 }
+
+// TestBlueprintFunctionsIncludesOtherModules verifies that `dagger functions`
+// in a workspace with a blueprint module shows both the blueprint's own
+// functions AND entrypoint functions for the other (non-blueprint) workspace
+// modules.
+func (WorkspaceSuite) TestBlueprintFunctionsIncludesOtherModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up a workspace with:
+	// - a blueprint module ("ci") whose functions should be promoted
+	// - two regular modules ("lint" and "test") whose constructors should
+	//   appear as entrypoint functions alongside the blueprint's functions
+	base := workspaceBase(t, c).
+		// Create the blueprint module
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub build: String! {
+    "built!"
+  }
+
+  pub deploy: String! {
+    "deployed!"
+  }
+}
+`)).
+		// Create two additional non-blueprint modules
+		With(initDangModule("lint", `
+type Lint {
+  pub check: String! {
+    "lint passed"
+  }
+}
+`)).
+		With(initDangModule("test", `
+type Test {
+  pub run: String! {
+    "tests passed"
+  }
+}
+`))
+
+	t.Run("dagger functions shows all modules", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+
+		// Blueprint functions should be promoted to the top level.
+		require.Contains(t, out, "build")
+		require.Contains(t, out, "deploy")
+
+		// Non-blueprint modules should appear as entrypoint functions.
+		require.Contains(t, out, "lint")
+		require.Contains(t, out, "test")
+	})
+
+	t.Run("dagger call blueprint function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "built!", strings.TrimSpace(out))
+	})
+
+	t.Run("dagger call sibling module function", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("lint", "check")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "lint passed", strings.TrimSpace(out))
+	})
+
+	t.Run("query root exposes blueprint entrypoint methods", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{build,lint{check},test{run}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"build":"built!","lint":{"check":"lint passed"},"test":{"run":"tests passed"}}`, out)
+	})
+}
+
+func (WorkspaceSuite) TestEntrypointProxySkipsRootFieldConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub build: String! {
+    "built!"
+  }
+
+  pub container: String! {
+    "custom container"
+  }
+}
+`))
+
+	t.Run("functions omit the conflicting proxy", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "build")
+		require.NotContains(t, out, "container\t")
+	})
+
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("ci", "container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "custom container", strings.TrimSpace(out))
+	})
+}
+
+func (WorkspaceSuite) TestEntrypointProxySkipsConstructorArgConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub prefix: String!
+
+  new(prefix: String! = "ctor") {
+    self.prefix = prefix
+    self
+  }
+
+  pub echo(prefix: String! = "method"): String! {
+    self.prefix + ":" + prefix
+  }
+}
+`))
+
+	t.Run("functions omit the ambiguous proxy", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "echo\t")
+	})
+
+	t.Run("namespaced method still accepts both args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("--prefix", "ctor", "ci", "echo", "--prefix", "method")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ctor:method", strings.TrimSpace(out))
+	})
+}

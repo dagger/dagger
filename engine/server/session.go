@@ -662,7 +662,7 @@ func (srv *Server) initializeDaggerClient(
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.servedMods = core.NewServedMods(client.dagqlRoot)
-	client.servedMods.Add(coreMod, false)
+	client.servedMods.Add(coreMod, core.InstallOpts{})
 	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
@@ -694,13 +694,13 @@ func (srv *Server) initializeDaggerClient(
 		// client.mod = modInst.Self
 
 		client.servedMods = core.NewServedMods(client.dagqlRoot)
-		client.servedMods.Add(coreMod, false)
+		client.servedMods.Add(coreMod, core.InstallOpts{})
 		for _, dep := range client.mod.Deps.Mods {
-			client.servedMods.Add(dep, false)
+			client.servedMods.Add(dep, core.InstallOpts{})
 		}
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
-			client.servedMods.Add(client.mod, false)
+			client.servedMods.Add(client.mod, core.InstallOpts{})
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
@@ -1407,12 +1407,12 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	if err := srv.serveModule(client, mod, false); err != nil {
+	if err := srv.serveModule(client, mod, core.InstallOpts{}); err != nil {
 		return err
 	}
 	if includeDependencies {
 		for _, dep := range mod.Deps.Mods {
-			if err := srv.serveModule(client, dep, false); err != nil {
+			if err := srv.serveModule(client, dep, core.InstallOpts{}); err != nil {
 				return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 			}
 		}
@@ -1421,27 +1421,28 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 }
 
 // serveModuleWithDeps serves a module with its constructor on the Query
-// root, and its dependencies as type-only (types available for schema
+// root, optionally proxies its main-object methods there as an entrypoint,
+// and serves its dependencies as type-only (types available for schema
 // resolution but no constructors).
 //
 // Not threadsafe: client.stateMu must be held when calling.
-func (srv *Server) serveModuleWithDeps(client *daggerClient, mod *core.Module) error {
-	if err := srv.serveModule(client, mod, false); err != nil {
+func (srv *Server) serveModuleWithDeps(client *daggerClient, mod *core.Module, entrypoint bool) error {
+	if err := srv.serveModule(client, mod, core.InstallOpts{Entrypoint: entrypoint}); err != nil {
 		return err
 	}
 	for _, dep := range mod.Deps.Mods {
-		if err := srv.serveModule(client, dep, true); err != nil {
+		if err := srv.serveModule(client, dep, core.InstallOpts{SkipConstructor: true}); err != nil {
 			return fmt.Errorf("error serving dependency %s: %w", dep.Name(), err)
 		}
 	}
 	return nil
 }
 
-// serveModule adds a module to the client's served set. skipConstructor
-// controls whether the module's constructor appears on the Query root.
+// serveModule adds a module to the client's served set with the given install
+// policy.
 //
 // Not threadsafe: client.stateMu must be held when calling.
-func (srv *Server) serveModule(client *daggerClient, mod core.Mod, skipConstructor bool) error {
+func (srv *Server) serveModule(client *daggerClient, mod core.Mod, opts core.InstallOpts) error {
 	existing, ok := client.servedMods.Lookup(mod.Name())
 	if ok {
 		if !isSameModuleReference(existing.GetSource(), mod.GetSource()) {
@@ -1451,7 +1452,7 @@ func (srv *Server) serveModule(client *daggerClient, mod core.Mod, skipConstruct
 		}
 	}
 	// Add handles deduplication and promotion internally.
-	client.servedMods.Add(mod, skipConstructor)
+	client.servedMods.Add(mod, opts)
 	return nil
 }
 
@@ -1775,8 +1776,9 @@ type pendingModule struct {
 	// Name override (empty = derive from module).
 	Name string
 
-	// If true, this is a blueprint module: it replaces the CWD module's
-	// constructor, assuming its name and type namespace.
+	// If true, this module is the workspace entrypoint: its main-object
+	// methods are proxied onto the Query root in addition to its namespaced
+	// constructor.
 	Blueprint bool
 
 	// If true, resolve +defaultPath from workspace root instead of module source.
@@ -2135,7 +2137,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	for i, load := range loads {
-		if err := srv.serveModuleWithDeps(client, resolvedMods[i]); err != nil {
+		if err := srv.serveModuleWithDeps(client, resolvedMods[i], load.mod.Blueprint); err != nil {
 			client.modulesErr = moduleLoadErr(load, err)
 			client.modulesLoaded = true
 			return client.modulesErr

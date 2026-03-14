@@ -1145,6 +1145,11 @@ type InstallOpts struct {
 	// resolution. Used for transitive dependencies whose types may
 	// be returned through interfaces.
 	SkipConstructor bool
+
+	// Entrypoint installs non-conflicting proxies for the module's
+	// main-object methods on the Query root. The module's namespaced
+	// constructor remains installed separately.
+	Entrypoint bool
 }
 
 type Mod interface {
