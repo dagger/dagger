@@ -348,6 +348,17 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a ChangesetDiffStatEntry from its ID.
+     */
+    public function loadChangesetDiffStatEntryFromID(
+        ChangesetDiffStatEntryId|ChangesetDiffStatEntry $id,
+    ): ChangesetDiffStatEntry {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadChangesetDiffStatEntryFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ChangesetDiffStatEntry($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Changeset from its ID.
      */
     public function loadChangesetFromID(ChangesetId|Changeset $id): Changeset
