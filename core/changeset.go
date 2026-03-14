@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/util/patchpreview"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -62,11 +61,45 @@ type ChangesetPaths struct {
 	Renamed    map[string]string // newPath → oldPath (also included in Added/Removed)
 }
 
+type ChangesetDiffStatKind string
+
+var ChangesetDiffStatKindEnum = dagql.NewEnum[ChangesetDiffStatKind]()
+
+var (
+	DiffStatKindAdded = ChangesetDiffStatKindEnum.Register("ADDED",
+		`A file or directory was added.`)
+	DiffStatKindModified = ChangesetDiffStatKindEnum.Register("MODIFIED",
+		`A file was modified.`)
+	DiffStatKindRemoved = ChangesetDiffStatKindEnum.Register("REMOVED",
+		`A file or directory was removed.`)
+	DiffStatKindRenamed = ChangesetDiffStatKindEnum.Register("RENAMED",
+		`A file was renamed.`)
+)
+
+func (ChangesetDiffStatKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ChangesetDiffStatKind",
+		NonNull:   true,
+	}
+}
+
+func (ChangesetDiffStatKind) TypeDescription() string {
+	return "The type of change for a diff stat entry."
+}
+
+func (ChangesetDiffStatKind) Decoder() dagql.InputDecoder {
+	return ChangesetDiffStatKindEnum
+}
+
+func (k ChangesetDiffStatKind) ToLiteral() call.Literal {
+	return ChangesetDiffStatKindEnum.Literal(k)
+}
+
 type ChangesetDiffStatEntry struct {
-	Path         string `field:"true" doc:"Path of the changed file or directory."`
-	Kind         string `field:"true" doc:"Type of change: ADDED, MODIFIED, REMOVED, or RENAMED."`
-	AddedLines   int    `field:"true" doc:"Number of added lines for this path."`
-	RemovedLines int    `field:"true" doc:"Number of removed lines for this path."`
+	Path         string                `field:"true" doc:"Path of the changed file or directory."`
+	Kind         ChangesetDiffStatKind `field:"true" doc:"Type of change."`
+	AddedLines   int                   `field:"true" doc:"Number of added lines for this path."`
+	RemovedLines int                   `field:"true" doc:"Number of removed lines for this path."`
 }
 
 func (*ChangesetDiffStatEntry) Type() *ast.Type {
@@ -310,7 +343,7 @@ func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, e
 		return nil, err
 	}
 
-	addEntry := func(entries []*ChangesetDiffStatEntry, path, kind string) []*ChangesetDiffStatEntry {
+	addEntry := func(entries []*ChangesetDiffStatEntry, path string, kind ChangesetDiffStatKind) []*ChangesetDiffStatEntry {
 		entry := &ChangesetDiffStatEntry{Path: path, Kind: kind}
 		if stat, ok := statsByPath[path]; ok {
 			entry.AddedLines = stat.Added
@@ -329,13 +362,13 @@ func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, e
 	var entries []*ChangesetDiffStatEntry
 	for _, path := range paths.Added {
 		if _, isRenamed := paths.Renamed[path]; isRenamed {
-			entries = addEntry(entries, path, patchpreview.KindRenamed)
+			entries = addEntry(entries, path, DiffStatKindRenamed)
 		} else {
-			entries = addEntry(entries, path, patchpreview.KindAdded)
+			entries = addEntry(entries, path, DiffStatKindAdded)
 		}
 	}
 	for _, path := range paths.Modified {
-		entries = addEntry(entries, path, patchpreview.KindModified)
+		entries = addEntry(entries, path, DiffStatKindModified)
 	}
 	// Use AllRemoved (uncollapsed) so that patchpreview.foldRemovedDirs can
 	// fold child files into their parent directory with summed line counts.
@@ -343,7 +376,7 @@ func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, e
 		if renamedOld[path] {
 			continue
 		}
-		entries = addEntry(entries, path, patchpreview.KindRemoved)
+		entries = addEntry(entries, path, DiffStatKindRemoved)
 	}
 
 	slices.SortFunc(entries, func(a, b *ChangesetDiffStatEntry) int {
