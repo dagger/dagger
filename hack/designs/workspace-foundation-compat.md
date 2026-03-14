@@ -1956,6 +1956,38 @@ Locked next step:
 - keep the local CLI WIP unclassified until those timed individual reruns show
   whether the retained entrypoint tests are actually broken on this branch
 
+### 2026-03-14: Timed `EngineDev.test` Rerun Still Failed To Surface Output
+
+Retried the first retained entrypoint test through the same harness with an
+explicit shorter timeout:
+
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestWorkspace/TestBlueprintFunctionsIncludesOtherModules' --timeout=3m --test-verbose`
+
+Observed behavior:
+
+- the CLI confirmed the timeout was threaded into the function call:
+  - `EngineDev.test(run: "TestWorkspace/TestBlueprintFunctionsIncludesOtherModules", pkg: "./core/integration", timeout: "3m", testVerbose: true): Void`
+- despite that, the outer `dagger call` stayed alive beyond the expected `3m`
+  test window without surfacing a pass, a timeout failure, or any test output
+- the run was stopped manually because it was no longer producing new
+  information
+
+Conclusion from this pass:
+
+- for this branch state, `toolchains/engine-dev test` is currently too opaque
+  to use as the first-line validation surface for the retained entrypoint
+  bucket, even after threading a shorter Go test timeout
+- the next validation pass needs a more direct harness that surfaces the test
+  process output immediately enough to distinguish pass, fail, and hang
+
+Locked next step:
+
+- rerun the retained `TestWorkspace/*` cases with native `go test` from the
+  repo worktree, using a short explicit timeout, to get attributable output
+  before deciding whether any of the current local CLI WIP is warranted
+- only fall back to the opaque `toolchains/engine-dev` surface again if native
+  `go test` proves non-viable on this host
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
