@@ -27,11 +27,11 @@ import (
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/dagger/dagger/util/patternmatcher"
 	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel"
-	"google.golang.org/grpc/metadata"
 	"github.com/moby/sys/user"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -309,7 +309,6 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		return fmt.Errorf("get local export opts: %w", err)
 	}
 
-
 	absPath, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path, false)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
@@ -348,7 +347,6 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		if err != nil {
 			return fmt.Errorf("failed to receive fs changes: %w", err)
 		}
-
 
 		return nil
 	}
@@ -1066,5 +1064,3 @@ func gitCommitOp(ctx context.Context, repoDir string, opts *engine.GitCommitOpts
 
 	return hash, nil
 }
-
-

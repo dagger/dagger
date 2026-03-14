@@ -34,11 +34,11 @@ type LLMConfig struct {
 
 // Provider represents a single LLM provider's configuration.
 type Provider struct {
-	APIKey          string `toml:"api_key"`
-	BaseURL         string `toml:"base_url,omitempty"`
-	AzureVersion    string `toml:"azure_version,omitempty"`
+	APIKey           string `toml:"api_key"`
+	BaseURL          string `toml:"base_url,omitempty"`
+	AzureVersion     string `toml:"azure_version,omitempty"`
 	DisableStreaming bool   `toml:"disable_streaming,omitempty"`
-	Enabled         bool   `toml:"enabled"`
+	Enabled          bool   `toml:"enabled"`
 
 	// OAuth fields for Claude Code subscription auth
 	AuthType         string `toml:"auth_type,omitempty"`         // "oauth" for Claude Code OAuth

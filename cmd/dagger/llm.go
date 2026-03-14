@@ -327,7 +327,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 
 	// Get aggregated token metrics from DB (includes all spans/sub-agents)
 	llmMetrics := s.frontend.GetLLMTokenMetrics()
-	
+
 	// Calculate total cost across all models
 	var totalCost float64
 	for model, metrics := range llmMetrics.ByModel {
@@ -339,7 +339,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 			totalCost += inputCost + outputCost + cacheReadCost + cacheWriteCost
 		}
 	}
-	
+
 	// Build the model line, optionally with subscription badge
 	modelLine := termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String()
 	if label := s.subscriptionLabel(); label != "" {

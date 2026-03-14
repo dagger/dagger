@@ -115,7 +115,7 @@ type LLMClient interface {
 // It carries content blocks and token usage but is not exposed in the API;
 // the evaluation loop converts it into LLMMessage history entries.
 type LLMResponse struct {
-	Content []*LLMContentBlock
+	Content    []*LLMContentBlock
 	TokenUsage LLMTokenUsage
 }
 

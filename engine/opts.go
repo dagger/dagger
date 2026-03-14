@@ -156,25 +156,25 @@ func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 }
 
 type LocalImportOpts struct {
-	Path               string   `json:"path"`
-	UseGitIgnore       bool     `json:"use_gitignore"`
-	IncludePatterns    []string `json:"include_patterns"`
-	ExcludePatterns    []string `json:"exclude_patterns"`
-	FollowPaths        []string `json:"follow_paths"`
-	ReadSingleFileOnly bool     `json:"read_single_file_only"`
-	MaxFileSize        int64    `json:"max_file_size"`
-	StatPathOnly         bool     `json:"stat_path_only"`
-	StatReturnAbsPath    bool     `json:"stat_return_abs_path"`
-	StatResolvePath      bool     `json:"stat_resolve_path"`
-	StatFollowSymlinks   bool     `json:"stat_follow_symlinks"`
-	GetAbsPathOnly       bool     `json:"get_abs_path_only"`
-	GlobPattern          string   `json:"glob_pattern"`
-	SearchOpts           *LocalSearchOpts `json:"search_opts,omitempty"`
-	GitBranchDetect      bool                `json:"git_branch_detect,omitempty"`
-	GitRevParseHead      bool                `json:"git_rev_parse_head,omitempty"`
-	GitWorktreeAdd       *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
-	GitStage  *GitStageOpts  `json:"git_stage,omitempty"`
-	GitCommit *GitCommitOpts `json:"git_commit,omitempty"`
+	Path               string              `json:"path"`
+	UseGitIgnore       bool                `json:"use_gitignore"`
+	IncludePatterns    []string            `json:"include_patterns"`
+	ExcludePatterns    []string            `json:"exclude_patterns"`
+	FollowPaths        []string            `json:"follow_paths"`
+	ReadSingleFileOnly bool                `json:"read_single_file_only"`
+	MaxFileSize        int64               `json:"max_file_size"`
+	StatPathOnly       bool                `json:"stat_path_only"`
+	StatReturnAbsPath  bool                `json:"stat_return_abs_path"`
+	StatResolvePath    bool                `json:"stat_resolve_path"`
+	StatFollowSymlinks bool                `json:"stat_follow_symlinks"`
+	GetAbsPathOnly     bool                `json:"get_abs_path_only"`
+	GlobPattern        string              `json:"glob_pattern"`
+	SearchOpts         *LocalSearchOpts    `json:"search_opts,omitempty"`
+	GitBranchDetect    bool                `json:"git_branch_detect,omitempty"`
+	GitRevParseHead    bool                `json:"git_rev_parse_head,omitempty"`
+	GitWorktreeAdd     *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
+	GitStage           *GitStageOpts       `json:"git_stage,omitempty"`
+	GitCommit          *GitCommitOpts      `json:"git_commit,omitempty"`
 }
 
 // GitWorktreeAddOpts configures a git worktree add operation on the client.
@@ -261,10 +261,10 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 
 // LocalSearchResult is a search match returned from a client-side search.
 type LocalSearchResult struct {
-	FilePath       string              `json:"file_path"`
-	LineNumber     int                 `json:"line_number"`
-	AbsoluteOffset int                 `json:"absolute_offset"`
-	MatchedLines   string              `json:"matched_lines"`
+	FilePath       string                `json:"file_path"`
+	LineNumber     int                   `json:"line_number"`
+	AbsoluteOffset int                   `json:"absolute_offset"`
+	MatchedLines   string                `json:"matched_lines"`
 	Submatches     []LocalSearchSubmatch `json:"submatches,omitempty"`
 }
 

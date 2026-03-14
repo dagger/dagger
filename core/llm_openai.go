@@ -288,5 +288,3 @@ func (c *OpenAIClient) queryWithoutStreaming(
 
 	return compl, nil
 }
-
-

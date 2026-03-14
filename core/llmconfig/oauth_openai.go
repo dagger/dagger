@@ -46,14 +46,14 @@ func GenerateOpenAIOAuthURL() (authURL, verifier, state string, err error) {
 	params := url.Values{
 		"response_type":              {"code"},
 		"client_id":                  {openaiClientID},
-		"redirect_uri":              {openaiRedirectURI},
-		"scope":                     {openaiScopes},
-		"code_challenge":            {challenge},
-		"code_challenge_method":     {"S256"},
-		"state":                     {state},
+		"redirect_uri":               {openaiRedirectURI},
+		"scope":                      {openaiScopes},
+		"code_challenge":             {challenge},
+		"code_challenge_method":      {"S256"},
+		"state":                      {state},
 		"id_token_add_organizations": {"true"},
-		"codex_cli_simplified_flow": {"true"},
-		"originator":                {"dagger"},
+		"codex_cli_simplified_flow":  {"true"},
+		"originator":                 {"dagger"},
 	}
 
 	return openaiAuthorize + "?" + params.Encode(), verifier, state, nil

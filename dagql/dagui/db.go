@@ -43,20 +43,20 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 	var model, provider string
 	modelAttr, hasModel := point.Attributes.Value(attribute.Key("model"))
 	providerAttr, hasProvider := point.Attributes.Value(attribute.Key("provider"))
-	
+
 	if !hasModel {
 		return // Skip if no model attribute
 	}
-	
+
 	model = modelAttr.AsString()
 	if hasProvider {
 		provider = providerAttr.AsString()
 	}
-	
+
 	if m.ByModel == nil {
 		m.ByModel = make(map[string]*LLMModelMetrics)
 	}
-	
+
 	metrics, ok := m.ByModel[model]
 	if !ok {
 		metrics = &LLMModelMetrics{
@@ -65,7 +65,7 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 		}
 		m.ByModel[model] = metrics
 	}
-	
+
 	// Aggregate the token counts based on metric name
 	switch metricName {
 	case telemetry.LLMInputTokens:
@@ -394,7 +394,7 @@ func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoint
 		}
 
 		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
-		
+
 		// Aggregate LLM token metrics across all spans
 		switch metric.Name {
 		case telemetry.LLMInputTokens, telemetry.LLMOutputTokens,

@@ -169,7 +169,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				lastBlock.OfToolUse.CacheControl = cacheControl
 			case lastBlock.OfToolResult != nil:
 				lastBlock.OfToolResult.CacheControl = cacheControl
-			// ThinkingBlockParam doesn't support CacheControl
+				// ThinkingBlockParam doesn't support CacheControl
 			}
 		}
 

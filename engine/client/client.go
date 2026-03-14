@@ -50,6 +50,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/client/imageload"
@@ -57,7 +58,6 @@ import (
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
-	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/engine/session/pipe"
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"

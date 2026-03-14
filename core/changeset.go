@@ -398,8 +398,6 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 	return bk.LocalDirExport(ctx, root, destPath, true, paths.Removed)
 }
 
-
-
 type ChangeType int
 
 const (
