@@ -369,7 +369,8 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 // currentWorkspace), this test hangs because the module resolves a workspace
 // pointing at its own container filesystem instead of the host's.
 func (LLMSuite) TestWorkspaceStage(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	configPath := llmconfig.ConfigFile
+	c := connect(ctx, t, dagger.WithConfigPath(configPath))
 
 	// Set up a git repo with a Dang toolchain module that has a tool
 	// returning Changeset (which triggers workspace staging).
@@ -401,7 +402,7 @@ type Writer {
 
 	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
 		return daggerShell(fmt.Sprintf(
-			`llm %s | with-env $(env | with-current-module) | with-prompt "Use the Writer write tool to create a file called 'hello.txt' with the content 'hello world'. Do not use any other tool." | loop | lastReply`,
+			`llm %s | with-env $(env) | with-prompt "Use the Writer write tool to create a file called 'hello.txt' with the content 'hello world'. Do not use any other tool." | loop | lastReply`,
 			llmFlags,
 		))
 	}
@@ -409,7 +410,6 @@ type Writer {
 	recording := "llmtest/workspace-stage.golden"
 	if golden.FlagUpdate() {
 		out, err := base.
-			With(daggerForwardSecrets(c)).
 			With(ctrFn("")).
 			Stdout(ctx)
 		require.NoError(t, err)

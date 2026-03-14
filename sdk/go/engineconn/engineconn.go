@@ -20,6 +20,7 @@ type EngineConn interface {
 
 type Config struct {
 	Workdir         string
+	ConfigPath      string
 	LogOutput       io.Writer
 	RunnerHost      string
 	Conn            EngineConn

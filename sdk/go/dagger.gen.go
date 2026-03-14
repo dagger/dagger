@@ -6266,7 +6266,7 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 }
 
 // Returns a new environment with the provided workspace
-func (r *Env) WithWorkspace(workspace *Directory) *Env {
+func (r *Env) WithWorkspace(workspace *Workspace) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
 	q = q.Arg("workspace", workspace)
@@ -6309,10 +6309,10 @@ func (r *Env) WithoutOutputs() *Env {
 	}
 }
 
-func (r *Env) Workspace() *Directory {
+func (r *Env) Workspace() *Workspace {
 	q := r.query.Select("workspace")
 
-	return &Directory{
+	return &Workspace{
 		query: q,
 	}
 }
@@ -15601,8 +15601,8 @@ func (v ImageLayerCompression) Name() string {
 		return "Gzip"
 	case ImageLayerCompressionZstd:
 		return "Zstd"
-	case ImageLayerCompressionEstarGz:
-		return "EStarGZ"
+	case ImageLayerCompressionEstargz:
+		return "EStargz"
 	case ImageLayerCompressionUncompressed:
 		return "Uncompressed"
 	default:
@@ -15633,9 +15633,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
-	case "EStarGZ":
-		*v = ImageLayerCompressionEstarGz
-	case "ESTARGZ":
+	case "EStargz":
 		*v = ImageLayerCompressionEstargz
 	case "Gzip":
 		*v = ImageLayerCompressionGzip
@@ -15654,8 +15652,7 @@ const (
 
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
 
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+	ImageLayerCompressionEstargz ImageLayerCompression = "EStargz"
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )

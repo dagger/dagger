@@ -30,6 +30,14 @@ func (fn clientOptFunc) setClientOpt(cfg *engineconn.Config) {
 	fn(cfg)
 }
 
+// WithConfigPath sets the path to the dagger config file (e.g. for LLM
+// provider configuration). Overrides the default XDG-based path.
+func WithConfigPath(path string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ConfigPath = path
+	})
+}
+
 // WithWorkdir sets the engine workdir
 func WithWorkdir(path string) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {

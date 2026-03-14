@@ -16,8 +16,15 @@ const (
 
 var (
 	ConfigRoot = filepath.Join(xdg.ConfigHome, "dagger")
-	ConfigFile = filepath.Join(ConfigRoot, ConfigFileName)
+	ConfigFile = configFilePath()
 )
+
+func configFilePath() string {
+	if p := os.Getenv("DAGGER_CONFIG"); p != "" {
+		return p
+	}
+	return filepath.Join(ConfigRoot, ConfigFileName)
+}
 
 // Config represents the top-level dagger config file.
 // Only the [llm] section is managed here; other sections are preserved as-is.
