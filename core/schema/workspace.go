@@ -622,13 +622,23 @@ func (s *workspaceSchema) stage(
 		return false, fmt.Errorf("export changeset: %w", err)
 	}
 
+	// Filter out directory entries from Added — git only tracks files,
+	// and os.ReadFile on a directory path fails. Directories are created
+	// implicitly by MkdirAll when writing their child files.
+	var addedFiles []string
+	for _, p := range paths.Added {
+		if !strings.HasSuffix(p, "/") {
+			addedFiles = append(addedFiles, p)
+		}
+	}
+
 	// Step 2: Stage and merge. For each file:
 	//  - Added: copy to worktree, write blob to index
 	//  - Modified: write blob to index (agent's version), then 3-way merge
 	//    into the working tree so user edits on other lines are preserved
 	//  - Removed: remove from index and disk
 	// The temp dir is cleaned up by the handler.
-	staged, err := bk.GitStage(ctx, ws.Root, tempDir, paths.Added, paths.Modified, paths.Removed)
+	staged, err := bk.GitStage(ctx, ws.Root, tempDir, addedFiles, paths.Modified, paths.Removed)
 	if err != nil {
 		return false, fmt.Errorf("stage: %w", err)
 	}

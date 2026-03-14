@@ -991,6 +991,42 @@ type Remstage {
 		require.NoError(t, err)
 		require.Contains(t, statusOut, "D  remove.txt")
 	})
+
+	t.Run("stage file in new subdirectory", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("subdir-stager", `
+type SubdirStager {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/subdir")
+    let before = ws2.directory(".")
+    let after = before.withNewFile("pkg/newpkg/hello.go", contents: "package newpkg")
+    ws2.stage(changes: after.changes(before))
+    self
+  }
+}
+`))
+		staged := ctr.With(daggerCall("subdir-stager"))
+		_, err := staged.Stdout(ctx)
+		require.NoError(t, err)
+
+		// File should exist in the worktree subdirectory.
+		out, err := staged.
+			WithWorkdir("/work-worktrees/agent-subdir").
+			WithExec([]string{"cat", "pkg/newpkg/hello.go"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "package newpkg", out)
+
+		// git status should show the file as staged.
+		statusOut, err := staged.
+			WithWorkdir("/work-worktrees/agent-subdir").
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, statusOut, "pkg/newpkg/hello.go")
+	})
 }
 
 func (WorkspaceSuite) TestCommit(ctx context.Context, t *testctx.T) {
