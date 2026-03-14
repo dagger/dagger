@@ -2247,6 +2247,40 @@ Locked next step:
   adjusted remote harness before changing any branch behavior or classifying
   the uncommitted local CLI WIP
 
+### 2026-03-14: Remote Playground + `toolchains/go` Reached Real Test Execution
+
+Instead of trying to install `go` into the playground image directly, reran the
+remote playground path with the inner script delegating to the repo's
+`toolchains/go` module:
+
+- inside `/src/dagger`:
+  - `dagger --progress=plain call -m ./toolchains/go env with-exec --args=go --args=test --args=-v --args=-timeout=3m --args=-count=1 --args=-run=^TestWorkspace/TestBlueprintFunctionsIncludesOtherModules$ --args=./core/integration combined-output`
+
+This is the closest the rerun has gotten to the actual retained test:
+
+- the remote playground came up successfully
+- the remote `src/dagger` mount stayed cached
+- the inner `toolchains/go` invocation ran for about `1m43s`
+- the trace showed real Go dependency downloads inside that inner run
+- the inner step still exited `1`, but now the remaining blocker is narrowed to
+  surfacing the actual failure text rather than getting to test execution at
+  all
+
+Scope consequence:
+
+- the remote playground + `toolchains/go` path is now the best validation lane
+  for the retained entrypoint bucket
+- the current blocker is no longer missing toolchains or source transport; it
+  is getting the inner failure details out of the nested Dagger call
+
+Locked next step:
+
+- rerun the same remote playground + `toolchains/go` path with inner
+  `dagger --progress=logs` (or equivalent stderr capture) so the actual test or
+  build failure is visible
+- only after that concrete failure is visible should any local CLI code change
+  be attempted
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
