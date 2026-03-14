@@ -380,6 +380,24 @@ func (c *cache) resultCallFrameSnapshot(resultID sharedResultID) *ResultCallFram
 	return res.resultCallFrame.clone()
 }
 
+func (c *cache) persistedCallIDByResultID(ctx context.Context, resultID sharedResultID) (*call.ID, error) {
+	if resultID == 0 {
+		return nil, fmt.Errorf("resolve persisted call ID: zero result ID")
+	}
+	frame := c.resultCallFrameSnapshot(resultID)
+	if frame == nil {
+		return nil, fmt.Errorf("resolve persisted call ID for result %d: missing result call frame", resultID)
+	}
+	rebuilt, ok := c.idForCallerFromFrame(ctx, resultID, frame, callerIDFrontier{}, map[sharedResultID]struct{}{})
+	if !ok || rebuilt == nil {
+		return nil, fmt.Errorf("resolve persisted call ID for result %d: failed to rebuild from frame", resultID)
+	}
+	for _, extra := range c.resultCallFrameExtraDigestsSnapshot(resultID) {
+		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
+	}
+	return rebuilt, nil
+}
+
 // given a rawID (which is in practice the presentation ID of a result) and a material shareResult,
 // reconstruct a call.ID from the materialized result but with bias towards what the caller knows
 // and was presented. E.g. the caller may know about a host directory load it made, but then that

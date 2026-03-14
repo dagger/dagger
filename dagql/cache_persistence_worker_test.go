@@ -34,8 +34,6 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 	sharedID := shared.id
-	canonicalID, err := key.Encode()
-	assert.NilError(t, err)
 
 	assert.NilError(t, res.Release(ctx))
 	assert.NilError(t, c.persistCurrentState(ctx))
@@ -45,10 +43,10 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 1, rowCount)
 
-	var storedCanonicalID string
-	err = c.sqlDB.QueryRowContext(ctx, `SELECT canonical_id FROM results WHERE id = ?`, sharedID).Scan(&storedCanonicalID)
+	var storedCallFrameJSON string
+	err = c.sqlDB.QueryRowContext(ctx, `SELECT call_frame_json FROM results WHERE id = ?`, sharedID).Scan(&storedCallFrameJSON)
 	assert.NilError(t, err)
-	assert.Check(t, cmp.Equal(storedCanonicalID, canonicalID))
+	assert.Check(t, cmp.Contains(storedCallFrameJSON, `"field":"persist-worker-retained"`))
 }
 
 func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {

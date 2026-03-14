@@ -669,6 +669,7 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.
 func (obj *ModuleObject) DecodePersistedObject(
 	ctx context.Context,
 	dag *dagql.Server,
+	_ uint64,
 	_ *call.ID,
 	jsonBytes json.RawMessage,
 ) (dagql.Typed, error) {

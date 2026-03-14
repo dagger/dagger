@@ -322,7 +322,7 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 	assert.NilError(t, json.Unmarshal(payload, &persisted))
 	assert.Equal(t, persistedModuleObjectValueKindResultRef, persisted.Fields["child"].Kind)
 
-	decodedTyped, err := obj.DecodePersistedObject(ctx, dag, nil, payload)
+	decodedTyped, err := obj.DecodePersistedObject(ctx, dag, 0, nil, payload)
 	assert.NilError(t, err)
 	decoded, ok := decodedTyped.(*ModuleObject)
 	assert.Assert(t, ok)

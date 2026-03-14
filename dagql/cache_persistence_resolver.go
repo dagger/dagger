@@ -70,6 +70,18 @@ func (c *cache) PersistedSnapshotLinks(ctx context.Context, id *call.ID) ([]Pers
 	return links, nil
 }
 
+func (c *cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
+	res, err := c.persistedSharedResultByResultID(sharedResultID(resultID))
+	if err != nil {
+		return nil, err
+	}
+
+	c.egraphMu.RLock()
+	links := append([]PersistedSnapshotRefLink(nil), res.persistedSnapshotLinks...)
+	c.egraphMu.RUnlock()
+	return links, nil
+}
+
 func (c *SessionCache) basePersistedCache() (*cache, error) {
 	if c == nil {
 		return nil, fmt.Errorf("persisted session cache: nil session cache")
@@ -103,6 +115,14 @@ func (c *SessionCache) PersistedSnapshotLinks(ctx context.Context, id *call.ID) 
 		return nil, err
 	}
 	return base.PersistedSnapshotLinks(ctx, id)
+}
+
+func (c *SessionCache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
+	base, err := c.basePersistedCache()
+	if err != nil {
+		return nil, err
+	}
+	return base.PersistedSnapshotLinksByResultID(ctx, resultID)
 }
 
 func (c *cache) PersistedResultID(res AnyResult) (uint64, error) {
@@ -148,37 +168,30 @@ func (c *cache) persistedSharedResultByID(ctx context.Context, id *call.ID) (*sh
 	return res, nil
 }
 
-func (c *cache) persistedSharedResultByResultID(resultID sharedResultID) (*sharedResult, *call.ID, error) {
+func (c *cache) persistedSharedResultByResultID(resultID sharedResultID) (*sharedResult, error) {
 	if c == nil {
-		return nil, nil, fmt.Errorf("resolve persisted result %d: nil cache", resultID)
+		return nil, fmt.Errorf("resolve persisted result %d: nil cache", resultID)
 	}
 	if resultID == 0 {
-		return nil, nil, fmt.Errorf("resolve persisted result: zero result ID")
+		return nil, fmt.Errorf("resolve persisted result: zero result ID")
 	}
 
 	c.egraphMu.RLock()
 	res := c.resultsByID[resultID]
-	canonicalID := c.resultCanonicalIDs[resultID]
-	if canonicalID != nil {
-		canonicalID = canonicalID.With()
-	}
 	c.egraphMu.RUnlock()
 
 	if res == nil {
-		return nil, nil, fmt.Errorf("resolve persisted result %d: missing shared result", resultID)
+		return nil, fmt.Errorf("resolve persisted result %d: missing shared result", resultID)
 	}
-	if canonicalID == nil {
-		return nil, nil, fmt.Errorf("resolve persisted result %d: missing canonical ID", resultID)
-	}
-	return res, canonicalID, nil
+	return res, nil
 }
 
-func (c *cache) PersistedCallIDByResultID(_ context.Context, resultID uint64) (*call.ID, error) {
-	_, canonicalID, err := c.persistedSharedResultByResultID(sharedResultID(resultID))
+func (c *cache) PersistedCallIDByResultID(ctx context.Context, resultID uint64) (*call.ID, error) {
+	_, err := c.persistedSharedResultByResultID(sharedResultID(resultID))
 	if err != nil {
 		return nil, err
 	}
-	return canonicalID, nil
+	return c.persistedCallIDByResultID(ctx, sharedResultID(resultID))
 }
 
 func (c *SessionCache) PersistedCallIDByResultID(ctx context.Context, resultID uint64) (*call.ID, error) {
@@ -190,11 +203,15 @@ func (c *SessionCache) PersistedCallIDByResultID(ctx context.Context, resultID u
 }
 
 func (c *cache) LoadPersistedResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
-	res, canonicalID, err := c.persistedSharedResultByResultID(sharedResultID(resultID))
+	res, err := c.persistedSharedResultByResultID(sharedResultID(resultID))
 	if err != nil {
 		return nil, err
 	}
-	wrapped, err := c.persistedResultForShared(ctx, res, canonicalID)
+	id, err := c.persistedCallIDByResultID(ctx, sharedResultID(resultID))
+	if err != nil {
+		return nil, err
+	}
+	wrapped, err := c.persistedResultForShared(ctx, res, id)
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS meta (
 
 CREATE TABLE IF NOT EXISTS results (
     id INTEGER PRIMARY KEY,
-    canonical_id TEXT NOT NULL,
+    call_frame_json TEXT NOT NULL,
     self_payload BLOB NOT NULL,
     output_effect_ids_json TEXT NOT NULL DEFAULT '[]',
     safe_to_persist_cache INTEGER NOT NULL DEFAULT 1,

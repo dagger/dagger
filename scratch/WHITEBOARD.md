@@ -1734,7 +1734,7 @@ Phase-3 tripwire:
 
 Status:
 
-* designed, not yet implemented
+* completed
 
 Purpose:
 
@@ -1887,6 +1887,10 @@ Phase-4 tripwires:
 
 ### Phase 5: Hard-cut persistence/import from `canonical_id` to persisted `resultCallFrame`
 
+Status:
+
+* designed, not yet implemented
+
 Purpose:
 
 * make the database reflect the new model fully
@@ -1911,7 +1915,8 @@ Primary files / seams:
 * `dagql/cache_persistence_contracts.go`
   * `persistResultSnapshot` should carry frame data rather than canonical ID
 * `dagql/cache_persistence_worker.go`
-  * snapshot export should read frames from results, not `resultCanonicalIDs`
+  * despite the filename, this is now just the shutdown-time full snapshot export path
+  * that export should read frames from results, not `resultCanonicalIDs`
   * persisted row write should store frame JSON
 * `dagql/cache_persistence_import.go`
   * import should load results shell-first
@@ -1946,24 +1951,103 @@ Important likely follow-on simplification in this phase:
 * once persistence is frame-backed, persisted object/data fields that now use internal result refs get more uniform:
   * internal graph edges use result IDs
   * caller-facing IDs are reconstructed on demand
+* Phase 4 already simplified the write side down to a single shutdown-time full snapshot path
+  * that means Phase 5 only needs to update one real persistence write path
+  * we no longer need to reason about frame persistence coexisting with background runtime DB writes
 
-Phase-4 test focus:
+Phase-5 test focus:
 
-* persistence worker snapshot tests
+* shutdown-time full snapshot persistence tests
 * import shell-first reconstruction tests
 * persisted object decode/load tests by result ID
 * full `TestEngine/TestDiskPersistenceAcrossRestart` rerun
 * focused function-cache and cache-volume restart repros via subagents
 
-Phase-4 review boundary:
+Phase-5 review boundary:
 
 * after this phase, the persistence model should match the current design directly
 * `canonical_id` should be gone from the mirrored DB and in-memory persistence bookkeeping
+* persisted restart behavior should no longer depend on any stored full public `call.ID` as the authoritative source of truth
+  * not at the row level
+  * and not hidden inside persisted self envelopes either
 
-Phase-4 tripwire:
+Phase-5 tripwire:
 
 * if some persisted object decode path genuinely still requires a stored full public `call.ID` rather than a result/frame-based reconstruction, stop and escalate
 * at that point we need to decide whether the object decoder is modeling a true public recipe handle or whether the decode API still needs redesign
+
+Important implementation seam discovered while doing Phase 5:
+
+* the row-level `canonical_id` cut is not sufficient by itself
+* it is possible for:
+  * `results.canonical_id` to be gone
+  * `resultCanonicalIDs` to be gone
+  * top-level persisted result lookup to be frame-backed
+  * **and yet restart to still fail**
+* the reason is that persisted self envelopes still carry embedded full IDs and the current decode path still treats those envelope IDs as authoritative
+
+Concrete failure shape we hit:
+
+* the cross-session module-object test can be green at the same time that `TestEngine/TestDiskPersistenceAcrossRestart` is still red
+* this is because the in-memory/result-ref model can already be correct while persisted-object lazy decode is still relying on old envelope IDs
+* the first concrete restart failure we hit after the row-level cut was:
+  * `decode persisted hit payload: decode object_id envelope load: load persisted container rootfs object: decode persisted hit payload: decode object_id envelope load: resolve persisted result "...": no cached shared result found for structural input ...`
+
+What that means semantically:
+
+* a persisted result row can now reconstruct its wrapper ID from the stored `resultCallFrame`
+* but when the lazy persisted self envelope for that result is later decoded:
+  * `decodePersistedResultEnvelope(...)` still reads `env.ID`
+  * nested persisted-object decode paths still treat that embedded encoded ID as authoritative
+* so the system is split-brain:
+  * row-level persistence is frame-authoritative
+  * envelope-level decode is still full-ID-authoritative
+* that split is exactly what still breaks restart behavior
+
+Phase-5 must therefore include one more hard cut:
+
+* stop treating envelope-carried IDs as authoritative during persisted decode
+* the outer persisted-result load path must provide the authoritative ID reconstructed from the stored frame/result graph
+* inner envelope decode should use that supplied ID instead of re-decoding and trusting `env.ID`
+
+Put differently:
+
+* row-level/frame-backed persistence is now implemented
+* but envelope-level/frame-backed decode is still missing
+* Phase 5 is not complete until both are done
+
+Likely design direction for finishing this seam:
+
+* `PersistedResultEnvelope` may still physically contain an `ID` for a short transitional period if that makes the cut easier
+* but decode must no longer rely on it as the source of truth
+* instead:
+  * top-level persisted result load reconstructs the authoritative ID from `resultCallFrame`
+  * that ID is passed explicitly into envelope/object decode
+  * nested persisted-object decode/load by `result_id` uses result/frame-based reconstruction all the way down
+
+Additional seam discovered while implementing that cut:
+
+* even after envelope decode stops trusting `env.ID`, restart can still fail because persisted object decoders are still looking up snapshot links by `call.ID`
+* the concrete shape is:
+  * row-level result load is frame/result-backed
+  * envelope-level self decode is frame/result-backed
+  * but `core/persisted_object.go` snapshot-link helpers still call into `PersistedSnapshotLinks(ctx, id)`
+  * that forces a structural lookup from a caller-facing reconstructed ID right in the middle of persisted restart decode
+* so the next hard cut in this phase is:
+  * persisted envelopes for nested results need to carry `result_id`
+  * persisted object decode needs to become explicitly result-ID-aware
+  * snapshot-link loads during persisted decode must use `result_id`, not `call.ID`
+* in other words:
+  * caller-facing `call.ID` is still needed for presentation and for object decoder context
+  * but durable/self/snapshot graph lookup during persisted restart must be anchored on `result_id`
+
+Why this matters:
+
+* until this is fixed, the restart suite can still fail even though:
+  * package/unit checks are green
+  * row-level frame persistence is working
+  * in-memory semantic result-ref behavior is correct
+* this is the main remaining Phase-5 seam
 
 ## Cross-phase notes / guardrails
 

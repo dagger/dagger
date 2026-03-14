@@ -4,7 +4,7 @@ import "context"
 
 type MirrorResult struct {
 	ID                   int64
-	CanonicalID          string
+	CallFrameJSON        string
 	SelfPayload          []byte
 	OutputEffectIDs      string
 	SafeToPersistCache   bool
@@ -88,7 +88,7 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 
 const insertMirrorResult = `
 INSERT INTO results (
-	id, canonical_id, self_payload, output_effect_ids_json, safe_to_persist_cache,
+	id, call_frame_json, self_payload, output_effect_ids_json, safe_to_persist_cache,
 	dep_of_persisted_result, expires_at_unix, created_at_unix_nano,
 	last_used_at_unix_nano, size_estimate_bytes, usage_identity, record_type, description
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -96,7 +96,7 @@ INSERT INTO results (
 
 func (q *Queries) InsertMirrorResult(ctx context.Context, arg MirrorResult) error {
 	_, err := q.exec(ctx, nil, insertMirrorResult,
-		arg.ID, arg.CanonicalID, arg.SelfPayload, arg.OutputEffectIDs,
+		arg.ID, arg.CallFrameJSON, arg.SelfPayload, arg.OutputEffectIDs,
 		arg.SafeToPersistCache, arg.DepOfPersistedResult, arg.ExpiresAtUnix,
 		arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano, arg.SizeEstimateBytes,
 		arg.UsageIdentity, arg.RecordType, arg.Description,
@@ -167,7 +167,7 @@ func (q *Queries) InsertMirrorResultSnapshotLink(ctx context.Context, arg Mirror
 
 const listMirrorResults = `
 SELECT
-	id, canonical_id, self_payload, output_effect_ids_json, safe_to_persist_cache,
+	id, call_frame_json, self_payload, output_effect_ids_json, safe_to_persist_cache,
 	dep_of_persisted_result, expires_at_unix, created_at_unix_nano,
 	last_used_at_unix_nano, size_estimate_bytes, usage_identity, record_type, description
 FROM results
@@ -185,7 +185,7 @@ func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error)
 		var row MirrorResult
 		if err := rows.Scan(
 			&row.ID,
-			&row.CanonicalID,
+			&row.CallFrameJSON,
 			&row.SelfPayload,
 			&row.OutputEffectIDs,
 			&row.SafeToPersistCache,

@@ -79,7 +79,7 @@ func (fn *Function) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 	return json.Marshal(encodePersistedFunction(fn))
 }
 
-func (*Function) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*Function) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -416,7 +416,7 @@ func (arg *FunctionArg) EncodePersistedObject(ctx context.Context, cache dagql.P
 	return json.Marshal(encodePersistedFunctionArg(arg))
 }
 
-func (*FunctionArg) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*FunctionArg) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -618,7 +618,7 @@ func (typeDef *TypeDef) EncodePersistedObject(ctx context.Context, cache dagql.P
 	return json.Marshal(encodePersistedTypeDef(typeDef))
 }
 
-func (*TypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*TypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -959,7 +959,7 @@ func (obj *ObjectTypeDef) EncodePersistedObject(ctx context.Context, cache dagql
 	return json.Marshal(encodePersistedObjectTypeDef(obj))
 }
 
-func (*ObjectTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*ObjectTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1115,7 +1115,7 @@ func (field *FieldTypeDef) EncodePersistedObject(ctx context.Context, cache dagq
 	return json.Marshal(encodePersistedFieldTypeDef(field))
 }
 
-func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1181,7 +1181,7 @@ func (iface *InterfaceTypeDef) EncodePersistedObject(ctx context.Context, cache 
 	return json.Marshal(encodePersistedInterfaceTypeDef(iface))
 }
 
-func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1277,7 +1277,7 @@ func (typeDef *ScalarTypeDef) EncodePersistedObject(ctx context.Context, cache d
 	return json.Marshal(encodePersistedScalarTypeDef(typeDef))
 }
 
-func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1316,7 +1316,7 @@ func (typeDef *ListTypeDef) EncodePersistedObject(ctx context.Context, cache dag
 	return json.Marshal(encodePersistedListTypeDef(typeDef))
 }
 
-func (*ListTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*ListTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1363,7 +1363,7 @@ func (typeDef *InputTypeDef) EncodePersistedObject(ctx context.Context, cache da
 	return json.Marshal(encodePersistedInputTypeDef(typeDef))
 }
 
-func (*InputTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*InputTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1436,7 +1436,7 @@ func (enum *EnumTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.
 	return json.Marshal(encodePersistedEnumTypeDef(enum))
 }
 
-func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1505,7 +1505,7 @@ func (member *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, cach
 	return json.Marshal(encodePersistedEnumMemberTypeDef(member))
 }
 
-func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1703,7 +1703,7 @@ func (fnCall *FunctionCall) EncodePersistedObject(ctx context.Context, cache dag
 	return json.Marshal(persistedFunctionCall(*fnCall))
 }
 
-func (*FunctionCall) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*FunctionCall) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1791,7 +1791,7 @@ func (arg *FunctionCallArgValue) EncodePersistedObject(ctx context.Context, cach
 	return json.Marshal(persistedFunctionCallArgValue(*arg))
 }
 
-func (*FunctionCallArgValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*FunctionCallArgValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id
@@ -1834,7 +1834,7 @@ func (sourceMap *SourceMap) EncodePersistedObject(ctx context.Context, cache dag
 	return json.Marshal(encodePersistedSourceMap(sourceMap))
 }
 
-func (*SourceMap) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*SourceMap) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	_ = ctx
 	_ = dag
 	_ = id

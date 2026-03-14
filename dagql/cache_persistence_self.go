@@ -26,6 +26,7 @@ type PersistedResultEnvelope struct {
 	Version      int                       `json:"version"`
 	Kind         string                    `json:"kind"`
 	TypeName     string                    `json:"typeName,omitempty"`
+	ResultID     uint64                    `json:"resultID,omitempty"`
 	ID           string                    `json:"id,omitempty"`
 	ObjectJSON   json.RawMessage           `json:"objectJSON,omitempty"`
 	ScalarJSON   json.RawMessage           `json:"scalarJSON,omitempty"`
@@ -57,14 +58,14 @@ type PersistedObject interface {
 // original dagql call chain.
 type PersistedObjectDecoder interface {
 	Typed
-	DecodePersistedObject(context.Context, *Server, *call.ID, json.RawMessage) (Typed, error)
+	DecodePersistedObject(context.Context, *Server, uint64, *call.ID, json.RawMessage) (Typed, error)
 }
 
 // PersistedSelfCodec is the shared interface used to encode/decode result self
 // payloads for disk persistence.
 type PersistedSelfCodec interface {
 	EncodeResult(context.Context, PersistedObjectCache, AnyResult) (PersistedResultEnvelope, error)
-	DecodeResult(context.Context, *Server, PersistedResultEnvelope) (AnyResult, error)
+	DecodeResult(context.Context, *Server, uint64, *call.ID, PersistedResultEnvelope) (AnyResult, error)
 }
 
 type defaultPersistedSelfCodec struct{}
@@ -75,8 +76,8 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 	return encodePersistedResultEnvelope(ctx, cache, res)
 }
 
-func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, env PersistedResultEnvelope) (AnyResult, error) {
-	return decodePersistedResultEnvelope(ctx, dag, env)
+func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, id *call.ID, env PersistedResultEnvelope) (AnyResult, error) {
+	return decodePersistedResultEnvelope(ctx, dag, resultID, id, env)
 }
 
 func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCache, res AnyResult) (PersistedResultEnvelope, error) {
@@ -93,6 +94,12 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	if err != nil {
 		return PersistedResultEnvelope{}, fmt.Errorf("encode persisted result envelope ID: %w", err)
 	}
+	var resultID uint64
+	if cache != nil {
+		if persistedResultID, err := cache.PersistedResultID(res); err == nil {
+			resultID = persistedResultID
+		}
+	}
 
 	if _, ok := res.(AnyObjectResult); ok {
 		encoder, ok := res.Unwrap().(PersistedObject)
@@ -107,6 +114,7 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Version:    2,
 			Kind:       persistedResultKindObject,
 			TypeName:   res.Type().Name(),
+			ResultID:   resultID,
 			ID:         encID,
 			ObjectJSON: objectJSON,
 		}, nil
@@ -120,6 +128,7 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Version:    2,
 			Kind:       persistedResultKindObject,
 			TypeName:   res.Type().Name(),
+			ResultID:   resultID,
 			ID:         encID,
 			ObjectJSON: objectJSON,
 		}, nil
@@ -142,6 +151,7 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Version:      2,
 			Kind:         persistedResultKindList,
 			TypeName:     res.Type().Name(),
+			ResultID:     resultID,
 			ID:           encID,
 			ElemTypeName: enumerable.Element().Type().Name(),
 			Items:        itemEnvs,
@@ -156,19 +166,19 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		Version:    2,
 		Kind:       persistedResultKindScalar,
 		TypeName:   res.Type().Name(),
+		ResultID:   resultID,
 		ID:         encID,
 		ScalarJSON: scalarJSON,
 	}, nil
 }
 
-func decodePersistedResultEnvelope(ctx context.Context, dag *Server, env PersistedResultEnvelope) (AnyResult, error) {
+func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID uint64, id *call.ID, env PersistedResultEnvelope) (AnyResult, error) {
 	switch env.Kind {
 	case persistedResultKindNull:
 		return nil, nil
 	case persistedResultKindObject:
-		id, err := decodeEnvelopeID(env)
-		if err != nil {
-			return nil, err
+		if id == nil {
+			return nil, fmt.Errorf("decode object_id envelope: missing authoritative ID")
 		}
 		if dag == nil {
 			return nil, fmt.Errorf("decode object_id envelope: missing current dagql server in context")
@@ -181,7 +191,8 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, env Persist
 		if !ok {
 			return nil, fmt.Errorf("decode object_id envelope: object type %q does not implement persisted decode", env.TypeName)
 		}
-		valSelf, err := decoder.DecodePersistedObject(ctx, dag, id, env.ObjectJSON)
+		decodeCtx := ContextWithID(ctx, id)
+		valSelf, err := decoder.DecodePersistedObject(decodeCtx, dag, resultID, id, env.ObjectJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode object_id envelope load: %w", err)
 		}
@@ -195,9 +206,8 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, env Persist
 		}
 		return objRes, nil
 	case persistedResultKindScalar:
-		id, err := decodeEnvelopeID(env)
-		if err != nil {
-			return nil, err
+		if id == nil {
+			return nil, fmt.Errorf("decode scalar_json envelope: missing authoritative ID")
 		}
 		var raw any
 		if err := json.Unmarshal(env.ScalarJSON, &raw); err != nil {
@@ -219,21 +229,14 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, env Persist
 		}
 		return NewResultForID(builtin, id)
 	case persistedResultKindList:
-		id, err := decodeEnvelopeID(env)
-		if err != nil {
-			return nil, err
+		if id == nil {
+			return nil, fmt.Errorf("decode list envelope: missing authoritative ID")
 		}
 		items := make([]AnyResult, 0, len(env.Items))
 		for i, itemEnv := range env.Items {
-			itemCtx := ctx
-			if itemEnv.ID != "" {
-				itemID, decodeIDErr := decodeEnvelopeID(itemEnv)
-				if decodeIDErr != nil {
-					return nil, fmt.Errorf("decode list item %d ID: %w", i+1, decodeIDErr)
-				}
-				itemCtx = ContextWithID(itemCtx, itemID)
-			}
-			itemRes, err := decodePersistedResultEnvelope(itemCtx, dag, itemEnv)
+			itemID := id.SelectNth(i + 1)
+			itemCtx := ContextWithID(ctx, itemID)
+			itemRes, err := decodePersistedResultEnvelope(itemCtx, dag, itemEnv.ResultID, itemID, itemEnv)
 			if err != nil {
 				return nil, fmt.Errorf("decode list item %d: %w", i+1, err)
 			}
@@ -306,17 +309,6 @@ func decodeBuiltinPersistedScalar(typeName string, raw any) (Typed, error) {
 	default:
 		return nil, fmt.Errorf("unknown scalar type %q and no dagql server in context", typeName)
 	}
-}
-
-func decodeEnvelopeID(env PersistedResultEnvelope) (*call.ID, error) {
-	if env.ID == "" {
-		return nil, fmt.Errorf("decode persisted result envelope: empty ID for kind %q", env.Kind)
-	}
-	var id call.ID
-	if err := id.Decode(env.ID); err != nil {
-		return nil, fmt.Errorf("decode persisted result envelope ID: %w", err)
-	}
-	return &id, nil
 }
 
 // PersistedSnapshotRefLink is a generic non-opaque link from a persisted result

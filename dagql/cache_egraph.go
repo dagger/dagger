@@ -218,9 +218,6 @@ func (c *cache) initEgraphLocked() {
 	if c.resultsByID == nil {
 		c.resultsByID = make(map[sharedResultID]*sharedResult)
 	}
-	if c.resultCanonicalIDs == nil {
-		c.resultCanonicalIDs = make(map[sharedResultID]*call.ID)
-	}
 	if c.nextEgraphClassID == 0 {
 		c.nextEgraphClassID = 1
 	}
@@ -1114,9 +1111,6 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		c.nextSharedResultID++
 	}
 	c.resultsByID[res.id] = res
-	if requestID != nil && c.resultCanonicalIDs[res.id] == nil {
-		c.resultCanonicalIDs[res.id] = requestID.With()
-	}
 	if err := c.ensureResultCallFrameLocked(ctx, res, requestID); err != nil {
 		return fmt.Errorf("derive result call frame: %w", err)
 	}
@@ -1391,7 +1385,6 @@ func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	delete(c.resultOutputEqClasses, res.id)
 	delete(c.resultsByID, res.id)
-	delete(c.resultCanonicalIDs, res.id)
 	c.traceResultRemoved(ctx, res)
 
 	nowUnix := time.Now().Unix()
@@ -1457,7 +1450,6 @@ func (c *cache) maybeResetEgraphLocked() {
 	c.egraphTermsByTermDigest = nil
 	c.egraphResultsByDigest = nil
 	c.resultsByID = nil
-	c.resultCanonicalIDs = nil
 	c.nextEgraphClassID = 0
 	c.nextEgraphTermID = 0
 	c.nextSharedResultID = 0

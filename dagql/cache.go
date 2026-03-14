@@ -137,7 +137,7 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 }
 
-const cachePersistenceSchemaVersion = "5"
+const cachePersistenceSchemaVersion = "7"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var errPersistedHitNotDecodable = errors.New("persisted hit payload not decodable in current context")
@@ -369,14 +369,6 @@ type cache struct {
 
 	// result id -> result
 	resultsByID map[sharedResultID]*sharedResult
-
-	// one canonical caller-facing ID per materialized result, used for
-	// persistence payload encoding and lazy rehydration after import
-	resultCanonicalIDs map[sharedResultID]*call.ID
-
-	//
-	// other indexes
-	//
 
 	// map of eq class -> all terms that have it as an input, needed during repair to
 	// figure out all the terms that need repair after eq class union

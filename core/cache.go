@@ -160,7 +160,7 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCa
 	return payload, nil
 }
 
-func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedCacheVolumePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted cache volume payload: %w", err)
@@ -173,8 +173,8 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		persisted.Sharing,
 		persisted.Owner,
 	)
-	if id != nil {
-		links, err := loadPersistedSnapshotLinksForID(ctx, dag, id)
+	if resultID != 0 {
+		links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "cache volume")
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +182,7 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 			if link.Role != "snapshot" {
 				continue
 			}
-			snapshot, link, err := loadPersistedMutableSnapshot(ctx, dag, id, "snapshot")
+			snapshot, link, err := loadPersistedMutableSnapshotByResultID(ctx, dag, resultID, "cache volume", "snapshot")
 			if err != nil {
 				return nil, err
 			}

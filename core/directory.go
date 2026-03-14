@@ -231,7 +231,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	return payloadJSON, nil
 }
 
-func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedDirectoryPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted directory payload: %w", err)
@@ -244,7 +244,7 @@ func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	}
 	switch persisted.Form {
 	case persistedDirectoryFormSnapshot:
-		snapshot, _, err := loadPersistedImmutableSnapshot(ctx, dag, id, "snapshot")
+		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "directory", "snapshot")
 		if err != nil {
 			return nil, err
 		}

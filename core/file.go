@@ -221,7 +221,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	return payloadJSON, nil
 }
 
-func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedFilePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted file payload: %w", err)
@@ -234,7 +234,7 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *c
 	}
 	switch persisted.Form {
 	case persistedFileFormSnapshot:
-		snapshot, _, err := loadPersistedImmutableSnapshot(ctx, dag, id, "snapshot")
+		snapshot, _, err := loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "file", "snapshot")
 		if err != nil {
 			return nil, err
 		}

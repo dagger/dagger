@@ -33,8 +33,6 @@ type EGraphDebugSnapshot struct {
 
 type EGraphDebugResult struct {
 	SharedResultID        uint64                     `json:"shared_result_id"`
-	CanonicalID           string                     `json:"canonical_id,omitempty"`
-	CanonicalIDDigest     string                     `json:"canonical_id_digest,omitempty"`
 	OutputEqClassIDs      []uint64                   `json:"output_eq_class_ids,omitempty"`
 	OutputEffectIDs       []string                   `json:"output_effect_ids,omitempty"`
 	RecordType            string                     `json:"record_type,omitempty"`
@@ -458,9 +456,9 @@ func (c *cache) tracePersistedPayloadImportedLazy(ctx context.Context, importRun
 	})
 }
 
-func (c *cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, canonicalDigest, canonicalID string) {
+func (c *cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, callFrameJSON string) {
 	c.traceLazy(ctx, "import_result_loaded", func() []any {
-		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "canonical_id_digest", canonicalDigest, "canonical_id", canonicalID}
+		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "call_frame_json", callFrameJSON}
 	})
 }
 
@@ -562,19 +560,8 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			payloadState = "materialized"
 		}
 
-		canonicalID := ""
-		canonicalDigest := ""
-		if id := c.resultCanonicalIDs[resultID]; id != nil {
-			if encoded, err := id.Encode(); err == nil {
-				canonicalID = encoded
-			}
-			canonicalDigest = id.Digest().String()
-		}
-
 		snap.Results = append(snap.Results, EGraphDebugResult{
 			SharedResultID:        uint64(res.id),
-			CanonicalID:           canonicalID,
-			CanonicalIDDigest:     canonicalDigest,
 			OutputEqClassIDs:      outputEqIDs,
 			OutputEffectIDs:       append([]string(nil), res.outputEffectIDs...),
 			RecordType:            res.recordType,

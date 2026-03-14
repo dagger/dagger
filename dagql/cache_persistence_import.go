@@ -53,168 +53,160 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 		return nil
 	}
 
+	var eagerDecodeResultIDs []sharedResultID
+
 	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
+	importErr := func() error {
+		c.initEgraphLocked()
 
-	c.initEgraphLocked()
-
-	var maxEqClassID eqClassID
-	for _, row := range eqClassRows {
-		eqID := eqClassID(row.ID)
-		if eqID == 0 {
-			return fmt.Errorf("import eq_class: zero ID")
-		}
-		if eqID > maxEqClassID {
-			maxEqClassID = eqID
-		}
-	}
-	c.egraphParents = make([]eqClassID, maxEqClassID+1)
-	c.egraphRanks = make([]uint8, maxEqClassID+1)
-	for _, row := range eqClassRows {
-		eqID := eqClassID(row.ID)
-		c.egraphParents[eqID] = eqID
-		if c.eqClassToDigests[eqID] == nil {
-			c.eqClassToDigests[eqID] = make(map[string]struct{})
-		}
-	}
-
-	for _, row := range eqClassDigestRows {
-		eqID := eqClassID(row.EqClassID)
-		if eqID == 0 {
-			return fmt.Errorf("import eq_class_digest %q: zero eq_class_id", row.Digest)
-		}
-		if c.egraphParents[eqID] == 0 {
-			return fmt.Errorf("import eq_class_digest %q: missing eq_class %d", row.Digest, eqID)
-		}
-		if row.Digest == "" {
-			return fmt.Errorf("import eq_class_digest: empty digest for eq_class %d", eqID)
-		}
-		c.egraphDigestToClass[row.Digest] = eqID
-		digests := c.eqClassToDigests[eqID]
-		if digests == nil {
-			digests = make(map[string]struct{})
-			c.eqClassToDigests[eqID] = digests
-		}
-		digests[row.Digest] = struct{}{}
-		if row.Label != "" {
-			extras := c.eqClassExtraDigests[eqID]
-			if extras == nil {
-				extras = make(map[call.ExtraDigest]struct{})
-				c.eqClassExtraDigests[eqID] = extras
+		var maxEqClassID eqClassID
+		for _, row := range eqClassRows {
+			eqID := eqClassID(row.ID)
+			if eqID == 0 {
+				return fmt.Errorf("import eq_class: zero ID")
 			}
-			extras[call.ExtraDigest{
-				Digest: digest.Digest(row.Digest),
-				Label:  row.Label,
-			}] = struct{}{}
-		}
-	}
-
-	var maxResultID sharedResultID
-	for _, row := range resultRows {
-		resultID := sharedResultID(row.ID)
-		if resultID == 0 {
-			return fmt.Errorf("import result: zero ID")
-		}
-		if resultID > maxResultID {
-			maxResultID = resultID
-		}
-
-		var canonicalID call.ID
-		if err := canonicalID.Decode(row.CanonicalID); err != nil {
-			return fmt.Errorf("import result %d canonical_id: %w", resultID, err)
-		}
-
-		var env PersistedResultEnvelope
-		if len(row.SelfPayload) > 0 {
-			if err := json.Unmarshal(row.SelfPayload, &env); err != nil {
-				return fmt.Errorf("import result %d self payload: %w", resultID, err)
-			}
-		} else {
-			env = PersistedResultEnvelope{
-				Version: 1,
-				Kind:    persistedResultKindNull,
+			if eqID > maxEqClassID {
+				maxEqClassID = eqID
 			}
 		}
-		if env.Kind == "" {
-			return fmt.Errorf("import result %d: empty self payload kind", resultID)
-		}
-
-		var outputEffects []string
-		if row.OutputEffectIDs != "" {
-			if err := json.Unmarshal([]byte(row.OutputEffectIDs), &outputEffects); err != nil {
-				return fmt.Errorf("import result %d output effect IDs: %w", resultID, err)
+		c.egraphParents = make([]eqClassID, maxEqClassID+1)
+		c.egraphRanks = make([]uint8, maxEqClassID+1)
+		for _, row := range eqClassRows {
+			eqID := eqClassID(row.ID)
+			c.egraphParents[eqID] = eqID
+			if c.eqClassToDigests[eqID] == nil {
+				c.eqClassToDigests[eqID] = make(map[string]struct{})
 			}
 		}
 
-		res := &sharedResult{
-			cache:                c,
-			id:                   resultID,
-			safeToPersistCache:   row.SafeToPersistCache,
-			depOfPersistedResult: row.DepOfPersistedResult,
-			outputEffectIDs:      outputEffects,
-			expiresAtUnix:        row.ExpiresAtUnix,
-			createdAtUnixNano:    row.CreatedAtUnixNano,
-			lastUsedAtUnixNano:   row.LastUsedAtUnixNano,
-			sizeEstimateBytes:    row.SizeEstimateBytes,
-			usageIdentity:        row.UsageIdentity,
-			description:          row.Description,
-			recordType:           row.RecordType,
-			persistedEnvelope:    &env,
-		}
-
-		if env.Kind == persistedResultKindNull {
-			res.hasValue = true
-			res.persistedEnvelope = nil
-			c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, canonicalID.Digest().String(), "nil")
-		} else if env.Kind != persistedResultKindObject {
-			if decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, nil, env); err == nil && decoded != nil {
-				res.self = decoded.Unwrap()
-				res.hasValue = true
-				if objRes, ok := decoded.(AnyObjectResult); ok {
-					res.objType = objRes.ObjectType()
+		for _, row := range eqClassDigestRows {
+			eqID := eqClassID(row.EqClassID)
+			if eqID == 0 {
+				return fmt.Errorf("import eq_class_digest %q: zero eq_class_id", row.Digest)
+			}
+			if c.egraphParents[eqID] == 0 {
+				return fmt.Errorf("import eq_class_digest %q: missing eq_class %d", row.Digest, eqID)
+			}
+			if row.Digest == "" {
+				return fmt.Errorf("import eq_class_digest: empty digest for eq_class %d", eqID)
+			}
+			c.egraphDigestToClass[row.Digest] = eqID
+			digests := c.eqClassToDigests[eqID]
+			if digests == nil {
+				digests = make(map[string]struct{})
+				c.eqClassToDigests[eqID] = digests
+			}
+			digests[row.Digest] = struct{}{}
+			if row.Label != "" {
+				extras := c.eqClassExtraDigests[eqID]
+				if extras == nil {
+					extras = make(map[call.ExtraDigest]struct{})
+					c.eqClassExtraDigests[eqID] = extras
 				}
-				setTypedPersistedResultID(res.self, resultID)
+				extras[call.ExtraDigest{
+					Digest: digest.Digest(row.Digest),
+					Label:  row.Label,
+				}] = struct{}{}
+			}
+		}
+
+		var maxResultID sharedResultID
+		for _, row := range resultRows {
+			resultID := sharedResultID(row.ID)
+			if resultID == 0 {
+				return fmt.Errorf("import result: zero ID")
+			}
+			if resultID > maxResultID {
+				maxResultID = resultID
+			}
+
+			if row.CallFrameJSON == "" {
+				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
+			}
+			var frame ResultCallFrame
+			if err := json.Unmarshal([]byte(row.CallFrameJSON), &frame); err != nil {
+				return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
+			}
+
+			var env PersistedResultEnvelope
+			if len(row.SelfPayload) > 0 {
+				if err := json.Unmarshal(row.SelfPayload, &env); err != nil {
+					return fmt.Errorf("import result %d self payload: %w", resultID, err)
+				}
+			} else {
+				env = PersistedResultEnvelope{
+					Version: 1,
+					Kind:    persistedResultKindNull,
+				}
+			}
+			if env.Kind == "" {
+				return fmt.Errorf("import result %d: empty self payload kind", resultID)
+			}
+
+			var outputEffects []string
+			if row.OutputEffectIDs != "" {
+				if err := json.Unmarshal([]byte(row.OutputEffectIDs), &outputEffects); err != nil {
+					return fmt.Errorf("import result %d output effect IDs: %w", resultID, err)
+				}
+			}
+
+			res := &sharedResult{
+				cache:                c,
+				id:                   resultID,
+				resultCallFrame:      frame.clone(),
+				safeToPersistCache:   row.SafeToPersistCache,
+				depOfPersistedResult: row.DepOfPersistedResult,
+				outputEffectIDs:      outputEffects,
+				expiresAtUnix:        row.ExpiresAtUnix,
+				createdAtUnixNano:    row.CreatedAtUnixNano,
+				lastUsedAtUnixNano:   row.LastUsedAtUnixNano,
+				sizeEstimateBytes:    row.SizeEstimateBytes,
+				usageIdentity:        row.UsageIdentity,
+				description:          row.Description,
+				recordType:           row.RecordType,
+				persistedEnvelope:    &env,
+			}
+
+			if env.Kind == persistedResultKindNull {
+				res.hasValue = true
 				res.persistedEnvelope = nil
-				c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, canonicalID.Digest().String(), "materialized")
+				c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, "", "nil")
+			} else {
+				eagerDecodeResultIDs = append(eagerDecodeResultIDs, resultID)
 			}
-		}
-		if res.persistedEnvelope != nil && !res.hasValue {
-			c.tracePersistedPayloadImportedLazy(ctx, importRunID, resultID, canonicalID.Digest().String(), env.Kind, env.TypeName)
-		}
-		if res.usageIdentity == "" {
-			if usageIdentity, ok := cacheUsageIdentity(res); ok {
-				res.usageIdentity = usageIdentity
+			if res.usageIdentity == "" {
+				if usageIdentity, ok := cacheUsageIdentity(res); ok {
+					res.usageIdentity = usageIdentity
+				}
 			}
+
+			c.resultsByID[resultID] = res
+			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
 		}
 
-		c.resultsByID[resultID] = res
-		c.resultCanonicalIDs[resultID] = canonicalID.With()
-		c.traceImportResultLoaded(ctx, importRunID, resultID, canonicalID.Digest().String(), row.CanonicalID)
-	}
-
-	type importTermInput struct {
-		position       int
-		inputEqClassID eqClassID
-		provenanceKind egraphInputProvenanceKind
-	}
-	inputsByTermID := make(map[egraphTermID][]importTermInput, len(termRows))
-	for _, row := range termInputRows {
-		termID := egraphTermID(row.TermID)
-		if termID == 0 {
-			return fmt.Errorf("import term_input: zero term_id")
+		type importTermInput struct {
+			position       int
+			inputEqClassID eqClassID
+			provenanceKind egraphInputProvenanceKind
 		}
-		provenance := egraphInputProvenanceKind(row.ProvenanceKind)
-		switch provenance {
-		case egraphInputProvenanceKindResult, egraphInputProvenanceKindDigest:
-		default:
-			return fmt.Errorf("import term_input %d/%d: unsupported provenance %q", row.TermID, row.Position, row.ProvenanceKind)
+		inputsByTermID := make(map[egraphTermID][]importTermInput, len(termRows))
+		for _, row := range termInputRows {
+			termID := egraphTermID(row.TermID)
+			if termID == 0 {
+				return fmt.Errorf("import term_input: zero term_id")
+			}
+			provenance := egraphInputProvenanceKind(row.ProvenanceKind)
+			switch provenance {
+			case egraphInputProvenanceKindResult, egraphInputProvenanceKindDigest:
+			default:
+				return fmt.Errorf("import term_input %d/%d: unsupported provenance %q", row.TermID, row.Position, row.ProvenanceKind)
+			}
+			inputsByTermID[termID] = append(inputsByTermID[termID], importTermInput{
+				position:       int(row.Position),
+				inputEqClassID: eqClassID(row.InputEqClassID),
+				provenanceKind: provenance,
+			})
 		}
-		inputsByTermID[termID] = append(inputsByTermID[termID], importTermInput{
-			position:       int(row.Position),
-			inputEqClassID: eqClassID(row.InputEqClassID),
-			provenanceKind: provenance,
-		})
-	}
 
 	var maxTermID egraphTermID
 	for _, row := range termRows {
@@ -347,19 +339,6 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 		}
 	}
 
-	for resultID, res := range c.resultsByID {
-		if res == nil || res.resultCallFrame != nil {
-			continue
-		}
-		canonicalID := c.resultCanonicalIDs[resultID]
-		if canonicalID == nil {
-			return fmt.Errorf("import result %d call frame: missing canonical ID", resultID)
-		}
-		if err := c.ensureResultCallFrameLocked(ctx, res, canonicalID); err != nil {
-			return fmt.Errorf("import result %d call frame: %w", resultID, err)
-		}
-	}
-
 	c.nextSharedResultID = maxResultID + 1
 	c.nextEgraphTermID = maxTermID + 1
 	c.nextEgraphClassID = maxEqClassID + 1
@@ -371,6 +350,43 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 	}
 	if c.nextEgraphClassID == 0 {
 		c.nextEgraphClassID = 1
+	}
+
+		return nil
+	}()
+	c.egraphMu.Unlock()
+	if importErr != nil {
+		return importErr
+	}
+
+	for _, resultID := range eagerDecodeResultIDs {
+		res := c.resultsByID[resultID]
+		if res == nil || res.hasValue || res.persistedEnvelope == nil {
+			continue
+		}
+		id, err := c.persistedCallIDByResultID(ctx, resultID)
+		if err != nil {
+			continue
+		}
+		decodeCtx := ContextWithID(ctx, id)
+		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), id, *res.persistedEnvelope); err == nil && decoded != nil {
+			res.self = decoded.Unwrap()
+			res.hasValue = true
+			if objRes, ok := decoded.(AnyObjectResult); ok {
+				res.objType = objRes.ObjectType()
+			}
+			setTypedPersistedResultID(res.self, resultID)
+			res.persistedEnvelope = nil
+			c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, "", "materialized")
+		}
+	}
+
+	for _, resultID := range eagerDecodeResultIDs {
+		res := c.resultsByID[resultID]
+		if res == nil || res.persistedEnvelope == nil || res.hasValue {
+			continue
+		}
+		c.tracePersistedPayloadImportedLazy(ctx, importRunID, resultID, "", res.persistedEnvelope.Kind, res.persistedEnvelope.TypeName)
 	}
 
 	return nil
@@ -400,7 +416,8 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 		return hit, nil
 	}
 
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, dag, *env)
+	decodeCtx := ContextWithID(ctx, hit.ID())
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), hit.ID(), *env)
 	if err != nil {
 		c.tracePersistedPayloadDecodeFailed(ctx, res, env, err)
 		return nil, fmt.Errorf("decode persisted hit payload: %w", err)

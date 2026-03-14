@@ -355,7 +355,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	return enc, nil
 }
 
-func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, id *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *call.ID, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedContainerPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted container payload: %w", err)
@@ -402,7 +402,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	}
 
 	var metaSnapshot bkcache.ImmutableRef
-	links, err := loadPersistedSnapshotLinksForID(ctx, dag, id)
+	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "container")
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		if link.Role != "meta" {
 			continue
 		}
-		metaSnapshot, _, err = loadPersistedImmutableSnapshot(ctx, dag, id, "meta")
+		metaSnapshot, _, err = loadPersistedImmutableSnapshotByResultID(ctx, dag, resultID, "container", "meta")
 		if err != nil {
 			return nil, err
 		}

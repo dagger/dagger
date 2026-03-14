@@ -66,25 +66,6 @@ func decodePersistedCallID(raw string) (*call.ID, error) {
 	return &id, nil
 }
 
-func loadPersistedCallIDByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label string) (*call.ID, error) {
-	if resultID == 0 {
-		return nil, nil
-	}
-	query, err := persistedDecodeQuery(dag)
-	if err != nil {
-		return nil, fmt.Errorf("load persisted %s query: %w", label, err)
-	}
-	cache, err := query.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load persisted %s cache: %w", label, err)
-	}
-	id, err := cache.PersistedCallIDByResultID(ctx, resultID)
-	if err != nil {
-		return nil, fmt.Errorf("load persisted %s ID: %w", label, err)
-	}
-	return id, nil
-}
-
 func loadPersistedResultByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label string) (dagql.AnyResult, error) {
 	if resultID == 0 {
 		return nil, nil
@@ -127,47 +108,51 @@ func loadPersistedObjectResultByResultID[T dagql.Typed](ctx context.Context, dag
 	return typed, nil
 }
 
-func loadPersistedSnapshotLink(ctx context.Context, dag *dagql.Server, id *call.ID, role string) (dagql.PersistedSnapshotRefLink, error) {
-	if id == nil {
-		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted snapshot link: nil ID")
+func loadPersistedSnapshotLinkByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label, role string) (dagql.PersistedSnapshotRefLink, error) {
+	if resultID == 0 {
+		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: zero result ID", label)
 	}
 	query, err := persistedDecodeQuery(dag)
 	if err != nil {
-		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted snapshot link query: %w", err)
+		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link query: %w", label, err)
 	}
 	cache, err := query.Cache(ctx)
 	if err != nil {
-		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted snapshot link cache: %w", err)
+		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link cache: %w", label, err)
 	}
-	links, err := cache.PersistedSnapshotLinks(ctx, id)
+	links, err := cache.PersistedSnapshotLinksByResultID(ctx, resultID)
 	if err != nil {
-		return dagql.PersistedSnapshotRefLink{}, err
+		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: %w", label, err)
 	}
 	for _, link := range links {
 		if link.Role == role {
 			return link, nil
 		}
 	}
-	return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("missing persisted snapshot link role %q for %s", role, id.Digest())
+	return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("missing persisted %s snapshot link role %q for result %d", label, role, resultID)
 }
 
-func loadPersistedSnapshotLinksForID(ctx context.Context, dag *dagql.Server, id *call.ID) ([]dagql.PersistedSnapshotRefLink, error) {
-	if id == nil {
-		return nil, fmt.Errorf("load persisted snapshot links: nil ID")
+func loadPersistedSnapshotLinksByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label string) ([]dagql.PersistedSnapshotRefLink, error) {
+	if resultID == 0 {
+		return nil, fmt.Errorf("load persisted %s snapshot links: zero result ID", label)
 	}
 	query, err := persistedDecodeQuery(dag)
 	if err != nil {
-		return nil, fmt.Errorf("load persisted snapshot links query: %w", err)
+		return nil, fmt.Errorf("load persisted %s snapshot links query: %w", label, err)
 	}
 	cache, err := query.Cache(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("load persisted snapshot links cache: %w", err)
+		return nil, fmt.Errorf("load persisted %s snapshot links cache: %w", label, err)
 	}
-	return cache.PersistedSnapshotLinks(ctx, id)
+	links, err := cache.PersistedSnapshotLinksByResultID(ctx, resultID)
+	if err != nil {
+		return nil, fmt.Errorf("load persisted %s snapshot links: %w", label, err)
+	}
+	return links, nil
 }
 
-func loadPersistedImmutableSnapshot(ctx context.Context, dag *dagql.Server, id *call.ID, role string) (bkcache.ImmutableRef, dagql.PersistedSnapshotRefLink, error) {
-	link, err := loadPersistedSnapshotLink(ctx, dag, id, role)
+func loadPersistedImmutableSnapshotByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label, role string) (bkcache.ImmutableRef, dagql.PersistedSnapshotRefLink, error) {
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, label, role)
 	if err != nil {
 		return nil, dagql.PersistedSnapshotRefLink{}, err
 	}
@@ -182,8 +167,8 @@ func loadPersistedImmutableSnapshot(ctx context.Context, dag *dagql.Server, id *
 	return ref, link, nil
 }
 
-func loadPersistedMutableSnapshot(ctx context.Context, dag *dagql.Server, id *call.ID, role string) (bkcache.MutableRef, dagql.PersistedSnapshotRefLink, error) {
-	link, err := loadPersistedSnapshotLink(ctx, dag, id, role)
+func loadPersistedMutableSnapshotByResultID(ctx context.Context, dag *dagql.Server, resultID uint64, label, role string) (bkcache.MutableRef, dagql.PersistedSnapshotRefLink, error) {
+	link, err := loadPersistedSnapshotLinkByResultID(ctx, dag, resultID, label, role)
 	if err != nil {
 		return nil, dagql.PersistedSnapshotRefLink{}, err
 	}

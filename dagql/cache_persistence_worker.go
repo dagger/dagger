@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 )
 
@@ -94,11 +93,6 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			continue
 		}
 
-		canonicalID := c.resultCanonicalIDs[resultID]
-		if canonicalID != nil {
-			canonicalID = canonicalID.With()
-		}
-
 		depIDs := make([]sharedResultID, 0, len(res.deps))
 		for depID := range res.deps {
 			depIDs = append(depIDs, depID)
@@ -157,7 +151,6 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:    resultID,
-			canonicalID: canonicalID,
 			shared: &sharedResult{
 				self:                   res.self,
 				objType:                res.objType,
@@ -230,11 +223,11 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 	for i := range snapshot.results {
 		resultSnapshot := &snapshot.results[i]
-		if resultSnapshot.canonicalID == nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing canonical ID", resultSnapshot.resultID)
+		if resultSnapshot.shared.resultCallFrame == nil {
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d: missing result call frame", resultSnapshot.resultID)
 		}
 
-		env, err := c.persistResultEnvelope(ctx, resultSnapshot.shared, resultSnapshot.canonicalID)
+		env, err := c.persistResultEnvelope(ctx, resultSnapshot.resultID, resultSnapshot.shared)
 		switch {
 		case errors.Is(err, ErrPersistStateNotReady):
 			return persistStateSnapshot{}, err
@@ -250,14 +243,14 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		if err != nil {
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d output effect IDs: %w", resultSnapshot.resultID, err)
 		}
-		canonicalID, err := resultSnapshot.canonicalID.Encode()
+		callFrameJSON, err := json.Marshal(resultSnapshot.shared.resultCallFrame)
 		if err != nil {
-			return persistStateSnapshot{}, fmt.Errorf("persist result %d canonical ID: %w", resultSnapshot.resultID, err)
+			return persistStateSnapshot{}, fmt.Errorf("persist result %d call frame JSON: %w", resultSnapshot.resultID, err)
 		}
 
 		resultSnapshot.row = persistdb.MirrorResult{
 			ID:                   int64(resultSnapshot.resultID),
-			CanonicalID:          canonicalID,
+			CallFrameJSON:        string(callFrameJSON),
 			SelfPayload:          payload,
 			OutputEffectIDs:      string(outputEffectIDs),
 			SafeToPersistCache:   resultSnapshot.shared.safeToPersistCache,
@@ -345,7 +338,7 @@ func (c *cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	return nil
 }
 
-func (c *cache) persistResultEnvelope(ctx context.Context, res *sharedResult, canonicalID *call.ID) (PersistedResultEnvelope, error) {
+func (c *cache) persistResultEnvelope(ctx context.Context, resultID sharedResultID, res *sharedResult) (PersistedResultEnvelope, error) {
 	if res != nil && res.persistedEnvelope != nil {
 		return *res.persistedEnvelope, nil
 	}
@@ -355,12 +348,13 @@ func (c *cache) persistResultEnvelope(ctx context.Context, res *sharedResult, ca
 			Kind:    persistedResultKindNull,
 		}, nil
 	}
-	if canonicalID == nil {
-		return PersistedResultEnvelope{}, fmt.Errorf("result has nil canonical ID and no persisted envelope")
+	id, err := c.persistedCallIDByResultID(ctx, resultID)
+	if err != nil {
+		return PersistedResultEnvelope{}, fmt.Errorf("result has no reconstructable frame ID and no persisted envelope: %w", err)
 	}
 	typedRes := Result[Typed]{
 		shared: res,
-		id:     canonicalID,
+		id:     id,
 	}
 	var anyRes AnyResult = typedRes
 	if res.objType != nil {
@@ -371,7 +365,7 @@ func (c *cache) persistResultEnvelope(ctx context.Context, res *sharedResult, ca
 		anyRes = objRes
 	}
 	persistCtx := context.WithoutCancel(ctx)
-	persistCtx = ContextWithID(persistCtx, canonicalID)
+	persistCtx = ContextWithID(persistCtx, id)
 	return DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, anyRes)
 }
 
