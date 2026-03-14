@@ -344,6 +344,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	ChangesetMergeConflictEnum.Install(srv)
 	ChangesetsMergeConflictEnum.Install(srv)
+	core.ChangesetDiffStatKindEnum.Install(srv)
 }
 
 type directoryPipelineArgs struct {

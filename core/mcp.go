@@ -394,7 +394,20 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	return nil
 }
 
-func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
+func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) string {
+	// Try to return the raw patch so the LLM can see the actual diff.
+	// Fall back to a structured summary for large changesets.
+	var rawPatch string
+	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
+		View:  srv.View,
+		Field: "asPatch",
+	}, dagql.Selector{
+		View:  srv.View,
+		Field: "contents",
+	}); err == nil && rawPatch != "" && strings.Count(rawPatch, "\n") <= 100 {
+		return rawPatch
+	}
+
 	const summaryWidth = 80
 
 	var diffStat []*ChangesetDiffStatEntry
@@ -402,14 +415,14 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 		View:  srv.View,
 		Field: "diffStat",
 	}); err != nil {
-		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err), nil
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
 	}
 
 	entries := make([]patchpreview.Entry, len(diffStat))
 	for i, s := range diffStat {
-		entries[i] = patchpreview.Entry{Path: s.Path, Kind: s.Kind, Added: s.AddedLines, Removed: s.RemovedLines}
+		entries[i] = patchpreview.Entry{Path: s.Path, Kind: string(s.Kind), Added: s.AddedLines, Removed: s.RemovedLines}
 	}
-	return patchpreview.SummarizeString(entries, summaryWidth), nil
+	return patchpreview.SummarizeString(entries, summaryWidth)
 }
 
 func toAny(v any) (res map[string]any, rerr error) {
@@ -742,7 +755,7 @@ func (m *MCP) call(ctx context.Context,
 		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
 			return "", err
 		}
-		return m.summarizePatch(ctx, srv, changes)
+		return m.summarizePatch(ctx, srv, changes), nil
 	}
 
 	if autoConstruct != nil {

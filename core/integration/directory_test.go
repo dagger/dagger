@@ -1602,7 +1602,6 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
 		require.Error(t, err)
 	})
-
 }
 
 func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Context, t *testctx.T) {

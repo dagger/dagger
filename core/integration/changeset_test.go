@@ -779,8 +779,6 @@ func (s ChangesetSuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
 	}, true)
 }
 
-
-
 func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Directory, *dagger.Changeset) *dagger.Directory, leaveDirs bool) {
 	t.Run("basic usage with added, changed, and removed files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

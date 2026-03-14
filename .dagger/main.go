@@ -28,11 +28,27 @@ func (dev *DaggerDev) Generated(ctx context.Context) error {
 		}
 		entries := make([]patchpreview.Entry, len(diffStat))
 		for i, s := range diffStat {
+			path, err := s.Path(ctx)
+			if err != nil {
+				return err
+			}
+			kind, err := s.Kind(ctx)
+			if err != nil {
+				return err
+			}
+			added, err := s.AddedLines(ctx)
+			if err != nil {
+				return err
+			}
+			removed, err := s.RemovedLines(ctx)
+			if err != nil {
+				return err
+			}
 			entries[i] = patchpreview.Entry{
-				Path:    s.Path,
-				Kind:    s.Kind,
-				Added:   s.AddedLines,
-				Removed: s.RemovedLines,
+				Path:    path,
+				Kind:    kind,
+				Added:   added,
+				Removed: removed,
 			}
 		}
 		fmt.Fprintln(os.Stderr, patchpreview.SummarizeString(entries, 80))
