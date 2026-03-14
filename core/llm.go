@@ -300,6 +300,16 @@ func (m *LLMMessage) IsToolResult() bool {
 	return false
 }
 
+// ToolResultContent returns the text from the first TOOL_RESULT block, if any.
+func (m *LLMMessage) ToolResultContent() string {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return b.Text
+		}
+	}
+	return ""
+}
+
 // ToolResultCallID returns the call ID from the first TOOL_RESULT block, if any.
 func (m *LLMMessage) ToolResultCallID() string {
 	for _, b := range m.Content {
@@ -1353,7 +1363,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				},
 				{
 					Name:  "content",
-					Value: dagql.NewString(msg.TextContent()),
+					Value: dagql.NewString(msg.ToolResultContent()),
 				},
 				{
 					Name:  "errored",
