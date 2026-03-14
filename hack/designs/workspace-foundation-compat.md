@@ -1988,6 +1988,41 @@ Locked next step:
 - only fall back to the opaque `toolchains/engine-dev` surface again if native
   `go test` proves non-viable on this host
 
+### 2026-03-14: Native `go test` Blocked On Darwin Host Build Constraints
+
+Tried the first retained entrypoint test natively from the repo worktree:
+
+- `env GOCACHE=/tmp/go-build go test ./core/integration -run 'TestWorkspace/TestBlueprintFunctionsIncludesOtherModules' -count=1 -v -timeout=3m`
+
+Observed result:
+
+- immediate build failure in `engine/buildkit` on Linux-only `unix.*` symbols:
+  - `undefined: unix.OpenTree`
+  - `undefined: unix.OPEN_TREE_CLONE`
+  - `undefined: unix.OPEN_TREE_CLOEXEC`
+  - `undefined: unix.AT_RECURSIVE`
+  - `undefined: unix.Unshare`
+  - `undefined: unix.CLONE_FS`
+  - `undefined: unix.Setns`
+- the retained `TestWorkspace/*` slice therefore cannot be validated natively on
+  this Darwin host
+
+Scope consequence:
+
+- the fallback to native `go test` is not viable here
+- this is the same host/build-constraint class already noted earlier for other
+  packages on this branch, but it is now directly confirmed for
+  `./core/integration` too
+
+Locked next step:
+
+- keep validation containerized, but move off the opaque `EngineDev.test`
+  wrapper onto a more direct local-playground/container execution path that can
+  run `go test` against this branch's source while surfacing the inner test
+  output directly
+- do not classify the existing local CLI WIP until that more observable
+  containerized rerun produces attributable results
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
