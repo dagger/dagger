@@ -2072,6 +2072,42 @@ Why this is the chosen next harness:
   `combined-output` should expose the actual inner `go test` output from the
   same Linux-native dev-engine environment
 
+### 2026-03-14: Raw Local Playground Call Still Needs Outer Watchdog
+
+Ran the first retained test with direct `playground` + `combined-output`:
+
+- `dagger --progress=logs call -m ./toolchains/engine-dev playground --shared-cache with-mounted-directory --path=/src/dagger --source=. with-workdir --path=/src/dagger with-exec --args=sh --args=-lc --args='env GOCACHE=/tmp/go-build go test ./core/integration -run "^TestWorkspace/TestBlueprintFunctionsIncludesOtherModules$" -count=1 -v -timeout=3m' combined-output`
+
+Observed behavior:
+
+- the outer `dagger call` remained alive beyond the inner `go test -timeout=3m`
+  window
+- no inner `go test` stdout/stderr had been surfaced yet when the process-state
+  check was taken
+- that means moving from `EngineDev.test(...)` to raw `playground` was not
+  sufficient by itself to make the validation pass handoff-safe
+
+Scope consequence:
+
+- the remaining missing piece is now specifically the outer wrapper behavior
+  from `engine-dev-testing/with-playground.sh`:
+  - heartbeat output during the long build/run window
+  - an outer watchdog timeout
+  - controlled trace capture on failure/timeout
+- the underlying `playground` path still appears to be the right execution
+  layer, but not as a naked synchronous `dagger call`
+
+Locked next step:
+
+- run a one-off local wrapper modeled on `engine-dev-testing/with-playground.sh`
+  that:
+  - uses `engine-dev playground` from this branch
+  - mounts this checkout at `src/dagger`
+  - writes the inner `go test` command to `/tmp/inner.sh`
+  - adds heartbeat output and an outer watchdog timeout
+- use that wrapped run as the authoritative next signal for
+  `TestWorkspace/TestBlueprintFunctionsIncludesOtherModules`
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
