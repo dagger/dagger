@@ -55,6 +55,10 @@ func (dev *EngineDev) Test(
 	// Enable the given ebpf progs in the engine during tests
 	// +optional
 	ebpfProgs []string,
+	// Mount a Dagger config file (e.g. ~/.config/dagger/config.toml) into
+	// the test container for LLM integration tests.
+	// +optional
+	configFile *dagger.Secret,
 ) error {
 	// FIXME: use the damn standard Go toolchain
 	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
@@ -73,6 +77,7 @@ func (dev *EngineDev) Test(
 		envs:          envFile,
 		testVerbose:   testVerbose,
 		update:        update,
+		configFile:    configFile,
 	},
 	).Sync(ctx)
 	return err
@@ -148,6 +153,7 @@ type testOpts struct {
 	envs          *dagger.Secret
 	testVerbose   bool
 	bench         bool
+	configFile    *dagger.Secret
 }
 
 func (dev *EngineDev) test(
@@ -160,6 +166,12 @@ func (dev *EngineDev) test(
 ) *dagger.Container {
 	if opts.envs != nil {
 		container = container.WithMountedSecret("/dagger.env", opts.envs)
+	}
+
+	// Mount the Dagger config file so LLM integration tests can find it.
+	// The path matches the default XDG location inside the container.
+	if opts.configFile != nil {
+		container = container.WithMountedSecret("/root/.config/dagger/config.toml", opts.configFile)
 	}
 
 	cgoEnabledEnv := "0"

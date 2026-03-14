@@ -889,6 +889,9 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
+		if client.clientMetadata.ConfigPath == "" && opts.ClientMetadata.ConfigPath != "" {
+			client.clientMetadata.ConfigPath = opts.ClientMetadata.ConfigPath
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -959,10 +962,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 	allowedLLMModules := execMD.AllowedLLMModules
 	eagerRuntime := false
+	configPath := ""
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		eagerRuntime = md.EagerRuntime
+		configPath = md.ConfigPath
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -977,6 +982,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
 			EagerRuntime:      eagerRuntime,
+			ConfigPath:        configPath,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
