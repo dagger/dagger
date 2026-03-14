@@ -373,7 +373,7 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 	return nil
 }
 
-func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResult[*Directory]) error {
+func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResult[*Workspace]) error {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("get dagql server: %w", err)
@@ -386,7 +386,7 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 		Args: []dagql.NamedInput{
 			{
 				Name:  "workspace",
-				Value: dagql.NewID[*Directory](workspace.ID()),
+				Value: dagql.NewID[*Workspace](workspace.ID()),
 			},
 		},
 	}); err != nil {
@@ -766,13 +766,12 @@ func (m *MCP) call(ctx context.Context,
 		return "", nil
 	}
 
-	// NOTE: returning a Changeset behaves similarly to returning an Env; it is
-	// directly applied to the Env.
+	// NOTE: returning a Changeset stages it in the workspace's git index.
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
-		var newWS dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, m.env.Self().Workspace, &newWS, dagql.Selector{
+		var staged dagql.Boolean
+		if err := srv.Select(ctx, m.env.Self().Workspace, &staged, dagql.Selector{
 			View:  srv.View,
-			Field: "withChanges",
+			Field: "stage",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "changes",
@@ -780,9 +779,6 @@ func (m *MCP) call(ctx context.Context,
 				},
 			},
 		}); err != nil {
-			return "", err
-		}
-		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
 			return "", err
 		}
 		return m.summarizePatch(ctx, srv, changes)
@@ -1253,13 +1249,28 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically.
+	// Resolve the workspace's root directory for the container sync.
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	var wsDir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, m.env.Self().Workspace, &wsDir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(".")},
+		},
+	}); err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
 	var results []*LLMMessage
-	snapshot, hasChanges, err := mcpCfg.Service.Self().runAndSnapshotChanges(
+	_, _, err = mcpCfg.Service.Self().runAndSnapshotChanges(
 		ctx,
 		sess.ID(),
 		ctr.Config.WorkingDir,
-		m.env.Self().Workspace.Self(),
+		wsDir.Self(),
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
 			results = m.callBatchRegular(ctx, tools, toolCalls)
@@ -1271,12 +1282,8 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	// Apply workspace changes if any were made
-	if hasChanges {
-		if err := m.updateEnvWorkspace(ctx, snapshot); err != nil {
-			slog.Error("failed to update workspace after MCP server batch", "server", serverName, "error", err)
-		}
-	}
+	// MCP server changes are synced back through their own tool results
+	// (Changeset returns will be staged via the normal Changeset handling path).
 
 	return results
 }

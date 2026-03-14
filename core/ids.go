@@ -50,6 +50,7 @@ type LLMID = dagql.ID[*LLM]
 type EnvID = dagql.ID[*Env]
 
 type EnvFileID = dagql.ID[*EnvFile]
+type WorkspaceID = dagql.ID[*Workspace]
 
 type ID struct {
 	Inner *call.ID
