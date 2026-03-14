@@ -16503,8 +16503,32 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-branch" href="#Workspace-branch"><code>branch</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The Git branch this workspace is on. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The client ID that owns this workspace's host filesystem. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-commit" href="#Workspace-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                          <p>Commit whatever is currently staged in the workspace&#39;s git index.</p>
+                          <p>Returns the commit hash. Fails if there is nothing staged.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>message</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The commit message.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
@@ -16689,6 +16713,50 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>limit</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
                                 <p>Limit the number of results to return</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-stage" href="#Workspace-stage"><code>stage</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td>
+                          <p>Apply a Changeset to the workspace and stage the affected paths in git.</p>
+                          <p>Files are written (added/modified) and removed on disk, then precisely</p>
+                          <p>the changed paths are staged via git add / git rm. Any pre-existing</p>
+                          <p>unstaged user edits are preserved as unstaged changes.</p>
+                          <p>Returns true if any changes were staged, false if the changeset was empty.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span></h6>
+                                <p>The changes to apply and stage.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-withBranch" href="#Workspace-withBranch"><code>withBranch</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td>
+                          <p>Return a Workspace for the given branch. If the branch is different from</p>
+                          <p>the currently checked-out branch, a git worktree is created on the host.</p>
+                          <p>If the branch does not exist, it is created from the current branch tip.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>branch</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The branch name (e.g. &quot;agent/auth&quot;).</p>
                               </div>
                             </div>
                           </div>

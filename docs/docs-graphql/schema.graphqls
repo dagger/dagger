@@ -5961,8 +5961,21 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
+  """The Git branch this workspace is on."""
+  branch: String!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
+
+  """
+  Commit whatever is currently staged in the workspace's git index.
+
+  Returns the commit hash. Fails if there is nothing staged.
+  """
+  commit(
+    """The commit message."""
+    message: String!
+  ): String!
 
   """
   Returns a Directory from the workspace.
@@ -6087,6 +6100,34 @@ type Workspace {
     """Limit the number of results to return"""
     limit: Int
   ): [SearchResult!]!
+
+  """
+  Apply a Changeset to the workspace and stage the affected paths in git.
+
+  Files are written (added/modified) and removed on disk, then precisely
+
+  the changed paths are staged via git add / git rm. Any pre-existing
+
+  unstaged user edits are preserved as unstaged changes.
+
+  Returns true if any changes were staged, false if the changeset was empty.
+  """
+  stage(
+    """The changes to apply and stage."""
+    changes: ChangesetID!
+  ): Boolean!
+
+  """
+  Return a Workspace for the given branch. If the branch is different from
+
+  the currently checked-out branch, a git worktree is created on the host.
+
+  If the branch does not exist, it is created from the current branch tip.
+  """
+  withBranch(
+    """The branch name (e.g. "agent/auth")."""
+    branch: String!
+  ): Workspace!
 }
 
 """

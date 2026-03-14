@@ -14800,11 +14800,22 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
+	branch   *string
 	clientId *string
+	commit   *string
 	exists   *bool
 	findUp   *string
 	id       *WorkspaceID
 	root     *string
+	stage    *bool
+}
+type WithWorkspaceFunc func(r *Workspace) *Workspace
+
+// With calls the provided function with current Workspace.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
+	return f(r)
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -14813,12 +14824,41 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	}
 }
 
+// The Git branch this workspace is on.
+func (r *Workspace) Branch(ctx context.Context) (string, error) {
+	if r.branch != nil {
+		return *r.branch, nil
+	}
+	q := r.query.Select("branch")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The client ID that owns this workspace's host filesystem.
 func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	if r.clientId != nil {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commit whatever is currently staged in the workspace's git index.
+//
+// Returns the commit hash. Fails if there is nothing staged.
+func (r *Workspace) Commit(ctx context.Context, message string) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.query.Select("commit")
+	q = q.Arg("message", message)
 
 	var response string
 
@@ -15104,6 +15144,43 @@ func (r *Workspace) Search(ctx context.Context, pattern string, opts ...Workspac
 	}
 
 	return convert(response), nil
+}
+
+// Apply a Changeset to the workspace and stage the affected paths in git.
+//
+// Files are written (added/modified) and removed on disk, then precisely
+//
+// the changed paths are staged via git add / git rm. Any pre-existing
+//
+// unstaged user edits are preserved as unstaged changes.
+//
+// Returns true if any changes were staged, false if the changeset was empty.
+func (r *Workspace) Stage(ctx context.Context, changes *Changeset) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.stage != nil {
+		return *r.stage, nil
+	}
+	q := r.query.Select("stage")
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return a Workspace for the given branch. If the branch is different from
+//
+// the currently checked-out branch, a git worktree is created on the host.
+//
+// If the branch does not exist, it is created from the current branch tip.
+func (r *Workspace) WithBranch(branch string) *Workspace {
+	q := r.query.Select("withBranch")
+	q = q.Arg("branch", branch)
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // Sharing mode of the cache volume.

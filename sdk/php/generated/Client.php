@@ -305,14 +305,11 @@ class Client extends Client\AbstractClient
     /**
      * Initialize a Large Language Model (LLM)
      */
-    public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
+    public function llm(?string $model = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
         if (null !== $model) {
         $innerQueryBuilder->setArgument('model', $model);
-        }
-        if (null !== $maxAPICalls) {
-        $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -689,6 +686,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a LLMContentBlock from its ID.
+     */
+    public function loadLLMContentBlockFromID(LLMContentBlockId|LLMContentBlock $id): LLMContentBlock
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMContentBlockFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\LLMContentBlock($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a LLM from its ID.
      */
     public function loadLLMFromID(LLMId|LLM $id): LLM
@@ -699,6 +706,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a LLMMessage from its ID.
+     */
+    public function loadLLMMessageFromID(LLMMessageId|LLMMessage $id): LLMMessage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMMessageFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\LLMMessage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a LLMTokenUsage from its ID.
      */
     public function loadLLMTokenUsageFromID(LLMTokenUsageId|LLMTokenUsage $id): LLMTokenUsage
@@ -706,6 +723,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMTokenUsageFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a LLMToolCall from its ID.
+     */
+    public function loadLLMToolCallFromID(LLMToolCallId|LLMToolCall $id): LLMToolCall
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMToolCallFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\LLMToolCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
