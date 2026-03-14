@@ -1028,6 +1028,46 @@ type SubdirStager {
 		require.Contains(t, statusOut, "pkg/newpkg/hello.go")
 	})
 
+	t.Run("consecutive stages to different files without branch", func(ctx context.Context, t *testctx.T) {
+		// Mirrors the LLM write tool pattern: each stage uses
+		// directory(".", exclude: ["*"]) as the before (empty),
+		// and adds a single new file as the after.
+		ctr := workspaceBase(t, c).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("accum-nobranch", `
+type AccumNobranch {
+  pub run(ws: Workspace!): String! {
+    let empty = ws.directory(".", exclude: ["*"])
+    ws.stage(changes: empty.withNewFile("file-a.txt", contents: "aaa").changes(empty))
+    ws.stage(changes: empty.withNewFile("file-b.txt", contents: "bbb").changes(empty))
+    "done"
+  }
+}
+`))
+		staged := ctr.With(daggerCall("accum-nobranch", "run"))
+		_, err := staged.Stdout(ctx)
+		require.NoError(t, err)
+
+		statusOut, err := staged.
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, statusOut, "file-a.txt",
+			"file-a.txt from first stage should still be staged")
+		require.Contains(t, statusOut, "file-b.txt",
+			"file-b.txt from second stage should be staged")
+
+		diffOut, err := staged.
+			WithExec([]string{"git", "diff", "--cached"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, diffOut, "file-a.txt",
+			"file-a.txt should appear in staged diff")
+		require.Contains(t, diffOut, "file-b.txt",
+			"file-b.txt should appear in staged diff")
+	})
+
 	t.Run("consecutive stages to same file accumulate", func(ctx context.Context, t *testctx.T) {
 		// Build a 50-line file; each stage edits a different distant line
 		// so the changes don't overlap in a diff context window.
