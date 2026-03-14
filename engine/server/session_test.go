@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,10 @@ func TestPendingLegacyModule(t *testing.T) {
 			"abc123",
 			false,
 			map[string]any{"foo": "bar"},
+			[]*modules.ModuleConfigArgument{{
+				Argument:    "config",
+				DefaultPath: "./custom-config.txt",
+			}},
 		)
 
 		require.Equal(t, "github.com/acme/go-toolchain@main", mod.Ref)
@@ -38,6 +43,8 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.False(t, mod.Blueprint)
 		require.True(t, mod.LegacyDefaultPath)
 		require.Equal(t, map[string]any{"foo": "bar"}, mod.ConfigDefaults)
+		require.Len(t, mod.ArgCustomizations, 1)
+		require.Equal(t, "./custom-config.txt", mod.ArgCustomizations[0].DefaultPath)
 	})
 
 	t.Run("resolves local refs without ref pin", func(t *testing.T) {
@@ -50,6 +57,7 @@ func TestPendingLegacyModule(t *testing.T) {
 			"../blueprint",
 			"",
 			true,
+			nil,
 			nil,
 		)
 

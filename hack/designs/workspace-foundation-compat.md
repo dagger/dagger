@@ -51,10 +51,13 @@ Current implementation status:
   official repo-root `dagger generate -y ...` functions and trimmed back to the
   Workspace path-contract-related files only
 - next compat/runtime fix under that contract:
-  - legacy `defaultPath` failures are currently blocked by the root-`/`
-    sandbox bug in
-    [pathutil.go](/Users/shykes/git/github.com/dagger/dagger_workspace/engine/client/pathutil/pathutil.go),
-    not by a mismatch in the new Workspace path semantics
+  - the root-`/` sandbox bug was fixed in `bae60c5b2`
+    (`engine: fix sandboxing under root slash`)
+  - the targeted blueprint repro moved past the boundary failure on that fix
+  - the next remaining targeted runtime bug is legacy toolchain argument
+    customizations (`defaultPath`, `defaultAddress`, `ignore`) being dropped
+    during compat loading; the fix must stay inside the existing
+    workspace/session loader path
 
 ## Why This Split
 
@@ -1465,6 +1468,77 @@ Verification used to build this ledger:
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=1`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=5`
+
+### 2026-03-13: Legacy Toolchain Customization Threading
+
+After the root-`/` sandbox fix in `bae60c5b2`, the next remaining targeted
+toolchain failure narrowed to:
+
+- `core/integration/TestToolchain/TestToolchainsWithConfiguration/override constructor defaultPath argument`
+
+Known cause:
+
+- legacy compat parsing was preserving primitive constructor defaults via
+  `ConfigDefaults`, but not the broader legacy toolchain customizations needed
+  to restore `defaultPath`, `defaultAddress`, and `ignore`
+- that meant the existing workspace/session loader could load the toolchain
+  module, but its already-loaded typedefs no longer reflected the legacy
+  contextual argument overrides the tests expect
+
+Cleanup done before touching runtime:
+
+- `legacy.go` now reuses the authoritative `modules.ModuleConfig` schema instead
+  of maintaining a private `dagger.json` JSON shape
+  - committed in `8126a7a94`
+
+Current implementation for the runtime fix:
+
+- `pendingModule` carries `ArgCustomizations`
+- legacy toolchain compat extraction threads those customizations through
+  `pendingLegacyModule(...)`
+- `resolveModule(...)` applies them onto the already-loaded module typedefs
+- the applicator lives in `core/module.go` as
+  `ApplyLegacyCustomizationsToTypeDefs(customizations)`
+- the customizations are not stored on `core.Module`; they are applied during
+  load and discarded
+
+Guardrails preserved in this batch:
+
+- no second loader path under `ModuleSource.asModule()`
+- no rollback of `check` / `generate` away from workspace traversal
+- no CLI-side `dagger.json` mutation
+- no new persistent compat field on `core.Module`
+
+Supporting test-only cleanup:
+
+- `core/integration/workspace_test.go` had stale helper usage from the earlier
+  command/path-contract resets
+- that helper drift is fixed in `d6a7b60fb` (`test: fix workspace helper drift`)
+
+Focused verification for the in-flight runtime patch:
+
+- `env GOCACHE=/tmp/go-build go test ./core/workspace -run TestParseLegacyPins -count=1`
+  - result: passes
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core/workspace ./engine/server ./core ./core/integration`
+  - result: passes
+- added focused unit coverage in `core/module_legacy_test.go` for:
+  - constructor `defaultPath` + `ignore`
+  - chained function default-value override
+
+Validation gap still open at this checkpoint:
+
+- direct execution of `go test ./core` and `go test ./engine/server` remains
+  blocked on this Darwin host by the existing Linux-only `engine/buildkit` and
+  overlay snapshotter files
+- the `engine-dev` harness remains too opaque/slow to treat as a quick
+  validation loop for this one targeted fix
+
+Current stance:
+
+- this is an acceptable narrow compat fix because it only restores metadata that
+  the current loader already parsed and attached to the legacy toolchain path
+- the next step after landing it is a decisive targeted rerun of the remaining
+  toolchain integration repro
 
 ## User-Visible Breakage In The Foundation PR
 

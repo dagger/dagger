@@ -19,6 +19,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -1786,6 +1787,7 @@ type pendingModule struct {
 	// Workspace config defaults to apply to the module.
 	ConfigDefaults     map[string]any
 	DefaultsFromDotEnv bool
+	ArgCustomizations  []*modules.ModuleConfigArgument
 }
 
 type moduleLoadRequest struct {
@@ -1827,6 +1829,7 @@ func pendingLegacyModule(
 	name, source, pin string,
 	blueprint bool,
 	configDefaults map[string]any,
+	argCustomizations []*modules.ModuleConfigArgument,
 ) pendingModule {
 	kind := core.FastModuleSourceKindCheck(source, pin)
 	ref := source
@@ -1841,6 +1844,7 @@ func pendingLegacyModule(
 		Blueprint:         blueprint,
 		LegacyDefaultPath: true,
 		ConfigDefaults:    configDefaults,
+		ArgCustomizations: argCustomizations,
 	}
 	if kind == core.ModuleSourceKindLocal {
 		mod.RefPin = ""
@@ -1927,6 +1931,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			tc.Pin,
 			false,
 			tc.ConfigDefaults,
+			tc.Customizations,
 		))
 	}
 
@@ -1939,6 +1944,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			legacyBlueprint.Source,
 			legacyBlueprint.Pin,
 			true,
+			nil,
 			nil,
 		))
 	}
@@ -2214,6 +2220,9 @@ func (srv *Server) resolveModule(
 		resolved.Self().WorkspaceConfig = mod.ConfigDefaults
 		resolved.Self().DefaultsFromDotEnv = mod.DefaultsFromDotEnv
 		resolved.Self().ApplyWorkspaceDefaultsToTypeDefs()
+	}
+	if len(mod.ArgCustomizations) > 0 {
+		resolved.Self().ApplyLegacyCustomizationsToTypeDefs(mod.ArgCustomizations)
 	}
 
 	return resolved.Self(), nil

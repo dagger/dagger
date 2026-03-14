@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
@@ -345,6 +346,156 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs() {
 				arg.DefaultValue = jsonValue
 			}
 		}
+	}
+}
+
+func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(customizations []*modules.ModuleConfigArgument) {
+	if len(customizations) == 0 {
+		return
+	}
+	for _, cust := range customizations {
+		if cust == nil {
+			continue
+		}
+		fn, found := mod.lookupCustomizationFunction(cust.Function)
+		if !found {
+			continue
+		}
+		arg, found := lookupFunctionArg(fn, cust.Argument)
+		if !found {
+			continue
+		}
+		applyLegacyArgCustomization(arg, cust)
+	}
+}
+
+func (mod *Module) lookupCustomizationFunction(path []string) (*Function, bool) {
+	obj, ok := mod.MainObject()
+	if !ok {
+		return nil, false
+	}
+	if len(path) == 0 {
+		if !obj.Constructor.Valid {
+			return nil, false
+		}
+		return obj.Constructor.Value, true
+	}
+	for i, segment := range path {
+		fn, ok := functionByOriginalName(obj, segment)
+		if !ok {
+			return nil, false
+		}
+		if i == len(path)-1 {
+			return fn, true
+		}
+		nextObj, ok := mod.lookupCustomizationObject(fn.ReturnType)
+		if !ok {
+			return nil, false
+		}
+		obj = nextObj
+	}
+	return nil, false
+}
+
+func (mod *Module) lookupCustomizationObject(typeDef *TypeDef) (*ObjectTypeDef, bool) {
+	if typeDef == nil || !typeDef.AsObject.Valid {
+		return nil, false
+	}
+
+	obj := typeDef.AsObject.Value
+	if canonical, ok := mod.ObjectByOriginalName(obj.OriginalName); ok {
+		return canonical, true
+	}
+	if canonical, ok := mod.ObjectByName(obj.Name); ok {
+		return canonical, true
+	}
+	return obj, true
+}
+
+func functionByOriginalName(obj *ObjectTypeDef, name string) (*Function, bool) {
+	for _, fn := range obj.Functions {
+		if strings.EqualFold(fn.OriginalName, name) || strings.EqualFold(fn.Name, gqlFieldName(name)) {
+			return fn, true
+		}
+	}
+	return nil, false
+}
+
+func lookupFunctionArg(fn *Function, name string) (*FunctionArg, bool) {
+	for _, arg := range fn.Args {
+		if strings.EqualFold(arg.OriginalName, name) || strings.EqualFold(arg.Name, gqlFieldName(name)) {
+			return arg, true
+		}
+	}
+	return nil, false
+}
+
+func applyLegacyArgCustomization(arg *FunctionArg, cust *modules.ModuleConfigArgument) {
+	if jsonValue, ok := legacyArgDefaultValue(arg.TypeDef, cust.Default); ok {
+		arg.DefaultValue = jsonValue
+	}
+	if cust.DefaultPath != "" {
+		arg.DefaultPath = cust.DefaultPath
+		arg.DefaultAddress = ""
+		arg.TypeDef = arg.TypeDef.WithOptional(true)
+	}
+	if cust.DefaultAddress != "" {
+		arg.DefaultAddress = cust.DefaultAddress
+		arg.DefaultPath = ""
+		arg.TypeDef = arg.TypeDef.WithOptional(true)
+	}
+	if len(cust.Ignore) > 0 {
+		arg.Ignore = append([]string(nil), cust.Ignore...)
+	}
+}
+
+func legacyArgDefaultValue(typeDef *TypeDef, value string) (JSON, bool) {
+	if value == "" {
+		return nil, false
+	}
+	switch typeDef.Kind {
+	case TypeDefKindString:
+		marshaled, err := json.Marshal(value)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	case TypeDefKindInteger:
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, false
+		}
+		marshaled, err := json.Marshal(n)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	case TypeDefKindFloat:
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, false
+		}
+		marshaled, err := json.Marshal(f)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	case TypeDefKindBoolean:
+		b := value == "true"
+		marshaled, err := json.Marshal(b)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
+	default:
+		if json.Valid([]byte(value)) {
+			return JSON(value), true
+		}
+		marshaled, err := json.Marshal(value)
+		if err != nil {
+			return nil, false
+		}
+		return JSON(marshaled), true
 	}
 }
 
@@ -1059,7 +1210,6 @@ func (mod Module) Clone() *Module {
 			cp.WorkspaceConfig[k] = v
 		}
 	}
-
 	return &cp
 }
 
