@@ -1797,6 +1797,75 @@ Scope consequence:
   for both the workspace include fallback and the restored runtime-client
   contextual-dir reload path
 
+### 2026-03-14: Entrypoint Module Cherry-Pick Landed
+
+Cherry-picked the upstream schema-level entrypoint change from `workspace`:
+
+- `bbdfa797e` `workspace: move entrypoints to Query root`
+
+Branch-specific conflict resolution kept the `workspace-plumbing` scope
+intact:
+
+- kept PR A's no-new-targeting cut:
+  - did not reintroduce explicit workspace target parsing for
+    `call` / `functions`
+  - did not restore client-side workspace-target plumbing that belongs in the
+    deferred follow-up UX
+- removed the temporary CLI sibling-entrypoint workaround from
+  `cmd/dagger/call.go`, `cmd/dagger/functions.go`, and
+  `cmd/dagger/module_inspect.go`
+- kept the real schema/runtime change:
+  - `core.Module.InstallOpts` now carries `Entrypoint`
+  - `core/served_mods.go` preserves entrypoint install policy through module
+    dedupe/promotion
+  - `core/object.go` installs non-conflicting Query-root proxies for the
+    workspace entrypoint module's main-object methods
+  - `engine/server/session.go` threads entrypoint install policy through the
+    existing workspace/session loader path
+- preserved later local compat fixes in the same files:
+  - legacy toolchain customization threading
+  - legacy blueprint caller `.env` defaults
+  - runtime client content-digest cache seeding
+- pruned the upstream `workspace_test.go` tail back to PR A scope instead of
+  re-importing the deferred initialized-workspace/config/migrate suite
+  - kept the retained entrypoint-focused coverage only:
+    - `TestBlueprintFunctionsIncludesOtherModules`
+    - `TestEntrypointProxySkipsRootFieldConflicts`
+    - `TestEntrypointProxySkipsConstructorArgConflicts`
+  - kept `TestNestedModuleBeneathWorkspace` deferred per the earlier transplant
+    audit
+
+Focused verification for this cherry-pick:
+
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./cmd/dagger`
+  - result: passes
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core`
+  - result: passes
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./engine/server`
+  - result: passes
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./core/integration`
+  - result: passes
+
+Validation caveats:
+
+- native `env GOCACHE=/tmp/go-build go test ./cmd/dagger -count=1` on this
+  Darwin host still fails in `engine/buildkit` on Linux-only `unix.*` symbols;
+  this is the same host/build-constraint class seen elsewhere on the branch,
+  not a targeted entrypoint regression signal
+- targeted `toolchains/engine-dev` rerun for the three retained entrypoint
+  integration tests was started, but did not finish in a reasonable local
+  validation window; rerun that slice again before calling the entrypoint hold
+  bucket fully cleared:
+  - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)' --test-verbose`
+
+Current stance after this landing:
+
+- the schema-level entrypoint design is now present locally on
+  `workspace-plumbing`
+- the next follow-up is no longer "cherry-pick the entrypoint change"; it is
+  "rerun the entrypoint-sensitive hold bucket on top of this design and keep
+  only the fixes that still reproduce here"
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
