@@ -2178,6 +2178,41 @@ Locked next step:
   local-playground path itself as too expensive for this handoff window and
   record that explicitly before considering any further validation-path change
 
+### 2026-03-14: Reduced-Source Local Playground Still Too Expensive For Fast Reruns
+
+Reran the first retained test on the reduced-source wrapped harness with a
+longer `900s` outer watchdog.
+
+Observed result:
+
+- heartbeat stayed healthy for the entire 15-minute window
+- no inner `go test` stdout/stderr was surfaced before the watchdog fired
+- the wrapper exited with:
+  - `=== TIMEOUT: killed after 900s ===`
+- the trace tail still showed only early progress dots rather than the inner
+  test output
+
+Scope consequence:
+
+- for this local checkout, even the reduced-source `playground` path is too
+  expensive to serve as the primary immediate rerun loop for the retained
+  entrypoint bucket
+- this is now a validation-harness cost problem, not just a test-failure or
+  test-hang problem
+- importantly, no new functional code has been committed locally during this
+  pass; the local commits since takeover are ledger-only checkpoints, and the
+  uncommitted CLI WIP remains intentionally unverified
+
+Locked next step:
+
+- switch the next rerun attempt to a remote branch source that avoids local
+  `Directory` upload costs while still matching the current committed branch
+  behavior:
+  - use `origin/workspace-plumbing` or the equivalent GitHub ref as the source
+    payload for `src/dagger`
+- only return to local-source validation after a real code fix exists that is
+  not already represented by the remote branch contents
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
