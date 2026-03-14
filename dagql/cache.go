@@ -888,10 +888,14 @@ type cacheContextKey struct {
 func (c *cache) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
 		if err := c.persistCurrentState(ctx); err != nil {
+			slog.Error("failed to persist dagql cache during close", "err", err)
 			c.closeErr = errors.Join(c.closeErr, err)
 		}
 		if c.closeErr != nil {
-			c.closeErr = errors.Join(c.closeErr, closeCacheDBs(c.sqlDB, c.pdb))
+			if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+				slog.Error("failed to close dagql persistence databases after cache close error", "err", closeErr)
+				c.closeErr = errors.Join(c.closeErr, closeErr)
+			}
 			c.sqlDB = nil
 			c.pdb = nil
 			return
@@ -902,7 +906,10 @@ func (c *cache) Close(ctx context.Context) error {
 			}
 			slog.Warn("successfully marked clean shutdown in persistence metadata")
 		}
-		c.closeErr = closeCacheDBs(c.sqlDB, c.pdb)
+		if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+			slog.Error("failed to close dagql persistence databases", "err", closeErr)
+			c.closeErr = closeErr
+		}
 		c.sqlDB = nil
 		c.pdb = nil
 	})

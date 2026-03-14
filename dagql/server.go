@@ -729,40 +729,6 @@ func (s *Server) loadNthValue(
 	}, opts...)
 }
 
-func (s *Server) promoteDerivedObjectResult(
-	ctx context.Context,
-	res AnyResult,
-	opts ...CacheCallOpt,
-) (AnyResult, error) {
-	if res == nil || !s.isObjectType(res.Type().Name()) {
-		return res, nil
-	}
-	shared := res.cacheSharedResult()
-	if shared != nil && shared.cache != nil {
-		return res, nil
-	}
-
-	id := res.ID()
-	if id == nil {
-		return nil, fmt.Errorf("derived object result has no ID")
-	}
-	callCtx := srvToContext(idToContext(ctx, id), s)
-
-	if hit, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
-		ID: id,
-	}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("cache miss")
-	}, opts...); err == nil {
-		return hit, nil
-	}
-
-	return s.Cache.GetOrInitCall(callCtx, CacheKey{
-		ID: id,
-	}, func(context.Context) (AnyResult, error) {
-		return res, nil
-	}, opts...)
-}
-
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	callCtx := srvToContext(idToContext(ctx, id), s)
 

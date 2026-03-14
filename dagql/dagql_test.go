@@ -255,7 +255,7 @@ func TestSelectArray(t *testing.T) {
 		}),
 		dagql.Func("maybeShiftLeft", func(ctx context.Context, self *points.Point, _ struct{}) (dagql.Nullable[*points.Point], error) {
 			return dagql.NonNull(&points.Point{X: self.X - 1, Y: self.Y}), nil
-		}).DoNotCache("simple field selection"),
+		}),
 	}.Install(srv)
 
 	pointSel := dagql.Selector{

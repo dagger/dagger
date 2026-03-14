@@ -258,7 +258,7 @@ func (c *SessionCache) LoadPersistedObjectByResultID(ctx context.Context, dag *S
 	return base.LoadPersistedObjectByResultID(ctx, dag, resultID)
 }
 
-func (c *cache) persistedResultForShared(_ context.Context, res *sharedResult, requestedID *call.ID) (AnyResult, error) {
+func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult, requestedID *call.ID) (AnyResult, error) {
 	if res == nil {
 		return nil, fmt.Errorf("wrap persisted shared result: nil result")
 	}
@@ -266,7 +266,11 @@ func (c *cache) persistedResultForShared(_ context.Context, res *sharedResult, r
 		return nil, fmt.Errorf("wrap persisted shared result: nil requested ID")
 	}
 
-	c.egraphMu.RLock()
+	c.egraphMu.Lock()
+	if err := c.teachResultIdentityLocked(ctx, res, requestedID); err != nil {
+		c.egraphMu.Unlock()
+		return nil, fmt.Errorf("teach persisted shared result identity %q: %w", requestedID.Digest(), err)
+	}
 	retID := requestedID
 	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
 		// NOTE: if multiple content-labeled digests end up in one eq class, we
@@ -285,7 +289,7 @@ func (c *cache) persistedResultForShared(_ context.Context, res *sharedResult, r
 	}
 	outputEffectIDs := append([]string(nil), res.outputEffectIDs...)
 	objType := res.objType
-	c.egraphMu.RUnlock()
+	c.egraphMu.Unlock()
 
 	retID = retID.AppendEffectIDs(outputEffectIDs...)
 	retRes := Result[Typed]{

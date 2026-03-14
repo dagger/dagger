@@ -2373,6 +2373,69 @@ func TestEquivalentCandidateSelectionIdentityInvariant(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	shared := call.ExtraDigest{
+		Digest: digest.FromString("teach-hit-request-id-shared"),
+		Label:  "eq-shared",
+	}
+
+	parentAKey := cacheTestID("teach-hit-parent-a")
+	parentBKey := cacheTestID("teach-hit-parent-b")
+	parentAOut := parentAKey.With(call.WithExtraDigest(shared))
+	parentBOut := parentBKey.With(call.WithExtraDigest(shared))
+
+	parentARes, err := c.GetOrInitCall(ctx, CacheKey{ID: parentAKey}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(parentAOut, NewInt(1)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !parentARes.HitCache())
+
+	parentBRes, err := c.GetOrInitCall(ctx, CacheKey{ID: parentBKey}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(parentBOut, NewInt(2)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !parentBRes.HitCache())
+
+	childAKey := parentAKey.Append(Int(0).Type(), "teach-hit-child")
+	childBKey := parentBKey.Append(Int(0).Type(), "teach-hit-child")
+
+	childARes, err := c.GetOrInitCall(ctx, CacheKey{ID: childAKey}, func(context.Context) (AnyResult, error) {
+		return newDetachedResult(childAKey, NewInt(1001)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !childARes.HitCache())
+
+	childBInitCalls := 0
+	childBRes, err := c.GetOrInitCall(ctx, CacheKey{ID: childBKey}, func(context.Context) (AnyResult, error) {
+		childBInitCalls++
+		return newDetachedResult(childBKey, NewInt(1002)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, childBInitCalls)
+	assert.Assert(t, childBRes.HitCache())
+	assert.Equal(t, childBKey.Digest().String(), childBRes.ID().Digest().String())
+
+	c.egraphMu.RLock()
+	resolvedChildB, resolveErr := c.resolveSharedResultForInputIDLocked(ctx, childBKey)
+	c.egraphMu.RUnlock()
+	assert.NilError(t, resolveErr)
+	assert.Assert(t, resolvedChildB != nil)
+	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.id)
+
+	assert.NilError(t, childARes.Release(ctx))
+	assert.NilError(t, childBRes.Release(ctx))
+	assert.NilError(t, parentARes.Release(ctx))
+	assert.NilError(t, parentBRes.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestExtraDigestLabelIsolation(t *testing.T) {
 	t.Parallel()
 

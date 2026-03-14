@@ -824,8 +824,8 @@ func (c *cache) lookupCacheForID(
 		}
 	}
 
-	// We have a cache hit, make sure that the requested ID digest is in the same eq class as the
-	// cached result's output digest, and if not, merge them since we know them now to be equivalent
+	// We have a cache hit. Teach this request identity onto the existing shared
+	// result so any raw ID we hand back is itself resolvable by the cache later.
 	res := hitRes
 	// A TTL-bearing call can alias an existing result on lookup; apply the same
 	// conservative expiry merge policy here so TTL remains effective on hits.
@@ -845,53 +845,26 @@ func (c *cache) lookupCacheForID(
 		// persistence policy is finalized.
 		c.markResultAsDepOfPersistedLocked(ctx, res)
 	}
+	if err := c.teachResultIdentityLocked(ctx, res, id); err != nil {
+		return nil, false, err
+	}
 	newRefCount := atomic.AddInt64(&res.refCount, 1)
 	c.traceRefAcquired(ctx, res, newRefCount)
 
-	requestEqID := c.ensureEqClassForDigestLocked(ctx, id.Digest().String())
-	mergeIDs := make([]eqClassID, 0, 2+len(id.ExtraDigests()))
-	mergeIDs = append(mergeIDs, requestEqID)
-	if match.hitEqClassID != 0 {
-		mergeIDs = append(mergeIDs, match.hitEqClassID)
-	}
-	if hitTerm != nil {
-		mergeIDs = append(mergeIDs, hitTerm.outputEqID)
-	}
-	for _, extra := range id.ExtraDigests() {
-		if extra.Digest == "" {
-			continue
-		}
-		mergeIDs = append(mergeIDs, c.ensureEqClassForDigestLocked(ctx, extra.Digest.String()))
-	}
-	mergedOutputEqID := c.mergeEqClassesLocked(ctx, mergeIDs...)
-	if mergedOutputEqID != 0 && hitTerm != nil {
-		hitTerm.outputEqID = mergedOutputEqID
-	}
-	if mergedOutputEqID != 0 {
-		extras := c.eqClassExtraDigests[mergedOutputEqID]
-		if extras == nil {
-			extras = make(map[call.ExtraDigest]struct{}, len(id.ExtraDigests()))
-			c.eqClassExtraDigests[mergedOutputEqID] = extras
-		}
-		for _, extra := range id.ExtraDigests() {
-			if extra.Digest == "" {
-				continue
-			}
-			extras[extra] = struct{}{}
-		}
-	}
-
 	// Materialize caller-facing result preserving request recipe identity.
 	retID := id
-	if mergedOutputEqID != 0 {
+	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
 		// NOTE: if multiple content-labeled digests end up in one eq class, we
 		// intentionally tolerate that for now and just use the first one we
 		// encounter.
-		for extra := range c.eqClassExtraDigests[mergedOutputEqID] {
+		for extra := range c.eqClassExtraDigests[outputEqID] {
 			if extra.Label != call.ExtraDigestLabelContent || extra.Digest == "" {
 				continue
 			}
 			retID = retID.With(call.WithExtraDigest(extra))
+			break
+		}
+		if retID.ContentDigest() != "" {
 			break
 		}
 	}
@@ -1036,6 +1009,176 @@ func (c *cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest 
 	return root
 }
 
+func (c *cache) associateResultWithTermLocked(
+	ctx context.Context,
+	res *sharedResult,
+	termID egraphTermID,
+	inputProvenance []egraphInputProvenanceKind,
+) {
+	if res == nil || res.id == 0 || termID == 0 {
+		return
+	}
+	term := c.egraphTerms[termID]
+	if term == nil {
+		return
+	}
+	outputEqID := c.findEqClassLocked(term.outputEqID)
+	if outputEqID == 0 {
+		return
+	}
+	if existing, ok := c.termInputProvenance[termID]; ok {
+		if !sameInputProvenance(existing, inputProvenance) {
+			c.termInputProvenance[termID] = slices.Clone(inputProvenance)
+			c.traceResultTermAssocUpdated(ctx, res.id, termID, inputProvenance)
+		}
+	} else {
+		c.termInputProvenance[termID] = slices.Clone(inputProvenance)
+	}
+
+	resultOutputEqClasses := c.resultOutputEqClasses[res.id]
+	if resultOutputEqClasses == nil {
+		resultOutputEqClasses = make(map[eqClassID]struct{})
+		c.resultOutputEqClasses[res.id] = resultOutputEqClasses
+	}
+	if _, ok := resultOutputEqClasses[outputEqID]; !ok {
+		resultOutputEqClasses[outputEqID] = struct{}{}
+		c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
+	}
+}
+
+func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult, requestID *call.ID) error {
+	if res == nil || res.id == 0 || requestID == nil {
+		return nil
+	}
+	c.initEgraphLocked()
+
+	requestSelf, requestInputRefs, err := requestID.SelfDigestAndInputRefs()
+	if err != nil {
+		return fmt.Errorf("derive request term digests: %w", err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return fmt.Errorf("derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
+
+	rootSet := c.outputEqClassesForResultLocked(res.id)
+	if rootSet == nil {
+		rootSet = make(map[eqClassID]struct{})
+	}
+	if requestID.Digest() != "" {
+		if eqID := c.ensureEqClassForDigestLocked(ctx, requestID.Digest().String()); eqID != 0 {
+			rootSet[c.findEqClassLocked(eqID)] = struct{}{}
+		}
+	}
+	for _, extra := range requestID.ExtraDigests() {
+		if extra.Digest == "" {
+			continue
+		}
+		if eqID := c.ensureEqClassForDigestLocked(ctx, extra.Digest.String()); eqID != 0 {
+			rootSet[c.findEqClassLocked(eqID)] = struct{}{}
+		}
+	}
+	if len(rootSet) == 0 {
+		return nil
+	}
+
+	mergeIDs := make([]eqClassID, 0, len(rootSet))
+	for root := range rootSet {
+		if root == 0 {
+			continue
+		}
+		mergeIDs = append(mergeIDs, root)
+	}
+	if len(mergeIDs) == 0 {
+		return nil
+	}
+	outputEqID := c.mergeEqClassesLocked(ctx, mergeIDs...)
+	if outputEqID == 0 {
+		return nil
+	}
+
+	inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
+	if err != nil {
+		return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
+	}
+	inputEqIDs := c.ensureTermInputEqIDsLocked(ctx, requestInputs)
+	termDigest := calcEgraphTermDigest(requestSelf, inputEqIDs)
+
+	switch {
+	case c.termForResultByDigestLocked(res.id, termDigest) != nil:
+		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
+	case c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest]) != nil:
+		existingTerm := c.firstLiveTermInSetLocked(c.egraphTermsByTermDigest[termDigest])
+		c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
+		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
+	default:
+		mergedOutputEqID := c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
+
+		termID := c.nextEgraphTermID
+		c.nextEgraphTermID++
+
+		newTerm := newEgraphTerm(termID, requestSelf, inputEqIDs, mergedOutputEqID)
+		c.egraphTerms[termID] = newTerm
+		c.traceTermCreated(ctx, "runtime", "", newTerm)
+
+		digestTerms := c.egraphTermsByTermDigest[newTerm.termDigest]
+		if digestTerms == nil {
+			digestTerms = make(map[egraphTermID]struct{})
+			c.egraphTermsByTermDigest[newTerm.termDigest] = digestTerms
+		}
+		digestTerms[termID] = struct{}{}
+
+		for _, inEqID := range newTerm.inputEqIDs {
+			if inEqID == 0 {
+				continue
+			}
+			classTerms := c.inputEqClassToTerms[inEqID]
+			if classTerms == nil {
+				classTerms = make(map[egraphTermID]struct{})
+				c.inputEqClassToTerms[inEqID] = classTerms
+			}
+			classTerms[termID] = struct{}{}
+		}
+		outputTerms := c.outputEqClassToTerms[mergedOutputEqID]
+		if outputTerms == nil {
+			outputTerms = make(map[egraphTermID]struct{})
+			c.outputEqClassToTerms[mergedOutputEqID] = outputTerms
+		}
+		outputTerms[termID] = struct{}{}
+
+		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
+	}
+
+	c.indexResultDigestsLocked(res, requestID, nil)
+	for termID := range c.termIDsForResultLocked(res.id) {
+		term := c.egraphTerms[termID]
+		if term == nil {
+			continue
+		}
+		outputEqID := c.findEqClassLocked(term.outputEqID)
+		if outputEqID == 0 {
+			continue
+		}
+		extras := c.eqClassExtraDigests[outputEqID]
+		if extras == nil {
+			extras = make(map[call.ExtraDigest]struct{})
+			c.eqClassExtraDigests[outputEqID] = extras
+		}
+		for _, extra := range requestID.ExtraDigests() {
+			if extra.Digest == "" {
+				continue
+			}
+			extras[extra] = struct{}{}
+		}
+	}
+
+	return nil
+}
+
 func (c *cache) indexWaitResultInEgraphLocked(
 	ctx context.Context,
 	requestID *call.ID,
@@ -1149,36 +1292,6 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		})
 	}
 
-	// helper func to setup bi-directional map between result and term.
-	associateResultWithTerm := func(termID egraphTermID, assoc egraphResultTermAssoc) {
-		term := c.egraphTerms[termID]
-		if term == nil {
-			return
-		}
-		outputEqID := c.findEqClassLocked(term.outputEqID)
-		if outputEqID == 0 {
-			return
-		}
-		if existing, ok := c.termInputProvenance[termID]; ok {
-			if !sameInputProvenance(existing, assoc.inputProvenance) {
-				c.termInputProvenance[termID] = slices.Clone(assoc.inputProvenance)
-				c.traceResultTermAssocUpdated(ctx, res.id, termID, assoc.inputProvenance)
-			}
-		} else {
-			c.termInputProvenance[termID] = slices.Clone(assoc.inputProvenance)
-		}
-
-		resultOutputEqClasses := c.resultOutputEqClasses[res.id]
-		if resultOutputEqClasses == nil {
-			resultOutputEqClasses = make(map[eqClassID]struct{})
-			c.resultOutputEqClasses[res.id] = resultOutputEqClasses
-		}
-		if _, ok := resultOutputEqClasses[outputEqID]; !ok {
-			resultOutputEqClasses[outputEqID] = struct{}{}
-			c.traceResultTermAssocAdded(ctx, res.id, termID, assoc.inputProvenance)
-		}
-	}
-
 	for _, term := range termsToIndex {
 		inputProvenance, err := c.inputProvenanceForRefs(term.inputRefs)
 		if err != nil {
@@ -1200,7 +1313,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 			// we ended up with a duplicate term that has the same digest; just associate this
 			// result with that term and merge the output eq class as needed, no need to create
 			// a new term
-			associateResultWithTerm(existingTerm.id, egraphResultTermAssoc{inputProvenance: inputProvenance})
+			c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 			continue
 		}
@@ -1246,7 +1359,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		}
 		outputTerms[termID] = struct{}{}
 
-		associateResultWithTerm(termID, egraphResultTermAssoc{inputProvenance: inputProvenance})
+		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
 
 	c.indexResultDigestsLocked(res, requestID, responseID)

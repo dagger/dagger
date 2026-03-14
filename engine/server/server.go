@@ -638,7 +638,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	if srv.baseDagqlCache != nil {
-		err = errors.Join(err, srv.baseDagqlCache.Close(ctx))
+		if closeErr := srv.baseDagqlCache.Close(ctx); closeErr != nil {
+			slog.Error("failed to close base dagql cache", "error", closeErr)
+			err = errors.Join(err, closeErr)
+		}
 	}
 
 	err = errors.Join(err, srv.worker.Close())
