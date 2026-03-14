@@ -115,7 +115,7 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focusedIdx int
+	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
