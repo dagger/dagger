@@ -615,15 +615,20 @@ func (s *workspaceSchema) stage(
 		return false, fmt.Errorf("buildkit: %w", err)
 	}
 
-	// Step 1: Export changeset to worktree (writes files to disk, removes deleted files)
-	if err := changeset.Self().Export(ctx, ws.Root); err != nil {
-		return false, fmt.Errorf("export to worktree: %w", err)
+	// Step 1: Export changeset to a temp dir (not the worktree!) so we
+	// never clobber user's in-progress edits.
+	tempDir := ws.Root + "-dagger-stage-tmp"
+	if err := changeset.Self().Export(ctx, tempDir); err != nil {
+		return false, fmt.Errorf("export changeset: %w", err)
 	}
 
-	// Step 2: Stage the affected paths in the git index.
-	// Uses go-git to directly update index entries — no stash, no patches,
-	// no temp commits. User's unstaged changes are untouched.
-	staged, err := bk.GitStage(ctx, ws.Root, paths.Added, paths.Modified, paths.Removed)
+	// Step 2: Stage and merge. For each file:
+	//  - Added: copy to worktree, write blob to index
+	//  - Modified: write blob to index (agent's version), then 3-way merge
+	//    into the working tree so user edits on other lines are preserved
+	//  - Removed: remove from index and disk
+	// The temp dir is cleaned up by the handler.
+	staged, err := bk.GitStage(ctx, ws.Root, tempDir, paths.Added, paths.Modified, paths.Removed)
 	if err != nil {
 		return false, fmt.Errorf("stage: %w", err)
 	}

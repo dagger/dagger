@@ -16,6 +16,11 @@ import (
 	"strings"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage"
 
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/fsutil"
@@ -849,50 +854,119 @@ func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) e
 	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }
 
-// gitStage stages the given paths in the git index using go-git.
-// This directly updates index entries without disturbing any other working
-// tree state — no stash, no patches, no temp commits.
-func gitStage(_ context.Context, repoDir string, opts *engine.GitStageOpts) (string, error) {
+// gitStage stages changeset paths in the git index and merges changes into
+// the working tree, preserving any user edits to the same files.
+//
+// For added files: copies from tempDir to the worktree, writes blob to index.
+// For modified files: writes the agent's content as a blob to the index, then
+// uses `git merge-file` to 3-way merge the change into the working tree.
+// For removed files: removes from the index and disk.
+//
+// After staging:
+//   - Index contains the agent's exact content (only agent changes staged)
+//   - Working tree contains user + agent edits merged
+//   - `git diff` shows only the user's edits (unstaged)
+//   - `git diff --cached` shows only the agent's edits (staged)
+func gitStage(ctx context.Context, repoDir string, opts *engine.GitStageOpts) (string, error) {
+	defer os.RemoveAll(opts.TempDir)
+
 	repo, err := git.PlainOpenWithOptions(repoDir, &git.PlainOpenOptions{
-		// EnableDotGitCommonDir is required for worktrees: it resolves the
-		// shared object store via .git/worktrees/<name>/commondir so that
-		// blobs are written to the correct location.
+		// EnableDotGitCommonDir resolves the shared object store via
+		// .git/worktrees/<name>/commondir for worktree support.
 		EnableDotGitCommonDir: true,
 	})
 	if err != nil {
 		return "", fmt.Errorf("open repo: %w", err)
 	}
 
-	wt, err := repo.Worktree()
+	// Read the index once; we'll modify it in memory and write once at the end.
+	idx, err := repo.Storer.Index()
 	if err != nil {
-		return "", fmt.Errorf("get worktree: %w", err)
+		return "", fmt.Errorf("read index: %w", err)
 	}
 
-	// Stage added/modified files: read from disk, hash blob, update index.
-	for _, p := range append(opts.Added, opts.Modified...) {
-		if _, err := wt.Add(p); err != nil {
-			return "", fmt.Errorf("stage %q: %w", p, err)
+	// Get HEAD tree for base content during 3-way merges.
+	var headTree *object.Tree
+	if headRef, err := repo.Head(); err == nil {
+		if headCommit, err := repo.CommitObject(headRef.Hash()); err == nil {
+			headTree, _ = headCommit.Tree()
 		}
 	}
 
-	// Stage removed files: remove from index (file already removed from disk by export).
-	for _, p := range opts.Removed {
-		// go-git's Remove also deletes from the filesystem, but the file
-		// is already gone (export handled it). We just need the index entry
-		// removed, so we manipulate the index directly.
-		idx, err := repo.Storer.Index()
+	// Process added files: copy to worktree, hash blob, add to index.
+	for _, p := range opts.Added {
+		afterContent, err := os.ReadFile(filepath.Join(opts.TempDir, p))
 		if err != nil {
-			return "", fmt.Errorf("read index for removal: %w", err)
+			return "", fmt.Errorf("read added file %q: %w", p, err)
 		}
+
+		// Write to working tree.
+		dst := filepath.Join(repoDir, p)
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+			return "", fmt.Errorf("mkdir for %q: %w", p, err)
+		}
+		if err := os.WriteFile(dst, afterContent, 0644); err != nil {
+			return "", fmt.Errorf("write %q to worktree: %w", p, err)
+		}
+
+		// Hash blob and upsert index entry.
+		hash, err := writeBlob(repo.Storer, afterContent)
+		if err != nil {
+			return "", fmt.Errorf("hash blob for %q: %w", p, err)
+		}
+		upsertIndexEntry(idx, filepath.Join(repoDir, p), p, hash, len(afterContent))
+	}
+
+	// Process modified files: hash blob for index, 3-way merge for working tree.
+	for _, p := range opts.Modified {
+		afterContent, err := os.ReadFile(filepath.Join(opts.TempDir, p))
+		if err != nil {
+			return "", fmt.Errorf("read modified file %q: %w", p, err)
+		}
+
+		// Hash blob and upsert index entry with the agent's exact content.
+		hash, err := writeBlob(repo.Storer, afterContent)
+		if err != nil {
+			return "", fmt.Errorf("hash blob for %q: %w", p, err)
+		}
+
+		// Get base content from HEAD for the 3-way merge.
+		var baseContent []byte
+		if headTree != nil {
+			if f, err := headTree.File(p); err == nil {
+				if reader, err := f.Reader(); err == nil {
+					baseContent, _ = io.ReadAll(reader)
+					reader.Close()
+				}
+			}
+		}
+
+		// 3-way merge into the working tree:
+		//   current = user's working-tree file
+		//   base    = HEAD version
+		//   other   = agent's after version
+		// git merge-file modifies current in place.
+		if err := gitMergeFile(ctx, repoDir, p, baseContent, afterContent); err != nil {
+			return "", err
+		}
+
+		upsertIndexEntry(idx, filepath.Join(repoDir, p), p, hash, len(afterContent))
+	}
+
+	// Process removed files: remove from index and disk.
+	for _, p := range opts.Removed {
 		if _, err := idx.Remove(p); err != nil {
-			// Ignore "entry not found" — the file might not have been tracked.
-			if err.Error() != "entry not found" {
+			if !errors.Is(err, index.ErrEntryNotFound) {
 				return "", fmt.Errorf("remove %q from index: %w", p, err)
 			}
 		}
-		if err := repo.Storer.SetIndex(idx); err != nil {
-			return "", fmt.Errorf("write index after removal: %w", err)
-		}
+		os.Remove(filepath.Join(repoDir, p))
+	}
+
+	// Invalidate tree cache (stale after index modifications) and write.
+	idx.Cache = nil
+	if err := repo.Storer.SetIndex(idx); err != nil {
+		return "", fmt.Errorf("write index: %w", err)
 	}
 
 	totalPaths := len(opts.Added) + len(opts.Modified) + len(opts.Removed)
@@ -900,6 +974,73 @@ func gitStage(_ context.Context, repoDir string, opts *engine.GitStageOpts) (str
 		return "true", nil
 	}
 	return "false", nil
+}
+
+// writeBlob hashes content as a git blob object and writes it to the store.
+func writeBlob(storer storage.Storer, content []byte) (plumbing.Hash, error) {
+	obj := storer.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	obj.SetSize(int64(len(content)))
+	w, err := obj.Writer()
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	if _, err := w.Write(content); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	if err := w.Close(); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return storer.SetEncodedObject(obj)
+}
+
+// upsertIndexEntry adds or updates an index entry for a path.
+func upsertIndexEntry(idx *index.Index, diskPath, gitPath string, hash plumbing.Hash, size int) {
+	e, err := idx.Entry(gitPath)
+	if err != nil {
+		e = idx.Add(gitPath)
+	}
+	e.Hash = hash
+	e.Mode = filemode.Regular
+	e.Size = uint32(size)
+	if info, err := os.Lstat(diskPath); err == nil {
+		e.ModifiedAt = info.ModTime()
+		e.CreatedAt = info.ModTime()
+	}
+}
+
+// gitMergeFile performs a 3-way merge of a file in the working tree.
+// It merges the agent's changes (base→after) into the user's working-tree
+// copy of the file. Returns an error if there are conflicts.
+func gitMergeFile(ctx context.Context, repoDir, path string, baseContent, afterContent []byte) error {
+	wtFile := filepath.Join(repoDir, path)
+
+	baseTmp, err := os.CreateTemp("", "dagger-merge-base-*")
+	if err != nil {
+		return fmt.Errorf("create base temp for %q: %w", path, err)
+	}
+	defer os.Remove(baseTmp.Name())
+	baseTmp.Write(baseContent)
+	baseTmp.Close()
+
+	afterTmp, err := os.CreateTemp("", "dagger-merge-after-*")
+	if err != nil {
+		return fmt.Errorf("create after temp for %q: %w", path, err)
+	}
+	defer os.Remove(afterTmp.Name())
+	afterTmp.Write(afterContent)
+	afterTmp.Close()
+
+	cmd := exec.CommandContext(ctx, "git", "merge-file", wtFile, baseTmp.Name(), afterTmp.Name())
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() > 0 {
+			return fmt.Errorf("merge conflict in %q (%d conflicts):\n%s", path, exitErr.ExitCode(), out)
+		}
+		return fmt.Errorf("merge-file %q: %w\n%s", path, err, out)
+	}
+	return nil
 }
 
 // gitCommitOp commits whatever is currently staged and returns the commit hash.

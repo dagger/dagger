@@ -193,12 +193,15 @@ func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePa
 	return string(msg.Data), nil
 }
 
-// GitStage stages the given paths in the git index using go-git.
-// Files must already exist on disk (from Export). This directly updates
-// the index without disturbing any other working tree state.
+// GitStage stages the given paths in the git index and merges changes
+// into the working tree. The tempDir contains the exported changeset
+// files. For added files, they are copied to the worktree. For modified
+// files, go-git writes the blob directly to the index and git merge-file
+// 3-way merges the change into the working tree (preserving user edits).
 func (c *Client) GitStage(
 	ctx context.Context,
 	worktreeDir string,
+	tempDir string,
 	added, modified, removed []string,
 ) (bool, error) {
 	msg := filesync.BytesMessage{}
@@ -208,6 +211,7 @@ func (c *Client) GitStage(
 			Added:    added,
 			Modified: modified,
 			Removed:  removed,
+			TempDir:  tempDir,
 		},
 	}, &msg)
 	if err != nil {

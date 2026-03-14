@@ -1304,12 +1304,11 @@ type Clobber {
 `, agentContent)))
 
 		// Create the worktree, then simulate the user editing line 1.
-		userContent := "user-was-here\nline2\nline3\nline4\nline5\n"
 		ctr = ctr.
 			WithExec([]string{"git", "worktree", "add", "-b", "agent/clobber",
 				"/work-worktrees/agent-clobber"}).
 			WithExec([]string{"sh", "-c",
-				fmt.Sprintf(`printf '%%s' %q > /work-worktrees/agent-clobber/shared.txt`, userContent)})
+				"printf 'user-was-here\\nline2\\nline3\\nline4\\nline5\\n' > /work-worktrees/agent-clobber/shared.txt"})
 
 		committed := ctr.With(daggerCall("clobber", "hash"))
 		hashOut, err := committed.Stdout(ctx)
@@ -1338,16 +1337,17 @@ type Clobber {
 		require.Equal(t, mergedContent, diskContent,
 			"working tree should merge both user and agent edits")
 
-		// git diff --cached should show only the agent's edit (line 5).
-		cachedDiff, err := committed.
+		// The committed diff (HEAD vs HEAD~1) should show only the agent's
+		// edit (line 5), not the user's edit (line 1).
+		commitDiff, err := committed.
 			WithWorkdir("/work-worktrees/agent-clobber").
-			WithExec([]string{"git", "diff", "--cached"}).
+			WithExec([]string{"git", "diff", "HEAD~1", "HEAD"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, cachedDiff, "-line5")
-		require.Contains(t, cachedDiff, "+agent-was-here")
-		require.NotContains(t, cachedDiff, "user-was-here",
-			"staged diff should not contain user's edit")
+		require.Contains(t, commitDiff, "-line5")
+		require.Contains(t, commitDiff, "+agent-was-here")
+		require.NotContains(t, commitDiff, "user-was-here",
+			"committed diff should not contain user's edit")
 
 		// git diff (unstaged) should show only the user's edit (line 1).
 		unstagedDiff, err := committed.

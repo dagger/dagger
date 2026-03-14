@@ -184,11 +184,13 @@ type GitWorktreeAddOpts struct {
 }
 
 // GitStageOpts configures staging paths in the git index.
-// Uses go-git to directly update index entries without disturbing the working tree.
+// Uses go-git to write blobs directly to the index and git merge-file
+// to 3-way merge changes into the working tree, preserving user edits.
 type GitStageOpts struct {
 	Added    []string `json:"added"`
 	Modified []string `json:"modified"`
 	Removed  []string `json:"removed"`
+	TempDir  string   `json:"temp_dir"` // path to exported changeset content
 }
 
 // GitCommitOpts configures a git commit operation on the client.
