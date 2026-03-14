@@ -247,9 +247,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	}
 
 	class := dagql.NewClass(dag, classOpts)
-	objDef := obj.TypeDef
-	mod := obj.Module
-	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) && !opt.SkipConstructor {
+	if obj.isMainObject() && !opt.SkipConstructor {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
@@ -265,7 +263,17 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)
 
+	if obj.isMainObject() && opt.Entrypoint {
+		if err := obj.installEntrypointMethods(ctx, dag); err != nil {
+			return fmt.Errorf("failed to install entrypoint methods: %w", err)
+		}
+	}
+
 	return nil
+}
+
+func (obj *ModuleObject) isMainObject() bool {
+	return gqlObjectName(obj.TypeDef.OriginalName) == gqlObjectName(obj.Module.OriginalName)
 }
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
@@ -344,6 +352,228 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	)
 
 	return nil
+}
+
+func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server) error {
+	constructorName := gqlFieldName(obj.Module.Name())
+	constructorSpec, ok := dag.Root().ObjectType().FieldSpec(constructorName, dag.View)
+	if !ok {
+		return fmt.Errorf("constructor %q not found", constructorName)
+	}
+
+	constructorArgs := constructorSpec.Args.Inputs(dag.View)
+	constructorArgNames := make(map[string]struct{}, len(constructorArgs))
+	for _, arg := range constructorArgs {
+		constructorArgNames[arg.Name] = struct{}{}
+	}
+
+	for _, fun := range obj.TypeDef.Functions {
+		modFun, err := NewModFunction(ctx, obj.Module, obj.TypeDef, fun)
+		if err != nil {
+			return fmt.Errorf("failed to create function %q: %w", fun.Name, err)
+		}
+		if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
+			return fmt.Errorf("failed to merge user defaults for %q: %w", fun.Name, err)
+		}
+
+		proxySpec, err := modFun.metadata.FieldSpec(ctx, obj.Module)
+		if err != nil {
+			return fmt.Errorf("failed to get field spec for %q: %w", fun.Name, err)
+		}
+		if _, exists := dag.Root().ObjectType().FieldSpec(proxySpec.Name, dag.View); exists {
+			slog.ExtraDebug("skipping entrypoint proxy due to root field conflict",
+				"module", obj.Module.Name(),
+				"function", proxySpec.Name,
+			)
+			continue
+		}
+
+		methodArgs := proxySpec.Args.Inputs(dag.View)
+		ambiguousArg := ""
+		for _, arg := range methodArgs {
+			if _, exists := constructorArgNames[arg.Name]; exists {
+				ambiguousArg = arg.Name
+				break
+			}
+		}
+		if ambiguousArg != "" {
+			slog.ExtraDebug("skipping entrypoint proxy due to constructor arg conflict",
+				"module", obj.Module.Name(),
+				"function", proxySpec.Name,
+				"arg", ambiguousArg,
+			)
+			continue
+		}
+
+		methodSpec := proxySpec
+		mergedArgs := append([]dagql.InputSpec{}, constructorArgs...)
+		mergedArgs = append(mergedArgs, methodArgs...)
+		proxySpec.Args = dagql.NewInputSpecs(mergedArgs...)
+		proxySpec.Module = obj.Module.IDModule()
+		proxySpec.GetCacheConfig = obj.entrypointProxyCacheConfig(constructorSpec, methodSpec, constructorArgs, methodArgs)
+
+		methodName := proxySpec.Name
+		dag.Root().ObjectType().Extend(
+			proxySpec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				var result dagql.AnyResult
+				if err := dag.Select(ctx, dag.Root(), &result,
+					dagql.Selector{
+						Field: constructorName,
+						Args:  orderedNamedInputs(constructorArgs, args),
+					},
+					dagql.Selector{
+						Field: methodName,
+						Args:  orderedNamedInputs(methodArgs, args),
+					},
+				); err != nil {
+					return nil, err
+				}
+				return result, nil
+			},
+		)
+	}
+
+	return nil
+}
+
+func (obj *ModuleObject) entrypointProxyCacheConfig(
+	constructorSpec dagql.FieldSpec,
+	methodSpec dagql.FieldSpec,
+	constructorArgs []dagql.InputSpec,
+	methodArgs []dagql.InputSpec,
+) dagql.GenericGetCacheConfigFunc {
+	return func(
+		ctx context.Context,
+		parent dagql.AnyResult,
+		args map[string]dagql.Input,
+		view call.View,
+		req dagql.GetCacheConfigRequest,
+	) (*dagql.GetCacheConfigResponse, error) {
+		constructorArgVals := subsetArgs(constructorArgs, args)
+		constructorID := selectionIDForSpec(nil, constructorSpec, constructorArgVals, "")
+		constructorReq := dagql.GetCacheConfigRequest{
+			CacheKey: dagql.CacheKey{ID: constructorID},
+		}
+		constructorResp := &dagql.GetCacheConfigResponse{CacheKey: constructorReq.CacheKey}
+		if constructorSpec.GetCacheConfig != nil {
+			var err error
+			constructorResp, err = constructorSpec.GetCacheConfig(
+				dagql.ContextWithID(ctx, constructorID),
+				parent,
+				constructorArgVals,
+				"",
+				constructorReq,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if constructorResp.CacheKey.ID == nil {
+			return nil, fmt.Errorf("entrypoint constructor cache key is nil for %q", constructorSpec.Name)
+		}
+
+		srv := dagql.CurrentDagqlServer(ctx)
+		parentObj, err := dagql.NewObjectResultForID(&ModuleObject{
+			Module:  obj.Module,
+			TypeDef: obj.TypeDef,
+		}, srv, constructorResp.CacheKey.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		methodArgVals := subsetArgs(methodArgs, args)
+		methodReq := req
+		methodReq.CacheKey.ID = selectionIDForSpec(constructorResp.CacheKey.ID, methodSpec, methodArgVals, view)
+
+		methodResp := &dagql.GetCacheConfigResponse{CacheKey: methodReq.CacheKey}
+		if methodSpec.GetCacheConfig != nil {
+			methodResp, err = methodSpec.GetCacheConfig(
+				dagql.ContextWithID(ctx, methodReq.CacheKey.ID),
+				parentObj,
+				methodArgVals,
+				view,
+				methodReq,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if constructorResp.CacheKey.DoNotCache {
+			methodResp.CacheKey.DoNotCache = true
+		}
+		if constructorResp.CacheKey.TTL != 0 && (methodResp.CacheKey.TTL == 0 || constructorResp.CacheKey.TTL < methodResp.CacheKey.TTL) {
+			methodResp.CacheKey.TTL = constructorResp.CacheKey.TTL
+		}
+
+		return methodResp, nil
+	}
+}
+
+func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []dagql.NamedInput {
+	if len(args) == 0 {
+		return nil
+	}
+
+	inputs := make([]dagql.NamedInput, 0, len(specs))
+	for _, spec := range specs {
+		arg, ok := args[spec.Name]
+		if !ok {
+			continue
+		}
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  spec.Name,
+			Value: arg,
+		})
+	}
+	return inputs
+}
+
+func subsetArgs(specs []dagql.InputSpec, args map[string]dagql.Input) map[string]dagql.Input {
+	if len(args) == 0 {
+		return nil
+	}
+
+	vals := make(map[string]dagql.Input, len(specs))
+	for _, spec := range specs {
+		arg, ok := args[spec.Name]
+		if !ok {
+			continue
+		}
+		vals[spec.Name] = arg
+	}
+	if len(vals) == 0 {
+		return nil
+	}
+	return vals
+}
+
+func selectionIDForSpec(parentID *call.ID, spec dagql.FieldSpec, args map[string]dagql.Input, view call.View) *call.ID {
+	if spec.ViewFilter == nil {
+		view = ""
+	}
+
+	idArgs := make([]*call.Argument, 0, len(args))
+	for _, argSpec := range spec.Args.Inputs(view) {
+		val, ok := args[argSpec.Name]
+		if !ok {
+			continue
+		}
+		idArgs = append(idArgs, call.NewArgument(
+			argSpec.Name,
+			val.ToLiteral(),
+			argSpec.Sensitive,
+		))
+	}
+
+	return parentID.Append(
+		spec.Type.Type(),
+		spec.Name,
+		call.WithView(view),
+		call.WithModule(spec.Module),
+		call.WithArgs(idArgs...),
+	)
 }
 
 func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {

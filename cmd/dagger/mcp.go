@@ -61,9 +61,14 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	// -m modules are loaded at engine connect time as extra modules.
 	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger(), nil)
 	if modDef != nil && !modDef.HasModule() {
-		// When -m is used, modDef.Name is "" but the module constructor
-		// is at Query root. Find it.
-		modDef = findAutoAliasedModule(modDef)
+		if modName, err := engineClient.Dagger().CurrentWorkspace().DefaultModule(ctx); err == nil && modName != "" {
+			modDef = focusRootModule(modDef, modName)
+		}
+		if modDef != nil && !modDef.HasModule() {
+			// When -m is used, modDef.Name is "" but the module constructor
+			// is at Query root. Find it.
+			modDef = findAutoAliasedModule(modDef)
+		}
 	}
 
 	if modDef == nil && !envPrivileged {
@@ -135,17 +140,39 @@ func findAutoAliasedModule(def *moduleDef) *moduleDef {
 		return nil
 	}
 	for _, fn := range fp.GetFunctions() {
-		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
-			// Found a module constructor — set up modDef to point to this module
-			return &moduleDef{
-				Name:       fn.ReturnType.AsObject.SourceModuleName,
-				MainObject: fn.ReturnType,
-				Objects:    def.Objects,
-				Interfaces: def.Interfaces,
-				Enums:      def.Enums,
-				Inputs:     def.Inputs,
-			}
+		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" && fn.Name == gqlFieldName(fn.ReturnType.AsObject.SourceModuleName) {
+			return focusRootModule(def, fn.ReturnType.AsObject.SourceModuleName)
 		}
 	}
 	return nil
+}
+
+func focusRootModule(def *moduleDef, modName string) *moduleDef {
+	if def == nil || def.MainObject == nil {
+		return nil
+	}
+	fp := def.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	for _, fn := range fp.GetFunctions() {
+		if fn.ReturnType.AsObject == nil {
+			continue
+		}
+		if fn.ReturnType.AsObject.SourceModuleName != modName {
+			continue
+		}
+		if fn.Name != gqlFieldName(modName) {
+			continue
+		}
+		return &moduleDef{
+			Name:       modName,
+			MainObject: fn.ReturnType,
+			Objects:    def.Objects,
+			Interfaces: def.Interfaces,
+			Enums:      def.Enums,
+			Inputs:     def.Inputs,
+		}
+	}
+	return def
 }

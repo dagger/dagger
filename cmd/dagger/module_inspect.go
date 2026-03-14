@@ -13,7 +13,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
@@ -40,11 +39,9 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // among the loaded types and sets it as the MainObject so that the module's
 // constructor flags are available at the top level (e.g. dagger call --model x run).
 //
-// When no specific module was requested, MainObject is the Query root and
-// workspace module constructors appear as Query root sub-commands.
-//
-// FIXME(vito): this needs to be cleaned up or renamed, since it also handles
-// support for standalone modules and implicit `-m .`
+// When no specific module was requested, MainObject is the Query root and the
+// CLI consumes workspace entrypoint methods and module constructors directly
+// from the engine schema.
 func initializeWorkspace(ctx context.Context, dag *dagger.Client, workspaceRef *string) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load workspace: "+workspaceLoadLocation(workspaceRef))
 	defer telemetry.EndWithCause(span, &rerr)
@@ -59,15 +56,6 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client, workspaceRef *
 		modName, err := dag.ModuleSource(modRef).ModuleName(ctx)
 		if err == nil && modName != "" {
 			def.Name = modName
-		}
-	}
-
-	// Ask the engine which module is the default for this workspace.
-	// This is authoritative: blueprint modules, standalone modules, etc.
-	if def.Name == "" {
-		name, err := dag.CurrentWorkspace().DefaultModule(ctx)
-		if err == nil && name != "" {
-			def.Name = name
 		}
 	}
 
@@ -391,48 +379,6 @@ func (m *moduleDef) Long() string {
 	return s
 }
 
-// siblingModuleEntrypoints returns Query root functions from workspace modules
-// other than the default module. These are module constructors that should
-// appear alongside the default module's own functions in `dagger functions`.
-// If a sibling module's CLI name conflicts with an existing function of the
-// default module, it is skipped and a warning is logged.
-func (m *moduleDef) siblingModuleEntrypoints() []*modFunction {
-	rootType := m.GetTypeDef("Query")
-	if rootType == nil || rootType.AsObject == nil {
-		return nil
-	}
-
-	// Collect CLI names of the default module's functions to detect conflicts.
-	existing := make(map[string]bool)
-	if m.MainObject != nil && m.MainObject.AsObject != nil {
-		for _, fn := range m.MainObject.AsObject.GetFunctions() {
-			existing[fn.CmdName()] = true
-		}
-	}
-
-	var siblings []*modFunction
-	for _, fn := range rootType.AsObject.Functions {
-		// Only include module-provided functions (skip core API).
-		if fn.SourceModuleName == "" {
-			continue
-		}
-		// Skip the default module's own constructor.
-		if fn.SourceModuleName == m.Name {
-			continue
-		}
-		if existing[fn.CmdName()] {
-			slog.Warn("default module function shadows workspace module entrypoint",
-				"function", fn.CmdName(),
-				"module", m.Name,
-				"shadowed", fn.SourceModuleName,
-			)
-			continue
-		}
-		siblings = append(siblings, fn)
-	}
-	return siblings
-}
-
 func (m *moduleDef) AsFunctionProviders() []functionProvider {
 	providers := make([]functionProvider, 0, len(m.Objects)+len(m.Interfaces))
 	for _, obj := range m.AsObjects() {
@@ -586,7 +532,7 @@ func (m *moduleDef) GetCoreFunctions() []*modFunction {
 	fns := make([]*modFunction, 0, len(all))
 
 	for _, fn := range all {
-		if fn.ReturnType.AsObject != nil && !fn.ReturnType.AsObject.IsCore() || fn.Name == "" {
+		if fn.SourceModuleName != "" || fn.Name == "" {
 			continue
 		}
 		fns = append(fns, fn)

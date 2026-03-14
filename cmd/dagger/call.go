@@ -79,22 +79,11 @@ Examples:
 			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
-			for i, field := range functionPath {
+			for _, field := range functionPath {
 				// Lookup the next function in the specified pipeline
 				nextFunc, err := GetSupportedFunction(mod, o, field)
 				if err != nil {
-					// On the first step, the field may refer to a sibling
-					// workspace module rather than a function on the
-					// default module's object.
-					if i == 0 {
-						if sf := findSiblingEntrypoint(mod, field); sf != nil {
-							nextFunc = sf
-							err = nil
-						}
-					}
-					if err != nil {
-						return err
-					}
+					return err
 				}
 				nextType := nextFunc.ReturnType
 				if nextType.AsFunctionProvider() != nil {
@@ -121,17 +110,7 @@ Examples:
 			filterCore := len(functionPath) == 0 &&
 				mod.MainObject.AsObject != nil &&
 				mod.MainObject.AsObject.Name == "Query"
-
-			// When the default module is focused (not Query) and we're
-			// at the top level, also show sibling workspace module
-			// entrypoints alongside the default module's functions.
-			var siblingFns []*modFunction
-			if len(functionPath) == 0 &&
-				mod.MainObject.AsObject != nil &&
-				mod.MainObject.AsObject.Name != "Query" {
-				siblingFns = mod.siblingModuleEntrypoints()
-			}
-			return functionListRun(o, cmd.OutOrStdout(), filterCore, siblingFns)
+			return functionListRun(o, cmd.OutOrStdout(), filterCore)
 		})
 	},
 }
@@ -144,18 +123,6 @@ func parseFunctionsTargetArgs(args []string, argsLenAtDash int) (*string, []stri
 	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
 }
 
-// findSiblingEntrypoint searches sibling workspace module entrypoints for a
-// function matching the given name. Returns nil if no match is found.
-func findSiblingEntrypoint(mod *moduleDef, name string) *modFunction {
-	for _, fn := range mod.siblingModuleEntrypoints() {
-		if fn.Name == name || fn.CmdName() == name {
-			mod.LoadFunctionTypeDefs(fn)
-			return fn
-		}
-	}
-	return nil
-}
-
 // parseCallTargetArgs parses "call" args with optional workspace target.
 //
 // Supported forms:
@@ -166,7 +133,7 @@ func parseCallTargetArgs(args []string, argsLenAtDash int) (*string, []string, e
 	return parseWorkspaceTargetArgsWithImplicitWorkspace(args, argsLenAtDash)
 }
 
-func functionListRun(o functionProvider, writer io.Writer, filterCore bool, siblingFns []*modFunction) error {
+func functionListRun(o functionProvider, writer io.Writer, filterCore bool) error {
 	fns, skipped := GetSupportedFunctions(o)
 
 	// At the Query root, filter out core API constructors — only show module
@@ -174,17 +141,13 @@ func functionListRun(o functionProvider, writer io.Writer, filterCore bool, sibl
 	if filterCore {
 		filtered := make([]*modFunction, 0, len(fns))
 		for _, fn := range fns {
-			if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" {
+			if fn.SourceModuleName != "" {
 				filtered = append(filtered, fn)
 			}
 		}
 		fns = filtered
 		skipped = nil // don't show core "skipped" noise either
 	}
-
-	// Append sibling module entrypoints (from workspace peers of the
-	// default module). Conflicts are already filtered out.
-	fns = append(fns, siblingFns...)
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",

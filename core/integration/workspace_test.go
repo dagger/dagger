@@ -1467,6 +1467,12 @@ type Inner {
 		require.Equal(t, "hello from inner", strings.TrimSpace(out))
 	})
 
+	t.Run("query root exposes the nested module entrypoint", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{greet(msg:"custom message"),outer{greet}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"greet":"custom message","outer":{"greet":"hello from outer"}}`, out)
+	})
+
 	t.Run("constructor flags work at top level", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("--msg", "custom message", "greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1610,6 +1616,74 @@ type Test {
 		out, err := base.With(daggerCall("lint", "check")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "lint passed", strings.TrimSpace(out))
+	})
+
+	t.Run("query root exposes blueprint entrypoint methods", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{build,lint{check},test{run}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"build":"built!","lint":{"check":"lint passed"},"test":{"run":"tests passed"}}`, out)
+	})
+}
+
+func (WorkspaceSuite) TestEntrypointProxySkipsRootFieldConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub build: String! {
+    "built!"
+  }
+
+  pub container: String! {
+    "custom container"
+  }
+}
+`))
+
+	t.Run("functions omit the conflicting proxy", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "build")
+		require.NotContains(t, out, "container\t")
+	})
+
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("ci", "container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "custom container", strings.TrimSpace(out))
+	})
+}
+
+func (WorkspaceSuite) TestEntrypointProxySkipsConstructorArgConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initDangBlueprint("ci", `
+type Ci {
+  pub prefix: String!
+
+  new(prefix: String! = "ctor") {
+    self.prefix = prefix
+    self
+  }
+
+  pub echo(prefix: String! = "method"): String! {
+    self.prefix + ":" + prefix
+  }
+}
+`))
+
+	t.Run("functions omit the ambiguous proxy", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "echo\t")
+	})
+
+	t.Run("namespaced method still accepts both args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("--prefix", "ctor", "ci", "echo", "--prefix", "method")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})
 }
 

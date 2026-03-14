@@ -10,7 +10,8 @@ import (
 // ServedMods is the set of modules served to a client session. Unlike
 // ModDeps (which represents a module's dependency graph), ServedMods
 // tracks per-module install policy: whether a module's constructor
-// should appear on the Query root or just its types.
+// should appear on the Query root, and whether its main-object
+// methods should be proxied there as an entrypoint.
 type ServedMods struct {
 	root    *Query
 	entries []servedModEntry
@@ -23,35 +24,39 @@ type ServedMods struct {
 }
 
 type servedModEntry struct {
-	mod             Mod
-	skipConstructor bool
+	mod  Mod
+	opts InstallOpts
 }
 
 func NewServedMods(root *Query) *ServedMods {
 	return &ServedMods{root: root}
 }
 
-// Add adds a module. If skipConstructor is false, the module's constructor
-// will be installed on the Query root; otherwise only its types are
-// installed for schema resolution.
+// Add adds a module with the given install options.
 //
 // If the module is already present, it is not added again — but if it was
-// previously added with skipConstructor=true and is now added with
-// skipConstructor=false, it is promoted to include its constructor.
-func (s *ServedMods) Add(mod Mod, skipConstructor bool) {
+// previously added with a more restrictive install policy, it is promoted to
+// the less restrictive one.
+func (s *ServedMods) Add(mod Mod, opts InstallOpts) {
 	for i, e := range s.entries {
 		if e.mod.Name() == mod.Name() {
-			// Promote from type-only to full if needed.
-			if e.skipConstructor && !skipConstructor {
-				s.entries[i].skipConstructor = false
+			promoted := e.opts
+			if promoted.SkipConstructor && !opts.SkipConstructor {
+				promoted.SkipConstructor = false
+			}
+			if !promoted.Entrypoint && opts.Entrypoint {
+				promoted.Entrypoint = true
+			}
+			if promoted != e.opts {
+				s.entries[i].opts = promoted
 				s.invalidateCache()
 			}
 			return
 		}
 	}
 	s.entries = append(s.entries, servedModEntry{
-		mod:             mod,
-		skipConstructor: skipConstructor,
+		mod:  mod,
+		opts: opts,
 	})
 	s.invalidateCache()
 }
@@ -81,7 +86,7 @@ func (s *ServedMods) Mods() []Mod {
 func (s *ServedMods) PrimaryMods() []Mod {
 	var mods []Mod
 	for _, e := range s.entries {
-		if !e.skipConstructor {
+		if !e.opts.SkipConstructor {
 			mods = append(mods, e.mod)
 		}
 	}
@@ -130,7 +135,7 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	for i, e := range s.entries {
 		mods[i] = modInstall{
 			mod:  e.mod,
-			opts: InstallOpts{SkipConstructor: e.skipConstructor},
+			opts: e.opts,
 		}
 	}
 
