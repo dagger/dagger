@@ -1925,6 +1925,37 @@ Locked next step:
 - keep the current local CLI WIP unverified until those individual reruns show
   whether any explicit `-m` or Query-root focus regression is still active
 
+### 2026-03-14: Individual Hold Reruns Need Explicit Test Timeout
+
+Started the first split rerun under the same `toolchains/engine-dev` harness:
+
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestWorkspace/TestBlueprintFunctionsIncludesOtherModules' --test-verbose`
+
+Observed behavior:
+
+- setup completed quickly compared with the aggregate slice:
+  - engine connect/session load: complete
+  - `load module: ./toolchains/engine-dev`: complete
+  - `EngineDev.test(run: "TestWorkspace/TestBlueprintFunctionsIncludesOtherModules", pkg: "./core/integration", testVerbose: true): Void`
+- after entering `EngineDev.test(...)`, there was still no attributable test
+  output before the run was stopped
+
+Conclusion from this pass:
+
+- the current blocker is not just "combined slice too broad"; the default
+  `toolchains/engine-dev` test path is still too opaque here when left on its
+  default `30m` Go test timeout
+- continuing to rerun without an explicit shorter timeout would keep consuming
+  local validation windows without producing actionable pass/fail output
+
+Locked next step:
+
+- rerun each retained `TestWorkspace/*` case individually with an explicit
+  shorter `timeout` argument to the same `EngineDev.test(...)` surface so a
+  hang turns into a stack-dumped failure instead of another silent long wait
+- keep the local CLI WIP unclassified until those timed individual reruns show
+  whether the retained entrypoint tests are actually broken on this branch
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
