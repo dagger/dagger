@@ -25,26 +25,52 @@ var errModuleNotFound = errors.New("module not found")
 func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
 	def := &moduleDef{}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 
 	return def, nil
 }
 
-// initializeDefaultModule loads the module referenced by the -m,--mod flag
+// initializeWorkspace loads type definitions from the workspace.
+// Modules are already served by the engine at connect time.
 //
-// By default, looks for a module in the current directory, or above.
-// Returns an error if the module is not found or invalid.
-func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
-	if moduleNoURL {
-		return nil, fmt.Errorf("cannot load module when --no-mod is specified")
+// When a specific module was requested via -m, the CLI identifies that module
+// among the loaded types and sets it as the MainObject so that the module's
+// constructor flags are available at the top level (e.g. dagger call --model x run).
+//
+// When no specific module was requested, MainObject is the Query root and the
+// CLI consumes workspace entrypoint methods and module constructors directly
+// from the engine schema.
+func initializeWorkspace(ctx context.Context, dag *dagger.Client, workspaceRef *string) (rdef *moduleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "load workspace: "+workspaceLoadLocation(workspaceRef))
+	defer telemetry.EndWithCause(span, &rerr)
+
+	def := &moduleDef{}
+
+	// If a specific module was requested via -m, resolve its name so that
+	// loadTypeDefs can match it and set MainObject to the module's type
+	// (rather than Query). This makes the module's constructor flags
+	// available at the top level (e.g. dagger call --model x run).
+	if modRef, explicit := getExplicitModuleSourceRef(); explicit && modRef != "" {
+		modName, err := dag.ModuleSource(modRef).ModuleName(ctx)
+		if err == nil && modName != "" {
+			def.Name = modName
+		}
 	}
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
+
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
+		return nil, err
 	}
-	return initializeModule(ctx, dag, modRef, dag.ModuleSource(modRef))
+
+	return def, nil
+}
+
+func workspaceLoadLocation(workspaceRef *string) string {
+	if workspaceRef == nil || strings.TrimSpace(*workspaceRef) == "" {
+		return "."
+	}
+	return *workspaceRef
 }
 
 // initializeModule loads the module at the given source ref
@@ -82,7 +108,7 @@ func initializeModule(
 		return nil, err
 	}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
+	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
 	}
 
@@ -278,7 +304,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
+// When includeCore is false, core types (Container, Directory, etc.) are excluded from the result.
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includeCore bool) (rerr error) {
 	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(loadSpan, &rerr)
 
@@ -287,7 +314,8 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
-		Query: loadTypeDefsQuery,
+		Query:     loadTypeDefsQuery,
+		Variables: map[string]interface{}{"includeCore": includeCore},
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -504,7 +532,7 @@ func (m *moduleDef) GetCoreFunctions() []*modFunction {
 	fns := make([]*modFunction, 0, len(all))
 
 	for _, fn := range all {
-		if fn.ReturnType.AsObject != nil && !fn.ReturnType.AsObject.IsCore() || fn.Name == "" {
+		if fn.SourceModuleName != "" || fn.Name == "" {
 			continue
 		}
 		fns = append(fns, fn)
@@ -903,12 +931,13 @@ func shortDescription(desc string) string {
 
 // modFunction is a representation of dagger.Function.
 type modFunction struct {
-	Name        string
-	Description string
-	ReturnType  *modTypeDef
-	Args        []*modFunctionArg
-	cmdName     string
-	once        sync.Once
+	Name             string
+	Description      string
+	SourceModuleName string
+	ReturnType       *modTypeDef
+	Args             []*modFunctionArg
+	cmdName          string
+	once             sync.Once
 }
 
 func (f *modFunction) CmdName() string {

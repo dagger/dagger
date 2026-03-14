@@ -97,7 +97,8 @@ func SandboxedRelativePath(userPath, root string) (string, error) {
 	resolved = normalizePath(resolved)
 
 	// Ensure the resolved path stays inside root.
-	if resolved != cleanRoot && !strings.HasPrefix(resolved, cleanRoot+"/") {
+	// Special-case "/" so every absolute child path remains inside it.
+	if cleanRoot != "/" && resolved != cleanRoot && !strings.HasPrefix(resolved, cleanRoot+"/") {
 		return "", fmt.Errorf("path %q resolves outside root %q", userPath, root)
 	}
 	return resolved, nil

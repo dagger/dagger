@@ -63,8 +63,8 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
-func (ms *mockServer) CurrentServedDeps(context.Context) (*ModDeps, error) {
-	return &ModDeps{}, nil
+func (ms *mockServer) CurrentServedDeps(context.Context) (*ServedMods, error) {
+	return NewServedMods(nil), nil
 }
 
 func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
@@ -75,6 +75,10 @@ func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientM
 }
 
 func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error) {
+	return nil, nil
+}
+
+func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 	return nil, nil
 }
 

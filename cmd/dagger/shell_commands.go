@@ -618,7 +618,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				h.modDefs.Store(def.SourceDigest, newDef)
 
 				// Reload type definitions
-				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
+				if err := newDef.loadTypeDefs(ctx, h.dag, true); err != nil {
 					return fmt.Errorf("failed to reload type definitions: %w", err)
 				}
 
@@ -679,7 +679,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		},
 		cobraToShellCommand(loginCmd),
 		cobraToShellCommand(logoutCmd),
-		cobraToShellCommand(moduleInstallCmd),
+		cobraToShellCommand(moduleDepInstallCmd),
 		cobraToShellCommand(moduleUnInstallCmd),
 		cobraToShellCommand(moduleUpdateCmd),
 	)

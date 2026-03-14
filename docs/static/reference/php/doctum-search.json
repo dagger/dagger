@@ -1098,6 +1098,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\PhpSdk",
+			"p": "Dagger/PhpSdk.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\PhpSdkId",
+			"p": "Dagger/PhpSdkId.html",
+			"d": "<p>The <code>PhpSdkID</code> scalar type represents an identifier for an object of type PhpSdk.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\PipelineLabel",
 			"p": "Dagger/PipelineLabel.html",
 			"d": "<p>Key value object that represents a pipeline label.</p>",
@@ -1598,6 +1618,12 @@
 			"n": "Dagger\\Binding::asModuleSource",
 			"p": "Dagger/Binding.html#method_asModuleSource",
 			"d": "<p>Retrieve the binding value, as type ModuleSource</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asPhpSdk",
+			"p": "Dagger/Binding.html#method_asPhpSdk",
+			"d": "<p>Retrieve the binding value, as type PhpSdk</p>"
 		},
 		{
 			"t": "M",
@@ -2267,6 +2293,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadPhpSdkFromID",
+			"p": "Dagger/Client.html#method_loadPhpSdkFromID",
+			"d": "<p>Load a PhpSdk from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadPortFromID",
 			"p": "Dagger/Client.html#method_loadPortFromID",
 			"d": "<p>Load a Port from its ID.</p>"
@@ -2354,6 +2386,12 @@
 			"n": "Dagger\\Client::moduleSource",
 			"p": "Dagger/Client.html#method_moduleSource",
 			"d": "<p>Create a new module source instance from a source ref string</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::phpSdk",
+			"p": "Dagger/Client.html#method_phpSdk",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -3755,6 +3793,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withPhpSdkInput",
+			"p": "Dagger/Env.html#method_withPhpSdkInput",
+			"d": "<p>Create or update a binding of type PhpSdk in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withPhpSdkOutput",
+			"p": "Dagger/Env.html#method_withPhpSdkOutput",
+			"d": "<p>Declare a desired PhpSdk output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withSearchResultInput",
 			"p": "Dagger/Env.html#method_withSearchResultInput",
 			"d": "<p>Create or update a binding of type SearchResult in the environment</p>"
@@ -4262,6 +4312,12 @@
 			"n": "Dagger\\Function_::sourceMap",
 			"p": "Dagger/Function_.html#method_sourceMap",
 			"d": "<p>The location of this function declaration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Function_::sourceModuleName",
+			"p": "Dagger/Function_.html#method_sourceModuleName",
+			"d": "<p>If this function is provided by a module, the name of the module. Unset otherwise.</p>"
 		},
 		{
 			"t": "M",
@@ -5141,12 +5197,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleSource::blueprint",
-			"p": "Dagger/ModuleSource.html#method_blueprint",
-			"d": "<p>The blueprint referenced by the module source.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleSource::cloneRef",
 			"p": "Dagger/ModuleSource.html#method_cloneRef",
 			"d": "<p>The ref to clone the root of the git repo from. Only valid for git sources.</p>"
@@ -5303,12 +5353,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleSource::toolchains",
-			"p": "Dagger/ModuleSource.html#method_toolchains",
-			"d": "<p>The toolchains referenced by the module source.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleSource::userDefaults",
 			"p": "Dagger/ModuleSource.html#method_userDefaults",
 			"d": "<p>User-defined defaults read from local .env files</p>"
@@ -5318,12 +5362,6 @@
 			"n": "Dagger\\ModuleSource::version",
 			"p": "Dagger/ModuleSource.html#method_version",
 			"d": "<p>The specified version of the git repo this source points to.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::withBlueprint",
-			"p": "Dagger/ModuleSource.html#method_withBlueprint",
-			"d": "<p>Set a blueprint for the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -5375,39 +5413,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleSource::withToolchains",
-			"p": "Dagger/ModuleSource.html#method_withToolchains",
-			"d": "<p>Add toolchains to the module source.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::withUpdateBlueprint",
-			"p": "Dagger/ModuleSource.html#method_withUpdateBlueprint",
-			"d": "<p>Update the blueprint module to the latest version.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdateDependencies",
 			"p": "Dagger/ModuleSource.html#method_withUpdateDependencies",
 			"d": "<p>Update one or more module dependencies.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleSource::withUpdateToolchains",
-			"p": "Dagger/ModuleSource.html#method_withUpdateToolchains",
-			"d": "<p>Update one or more toolchains.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdatedClients",
 			"p": "Dagger/ModuleSource.html#method_withUpdatedClients",
 			"d": "<p>Update one or more clients.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::withoutBlueprint",
-			"p": "Dagger/ModuleSource.html#method_withoutBlueprint",
-			"d": "<p>Remove the current blueprint from the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -5426,12 +5440,6 @@
 			"n": "Dagger\\ModuleSource::withoutExperimentalFeatures",
 			"p": "Dagger/ModuleSource.html#method_withoutExperimentalFeatures",
 			"d": "<p>Disable experimental features for the module source.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::withoutToolchains",
-			"p": "Dagger/ModuleSource.html#method_withoutToolchains",
-			"d": "<p>Remove the provided toolchains from the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -5486,6 +5494,36 @@
 			"n": "Dagger\\ObjectTypeDef::sourceModuleName",
 			"p": "Dagger/ObjectTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::codegen",
+			"p": "Dagger/PhpSdk.html#method_codegen",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::codegenBase",
+			"p": "Dagger/PhpSdk.html#method_codegenBase",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::id",
+			"p": "Dagger/PhpSdk.html#method_id",
+			"d": "<p>A unique identifier for this PhpSdk.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::moduleRuntime",
+			"p": "Dagger/PhpSdk.html#method_moduleRuntime",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\PhpSdk::sourceDir",
+			"p": "Dagger/PhpSdk.html#method_sourceDir",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -5927,9 +5965,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::checks",
+			"p": "Dagger/Workspace.html#method_checks",
+			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::clientId",
 			"p": "Dagger/Workspace.html#method_clientId",
 			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::defaultModule",
+			"p": "Dagger/Workspace.html#method_defaultModule",
+			"d": "<p>The default module to focus on (blueprint or standalone module name). Empty when ambiguous.</p>"
 		},
 		{
 			"t": "M",
@@ -5951,15 +6001,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::generators",
+			"p": "Dagger/Workspace.html#method_generators",
+			"d": "<p>Return all generators from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::id",
 			"p": "Dagger/Workspace.html#method_id",
 			"d": "<p>A unique identifier for this Workspace.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::root",
-			"p": "Dagger/Workspace.html#method_root",
-			"d": "<p>Absolute path to the workspace root directory.</p>"
+			"n": "Dagger\\Workspace::path",
+			"p": "Dagger/Workspace.html#method_path",
+			"d": "<p>Workspace path relative to root.</p>"
 		},
 		{
 			"t": "M",

@@ -7170,10 +7170,11 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type Function struct {
 	query *querybuilder.Selection
 
-	deprecated  *string
-	description *string
-	id          *FunctionID
-	name        *string
+	deprecated       *string
+	description      *string
+	id               *FunctionID
+	name             *string
+	sourceModuleName *string
 }
 type WithFunctionFunc func(r *Function) *Function
 
@@ -7318,6 +7319,19 @@ func (r *Function) SourceMap() *SourceMap {
 	return &SourceMap{
 		query: q,
 	}
+}
+
+// If this function is provided by a module, the name of the module. Unset otherwise.
+func (r *Function) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // FunctionWithArgOpts contains options for Function.WithArg
@@ -11651,9 +11665,21 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentTypeDefsOpts contains options for Client.CurrentTypeDefs
+type CurrentTypeDefsOpts struct {
+	// Whether to include core types (Container, Directory, etc.) in the result. Defaults to true.
+	IncludeCore bool
+}
+
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Client) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includeCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeCore) {
+			q = q.Arg("includeCore", opts[i].IncludeCore)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -11684,23 +11710,11 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// CurrentWorkspaceOpts contains options for Client.CurrentWorkspace
-type CurrentWorkspaceOpts struct {
-	// If true, skip legacy dagger.json migration checks.
-	SkipMigrationCheck bool
-}
-
 // Detect and return the current workspace.
 //
 // Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
-func (r *Client) CurrentWorkspace(opts ...CurrentWorkspaceOpts) *Workspace {
+func (r *Client) CurrentWorkspace() *Workspace {
 	q := r.query.Select("currentWorkspace")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipMigrationCheck` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipMigrationCheck) {
-			q = q.Arg("skipMigrationCheck", opts[i].SkipMigrationCheck)
-		}
-	}
 
 	return &Workspace{
 		query: q,
@@ -14236,14 +14250,53 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
-	clientId *string
-	findUp   *string
-	id       *WorkspaceID
-	root     *string
+	address       *string
+	clientId      *string
+	configPath    *string
+	defaultModule *string
+	findUp        *string
+	hasConfig     *bool
+	id            *WorkspaceID
+	initialized   *bool
+	path          *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Canonical Dagger address of the workspace directory.
+func (r *Workspace) Address(ctx context.Context) (string, error) {
+	if r.address != nil {
+		return *r.address, nil
+	}
+	q := r.query.Select("address")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceChecksOpts contains options for Workspace.Checks
+type WorkspaceChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks from modules loaded in the workspace.
+func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -14254,6 +14307,32 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Path to config.toml relative to the workspace boundary (empty if not initialized).
+func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
+	if r.configPath != nil {
+		return *r.configPath, nil
+	}
+	q := r.query.Select("configPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The default module to focus on (blueprint or standalone module name). Empty when ambiguous.
+func (r *Workspace) DefaultModule(ctx context.Context) (string, error) {
+	if r.defaultModule != nil {
+		return *r.defaultModule, nil
+	}
+	q := r.query.Select("defaultModule")
 
 	var response string
 
@@ -14273,7 +14352,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Path is relative to workspace root. Use "." for the root directory.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -14299,7 +14378,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Path is relative to workspace root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -14311,7 +14390,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from, relative to the workspace root.
+	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
 	//
 	// Default: "."
 	From string
@@ -14319,9 +14398,11 @@ type WorkspaceFindUpOpts struct {
 
 // Search for a file or directory by walking up from the start path within the workspace.
 //
-// Returns the path relative to the workspace root if found, or null if not found.
+// Returns the absolute workspace path if found, or null if not found.
 //
-// The search stops at the workspace root and will not traverse above it.
+// Relative start paths resolve from the workspace directory.
+//
+// The search stops at the workspace boundary and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -14336,6 +14417,40 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	q = q.Arg("name", name)
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceGeneratorsOpts contains options for Workspace.Generators
+type WorkspaceGeneratorsOpts struct {
+	// Only include generators matching the specified patterns
+	Include []string
+}
+
+// Return all generators from modules loaded in the workspace.
+func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup {
+	q := r.query.Select("generators")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Whether a config.toml file exists in the workspace.
+func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
+	if r.hasConfig != nil {
+		return *r.hasConfig, nil
+	}
+	q := r.query.Select("hasConfig")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14381,12 +14496,25 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Absolute path to the workspace root directory.
-func (r *Workspace) Root(ctx context.Context) (string, error) {
-	if r.root != nil {
-		return *r.root, nil
+// Whether .dagger/config.toml exists.
+func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
+	if r.initialized != nil {
+		return *r.initialized, nil
 	}
-	q := r.query.Select("root")
+	q := r.query.Select("initialized")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace directory path relative to the workspace boundary.
+func (r *Workspace) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
 
 	var response string
 

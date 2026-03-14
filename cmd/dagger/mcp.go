@@ -58,13 +58,21 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")
 	}
-	modDef, err := initializeDefaultModule(ctx, engineClient.Dagger())
-	if err != nil && err != errModuleNotFound {
-		return err
+	// -m modules are loaded at engine connect time as extra modules.
+	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger(), nil)
+	if modDef != nil && !modDef.HasModule() {
+		if modName, err := engineClient.Dagger().CurrentWorkspace().DefaultModule(ctx); err == nil && modName != "" {
+			modDef = focusRootModule(modDef, modName)
+		}
+		if modDef != nil && !modDef.HasModule() {
+			// When -m is used, modDef.Name is "" but the module constructor
+			// is at Query root. Find it.
+			modDef = findAutoAliasedModule(modDef)
+		}
 	}
 
-	if err == errModuleNotFound && !envPrivileged {
-		return fmt.Errorf("%w and --core not specified", errModuleNotFound)
+	if modDef == nil && !envPrivileged {
+		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
@@ -117,4 +125,54 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	}
 
 	return nil
+}
+
+// findAutoAliasedModule detects a module loaded with auto-alias at Query root.
+// When -m is used, the module's constructor appears as a Query root function
+// whose return type has a non-empty SourceModuleName. If exactly one such
+// constructor is found, return a moduleDef pointing to it as the main object.
+func findAutoAliasedModule(def *moduleDef) *moduleDef {
+	if def == nil || def.MainObject == nil {
+		return nil
+	}
+	fp := def.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	for _, fn := range fp.GetFunctions() {
+		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" && fn.Name == gqlFieldName(fn.ReturnType.AsObject.SourceModuleName) {
+			return focusRootModule(def, fn.ReturnType.AsObject.SourceModuleName)
+		}
+	}
+	return nil
+}
+
+func focusRootModule(def *moduleDef, modName string) *moduleDef {
+	if def == nil || def.MainObject == nil {
+		return nil
+	}
+	fp := def.MainObject.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+	for _, fn := range fp.GetFunctions() {
+		if fn.ReturnType.AsObject == nil {
+			continue
+		}
+		if fn.ReturnType.AsObject.SourceModuleName != modName {
+			continue
+		}
+		if fn.Name != gqlFieldName(modName) {
+			continue
+		}
+		return &moduleDef{
+			Name:       modName,
+			MainObject: fn.ReturnType,
+			Objects:    def.Objects,
+			Interfaces: def.Interfaces,
+			Enums:      def.Enums,
+			Inputs:     def.Inputs,
+		}
+	}
+	return def
 }

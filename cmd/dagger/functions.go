@@ -172,14 +172,26 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
-				return withEngine(c.Context(), initModuleParams(a), func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				execArgs := a
+				// With DisableFlagParsing enabled, --help can remain in args when it
+				// appears after the first positional token. Strip it once we know help
+				// mode was requested, so dynamic command traversal doesn't treat it as a
+				// function segment.
+				if fc.needsHelp {
+					execArgs = stripHelpArgs(execArgs)
+				}
+
+				params := initModuleParams(execArgs)
+				params.SkipWorkspaceModules = shouldSkipWorkspaceModules(fc.DisableModuleLoad)
+
+				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
 					// withEngine changes the context.
 					c.SetContext(ctx)
 
-					if err := fc.execute(c, a); err != nil {
+					if err := fc.execute(c, execArgs); err != nil {
 						// We've already handled printing the error in `fc.execute`
 						// because we want to show the usage for the right sub-command.
 						// Returning ExitError here will prevent the error from being printed
@@ -231,6 +243,17 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
+}
+
+func stripHelpArgs(args []string) []string {
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
 }
 
 func (fc *FuncCommand) Help(cmd *cobra.Command) error {
@@ -291,7 +314,8 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad || moduleNoURL {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		mod, err = initializeDefaultModule(ctx, fc.c.Dagger())
+		// -m modules are loaded at engine connect time as extra modules.
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger(), nil)
 	}
 	if err != nil {
 		return err
@@ -313,6 +337,18 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	// No args to the parent command
 	if cmd == c {
+		// `dagger call` needs a module entrypoint when the workspace root is Query.
+		// Executing the synthetic Query constructor falls through to an invalid `id`
+		// selection, so fail or show help before trying to run it.
+		if !fc.DisableModuleLoad &&
+			fc.mod.MainObject != nil &&
+			fc.mod.MainObject.AsObject != nil &&
+			fc.mod.MainObject.AsObject.Name == "Query" {
+			if cmd.HasAvailableSubCommands() {
+				return fc.Help(cmd)
+			}
+			return errModuleNotFound
+		}
 		return fc.RunE(ctx, fc.mod.MainObject.AsObject.Constructor)(cmd, flags)
 	}
 
@@ -463,6 +499,14 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	fns, skipped := GetSupportedFunctions(fnProvider)
 
 	for _, fn := range fns {
+		// On the Query root type, hide core API functions — only show functions
+		// provided by modules (constructors and auto-aliases). This doesn't apply
+		// to `dagger core`.
+		if !fc.DisableModuleLoad && typeDef.AsObject != nil && typeDef.AsObject.Name == "Query" {
+			if fn.SourceModuleName == "" {
+				continue
+			}
+		}
 		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
 	}

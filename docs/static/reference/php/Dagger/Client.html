@@ -248,7 +248,7 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_currentTypeDefs">currentTypeDefs</a>()
+                    <a href="#method_currentTypeDefs">currentTypeDefs</a>(bool|null $includeCore = null)
         
                                             <p><p>The TypeDef representations of the objects currently being served in the session.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -258,7 +258,7 @@
                     <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_currentWorkspace">currentWorkspace</a>(bool|null $skipMigrationCheck = false)
+                    <a href="#method_currentWorkspace">currentWorkspace</a>()
         
                                             <p><p>Detect and return the current workspace.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -855,6 +855,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadPhpSdkFromID">loadPhpSdkFromID</a>(<abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr> $id)
+        
+                                            <p><p>Load a PhpSdk from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -1001,6 +1011,17 @@
                     <a href="#method_moduleSource">moduleSource</a>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         
                                             <p><p>Create a new module source instance from a source ref string</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_phpSdk">phpSdk</a>(<abbr title="Dagger\Dagger\DirectoryId|Dagger\Directory|null">Directory|null</abbr> $sdkSourceDir = null)
+        
+                                            <p class="no-description">No description</p>
+                                    </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1483,7 +1504,7 @@
                     <h3 id="method_currentTypeDefs">
         <div class="location">at line 104</div>
         <code>                    array
-    <strong>currentTypeDefs</strong>()
+    <strong>currentTypeDefs</strong>(bool|null $includeCore = null)
         </code>
     </h3>
     <div class="details">    
@@ -1494,6 +1515,16 @@
                             <p><p>The TypeDef representations of the objects currently being served in the session.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$includeCore</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -1513,9 +1544,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_currentWorkspace">
-        <div class="location">at line 113</div>
+        <div class="location">at line 116</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
-    <strong>currentWorkspace</strong>(bool|null $skipMigrationCheck = false)
+    <strong>currentWorkspace</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1526,16 +1557,6 @@
                             <p><p>Detect and return the current workspace.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$skipMigrationCheck</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -4062,8 +4083,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadPortFromID">
+                    <h3 id="method_loadPhpSdkFromID">
         <div class="location">at line 774</div>
+        <code>                    <a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a>
+    <strong>loadPhpSdkFromID</strong>(<abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a PhpSdk from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadPortFromID">
+        <div class="location">at line 784</div>
         <code>                    <a href="../Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a>
     <strong>loadPortFromID</strong>(<abbr title="Dagger\PortId|Dagger\Port">Port</abbr> $id)
         </code>
@@ -4105,7 +4168,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSDKConfigFromID">
-        <div class="location">at line 784</div>
+        <div class="location">at line 794</div>
         <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
     <strong>loadSDKConfigFromID</strong>(<abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $id)
         </code>
@@ -4147,7 +4210,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadScalarTypeDefFromID">
-        <div class="location">at line 794</div>
+        <div class="location">at line 804</div>
         <code>                    <a href="../Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a>
     <strong>loadScalarTypeDefFromID</strong>(<abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $id)
         </code>
@@ -4189,7 +4252,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSearchResultFromID">
-        <div class="location">at line 804</div>
+        <div class="location">at line 814</div>
         <code>                    <a href="../Dagger/SearchResult.html"><abbr title="Dagger\SearchResult">SearchResult</abbr></a>
     <strong>loadSearchResultFromID</strong>(<abbr title="Dagger\SearchResultId|Dagger\SearchResult">SearchResult</abbr> $id)
         </code>
@@ -4231,7 +4294,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSearchSubmatchFromID">
-        <div class="location">at line 814</div>
+        <div class="location">at line 824</div>
         <code>                    <a href="../Dagger/SearchSubmatch.html"><abbr title="Dagger\SearchSubmatch">SearchSubmatch</abbr></a>
     <strong>loadSearchSubmatchFromID</strong>(<abbr title="Dagger\SearchSubmatchId|Dagger\SearchSubmatch">SearchSubmatch</abbr> $id)
         </code>
@@ -4273,7 +4336,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSecretFromID">
-        <div class="location">at line 824</div>
+        <div class="location">at line 834</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>loadSecretFromID</strong>(<abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $id)
         </code>
@@ -4315,7 +4378,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadServiceFromID">
-        <div class="location">at line 834</div>
+        <div class="location">at line 844</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>loadServiceFromID</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $id)
         </code>
@@ -4357,7 +4420,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSocketFromID">
-        <div class="location">at line 844</div>
+        <div class="location">at line 854</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>loadSocketFromID</strong>(<abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $id)
         </code>
@@ -4399,7 +4462,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSourceMapFromID">
-        <div class="location">at line 854</div>
+        <div class="location">at line 864</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>loadSourceMapFromID</strong>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $id)
         </code>
@@ -4441,7 +4504,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadStatFromID">
-        <div class="location">at line 864</div>
+        <div class="location">at line 874</div>
         <code>                    <a href="../Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a>
     <strong>loadStatFromID</strong>(<abbr title="Dagger\StatId|Dagger\Stat">Stat</abbr> $id)
         </code>
@@ -4483,7 +4546,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTerminalFromID">
-        <div class="location">at line 874</div>
+        <div class="location">at line 884</div>
         <code>                    <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
     <strong>loadTerminalFromID</strong>(<abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $id)
         </code>
@@ -4525,7 +4588,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTypeDefFromID">
-        <div class="location">at line 884</div>
+        <div class="location">at line 894</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>loadTypeDefFromID</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $id)
         </code>
@@ -4567,7 +4630,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadWorkspaceFromID">
-        <div class="location">at line 894</div>
+        <div class="location">at line 904</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>loadWorkspaceFromID</strong>(<abbr title="Dagger\WorkspaceId|Dagger\Workspace">Workspace</abbr> $id)
         </code>
@@ -4609,7 +4672,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 904</div>
+        <div class="location">at line 914</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -4641,7 +4704,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 913</div>
+        <div class="location">at line 923</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
@@ -4702,8 +4765,51 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_phpSdk">
+        <div class="location">at line 947</div>
+        <code>                    <a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a>
+    <strong>phpSdk</strong>(<abbr title="Dagger\Dagger\DirectoryId|Dagger\Directory|null">Directory|null</abbr> $sdkSourceDir = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p class="no-description">No description</p>
+                    
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\Dagger\DirectoryId|Dagger\Directory|null">Directory|null</abbr></td>
+                <td>$sdkSourceDir</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 940</div>
+        <div class="location">at line 959</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -4750,7 +4856,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 955</div>
+        <div class="location">at line 974</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -4797,7 +4903,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 966</div>
+        <div class="location">at line 985</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -4849,7 +4955,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 978</div>
+        <div class="location">at line 997</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -4881,7 +4987,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 987</div>
+        <div class="location">at line 1006</div>
         <code>                    string
     <strong>version</strong>()
         </code>

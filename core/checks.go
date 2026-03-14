@@ -30,15 +30,7 @@ func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGr
 		return nil, err
 	}
 
-	var exclude []string
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
-			for _, ignorePattern := range entry.IgnoreChecks {
-				exclude = append(exclude, entry.FieldName+":"+ignorePattern)
-			}
-		}
-	}
-	checkNodes, err := rootNode.RollupChecks(ctx, include, exclude)
+	checkNodes, err := rootNode.RollupChecks(ctx, include, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +136,9 @@ func markdownTable(headers []string, rows ...[]string) string {
 
 func (r *CheckGroup) Clone() *CheckGroup {
 	cp := *r
-	cp.Node = cp.Node.Clone()
+	if cp.Node != nil {
+		cp.Node = cp.Node.Clone()
+	}
 	cp.Checks = make([]*Check, len(r.Checks))
 	for i := range cp.Checks {
 		cp.Checks[i] = r.Checks[i].Clone()
