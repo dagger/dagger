@@ -107,7 +107,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("ports", s.ports).
-			DoNotCache("A tunnel service's ports can change each time it is restarted.").
+			WithInput(dagql.PerCallInput).
 			Doc(`Retrieves the list of ports provided by the service.`),
 
 		dagql.NodeFunc("endpoint", s.endpoint).
