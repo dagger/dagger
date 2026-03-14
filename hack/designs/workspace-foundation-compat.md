@@ -2144,6 +2144,40 @@ Locked next step:
 - keep the local CLI WIP untouched until the validation harness gets past this
   source-resolution blocker and reaches the actual retained tests
 
+### 2026-03-14: Reduced-Source Playground Probe Avoided Fast Parse Failure
+
+Retried the wrapped local-playground harness with a narrowed repo payload and a
+trivial inner command (`ls core/integration` plus `source-ok`).
+
+Observed result:
+
+- the run stayed alive for the full outer `420s` watchdog window
+- unlike the earlier raw `source=.` mount, it did not fail quickly during
+  argument parsing with a `failed to get value for argument "source"` timeout
+- the wrapper eventually killed it at the outer timeout:
+  - `=== TIMEOUT: killed after 420s ===`
+- the trace tail only showed the connection phase plus continued work dots,
+  without an early parser failure
+
+Scope consequence:
+
+- narrowing the source payload changed the failure mode in the desired
+  direction: the fast source-resolution timeout no longer reproduced
+- the remaining problem is now total wall time for the local-playground path,
+  not the earlier immediate `Directory`-argument resolution failure
+- because the run used `--shared-cache`, the next attempt has a reasonable
+  chance of benefiting from the warmed intermediate state even though this
+  probe itself timed out
+
+Locked next step:
+
+- keep the reduced-source shape
+- rerun the first retained `TestWorkspace/*` case on the same wrapped harness
+  with a longer outer watchdog window
+- if that longer run still fails to reach inner `go test` output, treat the
+  local-playground path itself as too expensive for this handoff window and
+  record that explicitly before considering any further validation-path change
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
