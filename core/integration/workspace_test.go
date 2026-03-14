@@ -53,7 +53,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("module", "init", "--sdk="+dangSDK, name)).
+			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -106,7 +106,7 @@ type Greeter {
 func (WorkspaceSuite) TestFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := gitBase(t, c).
+	base := workspaceBase(t, c).
 		WithNewFile("root.txt", "at root").
 		WithNewFile("a/target.txt", "in a").
 		WithNewFile("a/b/other.txt", "in a/b").
@@ -167,7 +167,7 @@ type Finder {
 func (WorkspaceSuite) TestNestedWorkspacePaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := gitBase(t, c).
+	ctr := workspaceBase(t, c).
 		WithExec([]string{"mkdir", "-p", "app"}).
 		WithNewFile("repo.txt", "hello from boundary").
 		WithNewFile("app/app.txt", "hello from workspace").
@@ -405,7 +405,7 @@ type Subdir {
 func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := gitBase(t, c).
+	base := workspaceBase(t, c).
 		WithNewFile("legit.txt", "legit")
 
 	t.Run("directory traversal with ..", func(ctx context.Context, t *testctx.T) {
