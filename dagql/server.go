@@ -364,11 +364,10 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 					Type: idType,
 				},
 			),
-			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 			Directives: directives,
 		}
 
-		s.Root().ObjectType().Extend(
+		s.Root().ObjectType().ExtendLoadByID(
 			spec,
 			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
 				idable, ok := args["id"].(IDable)
@@ -376,10 +375,16 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
 				}
 				id := idable.ID()
+				if id == nil {
+					return nil, fmt.Errorf("expected non-nil ID")
+				}
+				if id.Type() == nil {
+					return nil, fmt.Errorf("expected typed ID, got untyped ID")
+				}
 				if id.Type().ToAST().NamedType != class.TypeName() {
 					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
 				}
-				res, err := s.Load(ctx, idable.ID())
+				res, err := s.Load(ctx, id)
 				if err != nil {
 					return nil, fmt.Errorf("load: %w", err)
 				}

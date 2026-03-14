@@ -205,6 +205,20 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	}
 }
 
+func (class Class[T]) ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc) {
+	class.fieldsL.Lock()
+	spec.BuiltinLoadByIDFunc = fun
+	f := &Field[T]{
+		Spec: &spec,
+	}
+	class.fields[spec.Name] = append(class.fields[spec.Name], f)
+	class.fieldsL.Unlock()
+
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
+}
+
 // TypeDefinition returns the schema definition of the class.
 //
 // The definition is derived from the type name, description, and fields. The
@@ -561,6 +575,15 @@ func (r ObjectResult[T]) call(
 ) (AnyResult, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
+	fieldName := newID.Field()
+	view := newID.View()
+	field, ok := r.class.Field(fieldName, view)
+	if !ok {
+		return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
+	}
+	if field.Spec.BuiltinLoadByIDFunc != nil {
+		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
+	}
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
@@ -569,13 +592,6 @@ func (r ObjectResult[T]) call(
 	}
 
 	res, err := s.Cache.GetOrInitCall(ctx, cacheKey, func(ctx context.Context) (AnyResult, error) {
-		fieldName := newID.Field()
-		view := newID.View()
-		field, ok := r.class.Field(fieldName, view)
-		if !ok {
-			return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
-		}
-
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err
@@ -792,6 +808,10 @@ type FieldSpec struct {
 	Module *call.Module
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
+	// BuiltinLoadByIDFunc is the execution path for schema-generated
+	// load<Type>FromID fields, which re-enter the graph from an object ID
+	// rather than behaving like normal field resolvers.
+	BuiltinLoadByIDFunc LoadByIDFunc
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.

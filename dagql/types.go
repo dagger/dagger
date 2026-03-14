@@ -51,6 +51,10 @@ type ObjectType interface {
 	// Object interface.
 	// cacheConfigFunc is optional, if not set the default dagql ID cache key will be used.
 	Extend(spec FieldSpec, fun FieldFunc)
+	// ExtendLoadByID registers a builtin load<Type>FromID field that re-enters
+	// the graph from an object ID instead of behaving like a normal field
+	// resolver.
+	ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
 }
@@ -64,6 +68,10 @@ type IDType interface {
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
 type FieldFunc func(context.Context, AnyResult, map[string]Input) (AnyResult, error)
+
+// LoadByIDFunc is the builtin execution path for schema-generated
+// load<Type>FromID fields.
+type LoadByIDFunc func(context.Context, AnyResult, map[string]Input) (AnyResult, error)
 
 type IDable interface {
 	// ID returns the ID of the value.

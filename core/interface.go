@@ -438,7 +438,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	}
 
 	// override loadFooFromID to allow any ID that implements this interface
-	dag.Root().ObjectType().Extend(
+	dag.Root().ObjectType().ExtendLoadByID(
 		dagql.FieldSpec{
 			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
 			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
@@ -449,11 +449,26 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					Type: idScalar,
 				},
 			),
-			Module:     moduleID,
-			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
+			Module: moduleID,
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			return iface.ConvertFromSDKResult(ctx, args["id"])
+			idable, ok := args["id"].(dagql.IDable)
+			if !ok {
+				return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+			}
+			id := idable.ID()
+			if id == nil {
+				return nil, fmt.Errorf("expected non-nil ID")
+			}
+			loadedImpl, err := iface.loadImpl(ctx, id)
+			if err != nil {
+				return nil, fmt.Errorf("load interface implementation: %w", err)
+			}
+			typeName := loadedImpl.val.Type().Name()
+			if ok := loadedImpl.valType.TypeDef().IsSubtypeOf(iface.TypeDef()); !ok {
+				return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
+			}
+			return wrapIface(id, iface, loadedImpl.valType, loadedImpl.val, dag)
 		},
 	)
 
