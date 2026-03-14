@@ -37,6 +37,47 @@ func TestMatchWorkspaceInclude(t *testing.T) {
 	})
 }
 
+func TestFilterGeneratorsByInclude(t *testing.T) {
+	ctx := context.Background()
+	generators := []*core.Generator{
+		{Node: modTreeNode("hello-with-generators-java", "generate-files")},
+		{Node: modTreeNode("hello-with-generators-java", "generate-other-files")},
+	}
+
+	t.Run("workspace-qualified patterns still match", func(t *testing.T) {
+		filtered, err := filterGeneratorsByInclude(
+			ctx,
+			generators,
+			[]string{"hello-with-generators-java:generate-*"},
+			false,
+		)
+		require.NoError(t, err)
+		require.Len(t, filtered, 2)
+	})
+
+	t.Run("single generator module keeps legacy include semantics", func(t *testing.T) {
+		filtered, err := filterGeneratorsByInclude(
+			ctx,
+			generators,
+			[]string{"generate-*"},
+			true,
+		)
+		require.NoError(t, err)
+		require.Len(t, filtered, 2)
+	})
+
+	t.Run("legacy include does not match without compat fallback", func(t *testing.T) {
+		filtered, err := filterGeneratorsByInclude(
+			ctx,
+			generators,
+			[]string{"generate-*"},
+			false,
+		)
+		require.NoError(t, err)
+		require.Empty(t, filtered)
+	})
+}
+
 func TestResolveWorkspacePath(t *testing.T) {
 	t.Run("relative path resolves from workspace directory", func(t *testing.T) {
 		require.Equal(t, "services/payment/src", resolveWorkspacePath("src", "services/payment"))

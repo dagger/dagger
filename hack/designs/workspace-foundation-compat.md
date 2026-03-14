@@ -1482,7 +1482,24 @@ Conclusion:
       single-module case
     - do not rewrite the tests to use workspace-qualified generator names
     - do not revert to the standalone-module runtime path
-  - fix stance: `implementation`
+  - update:
+    - implemented the compat fix in `core/schema/workspace.go`
+    - generator filtering still prefers workspace-qualified matches first
+    - if exactly one loaded workspace module contributes generators, retry the
+      include match after stripping the leading workspace module segment
+    - this preserves old single-module patterns such as `generate-*` without
+      broadening true multi-module workspace matching
+  - focused verification:
+    - earlier targeted rerun:
+      - `TestGenerators/TestGeneratorsAsToolchain/go`: passes
+    - schema matcher coverage:
+      - `dagger --progress=plain call -m ./toolchains/go test --pkgs=./core/schema --run='TestMatchWorkspaceInclude|TestFilterGeneratorsByInclude|TestResolveWorkspacePath|TestWorkspaceAPIPath'`
+      - result: passes
+    - attempted fresh direct rerun:
+      - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
+      - blocked by a separate `toolchains/engine-dev` self-context load failure while building `bin/codegen`:
+        `module not found: /Users/shykes/git/github.com/dagger/dagger_workspace-plumbing/toolchains/engine-dev`
+  - fix stance: `implemented; direct integration rerun currently blocked by separate engine-dev harness failure`
 
 Verification used to build this ledger:
 
@@ -1493,6 +1510,8 @@ Verification used to build this ledger:
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalToolchain/inner_envfile' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/TestLocalToolchain/outer_envfile_outer_workdir' --test-verbose`
 - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
+- `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsToolchain/go' --test-verbose`
+- `dagger --progress=plain call -m ./toolchains/go test --pkgs=./core/schema --run='TestMatchWorkspaceInclude|TestFilterGeneratorsByInclude|TestResolveWorkspacePath|TestWorkspaceAPIPath'`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=1`
 - `env GOCACHE=/tmp/go-build go test ./cmd/codegen/generator/typescript/templates -count=5`
 
@@ -1647,9 +1666,45 @@ Scope consequence:
   `dagger -m ./app call ...` command-resolution failures, so treat them as
   entrypoint-sensitive hold items pending the upstream schema-level
   entrypoint-module cherry-pick
-- the next active non-entrypoint runtime task is generator include matching,
-  unless a narrower non-entrypoint user-default regression appears in later
-  reruns
+- the next local non-entrypoint follow-up was generator include matching; that
+  implementation is recorded in the next entry
+
+### 2026-03-13: Generator Include Matching Compat Restored
+
+Implemented a focused workspace-side compat fix in `core/schema/workspace.go`:
+
+- collect all generator groups first and count how many loaded workspace
+  modules actually contribute generators
+- keep normal workspace-qualified include matching as the first pass
+- when exactly one module contributes generators, retry include matching
+  against the generator path without the leading workspace module segment
+- keep the fallback scoped to generators only, so `check` and other workspace
+  grouping behavior stay unchanged
+
+Focused verification:
+
+- prior targeted rerun:
+  - `dagger --progress=logs call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsAsToolchain/go' --test-verbose`
+  - result: passes
+- schema-level matcher coverage:
+  - `dagger --progress=plain call -m ./toolchains/go test --pkgs=./core/schema --run='TestMatchWorkspaceInclude|TestFilterGeneratorsByInclude|TestResolveWorkspacePath|TestWorkspaceAPIPath'`
+  - result: passes
+- attempted fresh direct-SDK rerun:
+  - `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple' --test-verbose`
+  - currently blocked by a separate `toolchains/engine-dev` harness failure
+    while loading its own context for `bin/codegen`:
+    `module not found: /Users/shykes/git/github.com/dagger/dagger_workspace-plumbing/toolchains/engine-dev`
+
+Scope consequence:
+
+- the workspace generator filter now preserves legacy single-module include
+  patterns like `generate-*` without reverting `generate` to the standalone
+  module path
+- a fresh direct integration rerun still needs to happen once the separate
+  `engine-dev` harness failure is cleared
+- with caller-`.env` propagation fixed and generator matching implemented, the
+  remaining previously reproduced failures on the list are either
+  entrypoint-sensitive hold items or blocked behind the separate harness issue
 
 ## User-Visible Breakage In The Foundation PR
 

@@ -404,20 +404,37 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
-	var allGenerators []*core.Generator
+	moduleGenerators := make([]struct {
+		mod   *core.Module
+		group *core.GeneratorGroup
+	}, 0, len(mods))
+	generatorModuleCount := 0
 	for _, mod := range mods {
 		generatorGroup, err := mod.Generators(ctx, nil)
 		if err != nil {
 			return nil, fmt.Errorf("generators from module %q: %w", mod.Name(), err)
 		}
-		reparentWorkspaceTreeRoot(generatorGroup.Node, mod.Name())
-		filtered, err := filterNodesByInclude(
+		if len(generatorGroup.Generators) > 0 {
+			generatorModuleCount++
+		}
+		moduleGenerators = append(moduleGenerators, struct {
+			mod   *core.Module
+			group *core.GeneratorGroup
+		}{
+			mod:   mod,
+			group: generatorGroup,
+		})
+	}
+
+	var allGenerators []*core.Generator
+	allowSingleModuleCompat := generatorModuleCount == 1
+	for _, entry := range moduleGenerators {
+		reparentWorkspaceTreeRoot(entry.group.Node, entry.mod.Name())
+		filtered, err := filterGeneratorsByInclude(
 			ctx,
-			generatorGroup.Generators,
+			entry.group.Generators,
 			include,
-			func(generator *core.Generator) *core.ModTreeNode { return generator.Node },
-			func(generator *core.Generator) string { return generator.Name() },
-			"generator",
+			allowSingleModuleCompat,
 		)
 		if err != nil {
 			return nil, err
@@ -437,6 +454,77 @@ func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.S
 		patterns = append(patterns, pattern.String())
 	}
 	return patterns
+}
+
+func filterGeneratorsByInclude(
+	ctx context.Context,
+	generators []*core.Generator,
+	include []string,
+	allowSingleModuleCompat bool,
+) ([]*core.Generator, error) {
+	if len(include) == 0 {
+		return generators, nil
+	}
+
+	filtered := make([]*core.Generator, 0, len(generators))
+	for _, generator := range generators {
+		match, err := matchWorkspaceInclude(ctx, generator.Node, include)
+		if err != nil {
+			return nil, fmt.Errorf("generator %q include match: %w", generator.Name(), err)
+		}
+		if !match && allowSingleModuleCompat {
+			match, err = matchSingleModuleGeneratorInclude(ctx, generator.Node, include)
+			if err != nil {
+				return nil, fmt.Errorf("generator %q compat include match: %w", generator.Name(), err)
+			}
+		}
+		if match {
+			filtered = append(filtered, generator)
+		}
+	}
+	return filtered, nil
+}
+
+// Preserve old single-module generator include semantics by retrying matches
+// against the generator path without the leading workspace module segment.
+func matchSingleModuleGeneratorInclude(
+	ctx context.Context,
+	node *core.ModTreeNode,
+	include []string,
+) (bool, error) {
+	if node == nil {
+		return false, nil
+	}
+	path := node.Path()
+	if len(path) < 2 {
+		return false, nil
+	}
+	return matchWorkspaceIncludePath(ctx, core.ModTreePath(path[1:]), include)
+}
+
+func matchWorkspaceIncludePath(
+	ctx context.Context,
+	path core.ModTreePath,
+	include []string,
+) (bool, error) {
+	if len(include) == 0 {
+		return true, nil
+	}
+	if len(path) == 0 {
+		return false, nil
+	}
+	for _, pattern := range include {
+		if match, err := path.Glob(ctx, pattern); err != nil {
+			return false, err
+		} else if match {
+			return true, nil
+		}
+		patternAsPath := core.NewModTreePath(pattern)
+		if patternAsPath.Contains(ctx, path) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]*core.Module, error) {
