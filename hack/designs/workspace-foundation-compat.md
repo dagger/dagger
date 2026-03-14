@@ -21,6 +21,58 @@ in
 [workspace-api-rollout-tracker.md](/Users/shykes/git/github.com/dagger/dagger_workspace/hack/designs/done/workspace-api-rollout-tracker.md).
 The canonical contract itself currently lives in the `workspace` PR description.
 
+## Rebase Survival Notes
+
+When `workspace` is eventually rebased onto `workspace-plumbing`, preserve the
+verified behavior, not the current patch shape or commit topology.
+
+Local fix threads that must be reconciled explicitly:
+
+- `cd4c63ff1` `engine: preserve legacy toolchain customizations`
+  - keep unless upstream already restores legacy `defaultPath`,
+    `defaultAddress`, and `ignore` through the same compat/runtime path
+  - post-rebase proof:
+    `TestToolchain/TestToolchainsWithConfiguration/override_constructor_defaultPath_argument`
+- `fec23805b` `core: restore legacy blueprint caller env defaults`
+  - keep unless upstream already restores caller `.env` propagation for legacy
+    blueprints/toolchains before `ModuleSource.asModule()`
+  - post-rebase proof:
+    `TestUserDefaults/TestLocalBlueprint/inner_envfile`
+- `6c93ddba9` `core/schema: restore legacy generator include matching`
+  - keep unless upstream already preserves single-generator-module
+    `generate-*` matching on the workspace path
+  - post-rebase proof:
+    `TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple`
+    and `TestGenerators/TestGeneratorsAsBlueprint/java/generate`
+- `1bd6065c7` `engine: seed runtime module content cache`
+  - keep unless upstream already seeds or replaces the
+    content-digest lookup path used by `_contextDirectory`
+  - this commit is easy to misclassify as a generator fix; it is broader than
+    that and protects runtime-client contextual dir/file reloads
+
+Commits that are bookkeeping, not behavior:
+
+- docs-only ledger commits such as `a35930cd5`, `f972163b3`, `1025bf8d1`
+  - do not preserve them for their own sake during rebase
+  - preserve the decisions they record by rewriting this ledger as needed
+
+Commits likely to be partially or wholly superseded by the upstream entrypoint
+module rework:
+
+- any local behavior that only exists to paper over root-entrypoint selection,
+  CLI focus, `defaultModule`, `call`, `functions`, or shell routing
+- after the cherry-pick/rebase, rerun the entrypoint-sensitive hold bucket
+  before deciding whether any local workaround still belongs here
+
+Mandatory reruns after the later `workspace` rebase:
+
+- `TestToolchain/TestToolchainsWithConfiguration/override_constructor_defaultPath_argument`
+- `TestUserDefaults/TestLocalBlueprint/inner_envfile`
+- `TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple`
+- `TestGenerators/TestGeneratorsAsBlueprint/java/generate`
+- then the entrypoint-sensitive hold bucket after the upstream entrypoint
+  design is in place
+
 ## Workspace API Contract Adoption
 
 `workspace-plumbing` adopts the Workspace API path contract defined in `workspace`
