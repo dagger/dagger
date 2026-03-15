@@ -128,6 +128,7 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			attribute.String(telemetry.LLMToolAttr, toolName),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 		),
 	)
 	p := &displayPhase{
