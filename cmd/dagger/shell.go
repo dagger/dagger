@@ -140,6 +140,11 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+
+	// queuedMsg holds a user message submitted while Handle is running.
+	// Protected by queuedMsgMu for cross-goroutine access.
+	queuedMsg   string
+	queuedMsgMu sync.Mutex
 }
 
 func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
@@ -859,6 +864,20 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string) f
 		// Switch to prompt mode so the user can type a new prompt
 		h.mode = modePrompt
 	}
+}
+
+func (h *shellCallHandler) QueueMessage(msg string) {
+	h.queuedMsgMu.Lock()
+	h.queuedMsg = msg
+	h.queuedMsgMu.Unlock()
+}
+
+func (h *shellCallHandler) DequeueMessage() string {
+	h.queuedMsgMu.Lock()
+	msg := h.queuedMsg
+	h.queuedMsg = ""
+	h.queuedMsgMu.Unlock()
+	return msg
 }
 
 func (h *shellCallHandler) DecodeHistory(entry string) string {

@@ -31,9 +31,6 @@ var _ Frontend = &FrontendMock{}
 //			CloseFunc: func() error {
 //				panic("mock out the Close method")
 //			},
-//			DequeueMessageFunc: func() string {
-//				panic("mock out the DequeueMessage method")
-//			},
 //			GetLLMTokenMetricsFunc: func() *dagui.LLMTokenMetrics {
 //				panic("mock out the GetLLMTokenMetrics method")
 //			},
@@ -95,9 +92,6 @@ type FrontendMock struct {
 	// CloseFunc mocks the Close method.
 	CloseFunc func() error
 
-	// DequeueMessageFunc mocks the DequeueMessage method.
-	DequeueMessageFunc func() string
-
 	// GetLLMTokenMetricsFunc mocks the GetLLMTokenMetrics method.
 	GetLLMTokenMetricsFunc func() *dagui.LLMTokenMetrics
 
@@ -157,9 +151,6 @@ type FrontendMock struct {
 		}
 		// Close holds details about calls to the Close method.
 		Close []struct {
-		}
-		// DequeueMessage holds details about calls to the DequeueMessage method.
-		DequeueMessage []struct {
 		}
 		// GetLLMTokenMetrics holds details about calls to the GetLLMTokenMetrics method.
 		GetLLMTokenMetrics []struct {
@@ -252,7 +243,6 @@ type FrontendMock struct {
 	}
 	lockBackground         sync.RWMutex
 	lockClose              sync.RWMutex
-	lockDequeueMessage     sync.RWMutex
 	lockGetLLMTokenMetrics sync.RWMutex
 	lockHandleForm         sync.RWMutex
 	lockHandlePrompt       sync.RWMutex
@@ -331,33 +321,6 @@ func (mock *FrontendMock) CloseCalls() []struct {
 	mock.lockClose.RLock()
 	calls = mock.calls.Close
 	mock.lockClose.RUnlock()
-	return calls
-}
-
-// DequeueMessage calls DequeueMessageFunc.
-func (mock *FrontendMock) DequeueMessage() string {
-	if mock.DequeueMessageFunc == nil {
-		panic("FrontendMock.DequeueMessageFunc: method is nil but Frontend.DequeueMessage was just called")
-	}
-	callInfo := struct {
-	}{}
-	mock.lockDequeueMessage.Lock()
-	mock.calls.DequeueMessage = append(mock.calls.DequeueMessage, callInfo)
-	mock.lockDequeueMessage.Unlock()
-	return mock.DequeueMessageFunc()
-}
-
-// DequeueMessageCalls gets all the calls that were made to DequeueMessage.
-// Check the length with:
-//
-//	len(mockedFrontend.DequeueMessageCalls())
-func (mock *FrontendMock) DequeueMessageCalls() []struct {
-} {
-	var calls []struct {
-	}
-	mock.lockDequeueMessage.RLock()
-	calls = mock.calls.DequeueMessage
-	mock.lockDequeueMessage.RUnlock()
 	return calls
 }
 

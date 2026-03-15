@@ -100,8 +100,6 @@ type frontendPretty struct {
 	promptErr       error
 	promptErrLabel    *ErrorLabel
 	queuedMsgLabel   *QueuedMessageLabel
-	queuedMessage     string     // thread-safe via queuedMsgMu
-	queuedMsgMu       sync.Mutex
 	textInput         *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
@@ -2175,45 +2173,26 @@ func (fe *frontendPretty) handleInputComplete() {
 	fe.submitInput(value)
 }
 
-// setQueuedMessage stores a message to be picked up by the step loop
-// and updates the visual indicator. Called on the UI goroutine.
+// setQueuedMessage stores a message on the shell handler and updates
+// the visual indicator.
 func (fe *frontendPretty) setQueuedMessage(msg string) {
-	fe.queuedMsgMu.Lock()
-	fe.queuedMessage = msg
-	fe.queuedMsgMu.Unlock()
+	if fe.shell != nil {
+		fe.shell.QueueMessage(msg)
+	}
 	if fe.queuedMsgLabel != nil {
 		fe.queuedMsgLabel.SetMessage(msg)
 	}
 }
 
-// clearQueuedMessage removes the queued message and returns it.
-// Called on the UI goroutine.
+// clearQueuedMessage removes the queued message from the shell handler
+// and the visual indicator, returning the message.
 func (fe *frontendPretty) clearQueuedMessage() string {
-	fe.queuedMsgMu.Lock()
-	msg := fe.queuedMessage
-	fe.queuedMessage = ""
-	fe.queuedMsgMu.Unlock()
+	var msg string
+	if fe.shell != nil {
+		msg = fe.shell.DequeueMessage()
+	}
 	if fe.queuedMsgLabel != nil {
 		fe.queuedMsgLabel.SetMessage("")
-	}
-	return msg
-}
-
-// DequeueMessage atomically retrieves and clears the queued message.
-// Safe to call from any goroutine (e.g. the LLM step loop).
-func (fe *frontendPretty) DequeueMessage() string {
-	fe.queuedMsgMu.Lock()
-	msg := fe.queuedMessage
-	fe.queuedMessage = ""
-	fe.queuedMsgMu.Unlock()
-	if msg != "" {
-		// Update the UI label on the dispatch goroutine
-		fe.dispatch(func() {
-			if fe.queuedMsgLabel != nil {
-				fe.queuedMsgLabel.SetMessage("")
-			}
-			fe.Update()
-		})
 	}
 	return msg
 }

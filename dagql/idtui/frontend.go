@@ -119,11 +119,6 @@ type Frontend interface {
 	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
 	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
 
-	// DequeueMessage atomically retrieves and clears a message that was
-	// queued by the user while the shell was busy. Returns "" if no
-	// message is queued. Safe to call from any goroutine.
-	DequeueMessage() string
-
 	prompt.PromptHandler
 }
 
@@ -206,6 +201,15 @@ type ShellHandler interface {
 	// performs any async work needed (e.g. loading the LLM state),
 	// or nil if branching is not supported.
 	BranchFromID(ctx context.Context, encodedID string) func()
+
+	// QueueMessage queues a user message to be picked up by the
+	// currently running Handle loop at the next opportunity (e.g.
+	// between LLM steps). Safe to call from any goroutine.
+	QueueMessage(msg string)
+
+	// DequeueMessage atomically retrieves and clears a queued message.
+	// Returns "" if nothing is queued. Safe to call from any goroutine.
+	DequeueMessage() string
 }
 
 type Dump struct {
