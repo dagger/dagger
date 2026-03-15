@@ -8,9 +8,11 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/huh"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -514,31 +516,7 @@ type slashCommand struct {
 // slashCommands returns the available slash commands for prompt mode
 func slashCommands() []slashCommand {
 	return []slashCommand{
-		{Name: "/resume", Description: "Resume a saved session", HasArg: true,
-			Complete: func(h *shellCallHandler, prefix string) []tuist.Completion {
-				sessions, err := ListSessions()
-				if err != nil {
-					return nil
-				}
-				var items []tuist.Completion
-				for _, s := range sessions {
-					label := s.LLMID // UUID
-					// Truncate the display name
-					displayName := s.Name
-					if len(displayName) > 60 {
-						displayName = displayName[:57] + "..."
-					}
-					detail := fmt.Sprintf("%s | %s | %s", s.Model, s.CreatedAt, displayName)
-					if strings.HasPrefix(label, prefix) || strings.Contains(strings.ToLower(displayName), strings.ToLower(prefix)) {
-						items = append(items, tuist.Completion{
-							Label:  label,
-							Detail: detail,
-						})
-					}
-				}
-				return items
-			},
-		},
+		{Name: "/resume", Description: "Resume a saved session"},
 		{Name: "/clear", Description: "Clear the LLM history"},
 		{Name: "/compact", Description: "Compact the LLM history"},
 		{Name: "/history", Description: "Show the LLM history"},
@@ -557,19 +535,20 @@ func (h *shellCallHandler) handleSlashCommand(ctx context.Context, line string) 
 
 	switch cmd {
 	case "/resume":
-		if arg == "" {
-			return fmt.Errorf("/resume requires a session ID")
+		// If a session ID is given directly, use it
+		if arg != "" {
+			llm, err := h.llm(ctx)
+			if err != nil {
+				return err
+			}
+			if err := llm.LoadSession(ctx, arg); err != nil {
+				return err
+			}
+			h.initialPrompt = ""
+			return nil
 		}
-		llm, err := h.llm(ctx)
-		if err != nil {
-			return err
-		}
-		if err := llm.LoadSession(ctx, arg); err != nil {
-			return err
-		}
-		// Clear the initial prompt so the resumed session gets its own save identity
-		h.initialPrompt = ""
-		return nil
+		// Otherwise show an interactive picker
+		return h.resumeSessionInteractive(ctx)
 	case "/clear":
 		if h.llmSession == nil {
 			return fmt.Errorf("LLM not initialized")
@@ -616,6 +595,61 @@ func (h *shellCallHandler) handleSlashCommand(ctx context.Context, line string) 
 	default:
 		return fmt.Errorf("unknown command: %s", cmd)
 	}
+}
+
+func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
+	sessions, err := ListSessions()
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return fmt.Errorf("no saved sessions")
+	}
+
+	// Build options for the select form
+	var options []huh.Option[string]
+	for _, s := range sessions {
+		// Format: truncated prompt | model | timestamp
+		displayName := s.Name
+		if len(displayName) > 60 {
+			displayName = displayName[:57] + "..."
+		}
+		// Parse and format the timestamp more readably
+		ts := s.CreatedAt
+		if t, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
+			ts = t.Local().Format("Jan 2 15:04")
+		}
+		label := fmt.Sprintf("%s  (%s, %s)", displayName, s.Model, ts)
+		options = append(options, huh.NewOption(label, s.LLMID))
+	}
+
+	var selected string
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Resume session").
+				Options(options...).
+				Value(&selected),
+		),
+	)
+
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		return nil // user aborted
+	}
+
+	llm, err := h.llm(ctx)
+	if err != nil {
+		return err
+	}
+	if err := llm.LoadSession(ctx, selected); err != nil {
+		return err
+	}
+	h.initialPrompt = ""
+	return nil
 }
 
 func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.CompletionResult {
