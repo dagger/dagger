@@ -1026,6 +1026,9 @@ func (llm *LLM) WithPrompt(
 		// leave unexpanded, perhaps it refers to an object var
 		return fmt.Sprintf("$%s", key)
 	})
+	if prompt == "" {
+		return llm
+	}
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleUser,
@@ -1067,6 +1070,9 @@ func (llm *LLM) WithoutSystemPrompts() *LLM {
 
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
+	if prompt == "" {
+		return llm
+	}
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleSystem,
