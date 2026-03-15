@@ -98,6 +98,7 @@ type frontendPretty struct {
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
 	promptErr       error
+	promptErrLabel  *ErrorLabel
 	textInput       *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
@@ -614,8 +615,10 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert textInput before keymapBar: output → prompt → keymap
+	// Insert errorLabel + textInput before keymapBar: output → error → prompt → keymap
+	fe.promptErrLabel = NewErrorLabel(fe.profile)
 	fe.tui.RemoveChild(fe.keymapBar)
+	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.textInput)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
@@ -631,6 +634,10 @@ func (fe *frontendPretty) stopShell() {
 	// save history before clearing shell state
 	fe.saveHistory()
 
+	if fe.promptErrLabel != nil {
+		fe.tui.RemoveChild(fe.promptErrLabel)
+		fe.promptErrLabel = nil
+	}
 	if fe.textInput != nil {
 		fe.tui.RemoveChild(fe.textInput)
 		fe.textInput = nil
@@ -1349,8 +1356,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
-	chromeHeight += fe.editlineHeight() // textInput is a sibling, not rendered here
-	chromeHeight += fe.formHeight()     // formWrap is a sibling, not rendered here
+	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
+	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
+	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
 	if fe.searchInput != nil {
 		chromeHeight += 1 // searchInput is a sibling, 1 line
 	}
@@ -1395,6 +1403,14 @@ func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+}
+
+// errorLabelHeight returns the line count of the error label for chrome-height budgeting.
+func (fe *frontendPretty) errorLabelHeight() int {
+	if fe.promptErrLabel == nil || fe.promptErr == nil {
+		return 0
+	}
+	return 1
 }
 
 // editlineHeight returns the estimated line count of the text input
@@ -2080,6 +2096,9 @@ func (fe *frontendPretty) handleInputComplete() {
 
 	// reset prompt error state
 	fe.promptErr = nil
+	if fe.promptErrLabel != nil {
+		fe.promptErrLabel.SetError(nil)
+	}
 
 	value := fe.textInput.Value()
 	// Add to history (encoded with mode prefix for round-trip fidelity)
@@ -2118,8 +2137,10 @@ func (fe *frontendPretty) handleInputComplete() {
 }
 
 func (fe *frontendPretty) handleShellDone(err error) {
-	// show error result above the prompt
 	fe.promptErr = err
+	if fe.promptErrLabel != nil {
+		fe.promptErrLabel.SetError(err)
+	}
 	if err == nil {
 		fe.promptFg = termenv.ANSIGreen
 	} else {
