@@ -1482,7 +1482,9 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 				// the LLM along.
 
 				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
-					// interjecting failed or was interrupted
+					if ctx.Err() != nil {
+						return inst, nil
+					}
 					return inst, interjectErr
 				} else if interjected {
 					inst = newLLM
@@ -1508,6 +1510,12 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 		var err error
 		inst, err = inst.Self().Step(ctx, inst)
 		if err != nil {
+			if ctx.Err() != nil {
+				// Context was cancelled (user interrupt). Return the
+				// last successfully recorded state so that the prompt
+				// and any prior progress are preserved in history.
+				return inst, nil
+			}
 			// Handle persistent error after all retries failed.
 			return inst, err
 		}
