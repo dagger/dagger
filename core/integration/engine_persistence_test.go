@@ -390,6 +390,71 @@ printf 'layered\n' > /work/layered.txt
 		require.Contains(t, outB.summary, "random="+outB.random)
 	})
 
+	t.Run("engine-dev container build survives restart", func(ctx context.Context, t *testctx.T) {
+		stateKey := "phase7-engine-dev-build-state-" + identity.NewID()
+		repoDir := c.Host().Directory("/app")
+
+		runCLI := func(ctx context.Context, t *testctx.T, engineSvc *dagger.Service, args ...string) string {
+			t.Helper()
+			ctr := engineClientContainer(ctx, t, c, engineSvc).
+				WithMountedDirectory("/app", repoDir).
+				WithWorkdir("/app").
+				With(daggerExec(args...))
+
+			stdout, err := ctr.Stdout(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(stdout)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runCLI(
+			ctx,
+			t,
+			upstreamSvcA,
+			"call", "engine-dev", "container",
+			"with-exec", "--args", "true",
+			"with-exec", "--args", "sh", "--args", "-ec", "--args", `head -c 32 /dev/urandom | sha256sum | cut -d" " -f1 > /tmp/random`,
+			"file", "--path", "/tmp/random",
+			"contents",
+		)
+		require.NotEmpty(t, randomA)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runCLI(
+			ctx,
+			t,
+			upstreamSvcB,
+			"call", "engine-dev", "container",
+			"with-exec", "--args", "true",
+			"with-exec", "--args", "sh", "--args", "-ec", "--args", `head -c 32 /dev/urandom | sha256sum | cut -d" " -f1 > /tmp/random`,
+			"file", "--path", "/tmp/random",
+			"contents",
+		)
+		require.Equal(t, randomA, randomB, "engine-dev container build result should survive engine restart")
+
+		layered := runCLI(
+			ctx,
+			t,
+			upstreamSvcB,
+			"call", "engine-dev", "container",
+			"with-exec", "--args", "true",
+			"with-exec", "--args", "sh", "--args", "-ec", "--args", `head -c 32 /dev/urandom | sha256sum | cut -d" " -f1 > /tmp/random`,
+			"with-exec", "--args", "sh", "--args", "-ec", "--args", `test -x /usr/local/bin/dagger-engine && printf '%s|layered\n' "$(cat /tmp/random)" > /tmp/summary`,
+			"file", "--path", "/tmp/summary",
+			"contents",
+		)
+		require.Equal(t, randomB+"|layered", layered, "new withExec should still apply on top of the cached engine-dev container build")
+	})
+
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {
 		stateKey := "phase7-cache-volume-state-" + identity.NewID()
 		cacheKey := "phase7-cache-volume-data-" + identity.NewID()

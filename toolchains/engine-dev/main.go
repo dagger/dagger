@@ -21,6 +21,8 @@ func New(
 	// +ignore=[
 	// "*",
 	// "!.git",
+	// "!dagger.json",
+	// "!**/dagger.json",
 	// "!**/go.*",
 	// "!version",
 	// "!core",
