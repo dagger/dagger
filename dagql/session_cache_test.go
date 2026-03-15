@@ -87,9 +87,20 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 			t.Fatal("timed out waiting for running call")
 		}
 
-		err = sc.ReleaseAndClose(ctx)
-		assert.NilError(t, err)
+		closeErrCh := make(chan error, 1)
+		go func() {
+			closeErrCh <- sc.ReleaseAndClose(ctx)
+		}()
+
+		select {
+		case err := <-closeErrCh:
+			t.Fatalf("ReleaseAndClose returned before running call finished: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
+
 		close(stopCh)
+		err = <-closeErrCh
+		assert.NilError(t, err)
 
 		runErr := <-errCh
 		assert.ErrorContains(t, runErr, "session cache was closed during execution")
@@ -490,8 +501,19 @@ func TestSessionCacheArbitraryCloseWhileRunning(t *testing.T) {
 		t.Fatal("timed out waiting for running call")
 	}
 
-	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	closeErrCh := make(chan error, 1)
+	go func() {
+		closeErrCh <- sc.ReleaseAndClose(ctx)
+	}()
+
+	select {
+	case err := <-closeErrCh:
+		t.Fatalf("ReleaseAndClose returned before running arbitrary call finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
 	close(stopCh)
+	assert.NilError(t, <-closeErrCh)
 
 	runErr := <-errCh
 	assert.ErrorContains(t, runErr, "session cache was closed during execution")

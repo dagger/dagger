@@ -12,6 +12,8 @@ type SessionCache struct {
 	results          []AnyResult
 	arbitraryResults []ArbitraryCachedResult
 	mu               sync.Mutex
+	inflight         int
+	cond             *sync.Cond
 
 	// isClosed is set to true when ReleaseAndClose is called.
 	// Any in-progress results will be released and errors returned.
@@ -23,9 +25,11 @@ type SessionCache struct {
 func NewSessionCache(
 	baseCache Cache,
 ) *SessionCache {
-	return &SessionCache{
+	sc := &SessionCache{
 		cache: baseCache,
 	}
+	sc.cond = sync.NewCond(&sc.mu)
+	return sc
 }
 
 type CacheCallOpt interface {
@@ -113,7 +117,16 @@ func (c *SessionCache) GetOrInitCall(
 		c.mu.Unlock()
 		return nil, errors.New("session cache is closed")
 	}
+	c.inflight++
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.inflight--
+		if c.inflight == 0 {
+			c.cond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
 
 	var o CacheCallOpts
 	for _, opt := range opts {
@@ -179,19 +192,19 @@ func (c *SessionCache) GetOrInitCall(
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	isClosed := c.isClosed
+	if !isClosed && res != nil && !key.DoNotCache {
+		c.results = append(c.results, res)
+	}
+	c.mu.Unlock()
 
 	// if the session cache is closed, ensure we release the result so it doesn't leak
-	if c.isClosed {
+	if isClosed {
 		err := errors.New("session cache was closed during execution")
 		if res != nil {
 			err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
 		}
 		return nil, err
-	}
-
-	if res != nil && !key.DoNotCache {
-		c.results = append(c.results, res)
 	}
 
 	if nilResult {
@@ -211,7 +224,16 @@ func (c *SessionCache) GetOrInitArbitrary(
 		c.mu.Unlock()
 		return nil, errors.New("session cache is closed")
 	}
+	c.inflight++
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.inflight--
+		if c.inflight == 0 {
+			c.cond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
 
 	res, err := c.cache.GetOrInitArbitrary(ctx, callKey, fn)
 	if err != nil {
@@ -219,9 +241,13 @@ func (c *SessionCache) GetOrInitArbitrary(
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	isClosed := c.isClosed
+	if !isClosed && res != nil {
+		c.arbitraryResults = append(c.arbitraryResults, res)
+	}
+	c.mu.Unlock()
 
-	if c.isClosed {
+	if isClosed {
 		closeErr := errors.New("session cache was closed during execution")
 		if res != nil {
 			closeErr = errors.Join(closeErr, res.Release(context.WithoutCancel(ctx)))
@@ -232,31 +258,34 @@ func (c *SessionCache) GetOrInitArbitrary(
 	if res == nil {
 		return nil, nil
 	}
-	c.arbitraryResults = append(c.arbitraryResults, res)
 	return res, nil
 }
 
 func (c *SessionCache) ReleaseAndClose(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	c.isClosed = true
+	for c.inflight > 0 {
+		c.cond.Wait()
+	}
+	results := c.results
+	arbitraryResults := c.arbitraryResults
+	c.results = nil
+	c.arbitraryResults = nil
+	c.mu.Unlock()
 
 	var rerr error
-	for _, res := range c.results {
+	for _, res := range results {
 		if res == nil {
 			continue
 		}
 		rerr = errors.Join(rerr, res.Release(context.WithoutCancel(ctx)))
 	}
-	c.results = nil
-	for _, res := range c.arbitraryResults {
+	for _, res := range arbitraryResults {
 		if res == nil {
 			continue
 		}
 		rerr = errors.Join(rerr, res.Release(context.WithoutCancel(ctx)))
 	}
-	c.arbitraryResults = nil
 
 	return rerr
 }
