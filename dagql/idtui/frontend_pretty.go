@@ -2808,31 +2808,30 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // thing
 const llmLogsLastLines = 8
 
-// conventionalToolArgFields are argument names that receive special
-// rendering in the TUI (shown in the span header or as rich content)
-// rather than being dumped as raw JSON.
-var conventionalToolArgFields = map[string]bool{
-	"path":        true, // shown in header with cyan
-	"description": true, // shown in header, faint
-	"prompt":      true, // rendered as markdown content line
-}
-
 func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	args := fe.logs.ToolArgs[row.Span.ID]
 	if args == "" {
 		return
 	}
 
+	toolName := row.Span.LLMTool
 	fields := partialJSONFields(args)
 
-	// Render prompt field as a markdown-ish content line.
-	if prompt, ok := fields["prompt"]; ok && prompt != "" {
+	// Render content-style fields (prompt, command, content, etc.)
+	// as truncated italic lines beneath the header.
+	for _, argName := range []string{"prompt", "command", "content"} {
+		val, ok := fields[argName]
+		if !ok || val == "" {
+			continue
+		}
+		if toolArgStyle(toolName, argName) != argStyleContent {
+			continue
+		}
 		maxWidth := fe.window.Width - row.Depth*2 - 4
 		if maxWidth < 20 {
 			maxWidth = 20
 		}
-		// Show first line of prompt, truncated.
-		line := prompt
+		line := val
 		if idx := strings.IndexByte(line, '\n'); idx >= 0 {
 			line = line[:idx] + "…"
 		}
@@ -2851,7 +2850,7 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 		// Full JSON available — filter out conventional fields.
 		filtered := make(map[string]any, len(parsed))
 		for k, v := range parsed {
-			if !conventionalToolArgFields[k] {
+			if !isConventionalArg(toolName, k) {
 				filtered[k] = v
 			}
 		}
@@ -3499,6 +3498,12 @@ type prettyLogs struct {
 	// ToolArgs accumulates tool call argument JSON per span, captured
 	// from verbose application/json logs on LLMTool spans.
 	ToolArgs map[dagui.SpanID]string
+
+	// PendingRollUp buffers log bodies for spans whose parent span hasn't
+	// been registered yet. When the span appears and findRollUpSpan succeeds,
+	// the buffered logs are replayed into the roll-up writer so the first
+	// few tokens aren't lost.
+	PendingRollUp map[dagui.SpanID][]string
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -3511,6 +3516,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 		SawEOF:        make(map[dagui.SpanID]bool),
 		Output:        termenv.NewOutput(io.Discard, termenv.WithProfile(profile)),
 		ToolArgs:      make(map[dagui.SpanID]string),
+		PendingRollUp: make(map[dagui.SpanID][]string),
 	}
 }
 
@@ -3561,7 +3567,21 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 				context = targetID.String()
 			}
 			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
+			// Replay any logs that arrived before the span was registered.
+			if pending, ok := l.PendingRollUp[spanID]; ok {
+				for _, body := range pending {
+					fmt.Fprint(pw, body)
+				}
+				delete(l.PendingRollUp, spanID)
+			}
 			fmt.Fprint(pw, log.Body().AsString())
+		} else if !rolledUp && !verbose && !global {
+			// The span isn't in the DB yet (arrived before its parent span
+			// was exported). Buffer the log body so we can replay it into
+			// the roll-up writer once the span is registered.
+			if _, known := l.DB.Spans.Map[spanID]; !known {
+				l.PendingRollUp[spanID] = append(l.PendingRollUp[spanID], log.Body().AsString())
+			}
 		}
 
 		vterm := l.spanLogs(spanID)
