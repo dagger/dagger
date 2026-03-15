@@ -15,8 +15,8 @@ import (
 )
 
 type Env struct {
-	// The environment's host filesystem
-	Workspace dagql.ObjectResult[*Directory] `field:"true"`
+	// The environment's workspace
+	Workspace dagql.ObjectResult[*Workspace] `field:"true"`
 
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
@@ -66,7 +66,7 @@ func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
 	return env, true
 }
 
-func NewEnv(workspace dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
+func NewEnv(workspace dagql.ObjectResult[*Workspace], deps *ModDeps) *Env {
 	return &Env{
 		Workspace:     workspace,
 		deps:          deps,
@@ -86,9 +86,9 @@ func (env *Env) Clone() *Env {
 	return &cp
 }
 
-func (env *Env) WithWorkspace(dir dagql.ObjectResult[*Directory]) *Env {
+func (env *Env) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *Env {
 	cp := *env
-	cp.Workspace = dir
+	cp.Workspace = ws
 	return &cp
 }
 

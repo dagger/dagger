@@ -10,6 +10,13 @@ type Workspace struct {
 	// Used to route host filesystem operations through the correct session
 	// when the workspace is passed to a module function.
 	ClientID string `field:"true" doc:"The client ID that owns this workspace's host filesystem."`
+
+	// Branch is the Git branch this workspace is on.
+	Branch string `field:"true" doc:"The Git branch this workspace is on."`
+
+	// RepoRoot is the path to the main repo (where .git/ lives).
+	// Not exposed in the schema. Needed to create worktrees.
+	RepoRoot string
 }
 
 func (*Workspace) Type() *ast.Type {

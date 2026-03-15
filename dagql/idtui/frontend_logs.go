@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
@@ -23,12 +23,13 @@ import (
 )
 
 type frontendLogs struct {
-	profile termenv.Profile
-	out     TermOutput
-	mu      sync.Mutex
-	db      *dagui.DB
-	opts    dagui.FrontendOpts
-	logs    streamingLogExporter
+	profile        termenv.Profile
+	out            TermOutput
+	mu             sync.Mutex
+	db             *dagui.DB
+	opts           dagui.FrontendOpts
+	logs           streamingLogExporter
+	telemetryError atomic.Pointer[error]
 }
 
 // NewLogs creates a new logs-style frontend that only prints logs from spans,
@@ -64,6 +65,10 @@ func (fe *frontendLogs) SetClient(client *dagger.Client) {}
 
 func (fe *frontendLogs) SetSidebarContent(SidebarSection) {}
 
+func (fe *frontendLogs) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
 	cleanup, runErr := f(ctx)
@@ -74,11 +79,18 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)
 	}
+	if p := fe.telemetryError.Load(); p != nil {
+		handleTelemetryErrorOutput(fe.out, fe.out, *p)
+	}
 	return normalizeFrontendExit(runErr, fe.db)
 }
 
 func (fe *frontendLogs) Opts() *dagui.FrontendOpts {
 	return &fe.opts
+}
+
+func (fe *frontendLogs) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
 }
 
 func (fe *frontendLogs) SetVerbosity(verbosity int) {
@@ -95,7 +107,7 @@ func (fe *frontendLogs) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendLogs) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendLogs) Background(cmd ExecCommand, raw bool) error {
 	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
@@ -128,6 +140,10 @@ func (fe *frontendLogs) Shell(ctx context.Context, handler ShellHandler) {
 
 func (fe *frontendLogs) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
 	return interact.NewInteraction(prompt).Resolve(dest)
+}
+
+func (fe *frontendLogs) Close() error {
+	return nil
 }
 
 func (fe *frontendLogs) HandleForm(ctx context.Context, form *huh.Form) error {

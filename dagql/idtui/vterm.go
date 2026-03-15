@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -32,6 +33,17 @@ type Vterm struct {
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	needsRedraw bool
+
+	// Thinking mode: when true, rendered Markdown is styled dim+italic
+	// to visually distinguish LLM thinking/reasoning output.
+	Thinking bool
+
+	// Search highlight state. When SearchQuery is non-empty, matching
+	// substrings in rendered lines are highlighted. SearchCurrentRow
+	// is the vterm row index of the "current" match (-1 for none),
+	// which gets a brighter highlight.
+	SearchQuery      string
+	SearchCurrentRow int
 
 	mu *sync.Mutex
 }
@@ -158,6 +170,69 @@ func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return term, nil
 }
 
+// SetSearchHighlight sets the search highlight state using native midterm
+// search. Pass an empty query to clear highlights. currentRow is the vterm
+// row of the "current" match (-1 if none in this vterm).
+//
+// Always re-runs the search so that new content is picked up.
+func (term *Vterm) SetSearchHighlight(query string, currentRow int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	if query == "" {
+		if term.SearchQuery != "" {
+			term.vt.SearchClear()
+			term.needsRedraw = true
+		}
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		return
+	}
+
+	// Always re-run search to pick up new content.
+	term.vt.Search(query)
+
+	// Mark the current match by row.
+	if currentRow >= 0 {
+		term.setCurrentMatchByRow(currentRow)
+	} else {
+		// Clear any previous current highlight.
+		term.vt.SearchSetCurrent(-1)
+	}
+
+	if term.SearchQuery != query || term.SearchCurrentRow != currentRow {
+		term.needsRedraw = true
+	}
+	term.SearchQuery = query
+	term.SearchCurrentRow = currentRow
+}
+
+// setCurrentMatchByRow finds the first search match on the given row and
+// marks it as "current" in midterm. Must be called with term.mu held.
+func (term *Vterm) setCurrentMatchByRow(row int) {
+	for i, m := range term.vt.SearchMatches {
+		if m.Row == row {
+			term.vt.SearchSetCurrent(i)
+			return
+		}
+	}
+}
+
+// ScrollToRow scrolls the viewport so that the given row is centered
+// (or as close as possible) within the visible area.
+func (term *Vterm) ScrollToRow(row int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	// Center the target row in the viewport.
+	term.Offset = max(0, row-term.Height/2)
+	// Clamp to valid range.
+	maxOffset := max(0, term.vt.UsedHeight()-term.Height)
+	if term.Offset > maxOffset {
+		term.Offset = maxOffset
+	}
+	term.needsRedraw = true
+}
+
 func (term *Vterm) ScrollPercent() float64 {
 	return min(1, float64(term.Offset+term.Height)/float64(term.vt.UsedHeight()))
 }
@@ -178,6 +253,11 @@ func (term *Vterm) View() string {
 
 var MarkdownStyle = styles.LightStyleConfig
 
+// ThinkingMarkdownStyle is used for LLM thinking/reasoning output.
+// All text is rendered in a dim gray (ANSIBrightBlack equivalent)
+// and italic to visually distinguish it from normal assistant output.
+var ThinkingMarkdownStyle ansi.StyleConfig
+
 func init() {
 	if HasDarkBackground() {
 		MarkdownStyle = styles.DarkStyleConfig
@@ -188,6 +268,17 @@ func init() {
 
 	// No real point setting a custom foreground, it just looks weird.
 	MarkdownStyle.Document.Color = nil
+
+	// Build thinking style: clone the base style and set all text to
+	// a dim gray + italic. We use ANSI 90 which is "bright black" —
+	// the same color as termenv.ANSIBrightBlack.
+	ThinkingMarkdownStyle = MarkdownStyle
+	t := true
+	dimColor := "8" // ANSI color index 8 = termenv.ANSIBrightBlack
+	ThinkingMarkdownStyle.Document.StylePrimitive.Color = &dimColor
+	ThinkingMarkdownStyle.Document.StylePrimitive.Italic = &t
+	ThinkingMarkdownStyle.Paragraph.Color = &dimColor
+	ThinkingMarkdownStyle.Paragraph.Italic = &t
 }
 
 func (term *Vterm) redraw() {
@@ -195,9 +286,14 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
+		style := MarkdownStyle
+		if term.Thinking {
+			style = ThinkingMarkdownStyle
+		}
+
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(MarkdownStyle),
+			glamour.WithStyles(style),
 			glamour.WithPreservedNewLines(),
 			glamour.WithEmoji(),
 		)
@@ -290,8 +386,8 @@ func (m *Markdown) View() string {
 	return m.viewBuf.String()
 }
 
-// Bytes returns the output for the given region of the terminal, with
-// ANSI formatting.
+// Render writes the output for the given region of the terminal, with
+// ANSI formatting. Search highlights are rendered natively by midterm.
 func (term *Vterm) Render(w io.Writer, offset, height int) {
 	used := term.vt.UsedHeight()
 	if used == 0 {

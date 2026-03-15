@@ -8,10 +8,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -20,8 +22,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"github.com/vito/bubbline/computil"
-	"github.com/vito/bubbline/editline"
+	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -119,6 +120,13 @@ type shellCallHandler struct {
 	llmErr     error // error initializing LLM
 	llmModel   string
 	llmL       sync.Mutex // synchronizing LLM init status
+
+	// initialPrompt is the first prompt sent to the LLM in this session,
+	// used as the human-readable name when auto-saving.
+	initialPrompt string
+	// sessionUUID is the on-disk identifier for the current session file.
+	// Generated once on first prompt; reused for subsequent saves.
+	sessionUUID string
 
 	// debug mode toggle
 	debug bool
@@ -370,6 +378,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 
 	// Handle based on mode
 	if h.mode == modePrompt {
+		// Handle slash commands in prompt mode
+		if strings.HasPrefix(line, "/") {
+			return h.handleSlashCommand(ctx, line)
+		}
+
 		// NB: no span in this case, just let the LLM APIs create the user/assistant
 		// message spans
 
@@ -377,12 +390,27 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		if err != nil {
 			return err
 		}
+
+		// Track the initial prompt for session naming
+		if h.initialPrompt == "" {
+			h.initialPrompt = line
+		}
+
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {
 			return err
 		}
 		h.llmSession = newLLM
 		h.llmModel = newLLM.model
+
+		// Auto-save the session (creates file on first prompt, updates thereafter)
+		savedUUID, err := newLLM.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+		if err != nil {
+			slog.Warn("failed to auto-save session", "error", err)
+		} else {
+			h.sessionUUID = savedUUID
+		}
+
 		return nil
 	}
 
@@ -436,14 +464,13 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
-func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, tea.Cmd) {
+func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
 	sb := new(strings.Builder)
 
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 
-	var init tea.Cmd
+	var init func()
 
-	// Use LLM prompt if LLM session is active and in prompt mode
 	switch h.mode {
 	case modeShell:
 		if def, _ := h.GetModuleDef(nil); def != nil {
@@ -466,9 +493,8 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		} else {
 			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
-			init = func() tea.Msg {
-				h.llm(ctx) // initialize LLM
-				return idtui.UpdatePromptMsg{}
+			init = func() {
+				h.llm(ctx) //nolint:errcheck
 			}
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
@@ -484,33 +510,228 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	return err
 }
 
-func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
-	if h.mode == modePrompt {
-		word, wstart, wend := computil.FindWord(entireInput, line, col)
-		if after, ok := strings.CutPrefix(word, "$"); ok {
-			prefix := after
-			vars := h.runner.Vars
-			var completions []string
-			for k := range vars {
-				if strings.HasPrefix(k, prefix) {
-					completions = append(completions, "$"+k)
-				}
-			}
-			return "", editline.SimpleWordsCompletion(completions, "variable", col, wstart, wend)
-		}
-		return "", nil
-	}
-
-	return (&shellAutoComplete{h}).Do(entireInput, line, col)
+// slashCommand defines a slash command available in prompt mode
+type slashCommand struct {
+	Name        string
+	Description string
+	HasArg      bool
+	// Complete returns completions for the argument
+	Complete func(h *shellCallHandler, prefix string) []tuist.Completion
 }
 
-func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
+// slashCommands returns the available slash commands for prompt mode
+func slashCommands() []slashCommand {
+	return []slashCommand{
+		{Name: "/resume", Description: "Resume a saved session"},
+		{Name: "/clear", Description: "Clear the LLM history"},
+		{Name: "/compact", Description: "Compact the LLM history"},
+		{Name: "/history", Description: "Show the LLM history"},
+		{Name: "/model", Description: "Swap out the LLM model", HasArg: true},
+		{Name: "/shell", Description: "Switch into shell mode"},
+	}
+}
+
+func (h *shellCallHandler) handleSlashCommand(ctx context.Context, line string) error {
+	parts := strings.SplitN(line, " ", 2)
+	cmd := parts[0]
+	var arg string
+	if len(parts) > 1 {
+		arg = strings.TrimSpace(parts[1])
+	}
+
+	switch cmd {
+	case "/resume":
+		// If a session ID is given directly, use it
+		if arg != "" {
+			llm, err := h.llm(ctx)
+			if err != nil {
+				return err
+			}
+			if err := llm.LoadSession(ctx, arg); err != nil {
+				return err
+			}
+			h.initialPrompt = ""
+			return nil
+		}
+		// Otherwise show an interactive picker
+		return h.resumeSessionInteractive(ctx)
+	case "/clear":
+		if h.llmSession == nil {
+			return fmt.Errorf("LLM not initialized")
+		}
+		h.llmSession = h.llmSession.Clear()
+		h.initialPrompt = ""
+		return nil
+	case "/compact":
+		if h.llmSession == nil {
+			return fmt.Errorf("LLM not initialized")
+		}
+		compacted, err := h.llmSession.Compact(ctx)
+		if err != nil {
+			return err
+		}
+		return h.llmSession.updateLLMAndAgentVar(compacted)
+	case "/history":
+		if h.llmSession == nil {
+			return fmt.Errorf("LLM not initialized")
+		}
+		_, err := h.llmSession.History(ctx)
+		return err
+	case "/model":
+		if arg == "" {
+			return fmt.Errorf("/model requires a model name")
+		}
+		llm, err := h.llm(ctx)
+		if err != nil {
+			return err
+		}
+		newLLM, err := llm.Model(arg)
+		if err != nil {
+			return err
+		}
+		h.llmSession = newLLM
+		h.llmModel = newLLM.model
+		return nil
+	case "/shell":
+		h.mode = modeShell
+		return nil
+	case "/exit":
+		h.cancel()
+		return nil
+	default:
+		return fmt.Errorf("unknown command: %s", cmd)
+	}
+}
+
+func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
+	sessions, err := ListSessions()
+	if err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return fmt.Errorf("no saved sessions")
+	}
+
+	// Build options for the select form
+	var options []huh.Option[string]
+	for _, s := range sessions {
+		// Format: truncated prompt | model | timestamp
+		displayName := s.Name
+		if len(displayName) > 60 {
+			displayName = displayName[:57] + "..."
+		}
+		// Parse and format the timestamp more readably
+		ts := s.CreatedAt
+		if t, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
+			ts = t.Local().Format("Jan 2 15:04")
+		}
+		label := fmt.Sprintf("%s  (%s, %s)", displayName, s.Model, ts)
+		options = append(options, huh.NewOption(label, s.LLMID))
+	}
+
+	var selected string
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Resume session").
+				Options(options...).
+				Value(&selected),
+		),
+	)
+
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		return nil // user aborted
+	}
+
+	llm, err := h.llm(ctx)
+	if err != nil {
+		return err
+	}
+	if err := llm.LoadSession(ctx, selected); err != nil {
+		return err
+	}
+	h.initialPrompt = ""
+	return nil
+}
+
+func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.CompletionResult {
+	if h.mode == modePrompt {
+		before := input[:cursorPos]
+		wordStart := strings.LastIndexAny(before, " \t\n") + 1
+		word := before[wordStart:]
+
+		// Slash command completion
+		if strings.HasPrefix(input, "/") {
+			parts := strings.SplitN(input, " ", 2)
+			cmd := parts[0]
+
+			if len(parts) == 1 {
+				// Completing the command name itself
+				var items []tuist.Completion
+				for _, sc := range slashCommands() {
+					if strings.HasPrefix(sc.Name, cmd) {
+						items = append(items, tuist.Completion{
+							Label:  sc.Name,
+							Detail: sc.Description,
+						})
+					}
+				}
+				return tuist.CompletionResult{
+					Items:       items,
+					ReplaceFrom: 0,
+				}
+			}
+
+			// Completing the argument
+			argPrefix := ""
+			if len(parts) > 1 {
+				argPrefix = strings.TrimSpace(parts[1])
+			}
+			for _, sc := range slashCommands() {
+				if sc.Name == cmd && sc.HasArg && sc.Complete != nil {
+					items := sc.Complete(h, argPrefix)
+					return tuist.CompletionResult{
+						Items:       items,
+						ReplaceFrom: len(cmd) + 1,
+					}
+				}
+			}
+			return tuist.CompletionResult{}
+		}
+
+		// Variable completion
+		if after, ok := strings.CutPrefix(word, "$"); ok {
+			vars := h.runner.Vars
+			var items []tuist.Completion
+			for k := range vars {
+				if strings.HasPrefix(k, after) {
+					items = append(items, tuist.Completion{
+						Label:  "$" + k,
+						Detail: "variable",
+					})
+				}
+			}
+			return tuist.CompletionResult{
+				Items:       items,
+				ReplaceFrom: wordStart,
+			}
+		}
+		return tuist.CompletionResult{}
+	}
+
+	return (&shellAutoComplete{h}).Complete(input, cursorPos)
+}
+
+func (h *shellCallHandler) IsComplete(input string) bool {
 	if h.mode == modePrompt {
 		return true // LLM prompt mode always considers input complete
 	}
 
 	// Regular shell mode
-	input, _ := computil.Flatten(entireInput, line, col)
 	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
 	if err != nil {
 		if syntax.IsIncomplete(err) {
@@ -565,11 +786,6 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 			idtui.KeyEnabled(h.mode == modeShell),
 		),
 		key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("ctrl+u", "upload changes"),
-			idtui.KeyEnabled(h.mode == modePrompt),
-		),
-		key.NewBinding(
 			key.WithKeys("ctrl+x"),
 			key.WithHelp("ctrl+x", autoCompactHelp),
 			idtui.KeyEnabled(h.llmSession != nil),
@@ -577,58 +793,31 @@ func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
 	}
 }
 
-func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) tea.Cmd {
-	switch msg.String() {
-	case ">":
-		if editline.AtStart() {
+func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent, inputValue string, editing bool) func() {
+	key := uv.Key(ev)
+	switch {
+	case key.MatchString(">"):
+		if inputValue == "" {
 			h.mode = modePrompt
-			return func() tea.Msg {
+			return func() {
 				h.llm(ctx) // initialize LLM
-				return idtui.UpdatePromptMsg{}
 			}
 		}
-	case "!":
-		if editline.AtStart() {
+	case key.MatchString("!"):
+		if inputValue == "" {
 			h.mode = modeShell
-			return func() tea.Msg {
-				return idtui.UpdatePromptMsg{}
-			}
+			return noop // handled, no async work
 		}
-	case "ctrl+x":
+	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
 			h.llmSession.ToggleAutocompact()
-		}
-	case "ctrl+s":
-		if h.llmSession != nil {
-			return func() tea.Msg {
-				if err := h.llmSession.SyncToLocal(ctx); err != nil {
-					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
-					// Show error in sidebar
-					Frontend.SetSidebarContent(idtui.SidebarSection{
-						Title:   "Changes",
-						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
-					})
-				}
-				return idtui.UpdatePromptMsg{}
-			}
-		}
-	case "ctrl+u":
-		if h.llmSession != nil {
-			return func() tea.Msg {
-				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
-					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
-					// Show error in sidebar
-					Frontend.SetSidebarContent(idtui.SidebarSection{
-						Title:   "Changes",
-						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
-					})
-				}
-				return idtui.UpdatePromptMsg{}
-			}
+			return noop
 		}
 	}
 	return nil
 }
+
+func noop() {}
 
 func (h *shellCallHandler) EncodeHistory(entry string) string {
 	switch h.mode {
@@ -638,6 +827,31 @@ func (h *shellCallHandler) EncodeHistory(entry string) string {
 		return "!" + entry
 	}
 	return entry
+}
+
+func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string) func() {
+	return func() {
+		s, err := h.llm(ctx)
+		if err != nil {
+			slog.Error("failed to initialize LLM for branch", "error", err)
+			return
+		}
+		// Load the LLM from the encoded ID
+		loadedLLM := h.dag.LoadLLMFromID(dagger.LLMID(encodedID))
+		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+			slog.Error("failed to update LLM for branch", "error", err)
+			return
+		}
+		if err := s.updateSidebar(loadedLLM); err != nil {
+			slog.Error("failed to update sidebar for branch", "error", err)
+		}
+		// Branching creates a new session; clear UUID so the next prompt
+		// generates a fresh save file rather than overwriting the original.
+		h.sessionUUID = ""
+		h.initialPrompt = ""
+		// Switch to prompt mode so the user can type a new prompt
+		h.mode = modePrompt
+	}
 }
 
 func (h *shellCallHandler) DecodeHistory(entry string) string {

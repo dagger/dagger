@@ -3,8 +3,8 @@
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  EstarGz = "EStarGZ",
-  Estargz = ImageLayerCompression.EstarGz,
+  EStarGz = "EStarGZ",
+  Estargz = ImageLayerCompression.EStarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",
@@ -16,7 +16,7 @@ export enum ImageLayerCompression {
  */
 function ImageLayerCompressionValueToName(value: ImageLayerCompression): string {
   switch (value) {
-    case ImageLayerCompression.EstarGz:
+    case ImageLayerCompression.EStarGz:
       return "EStarGZ"
     case ImageLayerCompression.Gzip:
       return "Gzip"
@@ -36,7 +36,7 @@ function ImageLayerCompressionValueToName(value: ImageLayerCompression): string 
 function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
   switch (name) {
     case "EStarGZ":
-      return ImageLayerCompression.EstarGz
+      return ImageLayerCompression.EStarGz
     case "Gzip":
       return ImageLayerCompression.Gzip
     case "Uncompressed":

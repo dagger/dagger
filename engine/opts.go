@@ -86,6 +86,10 @@ type ClientMetadata struct {
 	// SSH auth socket path
 	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
 
+	// Path to the dagger config file on the client's filesystem.
+	// Resolved client-side via xdg.ConfigHome so it works cross-platform.
+	ConfigPath string `json:"config_path,omitempty"`
+
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
 
@@ -152,17 +156,47 @@ func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 }
 
 type LocalImportOpts struct {
-	Path               string   `json:"path"`
-	UseGitIgnore       bool     `json:"use_gitignore"`
-	IncludePatterns    []string `json:"include_patterns"`
-	ExcludePatterns    []string `json:"exclude_patterns"`
-	FollowPaths        []string `json:"follow_paths"`
-	ReadSingleFileOnly bool     `json:"read_single_file_only"`
-	MaxFileSize        int64    `json:"max_file_size"`
-	StatPathOnly       bool     `json:"stat_path_only"`
-	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
-	StatResolvePath    bool     `json:"stat_resolve_path"`
-	GetAbsPathOnly     bool     `json:"get_abs_path_only"`
+	Path               string              `json:"path"`
+	UseGitIgnore       bool                `json:"use_gitignore"`
+	IncludePatterns    []string            `json:"include_patterns"`
+	ExcludePatterns    []string            `json:"exclude_patterns"`
+	FollowPaths        []string            `json:"follow_paths"`
+	ReadSingleFileOnly bool                `json:"read_single_file_only"`
+	MaxFileSize        int64               `json:"max_file_size"`
+	StatPathOnly       bool                `json:"stat_path_only"`
+	StatReturnAbsPath  bool                `json:"stat_return_abs_path"`
+	StatResolvePath    bool                `json:"stat_resolve_path"`
+	StatFollowSymlinks bool                `json:"stat_follow_symlinks"`
+	GetAbsPathOnly     bool                `json:"get_abs_path_only"`
+	GlobPattern        string              `json:"glob_pattern"`
+	SearchOpts         *LocalSearchOpts    `json:"search_opts,omitempty"`
+	GitBranchDetect    bool                `json:"git_branch_detect,omitempty"`
+	GitRevParseHead    bool                `json:"git_rev_parse_head,omitempty"`
+	GitWorktreeAdd     *GitWorktreeAddOpts `json:"git_worktree_add,omitempty"`
+	GitStage           *GitStageOpts       `json:"git_stage,omitempty"`
+	GitCommit          *GitCommitOpts      `json:"git_commit,omitempty"`
+}
+
+// GitWorktreeAddOpts configures a git worktree add operation on the client.
+type GitWorktreeAddOpts struct {
+	Branch       string `json:"branch"`
+	WorktreePath string `json:"worktree_path"`
+	Base         string `json:"base,omitempty"` // start-point for new branch (default: HEAD)
+}
+
+// GitStageOpts configures staging paths in the git index.
+// Uses go-git to write blobs directly to the index and git merge-file
+// to 3-way merge changes into the working tree, preserving user edits.
+type GitStageOpts struct {
+	Added    []string `json:"added"`
+	Modified []string `json:"modified"`
+	Removed  []string `json:"removed"`
+	TempDir  string   `json:"temp_dir"` // path to exported changeset content
+}
+
+// GitCommitOpts configures a git commit operation on the client.
+type GitCommitOpts struct {
+	Message string `json:"message"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
@@ -224,6 +258,37 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 		return nil, err
 	}
 	return opts, nil
+}
+
+// LocalSearchResult is a search match returned from a client-side search.
+type LocalSearchResult struct {
+	FilePath       string                `json:"file_path"`
+	LineNumber     int                   `json:"line_number"`
+	AbsoluteOffset int                   `json:"absolute_offset"`
+	MatchedLines   string                `json:"matched_lines"`
+	Submatches     []LocalSearchSubmatch `json:"submatches,omitempty"`
+}
+
+// LocalSearchSubmatch is a sub-match within a search result.
+type LocalSearchSubmatch struct {
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// LocalSearchOpts configures a client-side search (ripgrep/grep).
+type LocalSearchOpts struct {
+	Pattern     string   `json:"pattern"`
+	Literal     bool     `json:"literal,omitempty"`
+	Multiline   bool     `json:"multiline,omitempty"`
+	Dotall      bool     `json:"dotall,omitempty"`
+	Insensitive bool     `json:"insensitive,omitempty"`
+	SkipIgnored bool     `json:"skip_ignored,omitempty"`
+	SkipHidden  bool     `json:"skip_hidden,omitempty"`
+	FilesOnly   bool     `json:"files_only,omitempty"`
+	Limit       *int     `json:"limit,omitempty"`
+	Paths       []string `json:"paths,omitempty"`
+	Globs       []string `json:"globs,omitempty"`
 }
 
 type LocalExportOpts struct {

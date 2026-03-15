@@ -3860,7 +3860,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.ImageLayerCompressionEstarGz,
+			dagger.ImageLayerCompressionEstargz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {

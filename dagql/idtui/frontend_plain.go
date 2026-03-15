@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -33,6 +33,9 @@ const plainMaxLiteralLen = 256 // same value as cloud currently
 
 type frontendPlain struct {
 	dagui.FrontendOpts
+
+	// telemetryError records errors from the OTel telemetry pipeline.
+	telemetryError atomic.Pointer[error]
 
 	// db stores info about all the spans
 	db   *dagui.DB
@@ -127,6 +130,12 @@ func NewPlain(w io.Writer) Frontend {
 
 func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
 
+func (fe *frontendPlain) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }
@@ -217,6 +226,10 @@ func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, des
 	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
+func (fe *frontendPlain) Close() error {
+	return nil
+}
+
 func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {
 	return form.RunWithContext(ctx)
 }
@@ -229,6 +242,10 @@ func (fe *frontendPlain) SetVerbosity(n int) {
 	fe.mu.Lock()
 	fe.Opts().Verbosity = n
 	fe.mu.Unlock()
+}
+
+func (fe *frontendPlain) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
 }
 
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
@@ -245,7 +262,7 @@ func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendPlain) Background(cmd ExecCommand, raw bool) error {
 	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
@@ -423,7 +440,11 @@ func (fe *frontendPlain) finalRender() {
 		fmt.Fprintln(stderr)
 	}
 
-	handleTelemetryErrorOutput(stderr, fe.output, fe.TelemetryError)
+	var telemetryErr error
+	if p := fe.telemetryError.Load(); p != nil {
+		telemetryErr = *p
+	}
+	handleTelemetryErrorOutput(stderr, fe.output, telemetryErr)
 
 	if fe.msgPreFinalRender.Len() > 0 {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")

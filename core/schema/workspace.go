@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type workspaceSchema struct{}
@@ -26,6 +28,30 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.NodeFuncWithCacheKey("withBranch", s.withBranch, dagql.CachePerClient).
+			Doc(`Return a Workspace for the given branch. If the branch is different from`,
+				`the currently checked-out branch, a git worktree is created on the host.`,
+				`If the branch does not exist, it is created from the current branch tip.`).
+			Args(
+				dagql.Arg("branch").Doc(`The branch name (e.g. "agent/auth").`),
+			),
+		dagql.NodeFuncWithCacheKey("stage", DagOpWrapper(srv, s.stage), dagql.CachePerClient).
+			DoNotCache("Writes to the local host.").
+			Doc(`Apply a Changeset to the workspace and stage the affected paths in git.`,
+				`Files are written (added/modified) and removed on disk, then precisely`,
+				`the changed paths are staged via git add / git rm. Any pre-existing`,
+				`unstaged user edits are preserved as unstaged changes.`,
+				`Returns true if any changes were staged, false if the changeset was empty.`).
+			Args(
+				dagql.Arg("changes").Doc(`The changes to apply and stage.`),
+			),
+		dagql.NodeFuncWithCacheKey("commit", DagOpWrapper(srv, s.commit), dagql.CachePerClient).
+			DoNotCache("Writes to the local host.").
+			Doc(`Commit whatever is currently staged in the workspace's git index.`,
+				`Returns the commit hash. Fails if there is nothing staged.`).
+			Args(
+				dagql.Arg("message").Doc(`The commit message.`),
+			),
 		dagql.NodeFuncWithCacheKey("directory",
 			DagOpDirectoryWrapper(
 				srv, s.directory,
@@ -45,6 +71,32 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").`),
 			),
+		dagql.NodeFuncWithCacheKey("exists", s.exists, dagql.CachePerClient).
+			Doc(`Check if a file or directory exists at the given path in the workspace.`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check, relative to the workspace root (e.g., "src/main.go").`),
+				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+			),
+		dagql.NodeFuncWithCacheKey("glob", s.glob, dagql.CachePerClient).
+			Doc(`Returns a list of files and directories that match the given pattern.`).
+			Args(
+				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
+			),
+		dagql.NodeFuncWithCacheKey("search", s.search, dagql.CachePerClient).
+			Doc(
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+				`Runs ripgrep on the client host, falling back to grep if unavailable.`,
+			).
+			Args((func() []dagql.Argument {
+				args := []dagql.Argument{
+					dagql.Arg("paths").Doc("Directory or file paths to search"),
+					dagql.Arg("globs").Doc("Glob patterns to match (e.g., \"*.md\")"),
+				}
+				args = append(args, (core.SearchOpts{}).Args()...)
+				return args
+			})()...),
 		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CachePerClient).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
 				`Returns the path relative to the workspace root if found, or null if not found.`,
@@ -95,9 +147,16 @@ func (s *workspaceSchema) currentWorkspace(
 		return nil, fmt.Errorf("client metadata: %w", err)
 	}
 
+	branch, err := bk.GitBranch(ctx, repoRoot)
+	if err != nil {
+		branch = "HEAD" // detached HEAD fallback
+	}
+
 	result := &core.Workspace{
 		Root:     repoRoot,
 		ClientID: clientMetadata.ClientID,
+		Branch:   branch,
+		RepoRoot: repoRoot,
 	}
 
 	return result, nil
@@ -225,6 +284,180 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 	return inst, nil
 }
 
+type workspaceSearchArgs struct {
+	core.SearchOpts
+	Paths []string `default:"[]"`
+	Globs []string `default:"[]"`
+}
+
+func (workspaceSearchArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceSearchArgs) (dagql.Array[*core.SearchResult], error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	localResults, err := bk.SearchCallerHostPath(ctx, ws.Root, &engine.LocalSearchOpts{
+		Pattern:     args.Pattern,
+		Literal:     args.Literal,
+		Multiline:   args.Multiline,
+		Dotall:      args.Dotall,
+		Insensitive: args.Insensitive,
+		SkipIgnored: args.SkipIgnored,
+		SkipHidden:  args.SkipHidden,
+		FilesOnly:   args.FilesOnly,
+		Limit:       args.Limit,
+		Paths:       args.Paths,
+		Globs:       args.Globs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+
+	// Convert engine.LocalSearchResult to core.SearchResult and emit OTel logs
+	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+	defer stdio.Close()
+
+	results := make([]*core.SearchResult, len(localResults))
+	for i, lr := range localResults {
+		result := &core.SearchResult{
+			FilePath:       lr.FilePath,
+			LineNumber:     lr.LineNumber,
+			AbsoluteOffset: lr.AbsoluteOffset,
+			MatchedLines:   lr.MatchedLines,
+		}
+		for _, sm := range lr.Submatches {
+			result.Submatches = append(result.Submatches, &core.SearchSubmatch{
+				Text:  sm.Text,
+				Start: sm.Start,
+				End:   sm.End,
+			})
+		}
+		results[i] = result
+
+		if args.FilesOnly {
+			fmt.Fprintln(stdio.Stdout, result.FilePath)
+		} else {
+			ensureLn := result.MatchedLines
+			if !strings.HasSuffix(ensureLn, "\n") {
+				ensureLn += "\n"
+			}
+			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
+		}
+	}
+
+	return dagql.Array[*core.SearchResult](results), nil
+}
+
+type workspaceGlobArgs struct {
+	Pattern string
+}
+
+func (workspaceGlobArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceGlobArgs) (dagql.Array[dagql.String], error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	matches, err := bk.GlobCallerHostPath(ctx, ws.Root, args.Pattern)
+	if err != nil {
+		return nil, fmt.Errorf("glob: %w", err)
+	}
+
+	return dagql.NewStringArray(matches...), nil
+}
+
+type workspaceExistsArgs struct {
+	Path                string
+	ExpectedType        dagql.Optional[core.ExistsType]
+	DoNotFollowSymlinks bool `default:"false"`
+}
+
+func (workspaceExistsArgs) CacheType() dagql.CacheControlType {
+	return dagql.CacheTypePerClient
+}
+
+func (s *workspaceSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceExistsArgs) (dagql.Boolean, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return false, err
+	}
+
+	absPath, err := pathutil.SandboxedRelativePath(args.Path, ws.Root)
+	if err != nil {
+		return false, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return false, fmt.Errorf("buildkit: %w", err)
+	}
+
+	statFS := core.NewCallerStatFS(bk)
+
+	// Use Lstat (Stat) or follow-symlinks stat depending on the flag.
+	// When checking for symlink type, always use Lstat.
+	followSymlinks := !args.DoNotFollowSymlinks && args.ExpectedType.Value != core.ExistsTypeSymlink
+	var stat *core.Stat
+	if followSymlinks {
+		_, stat, err = statFS.StatFollow(ctx, absPath)
+	} else {
+		_, stat, err = statFS.Stat(ctx, absPath)
+	}
+	if err != nil {
+		// Path does not exist
+		return false, nil
+	}
+
+	if args.ExpectedType.Valid {
+		switch args.ExpectedType.Value {
+		case core.ExistsTypeDirectory:
+			return dagql.NewBoolean(stat.FileType == core.FileTypeDirectory), nil
+		case core.ExistsTypeRegular:
+			return dagql.NewBoolean(stat.FileType == core.FileTypeRegular), nil
+		case core.ExistsTypeSymlink:
+			return dagql.NewBoolean(stat.FileType == core.FileTypeSymlink), nil
+		}
+	}
+
+	return true, nil
+}
+
 type workspaceFindUpArgs struct {
 	Name string
 	From string `default:"."`
@@ -289,6 +522,171 @@ func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	return none, nil
+}
+
+// sanitizeBranch replaces "/" with "-" for use in filesystem paths.
+func sanitizeBranch(branch string) string {
+	return strings.ReplaceAll(branch, "/", "-")
+}
+
+func (s *workspaceSchema) withBranch(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Branch string
+		Base   dagql.Optional[dagql.String]
+	},
+) (*core.Workspace, error) {
+	ws := parent.Self()
+	if ws.Branch == args.Branch {
+		return ws, nil
+	}
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit: %w", err)
+	}
+
+	var base string
+	if args.Base.Valid {
+		base = args.Base.Value.String()
+	}
+
+	worktreePath := ws.RepoRoot + "-worktrees/" + sanitizeBranch(args.Branch)
+	actualPath, err := bk.GitWorktreeAdd(ctx, ws.RepoRoot, args.Branch, worktreePath, base)
+	if err != nil {
+		return nil, fmt.Errorf("create worktree: %w", err)
+	}
+
+	return &core.Workspace{
+		Root:     actualPath,
+		ClientID: ws.ClientID,
+		Branch:   args.Branch,
+		RepoRoot: ws.RepoRoot,
+	}, nil
+}
+
+type workspaceStageArgs struct {
+	Changes dagql.ID[*core.Changeset]
+
+	RawDagOpInternalArgs
+}
+
+func (s *workspaceSchema) stage(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceStageArgs,
+) (dagql.Boolean, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return false, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	changeset, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return false, fmt.Errorf("load changeset: %w", err)
+	}
+
+	// Compute the changeset paths (added/modified/removed)
+	paths, err := changeset.Self().ComputePaths(ctx)
+	if err != nil {
+		return false, fmt.Errorf("compute paths: %w", err)
+	}
+
+	// Check if empty
+	if len(paths.Added) == 0 && len(paths.Modified) == 0 && len(paths.Removed) == 0 {
+		return false, nil
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return false, fmt.Errorf("buildkit: %w", err)
+	}
+
+	// Step 1: Export changeset to a temp dir (not the worktree!) so we
+	// never clobber user's in-progress edits.
+	tempDir := ws.Root + "-dagger-stage-tmp"
+	if err := changeset.Self().Export(ctx, tempDir); err != nil {
+		return false, fmt.Errorf("export changeset: %w", err)
+	}
+
+	// Filter out directory entries from Added — git only tracks files,
+	// and os.ReadFile on a directory path fails. Directories are created
+	// implicitly by MkdirAll when writing their child files.
+	var addedFiles []string
+	for _, p := range paths.Added {
+		if !strings.HasSuffix(p, "/") {
+			addedFiles = append(addedFiles, p)
+		}
+	}
+
+	// Step 2: Stage and merge. For each file:
+	//  - Added: copy to worktree, write blob to index
+	//  - Modified: write blob to index (agent's version), then 3-way merge
+	//    into the working tree so user edits on other lines are preserved
+	//  - Removed: remove from index and disk
+	// The temp dir is cleaned up by the handler.
+	staged, err := bk.GitStage(ctx, ws.Root, tempDir, addedFiles, paths.Modified, paths.Removed)
+	if err != nil {
+		return false, fmt.Errorf("stage: %w", err)
+	}
+
+	return dagql.Boolean(staged), nil
+}
+
+type workspaceCommitArgs struct {
+	Message string
+
+	RawDagOpInternalArgs
+}
+
+func (s *workspaceSchema) commit(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceCommitArgs,
+) (dagql.String, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return "", err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("buildkit: %w", err)
+	}
+
+	hash, err := bk.GitCommit(ctx, ws.Root, args.Message)
+	if err != nil {
+		return "", fmt.Errorf("commit: %w", err)
+	}
+
+	return dagql.String(hash), nil
 }
 
 // withWorkspaceClientContext overrides the client metadata in context to the

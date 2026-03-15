@@ -244,11 +244,20 @@ type JSON string
 // The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
 type JSONValueID string
 
+// The `LLMContentBlockID` scalar type represents an identifier for an object of type LLMContentBlock.
+type LLMContentBlockID string
+
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
 
+// The `LLMMessageID` scalar type represents an identifier for an object of type LLMMessage.
+type LLMMessageID string
+
 // The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
 type LLMTokenUsageID string
+
+// The `LLMToolCallID` scalar type represents an identifier for an object of type LLMToolCall.
+type LLMToolCallID string
 
 // The `LabelID` scalar type represents an identifier for an object of type Label.
 type LabelID string
@@ -324,6 +333,30 @@ type BuildArg struct {
 
 	// The build argument value.
 	Value string `json:"value"`
+}
+
+// A content block within an LLM message.
+type LLMContentBlockInput struct {
+	// The arguments to pass to the tool (for TOOL_CALL kind).
+	Arguments JSON `json:"arguments"`
+
+	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+	CallID string `json:"callId,omitempty"`
+
+	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+	Errored bool `json:"errored,omitempty"`
+
+	// The kind of content block.
+	Kind LLMContentBlockKind `json:"kind"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	Signature string `json:"signature,omitempty"`
+
+	// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+	Text string `json:"text,omitempty"`
+
+	// The name of the tool to call (for TOOL_CALL kind).
+	ToolName string `json:"toolName,omitempty"`
 }
 
 // Key value object that represents a pipeline label.
@@ -701,6 +734,33 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	q := r.query.Select("asJSONValue")
 
 	return &JSONValue{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMContentBlock
+func (r *Binding) AsLLMContentBlock() *LLMContentBlock {
+	q := r.query.Select("asLLMContentBlock")
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMMessage
+func (r *Binding) AsLLMMessage() *LLMMessage {
+	q := r.query.Select("asLLMMessage")
+
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMToolCall
+func (r *Binding) AsLLMToolCall() *LLMToolCall {
+	q := r.query.Select("asLLMToolCall")
+
+	return &LLMToolCall{
 		query: q,
 	}
 }
@@ -5866,6 +5926,78 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type LLMContentBlock in the environment
+func (r *Env) WithLLMContentBlockInput(name string, value *LLMContentBlock, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMContentBlockInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMContentBlock output to be assigned in the environment
+func (r *Env) WithLLMContentBlockOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMContentBlockOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMMessage in the environment
+func (r *Env) WithLLMMessageInput(name string, value *LLMMessage, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMMessageInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMMessage output to be assigned in the environment
+func (r *Env) WithLLMMessageOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMMessageOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMToolCall in the environment
+func (r *Env) WithLLMToolCallInput(name string, value *LLMToolCall, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMToolCallInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMToolCall output to be assigned in the environment
+func (r *Env) WithLLMToolCallOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMToolCallOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Sets the main module for this environment (the project being worked on)
 //
 // Contextual path arguments will be populated using the environment's workspace.
@@ -6134,7 +6266,7 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 }
 
 // Returns a new environment with the provided workspace
-func (r *Env) WithWorkspace(workspace *Directory) *Env {
+func (r *Env) WithWorkspace(workspace *Workspace) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
 	q = q.Arg("workspace", workspace)
@@ -6177,10 +6309,10 @@ func (r *Env) WithoutOutputs() *Env {
 	}
 }
 
-func (r *Env) Workspace() *Directory {
+func (r *Env) Workspace() *Workspace {
 	q := r.query.Select("workspace")
 
-	return &Directory{
+	return &Workspace{
 		query: q,
 	}
 }
@@ -9435,15 +9567,16 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
-	hasPrompt   *bool
-	historyJSON *JSON
-	id          *LLMID
-	lastReply   *string
-	model       *string
-	provider    *string
-	step        *LLMID
-	sync        *LLMID
-	tools       *string
+	hasPrompt    *bool
+	historyJSON  *JSON
+	id           *LLMID
+	lastReply    *string
+	model        *string
+	provider     *string
+	step         *LLMID
+	sync         *LLMID
+	systemPrompt *string
+	tools        *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -9578,13 +9711,58 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMLoopOpts contains options for LLM.Loop
+type LLMLoopOpts struct {
+	// Cap the number of API calls
+	MaxAPICalls int
+}
+
 // Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-func (r *LLM) Loop() *LLM {
+func (r *LLM) Loop(opts ...LLMLoopOpts) *LLM {
 	q := r.query.Select("loop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxAPICalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
+			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		}
+	}
 
 	return &LLM{
 		query: q,
 	}
+}
+
+// The full message history.
+func (r *LLM) Messages(ctx context.Context) ([]LLMMessage, error) {
+	q := r.query.Select("messages")
+
+	q = q.Select("id")
+
+	type messages struct {
+		Id LLMMessageID
+	}
+
+	convert := func(fields []messages) []LLMMessage {
+		out := []LLMMessage{}
+
+		for i := range fields {
+			val := LLMMessage{id: &fields[i].Id}
+			val.query = q.Root().Select("loadLLMMessageFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []messages
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // return the model used by the llm
@@ -9627,6 +9805,19 @@ func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 }
 
 // synchronize LLM state
+// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("replay")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
+}
+
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
 
@@ -9637,6 +9828,19 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	return &LLM{
 		query: q.Root().Select("loadLLMFromID").Arg("id", id),
 	}, nil
+}
+
+// A system prompt to send.
+func (r *LLM) SystemPrompt(ctx context.Context) (string, error) {
+	if r.systemPrompt != nil {
+		return *r.systemPrompt, nil
+	}
+	q := r.query.Select("systemPrompt")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // returns the token usage of the current state
@@ -9726,6 +9930,52 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	}
 }
 
+// LLMWithResponseOpts contains options for LLM.WithResponse
+type LLMWithResponseOpts struct {
+	// Uncached input tokens sent
+	InputTokens int
+	// Tokens received from the model, including text and tool calls
+	OutputTokens int
+	// Cached input tokens read
+	CachedTokenReads int
+	// Cached input tokens written
+	CachedTokenWrites int
+	// Total tokens consumed by this response
+	TotalTokens int
+}
+
+// Append an assistant response to the message history
+func (r *LLM) WithResponse(content []LLMContentBlockInput, opts ...LLMWithResponseOpts) *LLM {
+	q := r.query.Select("withResponse")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `inputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InputTokens) {
+			q = q.Arg("inputTokens", opts[i].InputTokens)
+		}
+		// `outputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OutputTokens) {
+			q = q.Arg("outputTokens", opts[i].OutputTokens)
+		}
+		// `cachedTokenReads` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenReads) {
+			q = q.Arg("cachedTokenReads", opts[i].CachedTokenReads)
+		}
+		// `cachedTokenWrites` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenWrites) {
+			q = q.Arg("cachedTokenWrites", opts[i].CachedTokenWrites)
+		}
+		// `totalTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TotalTokens) {
+			q = q.Arg("totalTokens", opts[i].TotalTokens)
+		}
+	}
+	q = q.Arg("content", content)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
 func (r *LLM) WithStaticTools() *LLM {
 	q := r.query.Select("withStaticTools")
@@ -9739,6 +9989,30 @@ func (r *LLM) WithStaticTools() *LLM {
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append a tool call to the last assistant message
+func (r *LLM) WithToolCall(call string, tool string, arguments JSON) *LLM {
+	q := r.query.Select("withToolCall")
+	q = q.Arg("call", call)
+	q = q.Arg("tool", tool)
+	q = q.Arg("arguments", arguments)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append a tool response to the message history
+func (r *LLM) WithToolResponse(call string, content string, errored bool) *LLM {
+	q := r.query.Select("withToolResponse")
+	q = q.Arg("call", call)
+	q = q.Arg("content", content)
+	q = q.Arg("errored", errored)
 
 	return &LLM{
 		query: q,
@@ -9770,6 +10044,233 @@ func (r *LLM) WithoutSystemPrompts() *LLM {
 	return &LLM{
 		query: q,
 	}
+}
+
+type LLMContentBlock struct {
+	query *querybuilder.Selection
+
+	arguments *JSON
+	callId    *string
+	errored   *bool
+	id        *LLMContentBlockID
+	kind      *LLMContentBlockKind
+	text      *string
+	toolName  *string
+}
+
+func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMContentBlock {
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
+	if r.arguments != nil {
+		return *r.arguments, nil
+	}
+	q := r.query.Select("arguments")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
+	if r.callId != nil {
+		return *r.callId, nil
+	}
+	q := r.query.Select("callId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) Errored(ctx context.Context) (bool, error) {
+	if r.errored != nil {
+		return *r.errored, nil
+	}
+	q := r.query.Select("errored")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMContentBlock.
+func (r *LLMContentBlock) ID(ctx context.Context) (LLMContentBlockID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMContentBlockID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContentBlock) XXX_GraphQLType() string {
+	return "LLMContentBlock"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContentBlock) XXX_GraphQLIDType() string {
+	return "LLMContentBlockID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContentBlock) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContentBlock) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMContentBlock) Kind(ctx context.Context) (LLMContentBlockKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMContentBlockKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) ToolName(ctx context.Context) (string, error) {
+	if r.toolName != nil {
+		return *r.toolName, nil
+	}
+	q := r.query.Select("toolName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type LLMMessage struct {
+	query *querybuilder.Selection
+
+	id   *LLMMessageID
+	role *LLMMessageRole
+}
+
+func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id LLMContentBlockID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = q.Root().Select("loadLLMContentBlockFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMMessage.
+func (r *LLMMessage) ID(ctx context.Context) (LLMMessageID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMMessageID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessage) XXX_GraphQLType() string {
+	return "LLMMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessage) XXX_GraphQLIDType() string {
+	return "LLMMessageID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
+	if r.role != nil {
+		return *r.role, nil
+	}
+	q := r.query.Select("role")
+
+	var response LLMMessageRole
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 type LLMTokenUsage struct {
@@ -9887,6 +10388,58 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+type LLMToolCall struct {
+	query *querybuilder.Selection
+
+	id *LLMToolCallID
+}
+
+func (r *LLMToolCall) WithGraphQLQuery(q *querybuilder.Selection) *LLMToolCall {
+	return &LLMToolCall{
+		query: q,
+	}
+}
+
+// A unique identifier for this LLMToolCall.
+func (r *LLMToolCall) ID(ctx context.Context) (LLMToolCallID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMToolCallID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMToolCall) XXX_GraphQLType() string {
+	return "LLMToolCall"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMToolCall) XXX_GraphQLIDType() string {
+	return "LLMToolCallID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMToolCall) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMToolCall) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // A simple key value object that represents a label.
@@ -11967,8 +12520,6 @@ func (r *Client) JSON() *JSONValue {
 type LLMOpts struct {
 	// Model to use
 	Model string
-	// Cap the number of API calls for this LLM
-	MaxAPICalls int
 }
 
 // Initialize a Large Language Model (LLM)
@@ -11980,10 +12531,6 @@ func (r *Client) LLM(opts ...LLMOpts) *LLM {
 		// `model` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Model) {
 			q = q.Arg("model", opts[i].Model)
-		}
-		// `maxAPICalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
-			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
 		}
 	}
 
@@ -12362,6 +12909,16 @@ func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 	}
 }
 
+// Load a LLMContentBlock from its ID.
+func (r *Client) LoadLLMContentBlockFromID(id LLMContentBlockID) *LLMContentBlock {
+	q := r.query.Select("loadLLMContentBlockFromID")
+	q = q.Arg("id", id)
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
 // Load a LLM from its ID.
 func (r *Client) LoadLLMFromID(id LLMID) *LLM {
 	q := r.query.Select("loadLLMFromID")
@@ -12372,12 +12929,32 @@ func (r *Client) LoadLLMFromID(id LLMID) *LLM {
 	}
 }
 
+// Load a LLMMessage from its ID.
+func (r *Client) LoadLLMMessageFromID(id LLMMessageID) *LLMMessage {
+	q := r.query.Select("loadLLMMessageFromID")
+	q = q.Arg("id", id)
+
+	return &LLMMessage{
+		query: q,
+	}
+}
+
 // Load a LLMTokenUsage from its ID.
 func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
 	q := r.query.Select("loadLLMTokenUsageFromID")
 	q = q.Arg("id", id)
 
 	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// Load a LLMToolCall from its ID.
+func (r *Client) LoadLLMToolCallFromID(id LLMToolCallID) *LLMToolCall {
+	q := r.query.Select("loadLLMToolCallFromID")
+	q = q.Arg("id", id)
+
+	return &LLMToolCall{
 		query: q,
 	}
 }
@@ -14236,10 +14813,22 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
+	branch   *string
 	clientId *string
+	commit   *string
+	exists   *bool
 	findUp   *string
 	id       *WorkspaceID
 	root     *string
+	stage    *bool
+}
+type WithWorkspaceFunc func(r *Workspace) *Workspace
+
+// With calls the provided function with current Workspace.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
+	return f(r)
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -14248,12 +14837,41 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	}
 }
 
+// The Git branch this workspace is on.
+func (r *Workspace) Branch(ctx context.Context) (string, error) {
+	if r.branch != nil {
+		return *r.branch, nil
+	}
+	q := r.query.Select("branch")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The client ID that owns this workspace's host filesystem.
 func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	if r.clientId != nil {
 		return *r.clientId, nil
 	}
 	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commit whatever is currently staged in the workspace's git index.
+//
+// Returns the commit hash. Fails if there is nothing staged.
+func (r *Workspace) Commit(ctx context.Context, message string) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.query.Select("commit")
+	q = q.Arg("message", message)
 
 	var response string
 
@@ -14297,6 +14915,38 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
+// WorkspaceExistsOpts contains options for Workspace.Exists
+type WorkspaceExistsOpts struct {
+	// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+	ExpectedType ExistsType
+	// If specified, do not follow symlinks.
+	DoNotFollowSymlinks bool
+}
+
+// Check if a file or directory exists at the given path in the workspace.
+func (r *Workspace) Exists(ctx context.Context, path string, opts ...WorkspaceExistsOpts) (bool, error) {
+	if r.exists != nil {
+		return *r.exists, nil
+	}
+	q := r.query.Select("exists")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expectedType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExpectedType) {
+			q = q.Arg("expectedType", opts[i].ExpectedType)
+		}
+		// `doNotFollowSymlinks` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
+			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+	}
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Returns a File from the workspace.
 //
 // Path is relative to workspace root.
@@ -14336,6 +14986,17 @@ func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFi
 	q = q.Arg("name", name)
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Returns a list of files and directories that match the given pattern.
+func (r *Workspace) Glob(ctx context.Context, pattern string) ([]string, error) {
+	q := r.query.Select("glob")
+	q = q.Arg("pattern", pattern)
+
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14392,6 +15053,147 @@ func (r *Workspace) Root(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceSearchOpts contains options for Workspace.Search
+type WorkspaceSearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	Insensitive bool
+	// Honor .gitignore, .ignore, and .rgignore files.
+	SkipIgnored bool
+	// Skip hidden files (files starting with .).
+	SkipHidden bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+//
+// Runs ripgrep on the client host, falling back to grep if unavailable.
+func (r *Workspace) Search(ctx context.Context, pattern string, opts ...WorkspaceSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `insensitive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Insensitive) {
+			q = q.Arg("insensitive", opts[i].Insensitive)
+		}
+		// `skipIgnored` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipIgnored) {
+			q = q.Arg("skipIgnored", opts[i].SkipIgnored)
+		}
+		// `skipHidden` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipHidden) {
+			q = q.Arg("skipHidden", opts[i].SkipHidden)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Apply a Changeset to the workspace and stage the affected paths in git.
+//
+// Files are written (added/modified) and removed on disk, then precisely
+//
+// the changed paths are staged via git add / git rm. Any pre-existing
+//
+// unstaged user edits are preserved as unstaged changes.
+//
+// Returns true if any changes were staged, false if the changeset was empty.
+func (r *Workspace) Stage(ctx context.Context, changes *Changeset) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.stage != nil {
+		return *r.stage, nil
+	}
+	q := r.query.Select("stage")
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return a Workspace for the given branch. If the branch is different from
+//
+// the currently checked-out branch, a git worktree is created on the host.
+//
+// If the branch does not exist, it is created from the current branch tip.
+func (r *Workspace) WithBranch(branch string) *Workspace {
+	q := r.query.Select("withBranch")
+	q = q.Arg("branch", branch)
+
+	return &Workspace{
+		query: q,
+	}
 }
 
 // Sharing mode of the cache volume.
@@ -14812,8 +15614,8 @@ func (v ImageLayerCompression) Name() string {
 		return "Gzip"
 	case ImageLayerCompressionZstd:
 		return "Zstd"
-	case ImageLayerCompressionEstarGz:
-		return "EStarGZ"
+	case ImageLayerCompressionEstargz:
+		return "EStargz"
 	case ImageLayerCompressionUncompressed:
 		return "Uncompressed"
 	default:
@@ -14844,9 +15646,7 @@ func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
-	case "EStarGZ":
-		*v = ImageLayerCompressionEstarGz
-	case "ESTARGZ":
+	case "EStargz":
 		*v = ImageLayerCompressionEstargz
 	case "Gzip":
 		*v = ImageLayerCompressionGzip
@@ -14865,8 +15665,7 @@ const (
 
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
 
-	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
-	ImageLayerCompressionEstargz ImageLayerCompression = ImageLayerCompressionEstarGz
+	ImageLayerCompressionEstargz ImageLayerCompression = "EStargz"
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 )
@@ -14930,6 +15729,141 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// The kind of content in a message block.
+type LLMContentBlockKind string
+
+func (LLMContentBlockKind) IsEnum() {}
+
+func (v LLMContentBlockKind) Name() string {
+	switch v {
+	case LLMContentBlockKindText:
+		return "TEXT"
+	case LLMContentBlockKindThinking:
+		return "THINKING"
+	case LLMContentBlockKindToolCall:
+		return "TOOL_CALL"
+	case LLMContentBlockKindToolResult:
+		return "TOOL_RESULT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMContentBlockKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMContentBlockKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMContentBlockKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "TEXT":
+		*v = LLMContentBlockKindText
+	case "THINKING":
+		*v = LLMContentBlockKindThinking
+	case "TOOL_CALL":
+		*v = LLMContentBlockKindToolCall
+	case "TOOL_RESULT":
+		*v = LLMContentBlockKindToolResult
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Plain text content.
+	LLMContentBlockKindText LLMContentBlockKind = "TEXT"
+
+	// Model thinking/reasoning content (e.g. Anthropic extended thinking).
+	LLMContentBlockKindThinking LLMContentBlockKind = "THINKING"
+
+	// A tool/function call from the model.
+	LLMContentBlockKindToolCall LLMContentBlockKind = "TOOL_CALL"
+
+	// A tool/function result.
+	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// The role that generated a message.
+type LLMMessageRole string
+
+func (LLMMessageRole) IsEnum() {}
+
+func (v LLMMessageRole) Name() string {
+	switch v {
+	case LLMMessageRoleUser:
+		return "USER"
+	case LLMMessageRoleAssistant:
+		return "ASSISTANT"
+	case LLMMessageRoleSystem:
+		return "SYSTEM"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageRole) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageRole) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageRole) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ASSISTANT":
+		*v = LLMMessageRoleAssistant
+	case "SYSTEM":
+		*v = LLMMessageRoleSystem
+	case "USER":
+		*v = LLMMessageRoleUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A user prompt or tool response.
+	LLMMessageRoleUser LLMMessageRole = "USER"
+
+	// A reply from the model.
+	LLMMessageRoleAssistant LLMMessageRole = "ASSISTANT"
+
+	// A system prompt.
+	LLMMessageRoleSystem LLMMessageRole = "SYSTEM"
 )
 
 // Experimental features of a module

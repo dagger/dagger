@@ -1176,19 +1176,19 @@ class Test:
 
 				out, err := modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+				require.Equal(t, "EStargz", gjson.Get(out, "test.fromImageLayerCompression").String())
 
-				_, err = modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				_, err = modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "EStargz")}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+				require.Equal(t, "EStargz", gjson.Get(out, "test.fromImageLayerCompression").String())
 
-				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "EStargz")}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+				require.Equal(t, "EStargz", gjson.Get(out, "test.toImageLayerCompression").String())
 
 				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+				require.Equal(t, "EStargz", gjson.Get(out, "test.toImageLayerCompression").String())
 			})
 		}
 	})

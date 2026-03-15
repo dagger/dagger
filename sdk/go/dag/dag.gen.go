@@ -428,16 +428,34 @@ func LoadJSONValueFromID(id dagger.JSONValueID) *dagger.JSONValue {
 	return client.LoadJSONValueFromID(id)
 }
 
+// Load a LLMContentBlock from its ID.
+func LoadLLMContentBlockFromID(id dagger.LLMContentBlockID) *dagger.LLMContentBlock {
+	client := initClient()
+	return client.LoadLLMContentBlockFromID(id)
+}
+
 // Load a LLM from its ID.
 func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
 	client := initClient()
 	return client.LoadLLMFromID(id)
 }
 
+// Load a LLMMessage from its ID.
+func LoadLLMMessageFromID(id dagger.LLMMessageID) *dagger.LLMMessage {
+	client := initClient()
+	return client.LoadLLMMessageFromID(id)
+}
+
 // Load a LLMTokenUsage from its ID.
 func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
 	client := initClient()
 	return client.LoadLLMTokenUsageFromID(id)
+}
+
+// Load a LLMToolCall from its ID.
+func LoadLLMToolCallFromID(id dagger.LLMToolCallID) *dagger.LLMToolCall {
+	client := initClient()
+	return client.LoadLLMToolCallFromID(id)
 }
 
 // Load a Label from its ID.
