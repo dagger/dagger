@@ -4052,6 +4052,56 @@ func TestResultIDForCallerFallsBackToRawIDOnMissingFrameRef(t *testing.T) {
 	assert.Equal(t, rawID.DisplaySelf(), rebuilt.DisplaySelf())
 }
 
+func TestResultIDForCallerPreservesRawTopLevelFieldShape(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	currentModuleID := call.New().Append((&cacheTestObject{}).Type(), "currentModule")
+	rawID := currentModuleID.Append((&cacheTestObject{}).Type(), "source")
+
+	shared := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     &cacheTestObject{},
+		hasValue: true,
+		resultCallFrame: &ResultCallFrame{
+			Kind:  ResultCallFrameKindField,
+			Type:  NewResultCallFrameType((&cacheTestObject{}).Type()),
+			Field: "directory",
+			Receiver: &ResultCallFrameRef{
+				ResultID: 99,
+			},
+			Args: []*ResultCallFrameArg{{
+				Name: "path",
+				Value: &ResultCallFrameLiteral{
+					Kind:        ResultCallFrameLiteralKindString,
+					StringValue: "dagger-sdk",
+				},
+			}},
+		},
+	}
+	c.egraphMu.Lock()
+	if c.resultsByID == nil {
+		c.resultsByID = map[sharedResultID]*sharedResult{}
+	}
+	c.resultsByID[shared.id] = shared
+	c.egraphMu.Unlock()
+
+	res := Result[*cacheTestObject]{
+		shared: shared,
+		id:     rawID,
+	}
+	rebuilt, err := res.IDForCaller(ctx)
+	assert.NilError(t, err)
+	assert.Assert(t, rebuilt != nil)
+	assert.Equal(t, rawID.Digest(), rebuilt.Digest())
+	assert.Equal(t, rawID.DisplaySelf(), rebuilt.DisplaySelf())
+}
+
 func TestCallerIDFrontierSeedsReceiverBinding(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
