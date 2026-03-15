@@ -119,6 +119,10 @@ type shellCallHandler struct {
 	llmModel   string
 	llmL       sync.Mutex // synchronizing LLM init status
 
+	// initialPrompt is the first prompt sent to the LLM in this session,
+	// used as the human-readable name when auto-saving.
+	initialPrompt string
+
 	// debug mode toggle
 	debug bool
 
@@ -369,6 +373,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 
 	// Handle based on mode
 	if h.mode == modePrompt {
+		// Handle slash commands in prompt mode
+		if strings.HasPrefix(line, "/") {
+			return h.handleSlashCommand(ctx, line)
+		}
+
 		// NB: no span in this case, just let the LLM APIs create the user/assistant
 		// message spans
 
@@ -376,12 +385,24 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		if err != nil {
 			return err
 		}
+
+		// Track the initial prompt for session naming
+		if h.initialPrompt == "" {
+			h.initialPrompt = line
+		}
+
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {
 			return err
 		}
 		h.llmSession = newLLM
 		h.llmModel = newLLM.model
+
+		// Auto-save the session after each prompt
+		if err := newLLM.AutoSaveSession(ctx, h.initialPrompt); err != nil {
+			slog.Warn("failed to auto-save session", "error", err)
+		}
+
 		return nil
 	}
 
@@ -481,12 +502,168 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	return err
 }
 
+// slashCommand defines a slash command available in prompt mode
+type slashCommand struct {
+	Name        string
+	Description string
+	HasArg      bool
+	// Complete returns completions for the argument
+	Complete func(h *shellCallHandler, prefix string) []tuist.Completion
+}
+
+// slashCommands returns the available slash commands for prompt mode
+func slashCommands() []slashCommand {
+	return []slashCommand{
+		{Name: "/resume", Description: "Resume a saved session", HasArg: true,
+			Complete: func(h *shellCallHandler, prefix string) []tuist.Completion {
+				sessions, err := ListSessions()
+				if err != nil {
+					return nil
+				}
+				var items []tuist.Completion
+				for _, s := range sessions {
+					label := s.LLMID // UUID
+					// Truncate the display name
+					displayName := s.Name
+					if len(displayName) > 60 {
+						displayName = displayName[:57] + "..."
+					}
+					detail := fmt.Sprintf("%s | %s | %s", s.Model, s.CreatedAt, displayName)
+					if strings.HasPrefix(label, prefix) || strings.Contains(strings.ToLower(displayName), strings.ToLower(prefix)) {
+						items = append(items, tuist.Completion{
+							Label:  label,
+							Detail: detail,
+						})
+					}
+				}
+				return items
+			},
+		},
+		{Name: "/clear", Description: "Clear the LLM history"},
+		{Name: "/compact", Description: "Compact the LLM history"},
+		{Name: "/history", Description: "Show the LLM history"},
+		{Name: "/model", Description: "Swap out the LLM model", HasArg: true},
+		{Name: "/shell", Description: "Switch into shell mode"},
+	}
+}
+
+func (h *shellCallHandler) handleSlashCommand(ctx context.Context, line string) error {
+	parts := strings.SplitN(line, " ", 2)
+	cmd := parts[0]
+	var arg string
+	if len(parts) > 1 {
+		arg = strings.TrimSpace(parts[1])
+	}
+
+	switch cmd {
+	case "/resume":
+		if arg == "" {
+			return fmt.Errorf("/resume requires a session ID")
+		}
+		llm, err := h.llm(ctx)
+		if err != nil {
+			return err
+		}
+		if err := llm.LoadSession(ctx, arg); err != nil {
+			return err
+		}
+		// Clear the initial prompt so the resumed session gets its own save identity
+		h.initialPrompt = ""
+		return nil
+	case "/clear":
+		if h.llmSession == nil {
+			return fmt.Errorf("LLM not initialized")
+		}
+		h.llmSession = h.llmSession.Clear()
+		h.initialPrompt = ""
+		return nil
+	case "/compact":
+		if h.llmSession == nil {
+			return fmt.Errorf("LLM not initialized")
+		}
+		compacted, err := h.llmSession.Compact(ctx)
+		if err != nil {
+			return err
+		}
+		return h.llmSession.updateLLMAndAgentVar(compacted)
+	case "/history":
+		if h.llmSession == nil {
+			return fmt.Errorf("LLM not initialized")
+		}
+		_, err := h.llmSession.History(ctx)
+		return err
+	case "/model":
+		if arg == "" {
+			return fmt.Errorf("/model requires a model name")
+		}
+		llm, err := h.llm(ctx)
+		if err != nil {
+			return err
+		}
+		newLLM, err := llm.Model(arg)
+		if err != nil {
+			return err
+		}
+		h.llmSession = newLLM
+		h.llmModel = newLLM.model
+		return nil
+	case "/shell":
+		h.mode = modeShell
+		return nil
+	case "/exit":
+		h.cancel()
+		return nil
+	default:
+		return fmt.Errorf("unknown command: %s", cmd)
+	}
+}
+
 func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.CompletionResult {
 	if h.mode == modePrompt {
-		// Find the word at the cursor for variable completion
 		before := input[:cursorPos]
 		wordStart := strings.LastIndexAny(before, " \t\n") + 1
 		word := before[wordStart:]
+
+		// Slash command completion
+		if strings.HasPrefix(input, "/") {
+			parts := strings.SplitN(input, " ", 2)
+			cmd := parts[0]
+
+			if len(parts) == 1 {
+				// Completing the command name itself
+				var items []tuist.Completion
+				for _, sc := range slashCommands() {
+					if strings.HasPrefix(sc.Name, cmd) {
+						items = append(items, tuist.Completion{
+							Label:  sc.Name,
+							Detail: sc.Description,
+						})
+					}
+				}
+				return tuist.CompletionResult{
+					Items:       items,
+					ReplaceFrom: 0,
+				}
+			}
+
+			// Completing the argument
+			argPrefix := ""
+			if len(parts) > 1 {
+				argPrefix = strings.TrimSpace(parts[1])
+			}
+			for _, sc := range slashCommands() {
+				if sc.Name == cmd && sc.HasArg && sc.Complete != nil {
+					items := sc.Complete(h, argPrefix)
+					return tuist.CompletionResult{
+						Items:       items,
+						ReplaceFrom: len(cmd) + 1,
+					}
+				}
+			}
+			return tuist.CompletionResult{}
+		}
+
+		// Variable completion
 		if after, ok := strings.CutPrefix(word, "$"); ok {
 			vars := h.runner.Vars
 			var items []tuist.Completion

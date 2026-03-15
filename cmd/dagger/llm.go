@@ -10,10 +10,12 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
@@ -725,18 +727,16 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	return s, nil
 }
 
-
-
 // sessionMetadata stores metadata about a saved LLM session
 type sessionMetadata struct {
 	Name      string `json:"name"`
 	Model     string `json:"model"`
-	Timestamp string `json:"timestamp"`
+	CreatedAt string `json:"created_at"`
+	LLMID     string `json:"llm_id"`
 }
 
 // getSessionDir returns the directory where LLM sessions are stored, creating it if necessary
 func getSessionDir() (string, error) {
-	// Use XDG_STATE_HOME if set, otherwise fall back to ~/.local/state
 	stateHome := os.Getenv("XDG_STATE_HOME")
 	if stateHome == "" {
 		homeDir, err := os.UserHomeDir()
@@ -754,10 +754,11 @@ func getSessionDir() (string, error) {
 	return sessionDir, nil
 }
 
-// SaveSession saves the current LLM session to disk
-func (s *LLMSession) SaveSession(ctx context.Context, name string) error {
+// AutoSaveSession saves the session automatically, named after the initial prompt,
+// stored on disk under a UUIDv7 filename for anonymity and time-sorted ordering.
+func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string) error {
 	if s.llm == nil {
-		return fmt.Errorf("no LLM session to save")
+		return nil // nothing to save
 	}
 
 	sessionDir, err := getSessionDir()
@@ -765,208 +766,71 @@ func (s *LLMSession) SaveSession(ctx context.Context, name string) error {
 		return err
 	}
 
-	// Get the LLM ID
 	llmID, err := s.llm.ID(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get LLM ID: %w", err)
 	}
 
-	// Create session metadata
+	id, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate session UUID: %w", err)
+	}
+
 	metadata := sessionMetadata{
-		Name:      name,
+		Name:      initialPrompt,
 		Model:     s.model,
-		Timestamp: fmt.Sprintf("%d", time.Now().Unix()),
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		LLMID:     string(llmID),
 	}
 
-	// Save the session ID
-	sessionFile := filepath.Join(sessionDir, name+".json")
-	data := map[string]interface{}{
-		"id":       string(llmID),
-		"metadata": metadata,
-	}
-
-	jsonData, err := json.MarshalIndent(data, "", "  ")
+	jsonData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal session data: %w", err)
 	}
 
+	sessionFile := filepath.Join(sessionDir, id.String()+".json")
 	if err := os.WriteFile(sessionFile, jsonData, 0644); err != nil {
 		return fmt.Errorf("failed to write session file: %w", err)
 	}
 
-	slog.Debug("saved LLM session", "name", name, "file", sessionFile)
+	slog.Debug("auto-saved LLM session", "id", id.String(), "name", initialPrompt, "file", sessionFile)
 	return nil
 }
 
-// AutoSaveSession automatically saves the session with an LLM-generated name
-func (s *LLMSession) AutoSaveSession(ctx context.Context) error {
-	if s.llm == nil {
-		return fmt.Errorf("no LLM session to save")
-	}
-
-	// Generate a session name using a lightweight LLM
-	name, err := s.generateSessionName(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to generate session name: %w", err)
-	}
-
-	return s.SaveSession(ctx, name)
-}
-
-// generateSessionName uses a lightweight LLM to generate a session name based on conversation history
-func (s *LLMSession) generateSessionName(ctx context.Context) (string, error) {
-	// Get conversation history
-	history, err := s.llm.History(s.plumbingCtx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get conversation history: %w", err)
-	}
-
-	if len(history) == 0 {
-		return "empty-session", nil
-	}
-
-	// Get the current provider to select an appropriate lightweight model
-	provider, err := s.llm.Provider(s.plumbingCtx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get LLM provider: %w", err)
-	}
-
-	// Select a lightweight model based on the provider
-	var lightweightModel string
-	switch provider {
-	case "anthropic":
-		lightweightModel = "claude-3-5-haiku-20241022"
-	case "openai":
-		lightweightModel = "gpt-4o-mini"
-	case "google":
-		lightweightModel = "gemini-2.0-flash-thinking-exp-1219"
-	case "meta":
-		lightweightModel = "llama-3.2-3b-instruct"
-	case "mistral":
-		lightweightModel = "mistral-small-latest"
-	case "deepseek":
-		lightweightModel = "deepseek-chat"
-	default:
-		return "", fmt.Errorf("unsupported provider: %s", provider)
-	}
-
-	slog.Debug("using lightweight model for session naming", "provider", provider, "model", lightweightModel)
-
-	// Use a small, fast model for name generation
-	namingLLM := s.dag.LLM(dagger.LLMOpts{
-		Model: lightweightModel,
-	})
-
-	// Build a compact summary of the conversation for the naming prompt
-	// Take the first few and last few messages to keep context small
-	var historySnippet strings.Builder
-	maxMessages := 6 // First 3 and last 3 messages
-	if len(history) <= maxMessages {
-		for _, msg := range history {
-			historySnippet.WriteString(msg)
-			historySnippet.WriteString("\n\n")
-		}
-	} else {
-		// First 3 messages
-		for i := 0; i < 3; i++ {
-			historySnippet.WriteString(history[i])
-			historySnippet.WriteString("\n\n")
-		}
-		historySnippet.WriteString("...\n\n")
-		// Last 3 messages
-		for i := len(history) - 3; i < len(history); i++ {
-			historySnippet.WriteString(history[i])
-			historySnippet.WriteString("\n\n")
-		}
-	}
-
-	prompt := fmt.Sprintf(`Based on this conversation history, generate a short, descriptive session name (2-5 words, lowercase with hyphens, no special characters except hyphens).
-The name should capture the main topic or task being discussed.
-
-Example good names:
-- "fix-docker-build-error"
-- "add-user-authentication"
-- "debug-memory-leak"
-- "implement-caching-layer"
-
-Conversation history:
-%s
-
-Respond with ONLY the session name, nothing else.`, historySnippet.String())
-
-	// Generate the name
-	nameReply, err := namingLLM.WithPrompt(prompt).LastReply(s.plumbingCtx)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate name: %w", err)
-	}
-
-	// Clean up the name
-	name := strings.TrimSpace(nameReply)
-	name = strings.ToLower(name)
-	// Remove any quotes or extra characters
-	name = strings.Trim(name, "\"'`\n\r ")
-	// Replace spaces with hyphens
-	name = strings.ReplaceAll(name, " ", "-")
-	// Remove any non-alphanumeric characters except hyphens
-	var cleaned strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			cleaned.WriteRune(r)
-		}
-	}
-	name = cleaned.String()
-
-	// Ensure the name isn't too long
-	if len(name) > 50 {
-		name = name[:50]
-	}
-
-	// Ensure the name isn't empty
-	if name == "" {
-		name = fmt.Sprintf("session-%d", time.Now().Unix())
-	}
-
-	slog.Debug("generated session name", "name", name)
-	return name, nil
-}
-
-// LoadSession loads an LLM session from disk
-func (s *LLMSession) LoadSession(ctx context.Context, name string) error {
+// LoadSession loads an LLM session from disk by UUID
+func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
 	sessionDir, err := getSessionDir()
 	if err != nil {
 		return err
 	}
 
-	sessionFile := filepath.Join(sessionDir, name+".json")
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
 	data, err := os.ReadFile(sessionFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("session %q not found", name)
+			return fmt.Errorf("session %q not found", sessionID)
 		}
 		return fmt.Errorf("failed to read session file: %w", err)
 	}
 
-	var sessionData map[string]any
-	if err := json.Unmarshal(data, &sessionData); err != nil {
+	var metadata sessionMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
 		return fmt.Errorf("failed to unmarshal session data: %w", err)
 	}
 
-	llmID, ok := sessionData["id"].(string)
-	if !ok || llmID == "" {
-		return fmt.Errorf("invalid session data: missing or invalid id")
+	if metadata.LLMID == "" {
+		return fmt.Errorf("invalid session data: missing LLM ID")
 	}
 
-	// Load the LLM from its ID
-	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(llmID))
-	s.updateLLMAndAgentVar(loadedLLM)
-	s.updateSidebar(loadedLLM)
-
-	slog.Debug("loaded LLM session", "name", name, "file", sessionFile)
-	return nil
+	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(metadata.LLMID))
+	if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+		return err
+	}
+	return s.updateSidebar(loadedLLM)
 }
 
-// ListSessions returns a list of saved session names
-func ListSessions() ([]string, error) {
+// ListSessions returns saved sessions sorted by creation time (newest first, via UUIDv7 ordering)
+func ListSessions() ([]sessionMetadata, error) {
 	sessionDir, err := getSessionDir()
 	if err != nil {
 		return nil, err
@@ -975,18 +839,37 @@ func ListSessions() ([]string, error) {
 	entries, err := os.ReadDir(sessionDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []string{}, nil
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to read session directory: %w", err)
 	}
 
-	var sessions []string
+	var sessions []sessionMetadata
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
-			name := strings.TrimSuffix(entry.Name(), ".json")
-			sessions = append(sessions, name)
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
 		}
+		data, err := os.ReadFile(filepath.Join(sessionDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var meta sessionMetadata
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		// Store the UUID (filename without extension) in the Name field isn't ideal,
+		// so let's use a separate approach: we'll include the UUID in the list
+		sessionID := strings.TrimSuffix(entry.Name(), ".json")
+		sessions = append(sessions, sessionMetadata{
+			Name:      meta.Name,
+			Model:     meta.Model,
+			CreatedAt: meta.CreatedAt,
+			LLMID:     sessionID, // repurpose LLMID field to carry the file UUID for listing
+		})
 	}
+
+	// Reverse so newest (highest UUIDv7) is first
+	slices.Reverse(sessions)
 
 	return sessions, nil
 }
