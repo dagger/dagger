@@ -627,6 +627,12 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 					// reveal cache hits for raw (non-contextual) calls, even if we've
 					// already seen them within the session
 					ctx = dagql.WithRepeatedTelemetry(ctx)
+				} else {
+					// for contextual calls, we still want to mark them as
+					// non-internal so that their spans are visible in the UI,
+					// but we don't reset seen keys (no need to re-show cache
+					// hits for module tool calls)
+					ctx = dagql.WithNonInternalTelemetry(ctx)
 				}
 				return m.call(ctx, srv, schema, typeDef.Name, field, argsMap, autoConstruct)
 			},
