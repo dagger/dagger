@@ -216,12 +216,16 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+	ctx, displaySpan := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 	))
-	defer telemetry.EndWithCause(span, &rerr)
+	defer func() {
+		if rerr != nil {
+			telemetry.EndWithCause(displaySpan, &rerr)
+		}
+	}()
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -323,8 +327,9 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	}
 
 	return &LLMResponse{
-		Content:    contentBlocks,
-		TokenUsage: tokenUsage,
+		Content:      contentBlocks,
+		TokenUsage:   tokenUsage,
+		DisplaySpans: []trace.Span{displaySpan},
 	}, nil
 }
 

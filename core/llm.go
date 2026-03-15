@@ -45,6 +45,12 @@ const (
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
 	modelDefaultCodex     = "gpt-5.3-codex"
+
+	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans.
+	// Its value is the DAG digest of the corresponding withPrompt or
+	// withResponse call, enabling the TUI to branch from that point
+	// in the conversation.
+	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 )
 
 func resolveModelAlias(maybeAlias string) string {
@@ -117,6 +123,12 @@ type LLMClient interface {
 type LLMResponse struct {
 	Content    []*LLMContentBlock
 	TokenUsage LLMTokenUsage
+
+	// DisplaySpans are the OTel spans created by the provider for
+	// prompt/response display in the TUI (e.g., "LLM response",
+	// "thinking"). Providers should NOT end these spans; the caller
+	// (step) will set attributes and end them.
+	DisplaySpans []trace.Span
 }
 
 // TextContent returns the concatenation of all text blocks.
@@ -1222,6 +1234,13 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		newMessages = append(newMessages, msg)
 	}
 	slices.Reverse(newMessages)
+
+	// Compute the LLM call digest for prompt/response span metadata.
+	// inst.ID() is the LLM state entering step() (typically ends in
+	// withPrompt). Its digest lets the TUI identify and branch from
+	// this point in the conversation.
+	llmCallDigest := inst.ID().Digest().String()
+
 	for _, msg := range newMessages {
 		func() {
 			var emoji string
@@ -1231,14 +1250,16 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			case LLMMessageRoleSystem:
 				emoji = "⚙️"
 			}
+			attrs := []attribute.KeyValue{
+				attribute.String(telemetry.UIActorEmojiAttr, emoji),
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+				attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
+				attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
+				attribute.String(LLMCallDigestAttr, llmCallDigest),
+			}
 			ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
 				telemetry.Reveal(),
-				trace.WithAttributes(
-					attribute.String(telemetry.UIActorEmojiAttr, emoji),
-					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-					attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
-					attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
-				))
+				trace.WithAttributes(attrs...))
 			defer span.End()
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 				log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -1413,7 +1434,22 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	var stepped dagql.ObjectResult[*LLM]
 	err = srv.Select(ctx, inst, &stepped, sels...)
 	if err != nil {
+		// End display spans even on error.
+		for _, s := range res.DisplaySpans {
+			s.End()
+		}
 		return inst, err
+	}
+
+	// Now that srv.Select has produced the stepped result, set its digest
+	// on the response display spans so the TUI can branch from this point
+	// in the conversation.
+	if len(res.DisplaySpans) > 0 {
+		responseDigest := stepped.ID().Digest().String()
+		for _, s := range res.DisplaySpans {
+			s.SetAttributes(attribute.String(LLMCallDigestAttr, responseDigest))
+			s.End()
+		}
 	}
 
 	return stepped, nil
@@ -1490,10 +1526,14 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	if err != nil {
 		return self, false, err
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+	interjectAttrs := []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
+		attribute.String(LLMCallDigestAttr, self.ID().Digest().String()),
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+		interjectAttrs...,
 	))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,

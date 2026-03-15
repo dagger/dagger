@@ -195,6 +195,12 @@ type ShellHandler interface {
 	EncodeHistory(entry string) string
 	// DecodeHistory decodes a persisted history entry.
 	DecodeHistory(entry string) string
+
+	// BranchFromID branches the LLM conversation from the state
+	// identified by the given encoded DAG ID. Returns a function that
+	// performs any async work needed (e.g. loading the LLM state),
+	// or nil if branching is not supported.
+	BranchFromID(ctx context.Context, encodedID string) func()
 }
 
 type Dump struct {

@@ -612,6 +612,27 @@ func (h *shellCallHandler) EncodeHistory(entry string) string {
 	return entry
 }
 
+func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string) func() {
+	return func() {
+		s, err := h.llm(ctx)
+		if err != nil {
+			slog.Error("failed to initialize LLM for branch", "error", err)
+			return
+		}
+		// Load the LLM from the encoded ID
+		loadedLLM := h.dag.LoadLLMFromID(dagger.LLMID(encodedID))
+		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+			slog.Error("failed to update LLM for branch", "error", err)
+			return
+		}
+		if err := s.updateSidebar(loadedLLM); err != nil {
+			slog.Error("failed to update sidebar for branch", "error", err)
+		}
+		// Switch to prompt mode so the user can type a new prompt
+		h.mode = modePrompt
+	}
+}
+
 func (h *shellCallHandler) DecodeHistory(entry string) string {
 	if len(entry) > 0 {
 		switch entry[0] {

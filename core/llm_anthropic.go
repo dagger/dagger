@@ -323,17 +323,30 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		return &p
 	}
 
-	endPhase := func(idx int64) {
+	// displaySpans collects the OTel spans for display phases. These
+	// are returned via LLMResponse so step() can set attributes on
+	// them (e.g. LLMCallDigest) before ending them.
+	var displaySpans []trace.Span
+
+	closePhase := func(idx int64) {
 		if p, ok := phases[idx]; ok {
 			p.stdio.Close()
-			telemetry.EndWithCause(p.span, &rerr)
+			displaySpans = append(displaySpans, p.span)
 			delete(phases, idx)
 		}
 	}
 
 	defer func() {
 		for idx := range phases {
-			endPhase(idx)
+			closePhase(idx)
+		}
+		if rerr != nil {
+			// On error, end spans here since the caller won't receive them.
+			for _, s := range displaySpans {
+				s.RecordError(rerr)
+				s.End()
+			}
+			displaySpans = nil
 		}
 	}()
 
@@ -382,7 +395,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			}
 
 		case anthropic.ContentBlockStopEvent:
-			endPhase(ev.Index)
+			closePhase(ev.Index)
 		}
 	}
 
@@ -431,5 +444,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			CachedTokenWrites: acc.Usage.CacheCreationInputTokens,
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
+		DisplaySpans: displaySpans,
 	}, nil
 }

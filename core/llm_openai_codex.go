@@ -58,12 +58,16 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 }
 
 func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+	ctx, displaySpan := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 	))
-	defer telemetry.EndWithCause(span, &rerr)
+	defer func() {
+		if rerr != nil {
+			telemetry.EndWithCause(displaySpan, &rerr)
+		}
+	}()
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -201,8 +205,9 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	return &LLMResponse{
-		Content:    contentBlocks,
-		TokenUsage: usage,
+		Content:      contentBlocks,
+		TokenUsage:   usage,
+		DisplaySpans: []trace.Span{displaySpan},
 	}, nil
 }
 

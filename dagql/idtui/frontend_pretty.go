@@ -1294,6 +1294,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
 		),
+		key.NewBinding(key.WithKeys("b"),
+			key.WithHelp("b", "branch"),
+			KeyEnabled(focused != nil && focused.LLMCallDigest != "" && fe.shell != nil),
+		),
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
 		key.NewBinding(key.WithKeys("n"),
@@ -2058,6 +2062,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "t":
 		fe.terminal()
 		return
+	case "b":
+		fe.branch()
+		return
 	case "/":
 		fe.enterSearchMode()
 		return
@@ -2242,6 +2249,36 @@ func (fe *frontendPretty) enterInsertMode(auto bool) {
 	}
 }
 
+func (fe *frontendPretty) branch() {
+	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
+		return
+	}
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil || focused.LLMCallDigest == "" {
+		return
+	}
+
+	encodedID := fe.llmBranchID(focused)
+	if encodedID == "" {
+		slog.Warn("could not find LLM call for branching", "digest", focused.LLMCallDigest)
+		return
+	}
+
+	work := fe.shell.BranchFromID(fe.shellCtx, encodedID)
+	if work != nil {
+		fe.runShellAsync(func() {
+			work()
+			fe.dispatch(func() {
+				// After branching, switch to insert mode so the user
+				// can immediately type a new prompt.
+				fe.enterInsertMode(false)
+				fe.syncPrompt()
+				fe.Update()
+			})
+		})
+	}
+}
+
 func (fe *frontendPretty) terminal() {
 	if !fe.FocusedSpan.IsValid() {
 		return
@@ -2313,6 +2350,29 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 	}
 
 	return nil
+}
+
+// llmBranchID returns the encoded DAG ID for branching from the focused
+// span's LLMCallDigest. Returns "" if the span doesn't have a call digest
+// or the call can't be found/encoded.
+func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
+	if span.LLMCallDigest == "" {
+		return ""
+	}
+	// Find a span in the DB whose CallDigest matches the LLMCallDigest.
+	// This is the dagql call span (e.g., LLM.withPrompt) that produced
+	// the LLM state we want to branch from.
+	for _, s := range fe.db.Spans.Map {
+		if s.CallDigest == span.LLMCallDigest {
+			id, err := loadIDFromSpan(s)
+			if err != nil {
+				slog.Debug("failed to load ID from LLM call span", "err", err)
+				continue
+			}
+			return id
+		}
+	}
+	return ""
 }
 
 func loadIDFromSpan(span *dagui.Span) (string, error) {
