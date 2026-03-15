@@ -639,6 +639,9 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 }
 
 func (fe *frontendPretty) stopShell() {
+	// save history before clearing shell state
+	fe.saveHistory()
+
 	if fe.promptErrLabel != nil {
 		fe.tui.RemoveChild(fe.promptErrLabel)
 		fe.promptErrLabel = nil
@@ -720,16 +723,6 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	} else {
 		// run the function wrapped in the TUI
 		fe.err = fe.runWithTUI(ctx, run)
-	}
-
-	if fe.textInput != nil && fe.shell != nil {
-		if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
-			slog.Error("failed to create history directory", "err", err)
-		}
-		// Entries are already encoded with mode prefixes
-		if err := history.SaveHistory(fe.inputHistory, historyFile); err != nil {
-			slog.Error("failed to save history", "err", err)
-		}
 	}
 
 	// print the final output display to stderr
@@ -2487,6 +2480,20 @@ func loadIDFromSpan(span *dagui.Span) (string, error) {
 		return "", err
 	}
 	return id, nil
+}
+
+// saveHistory persists the in-memory history to disk.
+func (fe *frontendPretty) saveHistory() {
+	if len(fe.inputHistory) == 0 {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
+		slog.Error("failed to create history directory", "err", err)
+		return
+	}
+	if err := history.SaveHistory(fe.inputHistory, historyFile); err != nil {
+		slog.Error("failed to save history", "err", err)
+	}
 }
 
 // historyUp navigates to the previous history entry. Returns true if handled.
