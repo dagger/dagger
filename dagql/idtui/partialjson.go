@@ -7,10 +7,10 @@ import "strings"
 // from LLM tool call arguments: the input may be truncated at any point
 // (e.g. `{"path": "/foo", "content": "hel`).
 //
-// String values are extracted directly. String arrays (e.g. ["a", "b"])
-// are joined with spaces. Other value types (nested objects, numbers,
-// booleans) are skipped. Fields are only included when their values have
-// been fully parsed. A field whose value is still streaming is omitted.
+// String values are extracted as soon as any content is available, even
+// if the closing quote hasn't arrived yet (streaming). String arrays
+// (e.g. ["a", "b"]) are joined with spaces. Other value types (nested
+// objects, numbers, booleans) are skipped.
 //
 // This is intentionally simple and only handles the subset of JSON that
 // LLM tool call arguments produce.
@@ -162,12 +162,11 @@ func partialJSONFields(s string) map[string]string {
 
 		// Check value type
 		if i < n && s[i] == '"' {
-			// String value
-			val, valComplete := parseString()
-			if valComplete {
+			// String value — include even if truncated (streaming)
+			val, _ := parseString()
+			if val != "" {
 				result[key] = val
 			}
-			// If incomplete, we don't include the partial value
 		} else if i < n && s[i] == '[' {
 			// Array value — try to extract as string array
 			saveI := i

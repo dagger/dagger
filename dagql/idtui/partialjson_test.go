@@ -16,11 +16,32 @@ func TestPartialJSONFields(t *testing.T) {
 	})
 
 	t.Run("truncated mid-value", func(t *testing.T) {
-		// Value for "content" is still streaming — not included
+		// Value for "content" is still streaming — included with partial content
 		fields := partialJSONFields(`{"path": "/foo/bar.go", "content": "hello wor`)
 		assert.Equal(t, map[string]string{
-			"path": "/foo/bar.go",
+			"path":    "/foo/bar.go",
+			"content": "hello wor",
 		}, fields)
+	})
+
+	t.Run("truncated mid-value no closing quote", func(t *testing.T) {
+		// Simulates streaming: {"command":"bash -c f
+		fields := partialJSONFields(`{"command":"bash -c f`)
+		assert.Equal(t, map[string]string{
+			"command": "bash -c f",
+		}, fields)
+	})
+
+	t.Run("truncated mid-value updates as more arrives", func(t *testing.T) {
+		// Successive calls with more data should show progressively more
+		fields1 := partialJSONFields(`{"command":"bash -c f`)
+		assert.Equal(t, "bash -c f", fields1["command"])
+
+		fields2 := partialJSONFields(`{"command":"bash -c foo --bar`)
+		assert.Equal(t, "bash -c foo --bar", fields2["command"])
+
+		fields3 := partialJSONFields(`{"command":"bash -c foo --bar"}`)
+		assert.Equal(t, "bash -c foo --bar", fields3["command"])
 	})
 
 	t.Run("truncated mid-key", func(t *testing.T) {
