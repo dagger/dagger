@@ -182,7 +182,6 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			telemetry.Reveal(),
 			trace.WithAttributes(
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 				attribute.String(telemetry.LLMToolAttr, toolName),
 			),

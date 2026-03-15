@@ -185,7 +185,6 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 					telemetry.Reveal(),
 					trace.WithAttributes(
 						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-						attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 						attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 						attribute.String(telemetry.LLMToolAttr, fc.Name),
 					),

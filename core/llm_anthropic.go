@@ -54,8 +54,6 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 
 var ephemeral = anthropic.CacheControlEphemeralParam{Type: constant.Ephemeral("").Default()}
 
-
-
 var _ LLMClient = (*AnthropicClient)(nil)
 
 var anthropicRetryable = []string{
@@ -336,7 +334,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			telemetry.Reveal(),
 			trace.WithAttributes(
 				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 				attribute.String(telemetry.LLMToolAttr, toolName),
 			),
