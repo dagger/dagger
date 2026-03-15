@@ -233,6 +233,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 
 	var displaySpans []trace.Span
 	toolCallCtxs := map[string]context.Context{}
+	toolCallSpans := map[string]trace.Span{}
 	defer func() {
 		stdio.Close()
 		displaySpans = append([]trace.Span{responseSpan}, displaySpans...)
@@ -349,6 +350,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		toolStdio.Close()
 		displaySpans = append(displaySpans, toolSpan)
 		toolCallCtxs[callID] = toolCtx
+		toolCallSpans[callID] = toolSpan
 	}
 
 	contentBlocks, tokenUsage, err := c.processStreamResponse(
@@ -364,8 +366,9 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	return &LLMResponse{
 		Content:      contentBlocks,
 		TokenUsage:   tokenUsage,
-		DisplaySpans: displaySpans,
-		ToolCallCtxs: toolCallCtxs,
+		DisplaySpans:  displaySpans,
+		ToolCallCtxs:  toolCallCtxs,
+		ToolCallSpans: toolCallSpans,
 	}, nil
 }
 

@@ -157,6 +157,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 	toolPhases := map[string]*toolPhase{}
 	toolCallCtxs := map[string]context.Context{}
+	toolCallSpans := map[string]trace.Span{}
 
 	closeToolPhase := func(itemID string) {
 		if tp, ok := toolPhases[itemID]; ok {
@@ -164,6 +165,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			displaySpans = append(displaySpans, tp.span)
 			if tp.callID != "" {
 				toolCallCtxs[tp.callID] = tp.ctx
+				toolCallSpans[tp.callID] = tp.span
 			}
 			delete(toolPhases, itemID)
 		}
@@ -277,7 +279,8 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		Content:      contentBlocks,
 		TokenUsage:   usage,
 		DisplaySpans:  displaySpans,
-		ToolCallCtxs: toolCallCtxs,
+		ToolCallCtxs:  toolCallCtxs,
+		ToolCallSpans: toolCallSpans,
 	}, nil
 }
 

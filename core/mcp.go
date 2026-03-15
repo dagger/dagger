@@ -1098,7 +1098,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallCtxs map[string]context.Context) []*LLMMessage {
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallCtxs map[string]context.Context, toolCallSpans map[string]trace.Span) []*LLMMessage {
 	// Group tool calls by their characteristics
 	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
 	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
@@ -1144,9 +1144,18 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		return ctx
 	}
 
+	// endToolCallSpan ends the tool call's display span if one exists.
+	endToolCallSpan := func(callID string) {
+		if s, ok := toolCallSpans[callID]; ok {
+			s.End()
+			delete(toolCallSpans, callID)
+		}
+	}
+
 	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(callCtx(call.CallID), tools, call)
+		endToolCallSpan(call.CallID)
 		allResults = append(allResults, &LLMMessage{
 			Role: LLMMessageRoleUser,
 			Content: []*LLMContentBlock{{
@@ -1160,13 +1169,13 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 	// 2. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
-		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallCtxs)
+		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallCtxs, toolCallSpans)
 		allResults = append(allResults, serverResults...)
 	}
 
 	// 3. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallCtxs)...)
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallCtxs, toolCallSpans)...)
 	}
 
 	// 4. Execute all read-only MCP calls in parallel (safe across servers)
@@ -1175,44 +1184,44 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
 	}
 	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallCtxs)...)
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallCtxs, toolCallSpans)...)
 	}
 
 	return allResults
 }
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string, toolCallCtxs map[string]context.Context) []*LLMMessage {
+func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string, toolCallCtxs map[string]context.Context, toolCallSpans map[string]trace.Span) []*LLMMessage {
 	mcpCfg, ok := m.mcpServers[serverName]
 	if !ok {
 		// Fall back to individual calls if server not found
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 
 	ctr := mcpCfg.Service.Self().Container
 	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 	mcps, err := query.MCPClients(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 	sess, err := mcps.Dial(ctx, mcpCfg)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically.
 	// Resolve the workspace's root directory for the container sync.
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 	var wsDir dagql.ObjectResult[*Directory]
 	if err := srv.Select(ctx, m.env.Self().Workspace, &wsDir, dagql.Selector{
@@ -1221,7 +1230,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 			{Name: "path", Value: dagql.NewString(".")},
 		},
 	}); err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 
 	var results []*LLMMessage
@@ -1232,13 +1241,13 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		wsDir.Self(),
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
-			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 			return nil
 		})
 
 	if err != nil {
 		// Fall back to individual calls if sync fails
-		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallCtxs, toolCallSpans)
 	}
 
 	// MCP server changes are synced back through their own tool results.
@@ -1247,7 +1256,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 }
 
 // callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallCtxs map[string]context.Context) []*LLMMessage {
+func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallCtxs map[string]context.Context, toolCallSpans map[string]trace.Span) []*LLMMessage {
 	// Run tool calls in parallel using the existing pool logic
 	toolCallsPool := pool.NewWithResults[*LLMMessage]()
 	for _, toolCall := range toolCalls {
@@ -1257,6 +1266,9 @@ func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls [
 				callCtx = tc
 			}
 			content, isError := m.Call(callCtx, tools, toolCall)
+			if s, ok := toolCallSpans[toolCall.CallID]; ok {
+				s.End()
+			}
 			return &LLMMessage{
 				Role: LLMMessageRoleUser,
 				Content: []*LLMContentBlock{{

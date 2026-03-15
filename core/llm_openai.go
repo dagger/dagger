@@ -196,6 +196,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	}
 
 	toolCallCtxs := map[string]context.Context{}
+	toolCallSpans := map[string]trace.Span{}
 
 	closePhase := func(idx int64) {
 		if p, ok := phases[idx]; ok {
@@ -203,6 +204,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			displaySpans = append(displaySpans, p.span)
 			if p.callID != "" {
 				toolCallCtxs[p.callID] = p.ctx
+				toolCallSpans[p.callID] = p.span
 			}
 			delete(phases, idx)
 		}
@@ -276,8 +278,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			CachedTokenReads: chatCompletion.Usage.PromptTokensDetails.CachedTokens,
 			TotalTokens:      chatCompletion.Usage.TotalTokens,
 		},
-		DisplaySpans: displaySpans,
-		ToolCallCtxs: toolCallCtxs,
+		DisplaySpans:  displaySpans,
+		ToolCallCtxs:  toolCallCtxs,
+		ToolCallSpans: toolCallSpans,
 	}, nil
 }
 

@@ -133,6 +133,10 @@ type LLMResponse struct {
 	// ToolCallCtxs maps tool call IDs to the context of their display
 	// span, so that tool execution spans are parented beneath them.
 	ToolCallCtxs map[string]context.Context
+
+	// ToolCallSpans maps tool call IDs to their display spans so that
+	// CallBatch can end each span when its tool execution completes.
+	ToolCallSpans map[string]trace.Span
 }
 
 // TextContent returns the concatenation of all text blocks.
@@ -1361,7 +1365,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		}
 	}
 	beforeObjs := maps.Clone(llm.mcp.objsByID)
-	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallCtxs) {
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallCtxs, res.ToolCallSpans) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
 			Args: []dagql.NamedInput{
@@ -1418,22 +1422,32 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		})
 	}
 
+	// Tool call spans have already been ended by CallBatch. Collect
+	// the remaining (non-tool-call) display spans that still need to
+	// be ended by us.
+	endedSpans := make(map[trace.Span]bool, len(res.ToolCallSpans))
+	for _, s := range res.ToolCallSpans {
+		endedSpans[s] = true
+	}
+	var remainingSpans []trace.Span
+	for _, s := range res.DisplaySpans {
+		if !endedSpans[s] {
+			remainingSpans = append(remainingSpans, s)
+		}
+	}
+
 	var stepped dagql.ObjectResult[*LLM]
 	err = srv.Select(ctx, inst, &stepped, sels...)
 	if err != nil {
-		// End display spans even on error.
-		for _, s := range res.DisplaySpans {
+		for _, s := range remainingSpans {
 			s.End()
 		}
 		return inst, err
 	}
 
-	// Now that srv.Select has produced the stepped result, set its digest
-	// on the response display spans so the TUI can branch from this point
-	// in the conversation.
-	if len(res.DisplaySpans) > 0 {
+	if len(remainingSpans) > 0 {
 		responseDigest := stepped.ID().Digest().String()
-		for _, s := range res.DisplaySpans {
+		for _, s := range remainingSpans {
 			s.SetAttributes(attribute.String(LLMCallDigestAttr, responseDigest))
 			s.End()
 		}

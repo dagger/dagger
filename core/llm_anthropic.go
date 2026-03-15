@@ -354,6 +354,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// them (e.g. LLMCallDigest) before ending them.
 	var displaySpans []trace.Span
 	toolCallCtxs := map[string]context.Context{}
+	toolCallSpans := map[string]trace.Span{}
 
 	closePhase := func(idx int64) {
 		if p, ok := phases[idx]; ok {
@@ -361,6 +362,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			displaySpans = append(displaySpans, p.span)
 			if p.callID != "" {
 				toolCallCtxs[p.callID] = p.ctx
+				toolCallSpans[p.callID] = p.span
 			}
 			delete(phases, idx)
 		}
@@ -480,7 +482,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			CachedTokenWrites: acc.Usage.CacheCreationInputTokens,
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
-		DisplaySpans: displaySpans,
-		ToolCallCtxs: toolCallCtxs,
+		DisplaySpans:  displaySpans,
+		ToolCallCtxs:  toolCallCtxs,
+		ToolCallSpans: toolCallSpans,
 	}, nil
 }
