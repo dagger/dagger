@@ -32,6 +32,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func init() {
@@ -103,10 +104,104 @@ type LLMEndpoint struct {
 	AuthToken        string // OAuth bearer token (used instead of Key when set)
 	IsOAuth          bool   // Whether this endpoint uses OAuth authentication
 	SubscriptionType string // "pro", "max", "team", "enterprise" (OAuth only)
+	RefreshToken     string // OAuth refresh token for token renewal
+	TokenExpiry      int64  // Unix timestamp (ms) when access token expires
 
 	// Thinking / reasoning configuration
 	ThinkingMode   string // "adaptive", "enabled", "disabled" (Anthropic) or reasoning effort (OpenAI)
 	ThinkingBudget int64  // Max thinking tokens (Anthropic, when mode == "enabled")
+
+	// rebuildClient recreates the Client after a token refresh.
+	// Set by the route* methods that produce OAuth endpoints.
+	rebuildClient func()
+	mu            sync.Mutex // protects token refresh
+}
+
+// NeedsRefresh reports whether the OAuth token is expired or near-expiry.
+func (ep *LLMEndpoint) NeedsRefresh() bool {
+	if !ep.IsOAuth || ep.RefreshToken == "" {
+		return false
+	}
+	if ep.TokenExpiry == 0 {
+		return false // no expiry info — assume still valid
+	}
+	return time.Now().UnixMilli() >= ep.TokenExpiry
+}
+
+// RefreshAuth refreshes an expired OAuth token and rebuilds the underlying
+// HTTP client so subsequent requests use the new credentials. It is safe
+// to call from multiple goroutines; only the first caller performs the
+// actual refresh.
+func (ep *LLMEndpoint) RefreshAuth(ctx context.Context) error {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+
+	// Double-check under lock — another goroutine may have refreshed already.
+	if !ep.NeedsRefresh() {
+		return nil
+	}
+
+	slog.Info("refreshing expired OAuth token", "provider", string(ep.Provider))
+
+	provider := &llmconfig.Provider{
+		AuthToken:    ep.AuthToken,
+		RefreshToken: ep.RefreshToken,
+		TokenExpiry:  ep.TokenExpiry,
+	}
+
+	var refreshed *llmconfig.Provider
+	var err error
+	switch ep.Provider {
+	case OpenAICodex:
+		refreshed, err = llmconfig.RefreshOpenAIOAuthToken(provider)
+	default:
+		refreshed, err = llmconfig.RefreshOAuthToken(provider)
+	}
+	if err != nil {
+		return fmt.Errorf("refresh OAuth token: %w", err)
+	}
+
+	ep.AuthToken = refreshed.AuthToken
+	ep.RefreshToken = refreshed.RefreshToken
+	ep.TokenExpiry = refreshed.TokenExpiry
+	if refreshed.SubscriptionType != "" {
+		ep.SubscriptionType = refreshed.SubscriptionType
+	}
+
+	// Rebuild the HTTP client with the new token.
+	if ep.rebuildClient != nil {
+		ep.rebuildClient()
+	}
+
+	slog.Info("OAuth token refreshed successfully", "provider", string(ep.Provider))
+
+	return nil
+}
+
+// isOAuthError returns true if the error looks like an authentication /
+// authorization failure that a token refresh might fix. We check for common
+// patterns across providers (HTTP 401, "authentication_error", "invalid token",
+// "unauthorized", etc.).
+func isOAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, pattern := range []string{
+		"401",
+		"authentication_error",
+		"unauthorized",
+		"invalid token",
+		"token expired",
+		"token has expired",
+		"invalid_grant",
+		"invalid api key",
+	} {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 type LLMProvider string
@@ -425,6 +520,8 @@ type LLMRouter struct {
 	AnthropicAuthToken        string // OAuth bearer token for Claude Code subscription
 	AnthropicIsOAuth          bool   // Whether Anthropic auth uses OAuth
 	AnthropicSubscriptionType string // "pro", "max", etc. (OAuth only)
+	AnthropicRefreshToken     string // OAuth refresh token for token renewal
+	AnthropicTokenExpiry      int64  // Unix timestamp (ms) when access token expires
 	AnthropicThinkingMode     string // "adaptive", "enabled", "disabled"
 	AnthropicThinkingBudget   int64  // Max thinking tokens (when mode == "enabled")
 
@@ -436,6 +533,8 @@ type LLMRouter struct {
 
 	// OpenAI Codex (ChatGPT subscription) fields
 	OpenAICodexAuthToken    string // OAuth bearer token
+	OpenAICodexRefreshToken string // OAuth refresh token for token renewal
+	OpenAICodexTokenExpiry  int64  // Unix timestamp (ms) when access token expires
 	OpenAICodexModel        string
 	OpenAICodexThinkingMode string // Reasoning effort: "none", "low", "medium", "high", "xhigh"
 
@@ -495,10 +594,15 @@ func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 		AuthToken:        r.AnthropicAuthToken,
 		IsOAuth:          r.AnthropicIsOAuth,
 		SubscriptionType: r.AnthropicSubscriptionType,
+		RefreshToken:     r.AnthropicRefreshToken,
+		TokenExpiry:      r.AnthropicTokenExpiry,
 		ThinkingMode:     r.AnthropicThinkingMode,
 		ThinkingBudget:   r.AnthropicThinkingBudget,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
+	endpoint.rebuildClient = func() {
+		endpoint.Client = newAnthropicClient(endpoint)
+	}
 
 	return endpoint
 }
@@ -509,9 +613,14 @@ func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
 		AuthToken:    r.OpenAICodexAuthToken,
 		IsOAuth:      true,
 		Provider:     OpenAICodex,
+		RefreshToken: r.OpenAICodexRefreshToken,
+		TokenExpiry:  r.OpenAICodexTokenExpiry,
 		ThinkingMode: r.OpenAICodexThinkingMode,
 	}
 	endpoint.Client = newOpenAICodexClient(endpoint)
+	endpoint.rebuildClient = func() {
+		endpoint.Client = newOpenAICodexClient(endpoint)
+	}
 	return endpoint
 }
 
@@ -731,6 +840,8 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 					r.AnthropicAuthToken = provider.AuthToken
 					r.AnthropicIsOAuth = true
 					r.AnthropicSubscriptionType = provider.SubscriptionType
+					r.AnthropicRefreshToken = provider.RefreshToken
+					r.AnthropicTokenExpiry = provider.TokenExpiry
 				}
 			} else if r.AnthropicAPIKey == "" {
 				r.AnthropicAPIKey = provider.APIKey
@@ -752,6 +863,8 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 		case "openai-codex":
 			if provider.IsOAuth() && r.OpenAICodexAuthToken == "" {
 				r.OpenAICodexAuthToken = provider.AuthToken
+				r.OpenAICodexRefreshToken = provider.RefreshToken
+				r.OpenAICodexTokenExpiry = provider.TokenExpiry
 			}
 			if provider.ThinkingMode != "" {
 				r.OpenAICodexThinkingMode = provider.ThinkingMode
@@ -959,6 +1072,13 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	defer llm.endpointMtx.Unlock()
 
 	if llm.endpoint != nil {
+		// Proactively refresh OAuth tokens that are expired or near-expiry,
+		// avoiding a failed request + retry cycle.
+		if llm.endpoint.NeedsRefresh() {
+			if err := llm.endpoint.RefreshAuth(ctx); err != nil {
+				slog.Warn("proactive OAuth token refresh failed", "error", err)
+			}
+		}
 		return llm.endpoint, nil
 	}
 
@@ -1264,6 +1384,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		return inst, err
 	}
 	client := ep.Client
+	authRefreshAttempted := false
 	err = backoff.Retry(func() error {
 		var sendErr error
 		res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
@@ -1273,6 +1394,19 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				// Don't retry if the model finished explicitly, treat as permanent.
 				return backoff.Permanent(sendErr)
 			}
+
+			// If this looks like an auth error and the endpoint supports
+			// OAuth refresh, try refreshing the token once before giving up.
+			if !authRefreshAttempted && ep.IsOAuth && ep.RefreshToken != "" && isOAuthError(sendErr) {
+				authRefreshAttempted = true
+				if refreshErr := ep.RefreshAuth(ctx); refreshErr != nil {
+					slog.Warn("OAuth token refresh on auth error failed", "error", refreshErr)
+					return backoff.Permanent(sendErr)
+				}
+				client = ep.Client // use the rebuilt client
+				return sendErr     // signal backoff to retry
+			}
+
 			if !client.IsRetryable(sendErr) {
 				// Maybe an invalid request - give up.
 				return backoff.Permanent(sendErr)
