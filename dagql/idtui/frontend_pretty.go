@@ -98,8 +98,9 @@ type frontendPretty struct {
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
 	promptErr       error
-	promptErrLabel  *ErrorLabel
-	textInput       *tuist.TextInput
+	promptErrLabel    *ErrorLabel
+	queuedMsgLabel   *QueuedMessageLabel
+	textInput         *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
 	editlineFocused bool
@@ -619,10 +620,13 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert errorLabel + textInput before keymapBar: output → error → prompt → keymap
+	// Insert errorLabel + queuedMsg + textInput before keymapBar:
+	// output → error → queued → prompt → keymap
 	fe.promptErrLabel = NewErrorLabel(fe.profile)
+	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
+	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.textInput)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
@@ -638,6 +642,10 @@ func (fe *frontendPretty) stopShell() {
 	if fe.promptErrLabel != nil {
 		fe.tui.RemoveChild(fe.promptErrLabel)
 		fe.promptErrLabel = nil
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.tui.RemoveChild(fe.queuedMsgLabel)
+		fe.queuedMsgLabel = nil
 	}
 	if fe.textInput != nil {
 		fe.tui.RemoveChild(fe.textInput)
@@ -1245,6 +1253,11 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
 		}
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
+			)
+		}
 		if fe.shell != nil {
 			bnds = append(bnds, fe.shell.KeyBindings(out)...)
 		}
@@ -1385,8 +1398,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
-	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
-	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
+	chromeHeight += fe.errorLabelHeight()      // promptErrLabel is a sibling, not rendered here
+	chromeHeight += fe.queuedMessageHeight()   // queuedMsgLabel is a sibling, not rendered here
+	chromeHeight += fe.editlineHeight()        // textInput is a sibling, not rendered here
 	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
 	if fe.searchInput != nil {
 		chromeHeight += 1 // searchInput is a sibling, 1 line
@@ -1437,6 +1451,14 @@ func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 // errorLabelHeight returns the line count of the error label for chrome-height budgeting.
 func (fe *frontendPretty) errorLabelHeight() int {
 	if fe.promptErrLabel == nil || fe.promptErr == nil {
+		return 0
+	}
+	return 1
+}
+
+// queuedMessageHeight returns the line count of the queued message label.
+func (fe *frontendPretty) queuedMessageHeight() int {
+	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Message() == "" {
 		return 0
 	}
 	return 1
@@ -1949,6 +1971,14 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.recalculateViewLocked()
 		fe.syncPrompt()
 		return true
+	case "alt+up":
+		// Dequeue a queued message back into the input for editing.
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+			msg := fe.clearQueuedMessage()
+			fe.textInput.SetValue(msg)
+			return true
+		}
+		return false
 	case "up":
 		if fe.historyUp() {
 			return true
@@ -2127,13 +2157,49 @@ func (fe *frontendPretty) handleInputComplete() {
 		return
 	}
 
+	value := fe.textInput.Value()
+
+	// If the shell is already running, queue the message instead of
+	// trying to run it immediately. Only one message can be queued;
+	// a second submit replaces the previous queued message.
+	if fe.shellRunning && fe.shell != nil {
+		fe.textInput.SetValue("")
+		if value != "" {
+			fe.setQueuedMessage(value)
+		}
+		return
+	}
+
+	fe.submitInput(value)
+}
+
+// setQueuedMessage stores a message to be picked up after the current
+// shell command finishes, and updates the visual indicator.
+func (fe *frontendPretty) setQueuedMessage(msg string) {
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.SetMessage(msg)
+	}
+}
+
+// clearQueuedMessage removes the queued message and returns it.
+func (fe *frontendPretty) clearQueuedMessage() string {
+	if fe.queuedMsgLabel == nil {
+		return ""
+	}
+	msg := fe.queuedMsgLabel.Message()
+	fe.queuedMsgLabel.SetMessage("")
+	return msg
+}
+
+// submitInput processes a submitted input value: adds it to history,
+// updates the prompt, and dispatches it to the shell handler.
+func (fe *frontendPretty) submitInput(value string) {
 	// reset prompt error state
 	fe.promptErr = nil
 	if fe.promptErrLabel != nil {
 		fe.promptErrLabel.SetError(nil)
 	}
 
-	value := fe.textInput.Value()
 	// Add to history (encoded with mode prefix for round-trip fidelity)
 	if value != "" {
 		encoded := value
@@ -2179,11 +2245,20 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	} else {
 		fe.promptFg = termenv.ANSIRed
 	}
+	fe.shellRunning = false
+
+	// If there's a queued message, pick it up immediately instead of
+	// returning to insert mode.
+	if queued := fe.clearQueuedMessage(); queued != "" {
+		fe.syncPrompt()
+		fe.submitInput(queued)
+		return
+	}
+
 	if fe.autoModeSwitch {
 		fe.enterInsertMode(true)
 	}
 	fe.syncPrompt()
-	fe.shellRunning = false
 }
 
 // ---------- mode switching --------------------------------------------------
