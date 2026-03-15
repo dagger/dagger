@@ -34,8 +34,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -1038,43 +1036,12 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		return fmt.Sprintf("failed to parse tool arguments: %s", err), true
 	}
 
-	toolName := tool.Name
-	if tool.Server != "" {
-		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
-	}
-	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.LLMToolAttr, toolName),
-		attribute.Bool(telemetry.UIRollUpLogsAttr, true),
-	}
-	if tool.HideSelf {
-		// Hide spans which are better represented by the child spans that they
-		// spawn, i.e. CallMethod, ChainMethods, or direct object-method tools.
-		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
-	}
-	if tool.Server != "" {
-		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
-	}
-	ctx, span := Tracer(ctx).Start(ctx,
-		toolName,
-		telemetry.ActorEmoji("🤖"),
-		telemetry.Reveal(),
-		trace.WithAttributes(attrs...),
-	)
-
-	var telemetryErr error
-	defer telemetry.EndWithCause(span, &telemetryErr)
-	defer func() {
-		if failed {
-			telemetryErr = fmt.Errorf("tool call %q failed", tool.Name)
-		}
-	}()
-
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.Bool(telemetry.LogsVerboseAttr, true))
+	// Write the tool result to the display span so the TUI shows
+	// the output. The display span's context is passed in by CallBatch
+	// when a tool call display span exists.
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
-
 	defer func() {
-		// write final result to telemetry so we see exactly what the LLM sees
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 

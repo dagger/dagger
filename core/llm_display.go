@@ -129,6 +129,7 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			attribute.String(telemetry.LLMToolAttr, toolName),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 		),
 	)
 	p := &displayPhase{
@@ -137,7 +138,8 @@ func (dp *displayPhases) StartToolCall(idx int64, callID, toolName string) *disp
 		callID: callID,
 	}
 	p.Stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "application/json"))
+		log.String(telemetry.ContentTypeAttr, "application/json"),
+		log.Bool(telemetry.LogsVerboseAttr, true))
 	dp.phases[idx] = p
 	return p
 }
