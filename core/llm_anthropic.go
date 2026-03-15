@@ -162,7 +162,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// 4-breakpoint limit, even when OAuth adds its own cached system
 	// prompt.
 	if len(systemPrompts) > 0 {
-		systemPrompts[len(systemPrompts)-1].CacheControl = ephemeral
+		// Find the last non-empty system prompt for the cache breakpoint.
+		// Anthropic rejects cache_control on empty text blocks.
+		for i := len(systemPrompts) - 1; i >= 0; i-- {
+			if systemPrompts[i].Text != "" {
+				systemPrompts[i].CacheControl = ephemeral
+				break
+			}
+		}
 	}
 	if len(messages) > 0 {
 		// Walk backwards to find the last user message.
