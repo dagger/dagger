@@ -124,6 +124,9 @@ type shellCallHandler struct {
 	// initialPrompt is the first prompt sent to the LLM in this session,
 	// used as the human-readable name when auto-saving.
 	initialPrompt string
+	// sessionUUID is the on-disk identifier for the current session file.
+	// Generated once on first prompt; reused for subsequent saves.
+	sessionUUID string
 
 	// debug mode toggle
 	debug bool
@@ -400,9 +403,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		h.llmSession = newLLM
 		h.llmModel = newLLM.model
 
-		// Auto-save the session after each prompt
-		if err := newLLM.AutoSaveSession(ctx, h.initialPrompt); err != nil {
+		// Auto-save the session (creates file on first prompt, updates thereafter)
+		savedUUID, err := newLLM.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+		if err != nil {
 			slog.Warn("failed to auto-save session", "error", err)
+		} else {
+			h.sessionUUID = savedUUID
 		}
 
 		return nil
@@ -839,6 +845,10 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string) f
 		if err := s.updateSidebar(loadedLLM); err != nil {
 			slog.Error("failed to update sidebar for branch", "error", err)
 		}
+		// Branching creates a new session; clear UUID so the next prompt
+		// generates a fresh save file rather than overwriting the original.
+		h.sessionUUID = ""
+		h.initialPrompt = ""
 		// Switch to prompt mode so the user can type a new prompt
 		h.mode = modePrompt
 	}

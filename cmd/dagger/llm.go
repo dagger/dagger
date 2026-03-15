@@ -756,24 +756,30 @@ func getSessionDir() (string, error) {
 
 // AutoSaveSession saves the session automatically, named after the initial prompt,
 // stored on disk under a UUIDv7 filename for anonymity and time-sorted ordering.
-func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string) error {
+// If existingUUID is non-empty the same file is updated in-place; otherwise a
+// new UUIDv7 is generated. Returns the UUID used.
+func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, existingUUID string) (string, error) {
 	if s.llm == nil {
-		return nil // nothing to save
+		return existingUUID, nil // nothing to save
 	}
 
 	sessionDir, err := getSessionDir()
 	if err != nil {
-		return err
+		return existingUUID, err
 	}
 
 	llmID, err := s.llm.ID(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get LLM ID: %w", err)
+		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
 	}
 
-	id, err := uuid.NewV7()
-	if err != nil {
-		return fmt.Errorf("failed to generate session UUID: %w", err)
+	sessionID := existingUUID
+	if sessionID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate session UUID: %w", err)
+		}
+		sessionID = id.String()
 	}
 
 	metadata := sessionMetadata{
@@ -785,16 +791,16 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string) 
 
 	jsonData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal session data: %w", err)
+		return sessionID, fmt.Errorf("failed to marshal session data: %w", err)
 	}
 
-	sessionFile := filepath.Join(sessionDir, id.String()+".json")
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
 	if err := os.WriteFile(sessionFile, jsonData, 0644); err != nil {
-		return fmt.Errorf("failed to write session file: %w", err)
+		return sessionID, fmt.Errorf("failed to write session file: %w", err)
 	}
 
-	slog.Debug("auto-saved LLM session", "id", id.String(), "name", initialPrompt, "file", sessionFile)
-	return nil
+	slog.Debug("auto-saved LLM session", "id", sessionID, "name", initialPrompt, "file", sessionFile)
+	return sessionID, nil
 }
 
 // LoadSession loads an LLM session from disk by UUID
