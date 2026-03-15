@@ -147,6 +147,27 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	var contentBlocks []*LLMContentBlock
 	var usage LLMTokenUsage
 
+	// Track tool call display phases by item ID
+	type toolPhase struct {
+		span  trace.Span
+		stdio telemetry.SpanStreams
+		name  string
+	}
+	toolPhases := map[string]*toolPhase{}
+
+	closeToolPhase := func(itemID string) {
+		if tp, ok := toolPhases[itemID]; ok {
+			tp.stdio.Close()
+			displaySpans = append(displaySpans, tp.span)
+			delete(toolPhases, itemID)
+		}
+	}
+	defer func() {
+		for id := range toolPhases {
+			closeToolPhase(id)
+		}
+	}()
+
 	for stream.Next() {
 		event := stream.Current()
 
@@ -155,6 +176,47 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			e := event.AsResponseOutputTextDelta()
 			fmt.Fprint(stdio.Stdout, e.Delta)
 			content.WriteString(e.Delta)
+
+		case "response.output_item.added":
+			e := event.AsResponseOutputItemAdded()
+			if e.Item.Type == "function_call" {
+				fc := e.Item.AsFunctionCall()
+				toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, fc.Name,
+					telemetry.Reveal(),
+					trace.WithAttributes(
+						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+						attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+						attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+						attribute.String(telemetry.LLMToolAttr, fc.Name),
+					),
+				)
+				toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
+					log.String(telemetry.ContentTypeAttr, "application/json"))
+				toolPhases[fc.ID] = &toolPhase{
+					span:  toolSpan,
+					stdio: toolStdio,
+					name:  fc.Name,
+				}
+			}
+
+		case "response.function_call_arguments.delta":
+			e := event.AsResponseFunctionCallArgumentsDelta()
+			if tp, ok := toolPhases[e.ItemID]; ok {
+				fmt.Fprint(tp.stdio.Stdout, e.Delta)
+			}
+
+		case "response.output_item.done":
+			e := event.AsResponseOutputItemDone()
+			if e.Item.Type == "function_call" {
+				fc := e.Item.AsFunctionCall()
+				contentBlocks = append(contentBlocks, &LLMContentBlock{
+					Kind:      LLMContentToolCall,
+					CallID:    fc.CallID,
+					ToolName:  fc.Name,
+					Arguments: JSON(fc.Arguments),
+				})
+				closeToolPhase(fc.ID)
+			}
 
 		case "response.completed":
 			e := event.AsResponseCompleted()
@@ -169,10 +231,9 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			}
 			usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 
-			// Extract tool calls and text from the completed response
+			// Extract text from the completed response (tool calls handled above)
 			for _, item := range resp.Output {
-				switch item.Type {
-				case "message":
+				if item.Type == "message" {
 					msg := item.AsMessage()
 					for _, part := range msg.Content {
 						if part.Type == "output_text" {
@@ -182,29 +243,6 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 							}
 						}
 					}
-				case "function_call":
-					fc := item.AsFunctionCall()
-					contentBlocks = append(contentBlocks, &LLMContentBlock{
-						Kind:      LLMContentToolCall,
-						CallID:    fc.CallID,
-						ToolName:  fc.Name,
-						Arguments: JSON(fc.Arguments),
-					})
-					// Create a display span for the tool call
-					toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, fc.Name,
-						telemetry.Reveal(),
-						trace.WithAttributes(
-							attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-							attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-							attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-							attribute.String(telemetry.LLMToolAttr, fc.Name),
-						),
-					)
-					toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
-						log.String(telemetry.ContentTypeAttr, "application/json"))
-					fmt.Fprint(toolStdio.Stdout, fc.Arguments)
-					toolStdio.Close()
-					displaySpans = append(displaySpans, toolSpan)
 				}
 			}
 		}
