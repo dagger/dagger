@@ -2829,7 +2829,7 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 	if len(line) > maxWidth {
 		line = line[:maxWidth-5] + "[...]"
 	}
-	r.fancyIndent(out, row, row.HasChildren, false)
+	r.fancyIndent(out, row, true, false)
 	fmt.Fprintln(out, prefix+out.String(line).Foreground(termenv.ANSIBrightBlack).String())
 }
 
