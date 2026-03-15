@@ -511,6 +511,7 @@ func (r *renderer) renderSpan(
 	out TermOutput,
 	span *dagui.Span,
 	name string,
+	toolArgs ...string, // optional: raw JSON tool call arguments for LLMTool spans
 ) error {
 	if name == "" {
 		return nil
@@ -527,6 +528,16 @@ func (r *renderer) renderSpan(
 				fmt.Fprint(out, " ")
 			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
+			// Parse conventional fields from streaming args
+			if len(toolArgs) > 0 && toolArgs[0] != "" {
+				fields := partialJSONFields(toolArgs[0])
+				if p, ok := fields["path"]; ok && p != "" {
+					fmt.Fprint(out, " ", out.String(p).Foreground(termenv.ANSICyan))
+				}
+				if d, ok := fields["description"]; ok && d != "" {
+					fmt.Fprint(out, " ", out.String(d).Faint())
+				}
+			}
 			return nil
 		}
 	}

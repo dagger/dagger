@@ -2808,29 +2808,79 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // thing
 const llmLogsLastLines = 8
 
+// conventionalToolArgFields are argument names that receive special
+// rendering in the TUI (shown in the span header or as rich content)
+// rather than being dumped as raw JSON.
+var conventionalToolArgFields = map[string]bool{
+	"path":        true, // shown in header with cyan
+	"description": true, // shown in header, faint
+	"prompt":      true, // rendered as markdown content line
+}
+
 func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	args := fe.logs.ToolArgs[row.Span.ID]
 	if args == "" {
 		return
 	}
-	// Compact the JSON to a single line.
-	var compacted bytes.Buffer
-	if err := json.Compact(&compacted, []byte(args)); err != nil {
-		// If it doesn't parse (e.g. still streaming), use as-is.
-		compacted.Reset()
-		compacted.WriteString(args)
+
+	fields := partialJSONFields(args)
+
+	// Render prompt field as a markdown-ish content line.
+	if prompt, ok := fields["prompt"]; ok && prompt != "" {
+		maxWidth := fe.window.Width - row.Depth*2 - 4
+		if maxWidth < 20 {
+			maxWidth = 20
+		}
+		// Show first line of prompt, truncated.
+		line := prompt
+		if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+			line = line[:idx] + "…"
+		}
+		if len(line) > maxWidth {
+			line = line[:maxWidth-1] + "…"
+		}
+		r.fancyIndent(out, row, true, false)
+		fmt.Fprintln(out, prefix+out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String())
 	}
-	line := compacted.String()
-	// Truncate to fit on one line with room for the [...] suffix.
-	maxWidth := fe.window.Width - row.Depth*2 - 4
-	if maxWidth < 20 {
-		maxWidth = 20
+
+	// Build a compact JSON line from remaining (non-conventional) args.
+	// Parse the full JSON; if it doesn't parse (still streaming), try partial fields.
+	var remaining string
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(args), &parsed); err == nil {
+		// Full JSON available — filter out conventional fields.
+		filtered := make(map[string]any, len(parsed))
+		for k, v := range parsed {
+			if !conventionalToolArgFields[k] {
+				filtered[k] = v
+			}
+		}
+		if len(filtered) > 0 {
+			if b, err := json.Marshal(filtered); err == nil {
+				remaining = string(b)
+			}
+		}
+	} else {
+		// Streaming/partial — fall back to compact raw JSON.
+		var compacted bytes.Buffer
+		if err := json.Compact(&compacted, []byte(args)); err != nil {
+			compacted.Reset()
+			compacted.WriteString(args)
+		}
+		remaining = compacted.String()
 	}
-	if len(line) > maxWidth {
-		line = line[:maxWidth-5] + "[...]"
+
+	if remaining != "" {
+		maxWidth := fe.window.Width - row.Depth*2 - 4
+		if maxWidth < 20 {
+			maxWidth = 20
+		}
+		if len(remaining) > maxWidth {
+			remaining = remaining[:maxWidth-5] + "[...]"
+		}
+		r.fancyIndent(out, row, true, false)
+		fmt.Fprintln(out, prefix+out.String(remaining).Foreground(termenv.ANSIBrightBlack).String())
 	}
-	r.fancyIndent(out, row, true, false)
-	fmt.Fprintln(out, prefix+out.String(line).Foreground(termenv.ANSIBrightBlack).String())
 }
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
@@ -3092,7 +3142,7 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 		if span.Name == "" {
 			empty = true
 		}
-		if err := r.renderSpan(out, span, span.Name); err != nil {
+		if err := r.renderSpan(out, span, span.Name, fe.logs.ToolArgs[span.ID]); err != nil {
 			return err
 		}
 	}
