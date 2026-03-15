@@ -120,7 +120,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewID[*core.LLM](self.ID()), nil
 		}).
 			Doc("synchronize LLM state"),
-		dagql.NodeFunc("replay", s.replay).
+		dagql.NodeFuncWithCacheKey("replay", s.replay, dagql.CachePerCall).
 			Doc("Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation"),
 		dagql.NodeFunc("loop", s.loop).
 			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn").
