@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -175,6 +176,93 @@ func (ep *LLMEndpoint) RefreshAuth(ctx context.Context) error {
 
 	slog.Info("OAuth token refreshed successfully", "provider", string(ep.Provider))
 
+	return nil
+}
+
+// persistRefreshedTokens writes the endpoint's current OAuth tokens back to
+// the client's config file so that future CLI sessions pick them up (and
+// don't fail when the refresh token has been rotated). This is best-effort;
+// callers should log but not propagate errors.
+func (ep *LLMEndpoint) persistRefreshedTokens(ctx context.Context) error {
+	if !ep.IsOAuth {
+		return nil
+	}
+
+	configPath := ""
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		configPath = md.ConfigPath
+	}
+	if configPath == "" {
+		return fmt.Errorf("no config path available")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return fmt.Errorf("get query: %w", err)
+	}
+
+	parentClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return fmt.Errorf("get parent client metadata: %w", err)
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, parentClient)
+
+	// Read the current config from the client's filesystem via the secret
+	// provider (same path used by NewLLMRouter).
+	mainSrv, err := query.Server.Server(ctx)
+	if err != nil {
+		return fmt.Errorf("get dagql server: %w", err)
+	}
+	var configData string
+	if err := mainSrv.Select(ctx, mainSrv.Root(), &configData,
+		dagql.Selector{
+			Field: "secret",
+			Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString("file://" + configPath)}},
+		},
+		dagql.Selector{
+			Field: "plaintext",
+		},
+	); err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg llmconfig.Config
+	if err := toml.Unmarshal([]byte(configData), &cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	if cfg.LLM.Providers == nil {
+		return fmt.Errorf("no providers in config")
+	}
+
+	providerName := string(ep.Provider)
+	provider, ok := cfg.LLM.Providers[providerName]
+	if !ok || !provider.IsOAuth() {
+		return fmt.Errorf("provider %q not found or not OAuth in config", providerName)
+	}
+
+	// Update the token fields.
+	provider.AuthToken = ep.AuthToken
+	provider.RefreshToken = ep.RefreshToken
+	provider.TokenExpiry = ep.TokenExpiry
+	if ep.SubscriptionType != "" {
+		provider.SubscriptionType = ep.SubscriptionType
+	}
+	cfg.LLM.Providers[providerName] = provider
+
+	updated, err := toml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("get buildkit client: %w", err)
+	}
+	if err := bk.IOReaderExport(ctx, bytes.NewReader(updated), configPath, 0o600); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	slog.Info("persisted refreshed OAuth tokens to config", "provider", providerName, "path", configPath)
 	return nil
 }
 
@@ -1077,6 +1165,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		if llm.endpoint.NeedsRefresh() {
 			if err := llm.endpoint.RefreshAuth(ctx); err != nil {
 				slog.Warn("proactive OAuth token refresh failed", "error", err)
+			} else if err := llm.endpoint.persistRefreshedTokens(ctx); err != nil {
+				slog.Warn("failed to persist refreshed OAuth tokens", "error", err)
 			}
 		}
 		return llm.endpoint, nil
@@ -1402,6 +1492,9 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				if refreshErr := ep.RefreshAuth(ctx); refreshErr != nil {
 					slog.Warn("OAuth token refresh on auth error failed", "error", refreshErr)
 					return backoff.Permanent(sendErr)
+				}
+				if persistErr := ep.persistRefreshedTokens(ctx); persistErr != nil {
+					slog.Warn("failed to persist refreshed OAuth tokens", "error", persistErr)
 				}
 				client = ep.Client // use the rebuilt client
 				return sendErr     // signal backoff to retry
