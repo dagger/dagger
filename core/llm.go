@@ -1248,30 +1248,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	llmCallDigest := inst.ID().Digest().String()
 
 	for _, msg := range newMessages {
-		func() {
-			var emoji string
-			switch msg.Role {
-			case LLMMessageRoleUser:
-				emoji = "🧑"
-			case LLMMessageRoleSystem:
-				emoji = "⚙️"
-			}
-			attrs := []attribute.KeyValue{
-				attribute.String(telemetry.UIActorEmojiAttr, emoji),
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-				attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
-				attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
-				attribute.String(LLMCallDigestAttr, llmCallDigest),
-			}
-			ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
-				telemetry.Reveal(),
-				trace.WithAttributes(attrs...))
-			defer span.End()
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-				log.String(telemetry.ContentTypeAttr, "text/markdown"))
-			defer stdio.Close()
-			fmt.Fprint(stdio.Stdout, msg.TextContent())
-		}()
+		emitMessageSpan(ctx, msg, llmCallDigest)
 	}
 
 	var res *LLMResponse
@@ -1630,6 +1607,116 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	}
 
 	return bk.PromptAllowLLM(ctx, moduleURL)
+}
+
+// emitMessageSpan creates a telemetry span for a single LLM message.
+// This is used both during live step() execution and during replay.
+// callDigest is the DAG digest enabling TUI branching from that point.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+	switch msg.Role {
+	case LLMMessageRoleUser, LLMMessageRoleSystem:
+		emitUserMessageSpan(ctx, msg, callDigest)
+	case LLMMessageRoleAssistant:
+		emitAssistantMessageSpan(ctx, msg, callDigest)
+	}
+}
+
+func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+	var emoji string
+	switch msg.Role {
+	case LLMMessageRoleUser:
+		emoji = "🧑"
+	case LLMMessageRoleSystem:
+		emoji = "⚙️"
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.UIActorEmojiAttr, emoji),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+		attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
+		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
+	}
+	if callDigest != "" {
+		attrs = append(attrs, attribute.String(LLMCallDigestAttr, callDigest))
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
+		telemetry.Reveal(),
+		trace.WithAttributes(attrs...))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+	fmt.Fprint(stdio.Stdout, msg.TextContent())
+}
+
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+	// Separate thinking from non-thinking content blocks, matching the
+	// provider behavior: each contiguous run of thinking or text/tool-call
+	// blocks gets its own span.
+	type span struct {
+		thinking bool
+		blocks   []*LLMContentBlock
+	}
+	var spans []span
+	for _, block := range msg.Content {
+		isThinking := block.Kind == LLMContentThinking
+		if len(spans) > 0 && spans[len(spans)-1].thinking == isThinking {
+			spans[len(spans)-1].blocks = append(spans[len(spans)-1].blocks, block)
+		} else {
+			spans = append(spans, span{thinking: isThinking, blocks: []*LLMContentBlock{block}})
+		}
+	}
+
+	for _, s := range spans {
+		func() {
+			var name string
+			var extraAttrs []attribute.KeyValue
+			if s.thinking {
+				name = "thinking"
+				extraAttrs = append(extraAttrs,
+					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.Bool("llm.thinking", true),
+				)
+			} else {
+				name = "LLM response"
+				extraAttrs = append(extraAttrs,
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				)
+			}
+			attrs := []attribute.KeyValue{
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+			}
+			attrs = append(attrs, extraAttrs...)
+			if callDigest != "" {
+				attrs = append(attrs, attribute.String(LLMCallDigestAttr, callDigest))
+			}
+			ctx, span := Tracer(ctx).Start(ctx, name,
+				telemetry.Reveal(),
+				trace.WithAttributes(attrs...))
+			defer span.End()
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, "text/markdown"))
+			defer stdio.Close()
+			for _, block := range s.blocks {
+				switch block.Kind {
+				case LLMContentText, LLMContentThinking:
+					fmt.Fprint(stdio.Stdout, block.Text)
+				case LLMContentToolCall:
+					fmt.Fprintf(stdio.Stdout, "**%s**(%s)\n", block.ToolName, block.Arguments)
+				}
+			}
+		}()
+	}
+}
+
+// Replay re-emits telemetry spans for all messages in the conversation history.
+// This allows the TUI to display the conversation after loading a saved session.
+func (llm *LLM) Replay(ctx context.Context) {
+	for _, msg := range llm.Messages {
+		// We don't have per-message call digests for replay, so pass empty.
+		// The TUI will still display the messages, just without branch support.
+		emitMessageSpan(ctx, msg, "")
+	}
 }
 
 func squash(str string) string {

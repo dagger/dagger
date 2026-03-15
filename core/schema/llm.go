@@ -120,6 +120,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewID[*core.LLM](self.ID()), nil
 		}).
 			Doc("synchronize LLM state"),
+		dagql.NodeFunc("replay", s.replay).
+			Doc("Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation"),
 		dagql.NodeFunc("loop", s.loop).
 			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn").
 			Args(
@@ -350,6 +352,11 @@ func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
 	return llm.TokenUsage(ctx, s.srv)
+}
+
+func (s *llmSchema) replay(ctx context.Context, parent dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
+	parent.Self().Replay(ctx)
+	return dagql.NewID[*core.LLM](parent.ID()), nil
 }
 
 func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
