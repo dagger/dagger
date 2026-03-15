@@ -731,12 +731,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	fnCall := &FunctionCall{
-		Name:   fn.metadata.OriginalName,
-		Parent: parentJSON,
-		// TODO: ?
-		// ParentID:  callID.Receiver(),
-		ParentID:  opts.ParentTyped.ID(),
+		Name:      fn.metadata.OriginalName,
+		Parent:    parentJSON,
 		InputArgs: callInputs,
+	}
+	if opts.ParentTyped != nil {
+		fnCall.ParentID = opts.ParentTyped.ID()
 	}
 	if envID, ok := EnvIDFromContext(ctx); ok {
 		fnCall.EnvID = envID

@@ -31,8 +31,14 @@ func (prov cachePersistInputProvenance) validate() error {
 
 type persistResultSnapshot struct {
 	resultID            sharedResultID
-	canonicalID         *call.ID
-	shared              *sharedResult
+	frame               *ResultCallFrame
+	extraDigests        []call.ExtraDigest
+	exportID            *call.ID
+	self                Typed
+	objType             ObjectType
+	hasValue            bool
+	persistedEnvelope   *PersistedResultEnvelope
+	outputEffectIDs     []string
 	row                 persistdb.MirrorResult
 	resultDeps          []persistdb.MirrorResultDep
 	resultSnapshotLinks []persistdb.MirrorResultSnapshotLink

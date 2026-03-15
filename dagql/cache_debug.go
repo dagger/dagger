@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	debugEGraphTrace       = true
+	debugEGraphTrace       = false
 	egraphTraceFormatV1    = 1
 	egraphTraceMessageName = "dagql_egraph_trace"
 )

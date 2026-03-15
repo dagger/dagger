@@ -159,6 +159,45 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	assert.Check(t, cmp.Equal(resultInputCount, 1))
 }
 
+func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheIface, err := NewCache(ctx, dbPath)
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+	defer func() {
+		assert.NilError(t, c.Close(context.Background()))
+	}()
+
+	key := cacheTestID("persist-snapshot-self-contained")
+	res, err := c.GetOrInitCall(ctx, CacheKey{
+		ID: key,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 42), nil
+	})
+	assert.NilError(t, err)
+
+	snapshot, err := c.snapshotPersistState(ctx)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(snapshot.results))
+	assert.Assert(t, snapshot.results[0].row.ID != 0)
+	snapshotResultID := snapshot.results[0].row.ID
+
+	assert.NilError(t, res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+
+	assert.NilError(t, c.applyPersistStateSnapshot(ctx, snapshot))
+
+	rows, err := c.pdb.ListMirrorResults(ctx)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(rows))
+	assert.Equal(t, snapshotResultID, rows[0].ID)
+
+	assert.Check(t, cmp.Contains(rows[0].CallFrameJSON, `"field":"persist-snapshot-self-contained"`))
+}
+
 func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
 	t.Parallel()
 
