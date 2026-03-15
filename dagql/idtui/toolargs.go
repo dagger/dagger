@@ -25,18 +25,18 @@ const (
 // tries both the full name and the method part after "_".
 var toolArgStyles = map[string]argStyle{
 	// File-oriented tools: path in cyan
-	"read.path":      argStylePath,
-	"read.filepath":  argStylePath,
-	"read.file_path": argStylePath,
+	"read.path":       argStylePath,
+	"read.filepath":   argStylePath,
+	"read.file_path":  argStylePath,
 	"write.path":      argStylePath,
 	"write.filepath":  argStylePath,
 	"write.file_path": argStylePath,
-	"edit.path":      argStylePath,
-	"edit.filepath":  argStylePath,
-	"edit.file_path": argStylePath,
-	"grep.path":      argStylePath,
-	"find.path":      argStylePath,
-	"ls.path":        argStylePath,
+	"edit.path":       argStylePath,
+	"edit.filepath":   argStylePath,
+	"edit.file_path":  argStylePath,
+	"grep.path":       argStylePath,
+	"find.path":       argStylePath,
+	"ls.path":         argStylePath,
 
 	// Write content
 	"write.content":  argStyleContent,
@@ -49,8 +49,8 @@ var toolArgStyles = map[string]argStyle{
 	"edit.new_text": argStyleContent,
 
 	// Shell commands
-	"bash.command":    argStyleContent,
-	"withexec.args":   argStyleContent,
+	"bash.command":  argStyleContent,
+	"withexec.args": argStyleContent,
 
 	// Grep pattern
 	"grep.regex":   argStyleDesc,
@@ -61,12 +61,18 @@ var toolArgStyles = map[string]argStyle{
 	"save.description":          argStyleDesc,
 
 	// Commit
-	"commit.message":    argStyleContent,
+	"commit.message":     argStyleContent,
 	"withcommit.message": argStyleContent,
 
 	// Check/test tools
 	"checks.include": argStyleDesc,
 	"check.include":  argStyleDesc,
+
+	// Sub-agents
+	"research.description":   argStyleDesc,
+	"research.prompt":        argStyleContent,
+	"rabbithole.description": argStyleDesc,
+	"rabbithole.prompt":      argStyleContent,
 }
 
 // toolArgStyle returns the rendering style for a given (toolName, argName) pair.
@@ -89,10 +95,6 @@ func toolArgStyle(toolName, argName string) argStyle {
 		}
 	}
 
-	// Fallback: prompt is always content-style regardless of tool.
-	if argLower == "prompt" {
-		return argStyleContent
-	}
 	return argStyleNone
 }
 
