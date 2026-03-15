@@ -87,7 +87,10 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			} else {
 				check.Passed = true
 			}
-			return err
+			// Don't propagate check failures as job errors;
+			// the failure is captured in the Check itself so
+			// callers can query .passed, .error, and .report.
+			return nil
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
