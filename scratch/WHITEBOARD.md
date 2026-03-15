@@ -2049,6 +2049,402 @@ Why this matters:
   * in-memory semantic result-ref behavior is correct
 * this is the main remaining Phase-5 seam
 
+### Phase 5.5: Make shutdown-time persistence truly quiescent and self-contained
+
+Important additional seam discovered after the typedef/simple-field unblocker:
+
+* removing the `core/typedef.go` `doNotCache:"simple field selection"` tags **did** move the restart failure forward
+  * the first blocker is no longer the old `.functions` result family
+  * but the restart test is still red
+* the current remaining failure is:
+  * the second engine start still wipes the persistence store as unclean
+  * the final test assertion mismatch is therefore still downstream of a cold start, not the primary bug
+
+Concrete current failure shape:
+
+* failing restart repro:
+  * `TestEngine/TestDiskPersistenceAcrossRestart/function_cache_control_survives_restart`
+* fresh log after the typedef unblocker:
+  * `/tmp/phase5-fn-cache-restart-post-typedef-1773530734-353754.log`
+* close-time failure:
+  * `failed to persist dagql cache during close`
+  * `persist result 393 envelope: result has no reconstructable frame ID and no persisted envelope: resolve persisted call ID for result 393: missing result call frame`
+* then on next boot:
+  * `persist_store_wiped_unclean_shutdown`
+  * `dagql persistence store marked unclean; wiping and cold-starting`
+
+Important clarification about the failing result:
+
+* the failing result is **not** the top-level `currentTypeDefs` array result
+* it is an nth-item/list-child result under that array:
+  * `shared_result_id=393`
+  * `record_type=.currentTypeDefs`
+  * `description=currentTypeDefs`
+* that comes from:
+  * `core/schema/module.go` `currentTypeDefs`
+  * which returns `dagql.Array[*core.TypeDef]`
+  * and then nth item promotion / nested field selections create the `.currentTypeDefs` item results
+
+Important evidence from the trace:
+
+* result `393` is definitely:
+  * created
+  * associated with a term
+  * ref-acquired
+* and later, **before** the close-time persist error:
+  * it is ref-released
+  * removed from result<->term associations
+  * removed from the live cache/e-graph
+* then the close-time exporter still errors trying to persist result `393`
+
+Why this matters:
+
+* the simple explanation “this result never had a frame at all” is probably **not** the best explanation anymore
+* a more likely explanation is:
+  * the shutdown persistence path captured result `393` into its snapshot
+  * then the live cache continued mutating during shutdown
+  * result `393` was removed from the live cache
+  * and later the exporter re-looked up frame/call-ID data from the **live** cache by `resultID`
+  * which then failed with `missing result call frame`
+
+The critical weirdness in the current implementation:
+
+* `snapshotPersistState(...)` still looks like a transitional artifact from the old continuous/background persistence architecture
+* it clones `sharedResult` state under `egraphMu.RLock`, including:
+  * `resultCallFrame: res.resultCallFrame.clone()`
+* but then, after releasing the lock, it does not fully trust/use that snapshotted state
+* instead, when exporting envelopes, it calls:
+  * `persistResultEnvelope(ctx, resultID, resultSnapshot.shared)`
+* and that path still calls:
+  * `persistedCallIDByResultID(ctx, resultID)`
+* which goes back to the **live cache** and reads:
+  * `resultCallFrameSnapshot(resultID)`
+* so the “snapshot” is not actually self-contained
+
+This is the core implementation smell:
+
+* the current code is neither:
+  * a true stop-the-world direct-write shutdown model
+  * nor a true self-contained snapshot/export model
+* it is an awkward hybrid:
+  * capture some state under lock
+  * then finish the job later by consulting live mutable cache state
+* that hybrid is exactly the kind of thing that can produce:
+  * result present in snapshot
+  * result removed from live cache
+  * later close-time failure when exporter tries to resolve it again
+
+Important correction to an earlier intuition:
+
+* it is **not** currently safe to say:
+  * “by the time we are persisting, all sessions are closed, so nothing is mutating anymore”
+* the trace shows that results are still being released/removed while shutdown persistence is in progress
+* so some notion of a stable/frozen view is still necessary unless shutdown ordering changes further
+
+What still makes sense about the snapshot idea:
+
+* if shutdown is not fully quiescent yet, then:
+  * a two-phase capture/write model can still be justified
+  * especially if we want to avoid holding `egraphMu` while marshalling JSON and writing the DB
+
+What does **not** make sense anymore:
+
+* if we take a snapshot, it should be self-contained
+* if we want a shutdown-time authoritative write, it should not depend on later live-cache lookups
+* cloning only part of the needed state and then consulting the live cache later is not coherent
+
+Other things that now look weird in the post-Phase-4 world:
+
+* cloning `sharedResult` payloads may still be justified if we truly want a stable snapshot
+  * but it no longer makes sense as a half-measure
+* the code is still carrying old-world assumptions like:
+  * “capture partial state now, reconstruct the rest later”
+  * which fit the old worker model better than the new shutdown-only model
+* the “snapshot moment” is not clearly the final authoritative cache state
+  * because releases/removals continue happening while persistence is running
+
+Current best theory for the concrete bug:
+
+* result `393` likely **did** have a frame while live
+* `snapshotPersistState(...)` likely captured it
+* but envelope export later ignores the snapshotted frame and re-derives the ID from the live cache by `resultID`
+* by then, result `393` has been removed
+* so `persistedCallIDByResultID(...)` fails with `missing result call frame`
+
+Why this deserves its own phase/subphase:
+
+* this is now broader than the original row/envelope/frame cut
+* even with those cuts in place, shutdown persistence will remain brittle until:
+  * the persistence pass operates on a truly stable view
+  * or shutdown is made truly quiescent before persistence starts
+* this is a prerequisite for trusting any further persistence debugging signal
+
+Two coherent implementation directions to choose between later:
+
+1. True stop-the-world shutdown persistence:
+   * make the cache truly quiescent before persistence starts
+   * no more result releases/removals during the persistence pass
+   * then write directly from live state
+   * if we choose this, much of the current snapshot cloning may become unnecessary
+
+2. True self-contained snapshot persistence:
+   * keep the two-phase capture/write structure
+   * but make the captured snapshot fully authoritative/self-contained
+   * no live cache lookups after snapshot capture
+   * envelope export must use the snapshotted frame/state, not `persistedCallIDByResultID(...)` against the live cache
+
+Current leaning:
+
+* we do not yet know why shutdown is still mutating this late, but making shutdown persistence truly quiescent is critical
+* regardless of which model we choose, the current hybrid should be treated as a bug farm
+* before embarking on the bigger projection redesign, we should first fully understand and fix this shutdown quiescence/self-contained snapshot problem so later persistence signals are trustworthy
+
+Current implementation plan for the shutdown-quiescence half of this work:
+
+* treat this as one cohesive shutdown fix set, but execute it in two groups
+* **Group 1** should land together:
+  * stop new work
+  * cancel active work
+  * suppress background prune/GC during shutdown
+  * make sure graceful shutdown is not still serving HTTP/DAGQL traffic while session removal and persistence are running
+* **Group 2** should land after Group 1:
+  * make `SessionCache.ReleaseAndClose` actually wait for in-flight work before returning
+* only after those are done should we move on to the separate persistence-export cleanup:
+  * stop consulting live cache state after snapshot capture
+  * possibly collapse the current hybrid snapshot/export flow
+
+### Phase 5.5 Group 1: shutdown gate, request rejection/cancellation, HTTP shutdown, and GC suppression
+
+This group corresponds to the earlier proposed steps 1, 2, 3, and 5, and they should be treated as one coherent change rather than four isolated tweaks.
+
+Why these belong together:
+
+* the current problem is not “one stray prune call”
+* the deeper issue is that shutdown does not currently establish a hard boundary saying:
+  * no new work may begin
+  * existing work is canceled/drained
+  * no background cache-maintenance work may run
+  * only then may we remove sessions, prune, and persist
+* so this group should create that boundary explicitly
+
+#### 1. Introduce a real engine-wide shutdown gate
+
+Add explicit server-wide shutdown state on `engine/server/server.go`, for example:
+
+* an atomic `shuttingDown`
+* a server-level shutdown context/channel
+* a `beginGracefulStop()` helper that flips the gate exactly once
+
+That gate needs to do two things:
+
+* make all new HTTP/DAGQL work reject immediately once graceful shutdown begins
+* cancel active request contexts so in-flight query work does not keep mutating dagql while session removal/persistence are underway
+
+Concrete intended effects:
+
+* `engine/server/session.go` `ServeHTTP`
+* `engine/server/session.go` `serveHTTPToClient`
+* `engine/server/session.go` `getOrInitClient`
+
+should all refuse new work once shutdown begins, ideally with a clear “shutting down” / `503`-style response instead of continuing to initialize sessions/clients.
+
+This is important because right now:
+
+* `cmd/engine/main.go` serves the engine API through `httpServer.Serve(...)`
+* graceful shutdown currently calls `grpcServer.GracefulStop()` and then `srv.GracefulStop(...)`
+* there is no corresponding `httpServer.Shutdown(...)`
+* there is also no global “do not create new sessions/clients” gate
+* so normal HTTP/DAGQL traffic can still be alive, and potentially still arriving, while graceful shutdown is removing sessions and persisting the cache
+
+That is fundamentally incompatible with a quiescent persistence model.
+
+#### 2. Actually shut down the outer HTTP server before session teardown
+
+In `cmd/engine/main.go`, the shutdown ordering should be updated so the outer HTTP server is explicitly shut down before `srv.GracefulStop(...)` begins removing sessions and persisting the cache.
+
+Current shape:
+
+* `grpcServer.GracefulStop()`
+* then `srv.GracefulStop(...)`
+
+Problem:
+
+* `grpcServer` is not the only thing serving requests
+* the real listener is `httpServer`, which serves both:
+  * `grpcServer.ServeHTTP(...)`
+  * `srv.ServeHTTP(...)`
+* without `httpServer.Shutdown(...)`, the engine is not actually preventing new or draining HTTP requests before cache teardown begins
+
+Desired shutdown sequence:
+
+1. `srv.beginGracefulStop()`
+2. `httpServer.Shutdown(srvStopCtx)`
+3. `grpcServer.GracefulStop()`
+4. `srv.GracefulStop(srvStopCtx)`
+
+Why this order:
+
+* `beginGracefulStop()` flips the global shutdown gate and cancels active request contexts
+* `httpServer.Shutdown(...)` stops listeners and drains/waits for active HTTP handlers
+* `grpcServer.GracefulStop()` then cleans up the gRPC layer
+* only after the serving layer has been shut down do we proceed to:
+  * remove sessions
+  * explicitly prune dagql
+  * persist the cache
+
+This is the cleanest way to make “no more engine API traffic” a real invariant before persistence starts.
+
+#### 3. Split “session is closing” from “session is fully shut down”
+
+Right now `engine/server/session.go` `shutdownCh` is overloaded.
+
+It is currently closed relatively late, partly because telemetry shutdown/flush logic wants that timing:
+
+* we currently defer closing the session shutdown channel until the end of the `/shutdown` handler path
+* that makes it unsuitable as the primary “cancel active query work now” signal
+
+The fix should be to split this into two explicit concepts:
+
+* an early session-closing/cancel-work signal
+  * e.g. `closingCh` or `cancelCallsCh`
+  * closed at the **start** of session teardown
+  * used to cancel attachables/query execution contexts
+* the existing late “fully shut down” signal
+  * retained only if still needed for telemetry/finalization semantics
+
+Then:
+
+* `daggerSession.withShutdownCancel(...)` should really become “cancel when the session starts closing”
+* `serveQuery(...)` must use that same cancellation path, not just attachables/session-manager connections
+
+This matters because the current code only wires that shutdown cancellation into some paths:
+
+* attachables/session-manager traffic uses `withShutdownCancel(...)`
+* GraphQL query execution does not
+
+So today, active GraphQL work can continue running after session teardown has already begun, which is precisely the opposite of what shutdown quiescence requires.
+
+#### 5. Disable all background dagql GC during graceful shutdown
+
+The current `removeDaggerSession(...)` path definitely arms background dagql GC during shutdown:
+
+* `engine/server/session.go` does `defer time.AfterFunc(time.Second, srv.throttledGC)`
+* `srv.throttledGC` is set by `throttle.After(time.Minute, srv.gc)`
+* the implementation of `throttle.After(...)` actually runs `srv.gc()` immediately and only sleeps **after** that invocation
+* `srv.gc()` calls `baseDagqlCache.Prune(context.Background(), ...)`
+
+So in practice:
+
+* every session removal can trigger a real background dagql prune about one second later
+* that prune can overlap with `baseDagqlCache.Close(...)`
+* and that means background result removal can race directly with shutdown-time persistence
+
+This must be shut off during graceful shutdown.
+
+The intended fix here is layered:
+
+* do not schedule `time.AfterFunc(..., srv.throttledGC)` once shutdown has begun
+* make `srv.gc()` itself early-return if the server is shutting down
+* as an additional guard, hold `srv.gcmu` across the full dagql-shutdown section:
+  * session removal
+  * explicit shutdown prune
+  * `baseDagqlCache.Close(...)`
+
+That last point is important:
+
+* the explicit graceful-shutdown prune already takes `gcmu`
+* but `baseDagqlCache.Close(...)` currently happens after releasing that lock
+* so even if the normal explicit prune is serialized, a separately armed background GC can still overlap with persistence
+
+The desired Group-1 invariant is:
+
+* once graceful shutdown begins, no background dagql prune/GC may run again
+* and nothing else may be able to acquire a path that calls `baseDagqlCache.Prune(...)` until shutdown persistence has completed
+
+#### Group-1 completion condition
+
+Group 1 should be considered complete only once the following statement is actually true:
+
+* after graceful shutdown begins:
+  * no new session/client/query work may start
+  * active engine API work is canceled/drained
+  * no background dagql GC/prune may run
+  * only then do we remove sessions, do the explicit shutdown prune, and call `baseDagqlCache.Close(...)`
+
+If any path still allows:
+
+* new HTTP/DAGQL work
+* late attachable/query execution
+* background dagql GC/prune
+
+during the session-removal/prune/persist sequence, then Group 1 is not done.
+
+### Phase 5.5 Group 2: make `SessionCache.ReleaseAndClose` wait for in-flight work
+
+This group corresponds to the earlier proposed step 4, and it should be done after Group 1 rather than folded into it.
+
+Why this is separate:
+
+* Group 1 establishes the outer shutdown boundary:
+  * no new work
+  * active work canceled/drained
+  * no background GC
+* Group 2 fixes an inner dagql lifecycle bug that still matters even after the outer shutdown boundary is corrected
+
+Current bug:
+
+* `dagql/session_cache.go` `ReleaseAndClose(...)` marks `isClosed = true`
+* releases only the results currently tracked in the session cache
+* and then returns immediately
+* it does **not** wait for in-flight `GetOrInitCall(...)` / `GetOrInitArbitrary(...)` operations to finish
+
+But those in-flight calls can still complete later, and when they do:
+
+* `SessionCache.GetOrInitCall(...)` notices `isClosed`
+* and then does a late `res.Release(...)`
+* which means the base dagql cache can still be mutated **after** `ReleaseAndClose(...)` has already returned
+
+That is a direct violation of the intuitive contract of session close.
+
+The intended fix:
+
+* track in-flight session operations explicitly
+  * increment on entry to `GetOrInitCall(...)`
+  * increment on entry to `GetOrInitArbitrary(...)`
+  * decrement on exit from those calls
+* `ReleaseAndClose(...)` should:
+  * mark `isClosed = true`
+  * wait for in-flight count to reach zero
+  * only then release tracked results/arbitrary values
+  * and only then return
+
+Desired invariant after Group 2:
+
+* once `SessionCache.ReleaseAndClose(...)` returns, that session can no longer mutate the base dagql cache afterward
+
+This is important even if Group 1 is implemented correctly, because:
+
+* we do not want session teardown to merely *usually* be quiet
+* we want the session cache itself to provide a strong completion boundary
+
+#### Group-2 completion condition
+
+Group 2 should be considered complete only once the following statement is true:
+
+* after `SessionCache.ReleaseAndClose(...)` returns, there is no remaining in-flight session cache work that can later call `res.Release(...)`, `ArbitraryResult.Release(...)`, or otherwise mutate base dagql state
+
+### Post-Group-2 follow-up
+
+Only after Groups 1 and 2 are in place should we return to the separate persistence-export cleanup:
+
+* stop consulting live cache state after snapshot capture
+* make the shutdown-time export path self-contained
+* possibly collapse the current snapshot/live hybrid into either:
+  * a truly stop-the-world direct-write export
+  * or a truly self-contained snapshot export
+
+That later work should be treated separately from the shutdown-quiescence fixes above.
+
 ## Cross-phase notes / guardrails
 
 ### Pruning

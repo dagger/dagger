@@ -477,14 +477,27 @@ func main() { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
 		}
-		defer func() {
-			if srv != nil {
-				srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
-				if err := srv.GracefulStop(context.WithoutCancel(srvStopCtx)); err != nil {
-					slog.Error("server graceful stop", "error", err)
-				}
-				srvStopCancel()
+		var httpServer *http.Server
+		shutdownServer := func(stopCtx context.Context) {
+			if srv == nil {
+				return
 			}
+			srv.BeginGracefulStop()
+			if httpServer != nil {
+				if err := httpServer.Shutdown(context.WithoutCancel(stopCtx)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					slog.Error("http server shutdown", "error", err)
+				}
+			}
+			grpcServer.GracefulStop()
+			if err := srv.GracefulStop(context.WithoutCancel(stopCtx)); err != nil {
+				slog.Error("server graceful stop", "error", err)
+			}
+			srv = nil
+		}
+		defer func() {
+			srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
+			defer srvStopCancel()
+			shutdownServer(srvStopCtx)
 		}()
 
 		if bkcfg.GRPC.DebugAddress != "" {
@@ -509,7 +522,7 @@ func main() { //nolint:gocyclo
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
 		http2Server := &http2.Server{}
-		httpServer := &http.Server{
+		httpServer = &http.Server{
 			ReadHeaderTimeout: 30 * time.Second,
 			Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
@@ -551,14 +564,9 @@ func main() { //nolint:gocyclo
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
 
-		grpcServer.GracefulStop()
-
 		srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
 		defer srvStopCancel()
-		if err := srv.GracefulStop(srvStopCtx); err != nil {
-			slog.Error("server graceful stop", "error", err)
-		}
-		srv = nil // prevent deferred close from running again
+		shutdownServer(srvStopCtx)
 
 		return err
 	}

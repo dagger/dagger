@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
@@ -37,12 +38,12 @@ import (
 	containerdsnapshot "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
-	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
@@ -141,6 +142,10 @@ type Server struct {
 	throttledGC func()
 	gcmu        sync.Mutex
 
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelCauseFunc
+	shuttingDown   atomic.Bool
+
 	//
 	// dagql cache
 	//
@@ -190,6 +195,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		locker: locker.New(),
 	}
+	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
@@ -586,6 +592,33 @@ func (srv *Server) initBoltDBs() (err error) {
 	return nil
 }
 
+var errServerShuttingDown = errors.New("engine is shutting down")
+
+func (srv *Server) BeginGracefulStop() {
+	if srv.shuttingDown.CompareAndSwap(false, true) && srv.shutdownCancel != nil {
+		srv.shutdownCancel(errServerShuttingDown)
+	}
+}
+
+func (srv *Server) isShuttingDown() bool {
+	return srv != nil && srv.shuttingDown.Load()
+}
+
+func (srv *Server) withShutdownCancel(ctx context.Context) context.Context {
+	if srv == nil || srv.shutdownCtx == nil {
+		return ctx
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case <-srv.shutdownCtx.Done():
+			cancel(context.Cause(srv.shutdownCtx))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx
+}
+
 func (srv *Server) EngineName() string {
 	return srv.engineName
 }
@@ -605,6 +638,8 @@ func (srv *Server) Clients() []string {
 // GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
 // run with NoSync=true (plus NoFreelistSync/NoGrowSync) for performance reasons.
 func (srv *Server) GracefulStop(ctx context.Context) error {
+	srv.BeginGracefulStop()
+
 	var err error
 
 	// note this *could* cause a panic in Session if it was still running, so
@@ -613,6 +648,11 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	daggerSessions := srv.daggerSessions
 	srv.daggerSessionsMu.Unlock()
 
+	if srv.baseDagqlCache != nil {
+		srv.gcmu.Lock()
+		defer srv.gcmu.Unlock()
+	}
+
 	for _, s := range daggerSessions {
 		s.stateMu.Lock()
 		err = errors.Join(err, srv.removeDaggerSession(ctx, s))
@@ -620,7 +660,6 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	if srv.baseDagqlCache != nil && len(srv.workerGCPolicies) > 0 {
-		srv.gcmu.Lock()
 		dstat, statErr := disk.GetDiskStat(srv.rootDir)
 		if statErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to get disk stats for graceful shutdown prune: %w", statErr))
@@ -634,7 +673,6 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 				err = errors.Join(err, fmt.Errorf("failed to prune dagql cache during graceful shutdown: %w", pruneErr))
 			}
 		}
-		srv.gcmu.Unlock()
 	}
 
 	if srv.baseDagqlCache != nil {

@@ -62,6 +62,10 @@ type daggerSession struct {
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
 
+	closingCtx       context.Context
+	cancelClosing    context.CancelCauseFunc
+	closeClosingOnce sync.Once
+
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
 	closeShutdownOnce sync.Once
@@ -241,6 +245,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.mainClientCallerID = clientMetadata.ClientID
 	sess.clients = map[string]*daggerClient{}
 	sess.endpoints = map[string]http.Handler{}
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.authProvider = auth.NewRegistryAuthProvider()
@@ -268,11 +273,24 @@ func (srv *Server) initializeDaggerSession(
 	return nil
 }
 
-func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Context {
+var errSessionClosing = errors.New("session is closing")
+
+func (sess *daggerSession) beginClosing() {
+	sess.closeClosingOnce.Do(func() {
+		if sess.cancelClosing != nil {
+			sess.cancelClosing(errSessionClosing)
+		}
+	})
+}
+
+func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Context {
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
-		<-sess.shutdownCh
-		cancel(errors.New("session shutdown called"))
+		select {
+		case <-sess.closingCtx.Done():
+			cancel(context.Cause(sess.closingCtx))
+		case <-ctx.Done():
+		}
 	}()
 	return ctx
 }
@@ -286,6 +304,9 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
+		if srv.isShuttingDown() {
+			return
+		}
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
 
@@ -294,6 +315,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	srv.daggerSessionsMu.Unlock()
 
 	sess.state = sessionStateRemoved
+	sess.beginClosing()
 
 	var errs error
 
@@ -672,6 +694,10 @@ func (srv *Server) getOrInitClient(
 	ctx context.Context,
 	opts *ClientInitOpts,
 ) (_ *daggerClient, _ func() error, rerr error) {
+	if srv.isShuttingDown() {
+		return nil, nil, errServerShuttingDown
+	}
+
 	sessionID := opts.SessionID
 	if sessionID == "" {
 		return nil, nil, fmt.Errorf("session ID is required")
@@ -696,6 +722,10 @@ func (srv *Server) getOrInitClient(
 	// get or initialize the session as a whole
 
 	srv.daggerSessionsMu.Lock()
+	if srv.isShuttingDown() {
+		srv.daggerSessionsMu.Unlock()
+		return nil, nil, errServerShuttingDown
+	}
 	sess, sessionExists := srv.daggerSessions[sessionID]
 	if !sessionExists {
 		sess = &daggerSession{
@@ -890,7 +920,16 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 const InstrumentationLibrary = "dagger.io/engine.server"
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
-	ctx := r.Context()
+	if srv.isShuttingDown() {
+		switch r.URL.Path {
+		case engine.QueryEndpoint:
+			return gqlErr(errServerShuttingDown, http.StatusServiceUnavailable)
+		default:
+			return httpErr(errServerShuttingDown, http.StatusServiceUnavailable)
+		}
+	}
+
+	ctx := srv.withShutdownCancel(r.Context())
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
@@ -1038,7 +1077,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		panic(fmt.Errorf("failed to read ack: %w", err))
 	}
 
-	ctx = client.daggerSession.withShutdownCancel(ctx)
+	ctx = client.daggerSession.withClosingCancel(ctx)
 
 	// Disable collecting otel metrics on these grpc connections for now. We don't use them and
 	// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
@@ -1057,7 +1096,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 }
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
-	ctx := r.Context()
+	ctx := client.daggerSession.withClosingCancel(r.Context())
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
@@ -1154,6 +1193,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 
 	if client.clientID == sess.mainClientCallerID {
 		slog.Info("main client is shutting down")
+		sess.beginClosing()
 
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.

@@ -194,6 +194,10 @@ func (srv *Server) gc() {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
+	if srv.isShuttingDown() {
+		return
+	}
+
 	if len(srv.workerGCPolicies) == 0 {
 		return
 	}
