@@ -2727,6 +2727,10 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
+	if span.LLMTool != "" {
+		fe.renderToolArgs(out, r, row, prefix)
+	}
+
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
@@ -2803,6 +2807,31 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // sync this with core.llmLogsLastLines to ensure user and LLM sees the same
 // thing
 const llmLogsLastLines = 8
+
+func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+	args := fe.logs.ToolArgs[row.Span.ID]
+	if args == "" {
+		return
+	}
+	// Compact the JSON to a single line.
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, []byte(args)); err != nil {
+		// If it doesn't parse (e.g. still streaming), use as-is.
+		compacted.Reset()
+		compacted.WriteString(args)
+	}
+	line := compacted.String()
+	// Truncate to fit on one line with room for the [...] suffix.
+	maxWidth := fe.window.Width - row.Depth*2 - 4
+	if maxWidth < 20 {
+		maxWidth = 20
+	}
+	if len(line) > maxWidth {
+		line = line[:maxWidth-5] + "[...]"
+	}
+	r.fancyIndent(out, row, row.HasChildren, false)
+	fmt.Fprintln(out, prefix+out.String(line).Foreground(termenv.ANSIBrightBlack).String())
+}
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	limit := fe.window.Height / 3
@@ -3416,6 +3445,10 @@ type prettyLogs struct {
 	SawEOF        map[dagui.SpanID]bool
 	Profile       termenv.Profile
 	Output        TermOutput
+
+	// ToolArgs accumulates tool call argument JSON per span, captured
+	// from verbose application/json logs on LLMTool spans.
+	ToolArgs map[dagui.SpanID]string
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
@@ -3427,6 +3460,7 @@ func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 		Profile:       profile,
 		SawEOF:        make(map[dagui.SpanID]bool),
 		Output:        termenv.NewOutput(io.Discard, termenv.WithProfile(profile)),
+		ToolArgs:      make(map[dagui.SpanID]string),
 	}
 }
 
@@ -3453,6 +3487,12 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		if eof && log.SpanID().IsValid() {
 			l.SawEOF[dagui.SpanID{SpanID: log.SpanID()}] = true
 			continue
+		}
+
+		// Capture tool call arguments from verbose JSON logs.
+		if verbose && contentType == "application/json" && log.SpanID().IsValid() {
+			sid := dagui.SpanID{SpanID: log.SpanID()}
+			l.ToolArgs[sid] += log.Body().AsString()
 		}
 
 		targetID := log.SpanID()
