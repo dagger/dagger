@@ -625,7 +625,11 @@ func (h *shellCallHandler) resumeSessionInteractive(ctx context.Context) error {
 		if t, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
 			ts = t.Local().Format("Jan 2 15:04")
 		}
-		label := fmt.Sprintf("%s  (%s, %s)", displayName, s.Model, ts)
+		branchInfo := ""
+		if s.Branch != "" {
+			branchInfo = ", " + s.Branch
+		}
+		label := fmt.Sprintf("%s  (%s, %s%s)", displayName, s.Model, ts, branchInfo)
 		options = append(options, huh.NewOption(label, s.LLMID))
 	}
 

@@ -733,6 +733,7 @@ type sessionMetadata struct {
 	Model     string `json:"model"`
 	CreatedAt string `json:"created_at"`
 	LLMID     string `json:"llm_id"`
+	Branch    string `json:"branch,omitempty"`
 }
 
 // getSessionDir returns the directory where LLM sessions are stored, creating it if necessary
@@ -782,11 +783,18 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 		sessionID = id.String()
 	}
 
+	// Capture current git branch from the workspace
+	branch, err := s.llm.Env().Workspace().Branch(ctx)
+	if err != nil {
+		slog.Debug("failed to get workspace branch", "error", err)
+	}
+
 	metadata := sessionMetadata{
 		Name:      initialPrompt,
 		Model:     s.model,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		LLMID:     string(llmID),
+		Branch:    branch,
 	}
 
 	jsonData, err := json.MarshalIndent(metadata, "", "  ")
@@ -878,6 +886,7 @@ func ListSessions() ([]sessionMetadata, error) {
 			Model:     meta.Model,
 			CreatedAt: meta.CreatedAt,
 			LLMID:     sessionID, // repurpose LLMID field to carry the file UUID for listing
+			Branch:    meta.Branch,
 		})
 	}
 
