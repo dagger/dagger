@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
@@ -55,38 +56,26 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 	return false
 }
 
+//nolint:gocyclo
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, displaySpan := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-	))
-	defer func() {
-		if rerr != nil {
-			telemetry.EndWithCause(displaySpan, &rerr)
-		}
-		// On success, the caller (step) ends the span after setting attributes.
-	}()
+	// parentCtx is the context we create sibling spans from (response, tool calls).
+	parentCtx := ctx
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
-
-	m := telemetry.Meter(ctx, InstrumentationLibrary)
-	spanCtx := trace.SpanContextFromContext(ctx)
-	attrs := []attribute.KeyValue{
+	m := telemetry.Meter(parentCtx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(parentCtx)
+	metricAttrs := []attribute.KeyValue{
 		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
 		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
 		attribute.String("model", c.endpoint.Model),
 		attribute.String("provider", string(c.endpoint.Provider)),
 	}
 
-	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	inputTokensGauge, err := m.Int64Gauge(telemetry.LLMInputTokens)
 	if err != nil {
 		return nil, err
 	}
 
-	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	outputTokensGauge, err := m.Int64Gauge(telemetry.LLMOutputTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -157,12 +146,83 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		params.Tools = toolParams
 	}
 
+	// Phase-based span management: text response and each tool call get their
+	// own display span, matching the Anthropic provider's approach.
+	// For streaming: track phases by tool call index. Text gets index -1.
+	phases := map[int64]*phase{}
+	var displaySpans []trace.Span
+
+	startTextPhase := func() *phase {
+		if p, ok := phases[-1]; ok {
+			return p
+		}
+		var p phase
+		phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "LLM response",
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+			),
+		)
+		p.span = span
+		p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary)
+		p.markdownW = telemetry.NewWriter(phaseCtx, InstrumentationLibrary,
+			log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		phases[-1] = &p
+		return &p
+	}
+
+	startToolPhase := func(idx int64, toolName string) *phase {
+		if p, ok := phases[idx]; ok {
+			return p
+		}
+		var p phase
+		phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+				attribute.String(telemetry.LLMToolAttr, toolName),
+			),
+		)
+		p.span = span
+		p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
+			log.String(telemetry.ContentTypeAttr, "application/json"))
+		phases[idx] = &p
+		return &p
+	}
+
+	closePhase := func(idx int64) {
+		if p, ok := phases[idx]; ok {
+			p.stdio.Close()
+			displaySpans = append(displaySpans, p.span)
+			delete(phases, idx)
+		}
+	}
+
+	defer func() {
+		for idx := range phases {
+			closePhase(idx)
+		}
+		if rerr != nil {
+			for _, s := range displaySpans {
+				s.RecordError(rerr)
+				s.End()
+			}
+			displaySpans = nil
+		}
+	}()
+
 	var chatCompletion *openai.ChatCompletion
 
 	if len(tools) > 0 && c.disableStreaming {
-		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, attrs, stdio)
+		// Non-streaming: create a single text phase for the response
+		p := startTextPhase()
+		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokensGauge, inputTokensGauge, metricAttrs, p.stdio)
 	} else {
-		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, attrs, stdio)
+		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokensGauge, inputTokensGauge, metricAttrs, startTextPhase, startToolPhase, closePhase)
 	}
 	if err != nil {
 		return nil, err
@@ -210,7 +270,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			CachedTokenReads: chatCompletion.Usage.PromptTokensDetails.CachedTokens,
 			TotalTokens:      chatCompletion.Usage.TotalTokens,
 		},
-		DisplaySpans: []trace.Span{displaySpan},
+		DisplaySpans: displaySpans,
 	}, nil
 }
 
@@ -220,7 +280,9 @@ func (c *OpenAIClient) queryWithStreaming(
 	outputTokens metric.Int64Gauge,
 	inputTokens metric.Int64Gauge,
 	attrs []attribute.KeyValue,
-	stdio telemetry.SpanStreams,
+	startTextPhase func() *phase,
+	startToolPhase func(idx int64, toolName string) *phase,
+	closePhase func(idx int64),
 ) (*openai.ChatCompletion, error) {
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 		IncludeUsage: openai.Opt(true),
@@ -237,14 +299,15 @@ func (c *OpenAIClient) queryWithStreaming(
 		return nil, stream.Err()
 	}
 
+	// Track which tool call indices we've already seen a name for
+	toolCallNames := map[int64]string{}
+
 	acc := new(openai.ChatCompletionAccumulator)
 	for stream.Next() {
 		res := stream.Current()
 		acc.AddChunk(res)
 
 		// Keep track of the token usage
-		//
-		// NOTE: so far I'm only seeing 0 back from OpenAI - is this not actually supported?
 		if res.Usage.CompletionTokens > 0 {
 			outputTokens.Record(ctx, acc.Usage.CompletionTokens, metric.WithAttributes(attrs...))
 		}
@@ -253,8 +316,30 @@ func (c *OpenAIClient) queryWithStreaming(
 		}
 
 		if len(res.Choices) > 0 {
-			if content := res.Choices[0].Delta.Content; content != "" {
-				fmt.Fprint(stdio.Stdout, content)
+			delta := res.Choices[0].Delta
+
+			// Stream text content
+			if delta.Content != "" {
+				p := startTextPhase()
+				if p.markdownW != nil {
+					fmt.Fprint(p.markdownW, delta.Content)
+				}
+			}
+
+			// Stream tool call arguments
+			for _, tc := range delta.ToolCalls {
+				idx := tc.Index
+				if tc.Function.Name != "" {
+					toolCallNames[idx] = tc.Function.Name
+				}
+				name := toolCallNames[idx]
+				if name == "" {
+					name = fmt.Sprintf("tool_call_%d", idx)
+				}
+				p := startToolPhase(idx, name)
+				if tc.Function.Arguments != "" {
+					fmt.Fprint(p.stdio.Stdout, tc.Function.Arguments)
+				}
 			}
 		}
 	}
@@ -264,6 +349,15 @@ func (c *OpenAIClient) queryWithStreaming(
 	}
 
 	return &acc.ChatCompletion, nil
+}
+
+// phase is an internal type used to track display spans during streaming.
+// Defined at package level so helper methods can reference it.
+type phase struct {
+	span  trace.Span
+	stdio telemetry.SpanStreams
+	// markdownW is only set for text response phases
+	markdownW io.Writer
 }
 
 func (c *OpenAIClient) queryWithoutStreaming(

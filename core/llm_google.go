@@ -141,7 +141,8 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 
 func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
-	stdout io.Writer,
+	textWriter io.Writer,
+	onToolCall func(name string, argsJSON []byte),
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
 	var textContent strings.Builder
@@ -171,7 +172,7 @@ func (c *GenaiClient) processStreamResponse(
 
 		for _, part := range candidate.Content.Parts {
 			if x := part.Text; x != "" {
-				fmt.Fprint(stdout, x)
+				fmt.Fprint(textWriter, x)
 				textContent.WriteString(x)
 			} else if x := part.FunctionCall; x != nil {
 				bytes, err := json.Marshal(x.Args)
@@ -184,6 +185,7 @@ func (c *GenaiClient) processStreamResponse(
 					ToolName:  x.Name,
 					Arguments: JSON(bytes),
 				})
+				onToolCall(x.Name, bytes)
 			} else {
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
@@ -216,23 +218,34 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, displaySpan := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+	parentCtx := ctx
+
+	// Create the text response span
+	responseCtx, responseSpan := Tracer(parentCtx).Start(parentCtx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 	))
+
+	stdio := telemetry.SpanStdio(responseCtx, InstrumentationLibrary)
+	markdownW := telemetry.NewWriter(responseCtx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+
+	var displaySpans []trace.Span
 	defer func() {
+		stdio.Close()
+		displaySpans = append([]trace.Span{responseSpan}, displaySpans...)
 		if rerr != nil {
-			telemetry.EndWithCause(displaySpan, &rerr)
+			for _, s := range displaySpans {
+				s.RecordError(rerr)
+				s.End()
+			}
+			displaySpans = nil
 		}
 	}()
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
-
-	m := telemetry.Meter(ctx, InstrumentationLibrary)
-	spanCtx := trace.SpanContextFromContext(ctx)
+	m := telemetry.Meter(parentCtx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(parentCtx)
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
 		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
@@ -317,9 +330,28 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return usageSummary
 	}
 
+	// onToolCall creates a display span for each tool call as it arrives
+	onToolCall := func(name string, argsJSON []byte) {
+		toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, name,
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+				attribute.String(telemetry.LLMToolAttr, name),
+			),
+		)
+		toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
+			log.String(telemetry.ContentTypeAttr, "application/json"))
+		fmt.Fprint(toolStdio.Stdout, string(argsJSON))
+		toolStdio.Close()
+		displaySpans = append(displaySpans, toolSpan)
+	}
+
 	contentBlocks, tokenUsage, err := c.processStreamResponse(
 		stream,
-		stdio.Stdout,
+		markdownW,
+		onToolCall,
 		tokenHandler,
 	)
 	if err != nil {
@@ -329,7 +361,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	return &LLMResponse{
 		Content:      contentBlocks,
 		TokenUsage:   tokenUsage,
-		DisplaySpans: []trace.Span{displaySpan},
+		DisplaySpans: displaySpans,
 	}, nil
 }
 

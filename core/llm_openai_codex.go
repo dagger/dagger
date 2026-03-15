@@ -58,23 +58,32 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 }
 
 func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, displaySpan := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+	parentCtx := ctx
+
+	responseCtx, responseSpan := Tracer(parentCtx).Start(parentCtx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 	))
+
+	stdio := telemetry.SpanStdio(responseCtx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+
+	var displaySpans []trace.Span
 	defer func() {
+		stdio.Close()
+		displaySpans = append([]trace.Span{responseSpan}, displaySpans...)
 		if rerr != nil {
-			telemetry.EndWithCause(displaySpan, &rerr)
+			for _, s := range displaySpans {
+				s.RecordError(rerr)
+				s.End()
+			}
+			displaySpans = nil
 		}
 	}()
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
-
-	m := telemetry.Meter(ctx, InstrumentationLibrary)
-	spanCtx := trace.SpanContextFromContext(ctx)
+	m := telemetry.Meter(parentCtx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(parentCtx)
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
 		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
@@ -181,6 +190,21 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 						ToolName:  fc.Name,
 						Arguments: JSON(fc.Arguments),
 					})
+					// Create a display span for the tool call
+					toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, fc.Name,
+						telemetry.Reveal(),
+						trace.WithAttributes(
+							attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+							attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+							attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+							attribute.String(telemetry.LLMToolAttr, fc.Name),
+						),
+					)
+					toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
+						log.String(telemetry.ContentTypeAttr, "application/json"))
+					fmt.Fprint(toolStdio.Stdout, fc.Arguments)
+					toolStdio.Close()
+					displaySpans = append(displaySpans, toolSpan)
 				}
 			}
 		}
@@ -207,7 +231,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	return &LLMResponse{
 		Content:      contentBlocks,
 		TokenUsage:   usage,
-		DisplaySpans: []trace.Span{displaySpan},
+		DisplaySpans: displaySpans,
 	}, nil
 }
 
