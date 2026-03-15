@@ -130,13 +130,11 @@ type LLMResponse struct {
 	// (step) will set attributes and end them.
 	DisplaySpans []trace.Span
 
-	// ToolCallCtxs maps tool call IDs to the context of their display
-	// span, so that tool execution spans are parented beneath them.
-	ToolCallCtxs map[string]context.Context
-
-	// ToolCallSpans maps tool call IDs to their display spans so that
-	// CallBatch can end each span when its tool execution completes.
-	ToolCallSpans map[string]trace.Span
+	// ToolCallDisplays maps tool call IDs to their display context and
+	// span, so that tool execution spans are parented beneath the
+	// corresponding tool call display span, and each span can be ended
+	// individually when its tool execution completes.
+	ToolCallDisplays map[string]toolCallDisplay
 }
 
 // TextContent returns the concatenation of all text blocks.
@@ -1365,7 +1363,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		}
 	}
 	beforeObjs := maps.Clone(llm.mcp.objsByID)
-	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallCtxs, res.ToolCallSpans) {
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
 			Args: []dagql.NamedInput{
@@ -1425,9 +1423,9 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	// Tool call spans have already been ended by CallBatch. Collect
 	// the remaining (non-tool-call) display spans that still need to
 	// be ended by us.
-	endedSpans := make(map[trace.Span]bool, len(res.ToolCallSpans))
-	for _, s := range res.ToolCallSpans {
-		endedSpans[s] = true
+	endedSpans := make(map[trace.Span]bool, len(res.ToolCallDisplays))
+	for _, tc := range res.ToolCallDisplays {
+		endedSpans[tc.Span] = true
 	}
 	var remainingSpans []trace.Span
 	for _, s := range res.DisplaySpans {

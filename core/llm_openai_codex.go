@@ -13,7 +13,6 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -60,25 +59,12 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	parentCtx := ctx
 
-	responseCtx, responseSpan := Tracer(parentCtx).Start(parentCtx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-	))
-
-	stdio := telemetry.SpanStdio(responseCtx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-
-	var displaySpans []trace.Span
+	dp := newDisplayPhases(parentCtx)
+	textPhase := dp.StartText(-1)
 	defer func() {
-		stdio.Close()
-		displaySpans = append([]trace.Span{responseSpan}, displaySpans...)
+		dp.CloseAll()
 		if rerr != nil {
-			for _, s := range displaySpans {
-				s.RecordError(rerr)
-				s.End()
-			}
-			displaySpans = nil
+			dp.Abort(rerr)
 		}
 	}()
 
@@ -147,71 +133,26 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	var contentBlocks []*LLMContentBlock
 	var usage LLMTokenUsage
 
-	// Track tool call display phases by item ID
-	type toolPhase struct {
-		ctx    context.Context
-		span   trace.Span
-		stdio  telemetry.SpanStreams
-		name   string
-		callID string
-	}
-	toolPhases := map[string]*toolPhase{}
-	toolCallCtxs := map[string]context.Context{}
-	toolCallSpans := map[string]trace.Span{}
-
-	closeToolPhase := func(itemID string) {
-		if tp, ok := toolPhases[itemID]; ok {
-			tp.stdio.Close()
-			displaySpans = append(displaySpans, tp.span)
-			if tp.callID != "" {
-				toolCallCtxs[tp.callID] = tp.ctx
-				toolCallSpans[tp.callID] = tp.span
-			}
-			delete(toolPhases, itemID)
-		}
-	}
-	defer func() {
-		for id := range toolPhases {
-			closeToolPhase(id)
-		}
-	}()
-
 	for stream.Next() {
 		event := stream.Current()
 
 		switch event.Type {
 		case "response.output_text.delta":
 			e := event.AsResponseOutputTextDelta()
-			fmt.Fprint(stdio.Stdout, e.Delta)
+			fmt.Fprint(textPhase.Stdio.Stdout, e.Delta)
 			content.WriteString(e.Delta)
 
 		case "response.output_item.added":
 			e := event.AsResponseOutputItemAdded()
 			if e.Item.Type == "function_call" {
 				fc := e.Item.AsFunctionCall()
-				toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, fc.Name,
-					telemetry.Reveal(),
-					trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-						attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-						attribute.String(telemetry.LLMToolAttr, fc.Name),
-					),
-				)
-				toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
-					log.String(telemetry.ContentTypeAttr, "application/json"))
-				toolPhases[fc.ID] = &toolPhase{
-					ctx:    toolCtx,
-					span:   toolSpan,
-					stdio:  toolStdio,
-					name:   fc.Name,
-					callID: fc.CallID,
-				}
+				dp.StartToolCall(e.OutputIndex, fc.CallID, fc.Name)
 			}
 
 		case "response.function_call_arguments.delta":
 			e := event.AsResponseFunctionCallArgumentsDelta()
-			if tp, ok := toolPhases[e.ItemID]; ok {
-				fmt.Fprint(tp.stdio.Stdout, e.Delta)
+			if p := dp.Phase(e.OutputIndex); p != nil {
+				fmt.Fprint(p.Stdio.Stdout, e.Delta)
 			}
 
 		case "response.output_item.done":
@@ -224,7 +165,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 					ToolName:  fc.Name,
 					Arguments: JSON(fc.Arguments),
 				})
-				closeToolPhase(fc.ID)
+				dp.Close(e.OutputIndex)
 			}
 
 		case "response.completed":
@@ -275,12 +216,12 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		}
 	}
 
+	displaySpans, toolCalls := dp.Response()
 	return &LLMResponse{
-		Content:      contentBlocks,
-		TokenUsage:   usage,
-		DisplaySpans:  displaySpans,
-		ToolCallCtxs:  toolCallCtxs,
-		ToolCallSpans: toolCallSpans,
+		Content:          contentBlocks,
+		TokenUsage:       usage,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCalls,
 	}, nil
 }
 

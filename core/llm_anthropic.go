@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -12,7 +11,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -274,111 +272,11 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 	acc := new(anthropic.Message)
 
-	// Phase-based span management: thinking and response are sibling spans
-	// created from parentCtx. Each content block maps to a phase; phases
-	// open/close spans lazily as streaming content arrives. This supports
-	// interleaved thinking/response blocks (thinking → text → thinking → text).
-	type phase struct {
-		ctx        context.Context
-		span       trace.Span
-		stdio      telemetry.SpanStreams
-		markdownW  io.Writer
-		isThinking bool
-		callID     string // tool call ID, if this is a tool phase
-	}
-	phases := map[int64]*phase{}
-
-	startPhase := func(idx int64, thinking bool) *phase {
-		if p, ok := phases[idx]; ok {
-			return p
-		}
-		var p phase
-		p.isThinking = thinking
-		if thinking {
-			phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "thinking",
-				telemetry.Reveal(),
-				trace.WithAttributes(
-					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
-					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-					attribute.Bool("llm.thinking", true),
-				),
-			)
-			p.span = span
-			p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
-				log.String(telemetry.ContentTypeAttr, "text/markdown"),
-				log.Bool("llm.thinking", true),
-			)
-		} else {
-			phaseCtx, span := Tracer(parentCtx).Start(parentCtx, "LLM response",
-				telemetry.Reveal(),
-				trace.WithAttributes(
-					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-				),
-			)
-			p.span = span
-			p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary)
-			p.markdownW = telemetry.NewWriter(phaseCtx, InstrumentationLibrary,
-				log.String(telemetry.ContentTypeAttr, "text/markdown"))
-		}
-		phases[idx] = &p
-		return &p
-	}
-
-	startToolPhase := func(idx int64, callID, toolName string) *phase {
-		if p, ok := phases[idx]; ok {
-			return p
-		}
-		var p phase
-		phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-				attribute.String(telemetry.LLMToolAttr, toolName),
-			),
-		)
-		p.ctx = phaseCtx
-		p.span = span
-		p.callID = callID
-		p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
-			log.String(telemetry.ContentTypeAttr, "application/json"))
-		phases[idx] = &p
-		return &p
-	}
-
-	// displaySpans collects the OTel spans for display phases. These
-	// are returned via LLMResponse so step() can set attributes on
-	// them (e.g. LLMCallDigest) before ending them.
-	var displaySpans []trace.Span
-	toolCallCtxs := map[string]context.Context{}
-	toolCallSpans := map[string]trace.Span{}
-
-	closePhase := func(idx int64) {
-		if p, ok := phases[idx]; ok {
-			p.stdio.Close()
-			displaySpans = append(displaySpans, p.span)
-			if p.callID != "" {
-				toolCallCtxs[p.callID] = p.ctx
-				toolCallSpans[p.callID] = p.span
-			}
-			delete(phases, idx)
-		}
-	}
-
+	dp := newDisplayPhases(parentCtx)
 	defer func() {
-		for idx := range phases {
-			closePhase(idx)
-		}
+		dp.CloseAll()
 		if rerr != nil {
-			// On error, end spans here since the caller won't receive them.
-			for _, s := range displaySpans {
-				s.RecordError(rerr)
-				s.End()
-			}
-			displaySpans = nil
+			dp.Abort(rerr)
 		}
 	}()
 
@@ -404,36 +302,36 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		case anthropic.ContentBlockStartEvent:
 			switch ev.ContentBlock.Type {
 			case "thinking":
-				startPhase(ev.Index, true)
+				dp.StartThinking(ev.Index)
 			case "text":
-				startPhase(ev.Index, false)
+				dp.StartText(ev.Index)
 			case "tool_use":
-				startToolPhase(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
+				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
 			}
 
 		case anthropic.ContentBlockDeltaEvent:
 			switch ev.Delta.Type {
 			case "thinking_delta":
-				if p := phases[ev.Index]; p != nil {
-					fmt.Fprint(p.stdio.Stdout, ev.Delta.Thinking)
+				if p := dp.Phase(ev.Index); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, ev.Delta.Thinking)
 				}
 			case "text_delta":
-				p := phases[ev.Index]
+				p := dp.Phase(ev.Index)
 				if p == nil {
 					// Lazily create a response phase if we get text without a start event
-					p = startPhase(ev.Index, false)
+					p = dp.StartText(ev.Index)
 				}
-				if p.markdownW != nil {
-					fmt.Fprint(p.markdownW, ev.Delta.Text)
+				if p.MarkdownW != nil {
+					fmt.Fprint(p.MarkdownW, ev.Delta.Text)
 				}
 			case "input_json_delta":
-				if p := phases[ev.Index]; p != nil {
-					fmt.Fprint(p.stdio.Stdout, ev.Delta.PartialJSON)
+				if p := dp.Phase(ev.Index); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, ev.Delta.PartialJSON)
 				}
 			}
 
 		case anthropic.ContentBlockStopEvent:
-			closePhase(ev.Index)
+			dp.Close(ev.Index)
 		}
 	}
 
@@ -473,6 +371,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		}
 	}
 
+	displaySpans, toolCalls := dp.Response()
 	return &LLMResponse{
 		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
@@ -482,8 +381,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			CachedTokenWrites: acc.Usage.CacheCreationInputTokens,
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
-		DisplaySpans:  displaySpans,
-		ToolCallCtxs:  toolCallCtxs,
-		ToolCallSpans: toolCallSpans,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCalls,
 	}, nil
 }

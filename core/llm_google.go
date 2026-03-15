@@ -14,7 +14,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -220,30 +219,13 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	parentCtx := ctx
 
-	// Create the text response span
-	responseCtx, responseSpan := Tracer(parentCtx).Start(parentCtx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-	))
-
-	stdio := telemetry.SpanStdio(responseCtx, InstrumentationLibrary)
-	markdownW := telemetry.NewWriter(responseCtx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-
-	var displaySpans []trace.Span
-	toolCallCtxs := map[string]context.Context{}
-	toolCallSpans := map[string]trace.Span{}
+	dp := newDisplayPhases(parentCtx)
+	// Eagerly create the text response phase (Google always streams text first)
+	textPhase := dp.StartText(0)
 	defer func() {
-		stdio.Close()
-		displaySpans = append([]trace.Span{responseSpan}, displaySpans...)
+		dp.CloseAll()
 		if rerr != nil {
-			for _, s := range displaySpans {
-				s.RecordError(rerr)
-				s.End()
-			}
-			displaySpans = nil
-			toolCallCtxs = nil
+			dp.Abort(rerr)
 		}
 	}()
 
@@ -333,29 +315,23 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return usageSummary
 	}
 
+	// toolIdx is a counter for generating unique phase indices for tool calls.
+	// Starts at 1 because index 0 is used for the text response phase.
+	var toolIdx int64
+
 	// onToolCall creates a display span for each tool call as it arrives.
-	// callID is the ID used to correlate with tool execution.
+	// Gemini delivers tool calls as complete objects, so we create the span,
+	// write the full args, and close it immediately.
 	onToolCall := func(callID, name string, argsJSON []byte) {
-		toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, name,
-			telemetry.Reveal(),
-			trace.WithAttributes(
-				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-				attribute.String(telemetry.LLMToolAttr, name),
-			),
-		)
-		toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
-			log.String(telemetry.ContentTypeAttr, "application/json"))
-		fmt.Fprint(toolStdio.Stdout, string(argsJSON))
-		toolStdio.Close()
-		displaySpans = append(displaySpans, toolSpan)
-		toolCallCtxs[callID] = toolCtx
-		toolCallSpans[callID] = toolSpan
+		toolIdx++
+		p := dp.StartToolCall(toolIdx, callID, name)
+		fmt.Fprint(p.Stdio.Stdout, string(argsJSON))
+		dp.Close(toolIdx)
 	}
 
 	contentBlocks, tokenUsage, err := c.processStreamResponse(
 		stream,
-		markdownW,
+		textPhase.MarkdownW,
 		onToolCall,
 		tokenHandler,
 	)
@@ -363,12 +339,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return nil, err
 	}
 
+	displaySpans, toolCalls := dp.Response()
 	return &LLMResponse{
-		Content:      contentBlocks,
-		TokenUsage:   tokenUsage,
-		DisplaySpans:  displaySpans,
-		ToolCallCtxs:  toolCallCtxs,
-		ToolCallSpans: toolCallSpans,
+		Content:          contentBlocks,
+		TokenUsage:       tokenUsage,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCalls,
 	}, nil
 }
 
