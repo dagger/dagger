@@ -829,6 +829,13 @@ func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
 	}
 
 	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(metadata.LLMID))
+
+	// Replay the message history to emit telemetry spans so the TUI
+	// shows the conversation in its scrollback.
+	if _, err := loadedLLM.Replay(ctx); err != nil {
+		slog.Warn("failed to replay session history", "error", err)
+	}
+
 	if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
 		return err
 	}

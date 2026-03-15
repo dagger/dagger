@@ -9805,6 +9805,19 @@ func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 }
 
 // synchronize LLM state
+// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("replay")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
+}
+
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
 
