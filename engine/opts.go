@@ -181,6 +181,7 @@ type LocalImportOpts struct {
 type GitWorktreeAddOpts struct {
 	Branch       string `json:"branch"`
 	WorktreePath string `json:"worktree_path"`
+	Base         string `json:"base,omitempty"` // start-point for new branch (default: HEAD)
 }
 
 // GitStageOpts configures staging paths in the git index.

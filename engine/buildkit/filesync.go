@@ -178,13 +178,14 @@ func (c *Client) GitBranch(ctx context.Context, repoDir string) (string, error) 
 }
 
 // GitWorktreeAdd creates a git worktree on the client host.
-func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePath string) (string, error) {
+func (c *Client) GitWorktreeAdd(ctx context.Context, repoDir, branch, worktreePath, base string) (string, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
 		Path: repoDir,
 		GitWorktreeAdd: &engine.GitWorktreeAddOpts{
 			Branch:       branch,
 			WorktreePath: worktreePath,
+			Base:         base,
 		},
 	}, &msg)
 	if err != nil {

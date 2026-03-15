@@ -532,7 +532,10 @@ func sanitizeBranch(branch string) string {
 func (s *workspaceSchema) withBranch(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args struct{ Branch string },
+	args struct {
+		Branch string
+		Base   dagql.Optional[dagql.String]
+	},
 ) (*core.Workspace, error) {
 	ws := parent.Self()
 	if ws.Branch == args.Branch {
@@ -553,8 +556,13 @@ func (s *workspaceSchema) withBranch(
 		return nil, fmt.Errorf("buildkit: %w", err)
 	}
 
+	var base string
+	if args.Base.Valid {
+		base = args.Base.Value.String()
+	}
+
 	worktreePath := ws.RepoRoot + "-worktrees/" + sanitizeBranch(args.Branch)
-	actualPath, err := bk.GitWorktreeAdd(ctx, ws.RepoRoot, args.Branch, worktreePath)
+	actualPath, err := bk.GitWorktreeAdd(ctx, ws.RepoRoot, args.Branch, worktreePath, base)
 	if err != nil {
 		return nil, fmt.Errorf("create worktree: %w", err)
 	}

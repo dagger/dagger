@@ -179,8 +179,12 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		cmd := exec.CommandContext(ctx, "git", "worktree", "add", wtPath, wopts.Branch)
 		cmd.Dir = absPath
 		if err := cmd.Run(); err != nil {
-			// Branch doesn't exist, create it
-			cmd = exec.CommandContext(ctx, "git", "worktree", "add", "-b", wopts.Branch, wtPath)
+			// Branch doesn't exist, create it from base (or HEAD if unset)
+			args := []string{"worktree", "add", "-b", wopts.Branch, wtPath}
+			if wopts.Base != "" {
+				args = append(args, wopts.Base)
+			}
+			cmd = exec.CommandContext(ctx, "git", args...)
 			cmd.Dir = absPath
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git worktree add -b %s %s: %w: %s", wopts.Branch, wtPath, err, out)

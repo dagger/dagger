@@ -874,6 +874,35 @@ type Existing {
 		require.NoError(t, err)
 		require.Contains(t, out, "hello.txt")
 	})
+	t.Run("with base ref", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("v1.txt", "version 1").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "v1"}).
+			// Add a second commit on master
+			WithNewFile("v2.txt", "version 2").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "v2"}).
+			// Tag the first commit so we can reference it
+			WithExec([]string{"git", "tag", "v1", "HEAD~1"}).
+			With(initDangModule("baseref", `
+type Baseref {
+  pub files: [String!]!
+
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/from-v1", base: "v1")
+    self.files = ws2.glob("*")
+    self
+  }
+}
+`))
+		out, err := ctr.With(daggerCall("baseref", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		// Should have v1.txt (from v1) but NOT v2.txt (added after v1)
+		require.Contains(t, out, "v1.txt")
+		require.NotContains(t, out, "v2.txt",
+			"branch based on v1 tag should not contain v2.txt")
+	})
 }
 
 // TestWorkspaceCommit verifies that Workspace.commit writes changeset files
