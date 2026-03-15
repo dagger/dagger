@@ -3695,6 +3695,183 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	assert.Assert(t, childRetained)
 }
 
+func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	mkRes := func(id sharedResultID, op string) *sharedResult {
+		return &sharedResult{
+			cache:    c,
+			id:       id,
+			self:     Int(id),
+			hasValue: true,
+			resultCallFrame: &ResultCallFrame{
+				Kind:        ResultCallFrameKindSynthetic,
+				SyntheticOp: op,
+				Type:        NewResultCallFrameType(Int(0).Type()),
+			},
+		}
+	}
+
+	root := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     Int(1),
+		hasValue: true,
+		deps: map[sharedResultID]struct{}{
+			2: {},
+		},
+		resultCallFrame: &ResultCallFrame{
+			Kind:  ResultCallFrameKindField,
+			Type:  NewResultCallFrameType(Int(0).Type()),
+			Field: "root",
+			Receiver: &ResultCallFrameRef{
+				ResultID: 3,
+			},
+			Module: &ResultCallFrameModule{
+				ResultRef: &ResultCallFrameRef{ResultID: 4},
+				Name:      "mod",
+			},
+			Args: []*ResultCallFrameArg{
+				{
+					Name: "arg",
+					Value: &ResultCallFrameLiteral{
+						Kind:      ResultCallFrameLiteralKindResultRef,
+						ResultRef: &ResultCallFrameRef{ResultID: 5},
+					},
+				},
+				{
+					Name: "list",
+					Value: &ResultCallFrameLiteral{
+						Kind: ResultCallFrameLiteralKindList,
+						ListItems: []*ResultCallFrameLiteral{
+							{
+								Kind:      ResultCallFrameLiteralKindResultRef,
+								ResultRef: &ResultCallFrameRef{ResultID: 6},
+							},
+						},
+					},
+				},
+				{
+					Name: "object",
+					Value: &ResultCallFrameLiteral{
+						Kind: ResultCallFrameLiteralKindObject,
+						ObjectFields: []*ResultCallFrameArg{
+							{
+								Name: "nested",
+								Value: &ResultCallFrameLiteral{
+									Kind:      ResultCallFrameLiteralKindResultRef,
+									ResultRef: &ResultCallFrameRef{ResultID: 7},
+								},
+							},
+						},
+					},
+				},
+			},
+			ImplicitInputs: []*ResultCallFrameArg{
+				{
+					Name: "implicit",
+					Value: &ResultCallFrameLiteral{
+						Kind:      ResultCallFrameLiteralKindResultRef,
+						ResultRef: &ResultCallFrameRef{ResultID: 8},
+					},
+				},
+			},
+		},
+	}
+
+	results := map[sharedResultID]*sharedResult{
+		root.id: root,
+		2:       mkRes(2, "explicit"),
+		3:       mkRes(3, "receiver"),
+		4:       mkRes(4, "module"),
+		5:       mkRes(5, "arg"),
+		6:       mkRes(6, "list"),
+		7:       mkRes(7, "object"),
+		8:       mkRes(8, "implicit"),
+	}
+
+	c.egraphMu.Lock()
+	c.resultsByID = results
+	graph := c.persistedClosureGraphLocked(root.id)
+	changed := c.markResultAsDepOfPersistedLocked(ctx, root)
+	c.egraphMu.Unlock()
+
+	assert.Assert(t, changed)
+	for resultID, res := range results {
+		_, ok := graph.resultIDs[resultID]
+		assert.Assert(t, ok, "expected result %d in persisted closure graph", resultID)
+		assert.Assert(t, res.depOfPersistedResult, "expected result %d to be marked as depOfPersistedResult", resultID)
+	}
+}
+
+func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	root := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     Int(1),
+		hasValue: true,
+		resultCallFrame: &ResultCallFrame{
+			Kind:        ResultCallFrameKindSynthetic,
+			SyntheticOp: "root",
+			Type:        NewResultCallFrameType(Int(0).Type()),
+		},
+	}
+	provenanceOnly := &sharedResult{
+		cache:    c,
+		id:       2,
+		self:     Int(2),
+		hasValue: true,
+		resultCallFrame: &ResultCallFrame{
+			Kind:        ResultCallFrameKindSynthetic,
+			SyntheticOp: "provenanceOnly",
+			Type:        NewResultCallFrameType(Int(0).Type()),
+		},
+	}
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		root.id:           root,
+		provenanceOnly.id: provenanceOnly,
+	}
+
+	rootEq := c.ensureEqClassForDigestLocked(ctx, "persisted-closure-root")
+	provenanceEq := c.ensureEqClassForDigestLocked(ctx, "persisted-closure-provenance-only")
+	c.resultOutputEqClasses[root.id] = map[eqClassID]struct{}{rootEq: {}}
+	c.resultOutputEqClasses[provenanceOnly.id] = map[eqClassID]struct{}{provenanceEq: {}}
+
+	termID := egraphTermID(1)
+	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("persisted-closure-root-term"), []eqClassID{provenanceEq}, rootEq)
+	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
+	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
+
+	graph := c.persistedClosureGraphLocked(root.id)
+	changed := c.markResultAsDepOfPersistedLocked(ctx, root)
+	c.egraphMu.Unlock()
+
+	assert.Assert(t, changed)
+	_, rootIncluded := graph.resultIDs[root.id]
+	assert.Assert(t, rootIncluded)
+	_, provenanceIncluded := graph.resultIDs[provenanceOnly.id]
+	assert.Assert(t, !provenanceIncluded)
+	_, termIncluded := graph.termIDs[termID]
+	assert.Assert(t, termIncluded)
+	assert.Assert(t, root.depOfPersistedResult)
+	assert.Assert(t, !provenanceOnly.depOfPersistedResult)
+}
+
 func TestCacheResultCallFrameDerivedFromRequestID(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

@@ -1402,10 +1402,81 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	return nil
 }
 
-// walks explicit sharedResult.deps plus exact structural proof inputs captured
-// on result<->term associations (recursively, with de-dupe) and gathers them
-// all together.
-func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID, nowUnix int64) persistedClosureGraph {
+func addPersistedFrameRefDep(
+	parentID sharedResultID,
+	ref *ResultCallFrameRef,
+	graph *persistedClosureGraph,
+	stack *[]sharedResultID,
+) {
+	if ref == nil {
+		return
+	}
+	depID := sharedResultID(ref.ResultID)
+	if depID == 0 || depID == parentID {
+		return
+	}
+	graph.addDep(parentID, depID)
+	*stack = append(*stack, depID)
+}
+
+func addPersistedFrameLiteralDeps(
+	parentID sharedResultID,
+	lit *ResultCallFrameLiteral,
+	graph *persistedClosureGraph,
+	stack *[]sharedResultID,
+) {
+	if lit == nil {
+		return
+	}
+	switch lit.Kind {
+	case ResultCallFrameLiteralKindResultRef:
+		addPersistedFrameRefDep(parentID, lit.ResultRef, graph, stack)
+	case ResultCallFrameLiteralKindList:
+		for _, item := range lit.ListItems {
+			addPersistedFrameLiteralDeps(parentID, item, graph, stack)
+		}
+	case ResultCallFrameLiteralKindObject:
+		for _, field := range lit.ObjectFields {
+			if field == nil {
+				continue
+			}
+			addPersistedFrameLiteralDeps(parentID, field.Value, graph, stack)
+		}
+	}
+}
+
+func addPersistedFrameDeps(
+	parentID sharedResultID,
+	frame *ResultCallFrame,
+	graph *persistedClosureGraph,
+	stack *[]sharedResultID,
+) {
+	if frame == nil {
+		return
+	}
+	addPersistedFrameRefDep(parentID, frame.Receiver, graph, stack)
+	if frame.Module != nil {
+		addPersistedFrameRefDep(parentID, frame.Module.ResultRef, graph, stack)
+	}
+	for _, arg := range frame.Args {
+		if arg == nil {
+			continue
+		}
+		addPersistedFrameLiteralDeps(parentID, arg.Value, graph, stack)
+	}
+	for _, input := range frame.ImplicitInputs {
+		if input == nil {
+			continue
+		}
+		addPersistedFrameLiteralDeps(parentID, input.Value, graph, stack)
+	}
+}
+
+// walks exact materialized dependencies for persisted results: explicit
+// sharedResult.deps plus exact result refs reachable through resultCallFrame
+// metadata. Symbolic term/eq-class state is still gathered for persisted cache
+// hitability, but no longer pulls in extra materialized results by provenance.
+func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) persistedClosureGraph {
 	if rootResultID == 0 {
 		return persistedClosureGraph{}
 	}
@@ -1436,24 +1507,13 @@ func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID, nowUnix
 			graph.addDep(curID, depID)
 			stack = append(stack, depID)
 		}
+		addPersistedFrameDeps(curID, res.resultCallFrame, &graph, &stack)
 		for termID := range c.termIDsForResultLocked(curID) {
 			term := c.egraphTerms[termID]
 			if term == nil {
 				continue
 			}
 			graph.addTerm(termID)
-			inputProvenance := c.termInputProvenance[termID]
-			for i, provenance := range inputProvenance {
-				if provenance != egraphInputProvenanceKindResult || i >= len(term.inputEqIDs) {
-					continue
-				}
-				dep := c.firstResultForOutputEqClassAnyAtLocked(term.inputEqIDs[i])
-				if dep == nil || dep.id == curID {
-					continue
-				}
-				graph.addDep(curID, dep.id)
-				stack = append(stack, dep.id)
-			}
 		}
 	}
 	return graph
@@ -1465,9 +1525,9 @@ func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *shar
 	}
 	changed := false
 	// Persisted-closure invariant: once a result is marked as dependency-of-
-	// persisted, every transitive dependency reachable through the current
-	// structural term graph and explicit dependency edges must also be marked.
-	graph := c.persistedClosureGraphLocked(root.id, time.Now().Unix())
+	// persisted, every transitive materialized dependency reachable through
+	// explicit deps and resultCallFrame refs must also be marked.
+	graph := c.persistedClosureGraphLocked(root.id)
 	for curID := range graph.resultIDs {
 		cur := c.resultsByID[curID]
 		if cur == nil {

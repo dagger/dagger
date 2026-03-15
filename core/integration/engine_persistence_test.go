@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -275,6 +276,118 @@ func (m *Test) ContextGitRef(
 
 		randomB := runChain(ctx, t, engineClientB, hostDirB)
 		require.Equal(t, randomA, randomB, "withExec output should survive engine restart for equivalent host-mounted input")
+	})
+
+	t.Run("git repository and ref survive restart", func(ctx context.Context, t *testctx.T) {
+		stateKey := "phase7-git-restart-state-" + identity.NewID()
+		repoDir := t.TempDir()
+
+		runGit := func(args ...string) {
+			t.Helper()
+			cmd := exec.Command("git", args...)
+			cmd.Dir = repoDir
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+		}
+
+		runGit("init")
+		runGit("config", "user.email", "dagger@example.com")
+		runGit("config", "user.name", "Dagger Tests")
+		require.NoError(t, os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("git persistence\n"), 0o600))
+		runGit("add", "README.md")
+		runGit("commit", "-m", "initial commit")
+
+		type gitRunOutput struct {
+			commit  string
+			random  string
+			readme  string
+			layered string
+			summary string
+		}
+
+		runChain := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, layerExtra bool) gitRunOutput {
+			t.Helper()
+
+			repo := engineClient.Host().Directory(repoDir).AsGit()
+			ref := repo.Head()
+			commitFromRef, err := ref.Commit(ctx)
+			require.NoError(t, err)
+
+			ctr := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"apk", "add", "git"}).
+				WithMountedDirectory("/repo", ref.Tree()).
+				WithExec([]string{"sh", "-ec", `
+set -eu
+mkdir -p /work
+git -C /repo rev-parse HEAD > /work/commit.txt
+cat /repo/README.md > /work/readme.txt
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`})
+
+			if layerExtra {
+				ctr = ctr.WithExec([]string{"sh", "-ec", `
+set -eu
+printf 'layered\n' > /work/layered.txt
+{
+  printf 'commit='
+  tr -d '\n' < /work/commit.txt
+  printf '\nrandom='
+  tr -d '\n' < /work/random.txt
+  printf '\n'
+} > /work/summary.txt
+`})
+			}
+
+			workDir := ctr.Directory("/work")
+
+			commitFromWorktree, err := workDir.File("commit.txt").Contents(ctx)
+			require.NoError(t, err)
+			commitFromWorktree = strings.TrimSpace(commitFromWorktree)
+			require.Equal(t, commitFromRef, commitFromWorktree)
+
+			randomContents, err := workDir.File("random.txt").Contents(ctx)
+			require.NoError(t, err)
+
+			readmeContents, err := workDir.File("readme.txt").Contents(ctx)
+			require.NoError(t, err)
+
+			out := gitRunOutput{
+				commit: commitFromWorktree,
+				random: strings.TrimSpace(randomContents),
+				readme: readmeContents,
+			}
+			if layerExtra {
+				layeredContents, err := workDir.File("layered.txt").Contents(ctx)
+				require.NoError(t, err)
+				summaryContents, err := workDir.File("summary.txt").Contents(ctx)
+				require.NoError(t, err)
+				out.layered = strings.TrimSpace(layeredContents)
+				out.summary = summaryContents
+			}
+			return out
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA := runChain(ctx, t, engineClientA, false)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		outB := runChain(ctx, t, engineClientB, true)
+		require.Equal(t, outA.commit, outB.commit, "git ref commit should survive engine restart")
+		require.Equal(t, outA.random, outB.random, "git-backed withExec result should survive engine restart")
+		require.Equal(t, outA.readme, outB.readme, "mounted git tree contents should survive engine restart")
+		require.Equal(t, "layered", outB.layered, "new withExec should still apply on top of the cached git-backed state")
+		require.Contains(t, outB.summary, "commit="+outB.commit)
+		require.Contains(t, outB.summary, "random="+outB.random)
 	})
 
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {

@@ -28,6 +28,9 @@
 * Persistence follow-up: understand what the full-state mirror should do with `Service` results.
   * A shutdown flush in the disk-persistence coverage surfaced `persist result ... encode persisted object payload: type "Service" does not implement persisted object encoding`.
   * We need to decide whether `Service` should get a real persisted representation or be explicitly excluded from mirrored persistence, and then make that behavior intentional.
+* Provisional Phase 6: make `Secret`, `Socket`, and `Service` persistence coherent.
+  * We are going to need this soon for things like fully general persisted `GitRepository` / `GitRef` support, where auth sockets, secrets, and service-backed remotes show up in the object graph.
+  * No implementation plan yet; just capturing that this is a real upcoming persistence phase, not incidental cleanup.
 * !!! Check if we are losing a lot of parallelism in places, especially seems potentially apparent in the dockerBuild of e.g. TestLoadHostContainerd, which looks hella linear and maybe slower than it used to be
    * Probably time now or in near future to do eager parallel loading of IDs in DAG during ID load and such
 
@@ -2444,6 +2447,362 @@ Only after Groups 1 and 2 are in place should we return to the separate persiste
   * or a truly self-contained snapshot export
 
 That later work should be treated separately from the shutdown-quiescence fixes above.
+
+### Phase 5.6: make `GitRepository` / `GitRef` persistable, and move remote-git snapshot ownership into `core/`
+
+Important new seam discovered after the contextual-arg simplification:
+
+* once `_contextGitRepository` / `_contextGitRef` are removed and contextual git args are loaded directly via:
+  * `core/modfunc.go` `ModuleFunction.loadContextualArg(...)`
+  * `ModuleSource.LoadContextGit(...)`
+* persisted function-cache restart can now legitimately retain `GitRepository` / `GitRef` results
+* the first concrete failure after the frame-closure fix is:
+  * `failed to persist dagql cache during close`
+  * `persist result ... envelope: encode persisted object payload: type "GitRepository" does not implement persisted object encoding`
+* that proves:
+  * `GitRepository` / `GitRef` need real persisted-object support
+  * and it also forces us to confront the fact that remote git still manages hidden buildkit snapshots through old metadata caches instead of object-owned snapshot state
+
+This phase is therefore **not** just:
+
+* “add `EncodePersistedObject(...)` to `GitRepository` / `GitRef`”
+
+It is also:
+
+* move remote git snapshot ownership into `core/` objects so persistence/refcounting works in the new world
+
+#### Why the first simple proposal was incomplete
+
+An initial payload-only proposal would have encoded:
+
+* local-vs-remote repo form
+* resolved remote metadata
+* ref name / sha
+
+But that misses a major implementation reality in:
+
+* `core/git_remote.go`
+
+The current remote git implementation still hides important state in global-ish buildkit metadata caches:
+
+* bare/shared remote repo snapshot lifecycle in `RemoteGitRepository.initRemote(...)`
+  * see around:
+    * `core/git_remote.go` ~498
+* checkout snapshot reuse for `GitRef.Tree(...)`
+  * see around:
+    * `core/git_remote.go` ~588
+
+Those codepaths still do things like:
+
+* `searchGitRemote(...)`
+* `searchGitSnapshot(...)`
+* retain/reuse buildkit refs by metadata lookup
+
+That was tolerable in the older buildkit-dependent/per-egraph world, but it is out of sync with the current direction where:
+
+* `core/` objects own their snapshots
+* snapshot links are exposed through `PersistedSnapshotRefLinks()`
+* persistence/import/export reasons about object-owned state directly
+
+So Phase 5.6 needs to fix **both**:
+
+1. persisted encoding/decoding for `GitRepository` / `GitRef`
+2. snapshot ownership for remote git internals
+
+#### Desired ownership model after this phase
+
+The intended post-Phase-5.6 model is:
+
+* `GitRepository`
+  * owns repo-level state
+  * for local repos: owns/refers to the input directory
+  * for remote repos: owns the bare fetched repo snapshot used to resolve refs/fetch trees
+* `GitRef`
+  * owns ref identity only:
+    * repo
+    * resolved ref name
+    * resolved ref sha
+  * does **not** itself own checkout snapshots
+* `Directory`
+  * owns checkout tree snapshots returned by `GitRef.Tree(...)`
+
+That matches the broader `core/` object model much better than the current hidden metadata caches.
+
+#### Concrete implementation direction
+
+Primary files:
+
+* `core/git.go`
+* `core/git_local.go`
+* `core/git_remote.go`
+* `core/schema/git.go`
+
+Supporting persistence seams:
+
+* `core/persisted_object.go`
+* `dagql/cache_persistence_self.go`
+
+Use the same persisted-object pattern already used by:
+
+* `Directory`
+  * `core/directory.go`
+* `File`
+  * `core/file.go`
+* `CacheVolume`
+  * `core/cache.go`
+* `ModuleSource`
+  * `core/modulesource.go`
+
+In particular:
+
+* object self payload should encode stable semantic state as JSON
+* snapshot ownership should be exposed through `PersistedSnapshotRefLinks()`
+* `PreparePersistedObject(...)` should retain owned snapshots if needed
+* decode should rebuild the object directly, not by replaying the original GraphQL query shape
+
+#### `GitRepository` persisted forms
+
+Recommended payload shape in `core/git.go`:
+
+* one backend-discriminated payload, roughly:
+  * `form`
+    * `local`
+    * `remote`
+  * `discardGitDir`
+  * `remoteJSON`
+    * serialized `gitutil.Remote`
+  * local-specific payload:
+    * `directoryResultID`
+  * remote-specific payload:
+    * `url`
+    * `sshKnownHosts`
+    * `authUsername`
+    * `platform`
+
+Why `remoteJSON` belongs in the payload:
+
+* `GitRepository.Remote` is what powers:
+  * `head`
+  * `ref`
+  * `branch`
+  * `tag`
+  * `latestVersion`
+  * `tags`
+  * `branches`
+* current remote-git code already serializes `gitutil.Remote` into JSON in:
+  * `core/git_remote.go`
+* so this is already a natural durable representation
+
+##### Local repository form
+
+For `LocalGitRepository`:
+
+* encode the backing directory result via:
+  * `encodePersistedObjectRef(...)`
+* decode by:
+  * `loadPersistedObjectResultByResultID[*Directory](...)`
+  * rebuilding:
+    * `LocalGitRepository{Directory: ...}`
+    * `GitRepository{Backend: ..., Remote: ..., DiscardGitDir: ...}`
+
+This is the straightforward path and directly covers the current contextual local-git test case.
+
+##### Remote repository form
+
+For `RemoteGitRepository`:
+
+* encode stable backend fields:
+  * URL
+  * SSHKnownHosts
+  * AuthUsername
+  * Platform
+* encode `RemoteJSON`
+* **do not** rely on replaying `Query.git(...)` during decode
+* decode by:
+  * `gitutil.ParseURL(...)`
+  * rebuilding a `RemoteGitRepository`
+  * rehydrating object-owned snapshot state from persisted snapshot links
+
+#### `GitRef` persisted form
+
+Recommended payload in `core/git.go`:
+
+* `repoResultID`
+* `name`
+* `sha`
+
+Decode should:
+
+* load the persisted `GitRepository`
+* rebuild `gitutil.Ref{Name, SHA}`
+* call:
+  * `repo.Backend.Get(ctx, ref)`
+* construct:
+  * `GitRef{Repo: ..., Ref: ..., Backend: ...}`
+
+This is cohesive and matches the normal runtime constructor path in:
+
+* `core/schema/git.go`
+
+#### Snapshot ownership changes required in `git_remote.go`
+
+This is the crucial architectural cut.
+
+##### 1. Remote bare repo snapshot should become owned state on `GitRepository`
+
+Current code in:
+
+* `core/git_remote.go`
+  * `RemoteGitRepository.initRemote(...)`
+
+still does hidden buildkit metadata lookup/reuse via:
+
+* `searchGitRemote(...)`
+* mutable ref lookup by metadata
+* repo initialization in a shared bare repo ref
+
+Phase 5.6 should replace that with:
+
+* object-owned repo snapshot state on `GitRepository` / `RemoteGitRepository`
+* if a remote repo object already has its bare repo snapshot, use it
+* if not, lazily create it and attach it to the object/backend
+* `PreparePersistedObject(...)` retains it
+* `PersistedSnapshotRefLinks()` exposes it under a stable role such as:
+  * `"bare_repo"`
+
+This means:
+
+* no more hidden repo-state ownership via metadata search
+* repo-level snapshot lifetime follows the `GitRepository` object itself
+
+##### 2. `GitRef.Tree(...)` should stop using hidden checkout-snapshot metadata caches
+
+Current code in:
+
+* `core/git_remote.go`
+  * `RemoteGitRef.Tree(...)`
+
+still does hidden lookup/reuse via:
+
+* `searchGitSnapshot(...)`
+* cached checkout snapshots by metadata key
+
+The updated model should be:
+
+* `GitRef.Tree(...)` just materializes the checkout snapshot and returns a `Directory`
+* that `Directory` already knows how to:
+  * own its snapshot
+  * expose snapshot links
+  * persist/decode itself
+
+So after this phase:
+
+* `GitRef.Tree(...)` should not maintain its own separate hidden snapshot cache layer
+* dagql result caching handles reuse of the `tree(...)` call
+* `Directory` handles snapshot ownership/persistence
+
+This is a meaningful shape change, but it is aligned with the desired object model.
+
+#### Tradeoff / acceptable behavior change
+
+The main likely tradeoff of removing the hidden `searchGitSnapshot(...)` checkout cache is:
+
+* the old code may have provided some extra warm-path reuse at the buildkit metadata layer
+
+The updated shape instead relies on:
+
+* dagql result caching for the `tree(...)` call
+* `Directory` owning/persisting the resulting checkout snapshot
+
+That is an acceptable trade:
+
+* much easier to reason about
+* consistent with the rest of `core/`
+* avoids layering a hidden second snapshot cache underneath dagql
+
+The bare remote repo snapshot ownership change, by contrast, should be a net improvement with no conceptual downside:
+
+* we still keep the important remote-fetch state warm
+* but it becomes object-owned rather than metadata-owned
+
+#### Auth / socket / service nuance
+
+One important limitation remains after Phase 5.6:
+
+* fully general remote git repos can still depend on:
+  * `Secret`
+  * `Socket`
+  * `Service`
+* those are not all coherently persistable yet
+* that is exactly why a provisional Phase 6 note has now been added
+
+So the intended near-term behavior for remote git should be:
+
+* support persistence of:
+  * local repos
+  * remote repos whose persisted bare repo snapshot + persisted remote metadata are sufficient for restart behavior
+* do **not** promise fully general auth/service-backed remote refetch-after-restart semantics yet
+
+Practical interpretation:
+
+* once the bare remote repo snapshot is persisted with the repo object, many restart scenarios will work because the already-fetched repo state survives
+* but if a post-restart operation would require fetching additional state that depends on secrets/sockets/services not yet persistable, that remains a separate future concern
+
+We should not paper over that by inventing fake persistence for those objects now.
+
+#### Interfaces to add
+
+In `core/git.go`:
+
+* `var _ dagql.PersistedObject = (*GitRepository)(nil)`
+* `var _ dagql.PersistedObjectDecoder = (*GitRepository)(nil)`
+* `var _ dagql.PersistedObject = (*GitRef)(nil)`
+* `var _ dagql.PersistedObjectDecoder = (*GitRef)(nil)`
+
+Potentially also:
+
+* `PreparePersistedObject(...)`
+* `PersistedSnapshotRefLinks()`
+
+for `GitRepository` remote form (because it will own the bare repo snapshot)
+
+`GitRef` itself should remain lightweight and likely does **not** need snapshot links if `Directory` owns checkout snapshots and `GitRepository` owns the bare repo snapshot.
+
+#### Tests / verification
+
+Once implemented, verify with:
+
+1. focused object persistence tests for:
+   * local `GitRepository`
+   * local `GitRef`
+   * remote `GitRepository` (object-owned bare repo snapshot)
+2. the new integration restart coverage already added in:
+   * `core/integration/engine_persistence_test.go`
+   * contextual:
+     * dir
+     * file
+     * git repository
+     * git ref
+3. broader disk persistence rerun once the focused contextual restart path is green
+
+#### Phase-5.6 review boundary
+
+This phase should be considered complete only when:
+
+* `GitRepository` / `GitRef` are real persisted objects
+* remote git no longer relies on hidden buildkit metadata caches for repo/checkouts in the persistence-critical path
+* repo-level remote snapshot ownership lives on the `GitRepository` object
+* checkout snapshot ownership lives on returned `Directory` objects
+* the contextual restart test passes without:
+  * close-time persistence error
+  * unclean-shutdown wipe
+
+#### Phase-5.6 tripwire
+
+If while implementing this cut we discover that some required remote-git restart behavior fundamentally depends on persisted `Secret` / `Socket` / `Service` semantics that do not yet exist, stop and escalate.
+
+At that point the correct answer is not a workaround hidden inside git persistence.
+It is to acknowledge that we have reached the provisional Phase 6 boundary.
 
 ## Cross-phase notes / guardrails
 

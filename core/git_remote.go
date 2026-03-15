@@ -49,9 +49,15 @@ type RemoteGitRepository struct {
 	AuthUsername string
 	AuthToken    dagql.ObjectResult[*Secret]
 	AuthHeader   dagql.ObjectResult[*Secret]
+
+	state *remoteGitRepositoryState
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
+
+type remoteGitRepositoryState struct {
+	snapshot bkcache.MutableRef
+}
 
 type RemoteGitRef struct {
 	*gitutil.Ref
@@ -59,6 +65,30 @@ type RemoteGitRef struct {
 }
 
 var _ GitRefBackend = (*RemoteGitRef)(nil)
+
+func (repo *RemoteGitRepository) getSnapshot() bkcache.MutableRef {
+	if repo == nil || repo.state == nil {
+		return nil
+	}
+	return repo.state.snapshot
+}
+
+func (repo *RemoteGitRepository) setSnapshot(snapshot bkcache.MutableRef) {
+	if repo == nil {
+		return
+	}
+	if repo.state == nil {
+		repo.state = &remoteGitRepositoryState{}
+	}
+	repo.state.snapshot = snapshot
+}
+
+func (repo *RemoteGitRepository) clearSnapshot() {
+	if repo == nil || repo.state == nil {
+		return
+	}
+	repo.state.snapshot = nil
+}
 
 func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Remote, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "git remote metadata", telemetry.Internal())
@@ -494,40 +524,25 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	defer locker.Unlock(indexGitRemote + repo.URL.Remote())
 
 	cache := query.BuildkitCache()
-
-	sis, err := searchGitRemote(ctx, cache, repo.URL.Remote())
-	if err != nil {
-		return fmt.Errorf("failed to search metadata for %s: %w", repo.URL.Remote(), err)
-	}
-
-	var remoteRef bkcache.MutableRef
-	for _, si := range sis {
-		remoteRef, err = cache.GetMutable(ctx, si.ID())
-		if err != nil {
-			if errors.Is(err, bkcache.ErrLocked) {
-				// should never really happen as no other function should access this metadata, but lets be graceful
-				slog.Warn("mutable ref for %s  %s was locked: %v", repo.URL.Remote(), si.ID(), err)
-				continue
-			}
-			return fmt.Errorf("failed to get mutable ref for %s: %w", repo.URL.Remote(), err)
-		}
-		break
-	}
-
-	initializeRepo := false
+	remoteRef := repo.getSnapshot()
+	createdSnapshot := false
+	initializeRepo := remoteRef == nil
 	if remoteRef == nil {
 		remoteRef, err = cache.New(ctx, nil, g,
 			bkcache.CachePolicyRetain,
-			bkcache.WithDescription(fmt.Sprintf("shared git repo for %s", repo.URL.Remote())))
+			bkcache.WithDescription(fmt.Sprintf("git bare repo for %s", repo.URL.Remote())))
 		if err != nil {
 			return fmt.Errorf("failed to create new mutable for %s: %w", repo.URL.Remote(), err)
 		}
-		initializeRepo = true
+		repo.setSnapshot(remoteRef)
+		createdSnapshot = true
 	}
 	defer func() {
-		err := remoteRef.Release(context.WithoutCancel(ctx))
-		if retErr == nil {
-			retErr = err
+		if retErr != nil && createdSnapshot {
+			repo.clearSnapshot()
+			if releaseErr := remoteRef.Release(context.WithoutCancel(ctx)); releaseErr != nil {
+				retErr = errors.Join(retErr, releaseErr)
+			}
 		}
 	}()
 
@@ -562,46 +577,17 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 		if _, err := git.Run(ctx, "remote", "add", "origin", repo.URL.Remote()); err != nil {
 			return fmt.Errorf("failed add origin repo at %s: %w", dir, err)
 		}
-
-		// save new remote metadata
-		md := cacheRefMetadata{remoteRef}
-		if err := md.setGitRemote(repo.URL.Remote()); err != nil {
-			return err
-		}
 	}
 
 	return fn(dir)
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
-	cacheKey := dagql.CurrentID(ctx).Digest().Encoded()
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cache := query.BuildkitCache()
-
-	locker := query.Locker()
-	locker.Lock(indexGitSnapshot + cacheKey)
-	defer locker.Unlock(indexGitSnapshot + cacheKey)
-	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search metadata for %s: %w", cacheKey, err)
-	}
-	if len(sis) > 0 {
-		res, err := cache.Get(ctx, sis[0].ID())
-		if err != nil {
-			return nil, err
-		}
-		checkout := &Directory{
-			Dir:       "/",
-			Platform:  query.Platform(),
-			LazyState: NewLazyState(),
-			Snapshot:  res,
-		}
-		return checkout, nil
-	}
 
 	var checkoutRef bkcache.MutableRef
 	defer func() {
@@ -653,11 +639,6 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			snap.Release(context.WithoutCancel(ctx))
 		}
 	}()
-
-	md := cacheRefMetadata{snap}
-	if err := md.setGitSnapshot(cacheKey); err != nil {
-		return nil, err
-	}
 
 	checkout := &Directory{
 		Dir:       "/",

@@ -934,9 +934,16 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 	}
 	repo := *parent
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		remote := *remote
-		remote.AuthToken = token
-		repo.Backend = &remote
+		repo.Backend = &core.RemoteGitRepository{
+			URL:           remote.URL,
+			SSHKnownHosts: remote.SSHKnownHosts,
+			SSHAuthSocket: remote.SSHAuthSocket,
+			Services:      slices.Clone(remote.Services),
+			Platform:      remote.Platform,
+			AuthUsername:  remote.AuthUsername,
+			AuthToken:     token,
+			AuthHeader:    remote.AuthHeader,
+		}
 	}
 	return &repo, nil
 }
@@ -957,9 +964,16 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 	}
 	repo := *parent
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		remote := *remote
-		remote.AuthHeader = header
-		repo.Backend = &remote
+		repo.Backend = &core.RemoteGitRepository{
+			URL:           remote.URL,
+			SSHKnownHosts: remote.SSHKnownHosts,
+			SSHAuthSocket: remote.SSHAuthSocket,
+			Services:      slices.Clone(remote.Services),
+			Platform:      remote.Platform,
+			AuthUsername:  remote.AuthUsername,
+			AuthToken:     remote.AuthToken,
+			AuthHeader:    header,
+		}
 	}
 	return &repo, nil
 }
