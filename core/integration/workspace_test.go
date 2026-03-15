@@ -1185,6 +1185,213 @@ type AccumStager {
 		require.Contains(t, diffOut, "SECOND EDIT",
 			"second edit should appear in staged diff")
 	})
+
+	t.Run("force stage overwrites without merge", func(ctx context.Context, t *testctx.T) {
+		// With force: true, modified files should be overwritten directly
+		// (no 3-way merge), allowing recovery from conflicts.
+		initialContent := "line1\nline2\nline3\nline4\nline5\n"
+		agentContent := "line1\nline2\nagent-line3\nline4\nline5\n"
+
+		ctr := workspaceBase(t, c).
+			WithNewFile("shared.txt", initialContent).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("forcer", fmt.Sprintf(`
+type Forcer {
+  pub run(ws: Workspace!): String! {
+    let ws2 = ws.withBranch("agent/force")
+    let before = ws2.directory(".")
+    let after = before.withNewFile("shared.txt", contents: %q)
+    ws2.stage(changes: after.changes(before), force: true)
+    "staged"
+  }
+}
+`, agentContent)))
+
+		// Create worktree, simulate user editing the SAME line (would conflict).
+		ctr = ctr.
+			WithExec([]string{"git", "worktree", "add", "-b", "agent/force",
+				"/work-worktrees/agent-force"}).
+			WithExec([]string{"sh", "-c",
+				"printf 'line1\\nline2\\nuser-line3\\nline4\\nline5\\n' > /work-worktrees/agent-force/shared.txt"})
+
+		// Force stage should succeed despite conflicting edits.
+		out, err := ctr.With(daggerCall("forcer", "run")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "staged", strings.TrimSpace(out))
+
+		// Working tree should have the agent's content (user edit overwritten).
+		diskContent, err := ctr.With(daggerCall("forcer", "run")).
+			WithWorkdir("/work-worktrees/agent-force").
+			WithExec([]string{"cat", "shared.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, diskContent, "agent-line3",
+			"force stage should write agent's content")
+		require.NotContains(t, diskContent, "user-line3",
+			"force stage should overwrite user's content")
+	})
+
+	t.Run("force stage recovers from conflict markers", func(ctx context.Context, t *testctx.T) {
+		// Simulates the cascading conflict scenario: a file already has
+		// conflict markers from a previous failed merge. A normal stage
+		// would fail again, but force: true overwrites the file and
+		// recovers.
+		initialContent := "line1\nline2\nline3\nline4\nline5\n"
+		resolvedContent := "line1\nline2\nresolved-line3\nline4\nline5\n"
+
+		ctr := workspaceBase(t, c).
+			WithNewFile("broken.txt", initialContent).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("recovery", fmt.Sprintf(`
+type Recovery {
+  pub run(ws: Workspace!): String! {
+    let ws2 = ws.withBranch("agent/recovery")
+    let before = ws2.directory(".")
+    let after = before.withNewFile("broken.txt", contents: %q)
+    ws2.stage(changes: after.changes(before), force: true)
+    "recovered"
+  }
+}
+`, resolvedContent)))
+
+		// Create worktree, then manually write conflict markers into
+		// the file (simulating what git merge-file leaves behind).
+		conflictContent := "line1\nline2\n<<<<<<< broken.txt\nuser-line3\n=======\nagent-line3\n>>>>>>> /tmp/dagger-merge-after-12345\nline4\nline5\n"
+		ctr = ctr.
+			WithExec([]string{"git", "worktree", "add", "-b", "agent/recovery",
+				"/work-worktrees/agent-recovery"}).
+			WithExec([]string{"sh", "-c",
+				fmt.Sprintf("printf '%s' > /work-worktrees/agent-recovery/broken.txt",
+					strings.ReplaceAll(conflictContent, "'", "'\\''"))})
+
+		// Force stage should succeed even though the file has conflict markers.
+		out, err := ctr.With(daggerCall("recovery", "run")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "recovered", strings.TrimSpace(out))
+
+		// Working tree should have the clean resolved content.
+		diskContent, err := ctr.With(daggerCall("recovery", "run")).
+			WithWorkdir("/work-worktrees/agent-recovery").
+			WithExec([]string{"cat", "broken.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, diskContent, "resolved-line3",
+			"force stage should write resolved content")
+		require.NotContains(t, diskContent, "<<<<<<<",
+			"conflict markers should be gone after force stage")
+		require.NotContains(t, diskContent, ">>>>>>>",
+			"conflict markers should be gone after force stage")
+	})
+}
+
+func (WorkspaceSuite) TestApply(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("apply writes files without staging", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("existing.txt", "original").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("applier", `
+type Applier {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/apply")
+    let before = ws2.directory(".")
+    let after = before.
+      withNewFile("build/output.bin", contents: "binary data").
+      withNewFile("existing.txt", contents: "modified")
+    ws2.apply(changes: after.changes(before))
+    self
+  }
+}
+`))
+		applied := ctr.With(daggerCall("applier"))
+		_, err := applied.Stdout(ctx)
+		require.NoError(t, err)
+
+		// New file should exist on disk.
+		out, err := applied.
+			WithWorkdir("/work-worktrees/agent-apply").
+			WithExec([]string{"cat", "build/output.bin"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "binary data", out)
+
+		// Modified file should have new content.
+		out, err = applied.
+			WithWorkdir("/work-worktrees/agent-apply").
+			WithExec([]string{"cat", "existing.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified", out)
+
+		// Nothing should be staged in git.
+		statusOut, err := applied.
+			WithWorkdir("/work-worktrees/agent-apply").
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		// Files should show as untracked or unstaged modifications,
+		// NOT staged (no A or M in first column).
+		for _, line := range strings.Split(statusOut, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			require.True(t, line[0] == '?' || line[0] == ' ',
+				"expected untracked or unstaged, got %q", line)
+		}
+	})
+
+	t.Run("apply removes files without staging", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("remove.txt", "remove me").
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "init"}).
+			With(initDangModule("remapply", `
+type Remapply {
+  new(ws: Workspace!) {
+    let ws2 = ws.withBranch("agent/remapply")
+    let before = ws2.directory(".")
+    let after = before.withoutFile("remove.txt")
+    ws2.apply(changes: after.changes(before))
+    self
+  }
+}
+`))
+		applied := ctr.With(daggerCall("remapply"))
+		_, err := applied.Stdout(ctx)
+		require.NoError(t, err)
+
+		// Removed file should be gone.
+		_, err = applied.
+			WithWorkdir("/work-worktrees/agent-remapply").
+			WithExec([]string{"test", "-f", "remove.txt"}).
+			Sync(ctx)
+		require.Error(t, err, "remove.txt should not exist")
+
+		// Kept file should still be there.
+		out, err := applied.
+			WithWorkdir("/work-worktrees/agent-remapply").
+			WithExec([]string{"cat", "keep.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep", out)
+
+		// The deletion should show as unstaged (not staged for commit).
+		statusOut, err := applied.
+			WithWorkdir("/work-worktrees/agent-remapply").
+			WithExec([]string{"git", "status", "--porcelain"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, statusOut, "remove.txt")
+		// Should be unstaged deletion (space + D)
+		require.Contains(t, statusOut, " D remove.txt",
+			"deletion should be unstaged")
+	})
 }
 
 func (WorkspaceSuite) TestCommit(ctx context.Context, t *testctx.T) {

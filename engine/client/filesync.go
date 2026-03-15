@@ -957,13 +957,24 @@ func gitStage(ctx context.Context, repoDir string, opts *engine.GitStageOpts) (s
 			}
 		}
 
-		// 3-way merge into the working tree:
-		//   current = user's working-tree file
-		//   base    = HEAD version
-		//   other   = agent's after version
-		// git merge-file modifies current in place.
-		if err := gitMergeFile(ctx, repoDir, p, baseContent, afterContent); err != nil {
-			return "", err
+		// Merge the agent's changes into the working tree.
+		if opts.Force {
+			// Force mode: overwrite the working tree file directly,
+			// bypassing 3-way merge. This is the escape hatch for
+			// recovering from merge conflicts.
+			dst := filepath.Join(repoDir, p)
+			if err := os.WriteFile(dst, afterContent, 0644); err != nil {
+				return "", fmt.Errorf("force-write %q: %w", p, err)
+			}
+		} else {
+			// Normal mode: 3-way merge into the working tree:
+			//   current = user's working-tree file
+			//   base    = HEAD version
+			//   other   = agent's after version
+			// git merge-file modifies current in place.
+			if err := gitMergeFile(ctx, repoDir, p, baseContent, afterContent); err != nil {
+				return "", err
+			}
 		}
 
 		upsertIndexEntry(idx, filepath.Join(repoDir, p), p, hash, len(afterContent))
@@ -1028,6 +1039,9 @@ func upsertIndexEntry(idx *index.Index, diskPath, gitPath string, hash plumbing.
 // gitMergeFile performs a 3-way merge of a file in the working tree.
 // It merges the agent's changes (base→after) into the user's working-tree
 // copy of the file. Returns an error if there are conflicts.
+//
+// On conflict, the working tree file will contain conflict markers.
+// Use force mode in stage to overwrite the file and recover.
 func gitMergeFile(ctx context.Context, repoDir, path string, baseContent, afterContent []byte) error {
 	wtFile := filepath.Join(repoDir, path)
 

@@ -44,6 +44,21 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				`Returns true if any changes were staged, false if the changeset was empty.`).
 			Args(
 				dagql.Arg("changes").Doc(`The changes to apply and stage.`),
+				dagql.Arg("force").Doc(
+					`Skip the 3-way merge for modified files and overwrite the working`,
+					`tree directly. Use this to recover from merge conflicts or when`,
+					`the changeset already contains the complete desired file content.`,
+				).Default(dagql.Boolean(false)),
+			),
+		dagql.NodeFuncWithCacheKey("apply", DagOpWrapper(srv, s.apply), dagql.CachePerClient).
+			DoNotCache("Writes to the local host.").
+			Doc(`Export a Changeset to the workspace directory without staging in git.`,
+				`Use this for files that should not be tracked by git (e.g. build`,
+				`artifacts, binary files). Added and modified files are written to`,
+				`disk; removed files are deleted.`,
+				`Returns true if any files were changed, false if the changeset was empty.`).
+			Args(
+				dagql.Arg("changes").Doc(`The changes to apply.`),
 			),
 		dagql.NodeFuncWithCacheKey("commit", DagOpWrapper(srv, s.commit), dagql.CachePerClient).
 			DoNotCache("Writes to the local host.").
@@ -577,6 +592,7 @@ func (s *workspaceSchema) withBranch(
 
 type workspaceStageArgs struct {
 	Changes dagql.ID[*core.Changeset]
+	Force   dagql.Boolean `default:"false"`
 
 	RawDagOpInternalArgs
 }
@@ -646,12 +662,58 @@ func (s *workspaceSchema) stage(
 	//    into the working tree so user edits on other lines are preserved
 	//  - Removed: remove from index and disk
 	// The temp dir is cleaned up by the handler.
-	staged, err := bk.GitStage(ctx, ws.Root, tempDir, addedFiles, paths.Modified, paths.Removed)
+	staged, err := bk.GitStage(ctx, ws.Root, tempDir, addedFiles, paths.Modified, paths.Removed, bool(args.Force))
 	if err != nil {
 		return false, fmt.Errorf("stage: %w", err)
 	}
 
 	return dagql.Boolean(staged), nil
+}
+
+type workspaceApplyArgs struct {
+	Changes dagql.ID[*core.Changeset]
+
+	RawDagOpInternalArgs
+}
+
+func (s *workspaceSchema) apply(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceApplyArgs,
+) (dagql.Boolean, error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return false, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	changeset, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return false, fmt.Errorf("load changeset: %w", err)
+	}
+
+	// Compute the changeset paths to check if empty.
+	paths, err := changeset.Self().ComputePaths(ctx)
+	if err != nil {
+		return false, fmt.Errorf("compute paths: %w", err)
+	}
+
+	if len(paths.Added) == 0 && len(paths.Modified) == 0 && len(paths.Removed) == 0 {
+		return false, nil
+	}
+
+	// Export directly to the workspace root — no git staging.
+	if err := changeset.Self().Export(ctx, ws.Root); err != nil {
+		return false, fmt.Errorf("apply: %w", err)
+	}
+
+	return true, nil
 }
 
 type workspaceCommitArgs struct {

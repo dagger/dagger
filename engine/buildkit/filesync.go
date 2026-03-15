@@ -204,6 +204,7 @@ func (c *Client) GitStage(
 	worktreeDir string,
 	tempDir string,
 	added, modified, removed []string,
+	force bool,
 ) (bool, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
@@ -213,6 +214,7 @@ func (c *Client) GitStage(
 			Modified: modified,
 			Removed:  removed,
 			TempDir:  tempDir,
+			Force:    force,
 		},
 	}, &msg)
 	if err != nil {
