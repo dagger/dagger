@@ -81,6 +81,8 @@ type LLMSession struct {
 	autoCompact  bool
 	autoCompactL *sync.Mutex
 
+	onStep func(s *LLMSession) // called after every step in the prompt loop
+
 	subscriptionLabelCache string // cached OAuth subscription label
 }
 
@@ -221,6 +223,12 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 		if err := s.updateSidebar(prompted); err != nil {
 			return s, err
+		}
+
+		// Auto-save after every step so sessions are preserved even if
+		// the process is interrupted mid-turn.
+		if s.onStep != nil {
+			s.onStep(s)
 		}
 
 		hasMore, err := prompted.HasPrompt(s.plumbingCtx)

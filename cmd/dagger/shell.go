@@ -396,20 +396,23 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			h.initialPrompt = line
 		}
 
+		// Auto-save after every LLM step so sessions are preserved
+		// even if the process is interrupted mid-turn.
+		llm.onStep = func(s *LLMSession) {
+			savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+			if err != nil {
+				slog.Warn("failed to auto-save session", "error", err)
+			} else {
+				h.sessionUUID = savedUUID
+			}
+		}
+
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {
 			return err
 		}
 		h.llmSession = newLLM
 		h.llmModel = newLLM.model
-
-		// Auto-save the session (creates file on first prompt, updates thereafter)
-		savedUUID, err := newLLM.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
-		if err != nil {
-			slog.Warn("failed to auto-save session", "error", err)
-		} else {
-			h.sessionUUID = savedUUID
-		}
 
 		return nil
 	}
