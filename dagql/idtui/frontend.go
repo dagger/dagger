@@ -119,6 +119,11 @@ type Frontend interface {
 	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
 	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
 
+	// DequeueMessage atomically retrieves and clears a message that was
+	// queued by the user while the shell was busy. Returns "" if no
+	// message is queued. Safe to call from any goroutine.
+	DequeueMessage() string
+
 	prompt.PromptHandler
 }
 

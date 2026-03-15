@@ -136,6 +136,8 @@ func (fe *frontendPlain) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 	return fe.db.LLMTokenMetrics
 }
 
+func (fe *frontendPlain) DequeueMessage() string { return "" }
+
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }

@@ -236,6 +236,15 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			return s, err
 		}
 		if !hasMore {
+			// Check if the user queued a message while the LLM was
+			// running. If so, inject it as a new prompt and keep
+			// iterating instead of returning to the shell.
+			if queued := s.frontend.DequeueMessage(); queued != "" {
+				prompted = prompted.WithPrompt(queued)
+				hasMore = true
+			}
+		}
+		if !hasMore {
 			break
 		}
 
