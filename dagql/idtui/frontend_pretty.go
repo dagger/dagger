@@ -3490,9 +3490,12 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 
 		// Capture tool call arguments from verbose JSON logs.
+		// These are rendered separately by renderToolArgs, so skip
+		// writing them to the vterm.
 		if verbose && contentType == "application/json" && log.SpanID().IsValid() {
 			sid := dagui.SpanID{SpanID: log.SpanID()}
 			l.ToolArgs[sid] += log.Body().AsString()
+			continue
 		}
 
 		targetID := log.SpanID()
