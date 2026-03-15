@@ -132,6 +132,108 @@ func (m *Test) TestAlwaysCache() string {
 		require.Equal(t, outA, outB, "always-cached function result should survive engine restart")
 	})
 
+	t.Run("contextual function cache survives restart", func(ctx context.Context, t *testctx.T) {
+		stateKey := "phase7-contextual-function-cache-state-" + identity.NewID()
+		moduleSrc := `package main
+
+import (
+	"context"
+	"crypto/rand"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) ContextDir(
+	ctx context.Context,
+	// +defaultPath="."
+	dir *dagger.Directory,
+) (string, error) {
+	contents, err := dir.File("dagger.json").Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	return rand.Text() + "|" + contents, nil
+}
+
+func (m *Test) ContextFile(
+	ctx context.Context,
+	// +defaultPath="dagger.json"
+	file *dagger.File,
+) (string, error) {
+	contents, err := file.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	return rand.Text() + "|" + contents, nil
+}
+
+func (m *Test) ContextGitRepository(
+	ctx context.Context,
+	// +defaultPath="."
+	repo *dagger.GitRepository,
+) (string, error) {
+	commit, err := repo.Head().Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	return rand.Text() + "|" + commit, nil
+}
+
+func (m *Test) ContextGitRef(
+	ctx context.Context,
+	// +defaultPath="."
+	ref *dagger.GitRef,
+) (string, error) {
+	commit, err := ref.Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	return rand.Text() + "|" + commit, nil
+}
+`
+
+		getMod := func(client *dagger.Client) *dagger.Container {
+			return modInit(t, client, "go", moduleSrc).
+				WithExec([]string{"git", "add", "."}).
+				WithExec([]string{"git", "commit", "-m", "make HEAD exist"})
+		}
+
+		runCalls := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) map[string]string {
+			t.Helper()
+
+			mod := getMod(engineClient)
+			outputs := map[string]string{}
+			for _, fn := range []string{
+				"context-dir",
+				"context-file",
+				"context-git-repository",
+				"context-git-ref",
+			} {
+				out, err := mod.With(daggerCall(fn)).Stdout(ctx)
+				require.NoError(t, err)
+				outputs[fn] = out
+			}
+			return outputs
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA := runCalls(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(ctx, t, stateKey, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		outB := runCalls(ctx, t, engineClientB)
+		require.Equal(t, outA, outB, "contextual function results should survive engine restart")
+	})
+
 	t.Run("container withExec output on host mount survives restart", func(ctx context.Context, t *testctx.T) {
 		stateKey := "phase7-container-host-mount-state-" + identity.NewID()
 

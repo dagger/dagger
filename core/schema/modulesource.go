@@ -3557,8 +3557,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// Ensure that the entry for this module scoped by the source content hash is
-	// in our cache too as it is used by _contextual APIs like _contextDirectory,
-	// IDModule (which impacts function caching) and IDDeps.
+	// in our cache too as it is used by IDModule (which impacts function caching)
+	// and IDDeps.
 	// FIXME: once the cache handles dependency relationships in pruning the post-call nonsense
 	// will no longer be needed since the content digested entry can be tied to the main entry.
 	contentScopedID, err := mod.SourceContentScopedID(ctx)

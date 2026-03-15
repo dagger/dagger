@@ -1007,53 +1007,18 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
-	modInst, err := dagql.NewObjectResultForID(fn.mod, dag, fn.mod.ResultID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load module: %w", err)
-	}
-
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		var dir dagql.ObjectResult[*Directory]
-		err := dag.Select(ctx, modInst, &dir,
-			dagql.Selector{
-				Field: "_sourceContentScoped",
-			},
-			dagql.Selector{
-				Field: "_contextDirectory",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(arg.DefaultPath),
-					},
-					{
-						Name:  "exclude",
-						Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...)),
-					},
-				},
-			},
-		)
+		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
+			Exclude: arg.Ignore,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("load contextual directory %q: %w", arg.DefaultPath, err)
 		}
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		var f dagql.ObjectResult[*File]
-		err := dag.Select(ctx, modInst, &f,
-			dagql.Selector{
-				Field: "_sourceContentScoped",
-			},
-			dagql.Selector{
-				Field: "_contextFile",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(arg.DefaultPath),
-					},
-				},
-			},
-		)
+		f, err := fn.mod.ContextSource.Value.Self().LoadContextFile(ctx, dag, arg.DefaultPath)
 		if err != nil {
 			return nil, fmt.Errorf("load contextual file %q: %w", arg.DefaultPath, err)
 		}
@@ -1068,34 +1033,27 @@ func (fn *ModuleFunction) loadContextualArg(
 		if isLocalMod && isLocalGit {
 			switch arg.TypeDef.AsObject.Value.Name {
 			case "GitRepository":
-				var f dagql.ObjectResult[*GitRepository]
-				err := dag.Select(ctx, modInst, &f,
-					dagql.Selector{
-						Field: "_sourceContentScoped",
-					},
-					dagql.Selector{
-						Field: "_contextGitRepository",
-					},
-				)
+				repo, err := fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
 				if err != nil {
 					return nil, fmt.Errorf("load contextual git repository %q: %w", arg.DefaultPath, err)
 				}
-				return dagql.NewID[*GitRepository](f.ID()), nil
+				return dagql.NewID[*GitRepository](repo.ID()), nil
 
 			case "GitRef":
-				var f dagql.ObjectResult[*GitRef]
-				err := dag.Select(ctx, modInst, &f,
+				repo, err := fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
+				if err != nil {
+					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
+				}
+				var gitRef dagql.ObjectResult[*GitRef]
+				err = dag.Select(ctx, repo, &gitRef,
 					dagql.Selector{
-						Field: "_sourceContentScoped",
-					},
-					dagql.Selector{
-						Field: "_contextGitRef",
+						Field: "head",
 					},
 				)
 				if err != nil {
 					return nil, fmt.Errorf("load contextual git ref %q: %w", arg.DefaultPath, err)
 				}
-				return dagql.NewID[*GitRef](f.ID()), nil
+				return dagql.NewID[*GitRef](gitRef.ID()), nil
 			}
 		}
 

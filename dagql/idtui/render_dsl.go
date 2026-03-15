@@ -3,7 +3,6 @@ package idtui
 import (
 	"encoding/json"
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/frioux/shellquote"
@@ -192,34 +191,6 @@ func (a WithUserArgs) Render(out TermOutput) (string, []string, bool) {
 	return title, []string{"name"}, true
 }
 
-// ContextDirectoryArgs represents the arguments for withUser calls
-type ContextDirectoryArgs struct {
-	Path    string   `json:"path"`
-	Exclude []string `json:"exclude"`
-	Module  string   `json:"module"`
-	Digest  string   `json:"digest"`
-}
-
-func (a ContextDirectoryArgs) Render(out TermOutput) (string, []string, bool) {
-	title := out.String("context").Foreground(termenv.ANSIBlue).String()
-	title += " " + path.Join(a.Module, a.Path) // NB: i think this is right for git AND local paths?
-	return title, []string{"path", "module", "digest"}, true
-}
-
-type ContextFileArgs struct {
-	Path   string `json:"path"`
-	Module string `json:"module"`
-	Digest string `json:"digest"`
-}
-
-func (a ContextFileArgs) Render(out TermOutput) (string, []string, bool) {
-	title := out.String("context").Foreground(termenv.ANSIBlue).String()
-	if a.Path != "" {
-		title += " " + a.Path
-	}
-	return title, []string{"path", "module", "digest"}, true
-}
-
 // FieldRendererRegistry holds all field renderers.
 // Each entry maps a GraphQL field name to a factory function that creates a new renderer instance.
 var FieldRendererRegistry = map[string]func() FieldRenderer{
@@ -232,8 +203,6 @@ var FieldRendererRegistry = map[string]func() FieldRenderer{
 	"withFile":             func() FieldRenderer { return &WithFileArgs{} },
 	"withNewFile":          func() FieldRenderer { return &WithNewFileArgs{} },
 	"withUser":             func() FieldRenderer { return &WithUserArgs{} },
-	"_contextDirectory":    func() FieldRenderer { return &ContextDirectoryArgs{} },
-	"_contextFile":         func() FieldRenderer { return &ContextFileArgs{} },
 }
 
 // RegisterFieldRenderer adds a new field renderer to the registry

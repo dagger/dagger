@@ -148,18 +148,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.NodeFunc("_sourceContentScoped", s.moduleSourceContentScoped).
 			Doc(`The module object with a cache key scoped to just the parts of the module that impact SDKs and function calls, i.e. the source code and dependencies but not the specific git commit or local path the module was loaded from. Must be used with caution as providing it to any operation that depends on non-source aspects of the module specific to a given client could result in unexpected cache collisions.`),
-		dagql.NodeFunc("_contextDirectory", s.contextDirectory).
-			WithInput(dagql.PerCallInput).
-			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
-		dagql.NodeFunc("_contextFile", s.contextFile).
-			WithInput(dagql.PerCallInput).
-			Doc(`Obtain a contextual file argument for the given path and module.`),
-		dagql.NodeFunc("_contextGitRepository", s.contextGitRepository).
-			WithInput(dagql.PerCallInput).
-			Doc(`Obtain a contextual git repository argument for the given module.`),
-		dagql.NodeFunc("_contextGitRef", s.contextGitRef).
-			WithInput(dagql.PerCallInput).
-			Doc(`Obtain a contextual git ref argument for the given module.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -1249,71 +1237,4 @@ func (s *moduleSchema) moduleSourceContentScoped(
 			},
 		},
 	}), nil
-}
-
-func (s *moduleSchema) contextDirectory(
-	ctx context.Context,
-	modInst dagql.ObjectResult[*core.Module],
-	args struct {
-		Path string
-		core.CopyFilter
-	},
-) (inst dagql.ObjectResult[*core.Directory], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	return modInst.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
-}
-
-func (s *moduleSchema) contextFile(
-	ctx context.Context,
-	modInst dagql.ObjectResult[*core.Module],
-	args struct {
-		Path string
-	},
-) (inst dagql.ObjectResult[*core.File], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	return modInst.Self().ContextSource.Value.Self().LoadContextFile(ctx, dag, args.Path)
-}
-
-func (s *moduleSchema) contextGitRepository(
-	ctx context.Context,
-	modInst dagql.ObjectResult[*core.Module],
-	args struct{},
-) (inst dagql.ObjectResult[*core.GitRepository], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	return modInst.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
-}
-
-func (s *moduleSchema) contextGitRef(
-	ctx context.Context,
-	modInst dagql.ObjectResult[*core.Module],
-	args struct{},
-) (inst dagql.ObjectResult[*core.GitRef], err error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	repo, err := modInst.Self().ContextSource.Value.Self().LoadContextGit(ctx, dag)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load contextual git repo: %w", err)
-	}
-
-	var gitRef dagql.ObjectResult[*core.GitRef]
-	err = dag.Select(ctx, repo, &gitRef,
-		dagql.Selector{
-			Field: "head",
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("load contextual git ref: %w", err)
-	}
-	return gitRef, nil
 }
