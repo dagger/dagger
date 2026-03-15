@@ -547,8 +547,11 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 		args = append(args, opts.Paths...)
 	}
 
-	cmd := exec.Command(rgPath, args...)
+	cmd := exec.CommandContext(ctx, rgPath, args...)
 	cmd.Dir = root
+	cmd.Cancel = func() error {
+		return cmd.Process.Kill()
+	}
 
 	// Create an OTel span for the command execution
 	ctx, span := otel.Tracer(InstrumentationLibrary).Start(ctx, "exec "+strings.Join(cmd.Args, " "),
@@ -626,19 +629,30 @@ func searchWithRipgrep(ctx context.Context, root string, rgPath string, opts *en
 		}
 	}
 
+	// If we stopped reading early (e.g. limit reached), kill the process
+	// to avoid deadlocking: rg may block writing to stdout if we don't
+	// drain it, and cmd.Wait would then block forever.
+	if cmd.Process != nil && (opts.Limit != nil && len(results) >= *opts.Limit) {
+		cmd.Process.Kill()
+	}
+
+	limitReached := opts.Limit != nil && len(results) >= *opts.Limit
+
 	waitErr := cmd.Wait()
 	if waitErr != nil {
-		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
+		// If we killed the process due to limit, the wait error is expected.
+		if limitReached {
+			waitErr = nil
+		} else if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
 			// Exit code 1 means no matches
 			return []engine.LocalSearchResult{}, nil
-		}
-		if parseErr != nil {
+		} else if parseErr != nil {
 			return nil, errors.Join(parseErr, waitErr)
-		}
-		if errBuf.Len() > 0 {
+		} else if errBuf.Len() > 0 {
 			return nil, fmt.Errorf("ripgrep error: %s", errBuf.String())
+		} else {
+			return nil, waitErr
 		}
-		return nil, waitErr
 	}
 	if parseErr != nil {
 		return nil, parseErr
