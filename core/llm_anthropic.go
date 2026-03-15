@@ -29,12 +29,13 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 		// Claude Code OAuth: use bearer token auth with Claude Code headers
 		opts = append(opts,
 			option.WithAuthToken(endpoint.AuthToken),
-			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
+			option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14"),
 			option.WithHeader("user-agent", "claude-cli/2.1.2 (external, cli)"),
 			option.WithHeader("x-app", "cli"),
 		)
 	} else if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
+		opts = append(opts, option.WithHeader("anthropic-beta", "fine-grained-tool-streaming-2025-05-14"))
 	}
 
 	if endpoint.BaseURL != "" {
@@ -326,6 +327,27 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		return &p
 	}
 
+	startToolPhase := func(idx int64, toolName string) *phase {
+		if p, ok := phases[idx]; ok {
+			return p
+		}
+		var p phase
+		phaseCtx, span := Tracer(parentCtx).Start(parentCtx, toolName,
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+				attribute.String(telemetry.LLMToolAttr, toolName),
+			),
+		)
+		p.span = span
+		p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
+			log.String(telemetry.ContentTypeAttr, "application/json"))
+		phases[idx] = &p
+		return &p
+	}
+
 	// displaySpans collects the OTel spans for display phases. These
 	// are returned via LLMResponse so step() can set attributes on
 	// them (e.g. LLMCallDigest) before ending them.
@@ -378,6 +400,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				startPhase(ev.Index, true)
 			case "text":
 				startPhase(ev.Index, false)
+			case "tool_use":
+				startToolPhase(ev.Index, ev.ContentBlock.Name)
 			}
 
 		case anthropic.ContentBlockDeltaEvent:
@@ -394,6 +418,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 				if p.markdownW != nil {
 					fmt.Fprint(p.markdownW, ev.Delta.Text)
+				}
+			case "input_json_delta":
+				if p := phases[ev.Index]; p != nil {
+					fmt.Fprint(p.stdio.Stdout, ev.Delta.PartialJSON)
 				}
 			}
 

@@ -1649,35 +1649,52 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 }
 
 func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
-	// Separate thinking from non-thinking content blocks, matching the
-	// provider behavior: each contiguous run of thinking or text/tool-call
-	// blocks gets its own span.
-	type span struct {
-		thinking bool
-		blocks   []*LLMContentBlock
+	// Each content block gets its own span, matching the provider streaming
+	// behavior: thinking, text (LLM response), and tool calls each appear
+	// separately. Contiguous runs of the same non-tool-call type are grouped.
+	type spanGroup struct {
+		kind   LLMContentBlockKind // LLMContentThinking, LLMContentText, or LLMContentToolCall
+		blocks []*LLMContentBlock
 	}
-	var spans []span
+	var groups []spanGroup
 	for _, block := range msg.Content {
-		isThinking := block.Kind == LLMContentThinking
-		if len(spans) > 0 && spans[len(spans)-1].thinking == isThinking {
-			spans[len(spans)-1].blocks = append(spans[len(spans)-1].blocks, block)
+		// Tool calls always get their own span (one per call).
+		if block.Kind == LLMContentToolCall {
+			groups = append(groups, spanGroup{kind: block.Kind, blocks: []*LLMContentBlock{block}})
+			continue
+		}
+		// Group contiguous thinking or text blocks together.
+		if len(groups) > 0 && groups[len(groups)-1].kind == block.Kind {
+			groups[len(groups)-1].blocks = append(groups[len(groups)-1].blocks, block)
 		} else {
-			spans = append(spans, span{thinking: isThinking, blocks: []*LLMContentBlock{block}})
+			groups = append(groups, spanGroup{kind: block.Kind, blocks: []*LLMContentBlock{block}})
 		}
 	}
 
-	for _, s := range spans {
+	for _, g := range groups {
 		func() {
 			var name string
 			var extraAttrs []attribute.KeyValue
-			if s.thinking {
+			var contentType string
+			switch g.kind {
+			case LLMContentThinking:
 				name = "thinking"
+				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
 					attribute.Bool("llm.thinking", true),
 				)
-			} else {
+			case LLMContentToolCall:
+				block := g.blocks[0]
+				name = block.ToolName
+				contentType = "application/json"
+				extraAttrs = append(extraAttrs,
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.LLMToolAttr, block.ToolName),
+				)
+			default:
 				name = "LLM response"
+				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 				)
@@ -1695,14 +1712,14 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				trace.WithAttributes(attrs...))
 			defer span.End()
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-				log.String(telemetry.ContentTypeAttr, "text/markdown"))
+				log.String(telemetry.ContentTypeAttr, contentType))
 			defer stdio.Close()
-			for _, block := range s.blocks {
+			for _, block := range g.blocks {
 				switch block.Kind {
 				case LLMContentText, LLMContentThinking:
 					fmt.Fprint(stdio.Stdout, block.Text)
 				case LLMContentToolCall:
-					fmt.Fprintf(stdio.Stdout, "**%s**(%s)\n", block.ToolName, block.Arguments)
+					fmt.Fprint(stdio.Stdout, string(block.Arguments))
 				}
 			}
 		}()

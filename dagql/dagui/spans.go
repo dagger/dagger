@@ -262,11 +262,9 @@ type SpanSnapshot struct {
 
 	LLMRole          string   `json:",omitempty"`
 	LLMThinking      bool     `json:",omitempty"`
-	LLMTool          string   `json:",omitempty"`
-	LLMToolServer    string   `json:",omitempty"`
-	LLMToolArgNames  []string `json:",omitempty"`
-	LLMToolArgValues []string `json:",omitempty"`
-	LLMCallDigest    string   `json:",omitempty"`
+	LLMTool       string `json:",omitempty"`
+	LLMToolServer string `json:",omitempty"`
+	LLMCallDigest string `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -367,12 +365,6 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.LLMToolServerAttr:
 		snapshot.LLMToolServer = val.(string)
-
-	case telemetry.LLMToolArgNamesAttr:
-		snapshot.LLMToolArgNames = sliceOf[string](val)
-
-	case telemetry.LLMToolArgValuesAttr:
-		snapshot.LLMToolArgValues = sliceOf[string](val)
 
 	case "dagger.io/llm.call.digest":
 		snapshot.LLMCallDigest = val.(string)

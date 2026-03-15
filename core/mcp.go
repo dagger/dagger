@@ -653,26 +653,6 @@ func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
 	return false
 }
 
-func displayArgs(args any) string {
-	switch args := args.(type) {
-	case nil:
-		return ""
-	case map[string]any:
-		var sb strings.Builder
-		sb.WriteString("(")
-		argList := make([]string, 0, len(args))
-		for key, value := range args {
-			argList = append(argList, fmt.Sprintf("%s: %v", key, value))
-		}
-		sort.Strings(argList)
-		sb.WriteString(strings.Join(argList, ", "))
-		sb.WriteString(")")
-		return sb.String()
-	default:
-		return fmt.Sprintf(" %v", args)
-	}
-}
-
 // Low-level function call plumbing
 func (m *MCP) call(ctx context.Context,
 	srv *dagql.Server,
@@ -1058,28 +1038,12 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		return fmt.Sprintf("failed to parse tool arguments: %s", err), true
 	}
 
-	var toolArgNames []string
-	var toolArgValues []string
-	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
-		for _, arg := range requiredArgs {
-			val, ok := args[arg]
-			if !ok {
-				continue
-			}
-			if str, ok := val.(string); ok {
-				toolArgNames = append(toolArgNames, arg)
-				toolArgValues = append(toolArgValues, str)
-			}
-		}
-	}
 	toolName := tool.Name
 	if tool.Server != "" {
 		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
 	}
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.LLMToolAttr, toolName),
-		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
-		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 		attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 		attribute.Bool(telemetry.UIRollUpSpansAttr, true),
 	}
@@ -1092,7 +1056,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
 	}
 	ctx, span := Tracer(ctx).Start(ctx,
-		fmt.Sprintf("%s%s", tool.Name, displayArgs(args)),
+		toolName,
 		telemetry.ActorEmoji("🤖"),
 		telemetry.Reveal(),
 		trace.WithAttributes(attrs...),

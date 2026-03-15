@@ -527,10 +527,6 @@ func (r *renderer) renderSpan(
 				fmt.Fprint(out, " ")
 			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
-			if len(span.LLMToolArgValues) > 0 {
-				// for now, only print the first arg, the rest are likely to be noisy.
-				fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
-			}
 			return nil
 		}
 	}
