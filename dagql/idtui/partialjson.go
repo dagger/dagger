@@ -1,17 +1,19 @@
 package idtui
 
+import "strings"
+
 // partialJSONFields extracts top-level string fields from a potentially
 // incomplete JSON object. It is designed for incremental/streaming JSON
 // from LLM tool call arguments: the input may be truncated at any point
 // (e.g. `{"path": "/foo", "content": "hel`).
 //
-// Only string values are extracted; nested objects, arrays, numbers, and
-// booleans are skipped. The returned map contains only fields whose values
-// have been fully parsed (i.e. the closing quote was seen). A field whose
-// value is still being streamed is not included.
+// String values are extracted directly. String arrays (e.g. ["a", "b"])
+// are joined with spaces. Other value types (nested objects, numbers,
+// booleans) are skipped. Fields are only included when their values have
+// been fully parsed. A field whose value is still streaming is omitted.
 //
 // This is intentionally simple and only handles the subset of JSON that
-// LLM tool call arguments produce (flat objects with string values).
+// LLM tool call arguments produce.
 func partialJSONFields(s string) map[string]string {
 	result := make(map[string]string)
 	i := 0
@@ -158,15 +160,56 @@ func partialJSONFields(s string) map[string]string {
 		i++ // skip :
 		skip()
 
-		// Check if value is a string
+		// Check value type
 		if i < n && s[i] == '"' {
+			// String value
 			val, valComplete := parseString()
 			if valComplete {
 				result[key] = val
 			}
 			// If incomplete, we don't include the partial value
+		} else if i < n && s[i] == '[' {
+			// Array value — try to extract as string array
+			saveI := i
+			i++ // skip [
+			var elems []string
+			complete := false
+			for {
+				skip()
+				if i >= n {
+					break
+				}
+				if s[i] == ']' {
+					i++
+					complete = true
+					break
+				}
+				if s[i] == '"' {
+					elem, ok := parseString()
+					if !ok {
+						break
+					}
+					elems = append(elems, elem)
+					skip()
+					if i < n && s[i] == ',' {
+						i++
+					}
+				} else {
+					// Non-string element — not a string array, skip the whole thing
+					i = saveI
+					if !skipValue() {
+						// truncated
+					}
+					complete = false
+					elems = nil
+					break
+				}
+			}
+			if complete && len(elems) > 0 {
+				result[key] = strings.Join(elems, " ")
+			}
 		} else {
-			// Non-string value — skip it
+			// Other value — skip it
 			if !skipValue() {
 				break
 			}

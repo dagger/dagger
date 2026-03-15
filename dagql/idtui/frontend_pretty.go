@@ -2819,12 +2819,8 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 
 	// Render content-style fields (prompt, command, content, etc.)
 	// as truncated italic lines beneath the header.
-	for _, argName := range []string{"prompt", "command", "content"} {
-		val, ok := fields[argName]
-		if !ok || val == "" {
-			continue
-		}
-		if toolArgStyle(toolName, argName) != argStyleContent {
+	for argName, val := range fields {
+		if val == "" || toolArgStyle(toolName, argName) != argStyleContent {
 			continue
 		}
 		maxWidth := fe.window.Width - row.Depth*2 - 4

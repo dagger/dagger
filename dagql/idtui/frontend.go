@@ -531,17 +531,22 @@ func (r *renderer) renderSpan(
 			// Parse conventional fields from streaming args
 			if len(toolArgs) > 0 && toolArgs[0] != "" {
 				fields := partialJSONFields(toolArgs[0])
-				for _, argName := range []string{"path", "filePath"} {
-					if p, ok := fields[argName]; ok && p != "" {
-						if toolArgStyle(span.LLMTool, argName) == argStylePath {
-							fmt.Fprint(out, " ", out.String(p).Foreground(termenv.ANSICyan))
-							break
-						}
+				var sawPath, sawDesc bool
+				for argName, val := range fields {
+					if val == "" {
+						continue
 					}
-				}
-				if d, ok := fields["description"]; ok && d != "" {
-					if toolArgStyle(span.LLMTool, "description") == argStyleDesc {
-						fmt.Fprint(out, " ", out.String(d).Faint())
+					switch toolArgStyle(span.LLMTool, argName) {
+					case argStylePath:
+						if !sawPath {
+							fmt.Fprint(out, " ", out.String(val).Foreground(termenv.ANSICyan))
+							sawPath = true
+						}
+					case argStyleDesc:
+						if !sawDesc {
+							fmt.Fprint(out, " ", out.String(val).Faint())
+							sawDesc = true
+						}
 					}
 				}
 			}

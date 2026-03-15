@@ -76,10 +76,11 @@ func TestPartialJSONFields(t *testing.T) {
 		}, fields)
 	})
 
-	t.Run("array value skipped", func(t *testing.T) {
+	t.Run("string array joined", func(t *testing.T) {
 		fields := partialJSONFields(`{"name": "test", "args": ["a", "b"], "path": "/bar"}`)
 		assert.Equal(t, map[string]string{
 			"name": "test",
+			"args": "a b",
 			"path": "/bar",
 		}, fields)
 	})
@@ -96,6 +97,33 @@ func TestPartialJSONFields(t *testing.T) {
 		assert.Equal(t, map[string]string{
 			"path": "/foo",
 			"desc": "ok",
+		}, fields)
+	})
+
+	t.Run("string array joined with spaces", func(t *testing.T) {
+		fields := partialJSONFields(`{"include": ["test", "lint"], "path": "/foo"}`)
+		assert.Equal(t, map[string]string{
+			"include": "test lint",
+			"path":    "/foo",
+		}, fields)
+	})
+
+	t.Run("truncated string array excluded", func(t *testing.T) {
+		fields := partialJSONFields(`{"include": ["test", "lin`)
+		assert.Equal(t, map[string]string{}, fields)
+	})
+
+	t.Run("empty string array excluded", func(t *testing.T) {
+		fields := partialJSONFields(`{"include": [], "path": "/foo"}`)
+		assert.Equal(t, map[string]string{
+			"path": "/foo",
+		}, fields)
+	})
+
+	t.Run("mixed array skipped", func(t *testing.T) {
+		fields := partialJSONFields(`{"items": [1, "a"], "path": "/foo"}`)
+		assert.Equal(t, map[string]string{
+			"path": "/foo",
 		}, fields)
 	})
 }
