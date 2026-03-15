@@ -7,8 +7,12 @@ import (
 )
 
 func TestToolArgStyle(t *testing.T) {
-	// path/filePath on file-oriented tools
+	// Case insensitive matching
 	assert.Equal(t, argStylePath, toolArgStyle("Read", "path"))
+	assert.Equal(t, argStylePath, toolArgStyle("read", "path"))
+	assert.Equal(t, argStylePath, toolArgStyle("READ", "path"))
+
+	// path variants
 	assert.Equal(t, argStylePath, toolArgStyle("Read", "filePath"))
 	assert.Equal(t, argStylePath, toolArgStyle("Read", "file_path"))
 	assert.Equal(t, argStylePath, toolArgStyle("Write", "path"))
@@ -17,14 +21,18 @@ func TestToolArgStyle(t *testing.T) {
 	assert.Equal(t, argStylePath, toolArgStyle("Find", "path"))
 	assert.Equal(t, argStylePath, toolArgStyle("Ls", "path"))
 
-	// path on unknown tools: no special style
+	// Type_method matching: tries method part after _
+	assert.Equal(t, argStyleContent, toolArgStyle("Container_withExec", "args"))
+	assert.Equal(t, argStyleContent, toolArgStyle("Git_withCommit", "message"))
+	// No rule for "file.path", so Directory_file doesn't match
+	assert.Equal(t, argStyleNone, toolArgStyle("Directory_file", "path"))
+
+	// Unknown tool: no special style for path
 	assert.Equal(t, argStyleNone, toolArgStyle("SomeCustomTool", "path"))
 
 	// description on declarative tools
 	assert.Equal(t, argStyleDesc, toolArgStyle("DeclareOutput", "description"))
 	assert.Equal(t, argStyleDesc, toolArgStyle("Save", "description"))
-
-	// description on non-declarative tools: no special style
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "description"))
 
 	// prompt: always content style
@@ -45,8 +53,9 @@ func TestToolArgStyle(t *testing.T) {
 	assert.Equal(t, argStyleContent, toolArgStyle("Edit", "newText"))
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "oldText"))
 
-	// Grep.regex
+	// Grep.regex and Grep.pattern
 	assert.Equal(t, argStyleDesc, toolArgStyle("Grep", "regex"))
+	assert.Equal(t, argStyleDesc, toolArgStyle("Grep", "pattern"))
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "regex"))
 
 	// Commit.message
@@ -55,6 +64,7 @@ func TestToolArgStyle(t *testing.T) {
 
 	// Checks.include
 	assert.Equal(t, argStyleDesc, toolArgStyle("Checks", "include"))
+	assert.Equal(t, argStyleDesc, toolArgStyle("Check", "include"))
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "include"))
 
 	// isConventionalArg
