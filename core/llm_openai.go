@@ -173,7 +173,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		return &p
 	}
 
-	startToolPhase := func(idx int64, toolName string) *phase {
+	startToolPhase := func(idx int64, callID, toolName string) *phase {
 		if p, ok := phases[idx]; ok {
 			return p
 		}
@@ -186,17 +186,24 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 				attribute.String(telemetry.LLMToolAttr, toolName),
 			),
 		)
+		p.ctx = phaseCtx
 		p.span = span
+		p.callID = callID
 		p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
 			log.String(telemetry.ContentTypeAttr, "application/json"))
 		phases[idx] = &p
 		return &p
 	}
 
+	toolCallCtxs := map[string]context.Context{}
+
 	closePhase := func(idx int64) {
 		if p, ok := phases[idx]; ok {
 			p.stdio.Close()
 			displaySpans = append(displaySpans, p.span)
+			if p.callID != "" {
+				toolCallCtxs[p.callID] = p.ctx
+			}
 			delete(phases, idx)
 		}
 	}
@@ -270,6 +277,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			TotalTokens:      chatCompletion.Usage.TotalTokens,
 		},
 		DisplaySpans: displaySpans,
+		ToolCallCtxs: toolCallCtxs,
 	}, nil
 }
 
@@ -280,7 +288,7 @@ func (c *OpenAIClient) queryWithStreaming(
 	inputTokens metric.Int64Gauge,
 	attrs []attribute.KeyValue,
 	startTextPhase func() *phase,
-	startToolPhase func(idx int64, toolName string) *phase,
+	startToolPhase func(idx int64, callID, toolName string) *phase,
 	closePhase func(idx int64),
 ) (*openai.ChatCompletion, error) {
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
@@ -298,8 +306,9 @@ func (c *OpenAIClient) queryWithStreaming(
 		return nil, stream.Err()
 	}
 
-	// Track which tool call indices we've already seen a name for
+	// Track which tool call indices we've already seen a name/ID for
 	toolCallNames := map[int64]string{}
+	toolCallIDs := map[int64]string{}
 
 	acc := new(openai.ChatCompletionAccumulator)
 	for stream.Next() {
@@ -328,6 +337,9 @@ func (c *OpenAIClient) queryWithStreaming(
 			// Stream tool call arguments
 			for _, tc := range delta.ToolCalls {
 				idx := tc.Index
+				if tc.ID != "" {
+					toolCallIDs[idx] = tc.ID
+				}
 				if tc.Function.Name != "" {
 					toolCallNames[idx] = tc.Function.Name
 				}
@@ -335,7 +347,7 @@ func (c *OpenAIClient) queryWithStreaming(
 				if name == "" {
 					name = fmt.Sprintf("tool_call_%d", idx)
 				}
-				p := startToolPhase(idx, name)
+				p := startToolPhase(idx, toolCallIDs[idx], name)
 				if tc.Function.Arguments != "" {
 					fmt.Fprint(p.stdio.Stdout, tc.Function.Arguments)
 				}
@@ -353,10 +365,13 @@ func (c *OpenAIClient) queryWithStreaming(
 // phase is an internal type used to track display spans during streaming.
 // Defined at package level so helper methods can reference it.
 type phase struct {
+	ctx   context.Context
 	span  trace.Span
 	stdio telemetry.SpanStreams
 	// markdownW is only set for text response phases
 	markdownW io.Writer
+	// callID is set for tool call phases
+	callID string
 }
 
 func (c *OpenAIClient) queryWithoutStreaming(

@@ -129,6 +129,10 @@ type LLMResponse struct {
 	// "thinking"). Providers should NOT end these spans; the caller
 	// (step) will set attributes and end them.
 	DisplaySpans []trace.Span
+
+	// ToolCallCtxs maps tool call IDs to the context of their display
+	// span, so that tool execution spans are parented beneath them.
+	ToolCallCtxs map[string]context.Context
 }
 
 // TextContent returns the concatenation of all text blocks.
@@ -1357,7 +1361,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		}
 	}
 	beforeObjs := maps.Clone(llm.mcp.objsByID)
-	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls) {
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallCtxs) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
 			Args: []dagql.NamedInput{

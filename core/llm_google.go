@@ -142,7 +142,7 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
 	textWriter io.Writer,
-	onToolCall func(name string, argsJSON []byte),
+	onToolCall func(callID, name string, argsJSON []byte),
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
 	var textContent strings.Builder
@@ -185,7 +185,7 @@ func (c *GenaiClient) processStreamResponse(
 					ToolName:  x.Name,
 					Arguments: JSON(bytes),
 				})
-				onToolCall(x.Name, bytes)
+				onToolCall(x.Name, x.Name, bytes)
 			} else {
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
@@ -232,6 +232,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
 	var displaySpans []trace.Span
+	toolCallCtxs := map[string]context.Context{}
 	defer func() {
 		stdio.Close()
 		displaySpans = append([]trace.Span{responseSpan}, displaySpans...)
@@ -241,6 +242,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 				s.End()
 			}
 			displaySpans = nil
+			toolCallCtxs = nil
 		}
 	}()
 
@@ -330,8 +332,9 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return usageSummary
 	}
 
-	// onToolCall creates a display span for each tool call as it arrives
-	onToolCall := func(name string, argsJSON []byte) {
+	// onToolCall creates a display span for each tool call as it arrives.
+	// callID is the ID used to correlate with tool execution.
+	onToolCall := func(callID, name string, argsJSON []byte) {
 		toolCtx, toolSpan := Tracer(parentCtx).Start(parentCtx, name,
 			telemetry.Reveal(),
 			trace.WithAttributes(
@@ -345,6 +348,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		fmt.Fprint(toolStdio.Stdout, string(argsJSON))
 		toolStdio.Close()
 		displaySpans = append(displaySpans, toolSpan)
+		toolCallCtxs[callID] = toolCtx
 	}
 
 	contentBlocks, tokenUsage, err := c.processStreamResponse(
@@ -361,6 +365,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		Content:      contentBlocks,
 		TokenUsage:   tokenUsage,
 		DisplaySpans: displaySpans,
+		ToolCallCtxs: toolCallCtxs,
 	}, nil
 }
 

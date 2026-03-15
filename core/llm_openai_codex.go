@@ -149,16 +149,22 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 
 	// Track tool call display phases by item ID
 	type toolPhase struct {
-		span  trace.Span
-		stdio telemetry.SpanStreams
-		name  string
+		ctx    context.Context
+		span   trace.Span
+		stdio  telemetry.SpanStreams
+		name   string
+		callID string
 	}
 	toolPhases := map[string]*toolPhase{}
+	toolCallCtxs := map[string]context.Context{}
 
 	closeToolPhase := func(itemID string) {
 		if tp, ok := toolPhases[itemID]; ok {
 			tp.stdio.Close()
 			displaySpans = append(displaySpans, tp.span)
+			if tp.callID != "" {
+				toolCallCtxs[tp.callID] = tp.ctx
+			}
 			delete(toolPhases, itemID)
 		}
 	}
@@ -192,9 +198,11 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 				toolStdio := telemetry.SpanStdio(toolCtx, InstrumentationLibrary,
 					log.String(telemetry.ContentTypeAttr, "application/json"))
 				toolPhases[fc.ID] = &toolPhase{
-					span:  toolSpan,
-					stdio: toolStdio,
-					name:  fc.Name,
+					ctx:    toolCtx,
+					span:   toolSpan,
+					stdio:  toolStdio,
+					name:   fc.Name,
+					callID: fc.CallID,
 				}
 			}
 
@@ -268,7 +276,8 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	return &LLMResponse{
 		Content:      contentBlocks,
 		TokenUsage:   usage,
-		DisplaySpans: displaySpans,
+		DisplaySpans:  displaySpans,
+		ToolCallCtxs: toolCallCtxs,
 	}, nil
 }
 

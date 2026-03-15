@@ -279,10 +279,12 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// open/close spans lazily as streaming content arrives. This supports
 	// interleaved thinking/response blocks (thinking → text → thinking → text).
 	type phase struct {
+		ctx        context.Context
 		span       trace.Span
 		stdio      telemetry.SpanStreams
 		markdownW  io.Writer
 		isThinking bool
+		callID     string // tool call ID, if this is a tool phase
 	}
 	phases := map[int64]*phase{}
 
@@ -325,7 +327,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		return &p
 	}
 
-	startToolPhase := func(idx int64, toolName string) *phase {
+	startToolPhase := func(idx int64, callID, toolName string) *phase {
 		if p, ok := phases[idx]; ok {
 			return p
 		}
@@ -338,7 +340,9 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				attribute.String(telemetry.LLMToolAttr, toolName),
 			),
 		)
+		p.ctx = phaseCtx
 		p.span = span
+		p.callID = callID
 		p.stdio = telemetry.SpanStdio(phaseCtx, InstrumentationLibrary,
 			log.String(telemetry.ContentTypeAttr, "application/json"))
 		phases[idx] = &p
@@ -349,11 +353,15 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// are returned via LLMResponse so step() can set attributes on
 	// them (e.g. LLMCallDigest) before ending them.
 	var displaySpans []trace.Span
+	toolCallCtxs := map[string]context.Context{}
 
 	closePhase := func(idx int64) {
 		if p, ok := phases[idx]; ok {
 			p.stdio.Close()
 			displaySpans = append(displaySpans, p.span)
+			if p.callID != "" {
+				toolCallCtxs[p.callID] = p.ctx
+			}
 			delete(phases, idx)
 		}
 	}
@@ -398,7 +406,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			case "text":
 				startPhase(ev.Index, false)
 			case "tool_use":
-				startToolPhase(ev.Index, ev.ContentBlock.Name)
+				startToolPhase(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
 			}
 
 		case anthropic.ContentBlockDeltaEvent:
@@ -473,5 +481,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
 		DisplaySpans: displaySpans,
+		ToolCallCtxs: toolCallCtxs,
 	}, nil
 }
