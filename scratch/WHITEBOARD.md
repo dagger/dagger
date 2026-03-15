@@ -48,7 +48,7 @@
 * A lot of eval'ing of lazy stuff is just triggered inline now; would be nice if dagql cache scheduler knew about these and could do that in parallel for ya
    * This is partially a pre-existing condition though, so not a big deal yet. But will probably make a great optimization in the near-ish future
 
-# Persistence Redesign (Current Iteration)
+# Persistence Redesign (Previous Iteration)
 
 * **THIS IS A NEW ITERATION OF THE PERSISTENCE DESIGN. PREVIOUS PERSISTENCE DESIGNS IN THIS FILE ARE OUTDATED AND SHOULD BE TREATED AS HISTORICAL CONTEXT ONLY.**
 
@@ -2832,3 +2832,644 @@ This entire plan assumes:
 * no attempt to preserve the old `canonical_id` model as a fallback storage layer
 
 If we hit a situation where implementation seems to “need” compatibility glue, that is a tripwire and we should stop.
+
+# Persistence Re-Redesign (Current Iteration)
+
+* **THIS IS THE CURRENT ITERATION.**
+* The previous persistence redesign section above remains useful context and is not totally invalidated, but this section supersedes it as the design we are actually steering toward.
+* The main shift is that we are no longer stopping at "store frames on shared results but keep `call.ID` as the internal planning center". We are pushing the disentangling all the way through the real center of the system: preselect, dynamic inputs, cache lookup, and internal identity/digest derivation.
+
+## New central thesis
+
+The internal center of dagql/cache must no longer be `call.ID`.
+
+That means:
+
+* `call.ID` becomes a **boundary encoding type**, not the native planning/cache identity type.
+* The internal planning object becomes a new `CallRequest`.
+* `sharedResult` remains the one real materialized identity.
+* `ResultCallFrame` remains the immutable provenance/construction record attached to `sharedResult`.
+* `Result` / `ObjectResult` stop carrying their own divergent ID at all.
+* Caller-specific presentation identity is gone.
+* Telemetry/presentation weirdness from overlapping content-digest hits is accepted for now; UX is not the design driver at this stage.
+
+This is the key re-redesign:
+
+* previous iteration:
+  * keep `call.ID` as the center
+  * add frames to help reconstruct better caller-facing IDs
+* current iteration:
+  * move the center off `call.ID` entirely
+  * use `CallRequest` internally
+  * use `ResultCallFrame` as the immutable materialized provenance record
+  * use `call.ID` only at the API / wire / explicit debug boundary
+
+## The three core internal concepts
+
+### `CallRequest`
+
+Mutable planning-time internal object.
+
+This is what:
+
+* `ObjectResult.preselect`
+* `FieldSpec.GetDynamicInput`
+* cache key derivation
+* `GetOrInitCall`
+
+should actually be centered on.
+
+This is **not** a wire format and **not** a persisted type.
+
+### `ResultCallFrame`
+
+Immutable materialized provenance/construction record stored on `sharedResult`.
+
+This is what:
+
+* canonical recipe reconstruction
+* persistence export
+* later lazy/provenance reconstruction
+
+should use.
+
+This is **not** the mutable planning object.
+
+### `call.ID`
+
+Boundary encoding only.
+
+Used for:
+
+* external `.id` / `.sync`
+* `ID[T]` scalar encode/decode
+* `load<Type>FromID`
+* explicit recipe/debug output
+
+It is **not** the internal planning primitive anymore.
+
+## Canonical identity model
+
+### `sharedResult` is definitive
+
+`sharedResult` is the one real runtime identity-bearing thing.
+
+It owns:
+
+* materialized payload
+* lifecycle
+* deps / retention
+* snapshots
+* canonical immutable `resultCallFrame`
+* canonical recipe identity derivable from that frame
+
+### wrappers stop carrying identity
+
+`Result` / `ObjectResult` should stop storing:
+
+* wrapper-local `*call.ID`
+* any divergent caller-specific presentation identity
+
+This includes deleting:
+
+* `IDForCaller`
+* `RebindResultID`
+* `rebindID`
+* caller frontier seeding / caller-bias reconstruction logic
+
+The wrapper should become:
+
+* typed handle to `sharedResult`
+* helper API surface
+* not another identity coordinate system
+
+### wrapper `.ID()` bridge
+
+For the initial bridge, the wrapper API should continue to have `.ID()`, but its meaning changes:
+
+* it becomes canonical recipe reconstruction from the underlying `sharedResult`
+* it no longer means "whatever raw caller-facing ID happened to be attached to this wrapper"
+
+Current preferred bridge shape:
+
+* `Result.ID() (*call.ID, error)`
+* `ObjectResult.ID() (*call.ID, error)`
+
+No `context.Context` should be needed anymore once caller bias is removed.
+
+This bridge is just to keep the refactor digestible. It is not meant to preserve the old muddy semantics.
+
+### important implementation bridge
+
+There is one transitional wrinkle:
+
+* newly created detached results still need canonical identity before they are cache-attached
+
+We do **not** want wrappers to own that identity anymore.
+
+Current bridge preference:
+
+* `sharedResult` may temporarily store enough canonical raw recipe information to bridge detached creation until every constructor path eagerly creates a frame
+* wrappers do not store it
+
+This is a bridge on `sharedResult`, not a retreat back to wrapper-local IDs.
+
+## `CallRequest` detailed design
+
+`CallRequest` should hold the semantic call shape directly, not a pre-encoded `call.ID`.
+
+### current expected fields
+
+At minimum:
+
+* receiver result ref or nil for `Query`
+* return type
+* field name
+* explicit args as typed `Input`s
+* implicit inputs as typed `Input`s
+* module result ref plus module metadata (`name`, `ref`, `pin`)
+* `view`
+* `nth`
+* effect IDs
+* extra digests
+* cache policy fields currently carried near `CacheKey` / `FieldSpec`:
+  * `DoNotCache`
+  * `TTL`
+  * `IsPersistable`
+  * `ConcurrencyKey`
+
+Important nuance:
+
+* this object is not just "field + args"
+* it is the full internal planned call plus the cache policy that will govern it
+
+### native methods it must provide
+
+This is the real replacement for the current `call.ID`-centric internal identity logic.
+
+At minimum:
+
+* `RecipeDigest()`
+* `SelfDigestAndInputRefs()`
+* `ToResultCallFrame()`
+* likely `ToRecipeID()` for explicit boundary/debug output only
+
+The key thing is that internal cache/egraph logic must use the native digest methods directly, not round-trip through a temporary `call.ID`.
+
+### digest semantics it must preserve exactly
+
+The current `call.ID` logic in `dagql/call/id.go` is subtle. `CallRequest` must preserve these semantics exactly:
+
+* receiver contributes as a structural input, not to self digest bytes
+* module contributes as a structural input, not to self digest bytes
+* args are hashed in schema order
+* implicit inputs contribute to recipe identity
+* `DigestedString` contributes digest-witness semantics
+* sensitive args still go through the same redaction-for-identity behavior as today
+* `nth` contributes
+* `view` contributes
+* effect IDs do **not** contribute to recipe digest
+* extra digests do **not** contribute to recipe digest
+
+This means the native `CallRequest` digest path must replace both current `call.ID` methods:
+
+* `calcDigest()`
+* `SelfDigestAndInputRefs()`
+
+### structural input refs remain important
+
+The native `CallRequest` path must preserve the current distinction between:
+
+* result-backed structural inputs
+* digest-only witness inputs
+
+This distinction is currently expressed by `call.StructuralInputRef`.
+
+We likely keep that concept, but it should be derived from `CallRequest`, not from `call.ID`.
+
+## `ResultCallFrame` detailed role
+
+`ResultCallFrame` remains the immutable materialized provenance record.
+
+### what it is
+
+* field/view/nth/effect/module/arg/implicit-input/receiver structure
+* internal result refs, not public caller-facing IDs
+* immutable after first attachment to a `sharedResult`
+
+### what it is not
+
+* not the mutable planning object
+* not the cache-proof digest object
+* not the place to attach recipe/egraph digests
+
+We explicitly do **not** want to put digests onto the frame. Digests belong to the cache/egraph logic derived from `CallRequest`, not to the immutable provenance record itself.
+
+### canonical recipe derivation from frame
+
+`sharedResult` should lazily memoize its canonical recipe digest and canonical recipe `call.ID`, both derived from its `resultCallFrame`.
+
+This is important because later `CallRequest` digest computation will often need:
+
+* the canonical recipe digest of referenced input results
+
+We do not want that to recursively rebuild full `call.ID`s from scratch every time.
+
+So:
+
+* frame -> canonical recipe digest should be lazy and memoized on `sharedResult`
+* frame -> canonical recipe `call.ID` should also likely be lazy and memoized on `sharedResult`
+
+This keeps recipe reconstruction available without making `call.ID` the planning center.
+
+## Preselect / Dynamic Inputs redesign
+
+This is one of the biggest concrete deltas.
+
+### current problem
+
+Today `ObjectResult.preselect` in `dagql/objects.go`:
+
+* builds a `call.ID`
+* derives a `CacheKey` from that
+* passes it into `GetDynamicInput`
+* allows `GetDynamicInput` to rewrite that ID
+* then decodes execution args back out of the rewritten ID
+
+That is exactly the kind of muddled, half-wire-format, half-planning behavior we want to get rid of.
+
+### new model
+
+`preselect` should:
+
+* parse and validate args into typed `Input`s
+* apply defaults
+* sort args in schema order
+* construct a `CallRequest`
+* derive initial cache policy from `FieldSpec`
+* pass that mutable request/policy into `GetDynamicInput`
+
+`GetDynamicInput` should:
+
+* mutate or replace `CallRequest`
+* mutate cache policy fields if needed
+* never rewrite a `call.ID`
+
+### consequence: remove `IdentityOpt` as a `call.ID` mutation mechanism
+
+Current `FieldSpec.IdentityOpt(...)` is basically an ID-mutation hook.
+
+In the new model, that should disappear as a `call.ID` concept and become direct mutation of the semantic request:
+
+* append implicit inputs
+* adjust extra digests
+* adjust cache-policy-relevant fields
+
+So the new center is semantic request mutation, not wire-format mutation.
+
+### result of this change
+
+This removes one of the worst current flows:
+
+* rewrite encoded ID
+* then decode args back out of the rewritten ID to keep execution/cache/telemetry in sync
+
+That entire pattern should disappear.
+
+## Cache API redesign
+
+### current problem
+
+`GetOrInitCall` is the heart of the system, but it still fundamentally wants a `call.ID`.
+
+That is not acceptable in the new design.
+
+### new model
+
+`GetOrInitCall` should take the new internal planning object as its center.
+
+Whether we keep the name `GetOrInitCall` is secondary; the important thing is the input shape.
+
+The cache layer should natively receive:
+
+* `CallRequest`
+
+and derive:
+
+* recipe digest for primary lookup
+* self digest + structural input refs for e-graph indexing
+* `ResultCallFrame` for the materialized `sharedResult`
+
+### `CacheKey` shape
+
+`CacheKey` itself should stop being centered on `ID *call.ID`.
+
+It should instead reflect the actual cache concerns:
+
+* recipe digest
+* cache policy
+* persistable
+* TTL
+* concurrency key
+* possibly canonical request object if the API wants to carry it there
+
+The exact struct shape is less important than the principle:
+
+* cache lookup should no longer fundamentally be "give me a `call.ID`"
+
+### do-not-cache branch
+
+The do-not-cache branch in `GetOrInitCall` still needs the final frame/provenance for the detached result.
+
+In the new world:
+
+* that comes from `CallRequest.ToResultCallFrame()`
+* not from `val.ID()`
+* not from wrapper-local ID copies
+
+### e-graph indexing
+
+Current indexing in `cache.go` / `cache_egraph.go` relies on:
+
+* request recipe digest
+* request self digest
+* request structural input refs
+* result recipe/self/input digests
+
+That all needs to become native to `CallRequest` + `sharedResult` canonical frame-derived identity.
+
+The native split should be:
+
+* `CallRequest` provides request identity math
+* `sharedResult` provides canonical recipe digest of referenced results via memoized frame-derived identity
+
+## Boundary `call.ID` redesign
+
+### top-level only sum type
+
+We explicitly do **not** want nested handle-ID structure in literals.
+
+The split lives only at the top-level encoded ID envelope.
+
+That means:
+
+* recipe-form IDs remain structured DAG encodings
+* handle-form IDs are opaque engine-local top-level handles
+
+### `call.proto`
+
+In `dagql/call/callpbv1/call.proto`:
+
+* `DAG` becomes a sum type:
+  * recipe DAG branch
+  * engine result handle branch
+* handle branch carries:
+  * `engineResultID`
+  * `rootType`
+
+### `call.ID`
+
+In `dagql/call/id.go`:
+
+* `call.ID` becomes a two-mode value:
+  * recipe mode
+  * handle mode
+
+Decode stays pure.
+
+No cache/server parameter is allowed here.
+
+### recipe-only operations
+
+In handle mode, the following are no longer meaningful as general operations:
+
+* `Receiver`
+* `Field`
+* `Args`
+* `ImplicitInputs`
+* `Module`
+* `Append`
+* `SelectNth`
+* recipe traversal helpers
+
+The current design preference is:
+
+* handle-mode misuse of recipe-manipulation APIs should fail loudly internally
+* do not fake recipe structure for handle IDs
+
+## External IDs and `.id` / `.sync`
+
+### `.id`
+
+In `dagql/objects.go`:
+
+* `id(recipe: Boolean = false): FooID!`
+
+Behavior:
+
+* default:
+  * return handle-form ID built from `sharedResult.id` + type
+* `recipe=true`:
+  * return canonical recipe-form ID reconstructed from `sharedResult` frame
+
+This is intentionally a hard cutover of the default behavior.
+
+### `.sync`
+
+In `core/schema/util.go`:
+
+* `sync(recipe: Boolean = false): FooID!`
+
+Behavior:
+
+* sync the object
+* default: return handle-form ID
+* `recipe=true`: return canonical recipe-form ID
+
+Current explicit decision:
+
+* the bool arg is fine
+* it is not a second real system
+* it is just a narrow debug/introspection path on a low-level field
+
+### `dagql.ID[T]`
+
+In `dagql/types.go`:
+
+* `ID[T]` still wraps `*call.ID`
+* but that ID may now be recipe-form or handle-form
+
+Behavior:
+
+* `DecodeInput` accepts both forms
+* `MarshalJSON` emits whichever form is held
+* `Encode` emits whichever form is held
+* `ToLiteral()` branches by form:
+  * recipe-form -> nested ID literal as today
+  * handle-form -> ordinary scalar string literal
+
+This is the crucial simplification that keeps nested literal handling clean.
+
+## Loading by ID
+
+### `Server.Load`
+
+The real branch point is not only `load<Type>FromID`, but generic `Server.Load`.
+
+`Server.Load` should branch by ID form:
+
+* recipe-form:
+  * current recipe/e-graph load path
+* handle-form:
+  * resolve directly by `sharedResultID`
+  * validate type
+  * wrap the already-materialized cached result
+
+### `load<Type>FromID`
+
+With that underlying branch in place, generated `load<Type>FromID` can remain simple:
+
+* accept `ID[T]`
+* pass through to `Server.Load`
+
+This gives us:
+
+* recipe-form debug/introspection re-entry
+* handle-form engine-local operational object handles
+
+## Persistence and embedded opaque IDs
+
+### design invariant
+
+If a cached or persisted object contains handle-form IDs:
+
+* the referenced results must remain retained as long as the containing object remains cached/persisted
+* those handle IDs must remain usable after restart/import
+
+This has been the intended behavior all along and is now an explicit invariant of the redesign.
+
+### why this is coherent
+
+Current persistence import in `dagql/cache_persistence_import.go` already preserves:
+
+* exact `sharedResultID` values
+
+So handle-form IDs embedded in persisted payloads remain valid after restart **provided** the referenced results are in the retained/persisted closure.
+
+### implementation consequence
+
+Object normalization / owned-result attachment must ensure:
+
+* embedded handle-form IDs create explicit retention/dependency edges
+
+This is not the first step to implement right now, but it is a required invariant for the full redesign.
+
+## Immediate code deltas by area
+
+### `dagql/result_call_frame.go`
+
+Delete:
+
+* caller-bias / frontier / rebinding logic
+* `IDForCaller`-style semantics
+
+Keep:
+
+* canonical recipe reconstruction from frame
+* frame/literal/result-ref structures
+
+Add/adjust:
+
+* lazy canonical recipe digest derivation from frame
+* likely lazy canonical recipe `call.ID` reconstruction from frame
+
+### `dagql/cache.go`
+
+Change:
+
+* `Result` / `ObjectResult` stop storing wrapper-local `id`
+* `GetOrInitCall` stops centering on `call.ID`
+* cache hit return path no longer manufactures per-caller recipe IDs
+* do-not-cache and normal cache branches use `CallRequest` + frame conversion
+
+Delete:
+
+* `RebindResultID`
+* wrapper identity rebinding semantics
+
+### `dagql/objects.go`
+
+Change:
+
+* `preselect` constructs `CallRequest`
+* `FieldSpec.GetDynamicInput` mutates `CallRequest`
+* builtin `id` field returns handle-form ID by default
+
+Delete:
+
+* ID rewrite / decode-back-out flows
+
+### `core/object.go`, `core/interface.go`, `core/schema/coremod.go`
+
+Delete:
+
+* caller-shape rebinding paths
+
+These were only needed because wrappers carried caller-presentation identity.
+
+### `dagql/call/id.go`
+
+Change:
+
+* top-level ID encoding/decoding supports handle-form and recipe-form
+* internal digest math no longer needs to be the center of dagql cache planning
+
+### `dagql/types.go`
+
+Change:
+
+* `AnyResult` interface stops implying a cheap raw stored `ID() *call.ID`
+* `ID[T]` scalar becomes dual-form at the boundary
+* `ToLiteral()` handle branch becomes plain scalar string literal
+
+### `dagql/server.go`
+
+Change:
+
+* `Server.Load` branches by ID form
+* handle-form loads resolve by `sharedResultID`
+* recipe-form loads continue through recipe logic
+
+## Recommended implementation order
+
+1. Introduce `CallRequest` with:
+   * semantic fields
+   * native `RecipeDigest()`
+   * native `SelfDigestAndInputRefs()`
+   * `ToResultCallFrame()`
+2. Move `preselect` and `GetDynamicInput` to `CallRequest`.
+3. Move `GetOrInitCall` / cache identity math to `CallRequest`.
+4. Move canonical identity ownership fully onto `sharedResult`.
+5. Remove wrapper-local IDs and caller-bias machinery.
+6. Add top-level handle-form support to `call.proto` / `call.ID`.
+7. Switch `.id` / `.sync` default output to handle-form with `recipe: true`.
+8. Branch `Server.Load` by recipe vs handle.
+9. After that, do the embedded-handle retention work.
+
+## Explicit tripwires
+
+### Tripwire: hidden remaining internal `call.ID` center
+
+If, after `CallRequest` exists, we discover major internal planning code that still fundamentally "needs" a `call.ID`, that is a design smell and should be surfaced rather than worked around.
+
+### Tripwire: digest semantic drift
+
+If the native `CallRequest` digest logic cannot preserve current recipe/self/input semantics exactly, stop and investigate. This is not an area where "close enough" is acceptable.
+
+### Tripwire: wrapper-local identity creep
+
+If implementation pressure starts reintroducing wrapper-local raw IDs because it is convenient, stop. The point of this redesign is to remove the wrapper/shared-result identity split, not just rename it.
+
+### Tripwire: persistence remapping
+
+If we ever consider renumbering imported `sharedResultID`s, that directly affects the handle-ID persistence invariant and must be treated as a design-level change, not an incidental implementation tweak.

@@ -422,9 +422,6 @@ func (c *cache) idForCaller(ctx context.Context, resultID sharedResultID, rawID 
 
 	rebuilt, ok := c.idForCallerFromRawAndFrame(ctx, resultID, rawID, frame, frontier, map[sharedResultID]struct{}{})
 	if !ok || rebuilt == nil {
-		rebuilt, ok = c.idForCallerFromFrame(ctx, resultID, frame, frontier, map[sharedResultID]struct{}{})
-	}
-	if !ok || rebuilt == nil {
 		return rawID
 	}
 	for _, extra := range rawID.ExtraDigests() {
