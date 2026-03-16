@@ -728,32 +728,22 @@ func (s *moduleSchema) currentModuleCacheKey(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args currentModuleArgs,
-	req dagql.DynamicInputRequest,
-) (*dagql.DynamicInputResponse, error) {
-	resp := &dagql.DynamicInputResponse{
-		CacheKey: req.CacheKey,
-	}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
+	req *dagql.CallRequest,
+) error {
 	if args.SourceContentScopedMod.Valid {
-		return resp, nil
+		return nil
 	}
 
 	mod, err := parent.Self().CurrentModule(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current module: %w", err)
+		return fmt.Errorf("failed to get current module: %w", err)
 	}
 	contentScopedID, err := mod.SourceContentScopedID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get source content scoped ID for current module: %w", err)
+		return fmt.Errorf("failed to get source content scoped ID for current module: %w", err)
 	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-		"sourceContentScopedMod",
-		dagql.NewID[*core.Module](contentScopedID).ToLiteral(),
-		false,
-	))
-	return resp, nil
+	args.SourceContentScopedMod = dagql.Opt(contentScopedID)
+	return req.SetArgInput(ctx, "sourceContentScopedMod", dagql.NewID[*core.Module](contentScopedID), false)
 }
 
 func (s *moduleSchema) currentModule(

@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 )
 
 type cacheSchema struct{}
@@ -48,37 +47,29 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Query],
 	args cacheArgs,
-	req dagql.DynamicInputRequest,
-) (*dagql.DynamicInputResponse, error) {
-	resp := &dagql.DynamicInputResponse{CacheKey: req.CacheKey}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
-
+	req *dagql.CallRequest,
+) error {
 	if args.Namespace == "" {
 		m, err := parent.Self().CurrentModule(ctx)
 		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
-			return nil, err
+			return err
 		}
 		namespaceKey := namespaceFromModule(m)
-		resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-			"namespace",
-			dagql.NewString(namespaceKey).ToLiteral(),
-			false,
-		))
+		args.Namespace = namespaceKey
+		if err := req.SetArgInput(ctx, "namespace", dagql.NewString(namespaceKey), false); err != nil {
+			return err
+		}
 	}
 
 	if args.Sharing == core.CacheSharingModePrivate {
 		// For now, PRIVATE means "always unique cache volume" to avoid
 		// surprising cross-call sharing behavior.
-		resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-			"privateNonce",
-			dagql.NewString(rand.Text()).ToLiteral(),
-			false,
-		))
+		if err := req.SetArgInput(ctx, "privateNonce", dagql.NewString(rand.Text()), false); err != nil {
+			return err
+		}
 	}
 
-	return resp, nil
+	return nil
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {

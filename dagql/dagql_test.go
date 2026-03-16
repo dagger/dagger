@@ -2646,14 +2646,8 @@ func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
 				calls = append(calls, args.Val)
 				return dagql.Int(args.Val), nil
 			},
-			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error) {
-				resp := &dagql.DynamicInputResponse{CacheKey: req.CacheKey}
-				resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-					"val",
-					dagql.Int(7).ToLiteral(),
-					false,
-				))
-				return resp, nil
+			func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req *dagql.CallRequest) error {
+				return req.SetArgInput(ctx, "val", dagql.Int(7), false)
 			},
 		),
 	}.Install(srv)
@@ -2920,16 +2914,8 @@ func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
 			return int(calls.Add(1)), nil
 		}, func(ctx context.Context, _ dagql.ObjectResult[Query], _ struct {
 			NoCache bool `default:"false"`
-		}, req dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error) {
-			resp := &dagql.DynamicInputResponse{
-				CacheKey: req.CacheKey,
-			}
-			resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-				"noCache",
-				dagql.NewBoolean(true).ToLiteral(),
-				false,
-			))
-			return resp, nil
+		}, req *dagql.CallRequest) error {
+			return req.SetArgInput(ctx, "noCache", dagql.NewBoolean(true), false)
 		}).WithInput(observedInput),
 	}.Install(srv)
 

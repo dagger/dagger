@@ -273,15 +273,15 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		switch value := value.(type) {
 		case nil:
 			return nil, nil
-	case dagql.AnyResult:
-		curID := dagql.CurrentID(ctx)
-		if curID == nil {
-			if value.ID() == nil {
-				return nil, nil
+		case dagql.AnyResult:
+			curID := dagql.CurrentID(ctx)
+			if curID == nil {
+				if value.ID() == nil {
+					return nil, nil
+				}
+				return value.ID().Encode()
 			}
-			return value.ID().Encode()
-		}
-		return curID.Encode()
+			return curID.Encode()
 		case dagql.IDable:
 			curID := dagql.CurrentID(ctx)
 			if curID == nil {
@@ -485,7 +485,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	DynamicInputsForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.DynamicInputRequest) (*dagql.DynamicInputResponse, error)
+	DynamicInputsForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, *dagql.CallRequest) error
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -1247,9 +1247,7 @@ func (f *CallableField) DynamicInputsForCall(
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	req dagql.DynamicInputRequest,
-) (*dagql.DynamicInputResponse, error) {
-	return &dagql.DynamicInputResponse{
-		CacheKey: req.CacheKey,
-	}, nil
+	req *dagql.CallRequest,
+) error {
+	return nil
 }

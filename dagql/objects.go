@@ -336,28 +336,23 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	if err != nil {
 		return nil, err
 	}
-	return r.call(ctx, s,
-		preselectResult.newID,
-		preselectResult.inputArgs,
-		preselectResult.cacheKey,
-	)
+	return r.call(ctx, s, preselectResult.request, preselectResult.inputArgs)
 }
 
 type preselectResult struct {
 	inputArgs map[string]Input
-	newID     *call.ID
-	cacheKey  CacheKey
+	request   *CallRequest
 }
 
-// sortArgsToSchema sorts the arguments to match the schema definition order.
-func (r ObjectResult[T]) sortArgsToSchema(fieldSpec *FieldSpec, view call.View, idArgs []*call.Argument) {
+// sortFrameArgsToSchema sorts the arguments to match the schema definition order.
+func (r ObjectResult[T]) sortFrameArgsToSchema(fieldSpec *FieldSpec, view call.View, args []*ResultCallFrameArg) {
 	inputs := fieldSpec.Args.Inputs(view)
-	sort.Slice(idArgs, func(i, j int) bool {
+	sort.Slice(args, func(i, j int) bool {
 		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
-			return input.Name == idArgs[i].Name()
+			return input.Name == args[i].Name
 		})
 		jIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
-			return input.Name == idArgs[j].Name()
+			return input.Name == args[j].Name
 		})
 		return iIdx < jIdx
 	})
@@ -374,9 +369,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		// selector (since they're global from all perspectives)
 		view = ""
 	}
+	ctx = srvToContext(ctx, s)
 
-	idArgs := make([]*call.Argument, 0, len(sel.Args))
 	inputArgs := make(map[string]Input, len(sel.Args))
+	frameArgs := make([]*ResultCallFrameArg, 0, len(sel.Args))
 	for _, argSpec := range field.Spec.Args.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
@@ -390,12 +386,12 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 
 		switch {
 		case namedInput.Value != nil:
-			idArgs = append(idArgs, call.NewArgument(
-				namedInput.Name,
-				namedInput.Value.ToLiteral(),
-				argSpec.Sensitive,
-			))
 			inputArgs[argSpec.Name] = namedInput.Value
+			frameArg, err := frameArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
+			if err != nil {
+				return nil, err
+			}
+			frameArgs = append(frameArgs, frameArg)
 
 		case argSpec.Default != nil:
 			inputArgs[argSpec.Name] = argSpec.Default
@@ -406,14 +402,13 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		}
 	}
 
-	r.sortArgsToSchema(field.Spec, view, idArgs)
-
 	astType := field.Spec.Type.Type()
 	if sel.Nth != 0 {
 		astType = astType.Elem
 	}
+	r.sortFrameArgsToSchema(field.Spec, view, frameArgs)
 
-	identityOpt, err := field.Spec.IdentityOpt(ctx, inputArgs)
+	implicitInputs, err := field.Spec.resolveImplicitInputFrameArgs(ctx, inputArgs)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {
@@ -422,113 +417,63 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
-	receiverID := r.ID()
-	if receiverID == nil {
+	receiverRef, err := frameRefFromResult(r)
+	if err != nil {
 		typ := r.Type()
 		if typ == nil {
-			return nil, fmt.Errorf("failed to resolve raw ID for <nil>.%s", sel.Field)
+			return nil, fmt.Errorf("failed to resolve receiver for <nil>.%s: %w", sel.Field, err)
 		}
-		if typ.Name() != "Query" {
-			return nil, fmt.Errorf("failed to resolve raw ID for %s.%s", typ.Name(), sel.Field)
-		}
+		return nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
-
-	newID := receiverID.Append(
-		astType,
-		sel.Field,
-		call.WithView(view),
-		call.WithNth(sel.Nth),
-		call.WithArgs(idArgs...),
-		identityOpt,
-	)
-
-	cacheKey := newCacheKey(ctx, newID, field.Spec)
+	mod, err := frameModuleFromCallModule(ctx, field.Spec.Module)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve module for %s.%s: %w", r.class.TypeName(), sel.Field, err)
+	}
+	req := &CallRequest{
+		ResultCallFrame: &ResultCallFrame{
+			Kind:           ResultCallFrameKindField,
+			Type:           NewResultCallFrameType(astType),
+			Field:          sel.Field,
+			View:           view,
+			Nth:            int64(sel.Nth),
+			Receiver:       receiverRef,
+			Module:         mod,
+			Args:           frameArgs,
+			ImplicitInputs: implicitInputs,
+		},
+		TTL:           field.Spec.TTL,
+		DoNotCache:    field.Spec.DoNotCache != "",
+		IsPersistable: field.Spec.IsPersistable,
+	}
+	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
+		slog.Warn("failed to get client metadata from context for call", "err", err)
+	} else {
+		req.ConcurrencyKey = clientMD.ClientID
+	}
 	if field.Spec.GetDynamicInput != nil {
-		cacheCfgCtx := idToContext(ctx, newID)
-		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfgResp, err := field.Spec.GetDynamicInput(cacheCfgCtx, r, inputArgs, view, DynamicInputRequest{
-			CacheKey: cacheKey,
-		})
-		if err != nil {
+		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
 			typ := r.Type()
 			if typ == nil {
 				return nil, fmt.Errorf("failed to compute cache key for <nil>.%s: %w", sel.Field, err)
 			}
 			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
-
-		cacheKey = cacheCfgResp.CacheKey
-		if cacheKey.ID == nil {
-			cacheKey.ID = newID
-		}
-		newID = cacheKey.ID
-
-		// Cache config may rewrite arguments in the returned ID (e.g. contextual
-		// defaults), so decode execution args from the final ID to keep resolver
-		// execution, cache keys, and telemetry in sync.
-		inputArgs, err = ExtractIDArgs(field.Spec.Args, newID)
+		r.sortFrameArgsToSchema(field.Spec, view, req.Args)
+		inputArgs, err = ExtractRequestArgs(ctx, field.Spec.Args, req)
 		if err != nil {
 			return nil, err
 		}
-
-		identityOpt, err = field.Spec.IdentityOpt(ctx, inputArgs)
-		if err != nil {
-			typ := r.Type()
-			if typ == nil {
-				return nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s after cache config: %w", sel.Field, err)
-			}
-			return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s after cache config: %w", typ.Name(), sel.Field, err)
-		}
-		newID = newID.With(identityOpt)
-		cacheKey.ID = newID
 	}
 
 	return &preselectResult{
 		inputArgs: inputArgs,
-		newID:     newID,
-		cacheKey:  cacheKey,
+		request:   req,
 	}, nil
-}
-
-func newCacheKey(ctx context.Context, id *call.ID, fieldSpec *FieldSpec) CacheKey {
-	cacheKey := CacheKey{
-		ID:            id,
-		TTL:           fieldSpec.TTL,
-		DoNotCache:    fieldSpec.DoNotCache != "",
-		IsPersistable: fieldSpec.IsPersistable,
-	}
-
-	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
-	// we don't want to dedupe across clients since:
-	// 1. it creates problems when one clients closes and others were waiting on the result
-	// 2. it makes it easy to accidentally leak clients specific information that isn't yet precisely scoped in the ID
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		// not expected to happen, fallback behavior is just that there's no deduping of concurrent calls
-		slog.Warn("failed to get client metadata from context for call", "err", err)
-	} else {
-		cacheKey.ConcurrencyKey = clientMD.ClientID
-	}
-
-	return cacheKey
 }
 
 // Call calls the field on the instance specified by the ID.
 func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (AnyResult, error) {
-	fieldName := newID.Field()
-	view := newID.View()
-	field, ok := r.class.Field(fieldName, view)
-	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.TypeName(), fieldName)
-	}
-
-	inputArgs, err := ExtractIDArgs(field.Spec.Args, newID)
-	if err != nil {
-		return nil, err
-	}
-
-	cacheKey := newCacheKey(ctx, newID, field.Spec)
-	return r.call(ctx, s, newID, inputArgs, cacheKey)
+	return nil, fmt.Errorf("ObjectResult.Call boundary path not yet ported to CallRequest")
 }
 
 func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
@@ -570,14 +515,12 @@ func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
 func (r ObjectResult[T]) call(
 	ctx context.Context,
 	s *Server,
-	newID *call.ID,
+	req *CallRequest,
 	inputArgs map[string]Input,
-	cacheKey CacheKey,
 ) (AnyResult, error) {
-	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
-	fieldName := newID.Field()
-	view := newID.View()
+	fieldName := req.Field
+	view := req.View
 	field, ok := r.class.Field(fieldName, view)
 	if !ok {
 		return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
@@ -588,11 +531,11 @@ func (r ObjectResult[T]) call(
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, newID)
+			return s.telemetry(ctx, nil)
 		}))
 	}
 
-	res, err := s.Cache.GetOrInitCall(ctx, cacheKey, func(ctx context.Context) (AnyResult, error) {
+	res, err := s.Cache.GetOrInitCall(ctx, req, func(ctx context.Context) (AnyResult, error) {
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err
@@ -605,7 +548,7 @@ func (r ObjectResult[T]) call(
 		if !ok {
 			return nil, nil
 		}
-		nth := int(newID.Nth())
+		nth := int(req.Nth)
 		if nth != 0 {
 			val, err = val.NthValue(nth)
 			if err != nil {
@@ -687,8 +630,9 @@ func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] 
 	return FuncWithDynamicInputs(name, fn, nil)
 }
 
-// FuncWithDynamicInputs is like Func but lets a resolver customize cache behavior
-// for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency key).
+// FuncWithDynamicInputs is like Func but lets a resolver customize request/cache
+// behavior for each call (for example argument rewrites, TTL, do-not-cache, or
+// concurrency key).
 func FuncWithDynamicInputs[T Typed, A any, R any](
 	name string,
 	fn FuncHandler[T, A, R],
@@ -705,9 +649,9 @@ func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) F
 	return NodeFuncWithDynamicInputs(name, fn, nil)
 }
 
-// NodeFuncWithDynamicInputs is like NodeFunc but lets a resolver customize cache
-// behavior for each call (e.g. ID rewrites, TTL, do-not-cache, concurrency
-// key).
+// NodeFuncWithDynamicInputs is like NodeFunc but lets a resolver customize
+// request/cache behavior for each call (for example argument rewrites, TTL,
+// do-not-cache, or concurrency key).
 func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 	name string,
 	fn NodeFuncHandler[T, A, R],
@@ -767,19 +711,19 @@ func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 	}
 
 	if cacheFn != nil {
-		field.Spec.GetDynamicInput = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req DynamicInputRequest) (*DynamicInputResponse, error) {
+		field.Spec.GetDynamicInput = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req *CallRequest) error {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
-				return nil, argsErr
+				return argsErr
 			}
 			var args A
 			if err := spec.Args.Decode(argVals, &args, view); err != nil {
-				return nil, err
+				return err
 			}
 			inst, ok := self.(ObjectResult[T])
 			if !ok {
-				return nil, fmt.Errorf("expected instance of %T, got %T", field, self)
+				return fmt.Errorf("expected instance of %T, got %T", field, self)
 			}
 			return cacheFn(ctx, inst, args, req)
 		}
@@ -828,8 +772,8 @@ type FieldSpec struct {
 	// If set, the result of this field is eligible for persistent cache storage.
 	IsPersistable bool
 
-	// If set, this GetDynamicInput will be called before ID evaluation to make
-	// any dynamic adjustments to the cache key or args
+	// If set, this GetDynamicInput will be called before cache evaluation to
+	// make any dynamic adjustments to the call request or its policy.
 	GetDynamicInput GenericDynamicInputFunc
 
 	// ImplicitInputs are engine-computed inputs that are attached to the call
@@ -860,13 +804,13 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	return def
 }
 
-func (spec *FieldSpec) resolveImplicitInputArgs(ctx context.Context, inputArgs map[string]Input) ([]*call.Argument, error) {
+func (spec *FieldSpec) resolveImplicitInputFrameArgs(ctx context.Context, inputArgs map[string]Input) ([]*ResultCallFrameArg, error) {
 	if spec == nil || len(spec.ImplicitInputs) == 0 {
 		return nil, nil
 	}
 
 	inputIdxByName := make(map[string]int, len(spec.ImplicitInputs))
-	implicitArgs := make([]*call.Argument, 0, len(spec.ImplicitInputs))
+	implicitArgs := make([]*ResultCallFrameArg, 0, len(spec.ImplicitInputs))
 	for _, implicitInput := range spec.ImplicitInputs {
 		inputVal, err := implicitInput.Resolver(ctx, inputArgs)
 		if err != nil {
@@ -876,7 +820,10 @@ func (spec *FieldSpec) resolveImplicitInputArgs(ctx context.Context, inputArgs m
 			return nil, fmt.Errorf("implicit input %q resolved to nil", implicitInput.Name)
 		}
 
-		newInput := call.NewArgument(implicitInput.Name, inputVal.ToLiteral(), false)
+		newInput, err := frameArgFromInput(ctx, implicitInput.Name, inputVal, false)
+		if err != nil {
+			return nil, fmt.Errorf("resolve implicit input %q: %w", implicitInput.Name, err)
+		}
 		if idx, ok := inputIdxByName[implicitInput.Name]; ok {
 			implicitArgs[idx] = newInput
 			continue
@@ -885,28 +832,9 @@ func (spec *FieldSpec) resolveImplicitInputArgs(ctx context.Context, inputArgs m
 		implicitArgs = append(implicitArgs, newInput)
 	}
 	sort.Slice(implicitArgs, func(i, j int) bool {
-		return implicitArgs[i].Name() < implicitArgs[j].Name()
+		return implicitArgs[i].Name < implicitArgs[j].Name
 	})
 	return implicitArgs, nil
-}
-
-// IdentityOpt resolves field-scoped identity inputs and returns an ID option
-// that applies them deterministically.
-func (spec *FieldSpec) IdentityOpt(ctx context.Context, inputArgs map[string]Input) (call.IDOpt, error) {
-	implicitArgs, err := spec.resolveImplicitInputArgs(ctx, inputArgs)
-	if err != nil {
-		return nil, err
-	}
-
-	var module *call.Module
-	if spec != nil {
-		module = spec.Module
-	}
-
-	return func(id *call.ID) {
-		call.WithModule(module)(id)
-		call.WithImplicitInputs(implicitArgs...)(id)
-	}, nil
 }
 
 // InputSpec specifies a field argument, or an input field.
@@ -1228,23 +1156,15 @@ type GenericDynamicInputFunc func(
 	AnyResult,
 	map[string]Input,
 	call.View,
-	DynamicInputRequest,
-) (*DynamicInputResponse, error)
+	*CallRequest,
+) error
 
 type DynamicInputFunc[T Typed, A any] func(
 	context.Context,
 	ObjectResult[T],
 	A,
-	DynamicInputRequest,
-) (*DynamicInputResponse, error)
-
-type DynamicInputRequest struct {
-	CacheKey CacheKey
-}
-
-type DynamicInputResponse struct {
-	CacheKey CacheKey
-}
+	*CallRequest,
+) error
 
 type ImplicitInputResolver func(context.Context, map[string]Input) (Input, error)
 

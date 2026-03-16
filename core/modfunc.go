@@ -481,12 +481,8 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	req dagql.DynamicInputRequest,
-) (*dagql.DynamicInputResponse, error) {
-	cacheCfgResp := &dagql.DynamicInputResponse{
-		CacheKey: req.CacheKey,
-	}
-
+	req *dagql.CallRequest,
+) error {
 	var ctxArgs []*FunctionArg
 	var workspaceArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -590,35 +586,38 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 
 		if err := eg.Wait(); err != nil {
-			return nil, err
+			return err
 		}
 
 		for _, arg := range ctxArgVals {
-			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
-				arg.argName,
-				dagql.Opt(arg.val).ToLiteral(),
-				false,
-			))
+			if arg == nil {
+				continue
+			}
+			args[arg.argName] = dagql.Opt(arg.val)
+			if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.val), false); err != nil {
+				return err
+			}
 		}
 		for _, arg := range workspaceArgVals {
-			cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
-				arg.argName,
-				dagql.Opt(arg.val).ToLiteral(),
-				false,
-			))
+			if arg == nil {
+				continue
+			}
+			args[arg.argName] = dagql.Opt(arg.val)
+			if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.val), false); err != nil {
+				return err
+			}
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
-				cacheCfgResp.CacheKey.ID = cacheCfgResp.CacheKey.ID.WithArgument(call.NewArgument(
-					arg.argName,
-					dagql.Opt(arg.val).ToLiteral(),
-					false,
-				))
+				args[arg.argName] = dagql.Opt(arg.val)
+				if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.val), false); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	return cacheCfgResp, nil
+	return nil
 }
 
 func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {

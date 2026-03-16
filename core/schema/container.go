@@ -1800,27 +1800,22 @@ func (s *containerSchema) withMountedCacheCacheKey(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
 	args containerWithMountedCacheArgs,
-	req dagql.DynamicInputRequest,
-) (*dagql.DynamicInputResponse, error) {
-	resp := &dagql.DynamicInputResponse{CacheKey: req.CacheKey}
-	if resp.CacheKey.ID == nil {
-		return nil, errors.New("cache key ID is nil")
-	}
-
-	hasSourceArg := resp.CacheKey.ID.Arg("source") != nil
-	hasSharingArg := resp.CacheKey.ID.Arg("sharing") != nil
-	hasOwnerArg := resp.CacheKey.ID.Arg("owner") != nil
+	req *dagql.CallRequest,
+) error {
+	hasSourceArg := req.HasArg("source")
+	hasSharingArg := req.HasArg("sharing")
+	hasOwnerArg := req.HasArg("owner")
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	cache, err := args.Cache.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if cache.Self() == nil {
-		return nil, errors.New("cache volume is nil")
+		return errors.New("cache volume is nil")
 	}
 
 	cacheSelf := cache.Self()
@@ -1839,11 +1834,11 @@ func (s *containerSchema) withMountedCacheCacheKey(
 	}
 	if ownerNeedsLookup(owner) {
 		if err := parent.Self().Evaluate(ctx); err != nil {
-			return nil, err
+			return err
 		}
 		owner, err = parent.Self().ResolveOwnership(ctx, owner)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+			return fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
 		}
 		needsRewrite = true
 	}
@@ -1853,7 +1848,7 @@ func (s *containerSchema) withMountedCacheCacheKey(
 		source = args.Source
 	}
 	if !needsRewrite {
-		return resp, nil
+		return nil
 	}
 
 	cacheSelectArgs := []dagql.NamedInput{
@@ -1874,15 +1869,10 @@ func (s *containerSchema) withMountedCacheCacheKey(
 		Field: "cacheVolume",
 		Args:  cacheSelectArgs,
 	}); err != nil {
-		return nil, err
+		return err
 	}
-	resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
-		"cache",
-		dagql.NewID[*core.CacheVolume](resolvedCache.ID()).ToLiteral(),
-		false,
-	))
-
-	return resp, nil
+	args.Cache = resolvedCache.ID()
+	return req.SetArgInput(ctx, "cache", dagql.NewID[*core.CacheVolume](resolvedCache.ID()), false)
 }
 
 func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedCacheArgs) (*core.Container, error) {
