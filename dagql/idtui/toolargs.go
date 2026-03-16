@@ -43,6 +43,8 @@ var toolArgStyles = map[string]argStyle{
 	"write.contents": argStyleContent,
 
 	// Edit payloads
+	"edit.oldtext":  argStyleContent,
+	"edit.old_text": argStyleContent,
 	"edit.newtext":  argStyleContent,
 	"edit.new_text": argStyleContent,
 
