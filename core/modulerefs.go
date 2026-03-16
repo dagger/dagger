@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
+	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -254,6 +255,15 @@ func (p *ParsedGitRefString) GitRef(
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
 ) (inst dagql.ObjectResult[*GitRef], rerr error) {
+	pinIsSHA := gitutil.IsCommitSHA(pinCommitRef)
+
+	withCommitArg := func(selector dagql.Selector) dagql.Selector {
+		if pinIsSHA {
+			selector.Args = append(selector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
+		}
+		return selector
+	}
+
 	var modTag string
 	if p.hasVersion && semver.IsValid(p.ModVersion) {
 		var tags dagql.Array[dagql.String]
@@ -290,35 +300,30 @@ func (p *ParsedGitRefString) GitRef(
 			{Name: "url", Value: dagql.String(p.cloneRef)},
 		},
 	}
-	if pinCommitRef != "" {
-		repoSelector.Args = append(repoSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
-	}
+	repoSelector = withCommitArg(repoSelector)
 
-	var refSelector dagql.Selector
+	refSelector := dagql.Selector{Field: "head"}
 	switch {
 	case modTag != "":
-		refSelector = dagql.Selector{
+		refSelector = withCommitArg(dagql.Selector{
 			Field: "tag",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(modTag)},
 			},
-		}
-		if pinCommitRef != "" {
-			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
-		}
+		})
 	case p.hasVersion:
-		refSelector = dagql.Selector{
+		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(p.ModVersion)},
 			},
-		}
-		if pinCommitRef != "" {
-			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
-		}
-	default:
+		})
+	case pinCommitRef != "" && !pinIsSHA:
 		refSelector = dagql.Selector{
-			Field: "head",
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(pinCommitRef)},
+			},
 		}
 	}
 	var gitRef dagql.ObjectResult[*GitRef]
