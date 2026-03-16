@@ -230,9 +230,9 @@ func CacheModuleByContentDigest(
 	return nil
 }
 
-// GetRuntimeContainer returns the runtime as a Container for the GraphQL field.
+// RuntimeContainer returns the runtime as a Container for the GraphQL field.
 // Returns nil if the runtime doesn't use a container.
-func (mod *Module) GetRuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
+func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
 	if !mod.runtimeContainer.Valid && mod.Runtime != nil {
 		// Cache the container view
 		if ctr, ok := mod.Runtime.AsContainer(); ok {

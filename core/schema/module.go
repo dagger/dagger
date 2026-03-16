@@ -728,7 +728,7 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 
 func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {
 	if mod.Runtime != nil {
-		return mod.GetRuntimeContainer(), nil
+		return mod.RuntimeContainer(), nil
 	}
 
 	runtime, err := mod.LoadRuntime(ctx)
@@ -736,7 +736,7 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 		return dagql.Nullable[dagql.ObjectResult[*core.Container]]{}, err
 	}
 	mod.Runtime = runtime
-	return mod.GetRuntimeContainer(), nil
+	return mod.RuntimeContainer(), nil
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {
