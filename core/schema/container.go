@@ -321,7 +321,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
-		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheCacheKey).
+		dagql.NodeFuncWithDynamicInputs("withMountedCache", s.withMountedCache, s.withMountedCacheDynamicInputs).
 			Doc(`Retrieves this container plus a cache volume mounted at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the cache directory (e.g., "/root/.npm").`),
@@ -947,7 +947,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 
-		inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 		if err != nil {
 			return inst, err
 		}
@@ -1037,10 +1037,15 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 		return nil, err
 	}
 
+	buildctxDirID, err := buildctxDir.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get build context ID: %w", err)
+	}
+
 	return parent.Self().Build(
 		ctx,
 		dir.Self(),
-		buildctxDir.ID(),
+		buildctxDirID,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
@@ -1141,7 +1146,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
@@ -1259,7 +1264,7 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerGpuArgs struct {
@@ -1796,7 +1801,7 @@ type containerWithMountedCacheArgs struct {
 	Expand  bool                  `default:"false"`
 }
 
-func (s *containerSchema) withMountedCacheCacheKey(
+func (s *containerSchema) withMountedCacheDynamicInputs(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Container],
 	args containerWithMountedCacheArgs,
@@ -1858,9 +1863,13 @@ func (s *containerSchema) withMountedCacheCacheKey(
 		{Name: "owner", Value: dagql.NewString(owner)},
 	}
 	if source.Valid {
+		sourceID, err := source.Value.ID()
+		if err != nil {
+			return fmt.Errorf("resolve cache source ID: %w", err)
+		}
 		cacheSelectArgs = append(cacheSelectArgs, dagql.NamedInput{
 			Name:  "source",
-			Value: dagql.Opt(dagql.NewID[*core.Directory](source.Value.ID())),
+			Value: dagql.Opt(dagql.NewID[*core.Directory](sourceID)),
 		})
 	}
 
@@ -1871,8 +1880,12 @@ func (s *containerSchema) withMountedCacheCacheKey(
 	}); err != nil {
 		return err
 	}
-	args.Cache = resolvedCache.ID()
-	return req.SetArgInput(ctx, "cache", dagql.NewID[*core.CacheVolume](resolvedCache.ID()), false)
+	resolvedCacheID, err := resolvedCache.ID()
+	if err != nil {
+		return fmt.Errorf("resolve rewritten cache volume ID: %w", err)
+	}
+	args.Cache = dagql.NewID[*core.CacheVolume](resolvedCacheID)
+	return req.SetArgInput(ctx, "cache", args.Cache, false)
 }
 
 func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedCacheArgs) (*core.Container, error) {
@@ -2318,25 +2331,33 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	file, err := args.Source.Load(ctx, srv)
 	if err != nil {
 		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
-			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
-				dirSource, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
-				if dirErr == nil {
-					ctr := core.NewContainerChild(parent)
-					ctr, fallbackErr := ctr.WithDirectory(
-						ctx,
-						path,
-						dirSource,
-						core.CopyFilter{},
-						args.Owner,
-						perms,
-						args.DoNotCreateDestPath,
-						args.AttemptUnpackDockerCompatibility,
-						"",
-						false,
-						false,
-					)
-					if fallbackErr == nil {
-						return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+			// FIXME: this fallback is still based on reconstructing a sibling
+			// `.directory(path)` selection from the source file recipe ID.
+			// That hack does not fit the handle-only ID model, but this is an
+			// obscure Dockerfile-fidelity path and we can tolerate it failing
+			// until it is redesigned or removed.
+			fileSourceID, idErr := args.Source.ID()
+			if idErr == nil {
+				if dirSourceID, ok := directorySourceIDFromFileSourceID(fileSourceID); ok {
+					dirSource, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
+					if dirErr == nil {
+						ctr := core.NewContainerChild(parent)
+						ctr, fallbackErr := ctr.WithDirectory(
+							ctx,
+							path,
+							dirSource,
+							core.CopyFilter{},
+							args.Owner,
+							perms,
+							args.DoNotCreateDestPath,
+							args.AttemptUnpackDockerCompatibility,
+							"",
+							false,
+							false,
+						)
+						if fallbackErr == nil {
+							return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+						}
 					}
 				}
 			}
@@ -2359,7 +2380,7 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 	return inst, err
 }
 
@@ -2404,7 +2425,7 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerWithoutDirectoryArgs struct {
@@ -2428,7 +2449,7 @@ func (s *containerSchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerWithoutFileArgs struct {
@@ -2452,7 +2473,7 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerWithoutFilesArgs struct {
@@ -2479,7 +2500,7 @@ func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerWithNewFileArgs struct {
@@ -2512,7 +2533,7 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerWithNewFileArgsLegacy struct {
@@ -2539,7 +2560,7 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type containerWithUnixSocketArgs struct {
@@ -2708,7 +2729,7 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, err
 	}
-	fileInst, err := dagql.NewObjectResultForCurrentID(ctx, srv, f)
+	fileInst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 	if err != nil {
 		return inst, err
 	}
@@ -2928,7 +2949,11 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 	if err != nil {
 		return nil, err
 	}
-	secretBytes, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secret.ID()))
+	secretID, err := secret.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get secret ID: %w", err)
+	}
+	secretBytes, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secretID))
 	if err != nil {
 		return nil, err
 	}
@@ -3088,7 +3113,11 @@ func (s *containerSchema) terminal(
 		args.Cmd = []string{"sh"}
 	}
 
-	err := ctr.Self().Terminal(ctx, ctr.ID(), &args.TerminalArgs)
+	ctrID, err := ctr.ID()
+	if err != nil {
+		return res, err
+	}
+	err = ctr.Self().Terminal(ctx, ctrID, &args.TerminalArgs)
 	if err != nil {
 		return res, err
 	}

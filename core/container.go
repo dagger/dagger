@@ -221,7 +221,7 @@ func (container *Container) AttachOwnedResults(
 	}
 
 	owned := make([]dagql.AnyResult, 0, 1+len(container.Mounts))
-	if container.FS != nil && container.FS.ID() != nil {
+	if container.FS != nil && container.FS.Self() != nil {
 		attached, err := attach(*container.FS)
 		if err != nil {
 			return nil, fmt.Errorf("attach container rootfs: %w", err)
@@ -237,7 +237,7 @@ func (container *Container) AttachOwnedResults(
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
 		switch {
-		case mnt.DirectorySource != nil && mnt.DirectorySource.ID() != nil:
+		case mnt.DirectorySource != nil && mnt.DirectorySource.Self() != nil:
 			attached, err := attach(*mnt.DirectorySource)
 			if err != nil {
 				return nil, fmt.Errorf("attach container directory mount %q: %w", mnt.Target, err)
@@ -248,7 +248,7 @@ func (container *Container) AttachOwnedResults(
 			}
 			mnt.DirectorySource = &typed
 			owned = append(owned, typed)
-		case mnt.FileSource != nil && mnt.FileSource.ID() != nil:
+		case mnt.FileSource != nil && mnt.FileSource.Self() != nil:
 			attached, err := attach(*mnt.FileSource)
 			if err != nil {
 				return nil, fmt.Errorf("attach container file mount %q: %w", mnt.Target, err)
@@ -259,7 +259,7 @@ func (container *Container) AttachOwnedResults(
 			}
 			mnt.FileSource = &typed
 			owned = append(owned, typed)
-		case mnt.CacheSource != nil && mnt.CacheSource.Volume.ID() != nil:
+		case mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil:
 			attached, err := attach(mnt.CacheSource.Volume)
 			if err != nil {
 				return nil, fmt.Errorf("attach container cache mount %q: %w", mnt.Target, err)
@@ -299,7 +299,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
 		DefaultArgs:        container.DefaultArgs,
 	}
-	if container.FS != nil && container.FS.ID() != nil {
+	if container.FS != nil && container.FS.Self() != nil {
 		encoded, err := encodePersistedObjectRef(cache, container.FS, "container rootfs")
 		if err != nil {
 			return nil, err
@@ -313,13 +313,13 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 			Readonly: mnt.Readonly,
 		}
 		switch {
-		case mnt.DirectorySource != nil && mnt.DirectorySource.ID() != nil:
+		case mnt.DirectorySource != nil && mnt.DirectorySource.Self() != nil:
 			id, err := encodePersistedObjectRef(cache, mnt.DirectorySource, fmt.Sprintf("directory mount %q", mnt.Target))
 			if err != nil {
 				return nil, err
 			}
 			encoded.DirectorySourceResultID = id
-		case mnt.FileSource != nil && mnt.FileSource.ID() != nil:
+		case mnt.FileSource != nil && mnt.FileSource.Self() != nil:
 			id, err := encodePersistedObjectRef(cache, mnt.FileSource, fmt.Sprintf("file mount %q", mnt.Target))
 			if err != nil {
 				return nil, err
@@ -337,15 +337,6 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 			return nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
 		payload.Mounts = append(payload.Mounts, encoded)
-	}
-
-	if container.FS != nil && container.FS.ID() != nil {
-		slog.Info(
-			"cache-debug container persist encode",
-			"rootfs_id_digest", container.FS.ID().Digest(),
-			"rootfs_content_digest", container.FS.ID().ContentDigest(),
-			"mounts", len(container.Mounts),
-		)
 	}
 
 	enc, err := json.Marshal(payload)
@@ -417,15 +408,6 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		break
 	}
 
-	if rootfs != nil && rootfs.ID() != nil {
-		slog.Info(
-			"cache-debug container persist decode",
-			"rootfs_id_digest", rootfs.ID().Digest(),
-			"rootfs_content_digest", rootfs.ID().ContentDigest(),
-			"mounts", len(mounts),
-		)
-	}
-
 	return &Container{
 		FS:                 rootfs,
 		Config:             persisted.Config,
@@ -447,54 +429,11 @@ func (container *Container) OnRelease(ctx context.Context) error {
 	if container == nil {
 		return nil
 	}
-	/* TODO: we don't do this anymore because the dagql cache should know our deps and handle their releases as needed
-	  Leaving for the moment as a reference and reminder that we gotta make the dagql cache do that
-
-
-	// this might be problematic if directories overlap, could release same result multiple times
-	if rootfs := container.FS; rootfs != nil {
-		rootfsRes := rootfs.Self().Result
-		if rootfsRes != nil {
-			err := rootfsRes.Release(ctx)
-			if err != nil {
-				return err
-			}
-		}
+	if container.MetaSnapshot != nil {
+		err := container.MetaSnapshot.Release(ctx)
+		container.MetaSnapshot = nil
+		return err
 	}
-	if meta := container.Meta; meta != nil {
-		metaRes := meta.Result
-		if metaRes != nil {
-			err := metaRes.Release(ctx)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	for _, mount := range container.Mounts {
-		if src := mount.DirectorySource; src != nil {
-			if src := mount.DirectorySource.Self(); src != nil {
-				res := src.Result
-				if res != nil {
-					err := res.Release(ctx)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-		if src := mount.FileSource; src != nil {
-			if src := mount.FileSource.Self(); src != nil {
-				res := src.Result
-				if res != nil {
-					err := res.Release(ctx)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-	*/
 	return nil
 }
 
@@ -837,7 +776,11 @@ func (container *Container) Build(
 	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
 	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
 	for _, secret := range secrets {
-		secretDgst := SecretIDDigest(secret.ID())
+		secretID, err := secret.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild secret ID: %w", err)
+		}
+		secretDgst := SecretIDDigest(secretID)
 		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
 			return nil, fmt.Errorf("secret not found: %s", secretDgst)
@@ -846,12 +789,12 @@ func (container *Container) Build(
 			return nil, fmt.Errorf("secret %s has no name and cannot be referenced from Dockerfile secret id", secretDgst)
 		}
 		if existing, found := secretIDsByLLBID[secretName]; found {
-			if existing.Digest() != secret.ID().Digest() {
+			if existing.Digest() != secretID.Digest() {
 				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
 			}
 			continue
 		}
-		secretIDsByLLBID[secretName] = secret.ID()
+		secretIDsByLLBID[secretName] = secretID
 		returnedSecretMounts = append(returnedSecretMounts, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
@@ -975,8 +918,12 @@ func (container *Container) WithDirectory(
 
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
-		{Name: "source", Value: dagql.NewID[*Directory](src.ID())},
 	}
+	srcID, err := src.ID()
+	if err != nil {
+		return nil, fmt.Errorf("resolve mounted directory ID: %w", err)
+	}
+	args = append(args, dagql.NamedInput{Name: "source", Value: dagql.NewID[*Directory](srcID)})
 	if len(filter.Exclude) > 0 {
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)})
 	}
@@ -1086,8 +1033,12 @@ func (container *Container) WithFile(
 
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
-		{Name: "source", Value: dagql.NewID[*File](src.ID())},
 	}
+	srcID, err := src.ID()
+	if err != nil {
+		return nil, fmt.Errorf("resolve mounted file ID: %w", err)
+	}
+	args = append(args, dagql.NamedInput{Name: "source", Value: dagql.NewID[*File](srcID)})
 	if permissions != nil {
 		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
 	}
@@ -2438,7 +2389,11 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
-	host, err := svc.Self().Hostname(ctx, svc.ID())
+	svcID, err := svc.RecipeID()
+	if err != nil {
+		return nil, err
+	}
+	host, err := svc.Self().Hostname(ctx, svcID)
 	if err != nil {
 		return nil, err
 	}
