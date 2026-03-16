@@ -646,7 +646,13 @@ type lookupMatch struct {
 	termSetSize           int
 }
 
-func (c *cache) lookupMatchForCallLocked(ctx context.Context, frame *ResultCall) (lookupMatch, error) {
+func (c *cache) lookupMatchForCallLocked(
+	ctx context.Context,
+	frame *ResultCall,
+	recipeDigest digest.Digest,
+	selfDigest digest.Digest,
+	inputDigests []digest.Digest,
+) (lookupMatch, error) {
 	match := lookupMatch{
 		primaryLookupPossible: true,
 		missingInputIndex:     -1,
@@ -657,11 +663,6 @@ func (c *cache) lookupMatchForCallLocked(ctx context.Context, frame *ResultCall)
 	frame.bindCache(c)
 
 	nowUnix := time.Now().Unix()
-	recipeDigest, err := frame.RecipeDigest()
-	if err != nil {
-		return match, fmt.Errorf("derive call recipe digest: %w", err)
-	}
-
 	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
 	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
 	if match.hitRes != nil {
@@ -683,18 +684,6 @@ func (c *cache) lookupMatchForCallLocked(ctx context.Context, frame *ResultCall)
 		return match, nil
 	}
 
-	selfDigest, inputRefs, err := frame.SelfDigestAndInputRefs()
-	if err != nil {
-		return match, fmt.Errorf("derive call term: %w", err)
-	}
-	inputDigests := make([]digest.Digest, 0, len(inputRefs))
-	for _, ref := range inputRefs {
-		dig, err := ref.InputDigest()
-		if err != nil {
-			return match, fmt.Errorf("derive call term input digest: %w", err)
-		}
-		inputDigests = append(inputDigests, dig)
-	}
 	match.selfDigest = selfDigest
 	match.inputDigests = inputDigests
 	match.inputEqIDs = make([]eqClassID, len(inputDigests))
@@ -880,16 +869,16 @@ func (c *cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 func (c *cache) lookupCacheForRequest(
 	ctx context.Context,
 	req *CallRequest,
+	requestDigest digest.Digest,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
+	requestInputRefs []ResultCallStructuralInputRef,
 ) (AnyResult, bool, error) {
 	if req == nil || req.ResultCall == nil {
 		return nil, false, nil
 	}
 	req.ResultCall.bindCache(c)
-	match, err := c.lookupMatchForCallLocked(ctx, req.ResultCall)
-	if err != nil {
-		return nil, false, err
-	}
-	requestDigest, err := req.RecipeDigest()
+	match, err := c.lookupMatchForCallLocked(ctx, req.ResultCall, requestDigest, requestSelf, requestInputs)
 	if err != nil {
 		return nil, false, err
 	}
@@ -935,7 +924,7 @@ func (c *cache) lookupCacheForRequest(
 		// persistence policy is finalized.
 		c.markResultAsDepOfPersistedLocked(ctx, res)
 	}
-	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall); err != nil {
+	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, err
 	}
 	newRefCount := atomic.AddInt64(&res.refCount, 1)
@@ -1115,33 +1104,24 @@ func (c *cache) associateResultWithTermLocked(
 	}
 }
 
-func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall) error {
+func (c *cache) teachResultIdentityLocked(
+	ctx context.Context,
+	res *sharedResult,
+	requestFrame *ResultCall,
+	requestDigest digest.Digest,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
+	requestInputRefs []ResultCallStructuralInputRef,
+) error {
 	if res == nil || res.id == 0 || requestFrame == nil {
 		return nil
 	}
 	c.initEgraphLocked()
 	requestFrame.bindCache(c)
 
-	requestSelf, requestInputRefs, err := requestFrame.SelfDigestAndInputRefs()
-	if err != nil {
-		return fmt.Errorf("derive request term digests: %w", err)
-	}
-	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
-	for _, ref := range requestInputRefs {
-		dig, err := ref.InputDigest()
-		if err != nil {
-			return fmt.Errorf("derive request term input digest: %w", err)
-		}
-		requestInputs = append(requestInputs, dig)
-	}
-
 	rootSet := c.outputEqClassesForResultLocked(res.id)
 	if rootSet == nil {
 		rootSet = make(map[eqClassID]struct{})
-	}
-	requestDigest, err := requestFrame.RecipeDigest()
-	if err != nil {
-		return fmt.Errorf("derive request recipe digest: %w", err)
 	}
 	if requestDigest != "" {
 		if eqID := c.ensureEqClassForDigestLocked(ctx, requestDigest.String()); eqID != 0 {
@@ -1259,6 +1239,8 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	ctx context.Context,
 	requestFrame *ResultCall,
 	responseFrame *ResultCall,
+	requestDigest digest.Digest,
+	responseDigest digest.Digest,
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
@@ -1283,26 +1265,17 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		}
 		digestSet[dig] = struct{}{}
 	}
-
-	addFrameDigests := func(frame *ResultCall) error {
-		if frame == nil {
-			return nil
-		}
-		dig, err := frame.RecipeDigest()
-		if err != nil {
-			return err
-		}
-		addDigest(dig.String())
-		for _, extra := range frame.ExtraDigests {
+	if requestFrame != nil {
+		addDigest(requestDigest.String())
+		for _, extra := range requestFrame.ExtraDigests {
 			addDigest(extra.Digest.String())
 		}
-		return nil
 	}
-	if err := addFrameDigests(requestFrame); err != nil {
-		return fmt.Errorf("index request digests: %w", err)
-	}
-	if err := addFrameDigests(responseFrame); err != nil {
-		return fmt.Errorf("index response digests: %w", err)
+	if responseFrame != nil {
+		addDigest(responseDigest.String())
+		for _, extra := range responseFrame.ExtraDigests {
+			addDigest(extra.Digest.String())
+		}
 	}
 	if len(digestSet) == 0 {
 		return nil

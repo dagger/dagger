@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
@@ -64,11 +63,15 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 	assert.Assert(t, ok)
 	Fields[*persistCodecRoot]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
-			return NewObjectResultForCurrentID(ctx, srv, &persistCodecObj{Name: "x"})
+			return NewObjectResultForCurrentCall(ctx, srv, &persistCodecObj{Name: "x"})
 		}),
 	}.Install(srv)
 
-	ctx := ContextWithID(t.Context(), cacheTestID("persist-codec-root"))
+	ctx := ContextWithCall(t.Context(), &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-codec-root",
+	})
 	ctx = srvToContext(ctx, srv)
 	return ctx
 }
@@ -77,17 +80,22 @@ func TestPersistedSelfCodecScalarRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := setupPersistCodecTest(t)
 
-	original, err := NewResultForID(String("hello"), cacheTestID("persist-scalar"))
+	originalCall := cacheTestIntCall("persist-scalar")
+	original, err := NewResultForCall(String("hello"), originalCall)
 	assert.NilError(t, err)
 
 	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(env.Kind, persistedResultKindScalar))
 
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, original.ID(), env)
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, original.cacheSharedResult().resultCall.clone(), env)
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decoded.Unwrap(), Typed(String("hello"))))
-	assert.Check(t, is.Equal(decoded.ID().Digest().String(), original.ID().Digest().String()))
+	decodedRecipeEnc, err := cacheTestMustRecipeID(t, decoded).Encode()
+	assert.NilError(t, err)
+	originalRecipeEnc, err := cacheTestMustRecipeID(t, original).Encode()
+	assert.NilError(t, err)
+	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
 }
 
 func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
@@ -105,19 +113,23 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	assert.Check(t, is.Equal(env.Kind, persistedResultKindObject))
 	assert.Check(t, is.Equal(string(env.ObjectJSON), `{"name":"x"}`))
 
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, srv, 0, original.ID(), env)
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, srv, 0, original.cacheSharedResult().resultCall.clone(), env)
 	assert.NilError(t, err)
 	assert.Assert(t, decoded != nil)
-	assert.Check(t, is.Equal(decoded.ID().Digest().String(), original.ID().Digest().String()))
+	decodedRecipeEnc, err := cacheTestMustRecipeID(t, decoded).Encode()
+	assert.NilError(t, err)
+	originalRecipeEnc, err := cacheTestMustRecipeID(t, original).Encode()
+	assert.NilError(t, err)
+	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
 }
 
 func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := setupPersistCodecTest(t)
 
-	intA, err := NewResultForID(Int(1), cacheTestID("persist-list-int-a"))
+	intA, err := NewResultForCall(Int(1), cacheTestIntCall("persist-list-int-a"))
 	assert.NilError(t, err)
-	intB, err := NewResultForID(Int(2), cacheTestID("persist-list-int-b"))
+	intB, err := NewResultForCall(Int(2), cacheTestIntCall("persist-list-int-b"))
 	assert.NilError(t, err)
 
 	innerAVal := DynamicResultArrayOutput{
@@ -129,16 +141,28 @@ func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {
 		Values: []AnyResult{intB},
 	}
 
-	innerA, err := NewResultForID(innerAVal, cacheTestID("persist-list-inner-a"))
+	innerA, err := NewResultForCall(innerAVal, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(innerAVal.Type()),
+		Field: "persist-list-inner-a",
+	})
 	assert.NilError(t, err)
-	innerB, err := NewResultForID(innerBVal, cacheTestID("persist-list-inner-b"))
+	innerB, err := NewResultForCall(innerBVal, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(innerBVal.Type()),
+		Field: "persist-list-inner-b",
+	})
 	assert.NilError(t, err)
 
 	outerVal := DynamicResultArrayOutput{
 		Elem:   innerAVal,
 		Values: []AnyResult{innerA, innerB},
 	}
-	outer, err := NewResultForID(outerVal, call.New().Append(outerVal.Type(), "persist-list-outer"))
+	outer, err := NewResultForCall(outerVal, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(outerVal.Type()),
+		Field: "persist-list-outer",
+	})
 	assert.NilError(t, err)
 
 	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, outer)
@@ -146,60 +170,16 @@ func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {
 	assert.Check(t, is.Equal(env.Kind, persistedResultKindList))
 	assert.Check(t, is.Equal(len(env.Items), 2))
 
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, outer.ID(), env)
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, outer.cacheSharedResult().resultCall.clone(), env)
 	assert.NilError(t, err)
 	assert.Assert(t, decoded != nil)
-	assert.Check(t, is.Equal(decoded.ID().Digest().String(), outer.ID().Digest().String()))
+	decodedRecipeEnc, err := cacheTestMustRecipeID(t, decoded).Encode()
+	assert.NilError(t, err)
+	outerRecipeEnc, err := cacheTestMustRecipeID(t, outer).Encode()
+	assert.NilError(t, err)
+	assert.Check(t, is.Equal(decodedRecipeEnc, outerRecipeEnc))
 
 	list, ok := decoded.Unwrap().(Enumerable)
 	assert.Assert(t, ok)
 	assert.Check(t, is.Equal(list.Len(), 2))
-}
-
-func TestPersistedSelfCodecIgnoresEnvelopeIDsDuringDecode(t *testing.T) {
-	t.Parallel()
-	ctx := setupPersistCodecTest(t)
-
-	intA, err := NewResultForID(Int(1), cacheTestID("persist-ignore-env-int-a"))
-	assert.NilError(t, err)
-	intB, err := NewResultForID(Int(2), cacheTestID("persist-ignore-env-int-b"))
-	assert.NilError(t, err)
-
-	outerVal := DynamicResultArrayOutput{
-		Elem:   Int(0),
-		Values: []AnyResult{intA, intB},
-	}
-	outer, err := NewResultForID(outerVal, call.New().Append(outerVal.Type(), "persist-ignore-env-outer"))
-	assert.NilError(t, err)
-
-	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, outer)
-	assert.NilError(t, err)
-	assert.Check(t, is.Equal(env.Kind, persistedResultKindList))
-	assert.Check(t, is.Equal(len(env.Items), 2))
-
-	wrongOuterID, err := cacheTestID("persist-ignore-env-wrong-outer").Encode()
-	assert.NilError(t, err)
-	wrongItemAID, err := cacheTestID("persist-ignore-env-wrong-item-a").Encode()
-	assert.NilError(t, err)
-	wrongItemBID, err := cacheTestID("persist-ignore-env-wrong-item-b").Encode()
-	assert.NilError(t, err)
-
-	env.ID = wrongOuterID
-	env.Items[0].ID = wrongItemAID
-	env.Items[1].ID = wrongItemBID
-
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, outer.ID(), env)
-	assert.NilError(t, err)
-	assert.Assert(t, decoded != nil)
-	assert.Check(t, is.Equal(decoded.ID().Digest().String(), outer.ID().Digest().String()))
-
-	first, err := decoded.NthValue(1)
-	assert.NilError(t, err)
-	assert.Assert(t, first != nil)
-	assert.Check(t, is.Equal(first.ID().Digest().String(), outer.ID().SelectNth(1).Digest().String()))
-
-	second, err := decoded.NthValue(2)
-	assert.NilError(t, err)
-	assert.Assert(t, second != nil)
-	assert.Check(t, is.Equal(second.ID().Digest().String(), outer.ID().SelectNth(2).Digest().String()))
 }

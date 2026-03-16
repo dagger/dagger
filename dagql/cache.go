@@ -71,6 +71,14 @@ type Cache interface {
 	// LoadResultByResultID loads a cache-backed result by its stable shared
 	// result handle.
 	LoadResultByResultID(context.Context, *Server, uint64) (AnyResult, error)
+
+	// AttachResult promotes a detached result into the cache so subsequent
+	// selections can refer to it by stable result handle.
+	AttachResult(context.Context, AnyResult) (AnyResult, error)
+
+	// RecipeIDForCall derives the semantic recipe ID for a result call using
+	// the cache to resolve any cached result refs it depends on.
+	RecipeIDForCall(*ResultCall) (*call.ID, error)
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
@@ -520,7 +528,7 @@ func setTypedPersistedResultID(val Typed, resultID sharedResultID) {
 	setter.SetPersistedResultID(uint64(resultID))
 }
 
-func (c *cache) attachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
+func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
 	if res == nil {
 		return nil, nil
 	}
@@ -627,7 +635,11 @@ func (r Result[T]) RecipeID() (*call.ID, error) {
 	if r.shared == nil || r.shared.resultCall == nil {
 		return nil, fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	return r.shared.resultCall.RecipeID()
+	call := r.shared.resultCall.clone()
+	if r.shared.cache != nil {
+		call.bindCache(r.shared.cache)
+	}
+	return call.RecipeID()
 }
 
 func (r Result[T]) Self() T {
@@ -1300,6 +1312,18 @@ func (c *cache) GetOrInitCall(
 	if err != nil {
 		return nil, fmt.Errorf("derive request digest: %w", err)
 	}
+	requestSelf, requestInputRefs, err := req.SelfDigestAndInputRefs()
+	if err != nil {
+		return nil, fmt.Errorf("derive request term digests: %w", err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return nil, fmt.Errorf("derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
 	callKey := callDigest.String()
 	if ctx.Value(cacheContextKey{callKey, c}) != nil {
 		return nil, ErrCacheRecursiveCall
@@ -1310,7 +1334,7 @@ func (c *cache) GetOrInitCall(
 	}
 
 	c.egraphMu.Lock()
-	hitRes, hit, err := c.lookupCacheForRequest(ctx, req)
+	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, err
@@ -1562,6 +1586,10 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 		hasResultTerm = true
 	}
 
+	requestDigest, err := requestForIndex.RecipeDigest()
+	if err != nil {
+		return fmt.Errorf("derive request digest: %w", err)
+	}
 	requestSelf, requestInputRefs, err := requestForIndex.SelfDigestAndInputRefs()
 	if err != nil {
 		return fmt.Errorf("derive request term digests: %w", err)
@@ -1574,12 +1602,21 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 		}
 		requestInputs = append(requestInputs, dig)
 	}
+	var responseDigest digest.Digest
+	if oc.res.resultCall != nil {
+		responseDigest, err = oc.res.resultCall.RecipeDigest()
+		if err != nil {
+			return fmt.Errorf("derive result digest: %w", err)
+		}
+	}
 
 	c.egraphMu.Lock()
 	indexErr := c.indexWaitResultInEgraphLocked(
 		ctx,
 		requestForIndex.ResultCall,
 		oc.res.resultCall,
+		requestDigest,
+		responseDigest,
 		requestSelf,
 		requestInputs,
 		requestInputRefs,
@@ -1614,7 +1651,7 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 		return nil
 	}
 	deps, err := withOwned.AttachOwnedResults(ctx, func(child AnyResult) (AnyResult, error) {
-		return c.attachResult(ctx, child)
+		return c.AttachResult(ctx, child)
 	})
 	if err != nil {
 		return err

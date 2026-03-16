@@ -359,7 +359,7 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		if arg == nil {
 			continue
 		}
-		h, inputRefs, err = appendResultCallArgSelfRefs(arg, h, inputRefs)
+		h, inputRefs, err = appendResultCallArgSelfRefs(frame.cache, arg, h, inputRefs)
 		if err != nil {
 			h.Close()
 			return "", nil, fmt.Errorf("result call frame %q args: %w", field, err)
@@ -373,7 +373,7 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		if input == nil {
 			continue
 		}
-		h, inputRefs, err = appendResultCallArgSelfRefs(input, h, inputRefs)
+		h, inputRefs, err = appendResultCallArgSelfRefs(frame.cache, input, h, inputRefs)
 		if err != nil {
 			h.Close()
 			return "", nil, fmt.Errorf("result call frame %q implicit inputs: %w", field, err)
@@ -576,7 +576,7 @@ func recipeDigestForCachedResult(c *cache, resultID sharedResultID, visiting map
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing recipe digest for shared result %d", resultID)
 	}
-	frame := c.resultCallByResultID(resultID)
+	frame := c.resultCallSnapshot(resultID)
 	if frame == nil {
 		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
 	}
@@ -635,12 +635,13 @@ func appendResultCallArgBytes(
 }
 
 func appendResultCallArgSelfRefs(
+	c *cache,
 	arg *ResultCallArg,
 	h *hashutil.Hasher,
 	inputs []ResultCallStructuralInputRef,
 ) (*hashutil.Hasher, []ResultCallStructuralInputRef, error) {
 	h = h.WithString(arg.Name)
-	h, inputs, err := appendResultCallLiteralSelfRefs(arg.Value, h, inputs)
+	h, inputs, err := appendResultCallLiteralSelfRefs(c, arg.Value, h, inputs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
@@ -718,6 +719,7 @@ func appendResultCallLiteralBytes(
 }
 
 func appendResultCallLiteralSelfRefs(
+	c *cache,
 	lit *ResultCallLiteral,
 	h *hashutil.Hasher,
 	inputs []ResultCallStructuralInputRef,
@@ -732,6 +734,7 @@ func appendResultCallLiteralSelfRefs(
 		h = h.WithByte(prefix)
 		inputs = append(inputs, ResultCallStructuralInputRef{
 			Result: lit.ResultRef,
+			cache:  c,
 		})
 	case lit.Kind == ResultCallLiteralKindBool:
 		const prefix = '2'
@@ -757,7 +760,7 @@ func appendResultCallLiteralSelfRefs(
 		const prefix = '7'
 		h = h.WithByte(prefix)
 		for _, elem := range lit.ListItems {
-			h, inputs, err = appendResultCallLiteralSelfRefs(elem, h, inputs)
+			h, inputs, err = appendResultCallLiteralSelfRefs(c, elem, h, inputs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -766,7 +769,7 @@ func appendResultCallLiteralSelfRefs(
 		const prefix = '8'
 		h = h.WithByte(prefix)
 		for _, field := range lit.ObjectFields {
-			h, inputs, err = appendResultCallArgSelfRefs(field, h, inputs)
+			h, inputs, err = appendResultCallArgSelfRefs(c, field, h, inputs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -878,7 +881,18 @@ func (c *cache) resultCallSnapshot(resultID sharedResultID) *ResultCall {
 	if res == nil || res.resultCall == nil {
 		return nil
 	}
-	return res.resultCall.clone()
+	frame := res.resultCall.clone()
+	frame.bindCache(c)
+	return frame
+}
+
+func (c *cache) RecipeIDForCall(frame *ResultCall) (*call.ID, error) {
+	if frame == nil {
+		return nil, fmt.Errorf("rebuild recipe ID: nil call")
+	}
+	frame = frame.clone()
+	frame.bindCache(c)
+	return frame.RecipeID()
 }
 
 func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
@@ -891,6 +905,7 @@ func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	if res == nil || res.resultCall == nil {
 		return nil
 	}
+	res.resultCall.bindCache(c)
 	return res.resultCall
 }
 

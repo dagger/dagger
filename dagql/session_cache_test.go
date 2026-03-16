@@ -25,19 +25,19 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		sc1 := NewSessionCache(base)
 		sc2 := NewSessionCache(base)
 
-		key1 := cacheTestID("session-1")
-		key2 := cacheTestID("session-2")
-		key3 := cacheTestID("session-3")
+		key1 := cacheTestIntCall("session-1")
+		key2 := cacheTestIntCall("session-2")
+		key3 := cacheTestIntCall("session-3")
 
-		_, err = sc1.GetOrInitCall(ctx, CacheKey{ID: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
+		_, err = sc1.GetOrInitCall(ctx, &CallRequest{ResultCall: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
 		assert.NilError(t, err)
-		_, err = sc1.GetOrInitCall(ctx, CacheKey{ID: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
+		_, err = sc1.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
 		assert.NilError(t, err)
 		assert.Equal(t, 2, base.Size())
 
-		_, err = sc2.GetOrInitCall(ctx, CacheKey{ID: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
+		_, err = sc2.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
 		assert.NilError(t, err)
-		_, err = sc2.GetOrInitCall(ctx, CacheKey{ID: key3}, ValueFunc(cacheTestIntResult(key3, 3)))
+		_, err = sc2.GetOrInitCall(ctx, &CallRequest{ResultCall: key3}, ValueFunc(cacheTestIntResult(key3, 3)))
 		assert.NilError(t, err)
 		assert.Equal(t, 3, base.Size())
 
@@ -45,8 +45,8 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, 2, base.Size())
 
-		_, err = sc1.GetOrInitCall(ctx, CacheKey{ID: cacheTestID("closed-session")}, func(context.Context) (AnyResult, error) {
-			return cacheTestIntResult(cacheTestID("closed-session"), 9), nil
+		_, err = sc1.GetOrInitCall(ctx, &CallRequest{ResultCall: cacheTestIntCall("closed-session")}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(cacheTestIntCall("closed-session"), 9), nil
 		})
 		assert.ErrorContains(t, err, "session cache is closed")
 		assert.Equal(t, 2, base.Size())
@@ -63,9 +63,9 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		base := cacheIface.(*cache)
 		sc := NewSessionCache(base)
 
-		key1 := cacheTestID("close-running-1")
-		key2 := cacheTestID("close-running-2")
-		_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
+		key1 := cacheTestIntCall("close-running-1")
+		key2 := cacheTestIntCall("close-running-2")
+		_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
 		assert.NilError(t, err)
 		assert.Equal(t, 1, base.Size())
 
@@ -73,7 +73,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		stopCh := make(chan struct{})
 		errCh := make(chan error, 1)
 		go func() {
-			_, err := sc.GetOrInitCall(ctx, CacheKey{ID: key2}, func(context.Context) (AnyResult, error) {
+			_, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, func(context.Context) (AnyResult, error) {
 				close(startCh)
 				<-stopCh
 				return cacheTestIntResult(key2, 2), nil
@@ -116,7 +116,7 @@ func TestSessionCacheErrorThenSuccessIsCached(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("session-error-then-success")
+	key := cacheTestIntCall("session-error-then-success")
 	steps := []error{
 		fmt.Errorf("boom 1"),
 		fmt.Errorf("boom 2"),
@@ -134,21 +134,21 @@ func TestSessionCacheErrorThenSuccessIsCached(t *testing.T) {
 		return cacheTestIntResult(key, 99), nil
 	}
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
 	assert.ErrorContains(t, err, "boom 1")
 	assert.Equal(t, 1, callCount)
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
 	assert.ErrorContains(t, err, "boom 2")
 	assert.Equal(t, 2, callCount)
 
-	res, err := sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	res, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, callCount)
 	assert.Assert(t, !res.HitCache())
 	assert.Equal(t, 99, cacheTestUnwrapInt(t, res))
 
-	res, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, fn)
+	res, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, callCount)
 	assert.Assert(t, res.HitCache())
@@ -167,7 +167,7 @@ func TestSessionCacheTelemetryBehavior(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("telemetry")
+	key := cacheTestIntCall("telemetry")
 
 	var beginCalls atomic.Int32
 	var doneCalls atomic.Int32
@@ -187,22 +187,22 @@ func TestSessionCacheTelemetryBehavior(t *testing.T) {
 		}
 	})
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt)
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt)
 	assert.NilError(t, err)
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt)
 	assert.NilError(t, err)
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{
-		ID:         key,
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{
+		ResultCall: key,
 		DoNotCache: true,
 	}, ValueFunc(cacheTestIntResult(key, 2)), telemetryOpt)
 	assert.NilError(t, err)
 
 	repeatedCtx := WithRepeatedTelemetry(ctx)
-	_, err = sc.GetOrInitCall(repeatedCtx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(repeatedCtx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt)
 	assert.NilError(t, err)
@@ -221,8 +221,8 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("telemetry-hit-only")
-	key2 := cacheTestID("telemetry-hit-only-second")
+	key := cacheTestIntCall("telemetry-hit-only")
+	key2 := cacheTestIntCall("telemetry-hit-only-second")
 
 	var beginCalls atomic.Int32
 	var doneCalls atomic.Int32
@@ -243,12 +243,12 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	})
 	hitOnlyOpt := WithTelemetryPolicy(TelemetryPolicyCacheHitOnly)
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt, hitOnlyOpt)
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
 	assert.Equal(t, int32(0), beginCalls.Load())
 	assert.Equal(t, int32(0), doneCalls.Load())
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
@@ -257,7 +257,7 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.Assert(t, beginSawResult.Load())
 	assert.DeepEqual(t, []bool{true}, cachedVals)
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
@@ -266,7 +266,7 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.DeepEqual(t, []bool{true}, cachedVals)
 
 	repeatedCtx := WithRepeatedTelemetry(ctx)
-	_, err = sc.GetOrInitCall(repeatedCtx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(repeatedCtx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
@@ -274,12 +274,12 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.Equal(t, int32(2), doneCalls.Load())
 	assert.DeepEqual(t, []bool{true, true}, cachedVals)
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key2}, ValueFunc(cacheTestIntResult(key2, 2)), telemetryOpt, hitOnlyOpt)
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)), telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
 	assert.Equal(t, int32(2), beginCalls.Load())
 	assert.Equal(t, int32(2), doneCalls.Load())
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key2}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt)
 	assert.NilError(t, err)
@@ -296,10 +296,10 @@ func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("session-donotcache-untracked")
+	key := cacheTestIntCall("session-donotcache-untracked")
 	var releaseCalls atomic.Int32
-	res, err := sc.GetOrInitCall(ctx, CacheKey{
-		ID:         key,
+	res, err := sc.GetOrInitCall(ctx, &CallRequest{
+		ResultCall: key,
 		DoNotCache: true,
 	}, ValueFunc(cacheTestIntResultWithOnRelease(key, 1, func(context.Context) error {
 		releaseCalls.Add(1)
@@ -323,11 +323,11 @@ func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("session-donotcache-nil")
+	key := cacheTestIntCall("session-donotcache-nil")
 	initCalls := 0
 
-	res, err := sc.GetOrInitCall(ctx, CacheKey{
-		ID:         key,
+	res, err := sc.GetOrInitCall(ctx, &CallRequest{
+		ResultCall: key,
 		DoNotCache: true,
 	}, func(context.Context) (AnyResult, error) {
 		initCalls++
@@ -338,8 +338,8 @@ func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
 	assert.Equal(t, 1, initCalls)
 	assert.Equal(t, 0, base.Size())
 
-	res, err = sc.GetOrInitCall(ctx, CacheKey{
-		ID:         key,
+	res, err = sc.GetOrInitCall(ctx, &CallRequest{
+		ResultCall: key,
 		DoNotCache: true,
 	}, func(context.Context) (AnyResult, error) {
 		initCalls++
@@ -360,8 +360,8 @@ func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("session-nil-result")
-	res, err := sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	key := cacheTestIntCall("session-nil-result")
+	res, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, nil
 	})
 	assert.NilError(t, err)
@@ -380,11 +380,11 @@ func TestSessionCacheGetOrInitCallNilID(t *testing.T) {
 	sc := NewSessionCache(cacheIface.(*cache))
 
 	called := false
-	_, err = sc.GetOrInitCall(ctx, CacheKey{}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{}}, func(context.Context) (AnyResult, error) {
 		called = true
 		return nil, nil
 	})
-	assert.ErrorContains(t, err, "cache key ID is nil")
+	assert.ErrorContains(t, err, "missing field")
 	assert.Assert(t, !called)
 }
 
@@ -397,17 +397,17 @@ func TestSessionCacheErrorThenNilResultStaysNil(t *testing.T) {
 	base := cacheIface.(*cache)
 	sc := NewSessionCache(base)
 
-	key := cacheTestID("session-error-then-nil")
+	key := cacheTestIntCall("session-error-then-nil")
 	initCalls := 0
 
-	_, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, errors.New("boom")
 	})
 	assert.ErrorContains(t, err, "boom")
 	assert.Equal(t, 1, initCalls)
 
-	res, err := sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	res, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, nil
 	})
@@ -416,7 +416,7 @@ func TestSessionCacheErrorThenNilResultStaysNil(t *testing.T) {
 	assert.Equal(t, 2, initCalls)
 
 	initCalledAgain := false
-	res, err = sc.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	res, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		initCalledAgain = true
 		return cacheTestIntResult(key, 42), nil
 	})

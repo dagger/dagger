@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type SessionCache struct {
@@ -135,10 +137,11 @@ func (c *SessionCache) GetOrInitCall(
 	if req == nil {
 		return nil, errors.New("call request is nil")
 	}
-	callDigest, err := req.RecipeDigest()
+	recipeID, err := c.cache.RecipeIDForCall(req.ResultCall)
 	if err != nil {
 		return nil, err
 	}
+	callDigest := recipeID.Digest()
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
@@ -216,6 +219,14 @@ func (c *SessionCache) GetOrInitCall(
 	}
 
 	return res, nil
+}
+
+func (c *SessionCache) RecipeIDForCall(call *ResultCall) (*call.ID, error) {
+	return c.cache.RecipeIDForCall(call)
+}
+
+func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
+	return c.cache.AttachResult(ctx, res)
 }
 
 func (c *SessionCache) GetOrInitArbitrary(

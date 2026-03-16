@@ -119,7 +119,23 @@
                 "name": "IntrospectTestID"
               }
             },
-            "args": [],
+            "args": [
+              {
+                "name": "recipe",
+                "description": "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+                "defaultValue": "false",
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Boolean"
+                  }
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": "",
             "directives": []
@@ -178,7 +194,23 @@
                 "name": "LineID"
               }
             },
-            "args": [],
+            "args": [
+              {
+                "name": "recipe",
+                "description": "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+                "defaultValue": "false",
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Boolean"
+                  }
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": "",
             "directives": []
@@ -237,7 +269,23 @@
                 "name": "PointID"
               }
             },
-            "args": [],
+            "args": [
+              {
+                "name": "recipe",
+                "description": "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+                "defaultValue": "false",
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "Boolean"
+                  }
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": "",
             "directives": []

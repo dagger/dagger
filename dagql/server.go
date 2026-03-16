@@ -700,6 +700,14 @@ func (s *Server) loadNthValue(
 	}
 
 	shared := parent.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		attached, err := s.Cache.AttachResult(srvToContext(ctx, s), parent)
+		if err != nil {
+			return nil, fmt.Errorf("nth %d: attach enumerable parent: %w", nth, err)
+		}
+		parent = attached
+		shared = parent.cacheSharedResult()
+	}
 	if shared == nil || shared.id == 0 || shared.resultCall == nil {
 		return nil, fmt.Errorf("nth %d: parent enumerable is not cache-backed", nth)
 	}

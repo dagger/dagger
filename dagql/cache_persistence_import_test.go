@@ -15,7 +15,7 @@ func newPersistCodecImportTestServer(cache Cache) *Server {
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	Fields[*persistCodecRoot]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
-			return NewObjectResultForCurrentID(ctx, srv, &persistCodecObj{Name: "x"})
+			return NewObjectResultForCurrentCall(ctx, srv, &persistCodecObj{Name: "x"})
 		}).IsPersistable(),
 	}.Install(srv)
 	return srv
@@ -31,9 +31,9 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	assert.NilError(t, err)
 	cA := cacheA.(*cache)
 
-	key := cacheTestID("persist-import-roundtrip")
-	resA, err := cA.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	key := cacheTestIntCall("persist-import-roundtrip")
+	resA, err := cA.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 123).WithSafeToPersistCache(true), nil
@@ -51,8 +51,8 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	resB, err := cB.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return nil, errors.New("unexpected initializer call")
@@ -74,7 +74,11 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	cA := cacheA.(*cache)
 	srvA := newPersistCodecImportTestServer(cacheA)
 
-	rootCtxA := ContextWithID(ctx, cacheTestID("persist-import-object-root"))
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-import-object-root",
+	})
 	rootCtxA = srvToContext(rootCtxA, srvA)
 
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
@@ -92,7 +96,11 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	}()
 	srvB := newPersistCodecImportTestServer(cacheB)
 
-	rootCtxB := ContextWithID(ctx, cacheTestID("persist-import-object-root"))
+	rootCtxB := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-import-object-root",
+	})
 	rootCtxB = srvToContext(rootCtxB, srvB)
 
 	resB, err := srvB.root.Select(rootCtxB, srvB, Selector{Field: "obj"})
@@ -115,9 +123,9 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	assert.NilError(t, err)
 	cA := cacheA.(*cache)
 
-	key := cacheTestID("persist-import-unclean-wipe")
-	resA, err := cA.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	key := cacheTestIntCall("persist-import-unclean-wipe")
+	resA, err := cA.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 7).WithSafeToPersistCache(true), nil
@@ -139,8 +147,8 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	resB, err := cB.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 8).WithSafeToPersistCache(true), nil
@@ -161,9 +169,9 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	assert.NilError(t, err)
 	cA := cacheA.(*cache)
 
-	key := cacheTestID("persist-import-corrupt-wipe")
-	resA, err := cA.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	key := cacheTestIntCall("persist-import-corrupt-wipe")
+	resA, err := cA.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 50).WithSafeToPersistCache(true), nil
@@ -187,8 +195,8 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	resB, err := cB.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 51).WithSafeToPersistCache(true), nil

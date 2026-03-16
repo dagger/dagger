@@ -352,7 +352,7 @@ func NoopDone(res AnyResult, cached bool, rerr *error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
-	preselectResult, err := r.preselect(ctx, s, sel)
+	r, preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -378,11 +378,11 @@ func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.Vi
 	})
 }
 
-func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
+func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector) (ObjectResult[T], *preselectResult, error) {
 	view := sel.View
 	field, ok := r.class.Field(sel.Field, view)
 	if !ok {
-		return nil, fmt.Errorf("Select: %s has no such field: %q", r.class.TypeName(), sel.Field)
+		return r, nil, fmt.Errorf("Select: %s has no such field: %q", r.class.TypeName(), sel.Field)
 	}
 	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
@@ -390,6 +390,24 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		view = ""
 	}
 	ctx = srvToContext(ctx, s)
+	if typ := r.Type(); typ != nil && typ.Name() != "Query" {
+		shared := r.cacheSharedResult()
+		if shared == nil || shared.id == 0 {
+			attached, err := s.Cache.AttachResult(ctx, r)
+			if err != nil {
+				return r, nil, fmt.Errorf("attach receiver for %s.%s: %w", typ.Name(), sel.Field, err)
+			}
+			attachedObj, err := r.class.New(attached)
+			if err != nil {
+				return r, nil, fmt.Errorf("wrap attached receiver for %s.%s: %w", typ.Name(), sel.Field, err)
+			}
+			var ok bool
+			r, ok = attachedObj.(ObjectResult[T])
+			if !ok {
+				return r, nil, fmt.Errorf("wrap attached receiver for %s.%s: unexpected %T", typ.Name(), sel.Field, attachedObj)
+			}
+		}
+	}
 
 	inputArgs := make(map[string]Input, len(sel.Args))
 	frameArgs := make([]*ResultCallArg, 0, len(sel.Args))
@@ -409,7 +427,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			inputArgs[argSpec.Name] = namedInput.Value
 			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
 			if err != nil {
-				return nil, err
+				return r, nil, err
 			}
 			frameArgs = append(frameArgs, frameArg)
 
@@ -418,7 +436,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return r, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 
@@ -432,18 +450,18 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {
-			return nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s: %w", sel.Field, err)
+			return r, nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s: %w", sel.Field, err)
 		}
-		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
+		return r, nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
 	receiverRef, err := resultCallRefFromResult(r)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {
-			return nil, fmt.Errorf("failed to resolve receiver for <nil>.%s: %w", sel.Field, err)
+			return r, nil, fmt.Errorf("failed to resolve receiver for <nil>.%s: %w", sel.Field, err)
 		}
-		return nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
+		return r, nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 	req := &CallRequest{
 		ResultCall: &ResultCall{
@@ -470,9 +488,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
 			typ := r.Type()
 			if typ == nil {
-				return nil, fmt.Errorf("failed to compute cache key for <nil>.%s: %w", sel.Field, err)
+				return r, nil, fmt.Errorf("failed to compute cache key for <nil>.%s: %w", sel.Field, err)
 			}
-			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
+			return r, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
 		r.sortCallArgsToSchema(field.Spec, view, req.Args)
 		inputArgs = make(map[string]Input, len(req.Args))
@@ -488,22 +506,31 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			case requestArg != nil:
 				inputVal, err := inputValueFromResultCallLiteral(ctx, requestArg.Value)
 				if err != nil {
-					return nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
+					return r, nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
 				}
 				input, err := argSpec.Type.Decoder().DecodeInput(inputVal)
 				if err != nil {
-					return nil, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+					return r, nil, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 				}
 				inputArgs[argSpec.Name] = input
 			case argSpec.Default != nil:
 				inputArgs[argSpec.Name] = argSpec.Default
 			case argSpec.Type.Type().NonNull:
-				return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+				return r, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 			}
 		}
+		implicitInputs, err = field.Spec.resolveImplicitInputCallArgs(ctx, inputArgs)
+		if err != nil {
+			typ := r.Type()
+			if typ == nil {
+				return r, nil, fmt.Errorf("failed to resolve identity inputs for <nil>.%s: %w", sel.Field, err)
+			}
+			return r, nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
+		}
+		req.ImplicitInputs = implicitInputs
 	}
 
-	return &preselectResult{
+	return r, &preselectResult{
 		inputArgs: inputArgs,
 		request:   req,
 	}, nil
@@ -528,7 +555,7 @@ func (r ObjectResult[T]) call(
 	}
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		telemetryID, err := req.ResultCall.RecipeID()
+		telemetryID, err := s.Cache.RecipeIDForCall(req.ResultCall)
 		if err != nil {
 			return nil, fmt.Errorf("derive telemetry call ID: %w", err)
 		}

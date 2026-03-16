@@ -1,120 +1,133 @@
-package dagql_test
+package dagql
 
 import (
 	"context"
 	"errors"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 )
 
-func TestFieldSpecIdentityOptResolvesDeterministicImplicitInputs(t *testing.T) {
-	// Implicit inputs should be canonicalized deterministically: deduped by name
-	// with last-write-wins semantics, then applied in stable name order.
-	spec := &dagql.FieldSpec{
-		ImplicitInputs: []dagql.ImplicitInput{
+type identityOptTestQuery struct{}
+
+func (identityOptTestQuery) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Query",
+		NonNull:   true,
+	}
+}
+
+func newIdentityOptTestServer(t *testing.T) *Server {
+	t.Helper()
+	baseCache, err := NewCache(context.Background(), "")
+	require.NoError(t, err)
+	return NewServer(identityOptTestQuery{}, NewSessionCache(baseCache))
+}
+
+func TestFieldSpecResolveImplicitInputCallArgsResolvesDeterministicImplicitInputs(t *testing.T) {
+	spec := &FieldSpec{
+		ImplicitInputs: []ImplicitInput{
 			{
 				Name: "b",
-				Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
-					return dagql.NewString("first"), nil
+				Resolver: func(context.Context, map[string]Input) (Input, error) {
+					return NewString("first"), nil
 				},
 			},
 			{
 				Name: "a",
-				Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
-					return dagql.NewString("alpha"), nil
+				Resolver: func(context.Context, map[string]Input) (Input, error) {
+					return NewString("alpha"), nil
 				},
 			},
 			{
 				Name: "b",
-				Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
-					return dagql.NewString("second"), nil
+				Resolver: func(context.Context, map[string]Input) (Input, error) {
+					return NewString("second"), nil
 				},
 			},
 		},
 	}
 
-	identityOpt, err := spec.IdentityOpt(context.Background(), nil)
+	implicitArgs, err := spec.resolveImplicitInputCallArgs(context.Background(), nil)
 	require.NoError(t, err)
+	require.Len(t, implicitArgs, 2)
+	require.Equal(t, "a", implicitArgs[0].Name)
+	require.Equal(t, "b", implicitArgs[1].Name)
 
-	id := call.New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "field").With(identityOpt)
+	require.Equal(t, ResultCallLiteralKindString, implicitArgs[0].Value.Kind)
+	require.Equal(t, "alpha", implicitArgs[0].Value.StringValue)
 
-	implicitInputs := id.ImplicitInputs()
-	require.Len(t, implicitInputs, 2)
-	require.Equal(t, "a", implicitInputs[0].Name())
-	require.Equal(t, "b", implicitInputs[1].Name())
-
-	litA, ok := implicitInputs[0].Value().(*call.LiteralString)
-	require.True(t, ok)
-	require.Equal(t, "alpha", litA.Value())
-
-	litB, ok := implicitInputs[1].Value().(*call.LiteralString)
-	require.True(t, ok)
-	require.Equal(t, "second", litB.Value())
+	require.Equal(t, ResultCallLiteralKindString, implicitArgs[1].Value.Kind)
+	require.Equal(t, "second", implicitArgs[1].Value.StringValue)
 }
 
-func TestFieldSpecIdentityOptAppliesModule(t *testing.T) {
-	// IdentityOpt should attach the field spec module to the resulting call ID.
-	moduleID := call.New().Append(&ast.Type{
-		NamedType: "Module",
-		NonNull:   true,
-	}, "module")
-	module := call.NewModule(moduleID, "mod", "ref", "pin")
-
-	spec := &dagql.FieldSpec{
-		Module: module,
-	}
-	identityOpt, err := spec.IdentityOpt(context.Background(), nil)
-	require.NoError(t, err)
-
-	id := call.New().Append(&ast.Type{
-		NamedType: "String",
-		NonNull:   true,
-	}, "field").With(identityOpt)
-
-	require.NotNil(t, id.Module())
-	require.NotNil(t, id.Module().ID())
-	require.Equal(t, moduleID.Digest(), id.Module().ID().Digest())
-}
-
-func TestFieldSpecIdentityOptPropagatesResolverErrors(t *testing.T) {
-	// Resolver failures should bubble up with implicit-input context.
-	spec := &dagql.FieldSpec{
-		ImplicitInputs: []dagql.ImplicitInput{
+func TestFieldSpecResolveImplicitInputCallArgsPropagatesResolverErrors(t *testing.T) {
+	spec := &FieldSpec{
+		ImplicitInputs: []ImplicitInput{
 			{
 				Name: "broken",
-				Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
+				Resolver: func(context.Context, map[string]Input) (Input, error) {
 					return nil, errors.New("boom")
 				},
 			},
 		},
 	}
 
-	_, err := spec.IdentityOpt(context.Background(), nil)
+	_, err := spec.resolveImplicitInputCallArgs(context.Background(), nil)
 	require.ErrorContains(t, err, `resolve implicit input "broken"`)
 	require.ErrorContains(t, err, "boom")
 }
 
-func TestFieldSpecIdentityOptRejectsNilResolvedInput(t *testing.T) {
-	// Resolvers must not return nil inputs; this should be treated as an error.
-	spec := &dagql.FieldSpec{
-		ImplicitInputs: []dagql.ImplicitInput{
+func TestFieldSpecResolveImplicitInputCallArgsRejectsNilResolvedInput(t *testing.T) {
+	spec := &FieldSpec{
+		ImplicitInputs: []ImplicitInput{
 			{
 				Name: "broken",
-				Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
+				Resolver: func(context.Context, map[string]Input) (Input, error) {
 					return nil, nil
 				},
 			},
 		},
 	}
 
-	_, err := spec.IdentityOpt(context.Background(), nil)
+	_, err := spec.resolveImplicitInputCallArgs(context.Background(), nil)
 	require.ErrorContains(t, err, `implicit input "broken" resolved to nil`)
+}
+
+func TestObjectPreselectAppliesFieldModule(t *testing.T) {
+	srv := newIdentityOptTestServer(t)
+	module := &ResultCallModule{
+		Name: "mod",
+		Ref:  "ref",
+		Pin:  "pin",
+	}
+
+	Fields[identityOptTestQuery]{
+		{
+			Spec: &FieldSpec{
+				Name:   "field",
+				Type:   String(""),
+				Module: module,
+			},
+			Func: func(context.Context, ObjectResult[identityOptTestQuery], map[string]Input, call.View) (AnyResult, error) {
+				return NewResultForCall(NewString("value"), &ResultCall{
+					Kind:  ResultCallKindField,
+					Type:  NewResultCallType(NewString("").Type()),
+					Field: "field",
+				})
+			},
+		},
+	}.Install(srv)
+
+	root, ok := srv.Root().(ObjectResult[identityOptTestQuery])
+	require.True(t, ok)
+
+	_, preselected, err := root.preselect(context.Background(), srv, Selector{Field: "field"})
+	require.NoError(t, err)
+	require.NotNil(t, preselected.request.ResultCall.Module)
+	require.Equal(t, module.Name, preselected.request.ResultCall.Module.Name)
+	require.Equal(t, module.Ref, preselected.request.ResultCall.Module.Ref)
+	require.Equal(t, module.Pin, preselected.request.ResultCall.Module.Pin)
 }

@@ -22,9 +22,9 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
 
-	key := cacheTestID("persist-worker-retained")
-	res, err := c.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	key := cacheTestIntCall("persist-worker-retained")
+	res, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 42).WithSafeToPersistCache(true), nil
@@ -61,9 +61,9 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
 
-	key := cacheTestID("persist-runtime-no-write")
-	res, err := c.GetOrInitCall(ctx, CacheKey{
-		ID:            key,
+	key := cacheTestIntCall("persist-runtime-no-write")
+	res, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 42).WithSafeToPersistCache(true), nil
@@ -89,8 +89,8 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
 
-	key := cacheTestID("persist-worker-pruned")
-	res, err := c.GetOrInitCall(ctx, CacheKey{ID: key}, func(context.Context) (AnyResult, error) {
+	key := cacheTestIntCall("persist-worker-pruned")
+	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 99), nil
 	})
 	assert.NilError(t, err)
@@ -116,21 +116,26 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
 
-	sourceKey := cacheTestID("persist-worker-source")
-	sourceRes, err := c.GetOrInitCall(ctx, CacheKey{
-		ID:            sourceKey,
+	sourceKey := cacheTestIntCall("persist-worker-source")
+	sourceRes, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    sourceKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(sourceKey, 11).WithSafeToPersistCache(true), nil
 	})
 	assert.NilError(t, err)
 
-	rootKey := sourceKey.Append(Int(0).Type(), "persist-worker-root")
-	rootRes, err := c.GetOrInitCall(ctx, CacheKey{
-		ID:            rootKey,
+	rootKey := &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType(Int(0).Type()),
+		Field:    "persist-worker-root",
+		Receiver: &ResultCallRef{ResultID: uint64(sourceRes.cacheSharedResult().id)},
+	}
+	rootRes, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    rootKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(rootKey, 22).WithSafeToPersistCache(true), nil
+		return cacheTestPlainResult(NewInt(22)).WithSafeToPersistCache(true), nil
 	})
 	assert.NilError(t, err)
 
@@ -171,9 +176,9 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 		assert.NilError(t, c.Close(context.Background()))
 	}()
 
-	key := cacheTestID("persist-snapshot-self-contained")
-	res, err := c.GetOrInitCall(ctx, CacheKey{
-		ID: key,
+	key := cacheTestIntCall("persist-snapshot-self-contained")
+	res, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 42), nil
 	})

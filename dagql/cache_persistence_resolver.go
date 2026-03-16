@@ -3,6 +3,8 @@ package dagql
 import (
 	"context"
 	"fmt"
+
+	"github.com/opencontainers/go-digest"
 )
 
 func (c *cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -138,9 +140,25 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult)
 	if requestedFrame == nil {
 		return nil, fmt.Errorf("derive persisted requested frame for result %d: missing result call frame", res.id)
 	}
+	requestDigest, err := requestedFrame.RecipeDigest()
+	if err != nil {
+		return nil, fmt.Errorf("derive persisted requested digest for result %d: %w", res.id, err)
+	}
+	requestSelf, requestInputRefs, err := requestedFrame.SelfDigestAndInputRefs()
+	if err != nil {
+		return nil, fmt.Errorf("derive persisted requested term digests for result %d: %w", res.id, err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return nil, fmt.Errorf("derive persisted requested term input digest for result %d: %w", res.id, err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
 
 	c.egraphMu.Lock()
-	if err := c.teachResultIdentityLocked(ctx, res, requestedFrame); err != nil {
+	if err := c.teachResultIdentityLocked(ctx, res, requestedFrame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		c.egraphMu.Unlock()
 		return nil, fmt.Errorf("teach persisted shared result identity for result %d: %w", res.id, err)
 	}
