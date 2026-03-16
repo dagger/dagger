@@ -189,7 +189,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		Snapshot:  snap,
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTags bool, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {

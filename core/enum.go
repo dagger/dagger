@@ -52,7 +52,7 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
 		}
 
-		return dagql.NewResultForCurrentID(ctx, val)
+		return dagql.NewResultForCurrentCall(ctx, val)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}

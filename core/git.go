@@ -161,7 +161,7 @@ func (repo *GitRepository) AttachOwnedResults(
 	var owned []dagql.AnyResult
 	switch backend := repo.Backend.(type) {
 	case *LocalGitRepository:
-		if backend.Directory.ID() != nil {
+		if backend.Directory.Self() != nil {
 			attached, err := attach(backend.Directory)
 			if err != nil {
 				return nil, fmt.Errorf("attach git repository directory: %w", err)
@@ -174,7 +174,7 @@ func (repo *GitRepository) AttachOwnedResults(
 			owned = append(owned, typed)
 		}
 	case *RemoteGitRepository:
-		if backend.SSHAuthSocket.ID() != nil {
+		if backend.SSHAuthSocket.Self() != nil {
 			attached, err := attach(backend.SSHAuthSocket)
 			if err != nil {
 				return nil, fmt.Errorf("attach git repository ssh auth socket: %w", err)
@@ -186,7 +186,7 @@ func (repo *GitRepository) AttachOwnedResults(
 			backend.SSHAuthSocket = typed
 			owned = append(owned, typed)
 		}
-		if backend.AuthToken.ID() != nil {
+		if backend.AuthToken.Self() != nil {
 			attached, err := attach(backend.AuthToken)
 			if err != nil {
 				return nil, fmt.Errorf("attach git repository auth token: %w", err)
@@ -198,7 +198,7 @@ func (repo *GitRepository) AttachOwnedResults(
 			backend.AuthToken = typed
 			owned = append(owned, typed)
 		}
-		if backend.AuthHeader.ID() != nil {
+		if backend.AuthHeader.Self() != nil {
 			attached, err := attach(backend.AuthHeader)
 			if err != nil {
 				return nil, fmt.Errorf("attach git repository auth header: %w", err)
@@ -211,7 +211,7 @@ func (repo *GitRepository) AttachOwnedResults(
 			owned = append(owned, typed)
 		}
 		for i := range backend.Services {
-			if backend.Services[i].Service.ID() == nil {
+			if backend.Services[i].Service.Self() == nil {
 				continue
 			}
 			attached, err := attach(backend.Services[i].Service)
@@ -234,7 +234,7 @@ func (ref *GitRef) AttachOwnedResults(
 	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if ref == nil || ref.Repo.ID() == nil {
+	if ref == nil || ref.Repo.Self() == nil {
 		return nil, nil
 	}
 	attached, err := attach(ref.Repo)
@@ -539,7 +539,15 @@ func doGitCheckout(
 }
 
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
-	if ref1.Repo.ID() == ref2.Repo.ID() { // fast-path, just grab both refs from the same repo
+	ref1RepoID, err1 := ref1.Repo.ID()
+	if err1 != nil {
+		return nil, fmt.Errorf("merge-base ref1 repo ID: %w", err1)
+	}
+	ref2RepoID, err2 := ref2.Repo.ID()
+	if err2 != nil {
+		return nil, fmt.Errorf("merge-base ref2 repo ID: %w", err2)
+	}
+	if ref1RepoID.Digest() == ref2RepoID.Digest() { // fast-path, just grab both refs from the same repo
 		var mergeBase string
 		err := ref1.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
 			out, err := git.Run(ctx, "merge-base", ref1.Ref.SHA, ref2.Ref.SHA)

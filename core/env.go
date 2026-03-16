@@ -279,7 +279,11 @@ func (b *Binding) ID() string {
 func (b *Binding) Digest() digest.Digest {
 	obj, isObject := b.AsObject()
 	if isObject {
-		return obj.ID().Digest()
+		id, err := obj.ID()
+		if err != nil {
+			return digest.FromString("")
+		}
+		return id.Digest()
 	}
 	jsonBytes, err := json.Marshal(b.Value)
 	if err != nil {
@@ -385,12 +389,16 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.IDType)
 			description := args["description"].(dagql.String).String()
-			obj, err := s.Server.Load(ctx, value.ID())
+			id, err := value.ID()
+			if err != nil {
+				return nil, fmt.Errorf("binding %q value ID: %w", name, err)
+			}
+			obj, err := s.Server.Load(ctx, id)
 			if err != nil {
 				return nil, err
 			}
 
-			return dagql.NewResultForCurrentID(ctx, env.WithInput(name, obj, description))
+			return dagql.NewResultForCurrentCall(ctx, env.WithInput(name, obj, description))
 		},
 	)
 
@@ -418,7 +426,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			name := args["name"].(dagql.String).String()
 			desc := args["description"].(dagql.String).String()
 
-			return dagql.NewResultForCurrentID(ctx, env.WithOutput(name, targetType, desc))
+			return dagql.NewResultForCurrentCall(ctx, env.WithOutput(name, targetType, desc))
 		},
 	)
 
@@ -445,7 +453,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			res, ok := val.(dagql.AnyResult)
 			if !ok {
 				var err error
-				res, err = dagql.NewResultForCurrentID(ctx, val)
+				res, err = dagql.NewResultForCurrentCall(ctx, val)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert binding %q value to result: %w", binding.Key, err)
 				}
