@@ -1,32 +1,73 @@
 package idtui
 
-import "time"
+import (
+	"github.com/muesli/termenv"
+)
 
-// streamingCursor returns a block cursor character that pulses between
-// a solid block and a thinner form based on wall-clock time. The pulse
-// cycle is ~500ms, creating a gentle blink effect. The caller is
-// responsible for styling it to match the surrounding content so it
-// doesn't look like the real terminal cursor.
+// streamingTail renders the last few characters of an incomplete value
+// with a fade-out gradient, visually indicating that more data is arriving.
+// The tail shifts naturally as new characters stream in, creating motion
+// without any time-based animation.
 //
-// The cursor uses fractional block characters to pulse:
+// For example, a streaming path "/src/main.g" renders as:
 //
-//	phase 0: █ (full block)
-//	phase 1: ▓ (dark shade)
-//	phase 2: ▒ (medium shade)
-//	phase 3: ░ (light shade)
+//	/src/mai  ← normal style
+//	       n  ← slightly faded
+//	        . ← more faded
+//	         g ← most faded
 //
-// then back up, creating a smooth breathing effect.
-func streamingCursor() string {
-	// 8 phases over 800ms = 100ms per phase
-	const phaseDuration = 100 * time.Millisecond
-	const numPhases = 8
+// The style function receives the base value and a fade level (0 = no fade,
+// higher = more faded) and should return the styled string.
+func streamingTail(out TermOutput, value string, fg termenv.Color, faint bool) string {
+	runes := []rune(value)
+	n := len(runes)
 
-	phase := int(time.Now().UnixMilli()/phaseDuration.Milliseconds()) % numPhases
-
-	// Bounce: 0 1 2 3 3 2 1 0
-	blocks := [4]string{"█", "▓", "▒", "░"}
-	if phase >= 4 {
-		phase = 7 - phase
+	const tailLen = 3
+	splitAt := n - tailLen
+	if splitAt < 0 {
+		splitAt = 0
 	}
-	return blocks[phase]
+
+	head := string(runes[:splitAt])
+	tail := runes[splitAt:]
+
+	var result string
+
+	// Render head with base style
+	if head != "" {
+		s := out.String(head)
+		if fg != nil {
+			s = s.Foreground(fg)
+		}
+		if faint {
+			s = s.Faint()
+		}
+		result += s.String()
+	}
+
+	// Render tail characters with increasing fade
+	// Use block shade characters interleaved with the actual chars
+	shades := []string{"▓", "▒", "░"}
+	for i, r := range tail {
+		// How far into the tail (0 = least faded, tailLen-1 = most faded)
+		depth := i - (len(tail) - min(len(tail), tailLen))
+
+		s := out.String(string(r))
+		if fg != nil {
+			s = s.Foreground(fg)
+		}
+		s = s.Faint()
+		result += s.String()
+
+		// Append a shade block that gets lighter toward the end
+		if depth < len(shades) {
+			sh := out.String(shades[depth])
+			if fg != nil {
+				sh = sh.Foreground(fg)
+			}
+			result += sh.Faint().String()
+		}
+	}
+
+	return result
 }

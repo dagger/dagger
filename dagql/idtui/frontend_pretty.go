@@ -2996,9 +2996,11 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 		if len(line) > maxWidth {
 			line = line[:maxWidth-1] + "…"
 		}
-		styled := out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String()
-		if !field.Complete {
-			styled += out.String(streamingCursor()).Foreground(termenv.ANSIBrightBlack).String()
+		var styled string
+		if field.Complete {
+			styled = out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String()
+		} else {
+			styled = streamingTail(out, line, termenv.ANSIBrightBlack, false)
 		}
 		r.fancyIndent(out, row, true, false)
 		fmt.Fprintln(out, prefix+styled)
