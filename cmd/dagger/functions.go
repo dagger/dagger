@@ -363,6 +363,8 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	defer telemetry.EndWithCause(span, &rerr)
 	fc.ctx = spanCtx
 
+	a = rewriteQueryRootConstructorArgs(c, fc.mod.MainObject, a)
+
 	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
 
 	cmd, args, err := fc.traverse(c, a, builder)
@@ -376,6 +378,176 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	}
 
 	return cmd, args, nil
+}
+
+func rewriteQueryRootConstructorArgs(root *cobra.Command, rootType *modTypeDef, args []string) []string {
+	if len(args) < 2 || !strings.HasPrefix(args[0], "-") {
+		return args
+	}
+	if rootType == nil || rootType.AsObject == nil || rootType.AsObject.Name != "Query" {
+		return args
+	}
+
+	constructors := queryRootModuleConstructors(rootType)
+	if len(constructors) == 0 {
+		return args
+	}
+
+	constructorsByName := make(map[string]*modFunction, len(constructors))
+	for _, constructor := range constructors {
+		constructorsByName[constructor.CmdName()] = constructor
+	}
+
+	for i := 1; i < len(args); i++ {
+		token := args[i]
+		if strings.HasPrefix(token, "-") {
+			continue
+		}
+
+		constructor, ok := constructorsByName[token]
+		if !ok {
+			continue
+		}
+
+		prefixStart, ok := queryRootConstructorPrefixStart(root.Flags(), constructor, args[:i])
+		if !ok {
+			continue
+		}
+
+		rewritten := make([]string, 0, len(args))
+		rewritten = append(rewritten, args[:prefixStart]...)
+		rewritten = append(rewritten, token)
+		rewritten = append(rewritten, args[prefixStart:i]...)
+		rewritten = append(rewritten, args[i+1:]...)
+		return rewritten
+	}
+
+	return args
+}
+
+func queryRootModuleConstructors(rootType *modTypeDef) []*modFunction {
+	fp := rootType.AsFunctionProvider()
+	if fp == nil {
+		return nil
+	}
+
+	fns, _ := GetSupportedFunctions(fp)
+	constructors := make([]*modFunction, 0, len(fns))
+	for _, fn := range fns {
+		obj := fn.ReturnType.AsObject
+		if obj == nil || obj.SourceModuleName == "" {
+			continue
+		}
+		if fn.Name != gqlFieldName(obj.SourceModuleName) {
+			continue
+		}
+		constructors = append(constructors, fn)
+	}
+	return constructors
+}
+
+func queryRootConstructorPrefixStart(rootFlags *pflag.FlagSet, constructor *modFunction, prefix []string) (int, bool) {
+	if len(prefix) == 0 {
+		return 0, false
+	}
+
+	rootOwned := make([]bool, len(prefix))
+	for i := 0; i < len(prefix); {
+		consumed := consumeKnownFlagTokens(rootFlags, prefix, i)
+		if consumed == 0 {
+			i++
+			continue
+		}
+		for j := 0; j < consumed && i+j < len(prefix); j++ {
+			rootOwned[i+j] = true
+		}
+		i += consumed
+	}
+
+	constructorArgs := make([]string, 0, len(prefix))
+	firstConstructorToken := -1
+	for i, arg := range prefix {
+		if rootOwned[i] {
+			continue
+		}
+		if firstConstructorToken == -1 {
+			firstConstructorToken = i
+		}
+		constructorArgs = append(constructorArgs, arg)
+	}
+	if firstConstructorToken == -1 {
+		return 0, false
+	}
+
+	if !parseFunctionFlags(constructor, constructorArgs) {
+		return 0, false
+	}
+
+	return firstConstructorToken, true
+}
+
+func parseFunctionFlags(fn *modFunction, args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+
+	cmd := &cobra.Command{
+		Use:           fn.CmdName(),
+		SilenceErrors: true,
+		SilenceUsage:  true,
+	}
+	cmd.Flags().SetInterspersed(false)
+	cmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+		return pflag.NormalizedName(cliName(name))
+	})
+
+	for _, arg := range fn.SupportedArgs() {
+		if err := arg.AddFlag(cmd.Flags()); err != nil {
+			return false
+		}
+	}
+
+	if err := cmd.ParseFlags(args); err != nil {
+		return false
+	}
+
+	return len(cmd.Flags().Args()) == 0
+}
+
+func consumeKnownFlagTokens(flags *pflag.FlagSet, args []string, idx int) int {
+	if idx >= len(args) {
+		return 0
+	}
+
+	arg := args[idx]
+	if arg == "-" || arg == "--" || !strings.HasPrefix(arg, "-") {
+		return 0
+	}
+
+	if strings.HasPrefix(arg, "--") {
+		name := strings.TrimPrefix(arg, "--")
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			name = name[:eq]
+		}
+		flag := flags.Lookup(name)
+		if flag == nil {
+			return 0
+		}
+		if strings.Contains(arg, "=") || flag.NoOptDefVal != "" || idx+1 >= len(args) {
+			return 1
+		}
+		return 2
+	}
+
+	name := arg[1:2]
+	flag := flags.ShorthandLookup(name)
+	if flag == nil {
+		return 0
+	}
+	if len(arg) > 2 || flag.NoOptDefVal != "" || idx+1 >= len(args) {
+		return 1
+	}
+	return 2
 }
 
 // traverse recursively builds the command tree, until the leaf command is found.

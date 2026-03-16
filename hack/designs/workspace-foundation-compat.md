@@ -2386,15 +2386,65 @@ Current blocker summary:
     - `namespaced_method_still_accepts_both_args`
 - so the previous harness-equivalence blocker is cleared for this bucket; the
   remaining failures are now real branch behavior, not a playground artifact
+- constructor-arg conflict diagnosis from the direct rerun:
+  - this does not currently look like proof that the schema/runtime
+    entrypoint-module design is wrong
+  - the engine-side Query-root proxy suppression appears intentional and
+    coherent: if a module constructor arg and a main-object method arg share the
+    same name, the root proxy is hidden rather than exposing an ambiguous merged
+    signature
+  - concrete retained example:
+    - module path: `ci`
+    - constructor: `new(prefix: String! = "ctor")`
+    - method: `echo(prefix: String! = "method")`
+  - the hidden root proxy is expected here because a root-shaped call like
+    `dagger call echo --prefix ... --prefix ...` does not say which `--prefix`
+    belongs to the constructor vs the method
+  - the namespaced path remains the intended escape hatch and should be
+    unambiguous in forms like:
+    - `dagger call ci echo`
+    - `dagger call ci --prefix ctor echo --prefix method`
+  - the currently reproduced blind spot is narrower and appears to live in CLI
+    traversal:
+    - `dagger call --prefix ctor ci echo --prefix method`
+    - this looks human-readable as "constructor flag first, then descend into
+      ci", but the current `Query`-root CLI parsing sees the leading
+      `--prefix` before it has descended into `ci`, so the flag has no owner
+  - likely fix boundary from this diagnosis:
+    - repair `cmd/dagger/functions.go` traversal/flag ownership for the
+      namespaced constructor path
+    - do not treat this as evidence that `core/object.go`'s proxy-skipping
+      behavior should be reverted
+- local follow-up outcome after reproducing the bucket:
+  - `cmd/dagger/module.go` now treats repeated bare `dagger init` as a no-op
+    when the module already exists and no init-mutating flags were explicitly
+    requested; this removed an earlier workspace bootstrap blocker from the
+    direct rerun path
+  - `cmd/dagger/functions.go` now rewrites leading constructor flags onto the
+    namespaced module constructor path when the workspace CLI root is `Query`
+  - the constructor-conflict case now resolves as intended:
+    - `dagger call --prefix ctor ci echo --prefix method`
+    - effective traversal: `dagger call ci --prefix ctor echo --prefix method`
+    - result: `ctor:method`
+- verification after the local follow-up:
+  - `dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestEntrypointProxySkipsConstructorArgConflicts/namespaced_method_still_accepts_both_args' --test-verbose`
+    - trace: `https://dagger.cloud/dagger/traces/fdcce7fff92d111102e4a248f2a4b5f3`
+    - result: passes
+  - `dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)' --test-verbose`
+    - trace: `https://dagger.cloud/dagger/traces/9bb1f6aa6a8acf126b0639ee675bf16f`
+    - result: all retained workspace entrypoint tests pass
 
 Recommended next step for the next session:
 
-- inspect the failing inner CLI invocations from the package-isolated direct rerun;
-  do not go back to the playground/toolchains path for this bucket
-- recover or discard the local CLI WIP only in response to the now-reproduced
-  failures above
-- keep the currently passing root-field-conflict behavior as a regression guard
-- do not change tests; the rerun finally gives product-facing evidence to fix
+- return to the explicit `-m` follow-up under the same direct `engine-dev test`
+  harness; do not go back to the playground/toolchains path for primary
+  verification
+- recover or discard the local `cmd/dagger/mcp.go` / `cmd/dagger/module_inspect.go`
+  WIP only against still-reproduced explicit `-m` failures
+- keep the now-passing blueprint, root-field-conflict, and constructor-conflict
+  workspace tests as regression guards
+- do not change tests without discussion; the current bucket now passes under the
+  intended harness
 
 Implementation constraints for any CLI follow-up:
 
@@ -2405,11 +2455,11 @@ Implementation constraints for any CLI follow-up:
 - preserve namespaced constructor/default behavior for explicit module access
   while repairing Query-root entrypoint visibility
 - do not fall back from explicit `-m` to an unfiltered raw `Query`
-- keep the now-passing root-field-conflict behavior intact while fixing the
-  remaining blueprint and constructor-arg regressions
+- keep the now-passing blueprint, root-field-conflict, and constructor-conflict
+  behavior intact while fixing any remaining explicit `-m` regressions
 - drop the debug-only `user_defaults_test.go` logging before landing unless there
   is an explicit reason to keep diagnostic output
-- do not change tests without discussion; the current failures are now reproduced
+- do not change tests without discussion; the current targeted bucket now passes
   under the intended harness
 
 ## User-Visible Breakage In The Foundation PR
