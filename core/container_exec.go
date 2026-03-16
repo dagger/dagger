@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -107,8 +106,15 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	execMD.SessionID = clientMetadata.SessionID
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 
-	if execMD.CallID == nil {
-		execMD.CallID = dagql.CurrentID(ctx)
+	if execMD.Call == nil {
+		execMD.Call = dagql.CurrentCall(ctx)
+	}
+	if execMD.CallDigest == "" && execMD.Call != nil {
+		callDigest, err := execMD.Call.RecipeDigest()
+		if err != nil {
+			return nil, fmt.Errorf("compute exec call digest: %w", err)
+		}
+		execMD.CallDigest = callDigest
 	}
 	if execMD.ExecID == "" {
 		execMD.ExecID = identity.NewID()
@@ -1459,12 +1465,25 @@ func (container *Container) WithExec(
 				!execMD.Internal &&
 				metaSpec != nil &&
 				(execMD.ExecID == "" || bkClient.RegisterInteractiveExec(execMD.ExecID)) {
+				var callID *call.ID
+				if execMD.Call != nil {
+					dagqlCache, err := query.Cache(ctx)
+					if err != nil {
+						rerr = fmt.Errorf("get dagql cache for terminal exec error: %w", err)
+						return
+					}
+					callID, err = dagqlCache.RecipeIDForCall(execMD.Call)
+					if err != nil {
+						rerr = fmt.Errorf("rebuild recipe ID for terminal exec error: %w", err)
+						return
+					}
+				}
 				meta := *metaSpec
 				meta.Args = []string{"/bin/sh"}
 				if len(bkClient.InteractiveCommand) > 0 {
 					meta.Args = bkClient.InteractiveCommand
 				}
-				if err := container.TerminalExecError(ctx, execMD.CallID, execMD, &meta, rerr); err != nil {
+				if err := container.TerminalExecError(ctx, callID, execMD, &meta, rerr); err != nil {
 					rerr = err
 					return
 				}

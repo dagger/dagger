@@ -277,9 +277,16 @@ func (sdk *goSDK) ModuleTypes(
 
 	execMD := buildkit.ExecutionMetadata{
 		ClientID: identity.NewID(),
-		CallID:   dagql.CurrentID(ctx),
+		Call:     dagql.CurrentCall(ctx),
 		ExecID:   identity.NewID(),
 		Internal: true,
+	}
+	if execMD.Call != nil {
+		callDigest, err := execMD.Call.RecipeDigest()
+		if err != nil {
+			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
+		}
+		execMD.CallDigest = callDigest
 	}
 	execMD.EncodedModuleID, err = currentModuleID.Encode()
 	if err != nil {

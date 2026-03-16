@@ -1158,8 +1158,8 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		WithField("id", state.id).
 		WithField("args", state.spec.Process.Args)
 	if w.execMD != nil {
-		if w.execMD.CallID != nil {
-			lg = lg.WithField("call_id", w.execMD.CallID.Digest())
+		if w.execMD.CallDigest != "" {
+			lg = lg.WithField("call_id", w.execMD.CallDigest)
 		}
 		if w.execMD.CallerClientID != "" {
 			lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
@@ -1180,11 +1180,11 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	})
 
 	cgroupPath := state.spec.Linux.CgroupsPath
-	if cgroupPath != "" && w.execMD != nil && w.execMD.CallID != nil {
+	if cgroupPath != "" && w.execMD != nil && w.execMD.CallDigest != "" {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
 
 		commonAttrs := []attribute.KeyValue{
-			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallID.Digest())),
+			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallDigest)),
 		}
 		spanContext := trace.SpanContextFromContext(ctx)
 		if spanContext.HasSpanID() {

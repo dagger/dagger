@@ -402,7 +402,7 @@ type ClientInitOpts struct {
 
 	// If this is a nested client, the call that created the client (i.e. a function call or
 	// an exec with nesting enabled)
-	CallID *call.ID
+	Call *dagql.ResultCall
 
 	// If this is a nested client, the client ID of the caller that created it
 	CallerClientID string
@@ -444,11 +444,15 @@ func (srv *Server) initializeDaggerClient(
 	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
-	if opts.CallID != nil {
+	if opts.Call != nil {
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: opts.CallID}, opts.CallerClientID, true); err != nil {
+		callID, err := client.daggerSession.dagqlCache.RecipeIDForCall(opts.Call)
+		if err != nil {
+			return fmt.Errorf("rebuild nested client recipe ID: %w", err)
+		}
+		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: callID}, opts.CallerClientID, true); err != nil {
 			return fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}
@@ -908,7 +912,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules: allowedLLMModules,
 			EagerRuntime:      eagerRuntime,
 		},
-		CallID:                 execMD.CallID,
+		Call:                   execMD.Call,
 		CallerClientID:         execMD.CallerClientID,
 		EncodedModuleID:        execMD.EncodedModuleID,
 		EncodedContentModuleID: execMD.EncodedContentModuleID,

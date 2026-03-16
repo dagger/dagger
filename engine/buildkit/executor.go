@@ -22,7 +22,7 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
@@ -62,7 +62,8 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	CallID                 *call.ID
+	Call                   *dagql.ResultCall
+	CallDigest             digest.Digest
 	EncodedModuleID        string
 	EncodedContentModuleID string
 	EncodedFunctionCall    json.RawMessage

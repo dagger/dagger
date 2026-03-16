@@ -665,14 +665,21 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, err
 	}
 
-	callID := dagql.CurrentID(ctx)
+	curCall := dagql.CurrentCall(ctx)
 	execMD := buildkit.ExecutionMetadata{
 		ClientID:          identity.NewID(),
-		CallID:            callID,
+		Call:              curCall,
 		ExecID:            identity.NewID(),
 		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+	}
+	if curCall != nil {
+		callDigest, err := curCall.RecipeDigest()
+		if err != nil {
+			return nil, fmt.Errorf("compute function exec call digest: %w", err)
+		}
+		execMD.CallDigest = callDigest
 	}
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
