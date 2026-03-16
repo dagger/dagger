@@ -56,9 +56,10 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client, workspaceRef *
 	if modRef, explicit := getExplicitModuleSourceRef(); explicit && modRef != "" {
 		explicitModule.ref = modRef
 		selected, err := resolveExplicitModuleSelection(ctx, dag, modRef)
-		if err == nil {
-			explicitModule = selected
+		if err != nil {
+			return nil, err
 		}
+		explicitModule = selected
 	}
 
 	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
