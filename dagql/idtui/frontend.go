@@ -560,20 +560,20 @@ func (r *renderer) renderSpan(
 					switch toolArgStyle(span.LLMTool, argName) {
 					case argStylePath:
 						if !sawPath {
-							if field.Complete {
-								fmt.Fprint(out, " ", out.String(field.Value).Foreground(termenv.ANSICyan))
-							} else {
-								fmt.Fprint(out, " ", streamingTail(out, field.Value, termenv.ANSICyan, false))
+							s := out.String(field.Value).Foreground(termenv.ANSICyan).String()
+							if !field.Complete {
+								s += out.String(streamingGlitch(field.Value)).Foreground(termenv.ANSICyan).Faint().String()
 							}
+							fmt.Fprint(out, " ", s)
 							sawPath = true
 						}
 					case argStyleDesc:
 						if !sawDesc {
-							if field.Complete {
-								fmt.Fprint(out, " ", out.String(field.Value).Faint())
-							} else {
-								fmt.Fprint(out, " ", streamingTail(out, field.Value, nil, true))
+							s := out.String(field.Value).Faint().String()
+							if !field.Complete {
+								s += out.String(streamingGlitch(field.Value)).Faint().String()
 							}
+							fmt.Fprint(out, " ", s)
 							sawDesc = true
 						}
 					}
