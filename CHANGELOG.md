@@ -268,7 +268,7 @@ Special thanks to our external contributors this release!
 - Function cache control by @sipsma in https://github.com/dagger/dagger/pull/10975 \
   Function calls now have configurable caching behavior, including TTLs. Function calls with cached results can skip execution, which often significantly speeds up your workflows. Instructions and more details on the configuration options can be found in the [docs](https://docs.dagger.io/extending/function-caching). \
   🚨 Modules initialized before v0.19.4 [will need to explicitly opt-in to the new caching behavior](https://docs.dagger.io/extending/function-caching/#backwards-compatibility).
-- New `GitRepository.uncommited` API to get changeset of dirty changes in the working directory by @jedevc in https://github.com/dagger/dagger/pull/11241
+- New `GitRepository.uncommitted` API to get changeset of dirty changes in the working directory by @jedevc in https://github.com/dagger/dagger/pull/11241
 - Add new `engine clients` API by @matipan in https://github.com/dagger/dagger/pull/11308
 
 ### Fixed
@@ -1626,7 +1626,7 @@ changes can be found in the PR descriptions linked above.
 ### Fixed
 - cli: Fix panic when calling function with list of scalars by @jedevc in https://github.com/dagger/dagger/pull/7322
 - Avoid hang caused by client id conflicts by @sipsma in https://github.com/dagger/dagger/pull/7335
-- Avoid unneccessary module cache invalidation from internal plumbing values by @sipsma in https://github.com/dagger/dagger/pull/7336
+- Avoid unnecessary module cache invalidation from internal plumbing values by @sipsma in https://github.com/dagger/dagger/pull/7336
 
 ### What to do next?
 - Read the [documentation](https://docs.dagger.io)
