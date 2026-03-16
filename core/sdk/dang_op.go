@@ -774,3 +774,93 @@ func solveDangEval(
 
 	return output, nil
 }
+
+func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type) (dang.Value, error) {
+	if nonNull, ok := fieldType.(hm.NonNullType); ok {
+		return anyToDang(ctx, env, val, nonNull.Type)
+	}
+	switch v := val.(type) {
+	case string:
+		if modType, ok := fieldType.(*dang.Module); ok && modType != dang.StringType {
+			sel := &dang.FunCall{
+				Fun: &dang.Select{
+					Field: &dang.Symbol{Name: fmt.Sprintf("load%sFromID", modType.Named)},
+				},
+				Args: dang.Record{
+					dang.Keyed[dang.Node]{
+						Key:   "id",
+						Value: &dang.String{Value: v},
+					},
+				},
+			}
+			return sel.Eval(ctx, env)
+		}
+		return dang.StringValue{Val: v}, nil
+	case int:
+		return dang.IntValue{Val: v}, nil
+	case json.Number:
+		i, err := v.Int64()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert json.Number to int64: %w", err)
+		}
+		return dang.IntValue{Val: int(i)}, nil
+	case bool:
+		return dang.BoolValue{Val: v}, nil
+	case []any:
+		listT, isList := fieldType.(dang.ListType)
+		if !isList {
+			return nil, fmt.Errorf("expected list type, got %T", fieldType)
+		}
+		vals := dang.ListValue{
+			ElemType: listT,
+		}
+		for _, item := range v {
+			val, err := anyToDang(ctx, env, item, listT.Type)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert list item: %w", err)
+			}
+			vals.Elements = append(vals.Elements, val)
+		}
+		return vals, nil
+	case map[string]any:
+		mod, isMod := fieldType.(dang.Env)
+		if !isMod {
+			return nil, fmt.Errorf("expected module type, got %T", fieldType)
+		}
+		modVal := dang.NewModuleValue(mod)
+		modVal.SetDynamicScope(modVal)
+		for name, val := range v {
+			expectedT, found := mod.SchemeOf(name)
+			if !found {
+				return nil, fmt.Errorf("module %q does not have a scheme for %q", mod.Name(), name)
+			}
+			t, isMono := expectedT.Type()
+			if !isMono {
+				return nil, fmt.Errorf("expected monomorphic type, got %T", t)
+			}
+			dangVal, err := anyToDang(ctx, env, val, t)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
+			}
+			modVal.Set(name, dangVal)
+		}
+		// For named types, evaluate the class body to set up computed properties and methods
+		if mod.Name() != "" {
+			constructor, ok := env.Get(mod.Name())
+			if ok {
+				if constructorFn, ok := constructor.(*dang.ConstructorFunction); ok {
+					bodyEnv := dang.CreateCompositeEnv(modVal, env)
+					_, err := dang.EvaluateFormsWithPhases(ctx, constructorFn.ClassBodyForms, bodyEnv)
+					if err != nil {
+						return nil, fmt.Errorf("evaluating class body for %s: %w", mod.Name(), err)
+					}
+				}
+			}
+		}
+		return modVal, nil
+	case nil:
+		return dang.NullValue{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported type %T", val)
+	}
+}
