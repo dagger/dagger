@@ -16,7 +16,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 		dagql.Func("list", s.list).
 			Doc("Return a list of individual checks and their details"),
 
-		dagql.Func("run", s.run).
+		dagql.FuncWithCacheKey("run", s.run, dagql.CachePerCall).
 			Doc("Execute all selected checks"),
 
 		dagql.Func("report", s.report).
@@ -36,7 +36,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
-		dagql.Func("run", s.runSingleCheck).
+		dagql.FuncWithCacheKey("run", s.runSingleCheck, dagql.CachePerCall).
 			Doc("Execute the check"),
 	}.Install(srv)
 }
