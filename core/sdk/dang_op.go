@@ -214,7 +214,17 @@ func (op DangEvalOp) eval(
 		return json.Marshal(dagMod)
 	}
 
-	// Build input args map.
+	// Dispatch the function/constructor call.
+	result, err := op.callFunction(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(result)
+}
+
+// callFunction dispatches a constructor or method call against the Dang environment.
+func (op DangEvalOp) callFunction(ctx context.Context, env dang.EvalEnv) (dang.Value, error) {
 	inputArgs := make(map[string][]byte, len(op.InputArgs))
 	for _, arg := range op.InputArgs {
 		inputArgs[arg.Name] = []byte(arg.Value)
@@ -282,52 +292,43 @@ func (op DangEvalOp) eval(
 		})
 	}
 
-	var result dang.Value
 	if op.FnName == "" {
-		result, err = parentConstructor.Call(ctx, env, argMap)
-		if err != nil {
-			return nil, fmt.Errorf("call constructor: %w", err)
-		}
-	} else {
-		parentModEnv := dang.NewModuleValue(parentModType)
-		parentModEnv.SetDynamicScope(parentModEnv)
-
-		for name, value := range parentState {
-			scheme, found := parentModType.SchemeOf(name)
-			if !found {
-				return nil, fmt.Errorf("unknown field: %s", name)
-			}
-			fieldType, isMono := scheme.Type()
-			if !isMono {
-				return nil, fmt.Errorf("non-monotype field %s", name)
-			}
-			dangVal, err := anyToDang(ctx, env, value, fieldType)
-			if err != nil {
-				return nil, fmt.Errorf("convert field %s: %w", name, err)
-			}
-			parentModEnv.Set(name, dangVal)
-		}
-
-		bodyEnv := dang.CreateCompositeEnv(parentModEnv, env)
-		_, err := dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
-		if err != nil {
-			return nil, fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ClassName, err)
-		}
-
-		call := &dang.FunCall{
-			Fun: &dang.Select{
-				Receiver: &dang.ValueNode{Val: parentModEnv},
-				Field:    &dang.Symbol{Name: op.FnName},
-			},
-			Args: args,
-		}
-		result, err = call.Eval(ctx, env)
-		if err != nil {
-			return nil, fmt.Errorf("eval call: %w", err)
-		}
+		return parentConstructor.Call(ctx, env, argMap)
 	}
 
-	return json.Marshal(result)
+	parentModEnv := dang.NewModuleValue(parentModType)
+	parentModEnv.SetDynamicScope(parentModEnv)
+
+	for name, value := range parentState {
+		scheme, found := parentModType.SchemeOf(name)
+		if !found {
+			return nil, fmt.Errorf("unknown field: %s", name)
+		}
+		fieldType, isMono := scheme.Type()
+		if !isMono {
+			return nil, fmt.Errorf("non-monotype field %s", name)
+		}
+		dangVal, err := anyToDang(ctx, env, value, fieldType)
+		if err != nil {
+			return nil, fmt.Errorf("convert field %s: %w", name, err)
+		}
+		parentModEnv.Set(name, dangVal)
+	}
+
+	bodyEnv := dang.CreateCompositeEnv(parentModEnv, env)
+	_, err := dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
+	if err != nil {
+		return nil, fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ClassName, err)
+	}
+
+	call := &dang.FunCall{
+		Fun: &dang.Select{
+			Receiver: &dang.ValueNode{Val: parentModEnv},
+			Field:    &dang.Symbol{Name: op.FnName},
+		},
+		Args: args,
+	}
+	return call.Eval(ctx, env)
 }
 
 func initModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (res dagql.ObjectResult[*core.Module], _ error) {
