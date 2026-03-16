@@ -1,6 +1,6 @@
 module toolchains/release
 
-go 1.25.6
+go 1.25.3
 
 replace github.com/dagger/dagger => ../..
 

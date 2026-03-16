@@ -1,6 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.25.6
+go 1.25.3
 
 require (
 	dagger.io/dagger v0.20.1
@@ -153,7 +153,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v0.0.0-20260314224556-8eba69d6ac5b
+	github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.3
