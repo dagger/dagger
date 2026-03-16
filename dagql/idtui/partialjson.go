@@ -5,6 +5,7 @@ import "strings"
 // parsedField holds a parsed field value and whether it is complete
 // (closing quote seen) or still streaming.
 type parsedField struct {
+	Key      string
 	Value    string
 	Complete bool
 }
@@ -22,8 +23,8 @@ type parsedField struct {
 //
 // This is intentionally simple and only handles the subset of JSON that
 // LLM tool call arguments produce.
-func partialJSONFields(s string) map[string]parsedField {
-	result := make(map[string]parsedField)
+func partialJSONFields(s string) []parsedField {
+	var result []parsedField
 	i := 0
 	n := len(s)
 
@@ -173,7 +174,7 @@ func partialJSONFields(s string) map[string]parsedField {
 			// String value — include even if truncated (streaming)
 			val, complete := parseString()
 			if val != "" {
-				result[key] = parsedField{Value: val, Complete: complete}
+				result = append(result, parsedField{Key: key, Value: val, Complete: complete})
 			}
 		} else if i < n && s[i] == '[' {
 			// Array value — try to extract as string array
@@ -213,7 +214,7 @@ func partialJSONFields(s string) map[string]parsedField {
 				}
 			}
 			if complete && len(elems) > 0 {
-				result[key] = parsedField{Value: strings.Join(elems, " "), Complete: true}
+				result = append(result, parsedField{Key: key, Value: strings.Join(elems, " "), Complete: true})
 			}
 		} else {
 			// Other value — skip it

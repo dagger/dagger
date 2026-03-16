@@ -98,9 +98,9 @@ type frontendPretty struct {
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
 	promptErr       error
-	promptErrLabel    *ErrorLabel
-	queuedMsgLabel   *QueuedMessageLabel
-	textInput         *tuist.TextInput
+	promptErrLabel  *ErrorLabel
+	queuedMsgLabel  *QueuedMessageLabel
+	textInput       *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
 	statusLine      *StatusLine
 	keymapBar       *KeymapBar
@@ -1416,10 +1416,10 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
-	chromeHeight += fe.errorLabelHeight()      // promptErrLabel is a sibling, not rendered here
-	chromeHeight += fe.queuedMessageHeight()   // queuedMsgLabel is a sibling, not rendered here
-	chromeHeight += fe.editlineHeight()        // textInput is a sibling, not rendered here
-	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
+	chromeHeight += fe.errorLabelHeight()    // promptErrLabel is a sibling, not rendered here
+	chromeHeight += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
+	chromeHeight += fe.editlineHeight()      // textInput is a sibling, not rendered here
+	chromeHeight += fe.formHeight()          // formWrap is a sibling, not rendered here
 	if fe.searchInput != nil {
 		chromeHeight += 1 // searchInput is a sibling, 1 line
 	}
@@ -3051,7 +3051,7 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 // tryRenderEditDiff checks whether this is an edit tool call with complete
 // old+new text and, if so, renders a unified diff with intraline highlighting.
 // Returns true if the diff was rendered (caller should skip normal arg rendering).
-func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields map[string]parsedField) bool {
+func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields []parsedField) bool {
 	if !isEditTool(toolName) {
 		return false
 	}
@@ -3115,10 +3115,10 @@ func isEditTool(toolName string) bool {
 }
 
 // firstField returns the value of the first matching field name (case-insensitive).
-func firstField(fields map[string]parsedField, names ...string) string {
+func firstField(fields []parsedField, names ...string) string {
 	for _, name := range names {
-		for k, f := range fields {
-			if strings.EqualFold(k, name) && f.Value != "" {
+		for _, f := range fields {
+			if strings.EqualFold(f.Key, name) && f.Value != "" {
 				return f.Value
 			}
 		}
@@ -3127,12 +3127,11 @@ func firstField(fields map[string]parsedField, names ...string) string {
 }
 
 // firstFieldEntry returns the parsedField pointer for the first matching name.
-func firstFieldEntry(fields map[string]parsedField, names ...string) *parsedField {
+func firstFieldEntry(fields []parsedField, names ...string) *parsedField {
 	for _, name := range names {
-		for k := range fields {
-			if strings.EqualFold(k, name) {
-				f := fields[k]
-				return &f
+		for i := range fields {
+			if strings.EqualFold(fields[i].Key, name) {
+				return &fields[i]
 			}
 		}
 	}
@@ -3919,6 +3918,9 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 	for {
 		span := l.DB.Spans.Map[id]
 		if span == nil {
+			break
+		}
+		if span.ID == origID {
 			break
 		}
 		if span.Boundary || span.Encapsulate || span.Internal {

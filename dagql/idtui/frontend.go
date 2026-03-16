@@ -2,7 +2,6 @@ package idtui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -582,16 +581,16 @@ func (r *renderer) renderSpan(
 			if len(toolArgs) > 0 && toolArgs[0] != "" {
 				fields := partialJSONFields(toolArgs[0])
 				var sawPath, sawDesc, sawContent bool
-				for argName, field := range fields {
+				for _, field := range fields {
 					if field.Value == "" {
 						continue
 					}
-					switch toolArgStyle(span.LLMTool, argName) {
+					switch toolArgStyle(span.LLMTool, field.Key) {
 					case argStylePath:
 						if !sawPath {
 							s := out.String(field.Value).Foreground(termenv.ANSICyan).String()
 							if !field.Complete {
-								s += out.String(streamingGlitch(field.Value)).Foreground(termenv.ANSICyan).Faint().String()
+								s += out.String(Block0250).Foreground(termenv.ANSICyan).Faint().String()
 							}
 							fmt.Fprint(out, " ", s)
 							sawPath = true
@@ -604,7 +603,7 @@ func (r *renderer) renderSpan(
 							}
 							s := out.String(val).Faint().String()
 							if !field.Complete {
-								s += out.String(streamingGlitch(field.Value)).Faint().String()
+								s += out.String(Block0250).Faint().String()
 							}
 							fmt.Fprint(out, " ", s)
 							sawDesc = true
@@ -617,31 +616,14 @@ func (r *renderer) renderSpan(
 							}
 							s := out.String(val).Foreground(termenv.ANSIBrightBlack).Italic().String()
 							if !field.Complete {
-								s += out.String(streamingGlitch(field.Value)).Foreground(termenv.ANSIBrightBlack).String()
+								s += out.String(Block0250).Foreground(termenv.ANSIBrightBlack).String()
 							}
 							fmt.Fprint(out, " ", s)
 							sawContent = true
 						}
-					}
-				}
-
-				// Render non-conventional args as key=value pairs.
-				var parsed map[string]any
-				if err := json.Unmarshal([]byte(toolArgs[0]), &parsed); err == nil {
-					for k, v := range parsed {
-						if isConventionalArg(span.LLMTool, k) {
-							continue
-						}
-						valBytes, err := json.Marshal(v)
-						if err != nil {
-							continue
-						}
-						val := string(valBytes)
-						// Unquote simple strings for cleaner display.
-						if str, ok := v.(string); ok {
-							val = str
-						}
-						s := out.String(k + "=" + val).Foreground(termenv.ANSIBrightBlack).String()
+					case argStyleNone:
+						// Non-conventional arg: render as key=value.
+						s := out.String(field.Key + "=" + field.Value).Foreground(termenv.ANSIBrightBlack).String()
 						fmt.Fprint(out, " ", s)
 					}
 				}
