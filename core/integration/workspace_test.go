@@ -51,7 +51,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("init", "--sdk=dang", "--source=.", "--name="+name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -189,23 +189,23 @@ type Paths {
 }
 `))
 
-	out, err := ctr.With(daggerCall("paths", "workspaceValue")).Stdout(ctx)
+	out, err := ctr.With(daggerCall("paths", "workspace-value")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 
-	out, err = ctr.With(daggerCall("paths", "boundaryValue")).Stdout(ctx)
+	out, err = ctr.With(daggerCall("paths", "boundary-value")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello from boundary", strings.TrimSpace(out))
 
-	out, err = ctr.With(daggerCall("paths", "foundValue")).Stdout(ctx)
+	out, err = ctr.With(daggerCall("paths", "found-value")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "/repo.txt", strings.TrimSpace(out))
 
-	out, err = ctr.With(daggerCall("paths", "workspacePath")).Stdout(ctx)
+	out, err = ctr.With(daggerCall("paths", "workspace-path")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "app", strings.TrimSpace(out))
 
-	out, err = ctr.With(daggerCall("paths", "workspaceAddress")).Stdout(ctx)
+	out, err = ctr.With(daggerCall("paths", "workspace-address")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 }
