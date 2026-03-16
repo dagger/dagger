@@ -36,7 +36,7 @@ async def ci(self, source: dagger.Directory) -> str:
     # Push image to a registry using core Dagger API
     ref = await image.publish("ttl.sh/demoapp:1h")
 
-    # Scan image for vulnerabilites using third-party Trivy module
+    # Scan image for vulnerabilities using third-party Trivy module
     return await dag.trivy().scan_container(dag.container().from_(ref))
 ```
 
