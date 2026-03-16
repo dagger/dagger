@@ -129,6 +129,7 @@ func NewPlain(w io.Writer) Frontend {
 }
 
 func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
+func (fe *frontendPlain) SetStatusLine(StatusLineData)     {}
 
 func (fe *frontendPlain) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 	fe.mu.Lock()

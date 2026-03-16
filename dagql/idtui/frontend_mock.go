@@ -128,6 +128,9 @@ type FrontendMock struct {
 	// SetSidebarContentFunc mocks the SetSidebarContent method.
 	SetSidebarContentFunc func(sidebarSection SidebarSection)
 
+	// SetStatusLineFunc mocks the SetStatusLine method.
+	SetStatusLineFunc func(data StatusLineData)
+
 	// SetTelemetryErrorFunc mocks the SetTelemetryError method.
 	SetTelemetryErrorFunc func(err error)
 
@@ -220,6 +223,11 @@ type FrontendMock struct {
 			// SidebarSection is the sidebarSection argument value.
 			SidebarSection SidebarSection
 		}
+		// SetStatusLine holds details about calls to the SetStatusLine method.
+		SetStatusLine []struct {
+			// Data is the data argument value.
+			Data StatusLineData
+		}
 		// SetTelemetryError holds details about calls to the SetTelemetryError method.
 		SetTelemetryError []struct {
 			// Err is the err argument value.
@@ -255,6 +263,7 @@ type FrontendMock struct {
 	lockSetCloudURL        sync.RWMutex
 	lockSetPrimary         sync.RWMutex
 	lockSetSidebarContent  sync.RWMutex
+	lockSetStatusLine      sync.RWMutex
 	lockSetTelemetryError  sync.RWMutex
 	lockSetVerbosity       sync.RWMutex
 	lockShell              sync.RWMutex
@@ -716,6 +725,38 @@ func (mock *FrontendMock) SetSidebarContentCalls() []struct {
 	mock.lockSetSidebarContent.RLock()
 	calls = mock.calls.SetSidebarContent
 	mock.lockSetSidebarContent.RUnlock()
+	return calls
+}
+
+// SetStatusLine calls SetStatusLineFunc.
+func (mock *FrontendMock) SetStatusLine(data StatusLineData) {
+	if mock.SetStatusLineFunc == nil {
+		panic("FrontendMock.SetStatusLineFunc: method is nil but Frontend.SetStatusLine was just called")
+	}
+	callInfo := struct {
+		Data StatusLineData
+	}{
+		Data: data,
+	}
+	mock.lockSetStatusLine.Lock()
+	mock.calls.SetStatusLine = append(mock.calls.SetStatusLine, callInfo)
+	mock.lockSetStatusLine.Unlock()
+	mock.SetStatusLineFunc(data)
+}
+
+// SetStatusLineCalls gets all the calls that were made to SetStatusLine.
+// Check the length with:
+//
+//	len(mockedFrontend.SetStatusLineCalls())
+func (mock *FrontendMock) SetStatusLineCalls() []struct {
+	Data StatusLineData
+} {
+	var calls []struct {
+		Data StatusLineData
+	}
+	mock.lockSetStatusLine.RLock()
+	calls = mock.calls.SetStatusLine
+	mock.lockSetStatusLine.RUnlock()
 	return calls
 }
 

@@ -112,6 +112,9 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// SetStatusLine updates the compact status line with LLM token/cost/context data.
+	SetStatusLine(StatusLineData)
+
 	// Close signals the frontend that no more data will be sent,
 	// allowing it to shut down gracefully.
 	Close() error
@@ -157,6 +160,31 @@ func (sec SidebarSection) Body(width int) string {
 		return sec.ContentFunc(width)
 	}
 	return ""
+}
+
+// StatusLineData carries structured token/cost/context data for the status line.
+type StatusLineData struct {
+	// Model is the active model identifier (e.g. "claude-opus-4-6").
+	Model string
+	// SubscriptionLabel is set when using an OAuth subscription (e.g. "sub").
+	SubscriptionLabel string
+	// InputTokens is cumulative input tokens across all turns.
+	InputTokens int
+	// OutputTokens is cumulative output tokens across all turns.
+	OutputTokens int
+	// CacheReads is cumulative cache read tokens.
+	CacheReads int
+	// CacheWrites is cumulative cache write tokens.
+	CacheWrites int
+	// TotalCost is the cumulative dollar cost across all models.
+	TotalCost float64
+	// ContextPercent is the current context window usage (0-100+).
+	// Negative means unknown.
+	ContextPercent float64
+	// ContextWindow is the model's context window size in tokens.
+	ContextWindow int
+	// AutoCompact indicates whether auto-compaction is enabled.
+	AutoCompact bool
 }
 
 // BranchSummary controls how the conversation is summarized when branching.

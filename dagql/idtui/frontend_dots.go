@@ -78,6 +78,7 @@ func NewDots(output io.Writer) Frontend {
 func (fe *frontendDots) SetClient(client *dagger.Client) {}
 
 func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
+func (fe *frontendDots) SetStatusLine(StatusLineData)     {}
 
 func (fe *frontendDots) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 	fe.mu.Lock()

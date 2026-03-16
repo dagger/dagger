@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/syntax"
@@ -24,7 +23,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/openrouter"
-	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
@@ -352,87 +350,26 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		}
 	}
 
-	// Build the model line, optionally with subscription badge
-	modelLine := termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String()
-	if label := s.subscriptionLabel(); label != "" {
-		modelLine += " " + termenv.String("("+label+")").Foreground(termenv.ANSICyan).String()
-	}
-
-	lines := []string{modelLine}
-
-	if opts.Verbosity > dagui.ShowInternalVerbosity {
-		if sessionInputTokens > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Tokens In: ",
-					sessionInputTokens))
-		}
-		if sessionOutputTokens > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Tokens Out:",
-					sessionOutputTokens))
-		}
-		if sessionCacheReads > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Cache Reads: ",
-					sessionCacheReads))
-		}
-		if sessionCacheWrites > 0 {
-			lines = append(lines,
-				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"Cache Writes:",
-					sessionCacheWrites))
-		}
+	data := idtui.StatusLineData{
+		Model:             s.model,
+		SubscriptionLabel: s.subscriptionLabel(),
+		InputTokens:       sessionInputTokens,
+		OutputTokens:      sessionOutputTokens,
+		CacheReads:        sessionCacheReads,
+		CacheWrites:       sessionCacheWrites,
+		TotalCost:         totalCost,
+		ContextPercent:     -1, // unknown by default
+		AutoCompact:       s.ShouldAutocompact(),
 	}
 
 	if m := s.models.Lookup(s.model); m != nil {
-		// Calculate session cost from current thread
-		sessionInputCost := m.Pricing.Prompt.Cost(sessionInputTokens)
-		sessionOutputCost := m.Pricing.Completion.Cost(sessionOutputTokens)
-		sessionCacheReadCost := m.Pricing.InputCacheRead.Cost(sessionCacheReads)
-		sessionCacheWriteCost := m.Pricing.InputCacheWrite.Cost(sessionCacheWrites)
-		sessionCost := sessionInputCost + sessionOutputCost + sessionCacheReadCost + sessionCacheWriteCost
-
-		// Show costs
-		if sessionCost > 0 && totalCost > sessionCost {
-			// Show both session and total when they differ
-			lines = append(lines,
-				fmt.Sprintf("Session: "+termenv.String("$%0.2f").Bold().String(), sessionCost),
-				fmt.Sprintf("Total: "+termenv.String("$%0.2f").Bold().String(), totalCost))
-		} else if sessionCost > 0 {
-			// Only show session cost if that's all we have
-			lines = append(lines,
-				fmt.Sprintf("Cost: "+termenv.String("$%0.2f").Bold().String(), sessionCost))
-		} else if totalCost > 0 {
-			// Only show total cost if session is 0 but total > 0
-			lines = append(lines,
-				fmt.Sprintf("Total: "+termenv.String("$%0.2f").Bold().String(), totalCost))
-		}
-
-		// Context percentage based on current session
-		if sessionInputTokens > 0 {
-			contextUsage := int(float64(sessionInputTokens) / float64(m.ContextLength) * 100)
-			contextStyle := termenv.String("%d%%").Bold()
-			if contextUsage > 80 {
-				contextStyle = contextStyle.Foreground(termenv.ANSIYellow)
-			}
-			if contextUsage > 90 {
-				contextStyle = contextStyle.Foreground(termenv.ANSIRed)
-			}
-			if contextUsage > 100 {
-				contextStyle = contextStyle.Foreground(termenv.ANSIBrightRed)
-			}
-			lines = append(lines,
-				fmt.Sprintf("Context: "+contextStyle.String(), contextUsage))
+		data.ContextWindow = int(m.ContextLength)
+		if sessionInputTokens > 0 && m.ContextLength > 0 {
+			data.ContextPercent = float64(sessionInputTokens) / float64(m.ContextLength) * 100
 		}
 	}
 
-	s.frontend.SetSidebarContent(idtui.SidebarSection{
-		Title:   "LLM",
-		Content: strings.Join(lines, "\n"),
-	})
+	s.frontend.SetStatusLine(data)
 
 	return nil
 }

@@ -64,6 +64,7 @@ func NewLogs(output io.Writer) Frontend {
 func (fe *frontendLogs) SetClient(client *dagger.Client) {}
 
 func (fe *frontendLogs) SetSidebarContent(SidebarSection) {}
+func (fe *frontendLogs) SetStatusLine(StatusLineData)     {}
 
 func (fe *frontendLogs) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
 	return fe.db.LLMTokenMetrics
