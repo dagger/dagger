@@ -130,14 +130,6 @@ type AnyObjectResult interface {
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 
-	// Call evaluates the field selected by the given ID and returns the result.
-	//
-	// The returned value is the raw Typed value returned from the field; it must
-	// be instantiated with a class for further selection.
-	//
-	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *Server, *call.ID) (AnyResult, error)
-
 	// Select evaluates the field selected by the given selector and returns the result.
 	//
 	// The returned value is the raw Typed value returned from the field; it must

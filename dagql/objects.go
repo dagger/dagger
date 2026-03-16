@@ -509,47 +509,6 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	}, nil
 }
 
-// Call calls the field on the instance specified by the ID.
-func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (AnyResult, error) {
-	return nil, fmt.Errorf("ObjectResult.Call boundary path not yet ported to CallRequest")
-}
-
-func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
-	idArgs := id.Args()
-	view := id.View()
-
-	inputArgs := make(map[string]Input, len(idArgs))
-	for _, argSpec := range specs.Inputs(view) {
-		// just be n^2 since the overhead of a map is likely more expensive
-		// for the expected low value of n
-		var inputLit call.Literal
-		for _, idArg := range idArgs {
-			if idArg.Name() == argSpec.Name {
-				inputLit = idArg.Value()
-				break
-			}
-		}
-
-		switch {
-		case inputLit != nil:
-			input, err := argSpec.Type.Decoder().DecodeInput(inputLit.ToInput())
-			if err != nil {
-				return nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
-			}
-			inputArgs[argSpec.Name] = input
-
-		case argSpec.Default != nil:
-			inputArgs[argSpec.Name] = argSpec.Default
-
-		case argSpec.Type.Type().NonNull:
-			// error out if the arg is missing but required
-			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-		}
-	}
-
-	return inputArgs, nil
-}
-
 func (r ObjectResult[T]) call(
 	ctx context.Context,
 	s *Server,
