@@ -58,6 +58,7 @@ const (
 	Diamond             = "◆"
 	LLMPrompt           = "❯"
 	CloudIcon           = "⬢"
+	CogIcon             = "⚙"
 
 	// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
 	// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
@@ -87,7 +88,7 @@ var LogsPrefix = Prefix{
 
 var LLMUserPrefix = Prefix{
 	Symbol: Block,
-	Fg:     termenv.ANSIBrightMagenta,
+	Fg:     termenv.ANSIBrightBlue,
 }
 
 var LLMThinkingPrefix = Prefix{
@@ -97,5 +98,10 @@ var LLMThinkingPrefix = Prefix{
 
 var LLMResponsePrefix = Prefix{
 	Symbol: VertBoldBar,
-	Fg:     termenv.ANSIMagenta,
+	Fg:     termenv.ANSIBrightBlack,
+}
+
+var LLMToolPrefix = Prefix{
+	Symbol: CogIcon,
+	Fg:     termenv.ANSIBrightBlack,
 }

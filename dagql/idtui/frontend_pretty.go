@@ -3466,45 +3466,68 @@ func (fe *frontendPretty) renderStepTitle(out TermOutput, r *renderer, row *dagu
 	}
 
 	if span != nil && !abridged {
-		// TODO: when a span has child spans that have progress, do 2-d progress
-		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span, !empty)
-
-		// Render RollUp dots after status/duration for collapsed RollUp spans
-		if span.RollUpSpans {
-			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
-			if dots != "" {
-				fmt.Fprint(out, " ")
-				fmt.Fprint(out, dots)
+		if span.LLMTool != "" {
+			// Tool call spans render duration/rollup/status on a second
+			// line beneath the tool name, similar to message spans.
+			fmt.Fprintln(out)
+			r.fancyIndent(out, row, false, false)
+			if !fe.finalRender {
+				fe.renderToggler(out, row, isFocused)
+			} else {
+				fe.renderStatusIcon(out, row)
 			}
-		}
+			r.renderDuration(out, span, true)
 
-		fe.renderStatus(out, span)
-		r.renderMetrics(out, span)
-
-		summary := map[string]int{}
-		for effect := range span.EffectSpans {
-			if effect.Passthrough {
-				// Don't show spans which are aggressively hidden.
-				continue
+			if span.RollUpSpans {
+				dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
+				if dots != "" {
+					fmt.Fprint(out, " ")
+					fmt.Fprint(out, dots)
+				}
 			}
-			icon, isInteresting := fe.statusIcon(effect)
-			if !isInteresting {
-				// summarize boring statuses, rather than showing them in full
-				summary[icon]++
-				continue
-			}
-			fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
-			r.renderSpan(out, effect, effect.Name)
-		}
 
-		for _, icon := range statusOrder {
-			count := summary[icon]
-			if count > 0 {
-				color := statusColors[icon]
-				fmt.Fprintf(out, " %s %s",
-					out.String(icon).Foreground(color).Faint(),
-					out.String(strconv.Itoa(count)).Faint())
+			fe.renderStatus(out, span)
+		} else {
+			// TODO: when a span has child spans that have progress, do 2-d progress
+			// fe.renderVertexTasks(out, span, depth)
+			r.renderDuration(out, span, !empty)
+
+			// Render RollUp dots after status/duration for collapsed RollUp spans
+			if span.RollUpSpans {
+				dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
+				if dots != "" {
+					fmt.Fprint(out, " ")
+					fmt.Fprint(out, dots)
+				}
+			}
+
+			fe.renderStatus(out, span)
+			r.renderMetrics(out, span)
+
+			summary := map[string]int{}
+			for effect := range span.EffectSpans {
+				if effect.Passthrough {
+					// Don't show spans which are aggressively hidden.
+					continue
+				}
+				icon, isInteresting := fe.statusIcon(effect)
+				if !isInteresting {
+					// summarize boring statuses, rather than showing them in full
+					summary[icon]++
+					continue
+				}
+				fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
+				r.renderSpan(out, effect, effect.Name)
+			}
+
+			for _, icon := range statusOrder {
+				count := summary[icon]
+				if count > 0 {
+					color := statusColors[icon]
+					fmt.Fprintf(out, " %s %s",
+						out.String(icon).Foreground(color).Faint(),
+						out.String(strconv.Itoa(count)).Faint())
+				}
 			}
 		}
 	}
@@ -3519,7 +3542,14 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
-	if row.Span.LLMRole != "" {
+	if row.Span.LLMTool != "" {
+		bar := LLMToolPrefix.Style(out)
+		if isFocused {
+			bar = hl(bar)
+		}
+		fmt.Fprint(out, bar)
+		fmt.Fprint(out, " ")
+	} else if row.Span.LLMRole != "" {
 		var bar termenv.Style
 		if span.LLMThinking {
 			bar = LLMThinkingPrefix.Style(out)
