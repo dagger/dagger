@@ -3,7 +3,6 @@ package dagql
 import (
 	"fmt"
 
-	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 )
 
@@ -32,8 +31,6 @@ func (prov cachePersistInputProvenance) validate() error {
 type persistResultSnapshot struct {
 	resultID            sharedResultID
 	frame               *ResultCallFrame
-	extraDigests        []call.ExtraDigest
-	exportID            *call.ID
 	self                Typed
 	objType             ObjectType
 	hasValue            bool

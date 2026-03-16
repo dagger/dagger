@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -31,7 +30,7 @@ func (*Host) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) 
 	return json.RawMessage(`{}`), nil
 }
 
-func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *call.ID, json.RawMessage) (dagql.Typed, error) {
+func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *dagql.ResultCallFrame, json.RawMessage) (dagql.Typed, error) {
 	return &Host{}, nil
 }
 

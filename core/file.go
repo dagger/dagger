@@ -28,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -221,7 +220,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	return payloadJSON, nil
 }
 
-func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *call.ID, payload json.RawMessage) (dagql.Typed, error) {
+func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCallFrame, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedFilePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted file payload: %w", err)

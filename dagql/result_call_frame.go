@@ -894,21 +894,6 @@ func (c *cache) resultCallFrameByResultID(resultID sharedResultID) *ResultCallFr
 	return res.resultCallFrame
 }
 
-func (c *cache) persistedCallIDByResultID(_ context.Context, resultID sharedResultID) (*call.ID, error) {
-	if resultID == 0 {
-		return nil, fmt.Errorf("resolve persisted call ID: zero result ID")
-	}
-	frame := c.resultCallFrameSnapshot(resultID)
-	if frame == nil {
-		return nil, fmt.Errorf("resolve persisted call ID for result %d: missing result call frame", resultID)
-	}
-	rebuilt, err := frame.RecipeID()
-	if err != nil {
-		return nil, fmt.Errorf("resolve persisted call ID for result %d: %w", resultID, err)
-	}
-	return rebuilt, nil
-}
-
 func (frame *ResultCallFrame) recipeIDWithVisiting(visiting map[sharedResultID]struct{}) (*call.ID, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil frame")

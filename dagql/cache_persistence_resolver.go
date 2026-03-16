@@ -3,8 +3,6 @@ package dagql
 import (
 	"context"
 	"fmt"
-
-	"github.com/dagger/dagger/dagql/call"
 )
 
 func (c *cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
@@ -79,22 +77,6 @@ func (c *cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, 
 		return nil, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
 	return res, nil
-}
-
-func (c *cache) PersistedCallIDByResultID(ctx context.Context, resultID uint64) (*call.ID, error) {
-	_, err := c.sharedResultByResultID(sharedResultID(resultID))
-	if err != nil {
-		return nil, err
-	}
-	return c.persistedCallIDByResultID(ctx, sharedResultID(resultID))
-}
-
-func (c *SessionCache) PersistedCallIDByResultID(ctx context.Context, resultID uint64) (*call.ID, error) {
-	base, err := c.basePersistedCache()
-	if err != nil {
-		return nil, err
-	}
-	return base.PersistedCallIDByResultID(ctx, resultID)
 }
 
 func (c *cache) LoadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {

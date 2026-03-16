@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -27,7 +26,6 @@ type PersistedResultEnvelope struct {
 	Kind         string                    `json:"kind"`
 	TypeName     string                    `json:"typeName,omitempty"`
 	ResultID     uint64                    `json:"resultID,omitempty"`
-	ID           string                    `json:"id,omitempty"`
 	ObjectJSON   json.RawMessage           `json:"objectJSON,omitempty"`
 	ScalarJSON   json.RawMessage           `json:"scalarJSON,omitempty"`
 	ElemTypeName string                    `json:"elemTypeName,omitempty"`
@@ -58,7 +56,7 @@ type PersistedObject interface {
 // original dagql call chain.
 type PersistedObjectDecoder interface {
 	Typed
-	DecodePersistedObject(context.Context, *Server, uint64, *call.ID, json.RawMessage) (Typed, error)
+	DecodePersistedObject(context.Context, *Server, uint64, *ResultCallFrame, json.RawMessage) (Typed, error)
 }
 
 // PersistedSelfCodec is the shared interface used to encode/decode result self
@@ -87,14 +85,6 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Kind:    persistedResultKindNull,
 		}, nil
 	}
-	id, err := res.ID()
-	if err != nil {
-		return PersistedResultEnvelope{}, fmt.Errorf("encode persisted result envelope: %w", err)
-	}
-	encID, err := id.Encode()
-	if err != nil {
-		return PersistedResultEnvelope{}, fmt.Errorf("encode persisted result envelope ID: %w", err)
-	}
 	var resultID uint64
 	if cache != nil {
 		if persistedResultID, err := cache.PersistedResultID(res); err == nil {
@@ -116,7 +106,6 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Kind:       persistedResultKindObject,
 			TypeName:   res.Type().Name(),
 			ResultID:   resultID,
-			ID:         encID,
 			ObjectJSON: objectJSON,
 		}, nil
 	}
@@ -130,7 +119,6 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Kind:       persistedResultKindObject,
 			TypeName:   res.Type().Name(),
 			ResultID:   resultID,
-			ID:         encID,
 			ObjectJSON: objectJSON,
 		}, nil
 	}
@@ -153,7 +141,6 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			Kind:         persistedResultKindList,
 			TypeName:     res.Type().Name(),
 			ResultID:     resultID,
-			ID:           encID,
 			ElemTypeName: enumerable.Element().Type().Name(),
 			Items:        itemEnvs,
 		}, nil
@@ -168,7 +155,6 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		Kind:       persistedResultKindScalar,
 		TypeName:   res.Type().Name(),
 		ResultID:   resultID,
-		ID:         encID,
 		ScalarJSON: scalarJSON,
 	}, nil
 }
@@ -184,10 +170,6 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 		if dag == nil {
 			return nil, fmt.Errorf("decode object_id envelope: missing current dagql server in context")
 		}
-		id, err := call.RecipeID()
-		if err != nil {
-			return nil, fmt.Errorf("decode object_id envelope recipe ID: %w", err)
-		}
 		objType, ok := dag.ObjectType(env.TypeName)
 		if !ok {
 			return nil, fmt.Errorf("decode object_id envelope: unknown object type %q", env.TypeName)
@@ -197,7 +179,7 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 			return nil, fmt.Errorf("decode object_id envelope: object type %q does not implement persisted decode", env.TypeName)
 		}
 		decodeCtx := ContextWithCall(ctx, call)
-		valSelf, err := decoder.DecodePersistedObject(decodeCtx, dag, resultID, id, env.ObjectJSON)
+		valSelf, err := decoder.DecodePersistedObject(decodeCtx, dag, resultID, call, env.ObjectJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode object_id envelope load: %w", err)
 		}
