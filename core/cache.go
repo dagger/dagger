@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -302,24 +300,6 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	}
 	cache.selector = sourceSelector
 	return nil
-}
-
-// Sum returns a checksum of the cache tokens suitable for use as a cache key.
-func (cache *CacheVolume) Sum() string {
-	hash := sha256.New()
-	for _, tok := range []string{
-		cache.Key,
-		cache.Namespace,
-		string(cache.Sharing),
-		cache.Owner,
-	} {
-		_, _ = hash.Write([]byte(tok + "\x00"))
-	}
-	if cache.Source.Valid {
-		_, _ = hash.Write([]byte(fmt.Sprintf("source:%s\x00", cache.Source.Value.ID().Digest())))
-	}
-
-	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
 type CacheSharingMode string

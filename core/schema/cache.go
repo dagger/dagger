@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -83,7 +84,7 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult
 	if err := cache.InitializeSnapshot(ctx); err != nil {
 		return dagql.Result[*core.CacheVolume]{}, err
 	}
-	return dagql.NewResultForCurrentID(ctx, cache)
+	return dagql.NewResultForCurrentCall(ctx, cache)
 }
 
 func namespaceFromModule(m *core.Module) string {
@@ -101,7 +102,11 @@ func namespaceFromModule(m *core.Module) string {
 	case core.ModuleSourceKindGit:
 		symbolic = src.Self().Git.Symbolic
 	case core.ModuleSourceKindDir:
-		symbolic = m.Source.Value.ID().Digest().String()
+		sourceID, err := m.Source.Value.ID()
+		if err != nil {
+			panic(fmt.Sprintf("module source handle ID: %v", err))
+		}
+		symbolic = sourceID.Digest().String()
 	}
 
 	return "mod(" + name + symbolic + ")"
