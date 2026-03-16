@@ -772,7 +772,7 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 		fe.tui.RemoveChild(formSpacer)
 		fe.formWrap = nil
 		fe.formModel = nil
-		fe.tui.SetFocus(fe)
+		fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 		fe.Update()
 	})
 	// Insert before keymapBar
@@ -1468,6 +1468,28 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// This is where ALL component state mutations happen — prefix,
 	// children, focus, spinners. Render() is then a pure read.
 	fe.syncSpanTreeState()
+
+	// Re-apply tuist focus after sync. The focus() call above may have
+	// targeted a SpanTreeView that didn't exist yet (new span on first
+	// appearance). Now that syncSpanTreeState has created all
+	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
+	fe.applyTuistFocus()
+}
+
+// applyTuistFocus sets tuist keyboard focus to the SpanTreeView for the
+// currently focused span (or to fe itself when no span is focused).
+// Skipped when editline or search has focus.
+func (fe *frontendPretty) applyTuistFocus() {
+	if fe.editlineFocused || fe.searchActive {
+		return
+	}
+	if fe.FocusedSpan.IsValid() {
+		if sr, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+			fe.tui.SetFocus(sr)
+			return
+		}
+	}
+	fe.tui.SetFocus(fe)
 }
 
 // syncSpanTreeState synchronizes the SpanTreeView component tree with
@@ -1832,6 +1854,8 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 }
 
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
+	oldSpan := fe.FocusedSpan
+	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
 		fe.focusedIdx = -1
@@ -1839,12 +1863,24 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
-		fe.FocusedSpan = row.Span.ID
+		newSpan = row.Span.ID
+		fe.FocusedSpan = newSpan
 		fe.focusedIdx = row.Index
 		if !fe.editlineFocused && !fe.searchActive {
-			if sr, ok := fe.spanTrees[row.Span.ID]; ok {
+			if sr, ok := fe.spanTrees[newSpan]; ok {
 				fe.tui.SetFocus(sr)
 			}
+		}
+	}
+	// Invalidate the render caches of old and new SpanTreeViews when
+	// focus moves. Their Render methods read fe.FocusedSpan to decide
+	// highlighting, so stale caches show the wrong focus indicator.
+	if oldSpan != newSpan {
+		if st, ok := fe.spanTrees[oldSpan]; ok {
+			st.Update()
+		}
+		if st, ok := fe.spanTrees[newSpan]; ok {
+			st.Update()
 		}
 	}
 }
@@ -2158,8 +2194,7 @@ func (fe *frontendPretty) handleShellDone(err error) {
 func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
-	fe.tui.SetFocus(fe)
-	fe.recalculateViewLocked()
+	fe.recalculateViewLocked() // also applies tuist focus via applyTuistFocus
 	fe.keymapBar.Update()
 }
 
@@ -2192,7 +2227,7 @@ func (fe *frontendPretty) exitSearchMode() {
 	}
 	fe.searchActive = false
 	fe.tui.SetShowHardwareCursor(fe.textInput != nil && fe.editlineFocused)
-	fe.tui.SetFocus(fe)
+	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 	fe.keymapBar.Update()
 }
 
