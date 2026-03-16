@@ -149,11 +149,16 @@ func (span *Span) CallID() (*call.ID, error) {
 		return nil, fmt.Errorf("no call for span")
 	}
 
-	dag := &callpbv1.DAG{
+	recipe := &callpbv1.RecipeDAG{
 		RootDigest:    spanCall.Digest,
 		CallsByDigest: map[string]*callpbv1.Call{},
 	}
-	extractIntoDAG(dag, span.db, spanCall.Digest)
+	extractIntoDAG(recipe, span.db, spanCall.Digest)
+	dag := &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipe,
+		},
+	}
 
 	var id call.ID
 	err := id.FromProto(dag)
