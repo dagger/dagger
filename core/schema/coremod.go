@@ -429,9 +429,6 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		if value.Type() == nil || value.Type().Name() != obj.name {
 			return nil, fmt.Errorf("unexpected core object result type %T for %q", value, obj.name)
 		}
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			return dagql.RebindResultID(value, curID), nil
-		}
 		return value, nil
 	case dagql.IDable:
 		if value.ID() == nil {
@@ -476,9 +473,6 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		val, err := dag.Load(ctx, &idp)
 		if err != nil {
 			return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
-		}
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			return dagql.RebindResultID(val, curID), nil
 		}
 		return val, nil
 	default:

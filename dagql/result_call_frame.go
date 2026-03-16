@@ -938,8 +938,6 @@ func (c *cache) ensureResultCallFrameLocked(ctx context.Context, res *sharedResu
 	return nil
 }
 
-type callerIDFrontier map[sharedResultID]*call.ID
-
 func (c *cache) resultCallFrameSnapshot(resultID sharedResultID) *ResultCallFrame {
 	if resultID == 0 {
 		return nil
@@ -974,7 +972,7 @@ func (c *cache) persistedCallIDByResultID(ctx context.Context, resultID sharedRe
 	if frame == nil {
 		return nil, fmt.Errorf("resolve persisted call ID for result %d: missing result call frame", resultID)
 	}
-	rebuilt, ok := c.idForCallerFromFrame(ctx, resultID, frame, callerIDFrontier{}, map[sharedResultID]struct{}{})
+	rebuilt, ok := c.callIDFromFrame(ctx, frame, map[sharedResultID]struct{}{})
 	if !ok || rebuilt == nil {
 		return nil, fmt.Errorf("resolve persisted call ID for result %d: failed to rebuild from frame", resultID)
 	}
@@ -982,41 +980,6 @@ func (c *cache) persistedCallIDByResultID(ctx context.Context, resultID sharedRe
 		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
 	}
 	return rebuilt, nil
-}
-
-// given a rawID (which is in practice the presentation ID of a result) and a material shareResult,
-// reconstruct a call.ID from the materialized result but with bias towards what the caller knows
-// and was presented. E.g. the caller may know about a host directory load it made, but then that
-// got deduped in cache with some earlier directory load from another client that happened to have
-// same contents. In that case, the result may contain that old reference, but we still want to present
-// the one the caller knows about.
-// NOTE: this is just an initial best-effort implementation. A more complete one would be aware of
-// results the client has loaded outside even the rawID and would do so by finding the right one for
-// that client/session in the cache (which would require more client/session awareness in the cache)
-func (c *cache) idForCaller(ctx context.Context, resultID sharedResultID, rawID *call.ID) *call.ID {
-	if resultID == 0 || rawID == nil {
-		return rawID
-	}
-	frame := c.resultCallFrameSnapshot(resultID)
-	if frame == nil {
-		return rawID
-	}
-	extraDigests := c.resultCallFrameExtraDigestsSnapshot(resultID)
-
-	frontier := callerIDFrontier{}
-	seedCallerIDFrontier(frame, rawID, frontier)
-
-	rebuilt, ok := c.idForCallerFromRawAndFrame(ctx, resultID, rawID, frame, frontier, map[sharedResultID]struct{}{})
-	if !ok || rebuilt == nil {
-		return rawID
-	}
-	for _, extra := range rawID.ExtraDigests() {
-		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
-	}
-	for _, extra := range extraDigests {
-		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
-	}
-	return rebuilt
 }
 
 func (c *cache) resultCallFrameExtraDigestsSnapshot(resultID sharedResultID) []call.ExtraDigest {
@@ -1066,90 +1029,9 @@ func (c *cache) resultCallFrameExtraDigestsSnapshot(resultID sharedResultID) []c
 	return extras
 }
 
-func seedCallerIDFrontier(frame *ResultCallFrame, rawID *call.ID, frontier callerIDFrontier) {
-	if frame == nil || rawID == nil {
-		return
-	}
-	if frame.Receiver != nil && rawID.Receiver() != nil {
-		frontier[sharedResultID(frame.Receiver.ResultID)] = rawID.Receiver()
-	}
-	if frame.Module != nil && frame.Module.ResultRef != nil && rawID.Module() != nil && rawID.Module().ID() != nil {
-		frontier[sharedResultID(frame.Module.ResultRef.ResultID)] = rawID.Module().ID()
-	}
-	seedCallerIDFrontierArgs(frame.Args, rawID.Args(), frontier)
-	seedCallerIDFrontierArgs(frame.ImplicitInputs, rawID.ImplicitInputs(), frontier)
-}
-
-func seedCallerIDFrontierArgs(frameArgs []*ResultCallFrameArg, rawArgs []*call.Argument, frontier callerIDFrontier) {
-	if len(frameArgs) == 0 || len(rawArgs) == 0 {
-		return
-	}
-	for _, frameArg := range frameArgs {
-		if frameArg == nil || frameArg.Value == nil {
-			continue
-		}
-		for _, rawArg := range rawArgs {
-			if rawArg == nil || rawArg.Name() != frameArg.Name {
-				continue
-			}
-			seedCallerIDFrontierLiteral(frameArg.Value, rawArg.Value(), frontier)
-			break
-		}
-	}
-}
-
-func seedCallerIDFrontierLiteral(frameLit *ResultCallFrameLiteral, rawLit call.Literal, frontier callerIDFrontier) {
-	if frameLit == nil || rawLit == nil {
-		return
-	}
-	switch frameLit.Kind {
-	case ResultCallFrameLiteralKindResultRef:
-		rawIDLit, ok := rawLit.(*call.LiteralID)
-		if !ok || frameLit.ResultRef == nil || rawIDLit.Value() == nil {
-			return
-		}
-		frontier[sharedResultID(frameLit.ResultRef.ResultID)] = rawIDLit.Value()
-	case ResultCallFrameLiteralKindList:
-		rawList, ok := rawLit.(*call.LiteralList)
-		if !ok {
-			return
-		}
-		for i, rawItem := range rawList.Values() {
-			if i >= len(frameLit.ListItems) {
-				break
-			}
-			item := frameLit.ListItems[i]
-			seedCallerIDFrontierLiteral(item, rawItem, frontier)
-		}
-	case ResultCallFrameLiteralKindObject:
-		rawObj, ok := rawLit.(*call.LiteralObject)
-		if !ok {
-			return
-		}
-		rawFieldsByName := map[string]*call.Argument{}
-		for _, rawField := range rawObj.Args() {
-			if rawField != nil {
-				rawFieldsByName[rawField.Name()] = rawField
-			}
-		}
-		for _, field := range frameLit.ObjectFields {
-			if field == nil || field.Value == nil {
-				continue
-			}
-			rawField := rawFieldsByName[field.Name]
-			if rawField == nil {
-				continue
-			}
-			seedCallerIDFrontierLiteral(field.Value, rawField.Value(), frontier)
-		}
-	}
-}
-
-func (c *cache) idForCallerFromFrame(
+func (c *cache) callIDFromFrame(
 	ctx context.Context,
-	resultID sharedResultID,
 	frame *ResultCallFrame,
-	frontier callerIDFrontier,
 	visiting map[sharedResultID]struct{},
 ) (*call.ID, bool) {
 	if frame == nil {
@@ -1168,7 +1050,7 @@ func (c *cache) idForCallerFromFrame(
 		mod        *call.Module
 	)
 	if frame.Receiver != nil {
-		id, ok := c.resolveFrameRefIDForCaller(ctx, frame.Receiver, frontier, visiting)
+		id, ok := c.resolveFrameRefCallID(ctx, frame.Receiver, visiting)
 		if !ok {
 			return nil, false
 		}
@@ -1178,18 +1060,18 @@ func (c *cache) idForCallerFromFrame(
 		if frame.Module.ResultRef == nil {
 			return nil, false
 		}
-		modID, ok := c.resolveFrameRefIDForCaller(ctx, frame.Module.ResultRef, frontier, visiting)
+		modID, ok := c.resolveFrameRefCallID(ctx, frame.Module.ResultRef, visiting)
 		if !ok || modID == nil {
 			return nil, false
 		}
 		mod = call.NewModule(modID, frame.Module.Name, frame.Module.Ref, frame.Module.Pin)
 	}
 
-	args, ok := c.callArgsForCallerFromFrame(ctx, frame.Args, frontier, visiting)
+	args, ok := c.callArgsFromFrame(ctx, frame.Args, visiting)
 	if !ok {
 		return nil, false
 	}
-	implicitInputs, ok := c.callArgsForCallerFromFrame(ctx, frame.ImplicitInputs, frontier, visiting)
+	implicitInputs, ok := c.callArgsFromFrame(ctx, frame.ImplicitInputs, visiting)
 	if !ok {
 		return nil, false
 	}
@@ -1208,120 +1090,18 @@ func (c *cache) idForCallerFromFrame(
 	if rebuilt == nil {
 		return nil, false
 	}
-	frontier[resultID] = rebuilt
 	return rebuilt, true
 }
 
-func (c *cache) idForCallerFromRawAndFrame(
-	ctx context.Context,
-	resultID sharedResultID,
-	rawID *call.ID,
-	frame *ResultCallFrame,
-	frontier callerIDFrontier,
-	visiting map[sharedResultID]struct{},
-) (*call.ID, bool) {
-	if rawID == nil {
-		return nil, false
-	}
-
-	field := rawID.Field()
-	if field == "" {
-		return nil, false
-	}
-
-	var receiverID *call.ID
-	if rawID.Receiver() != nil {
-		receiverID = rawID.Receiver()
-		if frame != nil && frame.Receiver != nil {
-			id, ok := c.resolveFrameRefIDForCaller(ctx, frame.Receiver, frontier, visiting)
-			if ok && id != nil {
-				receiverID = id
-			}
-		}
-	} else if frame != nil && frame.Receiver != nil {
-		id, ok := c.resolveFrameRefIDForCaller(ctx, frame.Receiver, frontier, visiting)
-		if !ok {
-			return nil, false
-		}
-		receiverID = id
-	}
-
-	var mod *call.Module
-	if rawID.Module() != nil {
-		modID := rawID.Module().ID()
-		if frame != nil && frame.Module != nil && frame.Module.ResultRef != nil {
-			id, ok := c.resolveFrameRefIDForCaller(ctx, frame.Module.ResultRef, frontier, visiting)
-			if ok && id != nil {
-				modID = id
-			}
-		}
-		mod = call.NewModule(modID, rawID.Module().Name(), rawID.Module().Ref(), rawID.Module().Pin())
-	} else if frame != nil && frame.Module != nil {
-		if frame.Module.ResultRef == nil {
-			return nil, false
-		}
-		modID, ok := c.resolveFrameRefIDForCaller(ctx, frame.Module.ResultRef, frontier, visiting)
-		if !ok || modID == nil {
-			return nil, false
-		}
-		mod = call.NewModule(modID, frame.Module.Name, frame.Module.Ref, frame.Module.Pin)
-	}
-
-	var frameArgs []*ResultCallFrameArg
-	var frameImplicitInputs []*ResultCallFrameArg
-	if frame != nil {
-		frameArgs = frame.Args
-		frameImplicitInputs = frame.ImplicitInputs
-	}
-
-	args, ok := c.callArgsForCallerFromRawAndFrame(ctx, rawID.Args(), frameArgs, frontier, visiting)
-	if !ok {
-		return nil, false
-	}
-	implicitInputs, ok := c.callArgsForCallerFromRawAndFrame(ctx, rawID.ImplicitInputs(), frameImplicitInputs, frontier, visiting)
-	if !ok {
-		return nil, false
-	}
-
-	retType := rawID.Type().ToAST()
-	if retType == nil && frame != nil && frame.Type != nil {
-		retType = frame.Type.toAST()
-	}
-	if retType == nil {
-		return nil, false
-	}
-
-	rebuilt := receiverID
-	rebuilt = rebuilt.Append(
-		retType,
-		field,
-		call.WithView(rawID.View()),
-		call.WithNth(int(rawID.Nth())),
-		call.WithEffectIDs(rawID.EffectIDs()),
-		call.WithArgs(args...),
-		call.WithImplicitInputs(implicitInputs...),
-		call.WithModule(mod),
-	)
-	if rebuilt == nil {
-		return nil, false
-	}
-	frontier[resultID] = rebuilt
-	return rebuilt, true
-}
-
-func (c *cache) resolveFrameRefIDForCaller(
+func (c *cache) resolveFrameRefCallID(
 	ctx context.Context,
 	ref *ResultCallFrameRef,
-	frontier callerIDFrontier,
 	visiting map[sharedResultID]struct{},
 ) (*call.ID, bool) {
 	if ref == nil || ref.ResultID == 0 {
 		return nil, false
 	}
 	refID := sharedResultID(ref.ResultID)
-	if rebound := frontier[refID]; rebound != nil {
-		return rebound, true
-	}
 	frame := c.resultCallFrameSnapshot(refID)
 	if frame == nil {
 		return nil, false
@@ -1331,7 +1111,7 @@ func (c *cache) resolveFrameRefIDForCaller(
 	}
 	visiting[refID] = struct{}{}
 	defer delete(visiting, refID)
-	rebuilt, ok := c.idForCallerFromFrame(ctx, refID, frame, frontier, visiting)
+	rebuilt, ok := c.callIDFromFrame(ctx, frame, visiting)
 	if !ok || rebuilt == nil {
 		return nil, false
 	}
@@ -1341,10 +1121,9 @@ func (c *cache) resolveFrameRefIDForCaller(
 	return rebuilt, true
 }
 
-func (c *cache) callArgsForCallerFromFrame(
+func (c *cache) callArgsFromFrame(
 	ctx context.Context,
 	frameArgs []*ResultCallFrameArg,
-	frontier callerIDFrontier,
 	visiting map[sharedResultID]struct{},
 ) ([]*call.Argument, bool) {
 	if len(frameArgs) == 0 {
@@ -1355,7 +1134,7 @@ func (c *cache) callArgsForCallerFromFrame(
 		if frameArg == nil || frameArg.Value == nil {
 			continue
 		}
-		lit, ok := c.callLiteralForCallerFromFrame(ctx, frameArg.Value, frontier, visiting)
+		lit, ok := c.callLiteralFromFrame(ctx, frameArg.Value, visiting)
 		if !ok {
 			return nil, false
 		}
@@ -1364,45 +1143,9 @@ func (c *cache) callArgsForCallerFromFrame(
 	return args, true
 }
 
-func (c *cache) callArgsForCallerFromRawAndFrame(
-	ctx context.Context,
-	rawArgs []*call.Argument,
-	frameArgs []*ResultCallFrameArg,
-	frontier callerIDFrontier,
-	visiting map[sharedResultID]struct{},
-) ([]*call.Argument, bool) {
-	if len(rawArgs) == 0 {
-		return nil, true
-	}
-	frameArgsByName := make(map[string]*ResultCallFrameArg, len(frameArgs))
-	for _, frameArg := range frameArgs {
-		if frameArg == nil {
-			continue
-		}
-		frameArgsByName[frameArg.Name] = frameArg
-	}
-	args := make([]*call.Argument, 0, len(rawArgs))
-	for _, rawArg := range rawArgs {
-		if rawArg == nil {
-			continue
-		}
-		var frameValue *ResultCallFrameLiteral
-		if frameArg := frameArgsByName[rawArg.Name()]; frameArg != nil {
-			frameValue = frameArg.Value
-		}
-		lit, ok := c.callLiteralForCallerFromRawAndFrame(ctx, rawArg.Value(), frameValue, frontier, visiting)
-		if !ok {
-			return nil, false
-		}
-		args = append(args, call.NewArgument(rawArg.Name(), lit, rawArg.IsSensitive()))
-	}
-	return args, true
-}
-
-func (c *cache) callLiteralForCallerFromFrame(
+func (c *cache) callLiteralFromFrame(
 	ctx context.Context,
 	frameLit *ResultCallFrameLiteral,
-	frontier callerIDFrontier,
 	visiting map[sharedResultID]struct{},
 ) (call.Literal, bool) {
 	if frameLit == nil {
@@ -1424,7 +1167,7 @@ func (c *cache) callLiteralForCallerFromFrame(
 	case ResultCallFrameLiteralKindDigestedString:
 		return call.NewLiteralDigestedString(frameLit.DigestedStringValue, frameLit.DigestedStringDigest), true
 	case ResultCallFrameLiteralKindResultRef:
-		id, ok := c.resolveFrameRefIDForCaller(ctx, frameLit.ResultRef, frontier, visiting)
+		id, ok := c.resolveFrameRefCallID(ctx, frameLit.ResultRef, visiting)
 		if !ok || id == nil {
 			return nil, false
 		}
@@ -1432,7 +1175,7 @@ func (c *cache) callLiteralForCallerFromFrame(
 	case ResultCallFrameLiteralKindList:
 		items := make([]call.Literal, 0, len(frameLit.ListItems))
 		for _, item := range frameLit.ListItems {
-			lit, ok := c.callLiteralForCallerFromFrame(ctx, item, frontier, visiting)
+			lit, ok := c.callLiteralFromFrame(ctx, item, visiting)
 			if !ok {
 				return nil, false
 			}
@@ -1445,7 +1188,7 @@ func (c *cache) callLiteralForCallerFromFrame(
 			if field == nil || field.Value == nil {
 				continue
 			}
-			lit, ok := c.callLiteralForCallerFromFrame(ctx, field.Value, frontier, visiting)
+			lit, ok := c.callLiteralFromFrame(ctx, field.Value, visiting)
 			if !ok {
 				return nil, false
 			}
@@ -1454,78 +1197,5 @@ func (c *cache) callLiteralForCallerFromFrame(
 		return call.NewLiteralObject(fields...), true
 	default:
 		return nil, false
-	}
-}
-
-func (c *cache) callLiteralForCallerFromRawAndFrame(
-	ctx context.Context,
-	rawLit call.Literal,
-	frameLit *ResultCallFrameLiteral,
-	frontier callerIDFrontier,
-	visiting map[sharedResultID]struct{},
-) (call.Literal, bool) {
-	if rawLit == nil {
-		if frameLit == nil {
-			return nil, true
-		}
-		return c.callLiteralForCallerFromFrame(ctx, frameLit, frontier, visiting)
-	}
-
-	switch raw := rawLit.(type) {
-	case *call.LiteralID:
-		if frameLit == nil || frameLit.Kind != ResultCallFrameLiteralKindResultRef || frameLit.ResultRef == nil {
-			return raw, true
-		}
-		id, ok := c.resolveFrameRefIDForCaller(ctx, frameLit.ResultRef, frontier, visiting)
-		if !ok || id == nil {
-			return raw, true
-		}
-		return call.NewLiteralID(id), true
-	case *call.LiteralList:
-		if frameLit == nil || frameLit.Kind != ResultCallFrameLiteralKindList {
-			return raw, true
-		}
-		items := make([]call.Literal, 0, raw.Len())
-		for i, rawItem := range raw.Values() {
-			var frameItem *ResultCallFrameLiteral
-			if i < len(frameLit.ListItems) {
-				frameItem = frameLit.ListItems[i]
-			}
-			lit, ok := c.callLiteralForCallerFromRawAndFrame(ctx, rawItem, frameItem, frontier, visiting)
-			if !ok {
-				return nil, false
-			}
-			items = append(items, lit)
-		}
-		return call.NewLiteralList(items...), true
-	case *call.LiteralObject:
-		if frameLit == nil || frameLit.Kind != ResultCallFrameLiteralKindObject {
-			return raw, true
-		}
-		frameFieldsByName := make(map[string]*ResultCallFrameArg, len(frameLit.ObjectFields))
-		for _, field := range frameLit.ObjectFields {
-			if field == nil {
-				continue
-			}
-			frameFieldsByName[field.Name] = field
-		}
-		fields := make([]*call.Argument, 0, raw.Len())
-		for _, rawField := range raw.Args() {
-			if rawField == nil {
-				continue
-			}
-			var frameValue *ResultCallFrameLiteral
-			if field := frameFieldsByName[rawField.Name()]; field != nil {
-				frameValue = field.Value
-			}
-			lit, ok := c.callLiteralForCallerFromRawAndFrame(ctx, rawField.Value(), frameValue, frontier, visiting)
-			if !ok {
-				return nil, false
-			}
-			fields = append(fields, call.NewArgument(rawField.Name(), lit, rawField.IsSensitive()))
-		}
-		return call.NewLiteralObject(fields...), true
-	default:
-		return raw, true
 	}
 }

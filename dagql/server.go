@@ -741,17 +741,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
-			presentedID := id
-			if res != nil {
-				rebound, err := res.IDForCaller(ctx)
-				if err != nil {
-					panic(fmt.Errorf("resolve caller-facing ID for telemetry: %w", err))
-				}
-				if rebound != nil {
-					presentedID = rebound
-				}
-			}
-			return s.telemetry(ctx, presentedID)
+			return s.telemetry(ctx, id)
 		}))
 		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
 		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))

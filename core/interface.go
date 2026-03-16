@@ -55,13 +55,6 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 			return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
 		}
 
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			rebound, ok := dagql.RebindResultID(loadedImpl.val, curID).(dagql.AnyObjectResult)
-			if !ok {
-				return nil, fmt.Errorf("rebind interface implementation %q: unexpected result type %T", typeName, loadedImpl.val)
-			}
-			return rebound, nil
-		}
 		return loadedImpl.val, nil
 	}
 
@@ -95,13 +88,6 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		}
 		if ok := loadedImpl.valType.TypeDef().IsSubtypeOf(iface.TypeDef()); !ok {
 			return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
-		}
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			rebound, ok := dagql.RebindResultID(value, curID).(dagql.AnyObjectResult)
-			if !ok {
-				return nil, fmt.Errorf("rebind interface implementation %q: unexpected result type %T", typeName, value)
-			}
-			return rebound, nil
 		}
 		return value, nil
 	case string:

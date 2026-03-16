@@ -89,10 +89,6 @@ type AnyResult interface {
 	PostCallable
 	Setter
 
-	// IDForCaller returns the best caller-facing ID for this result in the
-	// current presentation context. Raw ID() remains the explicit fallback.
-	IDForCaller(context.Context) (*call.ID, error)
-
 	// DerefValue returns an AnyResult when the wrapped value is Derefable and
 	// has a value set. If the value is not derefable, it returns itself.
 	DerefValue() (AnyResult, bool)
@@ -119,10 +115,6 @@ type AnyResult interface {
 	// cacheSharedResult returns the internal cache-backed shared payload when present.
 	// It is intentionally package-private so only dagql-owned result types satisfy AnyResult.
 	cacheSharedResult() *sharedResult
-
-	// rebindID returns a wrapper for the same underlying result/value that presents
-	// the provided caller-facing ID.
-	rebindID(*call.ID) AnyResult
 }
 
 // AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)

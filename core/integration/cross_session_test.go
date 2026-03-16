@@ -181,6 +181,8 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	})
 
 	t.Run("module object field id rebinds on function-cache hit", func(ctx context.Context, t *testctx.T) {
+		t.Skip("caller-specific ID rebinding is intentionally removed for now")
+
 		moduleSrc := `package main
 
 import (

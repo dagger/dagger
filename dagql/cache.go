@@ -427,9 +427,10 @@ type sharedResult struct {
 	// Immutable payload shared by all per-call Result values.
 	self    Typed
 	objType ObjectType
-	// resultCallFrame is the non-lossy presentational call-node metadata for
-	// this materialized result. It is used for caller-facing ID reconstruction
-	// and telemetry hierarchy reconstruction, not execution or liveness.
+	// resultCallFrame is the non-lossy semantic/provenance call-node metadata
+	// for this materialized result. It is used for canonical recipe
+	// reconstruction and telemetry hierarchy reconstruction, not execution or
+	// liveness.
 	resultCallFrame *ResultCallFrame
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
@@ -585,7 +586,7 @@ type Result[T Typed] struct {
 	// shared points at immutable payload + lifecycle state shared by all per-call Result values.
 	shared *sharedResult
 
-	// id is the caller-facing ID for this specific returned result.
+	// id is the currently attached wrapper ID for this specific returned result.
 	id *call.ID
 
 	// per-call cache-hit signal for callers/tests.
@@ -605,13 +606,6 @@ func (r Result[T]) Type() *ast.Type {
 // ID returns the ID of the instance.
 func (r Result[T]) ID() *call.ID {
 	return r.id
-}
-
-func (r Result[T]) IDForCaller(ctx context.Context) (*call.ID, error) {
-	if r.shared == nil || r.shared.cache == nil || r.shared.id == 0 {
-		return r.id, nil
-	}
-	return r.shared.cache.idForCaller(ctx, r.shared.id, r.id), nil
 }
 
 func (r Result[T]) Self() T {
@@ -778,11 +772,6 @@ func (r Result[T]) cacheSharedResult() *sharedResult {
 	return r.shared
 }
 
-func (r Result[T]) rebindID(id *call.ID) AnyResult {
-	r.id = id
-	return r
-}
-
 type ObjectResult[T Typed] struct {
 	Result[T]
 	class Class[T]
@@ -842,24 +831,8 @@ func (r ObjectResult[T]) ObjectResultWithCallFrame(frame *ResultCallFrame) Objec
 	return r
 }
 
-func (r ObjectResult[T]) IDForCaller(ctx context.Context) (*call.ID, error) {
-	return r.Result.IDForCaller(ctx)
-}
-
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 	return r.shared
-}
-
-func (r ObjectResult[T]) rebindID(id *call.ID) AnyResult {
-	r.Result.id = id
-	return r
-}
-
-func RebindResultID(res AnyResult, id *call.ID) AnyResult {
-	if res == nil || id == nil {
-		return res
-	}
-	return res.rebindID(id)
 }
 
 type cacheContextKey struct {

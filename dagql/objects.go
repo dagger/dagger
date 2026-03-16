@@ -84,13 +84,9 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
-					DoNotCache:  "caller-facing IDs are customized to the caller",
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
-					selfID, err := self.IDForCaller(ctx)
-					if err != nil {
-						return nil, fmt.Errorf("resolve caller-facing ID: %w", err)
-					}
+					selfID := self.ID()
 					id := NewDynamicID[T](selfID, opts.Typed)
 					idSelectionID := selfID.Append(id.Type(), "id", call.WithView(view))
 					return NewResultForID(id, idSelectionID)

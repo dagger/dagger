@@ -50,9 +50,6 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		if value.Type() == nil || value.Type().Name() != t.typeDef.Name {
 			return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
 		}
-		if curID := dagql.CurrentID(ctx); curID != nil {
-			return dagql.RebindResultID(value, curID), nil
-		}
 		return value, nil
 	case map[string]any:
 		fields := make(map[string]any, len(value))
