@@ -526,9 +526,16 @@ func (r ObjectResult[T]) call(
 	ctx = srvToContext(ctx, s)
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, r, newID)
-		}))
+		fieldName := newID.Field()
+		view := newID.View()
+		field, ok := r.class.Field(fieldName, view)
+		if ok && field.Spec.NoTelemetry {
+			// skip telemetry for this field (e.g. entrypoint proxies)
+		} else {
+			opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
+				return s.telemetry(ctx, r, newID)
+			}))
+		}
 	}
 
 	res, err := s.Cache.GetOrInitCall(ctx, cacheKey, func(ctx context.Context) (AnyResult, error) {
@@ -767,6 +774,11 @@ type FieldSpec struct {
 	// If set, this GetCacheConfig will be called before ID evaluation to make
 	// any dynamic adjustments to the cache key or args
 	GetCacheConfig GenericGetCacheConfigFunc
+
+	// NoTelemetry suppresses telemetry (AroundFunc) for this field.
+	// Used for entrypoint proxies that delegate to real fields which
+	// emit their own telemetry.
+	NoTelemetry bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name

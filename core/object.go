@@ -411,6 +411,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		proxySpec.Args = dagql.NewInputSpecs(mergedArgs...)
 		proxySpec.Module = obj.Module.IDModule()
 		proxySpec.GetCacheConfig = obj.entrypointProxyCacheConfig(constructorSpec, methodSpec, constructorArgs, methodArgs)
+		proxySpec.NoTelemetry = true
 
 		methodName := proxySpec.Name
 		dag.Root().ObjectType().Extend(
