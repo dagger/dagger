@@ -557,19 +557,23 @@ func (r *renderer) renderSpan(
 					if field.Value == "" {
 						continue
 					}
-					glitch := ""
-					if !field.Complete {
-						glitch = out.String(glitchText(0)).Faint().String()
-					}
 					switch toolArgStyle(span.LLMTool, argName) {
 					case argStylePath:
 						if !sawPath {
-							fmt.Fprint(out, " ", out.String(field.Value).Foreground(termenv.ANSICyan).String()+glitch)
+							s := out.String(field.Value).Foreground(termenv.ANSICyan).String()
+							if !field.Complete {
+								s += out.String(streamingCursor()).Foreground(termenv.ANSICyan).String()
+							}
+							fmt.Fprint(out, " ", s)
 							sawPath = true
 						}
 					case argStyleDesc:
 						if !sawDesc {
-							fmt.Fprint(out, " ", out.String(field.Value).Faint().String()+glitch)
+							s := out.String(field.Value).Faint().String()
+							if !field.Complete {
+								s += out.String(streamingCursor()).Faint().String()
+							}
+							fmt.Fprint(out, " ", s)
 							sawDesc = true
 						}
 					}

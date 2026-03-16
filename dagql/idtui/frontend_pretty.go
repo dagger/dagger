@@ -2998,7 +2998,7 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 		}
 		styled := out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String()
 		if !field.Complete {
-			styled += out.String(glitchText(0)).Faint().String()
+			styled += out.String(streamingCursor()).Foreground(termenv.ANSIBrightBlack).String()
 		}
 		r.fancyIndent(out, row, true, false)
 		fmt.Fprintln(out, prefix+styled)

@@ -1,31 +1,32 @@
 package idtui
 
-import (
-	"math/rand"
-	"strings"
-)
+import "time"
 
-// glitchRunes are characters used to create a cyberpunk streaming indicator.
-// A mix of unicode block elements, box-drawing fragments, and braille dots
-// that evoke a garbled/decoding feel.
-var glitchRunes = []rune{
-	'░', '▒', '▓', '█',
-	'╌', '╍', '┄', '┅',
-	'⡀', '⠁', '⠂', '⠄', '⡁', '⠅',
-	'▖', '▗', '▘', '▝', '▞', '▟',
-	'⣀', '⣤', '⣶', '⣿',
-}
+// streamingCursor returns a block cursor character that pulses between
+// a solid block and a thinner form based on wall-clock time. The pulse
+// cycle is ~500ms, creating a gentle blink effect. The caller is
+// responsible for styling it to match the surrounding content so it
+// doesn't look like the real terminal cursor.
+//
+// The cursor uses fractional block characters to pulse:
+//
+//	phase 0: █ (full block)
+//	phase 1: ▓ (dark shade)
+//	phase 2: ▒ (medium shade)
+//	phase 3: ░ (light shade)
+//
+// then back up, creating a smooth breathing effect.
+func streamingCursor() string {
+	// 8 phases over 800ms = 100ms per phase
+	const phaseDuration = 100 * time.Millisecond
+	const numPhases = 8
 
-// glitchText returns a short string of random glitch characters.
-// The length varies between 2 and 4 characters. Each call produces
-// different output, creating an animated effect when re-rendered.
-func glitchText(n int) string {
-	if n <= 0 {
-		n = 2 + rand.Intn(3) //nolint:gosec
+	phase := int(time.Now().UnixMilli()/phaseDuration.Milliseconds()) % numPhases
+
+	// Bounce: 0 1 2 3 3 2 1 0
+	blocks := [4]string{"█", "▓", "▒", "░"}
+	if phase >= 4 {
+		phase = 7 - phase
 	}
-	var sb strings.Builder
-	for range n {
-		sb.WriteRune(glitchRunes[rand.Intn(len(glitchRunes))]) //nolint:gosec
-	}
-	return sb.String()
+	return blocks[phase]
 }
