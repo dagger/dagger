@@ -3512,3 +3512,397 @@ If implementation pressure starts reintroducing wrapper-local raw IDs because it
 ### Tripwire: persistence remapping
 
 If we ever consider renumbering imported `sharedResultID`s, that directly affects the handle-ID persistence invariant and must be treated as a design-level change, not an incidental implementation tweak.
+
+# Wrapper/shared-result identity unification
+
+Yes. The corrected principle for this slice is:
+
+* `Result.ID()` and `ObjectResult.ID()` should return handle-form `call.ID`s only
+* they should not reconstruct recipe IDs
+* recipe IDs should only be used for:
+  * telemetry
+  * the future `recipe: true` debug mode on `.id` / `.sync`
+
+With that in mind, the implementation proposal for wrapper/shared-result identity unification is:
+
+## Core Rule
+
+After this slice, there are two explicit identity APIs:
+
+1. `ID()`
+
+* runtime object/result handle identity
+* always returns an engine-result-handle `call.ID`
+* never recipe-form
+
+2. `RecipeID()`
+
+* semantic recipe identity reconstructed from the frame
+* used only where recipe identity is actually needed:
+  * telemetry
+  * later debug `.id(recipe: true)` / `.sync(recipe: true)`
+
+That means the design becomes:
+
+* `sharedResult.id` owns runtime handle identity
+* `sharedResult.resultCallFrame` owns semantic identity
+* wrappers expose both explicitly and separately
+
+## Top-Level Goal
+
+Make `sharedResult` the sole owner of identity, and make wrappers just typed handles to it.
+
+After this slice:
+
+* `Result` / `ObjectResult` no longer store `id *call.ID`
+* `ID()` returns handle-form IDs only
+* `RecipeID()` returns recipe-form IDs only
+* `CurrentID(ctx)` is deleted
+* result constructors are call/frame-native, not recipe-ID-native
+
+## 1. Keep `IDable` on `AnyResult`, but change its meaning
+
+In `dagql/types.go`:
+
+Keep:
+
+* `IDable`
+* `AnyResult` embedding `IDable`
+
+But change `IDable` to:
+
+* `ID() (*call.ID, error)`
+
+Semantics:
+
+* `ID()` is the runtime handle ID API for any cached result, including scalars
+* it is not a recipe identity API anymore
+
+Then add a second explicit interface:
+
+* `type RecipeIDable interface { RecipeID() (*call.ID, error) }`
+
+And have `AnyResult` embed that too, because every dagql-owned result wrapper should expose both concepts explicitly.
+
+This gives us:
+
+* cached scalar/object/array/etc result -> handle ID via `ID()`
+* semantic recipe identity via `RecipeID()`
+
+## 2. Delete wrapper-local stored IDs
+
+In `dagql/cache.go`:
+
+Current:
+
+* `Result[T]` has:
+  * `shared *sharedResult`
+  * `id *call.ID`
+  * `hitCache bool`
+
+Proposal:
+
+* remove `id *call.ID` entirely
+
+So wrappers stop carrying their own identity payload.
+Everything comes from `sharedResult` now.
+
+This affects:
+
+* `newDetachedResult(...)`
+* `withDetachedPayload()`
+* `String()`
+* `MarshalJSON()`
+* `WithContentDigest(...)`
+* deref/nth construction paths
+
+## 3. `Result.ID()` / `ObjectResult.ID()` become handle-only
+
+In `dagql/cache.go`:
+
+`Result.ID()` should:
+
+* require `shared != nil`
+* require `shared.id != 0`
+* require `Type() != nil`
+* return:
+  * `call.NewEngineResultID(uint64(shared.id), call.NewType(r.Type()))`
+
+That means:
+
+* cache-backed result => real handle ID
+* detached/do-not-cache result => no handle exists
+
+So `ID()` must be fallible.
+Make both:
+
+* `func (r Result[T]) ID() (*call.ID, error)`
+* `func (r ObjectResult[T]) ID() (*call.ID, error)`
+
+`ID[T]` scalar still implements the same interface trivially, because it already holds a `*call.ID`.
+
+The key behavioral rule is:
+
+* wrapper `ID()` never returns recipe IDs anymore
+
+## 4. Add explicit `RecipeID()` on results
+
+Also in `dagql/cache.go`:
+
+Add:
+
+* `func (r Result[T]) RecipeID() (*call.ID, error)`
+* `func (r ObjectResult[T]) RecipeID() (*call.ID, error)`
+
+Implementation:
+
+* require `shared != nil`
+* require `shared.resultCallFrame != nil`
+* return `shared.resultCallFrame.RecipeID()`
+
+This is the explicit semantic identity path for:
+
+* telemetry
+* future debug `.id(recipe:true)` / `.sync(recipe:true)`
+* any dagql-owned path that truly needs a recipe ID
+
+## 5. Move recipe reconstruction onto the frame as `RecipeID()`
+
+In `dagql/result_call_frame.go`:
+
+Add:
+
+* `func (frame *ResultCallFrame) RecipeID() (*call.ID, error)`
+
+This should use the existing canonical reconstruction logic, with the visiting map kept private.
+
+Make it explicit that:
+
+* `RecipeID()` reconstructs from the semantic frame
+* it reattaches the frame’s own `ExtraDigests`
+* it does not pull in e-graph merged equivalence extras
+
+Reason:
+
+* this method is semantic provenance, not cache-equivalence state
+* if a separate “debug cache-equivalence recipe ID” path is needed later, that can stay cache-owned
+
+That also makes `WithContentDigest(...)` on detached results coherent, because frame extra digests will be reflected in `RecipeID()`.
+
+## 6. Delete `CurrentID(ctx)` entirely
+
+In `dagql/server.go`, delete:
+
+* `idCtx`
+* `idToContext`
+* `ContextWithID`
+* `CurrentID`
+
+Replace them with:
+
+* `callCtx`
+* `ContextWithCall(ctx, *ResultCallFrame)`
+* `CurrentCall(ctx) *ResultCallFrame`
+
+Then:
+
+* `dagql/objects.go` `ObjectResult.call(...)` installs `req.ResultCallFrame` into context via `ContextWithCall(...)`
+* persistence/import/decode sites that were using `ContextWithID(...)` switch to `ContextWithCall(...)`
+* any dagql-owned code that was only reading `.View()` from `CurrentID(ctx)` should read it from `CurrentCall(ctx)` instead
+
+No compatibility shim. No `CurrentID` fallback. Compile errors are the point.
+
+## 7. Replace current-ID constructors with current-call constructors
+
+Also in `dagql/server.go`, delete:
+
+* `NewResultForCurrentID`
+* `NewObjectResultForCurrentID`
+* `NewResultForID`
+* `NewObjectResultForID`
+
+Replace with:
+
+* `NewResultForCurrentCall`
+* `NewObjectResultForCurrentCall`
+* `NewResultForCall`
+* `NewObjectResultForCall`
+
+And in `dagql/cache.go`:
+
+* change `newDetachedResult(id, self)` to `newDetachedResult(call, self)`
+
+These constructors should:
+
+* clone the provided `ResultCallFrame`
+* store it on `sharedResult.resultCallFrame`
+* not store any wrapper ID
+* create a detached `sharedResult` with `hasValue: true`
+
+So results are born from call frames now, not from recipe IDs.
+
+## 8. Make nullable and enumerable construction call-native
+
+In `dagql/nullables.go`:
+
+Change:
+
+* `DerefToResult(constructor *call.ID, ...)`
+
+to:
+
+* `DerefToResult(call *ResultCallFrame, ...)`
+
+In `dagql/types.go`:
+
+Change:
+
+* `NthValue(i int, enumID *call.ID)`
+
+to:
+
+* `NthValue(i int, call *ResultCallFrame)`
+
+Update implementations in:
+
+* `dagql/nullables.go`
+* `dagql/types.go`
+* `dagql/builtins.go`
+
+Pattern:
+
+* deref: reuse the same call frame
+* nth: clone the call frame, set:
+  * `Nth = i`
+  * `Type = Type.Elem`
+  then create a detached result from that call
+
+This removes another recipe-ID constructor bridge.
+
+## 9. Move `WithContentDigest(...)` onto frame extra digests
+
+In `dagql/cache.go`:
+
+Current:
+
+* `WithContentDigest(...)` mutates wrapper-local recipe IDs
+
+Proposal:
+
+* `WithContentDigest(...)` should:
+  * `withDetachedPayload()`
+  * require `shared.resultCallFrame != nil`
+  * replace the content-labeled digest entry inside `shared.resultCallFrame.ExtraDigests`
+
+So content scoping becomes frame provenance, not wrapper-ID mutation.
+
+## 10. Update dagql-owned callsites to use `ID()` vs `RecipeID()` correctly
+
+This is where the split becomes real.
+
+### Use `ID()` for:
+
+* runtime handle identity
+* serialization of result wrappers where a handle is the correct public identity
+* any future `.id()` default behavior
+
+### Use `RecipeID()` for:
+
+* telemetry
+* any path-to-query reconstruction
+* any debug/provenance output
+
+Concrete dagql-owned fallout to fix in this slice:
+
+* `dagql/cache.go`
+  * `String()` should use handle ID, not recipe digest
+  * `MarshalJSON()` should use handle ID
+  * `DerefValue()` / `NthValue()` become call-native, so they should stop calling `r.ID()` as a recipe constructor source
+
+* `dagql/server.go`
+  * any error-path code that used wrapper `ID()` as a selection-path source should switch to `RecipeID()` or current call
+  * persistence decode paths using `ContextWithID(...)` should switch to `ContextWithCall(...)`
+
+* `dagql/objects.go`
+  * telemetry callback plumbing can simplify to use `req.ResultCallFrame.RecipeID()` or current call
+
+## 11. Telemetry fallout belongs in this slice
+
+With `RecipeID()` added to results, `core/telemetry.go` can keep its recipe-centric behavior while being explicit about it.
+
+That means:
+
+* request-side span creation still uses the request recipe ID
+* `recordStatus(...)` should use `obj.RecipeID()` instead of `obj.ID()`
+* `collectEffects(...)` should use `res.RecipeID()` or frame/effect data, not handle `ID()`
+
+So telemetry stays recipe-oriented, but it stops accidentally treating runtime handle IDs as if they were recipe IDs.
+
+## 12. What should intentionally break
+
+This slice should intentionally strand:
+
+* every `CurrentID(ctx)` callsite
+* every `NewResultForCurrentID(...)` / `NewObjectResultForCurrentID(...)` callsite
+* any code assuming wrapper `ID()` is recipe-shaped
+* any code assuming wrapper `ID()` is infallible
+* `core/` code that still builds semantics from recipe IDs directly
+
+That compile fallout is desirable.
+
+## 13. Tests to add or update
+
+1. `Result.ID()` / `ObjectResult.ID()`
+
+* cache-backed scalar/object returns handle-form ID
+* detached result returns error
+
+2. `Result.RecipeID()` / `ObjectResult.RecipeID()`
+
+* reconstruct canonical recipe ID from frame
+* includes frame-owned extra digests
+
+3. detached constructors
+
+* `NewResultForCall` / `NewObjectResultForCall` store frame on shared payload
+* no wrapper-local ID exists
+
+4. deref/nth
+
+* use frame cloning, not recipe-ID construction
+
+5. content digest
+
+* `WithContentDigest(...)` mutates frame extras on detached payload
+* sibling wrappers remain unaffected
+
+6. context
+
+* `CurrentCall(ctx)` works
+* no `CurrentID(ctx)` remains in dagql-owned code
+
+## Recommended implementation order
+
+1. Add `RecipeIDable` and `RecipeID()` methods.
+2. Change `IDable.ID()` to handle-only and fallible.
+3. Remove `id *call.ID` from `Result`.
+4. Add `ResultCallFrame.RecipeID()`.
+5. Delete `CurrentID` / `ContextWithID`; add `CurrentCall` / `ContextWithCall`.
+6. Replace constructors with:
+   * `NewResultForCall`
+   * `NewObjectResultForCall`
+   * `NewResultForCurrentCall`
+   * `NewObjectResultForCurrentCall`
+7. Convert `DerefableResult` / `Enumerable` to call-native construction.
+8. Move `WithContentDigest(...)` to frame extras.
+9. Fix dagql-owned callsites and telemetry fallout.
+10. Leave `core/` compile fallout for the next slice.
+
+## Bottom line
+
+The corrected principle is:
+
+* `ID()` means handle
+* `RecipeID()` means recipe
+* `CurrentID` is deleted
+* results are constructed from calls, not from recipe IDs

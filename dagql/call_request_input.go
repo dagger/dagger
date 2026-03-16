@@ -83,9 +83,9 @@ func frameLiteralFromInput(ctx context.Context, input Input) (*ResultCallFrameLi
 		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
 	}
 	if idable, ok := input.(IDable); ok {
-		id := idable.ID()
-		if id == nil {
-			return nil, fmt.Errorf("ID input %T is missing an ID", input)
+		id, err := idable.ID()
+		if err != nil {
+			return nil, fmt.Errorf("ID input %T is invalid: %w", input, err)
 		}
 		ref, err := frameRefFromIDInput(ctx, id)
 		if err != nil {

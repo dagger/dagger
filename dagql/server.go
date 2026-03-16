@@ -374,9 +374,9 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 				if !ok {
 					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
 				}
-				id := idable.ID()
-				if id == nil {
-					return nil, fmt.Errorf("expected non-nil ID")
+				id, err := idable.ID()
+				if err != nil {
+					return nil, fmt.Errorf("expected valid ID: %w", err)
 				}
 				if id.Type() == nil {
 					return nil, fmt.Errorf("expected typed ID, got untyped ID")
@@ -682,7 +682,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.toSelectable(res)
+	return s.toSelectable(ctx, res)
 }
 
 func (s *Server) loadNthValue(
@@ -753,7 +753,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if !id.IsHandle() {
 		return nil, fmt.Errorf("load %s: recipe-form IDs are not valid inputs", idInputDebugString(id))
 	}
-	res, err := s.Cache.LoadResultByResultID(srvToContext(idToContext(ctx, id), s), s, id.EngineResultID())
+	res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), s, id.EngineResultID())
 	if err != nil {
 		return nil, err
 	}
@@ -831,7 +831,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 					continue
 				}
 				if isObj {
-					val, err = s.toSelectable(val)
+					val, err = s.toSelectable(ctx, val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
@@ -844,7 +844,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(res)
+			self, err = s.toSelectable(ctx, res)
 			if err != nil {
 				return err
 			}
@@ -909,22 +909,18 @@ func LoadIDResults[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Ob
 	return out, nil
 }
 
-type idCtx struct{}
+type callCtx struct{}
 
-func idToContext(ctx context.Context, id *call.ID) context.Context {
-	return context.WithValue(ctx, idCtx{}, id)
+func ContextWithCall(ctx context.Context, call *ResultCallFrame) context.Context {
+	return context.WithValue(ctx, callCtx{}, call)
 }
 
-func ContextWithID(ctx context.Context, id *call.ID) context.Context {
-	return idToContext(ctx, id)
-}
-
-func CurrentID(ctx context.Context) *call.ID {
-	val := ctx.Value(idCtx{})
+func CurrentCall(ctx context.Context) *ResultCallFrame {
+	val := ctx.Value(callCtx{})
 	if val == nil {
 		return nil
 	}
-	return val.(*call.ID)
+	return val.(*ResultCallFrame)
 }
 
 type srvCtx struct{}
@@ -941,22 +937,22 @@ func CurrentDagqlServer(ctx context.Context) *Server {
 	return val.(*Server)
 }
 
-// NewResultForCurrentID creates a new Result that's set to the current ID from
-// the given self value.
-func NewResultForCurrentID[T Typed](
+// NewResultForCurrentCall creates a new Result that's set to the current call
+// from the given self value.
+func NewResultForCurrentCall[T Typed](
 	ctx context.Context,
 	self T,
 ) (Result[T], error) {
-	return NewResultForID(self, CurrentID(ctx))
+	return NewResultForCall(self, CurrentCall(ctx))
 }
 
-// NewResultForID creates a new Result with the given ID and self value.
-func NewResultForID[T Typed](
+// NewResultForCall creates a new Result with the given call and self value.
+func NewResultForCall[T Typed](
 	self T,
-	id *call.ID,
+	call *ResultCallFrame,
 ) (res Result[T], _ error) {
-	if id == nil {
-		return res, errors.New("id is nil")
+	if call == nil {
+		return res, errors.New("call is nil")
 	}
 
 	// check that we aren't trying to create a Result for a Result itself
@@ -964,21 +960,21 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	return newDetachedResult(id, self), nil
+	return newDetachedResult(call, self), nil
 }
 
-func NewObjectResultForCurrentID[T Typed](
+func NewObjectResultForCurrentCall[T Typed](
 	ctx context.Context,
 	srv *Server,
 	self T,
 ) (ObjectResult[T], error) {
-	return NewObjectResultForID(self, srv, CurrentID(ctx))
+	return NewObjectResultForCall(self, srv, CurrentCall(ctx))
 }
 
-func NewObjectResultForID[T Typed](
+func NewObjectResultForCall[T Typed](
 	self T,
 	srv *Server,
-	id *call.ID,
+	call *ResultCallFrame,
 ) (res ObjectResult[T], _ error) {
 	objType, ok := srv.ObjectType(self.Type().Name())
 	if !ok {
@@ -989,7 +985,7 @@ func NewObjectResultForID[T Typed](
 		return res, fmt.Errorf("not a Class: %T", objType)
 	}
 
-	inst, err := NewResultForID(self, id)
+	inst, err := NewResultForCall(self, call)
 	if err != nil {
 		return res, err
 	}
@@ -1047,7 +1043,12 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		}
 
 		if rerr != nil {
-			queryPath := append(idToPath(self.ID()), ast.PathName(sel.Name()))
+			var queryPath ast.Path
+			if recipeID, err := self.RecipeID(); err == nil {
+				queryPath = append(idToPath(recipeID), ast.PathName(sel.Name()))
+			} else {
+				queryPath = ast.Path{ast.PathName(sel.Name())}
+			}
 			rerr = gqlErr(rerr, queryPath)
 		}
 	}()
@@ -1103,7 +1104,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 						results[nth-1] = nil
 						return nil
 					}
-					node, err := s.toSelectable(elemVal)
+					node, err := s.toSelectable(ctx, elemVal)
 					if err != nil {
 						return fmt.Errorf("instantiate %dth array element: %w", nth, err)
 					}
@@ -1127,7 +1128,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	// instantiate the return value so we can sub-select
-	node, err := s.toSelectable(val)
+	node, err := s.toSelectable(ctx, val)
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
@@ -1135,7 +1136,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
-func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
+func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResult, error) {
 	if sel, ok := val.(AnyObjectResult); ok {
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.
@@ -1158,7 +1159,11 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		className := obj.Type().Name()
 		class, ok = s.ObjectType(className)
 		if ok {
-			val, err = NewResultForID(obj, val.ID())
+			shared := val.cacheSharedResult()
+			if shared == nil || shared.resultCallFrame == nil {
+				return nil, fmt.Errorf("toSelectable iface conversion: missing result call frame")
+			}
+			val, err = NewResultForCall(obj, shared.resultCallFrame)
 			if err != nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
 			}

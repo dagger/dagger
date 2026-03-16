@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-
-	"github.com/dagger/dagger/dagql/call"
 )
 
 type SessionCache struct {
@@ -104,13 +102,6 @@ func telemetryKeys(ctx context.Context) *sync.Map {
 		return v.(*sync.Map)
 	}
 	return nil
-}
-
-func (c *SessionCache) CallIDFromFrame(ctx context.Context, frame *ResultCallFrame) (*call.ID, error) {
-	if c == nil {
-		return nil, errors.New("session cache is nil")
-	}
-	return c.cache.CallIDFromFrame(ctx, frame)
 }
 
 func (c *SessionCache) GetOrInitCall(

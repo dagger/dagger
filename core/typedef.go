@@ -505,8 +505,11 @@ type DynamicID struct {
 var _ dagql.IDable = DynamicID{}
 
 // ID returns the ID of the value.
-func (d DynamicID) ID() *call.ID {
-	return d.id
+func (d DynamicID) ID() (*call.ID, error) {
+	if d.id == nil {
+		return nil, fmt.Errorf("nil dynamic ID")
+	}
+	return d.id, nil
 }
 
 var _ dagql.ScalarType = DynamicID{}
@@ -524,9 +527,18 @@ func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 		if err := idp.Decode(x); err != nil {
 			return nil, fmt.Errorf("decode %q ID: %w", d.typeName, err)
 		}
+		if !idp.IsHandle() {
+			return nil, fmt.Errorf("recipe-form IDs are not valid %q inputs", d.TypeName())
+		}
 		d.id = &idp
 		return d, nil
 	case *call.ID:
+		if x == nil {
+			return nil, fmt.Errorf("cannot create %q from nil ID", d.TypeName())
+		}
+		if !x.IsHandle() {
+			return nil, fmt.Errorf("recipe-form IDs are not valid %q inputs", d.TypeName())
+		}
 		d.id = x
 		return d, nil
 	default:
@@ -537,7 +549,17 @@ func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 var _ dagql.Input = DynamicID{}
 
 func (d DynamicID) ToLiteral() call.Literal {
-	return call.NewLiteralID(d.id)
+	if d.id == nil {
+		panic("core.DynamicID.ToLiteral: nil ID")
+	}
+	if !d.id.IsHandle() {
+		panic("core.DynamicID.ToLiteral: recipe-form IDs are not valid inputs")
+	}
+	enc, err := d.id.Encode()
+	if err != nil {
+		panic(fmt.Errorf("core.DynamicID.ToLiteral: encode handle ID: %w", err))
+	}
+	return call.NewLiteralString(enc)
 }
 
 func (d DynamicID) Type() *ast.Type {

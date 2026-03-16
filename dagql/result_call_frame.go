@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"sync"
 
 	"github.com/opencontainers/go-digest"
@@ -232,6 +231,10 @@ func (frame *ResultCallFrame) clone() *ResultCallFrame {
 
 func (frame *ResultCallFrame) RecipeDigest() (digest.Digest, error) {
 	return frame.recipeDigestWithVisiting(map[sharedResultID]struct{}{})
+}
+
+func (frame *ResultCallFrame) RecipeID() (*call.ID, error) {
+	return frame.recipeIDWithVisiting(map[sharedResultID]struct{}{})
 }
 
 func (frame *ResultCallFrame) recipeDigestWithVisiting(visiting map[sharedResultID]struct{}) (digest.Digest, error) {
@@ -891,7 +894,7 @@ func (c *cache) resultCallFrameByResultID(resultID sharedResultID) *ResultCallFr
 	return res.resultCallFrame
 }
 
-func (c *cache) persistedCallIDByResultID(ctx context.Context, resultID sharedResultID) (*call.ID, error) {
+func (c *cache) persistedCallIDByResultID(_ context.Context, resultID sharedResultID) (*call.ID, error) {
 	if resultID == 0 {
 		return nil, fmt.Errorf("resolve persisted call ID: zero result ID")
 	}
@@ -899,77 +902,23 @@ func (c *cache) persistedCallIDByResultID(ctx context.Context, resultID sharedRe
 	if frame == nil {
 		return nil, fmt.Errorf("resolve persisted call ID for result %d: missing result call frame", resultID)
 	}
-	rebuilt, ok := c.callIDFromFrame(ctx, frame, map[sharedResultID]struct{}{})
-	if !ok || rebuilt == nil {
-		return nil, fmt.Errorf("resolve persisted call ID for result %d: failed to rebuild from frame", resultID)
-	}
-	for _, extra := range c.resultCallFrameExtraDigestsSnapshot(resultID) {
-		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
+	rebuilt, err := frame.RecipeID()
+	if err != nil {
+		return nil, fmt.Errorf("resolve persisted call ID for result %d: %w", resultID, err)
 	}
 	return rebuilt, nil
 }
 
-func (c *cache) resultCallFrameExtraDigestsSnapshot(resultID sharedResultID) []call.ExtraDigest {
-	if resultID == 0 {
-		return nil
-	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-
-	outputEqClasses := c.outputEqClassesForResultLocked(resultID)
-	if len(outputEqClasses) == 0 {
-		return nil
-	}
-
-	seen := make(map[call.ExtraDigest]struct{})
-	extras := make([]call.ExtraDigest, 0)
-	if res := c.resultsByID[resultID]; res != nil && res.resultCallFrame != nil {
-		for _, extra := range res.resultCallFrame.ExtraDigests {
-			if extra.Digest == "" {
-				continue
-			}
-			if _, ok := seen[extra]; ok {
-				continue
-			}
-			seen[extra] = struct{}{}
-			extras = append(extras, extra)
-		}
-	}
-	for outputEqID := range outputEqClasses {
-		for extra := range c.eqClassExtraDigests[outputEqID] {
-			if extra.Digest == "" {
-				continue
-			}
-			if _, ok := seen[extra]; ok {
-				continue
-			}
-			seen[extra] = struct{}{}
-			extras = append(extras, extra)
-		}
-	}
-	sort.Slice(extras, func(i, j int) bool {
-		if extras[i].Label != extras[j].Label {
-			return extras[i].Label < extras[j].Label
-		}
-		return extras[i].Digest < extras[j].Digest
-	})
-	return extras
-}
-
-func (c *cache) callIDFromFrame(
-	ctx context.Context,
-	frame *ResultCallFrame,
-	visiting map[sharedResultID]struct{},
-) (*call.ID, bool) {
+func (frame *ResultCallFrame) recipeIDWithVisiting(visiting map[sharedResultID]struct{}) (*call.ID, error) {
 	if frame == nil {
-		return nil, false
+		return nil, fmt.Errorf("rebuild recipe ID: nil frame")
 	}
 	field := frame.Field
 	if frame.Kind == ResultCallFrameKindSynthetic {
 		field = frame.SyntheticOp
 	}
 	if field == "" {
-		return nil, false
+		return nil, fmt.Errorf("rebuild recipe ID: missing field")
 	}
 
 	var (
@@ -977,30 +926,30 @@ func (c *cache) callIDFromFrame(
 		mod        *call.Module
 	)
 	if frame.Receiver != nil {
-		id, ok := c.resolveFrameRefCallID(ctx, frame.Receiver, visiting)
-		if !ok {
-			return nil, false
+		id, err := frame.resolveRefRecipeID(frame.Receiver, visiting)
+		if err != nil {
+			return nil, fmt.Errorf("receiver: %w", err)
 		}
 		receiverID = id
 	}
 	if frame.Module != nil {
 		if frame.Module.ResultRef == nil {
-			return nil, false
+			return nil, fmt.Errorf("module: missing result ref")
 		}
-		modID, ok := c.resolveFrameRefCallID(ctx, frame.Module.ResultRef, visiting)
-		if !ok || modID == nil {
-			return nil, false
+		modID, err := frame.resolveRefRecipeID(frame.Module.ResultRef, visiting)
+		if err != nil {
+			return nil, fmt.Errorf("module: %w", err)
 		}
 		mod = call.NewModule(modID, frame.Module.Name, frame.Module.Ref, frame.Module.Pin)
 	}
 
-	args, ok := c.callArgsFromFrame(ctx, frame.Args, visiting)
-	if !ok {
-		return nil, false
+	args, err := frame.callArgsFromFrame(frame.Args, visiting)
+	if err != nil {
+		return nil, fmt.Errorf("args: %w", err)
 	}
-	implicitInputs, ok := c.callArgsFromFrame(ctx, frame.ImplicitInputs, visiting)
-	if !ok {
-		return nil, false
+	implicitInputs, err := frame.callArgsFromFrame(frame.ImplicitInputs, visiting)
+	if err != nil {
+		return nil, fmt.Errorf("implicit inputs: %w", err)
 	}
 
 	rebuilt := receiverID
@@ -1015,125 +964,110 @@ func (c *cache) callIDFromFrame(
 		call.WithModule(mod),
 	)
 	if rebuilt == nil {
-		return nil, false
+		return nil, fmt.Errorf("rebuild recipe ID: append returned nil")
 	}
-	return rebuilt, true
-}
-
-func (c *cache) resolveFrameRefCallID(
-	ctx context.Context,
-	ref *ResultCallFrameRef,
-	visiting map[sharedResultID]struct{},
-) (*call.ID, bool) {
-	if ref == nil || ref.ResultID == 0 {
-		return nil, false
-	}
-	refID := sharedResultID(ref.ResultID)
-	frame := c.resultCallFrameSnapshot(refID)
-	if frame == nil {
-		return nil, false
-	}
-	if _, seen := visiting[refID]; seen {
-		return nil, false
-	}
-	visiting[refID] = struct{}{}
-	defer delete(visiting, refID)
-	rebuilt, ok := c.callIDFromFrame(ctx, frame, visiting)
-	if !ok || rebuilt == nil {
-		return nil, false
-	}
-	for _, extra := range c.resultCallFrameExtraDigestsSnapshot(refID) {
+	for _, extra := range frame.ExtraDigests {
+		if extra.Digest == "" {
+			continue
+		}
 		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
-	}
-	return rebuilt, true
-}
-
-func (c *cache) CallIDFromFrame(ctx context.Context, frame *ResultCallFrame) (*call.ID, error) {
-	if frame == nil {
-		return nil, fmt.Errorf("rebuild call ID from frame: nil frame")
-	}
-	rebuilt, ok := c.callIDFromFrame(ctx, frame, map[sharedResultID]struct{}{})
-	if !ok || rebuilt == nil {
-		return nil, fmt.Errorf("rebuild call ID from frame: failed")
 	}
 	return rebuilt, nil
 }
 
-func (c *cache) callArgsFromFrame(
-	ctx context.Context,
+func (frame *ResultCallFrame) resolveRefRecipeID(ref *ResultCallFrameRef, visiting map[sharedResultID]struct{}) (*call.ID, error) {
+	if ref == nil || ref.ResultID == 0 {
+		return nil, fmt.Errorf("missing result ref")
+	}
+	if frame == nil || frame.cache == nil {
+		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
+	}
+	refID := sharedResultID(ref.ResultID)
+	refFrame := frame.cache.resultCallFrameSnapshot(refID)
+	if refFrame == nil {
+		return nil, fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
+	}
+	if _, seen := visiting[refID]; seen {
+		return nil, fmt.Errorf("cycle while reconstructing recipe ID for shared result %d", ref.ResultID)
+	}
+	visiting[refID] = struct{}{}
+	defer delete(visiting, refID)
+	return refFrame.recipeIDWithVisiting(visiting)
+}
+
+func (frame *ResultCallFrame) callArgsFromFrame(
 	frameArgs []*ResultCallFrameArg,
 	visiting map[sharedResultID]struct{},
-) ([]*call.Argument, bool) {
+) ([]*call.Argument, error) {
 	if len(frameArgs) == 0 {
-		return nil, true
+		return nil, nil
 	}
 	args := make([]*call.Argument, 0, len(frameArgs))
 	for _, frameArg := range frameArgs {
 		if frameArg == nil || frameArg.Value == nil {
 			continue
 		}
-		lit, ok := c.callLiteralFromFrame(ctx, frameArg.Value, visiting)
-		if !ok {
-			return nil, false
+		lit, err := frame.callLiteralFromFrame(frameArg.Value, visiting)
+		if err != nil {
+			return nil, err
 		}
 		args = append(args, call.NewArgument(frameArg.Name, lit, frameArg.IsSensitive))
 	}
-	return args, true
+	return args, nil
 }
 
-func (c *cache) callLiteralFromFrame(
-	ctx context.Context,
+func (frame *ResultCallFrame) callLiteralFromFrame(
 	frameLit *ResultCallFrameLiteral,
 	visiting map[sharedResultID]struct{},
-) (call.Literal, bool) {
+) (call.Literal, error) {
 	if frameLit == nil {
-		return nil, false
+		return nil, fmt.Errorf("missing literal")
 	}
 	switch frameLit.Kind {
 	case ResultCallFrameLiteralKindNull:
-		return call.NewLiteralNull(), true
+		return call.NewLiteralNull(), nil
 	case ResultCallFrameLiteralKindBool:
-		return call.NewLiteralBool(frameLit.BoolValue), true
+		return call.NewLiteralBool(frameLit.BoolValue), nil
 	case ResultCallFrameLiteralKindInt:
-		return call.NewLiteralInt(frameLit.IntValue), true
+		return call.NewLiteralInt(frameLit.IntValue), nil
 	case ResultCallFrameLiteralKindFloat:
-		return call.NewLiteralFloat(frameLit.FloatValue), true
+		return call.NewLiteralFloat(frameLit.FloatValue), nil
 	case ResultCallFrameLiteralKindString:
-		return call.NewLiteralString(frameLit.StringValue), true
+		return call.NewLiteralString(frameLit.StringValue), nil
 	case ResultCallFrameLiteralKindEnum:
-		return call.NewLiteralEnum(frameLit.EnumValue), true
+		return call.NewLiteralEnum(frameLit.EnumValue), nil
 	case ResultCallFrameLiteralKindDigestedString:
-		return call.NewLiteralDigestedString(frameLit.DigestedStringValue, frameLit.DigestedStringDigest), true
+		return call.NewLiteralDigestedString(frameLit.DigestedStringValue, frameLit.DigestedStringDigest), nil
 	case ResultCallFrameLiteralKindResultRef:
-		id, ok := c.resolveFrameRefCallID(ctx, frameLit.ResultRef, visiting)
-		if !ok || id == nil {
-			return nil, false
+		id, err := frame.resolveRefRecipeID(frameLit.ResultRef, visiting)
+		if err != nil {
+			return nil, err
 		}
-		return call.NewLiteralID(id), true
+		return call.NewLiteralID(id), nil
 	case ResultCallFrameLiteralKindList:
 		items := make([]call.Literal, 0, len(frameLit.ListItems))
 		for _, item := range frameLit.ListItems {
-			lit, ok := c.callLiteralFromFrame(ctx, item, visiting)
-			if !ok {
-				return nil, false
+			lit, err := frame.callLiteralFromFrame(item, visiting)
+			if err != nil {
+				return nil, err
 			}
 			items = append(items, lit)
 		}
-		return call.NewLiteralList(items...), true
+		return call.NewLiteralList(items...), nil
 	case ResultCallFrameLiteralKindObject:
 		fields := make([]*call.Argument, 0, len(frameLit.ObjectFields))
 		for _, field := range frameLit.ObjectFields {
 			if field == nil || field.Value == nil {
 				continue
 			}
-			lit, ok := c.callLiteralFromFrame(ctx, field.Value, visiting)
-			if !ok {
-				return nil, false
+			lit, err := frame.callLiteralFromFrame(field.Value, visiting)
+			if err != nil {
+				return nil, err
 			}
 			fields = append(fields, call.NewArgument(field.Name, lit, field.IsSensitive))
 		}
-		return call.NewLiteralObject(fields...), true
+		return call.NewLiteralObject(fields...), nil
 	default:
-		return nil, false
+		return nil, fmt.Errorf("unknown result call frame literal kind %q", frameLit.Kind)
 	}
 }

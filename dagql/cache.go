@@ -71,10 +71,6 @@ type Cache interface {
 	// LoadResultByResultID loads a cache-backed result by its stable shared
 	// result handle.
 	LoadResultByResultID(context.Context, *Server, uint64) (AnyResult, error)
-
-	// CallIDFromFrame rebuilds the canonical recipe-form call ID for the given
-	// semantic frame.
-	CallIDFromFrame(context.Context, *ResultCallFrame) (*call.ID, error)
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
@@ -497,15 +493,19 @@ type ongoingCall struct {
 	res *sharedResult
 }
 
-// newDetachedResult creates a non-cache-backed Result from an explicit call ID and value.
-func newDetachedResult[T Typed](resultID *call.ID, self T) Result[T] {
+// newDetachedResult creates a non-cache-backed Result from an explicit call frame and value.
+func newDetachedResult[T Typed](call *ResultCallFrame, self T) Result[T] {
+	var resultCallFrame *ResultCallFrame
+	if call != nil {
+		resultCallFrame = call.clone()
+	}
 	return Result[T]{
 		shared: &sharedResult{
 			self:               self,
+			resultCallFrame:    resultCallFrame,
 			hasValue:           true,
 			safeToPersistCache: true,
 		},
-		id: resultID,
 	}
 }
 
@@ -594,9 +594,6 @@ type Result[T Typed] struct {
 	// shared points at immutable payload + lifecycle state shared by all per-call Result values.
 	shared *sharedResult
 
-	// id is the currently attached wrapper ID for this specific returned result.
-	id *call.ID
-
 	// per-call cache-hit signal for callers/tests.
 	hitCache bool
 }
@@ -611,9 +608,26 @@ func (r Result[T]) Type() *ast.Type {
 	return r.shared.self.Type()
 }
 
-// ID returns the ID of the instance.
-func (r Result[T]) ID() *call.ID {
-	return r.id
+// ID returns the runtime handle ID of the instance.
+func (r Result[T]) ID() (*call.ID, error) {
+	if r.shared == nil {
+		return nil, fmt.Errorf("result has no shared payload")
+	}
+	if r.shared.id == 0 {
+		return nil, fmt.Errorf("result %T is detached", r.Self())
+	}
+	typ := r.Type()
+	if typ == nil {
+		return nil, fmt.Errorf("result %T has no type", r.Self())
+	}
+	return call.NewEngineResultID(uint64(r.shared.id), call.NewType(typ)), nil
+}
+
+func (r Result[T]) RecipeID() (*call.ID, error) {
+	if r.shared == nil || r.shared.resultCallFrame == nil {
+		return nil, fmt.Errorf("result %T has no call frame", r.Self())
+	}
+	return r.shared.resultCallFrame.RecipeID()
 }
 
 func (r Result[T]) Self() T {
@@ -655,7 +669,10 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 	if r.shared != nil {
 		postCall = r.shared.postCall
 	}
-	return derefableSelf.DerefToResult(r.ID(), postCall, r.IsSafeToPersistCache())
+	if r.shared == nil || r.shared.resultCallFrame == nil {
+		panic(fmt.Sprintf("deref result %T: missing call frame", self))
+	}
+	return derefableSelf.DerefToResult(r.shared.resultCallFrame, postCall, r.IsSafeToPersistCache())
 }
 
 func (r Result[T]) NthValue(nth int) (AnyResult, error) {
@@ -664,7 +681,10 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 	if !ok {
 		return nil, fmt.Errorf("cannot get %dth value from %T", nth, self)
 	}
-	return enumerableSelf.NthValue(nth, r.ID())
+	if r.shared == nil || r.shared.resultCallFrame == nil {
+		return nil, fmt.Errorf("cannot get %dth value from %T without call frame", nth, self)
+	}
+	return enumerableSelf.NthValue(nth, r.shared.resultCallFrame)
 }
 
 // withDetachedPayload clones shared payload so per-call mutations do not affect other Results.
@@ -720,11 +740,25 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 }
 
 func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
-	id := r.ID()
-	if id == nil {
-		return r
+	r = r.withDetachedPayload()
+	if r.shared == nil || r.shared.resultCallFrame == nil {
+		panic(fmt.Sprintf("set content digest on %T: missing call frame", r.Self()))
 	}
-	r.id = id.With(call.WithContentDigest(contentDigest))
+	replaced := false
+	for i, extra := range r.shared.resultCallFrame.ExtraDigests {
+		if extra.Label != call.ExtraDigestLabelContent {
+			continue
+		}
+		r.shared.resultCallFrame.ExtraDigests[i].Digest = contentDigest
+		replaced = true
+		break
+	}
+	if !replaced {
+		r.shared.resultCallFrame.ExtraDigests = append(r.shared.resultCallFrame.ExtraDigests, call.ExtraDigest{
+			Label:  call.ExtraDigestLabelContent,
+			Digest: contentDigest,
+		})
+	}
 	return r
 }
 
@@ -740,11 +774,15 @@ func (r Result[T]) String() string {
 	if typ == nil {
 		return "<nil>@<nil>"
 	}
-	id := r.ID()
-	if id == nil {
-		return fmt.Sprintf("%s@<nil>", typ.Name())
+	id, err := r.ID()
+	if err != nil {
+		return fmt.Sprintf("%s@<detached>", typ.Name())
 	}
-	return fmt.Sprintf("%s@%s", typ.Name(), id.Digest())
+	enc, err := id.Encode()
+	if err != nil {
+		return fmt.Sprintf("%s@<encode-error>", typ.Name())
+	}
+	return fmt.Sprintf("%s@%s", typ.Name(), enc)
 }
 
 func (r Result[T]) PostCall(ctx context.Context) error {
@@ -755,7 +793,11 @@ func (r Result[T]) PostCall(ctx context.Context) error {
 }
 
 func (r Result[T]) MarshalJSON() ([]byte, error) {
-	return json.Marshal(r.ID())
+	id, err := r.ID()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 func (r Result[T]) HitCache() bool {
@@ -801,7 +843,10 @@ func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
 	if r.shared != nil {
 		postCall = r.shared.postCall
 	}
-	return derefableSelf.DerefToResult(r.ID(), postCall, r.IsSafeToPersistCache())
+	if r.shared == nil || r.shared.resultCallFrame == nil {
+		panic(fmt.Sprintf("deref object result %T: missing call frame", self))
+	}
+	return derefableSelf.DerefToResult(r.shared.resultCallFrame, postCall, r.IsSafeToPersistCache())
 }
 
 func (r ObjectResult[T]) SetField(field reflect.Value) error {
@@ -1379,7 +1424,6 @@ func (c *cache) wait(
 
 	retRes := Result[Typed]{
 		shared:   oc.res,
-		id:       nil,
 		hitCache: false,
 	}
 
@@ -1594,12 +1638,12 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 	}
 
 	for _, dep := range deps {
-		if dep == nil || dep.ID() == nil {
+		if dep == nil {
 			continue
 		}
 		attachedDepRes := dep.cacheSharedResult()
 		if attachedDepRes == nil || attachedDepRes.id == 0 {
-			return fmt.Errorf("attach owned result %q: unexpected detached result", dep.ID().Digest())
+			return fmt.Errorf("attach owned result %T: unexpected detached result", dep)
 		}
 		attachedDepRefs = append(attachedDepRefs, dep)
 		addDepID(attachedDepRes.id)

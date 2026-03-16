@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/introspection"
 )
 
@@ -15,15 +16,24 @@ type SchemaResolvers interface {
 }
 
 func Syncer[T core.Syncable]() dagql.Field[T] {
-	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], _ struct{}) (res dagql.Result[dagql.ID[T]], _ error) {
+	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
+		Recipe bool `default:"false"`
+	}) (res dagql.Result[dagql.ID[T]], _ error) {
 		err := self.Self().Sync(ctx)
 		if err != nil {
 			return res, err
 		}
-		selfID := self.ID()
+		var selfID *call.ID
+		if args.Recipe {
+			selfID, err = self.RecipeID()
+		} else {
+			selfID, err = self.ID()
+		}
+		if err != nil {
+			return res, err
+		}
 		id := dagql.NewID[T](selfID)
-		syncID := selfID.Append(id.Type(), "sync")
-		return dagql.NewResultForID(id, syncID)
+		return dagql.NewResultForCurrentCall(ctx, id)
 	}).DoNotCache("sync is an operational boundary and each object already controls its own underlying lazy/cached state")
 }
 

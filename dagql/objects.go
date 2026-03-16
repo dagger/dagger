@@ -84,12 +84,30 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
+					Args: NewInputSpecs(
+						InputSpec{
+							Name:        "recipe",
+							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+							Type:        Boolean(false),
+							Default:     Boolean(false),
+						},
+					),
 				},
-				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
-					selfID := self.ID()
-					id := NewDynamicID[T](selfID, opts.Typed)
-					idSelectionID := selfID.Append(id.Type(), "id", call.WithView(view))
-					return NewResultForID(id, idSelectionID)
+				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
+					recipe, _ := args["recipe"].(Boolean)
+					var (
+						selfID *call.ID
+						err    error
+					)
+					if bool(recipe) {
+						selfID, err = self.RecipeID()
+					} else {
+						selfID, err = self.ID()
+					}
+					if err != nil {
+						return nil, err
+					}
+					return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
 				},
 			},
 		)
@@ -313,14 +331,20 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 		}, nil
 	}
 
-	self, ok := UnwrapAs[T](val)
-	if !ok {
+	if _, ok := UnwrapAs[T](val); !ok {
 		return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
+	}
+	shared := val.cacheSharedResult()
+	if shared == nil {
+		return nil, fmt.Errorf("cannot instantiate %T with %T: missing shared result", class, val)
 	}
 
 	return ObjectResult[T]{
-		Result: newDetachedResult(val.ID(), self),
-		class:  class,
+		Result: Result[T]{
+			shared:   shared,
+			hitCache: val.HitCache(),
+		},
+		class: class,
 	}, nil
 }
 
@@ -533,6 +557,7 @@ func (r ObjectResult[T]) call(
 	inputArgs map[string]Input,
 ) (AnyResult, error) {
 	ctx = srvToContext(ctx, s)
+	ctx = ContextWithCall(ctx, req.ResultCallFrame)
 	fieldName := req.Field
 	view := req.View
 	field, ok := r.class.Field(fieldName, view)
@@ -544,7 +569,7 @@ func (r ObjectResult[T]) call(
 	}
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		telemetryID, err := s.Cache.CallIDFromFrame(ctx, req.ResultCallFrame)
+		telemetryID, err := req.ResultCallFrame.RecipeID()
 		if err != nil {
 			return nil, fmt.Errorf("derive telemetry call ID: %w", err)
 		}
@@ -724,7 +749,7 @@ func NodeFuncWithDynamicInputs[T Typed, A any, R any](
 				return nil, fmt.Errorf("expected %T to be a Typed value, got %T: %w", ret, ret, err)
 			}
 
-			return NewResultForCurrentID(ctx, res)
+			return NewResultForCurrentCall(ctx, res)
 		},
 	}
 
@@ -1521,7 +1546,7 @@ func getField(
 				return nil, true, nil
 			}
 
-			retVal, err := NewResultForCurrentID(ctx, t)
+			retVal, err := NewResultForCurrentCall(ctx, t)
 			if err != nil {
 				return nil, false, fmt.Errorf("get field %q: %w", name, err)
 			}

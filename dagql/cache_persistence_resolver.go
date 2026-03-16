@@ -102,11 +102,7 @@ func (c *cache) LoadResultByResultID(ctx context.Context, dag *Server, resultID 
 	if err != nil {
 		return nil, err
 	}
-	id, err := c.persistedCallIDByResultID(ctx, sharedResultID(resultID))
-	if err != nil {
-		return nil, err
-	}
-	wrapped, err := c.persistedResultForShared(ctx, res, id)
+	wrapped, err := c.persistedResultForShared(ctx, res)
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +126,7 @@ func (c *cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, 
 	if ok {
 		return obj, nil
 	}
-	id := res.ID()
-	if dag == nil || id == nil || res.Type() == nil || res.Type().Elem != nil {
+	if dag == nil || res.Type() == nil || res.Type().Elem != nil {
 		return nil, fmt.Errorf("load persisted object by result ID %d: result is %T", resultID, res)
 	}
 	objType, ok := dag.ObjectType(res.Type().Name())
@@ -153,12 +148,9 @@ func (c *SessionCache) LoadPersistedObjectByResultID(ctx context.Context, dag *S
 	return base.LoadPersistedObjectByResultID(ctx, dag, resultID)
 }
 
-func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult, requestedID *call.ID) (AnyResult, error) {
+func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult) (AnyResult, error) {
 	if res == nil {
 		return nil, fmt.Errorf("wrap persisted shared result: nil result")
-	}
-	if requestedID == nil {
-		return nil, fmt.Errorf("wrap persisted shared result: nil requested ID")
 	}
 	requestedFrame := c.resultCallFrameSnapshot(res.id)
 	if requestedFrame == nil {
@@ -168,32 +160,13 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult,
 	c.egraphMu.Lock()
 	if err := c.teachResultIdentityLocked(ctx, res, requestedFrame); err != nil {
 		c.egraphMu.Unlock()
-		return nil, fmt.Errorf("teach persisted shared result identity %q: %w", requestedID.Digest(), err)
+		return nil, fmt.Errorf("teach persisted shared result identity for result %d: %w", res.id, err)
 	}
-	retID := requestedID
-	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
-		// NOTE: if multiple content-labeled digests end up in one eq class, we
-		// intentionally tolerate that for now and just use the first one we
-		// encounter.
-		for extra := range c.eqClassExtraDigests[outputEqID] {
-			if extra.Label != call.ExtraDigestLabelContent || extra.Digest == "" {
-				continue
-			}
-			retID = retID.With(call.WithExtraDigest(extra))
-			break
-		}
-		if retID.ContentDigest() != "" {
-			break
-		}
-	}
-	outputEffectIDs := append([]string(nil), res.outputEffectIDs...)
 	objType := res.objType
 	c.egraphMu.Unlock()
 
-	retID = retID.AppendEffectIDs(outputEffectIDs...)
 	retRes := Result[Typed]{
 		shared:   res,
-		id:       retID,
 		hitCache: true,
 	}
 	if objType == nil {
@@ -201,7 +174,7 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult,
 	}
 	objRes, err := objType.New(retRes)
 	if err != nil {
-		return nil, fmt.Errorf("wrap persisted shared result %q: %w", requestedID.Digest(), err)
+		return nil, fmt.Errorf("wrap persisted shared result %d: %w", res.id, err)
 	}
 	return objRes, nil
 }

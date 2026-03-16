@@ -74,8 +74,13 @@ type FieldFunc func(context.Context, AnyResult, map[string]Input) (AnyResult, er
 type LoadByIDFunc func(context.Context, AnyResult, map[string]Input) (AnyResult, error)
 
 type IDable interface {
-	// ID returns the ID of the value.
-	ID() *call.ID
+	// ID returns the runtime handle ID of the value.
+	ID() (*call.ID, error)
+}
+
+type RecipeIDable interface {
+	// RecipeID returns the semantic recipe ID of the value.
+	RecipeID() (*call.ID, error)
 }
 
 // AnyResult is a Typed value wrapped with an ID constructor. The wrapped value may
@@ -86,6 +91,7 @@ type AnyResult interface {
 	Typed
 	Wrapper
 	IDable
+	RecipeIDable
 	PostCallable
 	Setter
 
@@ -872,8 +878,11 @@ func (i ID[T]) Type() *ast.Type {
 var _ IDable = ID[Typed]{}
 
 // ID returns the ID of the value.
-func (i ID[T]) ID() *call.ID {
-	return i.id
+func (i ID[T]) ID() (*call.ID, error) {
+	if i.id == nil {
+		return nil, fmt.Errorf("nil ID")
+	}
+	return i.id, nil
 }
 
 var _ ScalarType = ID[Typed]{}
@@ -945,9 +954,13 @@ func (i ID[T]) String() string {
 var _ Setter = ID[Typed]{}
 
 func (i ID[T]) SetField(v reflect.Value) error {
+	id, err := i.ID()
+	if err != nil {
+		return err
+	}
 	switch v.Interface().(type) {
 	case *call.ID:
-		v.Set(reflect.ValueOf(i.ID))
+		v.Set(reflect.ValueOf(id))
 		return nil
 	default:
 		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), i)
@@ -1055,7 +1068,7 @@ type Enumerable interface {
 	// first entry.
 	Nth(int) (Typed, error)
 
-	NthValue(i int, enumID *call.ID) (AnyResult, error)
+	NthValue(i int, call *ResultCallFrame) (AnyResult, error)
 }
 
 // Array is an array of GraphQL values.
@@ -1220,13 +1233,21 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr.nth(i)
 }
 
-func (arr Array[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (arr Array[T]) NthValue(i int, call *ResultCallFrame) (AnyResult, error) {
 	t, err := arr.nth(i)
 	if err != nil {
 		return nil, err
 	}
 
-	return newDetachedResult(enumID.SelectNth(i), t), nil
+	if call == nil {
+		return nil, fmt.Errorf("index %d from %T without call frame", i, arr)
+	}
+	elemCall := call.clone()
+	elemCall.Nth = int64(i)
+	if elemCall.Type != nil {
+		elemCall.Type = elemCall.Type.Elem
+	}
+	return newDetachedResult(elemCall, t), nil
 }
 
 type ResultArray[T Typed] []Result[T]
@@ -1266,7 +1287,7 @@ func (arr ResultArray[T]) Nth(i int) (Typed, error) {
 	return inst.Self(), nil
 }
 
-func (arr ResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (arr ResultArray[T]) NthValue(i int, _ *ResultCallFrame) (AnyResult, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err
@@ -1312,7 +1333,7 @@ func (arr ObjectResultArray[T]) Nth(i int) (Typed, error) {
 	return inst.Self(), nil
 }
 
-func (arr ObjectResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (arr ObjectResultArray[T]) NthValue(i int, _ *ResultCallFrame) (AnyResult, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err

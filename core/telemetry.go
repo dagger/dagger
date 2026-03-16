@@ -246,8 +246,9 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		// consider it.
 		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 		if !isLoader {
-			objDigest := obj.ID().Digest()
-			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
+			if objID, err := obj.RecipeID(); err == nil {
+				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objID.Digest().String()))
+			}
 		}
 	}
 }
@@ -302,14 +303,22 @@ func collectEffects(res dagql.AnyResult, span trace.Span, id *call.ID) {
 		parentEffects = receiver.AllEffectIDs()
 	}
 
-	if res == nil || res.ID() == nil {
+	if res == nil {
 		if len(parentEffects) > 0 {
 			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
 		}
 		return
 	}
 
-	allEffects := res.ID().AllEffectIDs()
+	recipeID, err := res.RecipeID()
+	if err != nil || recipeID == nil {
+		if len(parentEffects) > 0 {
+			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
+		}
+		return
+	}
+
+	allEffects := recipeID.AllEffectIDs()
 	if len(allEffects) == 0 && len(parentEffects) == 0 {
 		return
 	}

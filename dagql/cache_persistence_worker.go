@@ -550,17 +550,18 @@ func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			Kind:    persistedResultKindNull,
 		}, nil
 	}
-	if snapshot.exportID == nil {
-		return PersistedResultEnvelope{}, fmt.Errorf("result has no reconstructable frame ID and no persisted envelope: missing export ID")
+	if snapshot.frame == nil {
+		return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")
 	}
 	shared := &sharedResult{
-		self:     snapshot.self,
-		objType:  snapshot.objType,
-		hasValue: snapshot.hasValue,
+		self:            snapshot.self,
+		objType:         snapshot.objType,
+		resultCallFrame: snapshot.frame.clone(),
+		hasValue:        snapshot.hasValue,
+		id:              snapshot.resultID,
 	}
 	typedRes := Result[Typed]{
 		shared: shared,
-		id:     snapshot.exportID,
 	}
 	var anyRes AnyResult = typedRes
 	if snapshot.objType != nil {
@@ -571,7 +572,7 @@ func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		anyRes = objRes
 	}
 	persistCtx := context.WithoutCancel(ctx)
-	persistCtx = ContextWithID(persistCtx, snapshot.exportID)
+	persistCtx = ContextWithCall(persistCtx, snapshot.frame)
 	return DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, anyRes)
 }
 

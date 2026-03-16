@@ -121,8 +121,10 @@ func (c *cache) trace(ctx context.Context, event string, args ...any) {
 			"session_id", md.SessionID,
 		)
 	}
-	if id := CurrentID(ctx); id != nil {
-		base = append(base, "call_digest", id.Digest().String())
+	if call := CurrentCall(ctx); call != nil {
+		if id, err := call.RecipeID(); err == nil {
+			base = append(base, "call_digest", id.Digest().String())
+		}
 	}
 	base = append(base, args...)
 	slog.InfoContext(ctx, egraphTraceMessageName, base...)

@@ -365,12 +365,12 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 		if res == nil || res.hasValue || res.persistedEnvelope == nil {
 			continue
 		}
-		id, err := c.persistedCallIDByResultID(ctx, resultID)
-		if err != nil {
+		call := c.resultCallFrameSnapshot(resultID)
+		if call == nil {
 			continue
 		}
-		decodeCtx := ContextWithID(ctx, id)
-		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), id, *res.persistedEnvelope); err == nil && decoded != nil {
+		decodeCtx := ContextWithCall(ctx, call)
+		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *res.persistedEnvelope); err == nil && decoded != nil {
 			res.self = decoded.Unwrap()
 			res.hasValue = true
 			if objRes, ok := decoded.(AnyObjectResult); ok {
@@ -412,13 +412,14 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 	c.egraphMu.RLock()
 	hasValue := res.hasValue
 	env := res.persistedEnvelope
+	call := res.resultCallFrame.clone()
 	c.egraphMu.RUnlock()
 	if hasValue || env == nil {
 		return hit, nil
 	}
 
-	decodeCtx := ContextWithID(ctx, hit.ID())
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), hit.ID(), *env)
+	decodeCtx := ContextWithCall(ctx, call)
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *env)
 	if err != nil {
 		c.tracePersistedPayloadDecodeFailed(ctx, res, env, err)
 		return nil, fmt.Errorf("decode persisted hit payload: %w", err)
@@ -440,7 +441,6 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 
 	ret := Result[Typed]{
 		shared:   res,
-		id:       hit.ID(),
 		hitCache: hit.HitCache(),
 	}
 	if objType == nil {

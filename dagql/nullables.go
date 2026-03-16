@@ -21,7 +21,7 @@ type Derefable interface {
 // DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
 type DerefableResult interface {
 	Derefable
-	DerefToResult(constructor *call.ID, postCall PostCallFunc, safeToPersistCache bool) (AnyResult, bool)
+	DerefToResult(call *ResultCallFrame, postCall PostCallFunc, safeToPersistCache bool) (AnyResult, bool)
 }
 
 // Optional wraps a type and allows it to be null.
@@ -295,7 +295,7 @@ func (n Nullable[T]) Deref() (Typed, bool) {
 }
 
 func (n Nullable[T]) DerefToResult(
-	constructor *call.ID,
+	call *ResultCallFrame,
 	postCall PostCallFunc,
 	safeToPersistCache bool,
 ) (AnyResult, bool) {
@@ -307,7 +307,7 @@ func (n Nullable[T]) DerefToResult(
 		return anyRes.WithSafeToPersistCache(safeToPersistCache), true
 	}
 
-	res := newDetachedResult(constructor, n.Value)
+	res := newDetachedResult(call, n.Value)
 	if postCall != nil {
 		res = res.ResultWithPostCall(postCall)
 	}
@@ -349,7 +349,7 @@ func (n DynamicNullable) Deref() (Typed, bool) {
 }
 
 func (n DynamicNullable) DerefToResult(
-	constructor *call.ID,
+	call *ResultCallFrame,
 	postCall PostCallFunc,
 	safeToPersistCache bool,
 ) (AnyResult, bool) {
@@ -361,7 +361,7 @@ func (n DynamicNullable) DerefToResult(
 		return anyRes.WithSafeToPersistCache(safeToPersistCache), true
 	}
 
-	res := newDetachedResult(constructor, n.Value)
+	res := newDetachedResult(call, n.Value)
 	if postCall != nil {
 		res = res.ResultWithPostCall(postCall)
 	}

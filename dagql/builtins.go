@@ -106,12 +106,20 @@ func (d DynamicArrayOutput) Nth(i int) (Typed, error) {
 	return d.Values[i-1], nil
 }
 
-func (d DynamicArrayOutput) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (d DynamicArrayOutput) NthValue(i int, call *ResultCallFrame) (AnyResult, error) {
 	t, err := d.Nth(i)
 	if err != nil {
 		return nil, err
 	}
-	return newDetachedResult(enumID.SelectNth(i), t), nil
+	if call == nil {
+		return nil, fmt.Errorf("index %d from %T without call frame", i, d)
+	}
+	elemCall := call.clone()
+	elemCall.Nth = int64(i)
+	if elemCall.Type != nil {
+		elemCall.Type = elemCall.Type.Elem
+	}
+	return newDetachedResult(elemCall, t), nil
 }
 
 func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
@@ -166,7 +174,7 @@ func (d DynamicResultArrayOutput) Nth(i int) (Typed, error) {
 	return val.Unwrap(), nil
 }
 
-func (d DynamicResultArrayOutput) NthValue(i int, _ *call.ID) (AnyResult, error) {
+func (d DynamicResultArrayOutput) NthValue(i int, _ *ResultCallFrame) (AnyResult, error) {
 	if i < 1 || i > len(d.Values) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
@@ -347,10 +355,18 @@ func (d DynamicArrayInput) Nth(i int) (Typed, error) {
 	return d.Values[i-1], nil
 }
 
-func (d DynamicArrayInput) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+func (d DynamicArrayInput) NthValue(i int, call *ResultCallFrame) (AnyResult, error) {
 	t, err := d.Nth(i)
 	if err != nil {
 		return nil, err
 	}
-	return newDetachedResult(enumID.SelectNth(i), t), nil
+	if call == nil {
+		return nil, fmt.Errorf("index %d from %T without call frame", i, d)
+	}
+	elemCall := call.clone()
+	elemCall.Nth = int64(i)
+	if elemCall.Type != nil {
+		elemCall.Type = elemCall.Type.Elem
+	}
+	return newDetachedResult(elemCall, t), nil
 }

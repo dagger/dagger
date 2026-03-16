@@ -944,13 +944,11 @@ func (c *cache) lookupCacheForRequest(
 		c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
 		return Result[Typed]{
 			shared:   res,
-			id:       nil,
 			hitCache: true,
 		}, true, nil
 	}
 	retRes := Result[Typed]{
 		shared:   res,
-		id:       nil,
 		hitCache: true,
 	}
 	if res.objType == nil {
