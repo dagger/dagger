@@ -17,10 +17,9 @@ type ServedMods struct {
 	entries []servedModEntry
 
 	// lazy schema cache
-	lazilyLoadedSchema         *dagql.Server
-	lazilyLoadedSchemaJSONFile dagql.Result[*File]
-	loadSchemaErr              error
-	loadSchemaLock             sync.Mutex
+	lazilyLoadedSchema *dagql.Server
+	loadSchemaErr      error
+	loadSchemaLock     sync.Mutex
 }
 
 type servedModEntry struct {
@@ -102,32 +101,36 @@ func (s *ServedMods) ModDeps() *ModDeps {
 
 // Schema builds and caches the combined schema for all served modules.
 func (s *ServedMods) Schema(ctx context.Context) (*dagql.Server, error) {
-	srv, _, err := s.lazilyLoadSchema(ctx)
-	return srv, err
+	schema, err := s.lazilyLoadSchema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dagqlCache, err := s.root.Cache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return schema.WithCache(dagqlCache), nil
 }
 
 func (s *ServedMods) invalidateCache() {
 	s.lazilyLoadedSchema = nil
-	s.lazilyLoadedSchemaJSONFile = dagql.Result[*File]{}
 	s.loadSchemaErr = nil
 }
 
 func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	loadedSchema *dagql.Server,
-	loadedSchemaJSONFile dagql.Result[*File],
 	rerr error,
 ) {
 	s.loadSchemaLock.Lock()
 	defer s.loadSchemaLock.Unlock()
 	if s.lazilyLoadedSchema != nil {
-		return s.lazilyLoadedSchema, s.lazilyLoadedSchemaJSONFile, nil
+		return s.lazilyLoadedSchema, nil
 	}
 	if s.loadSchemaErr != nil {
-		return nil, loadedSchemaJSONFile, s.loadSchemaErr
+		return nil, s.loadSchemaErr
 	}
 	defer func() {
 		s.lazilyLoadedSchema = loadedSchema
-		s.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
 		s.loadSchemaErr = rerr
 	}()
 
@@ -139,9 +142,9 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 		}
 	}
 
-	dag, schemaJSONFile, err := buildSchema(ctx, s.root, mods, nil)
+	dag, err := buildSchema(ctx, s.root, mods)
 	if err != nil {
-		return nil, loadedSchemaJSONFile, err
+		return nil, err
 	}
-	return dag, schemaJSONFile, nil
+	return dag, nil
 }
