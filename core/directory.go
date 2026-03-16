@@ -231,7 +231,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	return payloadJSON, nil
 }
 
-func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCallFrame, payload json.RawMessage) (dagql.Typed, error) {
+func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedDirectoryPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted directory payload: %w", err)

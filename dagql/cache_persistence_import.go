@@ -123,7 +123,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			if row.CallFrameJSON == "" {
 				return fmt.Errorf("import result %d: empty call_frame_json", resultID)
 			}
-			var frame ResultCallFrame
+			var frame ResultCall
 			if err := json.Unmarshal([]byte(row.CallFrameJSON), &frame); err != nil {
 				return fmt.Errorf("import result %d call_frame_json: %w", resultID, err)
 			}
@@ -153,7 +153,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			res := &sharedResult{
 				cache:                c,
 				id:                   resultID,
-				resultCallFrame:      frame.clone(),
+				resultCall:           frame.clone(),
 				safeToPersistCache:   row.SafeToPersistCache,
 				depOfPersistedResult: row.DepOfPersistedResult,
 				outputEffectIDs:      outputEffects,
@@ -166,7 +166,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 				recordType:           row.RecordType,
 				persistedEnvelope:    &env,
 			}
-			res.resultCallFrame.bindCache(c)
+			res.resultCall.bindCache(c)
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true
@@ -365,7 +365,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 		if res == nil || res.hasValue || res.persistedEnvelope == nil {
 			continue
 		}
-		call := c.resultCallFrameSnapshot(resultID)
+		call := c.resultCallSnapshot(resultID)
 		if call == nil {
 			continue
 		}
@@ -412,7 +412,7 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 	c.egraphMu.RLock()
 	hasValue := res.hasValue
 	env := res.persistedEnvelope
-	call := res.resultCallFrame.clone()
+	call := res.resultCall.clone()
 	c.egraphMu.RUnlock()
 	if hasValue || env == nil {
 		return hit, nil

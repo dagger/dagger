@@ -106,7 +106,7 @@ func (d DynamicArrayOutput) Nth(i int) (Typed, error) {
 	return d.Values[i-1], nil
 }
 
-func (d DynamicArrayOutput) NthValue(i int, call *ResultCallFrame) (AnyResult, error) {
+func (d DynamicArrayOutput) NthValue(i int, call *ResultCall) (AnyResult, error) {
 	t, err := d.Nth(i)
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func (d DynamicResultArrayOutput) Nth(i int) (Typed, error) {
 	return val.Unwrap(), nil
 }
 
-func (d DynamicResultArrayOutput) NthValue(i int, _ *ResultCallFrame) (AnyResult, error) {
+func (d DynamicResultArrayOutput) NthValue(i int, _ *ResultCall) (AnyResult, error) {
 	if i < 1 || i > len(d.Values) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
@@ -268,7 +268,7 @@ type DynamicArrayInput struct {
 
 var _ InputDecoder = DynamicArrayInput{}
 
-func (d DynamicArrayInput) frameArrayValues() []Input {
+func (d DynamicArrayInput) resultCallArrayValues() []Input {
 	return d.Values
 }
 
@@ -355,7 +355,7 @@ func (d DynamicArrayInput) Nth(i int) (Typed, error) {
 	return d.Values[i-1], nil
 }
 
-func (d DynamicArrayInput) NthValue(i int, call *ResultCallFrame) (AnyResult, error) {
+func (d DynamicArrayInput) NthValue(i int, call *ResultCall) (AnyResult, error) {
 	t, err := d.Nth(i)
 	if err != nil {
 		return nil, err

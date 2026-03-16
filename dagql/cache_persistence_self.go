@@ -56,14 +56,14 @@ type PersistedObject interface {
 // original dagql call chain.
 type PersistedObjectDecoder interface {
 	Typed
-	DecodePersistedObject(context.Context, *Server, uint64, *ResultCallFrame, json.RawMessage) (Typed, error)
+	DecodePersistedObject(context.Context, *Server, uint64, *ResultCall, json.RawMessage) (Typed, error)
 }
 
 // PersistedSelfCodec is the shared interface used to encode/decode result self
 // payloads for disk persistence.
 type PersistedSelfCodec interface {
 	EncodeResult(context.Context, PersistedObjectCache, AnyResult) (PersistedResultEnvelope, error)
-	DecodeResult(context.Context, *Server, uint64, *ResultCallFrame, PersistedResultEnvelope) (AnyResult, error)
+	DecodeResult(context.Context, *Server, uint64, *ResultCall, PersistedResultEnvelope) (AnyResult, error)
 }
 
 type defaultPersistedSelfCodec struct{}
@@ -74,7 +74,7 @@ func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache Persist
 	return encodePersistedResultEnvelope(ctx, cache, res)
 }
 
-func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCallFrame, env PersistedResultEnvelope) (AnyResult, error) {
+func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
 	return decodePersistedResultEnvelope(ctx, dag, resultID, call, env)
 }
 
@@ -159,7 +159,7 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	}, nil
 }
 
-func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID uint64, call *ResultCallFrame, env PersistedResultEnvelope) (AnyResult, error) {
+func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
 	switch env.Kind {
 	case persistedResultKindNull:
 		return nil, nil

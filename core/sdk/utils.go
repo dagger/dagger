@@ -37,19 +37,19 @@ func scopeSourceForSDKOperation(
 	if err != nil {
 		return inst, err
 	}
-	scopedSrc = scopedSrc.ObjectResultWithCallFrame(&dagql.ResultCallFrame{
-		Kind:        dagql.ResultCallFrameKindSynthetic,
+	scopedSrc = scopedSrc.ObjectResultWithCall(&dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "sdk_scope_source",
-		Type:        dagql.NewResultCallFrameType(src.Type()),
-		Args: []*dagql.ResultCallFrameArg{
+		Type:        dagql.NewResultCallType(src.Type()),
+		Args: []*dagql.ResultCallArg{
 			{
 				Name:  "op",
-				Value: &dagql.ResultCallFrameLiteral{Kind: dagql.ResultCallFrameLiteralKindString, StringValue: op},
+				Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: op},
 			},
 			{
 				Name: "scopeDigest",
-				Value: &dagql.ResultCallFrameLiteral{
-					Kind:        dagql.ResultCallFrameLiteralKindString,
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
 					StringValue: srcContentDigestForSDK.String(),
 				},
 			},
@@ -101,19 +101,19 @@ func ScopeModuleForSDKOperation(
 	if err != nil {
 		return inst, err
 	}
-	scopedModInst = scopedModInst.ObjectResultWithCallFrame(&dagql.ResultCallFrame{
-		Kind:        dagql.ResultCallFrameKindSynthetic,
+	scopedModInst = scopedModInst.ObjectResultWithCall(&dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "sdk_scope_module",
-		Type:        dagql.NewResultCallFrameType(scopedMod.Type()),
-		Args: []*dagql.ResultCallFrameArg{
+		Type:        dagql.NewResultCallType(scopedMod.Type()),
+		Args: []*dagql.ResultCallArg{
 			{
 				Name:  "op",
-				Value: &dagql.ResultCallFrameLiteral{Kind: dagql.ResultCallFrameLiteralKindString, StringValue: op},
+				Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: op},
 			},
 			{
 				Name: "scopeDigest",
-				Value: &dagql.ResultCallFrameLiteral{
-					Kind:        dagql.ResultCallFrameLiteralKindString,
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
 					StringValue: srcContentDigestForSDK.String(),
 				},
 			},

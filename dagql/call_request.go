@@ -3,10 +3,10 @@ package dagql
 import "context"
 
 // CallRequest is the mutable planning-time wrapper around the semantic
-// ResultCallFrame shape, plus request-only cache policy that does not belong in
+// ResultCall shape, plus request-only cache policy that does not belong in
 // persisted provenance.
 type CallRequest struct {
-	*ResultCallFrame
+	*ResultCall
 
 	ConcurrencyKey string
 	TTL            int64
@@ -18,27 +18,27 @@ func (req *CallRequest) Clone() *CallRequest {
 	if req == nil {
 		return nil
 	}
-	frame := req.ResultCallFrame.clone()
+	frame := req.ResultCall.clone()
 	if frame == nil {
-		frame = &ResultCallFrame{}
+		frame = &ResultCall{}
 	}
 	return &CallRequest{
-		ResultCallFrame: frame,
-		ConcurrencyKey:  req.ConcurrencyKey,
-		TTL:             req.TTL,
-		DoNotCache:      req.DoNotCache,
-		IsPersistable:   req.IsPersistable,
+		ResultCall:     frame,
+		ConcurrencyKey: req.ConcurrencyKey,
+		TTL:            req.TTL,
+		DoNotCache:     req.DoNotCache,
+		IsPersistable:  req.IsPersistable,
 	}
 }
 
-func (req *CallRequest) ToResultCallFrame() (*ResultCallFrame, error) {
+func (req *CallRequest) ToResultCall() (*ResultCall, error) {
 	if req == nil {
 		return nil, nil
 	}
-	return req.ResultCallFrame.clone(), nil
+	return req.ResultCall.clone(), nil
 }
 
-func (req *CallRequest) Arg(name string) *ResultCallFrameArg {
+func (req *CallRequest) Arg(name string) *ResultCallArg {
 	if req == nil {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (req *CallRequest) HasArg(name string) bool {
 	return req.Arg(name) != nil
 }
 
-func (req *CallRequest) SetArg(arg *ResultCallFrameArg) {
+func (req *CallRequest) SetArg(arg *ResultCallArg) {
 	if req == nil || arg == nil {
 		return
 	}
@@ -84,7 +84,7 @@ func (req *CallRequest) SetArgInput(ctx context.Context, name string, input Inpu
 	if req == nil {
 		return nil
 	}
-	arg, err := frameArgFromInput(ctx, name, input, sensitive)
+	arg, err := resultCallArgFromInput(ctx, name, input, sensitive)
 	if err != nil {
 		return err
 	}

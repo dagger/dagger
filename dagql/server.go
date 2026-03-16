@@ -700,18 +700,18 @@ func (s *Server) loadNthValue(
 	}
 
 	shared := parent.cacheSharedResult()
-	if shared == nil || shared.id == 0 || shared.resultCallFrame == nil {
+	if shared == nil || shared.id == 0 || shared.resultCall == nil {
 		return nil, fmt.Errorf("nth %d: parent enumerable is not cache-backed", nth)
 	}
-	if shared.resultCallFrame.Type == nil || shared.resultCallFrame.Type.Elem == nil {
+	if shared.resultCall.Type == nil || shared.resultCall.Type.Elem == nil {
 		return nil, fmt.Errorf("nth %d: parent enumerable has no element type", nth)
 	}
 
 	req := &CallRequest{
-		ResultCallFrame: shared.resultCallFrame.clone(),
+		ResultCall: shared.resultCall.clone(),
 	}
 	req.Type = req.Type.Elem.clone()
-	req.Receiver = &ResultCallFrameRef{ResultID: uint64(shared.id)}
+	req.Receiver = &ResultCallRef{ResultID: uint64(shared.id)}
 	req.Nth = int64(nth)
 
 	callCtx := srvToContext(ctx, s)
@@ -911,16 +911,16 @@ func LoadIDResults[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Ob
 
 type callCtx struct{}
 
-func ContextWithCall(ctx context.Context, call *ResultCallFrame) context.Context {
+func ContextWithCall(ctx context.Context, call *ResultCall) context.Context {
 	return context.WithValue(ctx, callCtx{}, call)
 }
 
-func CurrentCall(ctx context.Context) *ResultCallFrame {
+func CurrentCall(ctx context.Context) *ResultCall {
 	val := ctx.Value(callCtx{})
 	if val == nil {
 		return nil
 	}
-	return val.(*ResultCallFrame)
+	return val.(*ResultCall)
 }
 
 type srvCtx struct{}
@@ -949,7 +949,7 @@ func NewResultForCurrentCall[T Typed](
 // NewResultForCall creates a new Result with the given call and self value.
 func NewResultForCall[T Typed](
 	self T,
-	call *ResultCallFrame,
+	call *ResultCall,
 ) (res Result[T], _ error) {
 	if call == nil {
 		return res, errors.New("call is nil")
@@ -974,7 +974,7 @@ func NewObjectResultForCurrentCall[T Typed](
 func NewObjectResultForCall[T Typed](
 	self T,
 	srv *Server,
-	call *ResultCallFrame,
+	call *ResultCall,
 ) (res ObjectResult[T], _ error) {
 	objType, ok := srv.ObjectType(self.Type().Name())
 	if !ok {
@@ -1160,10 +1160,10 @@ func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResu
 		class, ok = s.ObjectType(className)
 		if ok {
 			shared := val.cacheSharedResult()
-			if shared == nil || shared.resultCallFrame == nil {
+			if shared == nil || shared.resultCall == nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: missing result call frame")
 			}
-			val, err = NewResultForCall(obj, shared.resultCallFrame)
+			val, err = NewResultForCall(obj, shared.resultCall)
 			if err != nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
 			}
@@ -1331,7 +1331,7 @@ type inputObjectField struct {
 	value Input
 }
 
-func (input InputObject[T]) frameInputObjectFields() []inputObjectField {
+func (input InputObject[T]) resultCallInputObjectFields() []inputObjectField {
 	return input.fields
 }
 

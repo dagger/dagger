@@ -364,8 +364,8 @@ type preselectResult struct {
 	request   *CallRequest
 }
 
-// sortFrameArgsToSchema sorts the arguments to match the schema definition order.
-func (r ObjectResult[T]) sortFrameArgsToSchema(fieldSpec *FieldSpec, view call.View, args []*ResultCallFrameArg) {
+// sortCallArgsToSchema sorts the arguments to match the schema definition order.
+func (r ObjectResult[T]) sortCallArgsToSchema(fieldSpec *FieldSpec, view call.View, args []*ResultCallArg) {
 	inputs := fieldSpec.Args.Inputs(view)
 	sort.Slice(args, func(i, j int) bool {
 		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
@@ -392,7 +392,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	ctx = srvToContext(ctx, s)
 
 	inputArgs := make(map[string]Input, len(sel.Args))
-	frameArgs := make([]*ResultCallFrameArg, 0, len(sel.Args))
+	frameArgs := make([]*ResultCallArg, 0, len(sel.Args))
 	for _, argSpec := range field.Spec.Args.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
@@ -407,7 +407,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		switch {
 		case namedInput.Value != nil:
 			inputArgs[argSpec.Name] = namedInput.Value
-			frameArg, err := frameArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
+			frameArg, err := resultCallArgFromInput(ctx, argSpec.Name, namedInput.Value, argSpec.Sensitive)
 			if err != nil {
 				return nil, err
 			}
@@ -426,9 +426,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	if sel.Nth != 0 {
 		astType = astType.Elem
 	}
-	r.sortFrameArgsToSchema(field.Spec, view, frameArgs)
+	r.sortCallArgsToSchema(field.Spec, view, frameArgs)
 
-	implicitInputs, err := field.Spec.resolveImplicitInputFrameArgs(ctx, inputArgs)
+	implicitInputs, err := field.Spec.resolveImplicitInputCallArgs(ctx, inputArgs)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {
@@ -437,7 +437,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		return nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
-	receiverRef, err := frameRefFromResult(r)
+	receiverRef, err := resultCallRefFromResult(r)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {
@@ -446,9 +446,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		return nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 	req := &CallRequest{
-		ResultCallFrame: &ResultCallFrame{
-			Kind:           ResultCallFrameKindField,
-			Type:           NewResultCallFrameType(astType),
+		ResultCall: &ResultCall{
+			Kind:           ResultCallKindField,
+			Type:           NewResultCallType(astType),
 			Field:          sel.Field,
 			View:           view,
 			Nth:            int64(sel.Nth),
@@ -474,10 +474,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			}
 			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
-		r.sortFrameArgsToSchema(field.Spec, view, req.Args)
+		r.sortCallArgsToSchema(field.Spec, view, req.Args)
 		inputArgs = make(map[string]Input, len(req.Args))
 		for _, argSpec := range field.Spec.Args.Inputs(view) {
-			var requestArg *ResultCallFrameArg
+			var requestArg *ResultCallArg
 			for _, arg := range req.Args {
 				if arg != nil && arg.Name == argSpec.Name {
 					requestArg = arg
@@ -486,7 +486,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			}
 			switch {
 			case requestArg != nil:
-				inputVal, err := inputValueFromFrameLiteral(ctx, requestArg.Value)
+				inputVal, err := inputValueFromResultCallLiteral(ctx, requestArg.Value)
 				if err != nil {
 					return nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
 				}
@@ -557,7 +557,7 @@ func (r ObjectResult[T]) call(
 	inputArgs map[string]Input,
 ) (AnyResult, error) {
 	ctx = srvToContext(ctx, s)
-	ctx = ContextWithCall(ctx, req.ResultCallFrame)
+	ctx = ContextWithCall(ctx, req.ResultCall)
 	fieldName := req.Field
 	view := req.View
 	field, ok := r.class.Field(fieldName, view)
@@ -569,7 +569,7 @@ func (r ObjectResult[T]) call(
 	}
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		telemetryID, err := req.ResultCallFrame.RecipeID()
+		telemetryID, err := req.ResultCall.RecipeID()
 		if err != nil {
 			return nil, fmt.Errorf("derive telemetry call ID: %w", err)
 		}
@@ -794,7 +794,7 @@ type FieldSpec struct {
 	ExperimentalReason string
 	// Module is frame-native provenance for the module that provides the field's
 	// implementation.
-	Module *ResultCallFrameModule
+	Module *ResultCallModule
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
 	// BuiltinLoadByIDFunc is the execution path for schema-generated
@@ -848,13 +848,13 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	return def
 }
 
-func (spec *FieldSpec) resolveImplicitInputFrameArgs(ctx context.Context, inputArgs map[string]Input) ([]*ResultCallFrameArg, error) {
+func (spec *FieldSpec) resolveImplicitInputCallArgs(ctx context.Context, inputArgs map[string]Input) ([]*ResultCallArg, error) {
 	if spec == nil || len(spec.ImplicitInputs) == 0 {
 		return nil, nil
 	}
 
 	inputIdxByName := make(map[string]int, len(spec.ImplicitInputs))
-	implicitArgs := make([]*ResultCallFrameArg, 0, len(spec.ImplicitInputs))
+	implicitArgs := make([]*ResultCallArg, 0, len(spec.ImplicitInputs))
 	for _, implicitInput := range spec.ImplicitInputs {
 		inputVal, err := implicitInput.Resolver(ctx, inputArgs)
 		if err != nil {
@@ -864,7 +864,7 @@ func (spec *FieldSpec) resolveImplicitInputFrameArgs(ctx context.Context, inputA
 			return nil, fmt.Errorf("implicit input %q resolved to nil", implicitInput.Name)
 		}
 
-		newInput, err := frameArgFromInput(ctx, implicitInput.Name, inputVal, false)
+		newInput, err := resultCallArgFromInput(ctx, implicitInput.Name, inputVal, false)
 		if err != nil {
 			return nil, fmt.Errorf("resolve implicit input %q: %w", implicitInput.Name, err)
 		}

@@ -1213,15 +1213,15 @@ func (s *moduleSchema) moduleSourceContentScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.ObjectResultWithCallFrame(&dagql.ResultCallFrame{
-		Kind:        dagql.ResultCallFrameKindSynthetic,
+	return inst.ObjectResultWithCall(&dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "_sourceContentScoped",
-		Type:        dagql.NewResultCallFrameType(parentMod.Type()),
-		Args: []*dagql.ResultCallFrameArg{
+		Type:        dagql.NewResultCallType(parentMod.Type()),
+		Args: []*dagql.ResultCallArg{
 			{
 				Name: "scopeDigest",
-				Value: &dagql.ResultCallFrameLiteral{
-					Kind:        dagql.ResultCallFrameLiteralKindString,
+				Value: &dagql.ResultCallLiteral{
+					Kind:        dagql.ResultCallLiteralKindString,
 					StringValue: sourceDigest.String(),
 				},
 			},

@@ -144,7 +144,7 @@ func (c *cache) ensureTermInputEqIDsLocked(ctx context.Context, inputDigests []d
 	return inputEqIDs
 }
 
-func (c *cache) inputProvenanceForRefs(inputRefs []ResultCallFrameStructuralInputRef) ([]egraphInputProvenanceKind, error) {
+func (c *cache) inputProvenanceForRefs(inputRefs []ResultCallStructuralInputRef) ([]egraphInputProvenanceKind, error) {
 	inputProvenance := make([]egraphInputProvenanceKind, 0, len(inputRefs))
 	for _, ref := range inputRefs {
 		if err := ref.Validate(); err != nil {
@@ -646,7 +646,7 @@ type lookupMatch struct {
 	termSetSize           int
 }
 
-func (c *cache) lookupMatchForFrameLocked(ctx context.Context, frame *ResultCallFrame) (lookupMatch, error) {
+func (c *cache) lookupMatchForCallLocked(ctx context.Context, frame *ResultCall) (lookupMatch, error) {
 	match := lookupMatch{
 		primaryLookupPossible: true,
 		missingInputIndex:     -1,
@@ -808,7 +808,7 @@ func (c *cache) resolveSharedResultForInputIDLocked(ctx context.Context, id *cal
 	return match.hitRes, nil
 }
 
-func (c *cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCallFrame) error {
+func (c *cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCall) error {
 	if res == nil {
 		return nil
 	}
@@ -826,7 +826,7 @@ func (c *cache) indexResultDigestsLocked(res *sharedResult, requestFrame, respon
 		set[res.id] = struct{}{}
 	}
 
-	indexFrame := func(frame *ResultCallFrame) error {
+	indexFrame := func(frame *ResultCall) error {
 		if frame == nil {
 			return nil
 		}
@@ -881,11 +881,11 @@ func (c *cache) lookupCacheForRequest(
 	ctx context.Context,
 	req *CallRequest,
 ) (AnyResult, bool, error) {
-	if req == nil || req.ResultCallFrame == nil {
+	if req == nil || req.ResultCall == nil {
 		return nil, false, nil
 	}
-	req.ResultCallFrame.bindCache(c)
-	match, err := c.lookupMatchForFrameLocked(ctx, req.ResultCallFrame)
+	req.ResultCall.bindCache(c)
+	match, err := c.lookupMatchForCallLocked(ctx, req.ResultCall)
 	if err != nil {
 		return nil, false, err
 	}
@@ -935,7 +935,7 @@ func (c *cache) lookupCacheForRequest(
 		// persistence policy is finalized.
 		c.markResultAsDepOfPersistedLocked(ctx, res)
 	}
-	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCallFrame); err != nil {
+	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall); err != nil {
 		return nil, false, err
 	}
 	newRefCount := atomic.AddInt64(&res.refCount, 1)
@@ -1115,7 +1115,7 @@ func (c *cache) associateResultWithTermLocked(
 	}
 }
 
-func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCallFrame) error {
+func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCall) error {
 	if res == nil || res.id == 0 || requestFrame == nil {
 		return nil
 	}
@@ -1257,14 +1257,14 @@ func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult
 
 func (c *cache) indexWaitResultInEgraphLocked(
 	ctx context.Context,
-	requestFrame *ResultCallFrame,
-	responseFrame *ResultCallFrame,
+	requestFrame *ResultCall,
+	responseFrame *ResultCall,
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
-	requestInputRefs []ResultCallFrameStructuralInputRef,
+	requestInputRefs []ResultCallStructuralInputRef,
 	resultTermSelf digest.Digest,
 	resultTermInputs []digest.Digest,
-	resultTermInputRefs []ResultCallFrameStructuralInputRef,
+	resultTermInputRefs []ResultCallStructuralInputRef,
 	hasResultTerm bool,
 	res *sharedResult,
 ) error {
@@ -1284,7 +1284,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		digestSet[dig] = struct{}{}
 	}
 
-	addFrameDigests := func(frame *ResultCallFrame) error {
+	addFrameDigests := func(frame *ResultCall) error {
 		if frame == nil {
 			return nil
 		}
@@ -1344,9 +1344,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		c.nextSharedResultID++
 	}
 	c.resultsByID[res.id] = res
-	if res.resultCallFrame == nil && requestFrame != nil {
-		res.resultCallFrame = requestFrame.clone()
-		res.resultCallFrame.bindCache(c)
+	if res.resultCall == nil && requestFrame != nil {
+		res.resultCall = requestFrame.clone()
+		res.resultCall.bindCache(c)
 	}
 	setTypedPersistedResultID(res.self, res.id)
 	c.traceResultCreated(ctx, res)
@@ -1358,7 +1358,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	termsToIndex := []struct {
 		selfDigest   digest.Digest
 		inputDigests []digest.Digest
-		inputRefs    []ResultCallFrameStructuralInputRef
+		inputRefs    []ResultCallStructuralInputRef
 	}{
 		{
 			selfDigest:   requestSelf,
@@ -1375,7 +1375,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		termsToIndex = append(termsToIndex, struct {
 			selfDigest   digest.Digest
 			inputDigests []digest.Digest
-			inputRefs    []ResultCallFrameStructuralInputRef
+			inputRefs    []ResultCallStructuralInputRef
 		}{
 			selfDigest:   resultTermSelf,
 			inputDigests: resultTermInputs,
@@ -1495,9 +1495,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	return nil
 }
 
-func addPersistedFrameRefDep(
+func addPersistedCallRefDep(
 	parentID sharedResultID,
-	ref *ResultCallFrameRef,
+	ref *ResultCallRef,
 	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
 ) {
@@ -1512,9 +1512,9 @@ func addPersistedFrameRefDep(
 	*stack = append(*stack, depID)
 }
 
-func addPersistedFrameLiteralDeps(
+func addPersistedCallLiteralDeps(
 	parentID sharedResultID,
-	lit *ResultCallFrameLiteral,
+	lit *ResultCallLiteral,
 	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
 ) {
@@ -1522,51 +1522,51 @@ func addPersistedFrameLiteralDeps(
 		return
 	}
 	switch lit.Kind {
-	case ResultCallFrameLiteralKindResultRef:
-		addPersistedFrameRefDep(parentID, lit.ResultRef, graph, stack)
-	case ResultCallFrameLiteralKindList:
+	case ResultCallLiteralKindResultRef:
+		addPersistedCallRefDep(parentID, lit.ResultRef, graph, stack)
+	case ResultCallLiteralKindList:
 		for _, item := range lit.ListItems {
-			addPersistedFrameLiteralDeps(parentID, item, graph, stack)
+			addPersistedCallLiteralDeps(parentID, item, graph, stack)
 		}
-	case ResultCallFrameLiteralKindObject:
+	case ResultCallLiteralKindObject:
 		for _, field := range lit.ObjectFields {
 			if field == nil {
 				continue
 			}
-			addPersistedFrameLiteralDeps(parentID, field.Value, graph, stack)
+			addPersistedCallLiteralDeps(parentID, field.Value, graph, stack)
 		}
 	}
 }
 
-func addPersistedFrameDeps(
+func addPersistedCallDeps(
 	parentID sharedResultID,
-	frame *ResultCallFrame,
+	frame *ResultCall,
 	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
 ) {
 	if frame == nil {
 		return
 	}
-	addPersistedFrameRefDep(parentID, frame.Receiver, graph, stack)
+	addPersistedCallRefDep(parentID, frame.Receiver, graph, stack)
 	if frame.Module != nil {
-		addPersistedFrameRefDep(parentID, frame.Module.ResultRef, graph, stack)
+		addPersistedCallRefDep(parentID, frame.Module.ResultRef, graph, stack)
 	}
 	for _, arg := range frame.Args {
 		if arg == nil {
 			continue
 		}
-		addPersistedFrameLiteralDeps(parentID, arg.Value, graph, stack)
+		addPersistedCallLiteralDeps(parentID, arg.Value, graph, stack)
 	}
 	for _, input := range frame.ImplicitInputs {
 		if input == nil {
 			continue
 		}
-		addPersistedFrameLiteralDeps(parentID, input.Value, graph, stack)
+		addPersistedCallLiteralDeps(parentID, input.Value, graph, stack)
 	}
 }
 
 // walks exact materialized dependencies for persisted results: explicit
-// sharedResult.deps plus exact result refs reachable through resultCallFrame
+// sharedResult.deps plus exact result refs reachable through resultCall
 // metadata. Symbolic term/eq-class state is still gathered for persisted cache
 // hitability, but no longer pulls in extra materialized results by provenance.
 func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) persistedClosureGraph {
@@ -1600,7 +1600,7 @@ func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) persist
 			graph.addDep(curID, depID)
 			stack = append(stack, depID)
 		}
-		addPersistedFrameDeps(curID, res.resultCallFrame, &graph, &stack)
+		addPersistedCallDeps(curID, res.resultCall, &graph, &stack)
 		for termID := range c.termIDsForResultLocked(curID) {
 			term := c.egraphTerms[termID]
 			if term == nil {
@@ -1619,7 +1619,7 @@ func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *shar
 	changed := false
 	// Persisted-closure invariant: once a result is marked as dependency-of-
 	// persisted, every transitive materialized dependency reachable through
-	// explicit deps and resultCallFrame refs must also be marked.
+	// explicit deps and resultCall refs must also be marked.
 	graph := c.persistedClosureGraphLocked(root.id)
 	for curID := range graph.resultIDs {
 		cur := c.resultsByID[curID]

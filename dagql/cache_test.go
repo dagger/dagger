@@ -3709,10 +3709,10 @@ func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
 			id:       id,
 			self:     Int(id),
 			hasValue: true,
-			resultCallFrame: &ResultCallFrame{
-				Kind:        ResultCallFrameKindSynthetic,
+			resultCall: &ResultCall{
+				Kind:        ResultCallKindSynthetic,
 				SyntheticOp: op,
-				Type:        NewResultCallFrameType(Int(0).Type()),
+				Type:        NewResultCallType(Int(0).Type()),
 			},
 		}
 	}
@@ -3725,59 +3725,59 @@ func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
 		deps: map[sharedResultID]struct{}{
 			2: {},
 		},
-		resultCallFrame: &ResultCallFrame{
-			Kind:  ResultCallFrameKindField,
-			Type:  NewResultCallFrameType(Int(0).Type()),
+		resultCall: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
 			Field: "root",
-			Receiver: &ResultCallFrameRef{
+			Receiver: &ResultCallRef{
 				ResultID: 3,
 			},
-			Module: &ResultCallFrameModule{
-				ResultRef: &ResultCallFrameRef{ResultID: 4},
+			Module: &ResultCallModule{
+				ResultRef: &ResultCallRef{ResultID: 4},
 				Name:      "mod",
 			},
-			Args: []*ResultCallFrameArg{
+			Args: []*ResultCallArg{
 				{
 					Name: "arg",
-					Value: &ResultCallFrameLiteral{
-						Kind:      ResultCallFrameLiteralKindResultRef,
-						ResultRef: &ResultCallFrameRef{ResultID: 5},
+					Value: &ResultCallLiteral{
+						Kind:      ResultCallLiteralKindResultRef,
+						ResultRef: &ResultCallRef{ResultID: 5},
 					},
 				},
 				{
 					Name: "list",
-					Value: &ResultCallFrameLiteral{
-						Kind: ResultCallFrameLiteralKindList,
-						ListItems: []*ResultCallFrameLiteral{
+					Value: &ResultCallLiteral{
+						Kind: ResultCallLiteralKindList,
+						ListItems: []*ResultCallLiteral{
 							{
-								Kind:      ResultCallFrameLiteralKindResultRef,
-								ResultRef: &ResultCallFrameRef{ResultID: 6},
+								Kind:      ResultCallLiteralKindResultRef,
+								ResultRef: &ResultCallRef{ResultID: 6},
 							},
 						},
 					},
 				},
 				{
 					Name: "object",
-					Value: &ResultCallFrameLiteral{
-						Kind: ResultCallFrameLiteralKindObject,
-						ObjectFields: []*ResultCallFrameArg{
+					Value: &ResultCallLiteral{
+						Kind: ResultCallLiteralKindObject,
+						ObjectFields: []*ResultCallArg{
 							{
 								Name: "nested",
-								Value: &ResultCallFrameLiteral{
-									Kind:      ResultCallFrameLiteralKindResultRef,
-									ResultRef: &ResultCallFrameRef{ResultID: 7},
+								Value: &ResultCallLiteral{
+									Kind:      ResultCallLiteralKindResultRef,
+									ResultRef: &ResultCallRef{ResultID: 7},
 								},
 							},
 						},
 					},
 				},
 			},
-			ImplicitInputs: []*ResultCallFrameArg{
+			ImplicitInputs: []*ResultCallArg{
 				{
 					Name: "implicit",
-					Value: &ResultCallFrameLiteral{
-						Kind:      ResultCallFrameLiteralKindResultRef,
-						ResultRef: &ResultCallFrameRef{ResultID: 8},
+					Value: &ResultCallLiteral{
+						Kind:      ResultCallLiteralKindResultRef,
+						ResultRef: &ResultCallRef{ResultID: 8},
 					},
 				},
 			},
@@ -3822,10 +3822,10 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 		id:       1,
 		self:     Int(1),
 		hasValue: true,
-		resultCallFrame: &ResultCallFrame{
-			Kind:        ResultCallFrameKindSynthetic,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
 			SyntheticOp: "root",
-			Type:        NewResultCallFrameType(Int(0).Type()),
+			Type:        NewResultCallType(Int(0).Type()),
 		},
 	}
 	provenanceOnly := &sharedResult{
@@ -3833,10 +3833,10 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 		id:       2,
 		self:     Int(2),
 		hasValue: true,
-		resultCallFrame: &ResultCallFrame{
-			Kind:        ResultCallFrameKindSynthetic,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
 			SyntheticOp: "provenanceOnly",
-			Type:        NewResultCallFrameType(Int(0).Type()),
+			Type:        NewResultCallType(Int(0).Type()),
 		},
 	}
 
@@ -3872,7 +3872,7 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 	assert.Assert(t, !provenanceOnly.depOfPersistedResult)
 }
 
-func TestCacheResultCallFrameDerivedFromRequestID(t *testing.T) {
+func TestCacheResultCallDerivedFromRequestID(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
@@ -3904,27 +3904,27 @@ func TestCacheResultCallFrameDerivedFromRequestID(t *testing.T) {
 	assert.NilError(t, err)
 	parentShared := parentRes.cacheSharedResult()
 	assert.Assert(t, parentShared != nil)
-	assert.Assert(t, parentShared.resultCallFrame != nil)
+	assert.Assert(t, parentShared.resultCall != nil)
 
-	frame := parentShared.resultCallFrame
-	assert.Equal(t, ResultCallFrameKindField, frame.Kind)
+	frame := parentShared.resultCall
+	assert.Equal(t, ResultCallKindField, frame.Kind)
 	assert.Equal(t, "frameParent", frame.Field)
 	assert.Assert(t, frame.Type != nil)
 	assert.Equal(t, "Int", frame.Type.NamedType)
 	assert.Equal(t, 2, len(frame.Args))
 	assert.Equal(t, "child", frame.Args[0].Name)
 	assert.Assert(t, frame.Args[0].Value != nil)
-	assert.Equal(t, ResultCallFrameLiteralKindResultRef, frame.Args[0].Value.Kind)
+	assert.Equal(t, ResultCallLiteralKindResultRef, frame.Args[0].Value.Kind)
 	assert.Assert(t, frame.Args[0].Value.ResultRef != nil)
 	assert.Equal(t, uint64(childShared.id), frame.Args[0].Value.ResultRef.ResultID)
 	assert.Equal(t, "payload", frame.Args[1].Name)
 	assert.Assert(t, frame.Args[1].Value != nil)
-	assert.Equal(t, ResultCallFrameLiteralKindDigestedString, frame.Args[1].Value.Kind)
+	assert.Equal(t, ResultCallLiteralKindDigestedString, frame.Args[1].Value.Kind)
 	assert.Equal(t, "same", frame.Args[1].Value.DigestedStringValue)
 	assert.Equal(t, digest.FromString("frame-payload"), frame.Args[1].Value.DigestedStringDigest)
 }
 
-func TestCacheResultCallFrameFirstWriterWins(t *testing.T) {
+func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
@@ -3933,36 +3933,36 @@ func TestCacheResultCallFrameFirstWriterWins(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	id := cacheTestID("frame-first-writer")
-	firstFrame := &ResultCallFrame{
-		Kind:        ResultCallFrameKindSynthetic,
+	firstFrame := &ResultCall{
+		Kind:        ResultCallKindSynthetic,
 		SyntheticOp: "first",
-		Type:        NewResultCallFrameType(Int(0).Type()),
+		Type:        NewResultCallType(Int(0).Type()),
 	}
-	secondFrame := &ResultCallFrame{
-		Kind:        ResultCallFrameKindSynthetic,
+	secondFrame := &ResultCall{
+		Kind:        ResultCallKindSynthetic,
 		SyntheticOp: "second",
-		Type:        NewResultCallFrameType(Int(0).Type()),
+		Type:        NewResultCallType(Int(0).Type()),
 	}
 
 	first, err := c.GetOrInitCall(ctx, CacheKey{ID: id}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(id, 1).(Result[Int]).ResultWithCallFrame(firstFrame), nil
+		return cacheTestIntResult(id, 1).(Result[Int]).ResultWithCall(firstFrame), nil
 	})
 	assert.NilError(t, err)
 	firstShared := first.cacheSharedResult()
 	assert.Assert(t, firstShared != nil)
-	assert.Assert(t, firstShared.resultCallFrame != nil)
-	assert.Equal(t, "first", firstShared.resultCallFrame.SyntheticOp)
+	assert.Assert(t, firstShared.resultCall != nil)
+	assert.Equal(t, "first", firstShared.resultCall.SyntheticOp)
 
 	second, err := c.GetOrInitCall(ctx, CacheKey{ID: id}, func(context.Context) (AnyResult, error) {
-		return cacheTestIntResult(id, 2).(Result[Int]).ResultWithCallFrame(secondFrame), nil
+		return cacheTestIntResult(id, 2).(Result[Int]).ResultWithCall(secondFrame), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, second.HitCache())
 
 	secondShared := second.cacheSharedResult()
 	assert.Assert(t, secondShared != nil)
-	assert.Assert(t, secondShared.resultCallFrame != nil)
-	assert.Equal(t, "first", secondShared.resultCallFrame.SyntheticOp)
+	assert.Assert(t, secondShared.resultCall != nil)
+	assert.Equal(t, "first", secondShared.resultCall.SyntheticOp)
 }
 
 func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {

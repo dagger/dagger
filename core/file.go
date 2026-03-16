@@ -220,7 +220,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	return payloadJSON, nil
 }
 
-func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCallFrame, payload json.RawMessage) (dagql.Typed, error) {
+func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedFilePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted file payload: %w", err)

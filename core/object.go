@@ -667,7 +667,7 @@ func (obj *ModuleObject) DecodePersistedObject(
 	ctx context.Context,
 	dag *dagql.Server,
 	_ uint64,
-	_ *dagql.ResultCallFrame,
+	_ *dagql.ResultCall,
 	jsonBytes json.RawMessage,
 ) (dagql.Typed, error) {
 	if obj == nil || obj.Module == nil || obj.TypeDef == nil {

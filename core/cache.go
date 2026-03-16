@@ -160,7 +160,7 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCa
 	return payload, nil
 }
 
-func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCallFrame, payload json.RawMessage) (dagql.Typed, error) {
+func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedCacheVolumePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted cache volume payload: %w", err)

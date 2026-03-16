@@ -21,7 +21,7 @@ type Derefable interface {
 // DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
 type DerefableResult interface {
 	Derefable
-	DerefToResult(call *ResultCallFrame, postCall PostCallFunc, safeToPersistCache bool) (AnyResult, bool)
+	DerefToResult(call *ResultCall, postCall PostCallFunc, safeToPersistCache bool) (AnyResult, bool)
 }
 
 // Optional wraps a type and allows it to be null.
@@ -85,7 +85,7 @@ func (o Optional[I]) Decoder() InputDecoder {
 	return o
 }
 
-func (o Optional[I]) frameOptionalValue() (Input, bool) {
+func (o Optional[I]) resultCallOptionalValue() (Input, bool) {
 	if !o.Valid {
 		return nil, false
 	}
@@ -183,7 +183,7 @@ func (o DynamicOptional) Decoder() InputDecoder {
 	return o
 }
 
-func (o DynamicOptional) frameOptionalValue() (Input, bool) {
+func (o DynamicOptional) resultCallOptionalValue() (Input, bool) {
 	if !o.Valid {
 		return nil, false
 	}
@@ -295,7 +295,7 @@ func (n Nullable[T]) Deref() (Typed, bool) {
 }
 
 func (n Nullable[T]) DerefToResult(
-	call *ResultCallFrame,
+	call *ResultCall,
 	postCall PostCallFunc,
 	safeToPersistCache bool,
 ) (AnyResult, bool) {
@@ -349,7 +349,7 @@ func (n DynamicNullable) Deref() (Typed, bool) {
 }
 
 func (n DynamicNullable) DerefToResult(
-	call *ResultCallFrame,
+	call *ResultCall,
 	postCall PostCallFunc,
 	safeToPersistCache bool,
 ) (AnyResult, bool) {

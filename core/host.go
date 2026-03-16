@@ -30,7 +30,7 @@ func (*Host) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) 
 	return json.RawMessage(`{}`), nil
 }
 
-func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *dagql.ResultCallFrame, json.RawMessage) (dagql.Typed, error) {
+func (*Host) DecodePersistedObject(context.Context, *dagql.Server, uint64, *dagql.ResultCall, json.RawMessage) (dagql.Typed, error) {
 	return &Host{}, nil
 }
 

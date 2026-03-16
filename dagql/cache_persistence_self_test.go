@@ -41,7 +41,7 @@ func (obj *persistCodecObj) EncodePersistedObject(ctx context.Context, cache Per
 	return json.Marshal(persistedPersistCodecObj{Name: obj.Name})
 }
 
-func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCallFrame, payload json.RawMessage) (Typed, error) {
+func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
 	_ = ctx
 	_ = dag
 	var persisted persistedPersistCodecObj

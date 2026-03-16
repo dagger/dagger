@@ -134,7 +134,7 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult)
 	if res == nil {
 		return nil, fmt.Errorf("wrap persisted shared result: nil result")
 	}
-	requestedFrame := c.resultCallFrameSnapshot(res.id)
+	requestedFrame := c.resultCallSnapshot(res.id)
 	if requestedFrame == nil {
 		return nil, fmt.Errorf("derive persisted requested frame for result %d: missing result call frame", res.id)
 	}

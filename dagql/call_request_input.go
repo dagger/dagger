@@ -8,16 +8,16 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type frameOptionalInput interface {
-	frameOptionalValue() (Input, bool)
+type resultCallOptionalInput interface {
+	resultCallOptionalValue() (Input, bool)
 }
 
-type frameArrayInput interface {
-	frameArrayValues() []Input
+type resultCallArrayInput interface {
+	resultCallArrayValues() []Input
 }
 
-type frameInputObject interface {
-	frameInputObjectFields() []inputObjectField
+type resultCallInputObject interface {
+	resultCallInputObjectFields() []inputObjectField
 }
 
 func idInputDebugString(id *call.ID) string {
@@ -31,7 +31,7 @@ func idInputDebugString(id *call.ID) string {
 	return "<encode-error>"
 }
 
-func frameRefFromResult(res AnyResult) (*ResultCallFrameRef, error) {
+func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
 	if res == nil {
 		return nil, fmt.Errorf("nil result")
 	}
@@ -42,10 +42,10 @@ func frameRefFromResult(res AnyResult) (*ResultCallFrameRef, error) {
 	if shared == nil || shared.id == 0 {
 		return nil, fmt.Errorf("result %T is not cache-backed", res)
 	}
-	return &ResultCallFrameRef{ResultID: uint64(shared.id)}, nil
+	return &ResultCallRef{ResultID: uint64(shared.id)}, nil
 }
 
-func frameRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallFrameRef, error) {
+func resultCallRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallRef, error) {
 	if id == nil {
 		return nil, fmt.Errorf("nil ID input")
 	}
@@ -60,144 +60,144 @@ func frameRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallFrameRef,
 	if err != nil {
 		return nil, fmt.Errorf("load ID input %q: %w", idInputDebugString(id), err)
 	}
-	return frameRefFromResult(val)
+	return resultCallRefFromResult(val)
 }
 
-func frameArgFromInput(ctx context.Context, name string, input Input, sensitive bool) (*ResultCallFrameArg, error) {
+func resultCallArgFromInput(ctx context.Context, name string, input Input, sensitive bool) (*ResultCallArg, error) {
 	if input == nil {
 		return nil, fmt.Errorf("nil input for arg %q", name)
 	}
-	lit, err := frameLiteralFromInput(ctx, input)
+	lit, err := resultCallLiteralFromInput(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("arg %q: %w", name, err)
 	}
-	return &ResultCallFrameArg{
+	return &ResultCallArg{
 		Name:        name,
 		IsSensitive: sensitive,
 		Value:       lit,
 	}, nil
 }
 
-func frameLiteralFromInput(ctx context.Context, input Input) (*ResultCallFrameLiteral, error) {
+func resultCallLiteralFromInput(ctx context.Context, input Input) (*ResultCallLiteral, error) {
 	if input == nil {
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
 	}
 	if idable, ok := input.(IDable); ok {
 		id, err := idable.ID()
 		if err != nil {
 			return nil, fmt.Errorf("ID input %T is invalid: %w", input, err)
 		}
-		ref, err := frameRefFromIDInput(ctx, id)
+		ref, err := resultCallRefFromIDInput(ctx, id)
 		if err != nil {
 			return nil, err
 		}
-		return &ResultCallFrameLiteral{
-			Kind:      ResultCallFrameLiteralKindResultRef,
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
 			ResultRef: ref,
 		}, nil
 	}
-	if opt, ok := input.(frameOptionalInput); ok {
-		val, valid := opt.frameOptionalValue()
+	if opt, ok := input.(resultCallOptionalInput); ok {
+		val, valid := opt.resultCallOptionalValue()
 		if !valid {
-			return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
+			return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
 		}
-		return frameLiteralFromInput(ctx, val)
+		return resultCallLiteralFromInput(ctx, val)
 	}
-	if arr, ok := input.(frameArrayInput); ok {
-		values := arr.frameArrayValues()
-		items := make([]*ResultCallFrameLiteral, 0, len(values))
+	if arr, ok := input.(resultCallArrayInput); ok {
+		values := arr.resultCallArrayValues()
+		items := make([]*ResultCallLiteral, 0, len(values))
 		for _, value := range values {
-			item, err := frameLiteralFromInput(ctx, value)
+			item, err := resultCallLiteralFromInput(ctx, value)
 			if err != nil {
 				return nil, err
 			}
 			items = append(items, item)
 		}
-		return &ResultCallFrameLiteral{
-			Kind:      ResultCallFrameLiteralKindList,
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
 			ListItems: items,
 		}, nil
 	}
-	if obj, ok := input.(frameInputObject); ok {
-		decodedFields := obj.frameInputObjectFields()
+	if obj, ok := input.(resultCallInputObject); ok {
+		decodedFields := obj.resultCallInputObjectFields()
 		if decodedFields == nil {
 			return nil, fmt.Errorf("input object %T is missing decoded fields", input)
 		}
-		fields := make([]*ResultCallFrameArg, 0, len(decodedFields))
+		fields := make([]*ResultCallArg, 0, len(decodedFields))
 		for _, field := range decodedFields {
-			arg, err := frameArgFromInput(ctx, field.name, field.value, false)
+			arg, err := resultCallArgFromInput(ctx, field.name, field.value, false)
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", field.name, err)
 			}
 			fields = append(fields, arg)
 		}
-		return &ResultCallFrameLiteral{
-			Kind:         ResultCallFrameLiteralKindObject,
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
 			ObjectFields: fields,
 		}, nil
 	}
-	return frameLiteralFromCallLiteral(ctx, input.ToLiteral())
+	return resultCallLiteralFromCallLiteral(ctx, input.ToLiteral())
 }
 
-func frameLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*ResultCallFrameLiteral, error) {
+func resultCallLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*ResultCallLiteral, error) {
 	switch v := lit.(type) {
 	case nil:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
 	case *call.LiteralNull:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
 	case *call.LiteralBool:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindBool, BoolValue: v.Value()}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBool, BoolValue: v.Value()}, nil
 	case *call.LiteralInt:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindInt, IntValue: v.Value()}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindInt, IntValue: v.Value()}, nil
 	case *call.LiteralFloat:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindFloat, FloatValue: v.Value()}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
 	case *call.LiteralString:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindString, StringValue: v.Value()}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
 	case *call.LiteralEnum:
-		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindEnum, EnumValue: v.Value()}, nil
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
 	case *call.LiteralDigestedString:
-		return &ResultCallFrameLiteral{
-			Kind:                 ResultCallFrameLiteralKindDigestedString,
+		return &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
 			DigestedStringValue:  v.Value(),
 			DigestedStringDigest: v.Digest(),
 		}, nil
 	case *call.LiteralID:
-		ref, err := frameRefFromIDInput(ctx, v.Value())
+		ref, err := resultCallRefFromIDInput(ctx, v.Value())
 		if err != nil {
 			return nil, err
 		}
-		return &ResultCallFrameLiteral{
-			Kind:      ResultCallFrameLiteralKindResultRef,
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
 			ResultRef: ref,
 		}, nil
 	case *call.LiteralList:
-		items := make([]*ResultCallFrameLiteral, 0, v.Len())
+		items := make([]*ResultCallLiteral, 0, v.Len())
 		for _, item := range v.Values() {
-			converted, err := frameLiteralFromCallLiteral(ctx, item)
+			converted, err := resultCallLiteralFromCallLiteral(ctx, item)
 			if err != nil {
 				return nil, err
 			}
 			items = append(items, converted)
 		}
-		return &ResultCallFrameLiteral{
-			Kind:      ResultCallFrameLiteralKindList,
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
 			ListItems: items,
 		}, nil
 	case *call.LiteralObject:
-		fields := make([]*ResultCallFrameArg, 0, v.Len())
+		fields := make([]*ResultCallArg, 0, v.Len())
 		for _, field := range v.Args() {
-			converted, err := frameLiteralFromCallLiteral(ctx, field.Value())
+			converted, err := resultCallLiteralFromCallLiteral(ctx, field.Value())
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", field.Name(), err)
 			}
-			fields = append(fields, &ResultCallFrameArg{
+			fields = append(fields, &ResultCallArg{
 				Name:        field.Name(),
 				IsSensitive: field.IsSensitive(),
 				Value:       converted,
 			})
 		}
-		return &ResultCallFrameLiteral{
-			Kind:         ResultCallFrameLiteralKindObject,
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
 			ObjectFields: fields,
 		}, nil
 	default:
@@ -205,7 +205,7 @@ func frameLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*Result
 	}
 }
 
-func handleIDFromFrameRef(ctx context.Context, ref *ResultCallFrameRef) (*call.ID, error) {
+func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.ID, error) {
 	if ref == nil || ref.ResultID == 0 {
 		return nil, fmt.Errorf("missing result ref")
 	}
@@ -222,8 +222,8 @@ func handleIDFromFrameRef(ctx context.Context, ref *ResultCallFrameRef) (*call.I
 		return nil, err
 	}
 	var gqlType *ast.Type
-	if res.resultCallFrame != nil && res.resultCallFrame.Type != nil {
-		gqlType = res.resultCallFrame.Type.toAST()
+	if res.resultCall != nil && res.resultCall.Type != nil {
+		gqlType = res.resultCall.Type.toAST()
 	}
 	if gqlType == nil && res.self != nil {
 		gqlType = res.self.Type()
@@ -234,44 +234,44 @@ func handleIDFromFrameRef(ctx context.Context, ref *ResultCallFrameRef) (*call.I
 	return call.NewEngineResultID(ref.ResultID, call.NewType(gqlType)), nil
 }
 
-func inputValueFromFrameLiteral(ctx context.Context, lit *ResultCallFrameLiteral) (any, error) {
+func inputValueFromResultCallLiteral(ctx context.Context, lit *ResultCallLiteral) (any, error) {
 	if lit == nil {
 		return nil, nil
 	}
 	switch lit.Kind {
-	case ResultCallFrameLiteralKindNull:
+	case ResultCallLiteralKindNull:
 		return nil, nil
-	case ResultCallFrameLiteralKindBool:
+	case ResultCallLiteralKindBool:
 		return lit.BoolValue, nil
-	case ResultCallFrameLiteralKindInt:
+	case ResultCallLiteralKindInt:
 		return lit.IntValue, nil
-	case ResultCallFrameLiteralKindFloat:
+	case ResultCallLiteralKindFloat:
 		return lit.FloatValue, nil
-	case ResultCallFrameLiteralKindString:
+	case ResultCallLiteralKindString:
 		return lit.StringValue, nil
-	case ResultCallFrameLiteralKindEnum:
+	case ResultCallLiteralKindEnum:
 		return lit.EnumValue, nil
-	case ResultCallFrameLiteralKindDigestedString:
+	case ResultCallLiteralKindDigestedString:
 		return lit.DigestedStringValue, nil
-	case ResultCallFrameLiteralKindResultRef:
-		return handleIDFromFrameRef(ctx, lit.ResultRef)
-	case ResultCallFrameLiteralKindList:
+	case ResultCallLiteralKindResultRef:
+		return handleIDFromResultCallRef(ctx, lit.ResultRef)
+	case ResultCallLiteralKindList:
 		values := make([]any, 0, len(lit.ListItems))
 		for _, item := range lit.ListItems {
-			val, err := inputValueFromFrameLiteral(ctx, item)
+			val, err := inputValueFromResultCallLiteral(ctx, item)
 			if err != nil {
 				return nil, err
 			}
 			values = append(values, val)
 		}
 		return values, nil
-	case ResultCallFrameLiteralKindObject:
+	case ResultCallLiteralKindObject:
 		values := make(map[string]any, len(lit.ObjectFields))
 		for _, field := range lit.ObjectFields {
 			if field == nil {
 				continue
 			}
-			val, err := inputValueFromFrameLiteral(ctx, field.Value)
+			val, err := inputValueFromResultCallLiteral(ctx, field.Value)
 			if err != nil {
 				return nil, fmt.Errorf("field %q: %w", field.Name, err)
 			}

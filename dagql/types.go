@@ -1068,7 +1068,7 @@ type Enumerable interface {
 	// first entry.
 	Nth(int) (Typed, error)
 
-	NthValue(i int, call *ResultCallFrame) (AnyResult, error)
+	NthValue(i int, call *ResultCall) (AnyResult, error)
 }
 
 // Array is an array of GraphQL values.
@@ -1106,7 +1106,7 @@ func (a ArrayInput[S]) Decoder() InputDecoder {
 	return a
 }
 
-func (a ArrayInput[S]) frameArrayValues() []Input {
+func (a ArrayInput[S]) resultCallArrayValues() []Input {
 	values := make([]Input, len(a))
 	for i, val := range a {
 		values[i] = val
@@ -1233,7 +1233,7 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr.nth(i)
 }
 
-func (arr Array[T]) NthValue(i int, call *ResultCallFrame) (AnyResult, error) {
+func (arr Array[T]) NthValue(i int, call *ResultCall) (AnyResult, error) {
 	t, err := arr.nth(i)
 	if err != nil {
 		return nil, err
@@ -1287,7 +1287,7 @@ func (arr ResultArray[T]) Nth(i int) (Typed, error) {
 	return inst.Self(), nil
 }
 
-func (arr ResultArray[T]) NthValue(i int, _ *ResultCallFrame) (AnyResult, error) {
+func (arr ResultArray[T]) NthValue(i int, _ *ResultCall) (AnyResult, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err
@@ -1333,7 +1333,7 @@ func (arr ObjectResultArray[T]) Nth(i int) (Typed, error) {
 	return inst.Self(), nil
 }
 
-func (arr ObjectResultArray[T]) NthValue(i int, _ *ResultCallFrame) (AnyResult, error) {
+func (arr ObjectResultArray[T]) NthValue(i int, _ *ResultCall) (AnyResult, error) {
 	inst, err := arr.nth(i)
 	if err != nil {
 		return nil, err

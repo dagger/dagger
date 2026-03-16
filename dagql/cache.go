@@ -431,11 +431,11 @@ type sharedResult struct {
 	// Immutable payload shared by all per-call Result values.
 	self    Typed
 	objType ObjectType
-	// resultCallFrame is the non-lossy semantic/provenance call-node metadata
+	// resultCall is the non-lossy semantic/provenance call-node metadata
 	// for this materialized result. It is used for canonical recipe
 	// reconstruction and telemetry hierarchy reconstruction, not execution or
 	// liveness.
-	resultCallFrame *ResultCallFrame
+	resultCall *ResultCall
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
 	postCall PostCallFunc
@@ -494,15 +494,15 @@ type ongoingCall struct {
 }
 
 // newDetachedResult creates a non-cache-backed Result from an explicit call frame and value.
-func newDetachedResult[T Typed](call *ResultCallFrame, self T) Result[T] {
-	var resultCallFrame *ResultCallFrame
+func newDetachedResult[T Typed](call *ResultCall, self T) Result[T] {
+	var resultCall *ResultCall
 	if call != nil {
-		resultCallFrame = call.clone()
+		resultCall = call.clone()
 	}
 	return Result[T]{
 		shared: &sharedResult{
 			self:               self,
-			resultCallFrame:    resultCallFrame,
+			resultCall:         resultCall,
 			hasValue:           true,
 			safeToPersistCache: true,
 		},
@@ -525,16 +525,16 @@ func (c *cache) attachResult(ctx context.Context, res AnyResult) (AnyResult, err
 		return nil, nil
 	}
 	shared := res.cacheSharedResult()
-	if shared == nil || shared.resultCallFrame == nil {
+	if shared == nil || shared.resultCall == nil {
 		return nil, fmt.Errorf("attach owned result: missing result call frame")
 	}
 	if shared.id != 0 {
 		return res, nil
 	}
 	req := &CallRequest{
-		ResultCallFrame: shared.resultCallFrame.clone(),
+		ResultCall: shared.resultCall.clone(),
 	}
-	req.ResultCallFrame.bindCache(c)
+	req.ResultCall.bindCache(c)
 	attached, err := c.GetOrInitCall(ctx, req, ValueFunc(res))
 	if err != nil {
 		return nil, fmt.Errorf("attach owned result: %w", err)
@@ -624,10 +624,10 @@ func (r Result[T]) ID() (*call.ID, error) {
 }
 
 func (r Result[T]) RecipeID() (*call.ID, error) {
-	if r.shared == nil || r.shared.resultCallFrame == nil {
+	if r.shared == nil || r.shared.resultCall == nil {
 		return nil, fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	return r.shared.resultCallFrame.RecipeID()
+	return r.shared.resultCall.RecipeID()
 }
 
 func (r Result[T]) Self() T {
@@ -669,10 +669,10 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 	if r.shared != nil {
 		postCall = r.shared.postCall
 	}
-	if r.shared == nil || r.shared.resultCallFrame == nil {
+	if r.shared == nil || r.shared.resultCall == nil {
 		panic(fmt.Sprintf("deref result %T: missing call frame", self))
 	}
-	return derefableSelf.DerefToResult(r.shared.resultCallFrame, postCall, r.IsSafeToPersistCache())
+	return derefableSelf.DerefToResult(r.shared.resultCall, postCall, r.IsSafeToPersistCache())
 }
 
 func (r Result[T]) NthValue(nth int) (AnyResult, error) {
@@ -681,10 +681,10 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 	if !ok {
 		return nil, fmt.Errorf("cannot get %dth value from %T", nth, self)
 	}
-	if r.shared == nil || r.shared.resultCallFrame == nil {
+	if r.shared == nil || r.shared.resultCall == nil {
 		return nil, fmt.Errorf("cannot get %dth value from %T without call frame", nth, self)
 	}
-	return enumerableSelf.NthValue(nth, r.shared.resultCallFrame)
+	return enumerableSelf.NthValue(nth, r.shared.resultCall)
 }
 
 // withDetachedPayload clones shared payload so per-call mutations do not affect other Results.
@@ -693,7 +693,7 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 		r.shared = &sharedResult{
 			self:                   r.shared.self,
 			objType:                r.shared.objType,
-			resultCallFrame:        r.shared.resultCallFrame.clone(),
+			resultCall:             r.shared.resultCall.clone(),
 			hasValue:               r.shared.hasValue,
 			postCall:               r.shared.postCall,
 			safeToPersistCache:     r.shared.safeToPersistCache,
@@ -723,9 +723,9 @@ func (r Result[T]) ResultWithPostCall(fn PostCallFunc) Result[T] {
 	return r
 }
 
-func (r Result[T]) ResultWithCallFrame(frame *ResultCallFrame) Result[T] {
+func (r Result[T]) ResultWithCall(frame *ResultCall) Result[T] {
 	r = r.withDetachedPayload()
-	r.shared.resultCallFrame = frame.clone()
+	r.shared.resultCall = frame.clone()
 	return r
 }
 
@@ -741,20 +741,20 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 
 func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
 	r = r.withDetachedPayload()
-	if r.shared == nil || r.shared.resultCallFrame == nil {
+	if r.shared == nil || r.shared.resultCall == nil {
 		panic(fmt.Sprintf("set content digest on %T: missing call frame", r.Self()))
 	}
 	replaced := false
-	for i, extra := range r.shared.resultCallFrame.ExtraDigests {
+	for i, extra := range r.shared.resultCall.ExtraDigests {
 		if extra.Label != call.ExtraDigestLabelContent {
 			continue
 		}
-		r.shared.resultCallFrame.ExtraDigests[i].Digest = contentDigest
+		r.shared.resultCall.ExtraDigests[i].Digest = contentDigest
 		replaced = true
 		break
 	}
 	if !replaced {
-		r.shared.resultCallFrame.ExtraDigests = append(r.shared.resultCallFrame.ExtraDigests, call.ExtraDigest{
+		r.shared.resultCall.ExtraDigests = append(r.shared.resultCall.ExtraDigests, call.ExtraDigest{
 			Label:  call.ExtraDigestLabelContent,
 			Digest: contentDigest,
 		})
@@ -843,10 +843,10 @@ func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
 	if r.shared != nil {
 		postCall = r.shared.postCall
 	}
-	if r.shared == nil || r.shared.resultCallFrame == nil {
+	if r.shared == nil || r.shared.resultCall == nil {
 		panic(fmt.Sprintf("deref object result %T: missing call frame", self))
 	}
-	return derefableSelf.DerefToResult(r.shared.resultCallFrame, postCall, r.IsSafeToPersistCache())
+	return derefableSelf.DerefToResult(r.shared.resultCall, postCall, r.IsSafeToPersistCache())
 }
 
 func (r ObjectResult[T]) SetField(field reflect.Value) error {
@@ -879,8 +879,8 @@ func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[
 	return r
 }
 
-func (r ObjectResult[T]) ObjectResultWithCallFrame(frame *ResultCallFrame) ObjectResult[T] {
-	r.Result = r.Result.ResultWithCallFrame(frame)
+func (r ObjectResult[T]) ObjectResultWithCall(frame *ResultCall) ObjectResult[T] {
+	r.Result = r.Result.ResultWithCall(frame)
 	return r
 }
 
@@ -1249,11 +1249,11 @@ func (c *cache) GetOrInitCall(
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 ) (AnyResult, error) {
-	if req == nil || req.ResultCallFrame == nil {
+	if req == nil || req.ResultCall == nil {
 		return nil, fmt.Errorf("call request is nil")
 	}
 	req = req.Clone()
-	req.ResultCallFrame.bindCache(c)
+	req.ResultCall.bindCache(c)
 
 	if req.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
@@ -1268,13 +1268,13 @@ func (c *cache) GetOrInitCall(
 
 		detached := &sharedResult{
 			self:               val.Unwrap(),
-			resultCallFrame:    req.ResultCallFrame.clone(),
+			resultCall:         req.ResultCall.clone(),
 			hasValue:           true,
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
 		}
-		detached.resultCallFrame.bindCache(c)
-		outputEffects, err := detached.resultCallFrame.AllEffectIDs()
+		detached.resultCall.bindCache(c)
+		outputEffects, err := detached.resultCall.AllEffectIDs()
 		if err != nil {
 			return nil, fmt.Errorf("derive do-not-cache output effects: %w", err)
 		}
@@ -1446,14 +1446,14 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	var (
 		resultTermSelf   digest.Digest
 		resultTermInputs []digest.Digest
-		resultTermRefs   []ResultCallFrameStructuralInputRef
+		resultTermRefs   []ResultCallStructuralInputRef
 		hasResultTerm    bool
 	)
-	if req == nil || req.ResultCallFrame == nil {
+	if req == nil || req.ResultCall == nil {
 		return fmt.Errorf("call request is nil")
 	}
 	req = req.Clone()
-	req.ResultCallFrame.bindCache(c)
+	req.ResultCall.bindCache(c)
 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{
@@ -1467,12 +1467,12 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 		} else {
 			oc.res.self = oc.val.Unwrap()
 			if shared := oc.val.cacheSharedResult(); shared != nil {
-				oc.res.resultCallFrame = shared.resultCallFrame.clone()
-				oc.res.resultCallFrame.bindCache(c)
+				oc.res.resultCall = shared.resultCall.clone()
+				oc.res.resultCall.bindCache(c)
 			}
-			if oc.res.resultCallFrame == nil {
-				oc.res.resultCallFrame = req.ResultCallFrame.clone()
-				oc.res.resultCallFrame.bindCache(c)
+			if oc.res.resultCall == nil {
+				oc.res.resultCall = req.ResultCall.clone()
+				oc.res.resultCall.bindCache(c)
 			}
 			oc.res.hasValue = true
 			oc.res.postCall = oc.val.PostCall
@@ -1494,15 +1494,15 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
 	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
 		requestForIndex = req.Clone()
-		requestForIndex.ImplicitInputs = append(requestForIndex.ImplicitInputs, &ResultCallFrameArg{
+		requestForIndex.ImplicitInputs = append(requestForIndex.ImplicitInputs, &ResultCallArg{
 			Name: "sessionID",
-			Value: &ResultCallFrameLiteral{
-				Kind:        ResultCallFrameLiteralKindString,
+			Value: &ResultCallLiteral{
+				Kind:        ResultCallLiteralKindString,
 				StringValue: sessionID,
 			},
 		})
 	}
-	requestForIndex.ResultCallFrame.bindCache(c)
+	requestForIndex.ResultCall.bindCache(c)
 
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
@@ -1536,15 +1536,15 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 		oc.res.expiresAtUnix,
 		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
 	)
-	if !resWasCacheBacked && oc.res.resultCallFrame != nil {
-		outputEffects, err := oc.res.resultCallFrame.AllEffectIDs()
+	if !resWasCacheBacked && oc.res.resultCall != nil {
+		outputEffects, err := oc.res.resultCall.AllEffectIDs()
 		if err != nil {
 			return fmt.Errorf("derive result output effects: %w", err)
 		}
 		oc.res.outputEffectIDs = outputEffects
 	}
-	if oc.res.resultCallFrame != nil && !resWasCacheBacked {
-		selfDigest, inputRefs, deriveErr := oc.res.resultCallFrame.SelfDigestAndInputRefs()
+	if oc.res.resultCall != nil && !resWasCacheBacked {
+		selfDigest, inputRefs, deriveErr := oc.res.resultCall.SelfDigestAndInputRefs()
 		if deriveErr != nil {
 			return fmt.Errorf("derive result term digests: %w", deriveErr)
 		}
@@ -1578,8 +1578,8 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	c.egraphMu.Lock()
 	indexErr := c.indexWaitResultInEgraphLocked(
 		ctx,
-		requestForIndex.ResultCallFrame,
-		oc.res.resultCallFrame,
+		requestForIndex.ResultCall,
+		oc.res.resultCall,
 		requestSelf,
 		requestInputs,
 		requestInputRefs,

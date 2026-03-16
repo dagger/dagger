@@ -30,7 +30,7 @@ func (prov cachePersistInputProvenance) validate() error {
 
 type persistResultSnapshot struct {
 	resultID            sharedResultID
-	frame               *ResultCallFrame
+	frame               *ResultCall
 	self                Typed
 	objType             ObjectType
 	hasValue            bool
