@@ -5360,37 +5360,33 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 	remoteRepo := "github.com/dagger/dagger-test-modules"
 	remoteModule := remoteRepo + "/context-git"
 
-	for _, tc := range []struct {
-		name string
-		pin  string
-	}{
-		{name: "branch", pin: "context-git"},
-		{name: "tag", pin: "v1.2.3"},
-	} {
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			g := c.Git(remoteRepo).Ref(tc.pin)
-			fullref, err := g.Ref(ctx)
-			require.NoError(t, err)
+	// Use a tag pin — tags are immutable and exercise the same ref(name: ...)
+	// code path as branches, without the risk of a branch being pruned.
+	pin := "v1.2.3"
 
-			commit, err := g.Commit(ctx)
-			require.NoError(t, err)
+	g := c.Git(remoteRepo).Ref(pin)
+	fullref, err := g.Ref(ctx)
+	require.NoError(t, err)
 
-			modGen := goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				WithNewFile("dagger.json", `{
+	commit, err := g.Commit(ctx)
+	require.NoError(t, err)
+
+	modGen := goGitBase(t, c).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{
 			"name": "test",
-	"source": ".",
+			"source": ".",
 			"sdk": "go",
 			"dependencies": [
 				{
 					"name": "context-git",
 					"source": "`+remoteModule+`",
-					"pin": "`+tc.pin+`"
+					"pin": "`+pin+`"
 				}
 			]
 		}`).
-				With(sdkSource("go", `package main
+		With(sdkSource("go", `package main
 
 		import (
 			"context"
@@ -5402,13 +5398,11 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 			return dag.ContextGit().TestRefLocal(ctx)
 		}
 		`)).
-				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
-			out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, fullref+"@"+commit, out)
-		})
-	}
+	out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fullref+"@"+commit, out)
 }
 
 func (ModuleSuite) TestContextGitDetectDirty(ctx context.Context, t *testctx.T) {
