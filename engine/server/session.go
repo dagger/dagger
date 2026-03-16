@@ -1779,7 +1779,7 @@ type pendingModule struct {
 	// If true, this module is the workspace entrypoint: its main-object
 	// methods are proxied onto the Query root in addition to its namespaced
 	// constructor.
-	Blueprint bool
+	Entrypoint bool
 
 	// If true, resolve +defaultPath from workspace root instead of module source.
 	// Used for legacy blueprints/toolchains migrated to workspace modules.
@@ -1818,11 +1818,11 @@ type resolvedServedModule struct {
 
 const maxParallelModuleResolves = 8
 
-// findBlueprint returns the index of the first blueprint module in pending,
+// findEntrypoint returns the index of the first entrypoint module in pending,
 // or -1 if none exists.
-func findBlueprint(pending []pendingModule) int {
+func findEntrypoint(pending []pendingModule) int {
 	for i, m := range pending {
-		if m.Blueprint {
+		if m.Entrypoint {
 			return i
 		}
 	}
@@ -1848,7 +1848,7 @@ func pendingLegacyModule(
 	ws *workspace.Workspace,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
 	name, source, pin string,
-	blueprint bool,
+	entrypoint bool,
 	configDefaults map[string]any,
 	argCustomizations []*modules.ModuleConfigArgument,
 ) pendingModule {
@@ -1862,7 +1862,7 @@ func pendingLegacyModule(
 		Ref:               ref,
 		RefPin:            pin,
 		Name:              name,
-		Blueprint:         blueprint,
+		Entrypoint:        entrypoint,
 		LegacyDefaultPath: true,
 		ConfigDefaults:    configDefaults,
 		ArgCustomizations: argCustomizations,
@@ -1994,7 +1994,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				// blueprint should contribute Query-root entrypoint proxies.
 				// The root app module still needs to be served, but only as a
 				// namespaced module.
-				Blueprint: legacyBlueprint == nil,
+				Entrypoint: legacyBlueprint == nil,
 			})
 		}
 	}
@@ -2007,7 +2007,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// Set the workspace's default module so the CLI knows which module
 	// to focus on without heuristics.
-	if idx := findBlueprint(pending); idx >= 0 {
+	if idx := findEntrypoint(pending); idx >= 0 {
 		client.workspace.DefaultModule = pending[idx].Name
 	}
 
@@ -2175,7 +2175,7 @@ func (srv *Server) resolveModuleLoad(
 
 	resolved := resolvedModuleLoad{
 		primary:           primary,
-		primaryEntrypoint: load.mod.Blueprint,
+		primaryEntrypoint: load.mod.Entrypoint,
 	}
 	if !load.extra {
 		return resolved, nil
@@ -2249,9 +2249,9 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 	for _, extra := range extras {
 		loads = append(loads, moduleLoadRequest{
 			mod: pendingModule{
-				Ref:       extra.Ref,
-				Name:      extra.Name,
-				Blueprint: extra.Blueprint,
+				Ref:        extra.Ref,
+				Name:       extra.Name,
+				Entrypoint: extra.Entrypoint,
 			},
 			extra: true,
 		})
@@ -2321,7 +2321,7 @@ func (srv *Server) resolveModule(
 		return nil, fmt.Errorf("resolving module source %q: %w", mod.Ref, err)
 	}
 
-	if mod.LegacyCallerModuleDir != "" && mod.Blueprint {
+	if mod.LegacyCallerModuleDir != "" && mod.Entrypoint {
 		if err := srv.mergeLegacyCallerEnvDefaults(ctx, dag, src.Self(), mod.LegacyCallerModuleDir); err != nil {
 			return nil, err
 		}
@@ -2338,7 +2338,7 @@ func (srv *Server) resolveModule(
 	if mod.Name != "" {
 		resolved.Self().NameField = mod.Name
 	}
-	// noop: Blueprint is handled during module gathering, not at load time.
+	// noop: Entrypoint is handled during module gathering, not at load time.
 	if mod.LegacyDefaultPath {
 		resolved.Self().LegacyDefaultPath = true
 	}

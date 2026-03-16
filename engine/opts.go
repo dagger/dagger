@@ -39,9 +39,9 @@ const (
 // ExtraModule specifies a module to load at connect time in addition to
 // (or instead of) workspace modules.
 type ExtraModule struct {
-	Ref       string `json:"ref"`
-	Name      string `json:"name,omitempty"`
-	Blueprint bool   `json:"blueprint,omitempty"`
+	Ref        string `json:"ref"`
+	Name       string `json:"name,omitempty"`
+	Entrypoint bool   `json:"entrypoint,omitempty"`
 }
 
 type ClientMetadata struct {
@@ -113,7 +113,8 @@ type ClientMetadata struct {
 	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 
 	// ExtraModules specifies additional modules to load at connect time.
-	// When Blueprint is true, the module's functions are aliased to the Query root.
+	// When Entrypoint is true, the module's main-object methods are proxied onto
+	// the Query root in addition to its namespaced constructor.
 	ExtraModules []ExtraModule `json:"extra_modules,omitempty"`
 
 	// SkipWorkspaceModules skips loading workspace modules when true.
