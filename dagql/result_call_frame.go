@@ -189,6 +189,13 @@ type ResultCall struct {
 	recipeDigestOnce sync.Once
 	recipeDigestErr  error
 	recipeDigest     digest.Digest
+
+	// contentPreferredDigest is memoized once the frame has reached its
+	// finalized semantic shape. Do not mutate the frame after calling
+	// ContentPreferredDigest.
+	contentPreferredDigestOnce sync.Once
+	contentPreferredDigestErr  error
+	contentPreferredDigest     digest.Digest
 }
 
 type ResultCallStructuralInputRef struct {
@@ -232,6 +239,24 @@ func (frame *ResultCall) clone() *ResultCall {
 
 func (frame *ResultCall) RecipeDigest() (digest.Digest, error) {
 	return frame.recipeDigestWithVisiting(map[sharedResultID]struct{}{})
+}
+
+func (frame *ResultCall) ContentDigest() digest.Digest {
+	if frame == nil {
+		return ""
+	}
+	var last digest.Digest
+	for _, extra := range frame.ExtraDigests {
+		if extra.Label != call.ExtraDigestLabelContent || extra.Digest == "" {
+			continue
+		}
+		last = extra.Digest
+	}
+	return last
+}
+
+func (frame *ResultCall) ContentPreferredDigest() (digest.Digest, error) {
+	return frame.contentPreferredDigestWithVisiting(map[sharedResultID]struct{}{})
 }
 
 func (frame *ResultCall) RecipeID() (*call.ID, error) {
@@ -323,6 +348,97 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 		frame.recipeDigest = digest.Digest(h.DigestAndClose())
 	})
 	return frame.recipeDigest, frame.recipeDigestErr
+}
+
+func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+	if frame == nil {
+		return "", nil
+	}
+
+	frame.contentPreferredDigestOnce.Do(func() {
+		if content := frame.ContentDigest(); content != "" {
+			frame.contentPreferredDigest = content
+			return
+		}
+
+		field, err := resultCallIdentityField(frame)
+		if err != nil {
+			frame.contentPreferredDigestErr = err
+			return
+		}
+		if frame.Type == nil {
+			frame.contentPreferredDigestErr = fmt.Errorf("missing call type")
+			return
+		}
+
+		h := hashutil.NewHasher()
+
+		if frame.Receiver != nil {
+			receiverDigest, err := contentPreferredDigestForResultCallRef(frame.cache, frame.Receiver, visiting)
+			if err != nil {
+				h.Close()
+				frame.contentPreferredDigestErr = fmt.Errorf("receiver: %w", err)
+				return
+			}
+			h = h.WithString(receiverDigest.String())
+		}
+		h = h.WithDelim()
+
+		h = appendResultCallTypeBytes(h, frame.Type).
+			WithDelim()
+
+		h = h.WithString(field).
+			WithDelim()
+
+		for _, arg := range frame.Args {
+			arg = redactedCallArgForDigest(arg)
+			if arg == nil {
+				continue
+			}
+			h, err = appendResultCallArgContentPreferredBytes(frame.cache, arg, h, visiting)
+			if err != nil {
+				h.Close()
+				frame.contentPreferredDigestErr = fmt.Errorf("args: %w", err)
+				return
+			}
+			h = h.WithDelim()
+		}
+		h = h.WithDelim()
+
+		for _, input := range frame.ImplicitInputs {
+			input = redactedCallArgForDigest(input)
+			if input == nil {
+				continue
+			}
+			h, err = appendResultCallArgContentPreferredBytes(frame.cache, input, h, visiting)
+			if err != nil {
+				h.Close()
+				frame.contentPreferredDigestErr = fmt.Errorf("implicit inputs: %w", err)
+				return
+			}
+			h = h.WithDelim()
+		}
+
+		if frame.Module != nil && frame.Module.ResultRef != nil {
+			moduleDigest, err := contentPreferredDigestForResultCallRef(frame.cache, frame.Module.ResultRef, visiting)
+			if err != nil {
+				h.Close()
+				frame.contentPreferredDigestErr = fmt.Errorf("module: %w", err)
+				return
+			}
+			h = h.WithString(moduleDigest.String())
+		}
+		h = h.WithDelim()
+
+		h = h.WithInt64(frame.Nth).
+			WithDelim()
+
+		h = h.WithString(frame.View.String()).
+			WithDelim()
+
+		frame.contentPreferredDigest = digest.Digest(h.DigestAndClose())
+	})
+	return frame.contentPreferredDigest, frame.contentPreferredDigestErr
 }
 
 func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallStructuralInputRef, error) {
@@ -624,6 +740,38 @@ func recipeDigestForResultCallRef(c *cache, ref *ResultCallRef, visiting map[sha
 	return recipeDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
 }
 
+func contentPreferredDigestForCachedResult(c *cache, resultID sharedResultID, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+	if resultID == 0 {
+		return "", fmt.Errorf("missing result ref")
+	}
+	if c == nil {
+		return "", fmt.Errorf("cannot resolve result ref %d without cache", resultID)
+	}
+	if _, seen := visiting[resultID]; seen {
+		return "", fmt.Errorf("cycle while reconstructing content-preferred digest for shared result %d", resultID)
+	}
+	frame := c.resultCallSnapshot(resultID)
+	if frame == nil {
+		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+	}
+
+	visiting[resultID] = struct{}{}
+	defer delete(visiting, resultID)
+
+	return frame.contentPreferredDigestWithVisiting(visiting)
+}
+
+func contentPreferredDigestForResultCallRef(c *cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+	if err := ref.Validate(); err != nil {
+		return "", err
+	}
+	if ref.Call != nil {
+		ref.Call.bindCache(c)
+		return ref.Call.contentPreferredDigestWithVisiting(visiting)
+	}
+	return contentPreferredDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
+}
+
 func appendResultCallTypeBytes(h *hashutil.Hasher, typ *ResultCallType) *hashutil.Hasher {
 	for curType := typ; curType != nil; curType = curType.Elem {
 		h = h.WithString(curType.NamedType)
@@ -658,6 +806,20 @@ func appendResultCallArgBytes(
 ) (*hashutil.Hasher, error) {
 	h = h.WithString(arg.Name)
 	h, err := appendResultCallLiteralBytes(c, arg.Value, h, visiting)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+	}
+	return h, nil
+}
+
+func appendResultCallArgContentPreferredBytes(
+	c *cache,
+	arg *ResultCallArg,
+	h *hashutil.Hasher,
+	visiting map[sharedResultID]struct{},
+) (*hashutil.Hasher, error) {
+	h = h.WithString(arg.Name)
+	h, err := appendResultCallLiteralContentPreferredBytes(c, arg.Value, h, visiting)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
@@ -730,6 +892,76 @@ func appendResultCallLiteralBytes(
 		h = h.WithByte(prefix)
 		for _, field := range lit.ObjectFields {
 			h, err = appendResultCallArgBytes(c, field, h, visiting)
+			if err != nil {
+				return nil, err
+			}
+			h = h.WithDelim()
+		}
+	case lit.Kind == ResultCallLiteralKindDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if lit.DigestedStringDigest != "" {
+			h = h.WithString(lit.DigestedStringDigest.String())
+		}
+	default:
+		return nil, fmt.Errorf("unknown result call frame literal kind %q", lit.Kind)
+	}
+	h = h.WithDelim()
+	return h, nil
+}
+
+func appendResultCallLiteralContentPreferredBytes(
+	c *cache,
+	lit *ResultCallLiteral,
+	h *hashutil.Hasher,
+	visiting map[sharedResultID]struct{},
+) (*hashutil.Hasher, error) {
+	var err error
+	switch {
+	case lit == nil || lit.Kind == ResultCallLiteralKindNull:
+		const prefix = '1'
+		h = h.WithByte(prefix).WithByte(1)
+	case lit.Kind == ResultCallLiteralKindResultRef:
+		const prefix = '0'
+		dig, err := contentPreferredDigestForResultCallRef(c, lit.ResultRef, visiting)
+		if err != nil {
+			return nil, fmt.Errorf("result ref content-preferred digest: %w", err)
+		}
+		h = h.WithByte(prefix).WithString(dig.String())
+	case lit.Kind == ResultCallLiteralKindBool:
+		const prefix = '2'
+		h = h.WithByte(prefix)
+		if lit.BoolValue {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case lit.Kind == ResultCallLiteralKindEnum:
+		const prefix = '3'
+		h = h.WithByte(prefix).WithString(lit.EnumValue)
+	case lit.Kind == ResultCallLiteralKindInt:
+		const prefix = '4'
+		h = h.WithByte(prefix).WithInt64(lit.IntValue)
+	case lit.Kind == ResultCallLiteralKindFloat:
+		const prefix = '5'
+		h = h.WithByte(prefix).WithFloat64(lit.FloatValue)
+	case lit.Kind == ResultCallLiteralKindString:
+		const prefix = '6'
+		h = h.WithByte(prefix).WithString(lit.StringValue)
+	case lit.Kind == ResultCallLiteralKindList:
+		const prefix = '7'
+		h = h.WithByte(prefix)
+		for _, elem := range lit.ListItems {
+			h, err = appendResultCallLiteralContentPreferredBytes(c, elem, h, visiting)
+			if err != nil {
+				return nil, err
+			}
+		}
+	case lit.Kind == ResultCallLiteralKindObject:
+		const prefix = '8'
+		h = h.WithByte(prefix)
+		for _, field := range lit.ObjectFields {
+			h, err = appendResultCallArgContentPreferredBytes(c, field, h, visiting)
 			if err != nil {
 				return nil, err
 			}

@@ -742,6 +742,28 @@ func (r Result[T]) RecipeID() (*call.ID, error) {
 	return call.RecipeID()
 }
 
+func (r Result[T]) ContentPreferredDigest() (digest.Digest, error) {
+	if r.shared == nil || r.shared.resultCall == nil {
+		return "", fmt.Errorf("result %T has no call frame", r.Self())
+	}
+	call := r.shared.resultCall.clone()
+	if r.shared.cache != nil {
+		call.bindCache(r.shared.cache)
+	}
+	return call.ContentPreferredDigest()
+}
+
+func (r Result[T]) ResultCall() (*ResultCall, error) {
+	if r.shared == nil || r.shared.resultCall == nil {
+		return nil, fmt.Errorf("result %T has no call frame", r.Self())
+	}
+	call := r.shared.resultCall.clone()
+	if r.shared.cache != nil {
+		call.bindCache(r.shared.cache)
+	}
+	return call, nil
+}
+
 func (r Result[T]) Self() T {
 	var zero T
 	if r.shared == nil || r.shared.self == nil {
@@ -968,6 +990,31 @@ func (r ObjectResult[T]) SetField(field reflect.Value) error {
 // ObjectType returns the ObjectType of the instance.
 func (r ObjectResult[T]) ObjectType() ObjectType {
 	return r.class
+}
+
+func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectResult, error) {
+	if srv == nil {
+		return nil, fmt.Errorf("receiver: server is nil")
+	}
+	call, err := r.ResultCall()
+	if err != nil {
+		return nil, err
+	}
+	if call.Receiver == nil {
+		return nil, nil
+	}
+	if call.Receiver.ResultID == 0 {
+		return nil, fmt.Errorf("receiver: result is detached")
+	}
+	res, err := srv.Cache.LoadResultByResultID(srvToContext(ctx, srv), srv, call.Receiver.ResultID)
+	if err != nil {
+		return nil, fmt.Errorf("receiver: load result %d: %w", call.Receiver.ResultID, err)
+	}
+	obj, ok := res.(AnyObjectResult)
+	if !ok {
+		return nil, fmt.Errorf("receiver: result %d is %T, not object result", call.Receiver.ResultID, res)
+	}
+	return obj, nil
 }
 
 func (r ObjectResult[T]) WithContentDigest(contentDigest digest.Digest) ObjectResult[T] {

@@ -493,31 +493,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			return r, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
 		r.sortCallArgsToSchema(field.Spec, view, req.Args)
-		inputArgs = make(map[string]Input, len(req.Args))
-		for _, argSpec := range field.Spec.Args.Inputs(view) {
-			var requestArg *ResultCallArg
-			for _, arg := range req.Args {
-				if arg != nil && arg.Name == argSpec.Name {
-					requestArg = arg
-					break
-				}
-			}
-			switch {
-			case requestArg != nil:
-				inputVal, err := inputValueFromResultCallLiteral(ctx, requestArg.Value)
-				if err != nil {
-					return r, nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
-				}
-				input, err := argSpec.Type.Decoder().DecodeInput(inputVal)
-				if err != nil {
-					return r, nil, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
-				}
-				inputArgs[argSpec.Name] = input
-			case argSpec.Default != nil:
-				inputArgs[argSpec.Name] = argSpec.Default
-			case argSpec.Type.Type().NonNull:
-				return r, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-			}
+		inputArgs, err = field.Spec.Args.InputsFromResultCallArgs(ctx, req.Args, view)
+		if err != nil {
+			return r, nil, err
 		}
 		implicitInputs, err = field.Spec.resolveImplicitInputCallArgs(ctx, inputArgs)
 		if err != nil {
@@ -1074,6 +1052,36 @@ func (specs InputSpecs) Inputs(view call.View) (args []InputSpec) {
 	}
 	slices.Reverse(args)
 	return args
+}
+
+func (specs InputSpecs) InputsFromResultCallArgs(ctx context.Context, args []*ResultCallArg, view call.View) (map[string]Input, error) {
+	inputs := make(map[string]Input, len(args))
+	for _, argSpec := range specs.Inputs(view) {
+		var requestArg *ResultCallArg
+		for _, arg := range args {
+			if arg != nil && arg.Name == argSpec.Name {
+				requestArg = arg
+				break
+			}
+		}
+		switch {
+		case requestArg != nil:
+			inputVal, err := inputValueFromResultCallLiteral(ctx, requestArg.Value)
+			if err != nil {
+				return nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
+			}
+			input, err := argSpec.Type.Decoder().DecodeInput(inputVal)
+			if err != nil {
+				return nil, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+			}
+			inputs[argSpec.Name] = input
+		case argSpec.Default != nil:
+			inputs[argSpec.Name] = argSpec.Default
+		case argSpec.Type.Type().NonNull:
+			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+		}
+	}
+	return inputs, nil
 }
 
 func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefinition {

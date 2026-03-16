@@ -117,6 +117,7 @@ type AnyResult interface {
 
 	HitCache() bool
 	Release(context.Context) error
+	ResultCall() (*ResultCall, error)
 
 	// cacheSharedResult returns the internal cache-backed shared payload when present.
 	// It is intentionally package-private so only dagql-owned result types satisfy AnyResult.
@@ -129,6 +130,9 @@ type AnyObjectResult interface {
 
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
+
+	// Receiver resolves the object result referenced by this result call's receiver, if any.
+	Receiver(context.Context, *Server) (AnyObjectResult, error)
 
 	// Select evaluates the field selected by the given selector and returns the result.
 	//

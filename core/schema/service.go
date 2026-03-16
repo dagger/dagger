@@ -152,11 +152,23 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		return inst, err
 	}
 
-	id := parent.ID()
-	for id != nil && id.Field() != "withExec" {
-		id = id.Receiver()
+	var cur dagql.AnyObjectResult = parent
+	var withExecCall *dagql.ResultCall
+	for cur != nil {
+		call, err := cur.ResultCall()
+		if err != nil {
+			return inst, err
+		}
+		if call.Field == "withExec" {
+			withExecCall = call
+			break
+		}
+		cur, err = cur.Receiver(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
 	}
-	if id == nil {
+	if withExecCall == nil {
 		// no withExec found, so just rely on the entrypoint!
 		svc, err := parent.Self().AsService(ctx, core.ContainerAsServiceArgs{
 			UseEntrypoint: true,
@@ -164,30 +176,33 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectResultForCurrentID(ctx, srv, svc)
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 	}
 
 	// load the withExec parent
-	obj, err := srv.Load(ctx, id.Receiver())
+	receiver, err := cur.Receiver(ctx, srv)
 	if err != nil {
 		return inst, err
 	}
-	ctr, ok := obj.(dagql.ObjectResult[*core.Container])
+	if receiver == nil {
+		return inst, fmt.Errorf("withExec receiver is nil")
+	}
+	ctr, ok := receiver.(dagql.ObjectResult[*core.Container])
 	if !ok {
-		return inst, fmt.Errorf("expected %T, but got %T", ctr, obj)
+		return inst, fmt.Errorf("expected %T, but got %T", ctr, receiver)
 	}
 
 	// extract the withExec args
-	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), id.View())
+	withExecField, ok := ctr.ObjectType().FieldSpec(withExecCall.Field, withExecCall.View)
 	if !ok {
-		return inst, fmt.Errorf("could not find %s on %s", id.Field(), ctr.Type().NamedType)
+		return inst, fmt.Errorf("could not find %s on %s", withExecCall.Field, ctr.Type().NamedType)
 	}
-	inputs, err := dagql.ExtractIDArgs(withExecField.Args, id)
+	inputs, err := withExecField.Args.InputsFromResultCallArgs(ctx, withExecCall.Args, withExecCall.View)
 	if err != nil {
 		return inst, err
 	}
 	var withExecArgs containerExecArgs
-	err = withExecField.Args.Decode(inputs, &withExecArgs, id.View())
+	err = withExecField.Args.Decode(inputs, &withExecArgs, withExecCall.View)
 	if err != nil {
 		return inst, err
 	}
@@ -203,7 +218,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, svc)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
@@ -269,10 +284,14 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	}
 
 	var svc dagql.ObjectResult[*core.Service]
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return res, fmt.Errorf("current call is nil")
+	}
 	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  dagql.CurrentID(ctx).View(),
+			View:  curCall.View,
 			Args:  inputs,
 		},
 	)
@@ -290,10 +309,14 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectR
 	}
 
 	var svc dagql.ObjectResult[*core.Service]
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return res, fmt.Errorf("current call is nil")
+	}
 	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  dagql.CurrentID(ctx).View(),
+			View:  curCall.View,
 		},
 	)
 	if err != nil {
@@ -303,12 +326,16 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectR
 }
 
 func (s *serviceSchema) hostname(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[dagql.String], _ error) {
-	hn, err := parent.Self().Hostname(ctx, parent.ID())
+	parentDig, err := parent.ContentPreferredDigest()
+	if err != nil {
+		return res, fmt.Errorf("service digest: %w", err)
+	}
+	hn, err := parent.Self().Hostname(ctx, parentDig)
 	if err != nil {
 		return res, err
 	}
 	str := dagql.NewString(hn)
-	return dagql.NewResultForCurrentID(ctx, str)
+	return dagql.NewResultForCurrentCall(ctx, str)
 }
 
 func (s *serviceSchema) withHostname(ctx context.Context, parent *core.Service, args struct {
@@ -318,11 +345,15 @@ func (s *serviceSchema) withHostname(ctx context.Context, parent *core.Service, 
 }
 
 func (s *serviceSchema) ports(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[dagql.Array[core.Port]], _ error) {
-	ports, err := parent.Self().Ports(ctx, parent.ID())
+	parentDig, err := parent.ContentPreferredDigest()
+	if err != nil {
+		return res, fmt.Errorf("service digest: %w", err)
+	}
+	ports, err := parent.Self().Ports(ctx, parentDig)
 	if err != nil {
 		return res, fmt.Errorf("failed to get service ports: %w", err)
 	}
-	return dagql.NewResultForCurrentID(ctx, dagql.Array[core.Port](ports))
+	return dagql.NewResultForCurrentCall(ctx, dagql.Array[core.Port](ports))
 }
 
 type serviceEndpointArgs struct {
@@ -331,11 +362,15 @@ type serviceEndpointArgs struct {
 }
 
 func (s *serviceSchema) endpoint(ctx context.Context, parent dagql.ObjectResult[*core.Service], args serviceEndpointArgs) (res dagql.Result[dagql.String], _ error) {
-	str, err := parent.Self().Endpoint(ctx, parent.ID(), args.Port.Value.Int(), args.Scheme)
+	parentDig, err := parent.ContentPreferredDigest()
+	if err != nil {
+		return res, fmt.Errorf("service digest: %w", err)
+	}
+	str, err := parent.Self().Endpoint(ctx, parentDig, args.Port.Value.Int(), args.Scheme)
 	if err != nil {
 		return res, err
 	}
-	return dagql.NewResultForCurrentID(ctx, dagql.NewString(str))
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewString(str))
 }
 
 func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[core.ServiceID], _ error) {
@@ -346,12 +381,20 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*co
 		}
 	}()
 
-	if err := parent.Self().StartAndTrack(ctx, parent.ID()); err != nil {
+	parentDig, err := parent.ContentPreferredDigest()
+	if err != nil {
+		return res, fmt.Errorf("service digest: %w", err)
+	}
+	if err := parent.Self().StartAndTrack(ctx, parentDig); err != nil {
 		return res, err
 	}
 
-	id := dagql.NewID[*core.Service](parent.ID())
-	return dagql.NewResultForCurrentID(ctx, id)
+	parentID, err := parent.ID()
+	if err != nil {
+		return res, fmt.Errorf("service ID: %w", err)
+	}
+	id := dagql.NewID[*core.Service](parentID)
+	return dagql.NewResultForCurrentCall(ctx, id)
 }
 
 type serviceStopArgs struct {
@@ -359,11 +402,19 @@ type serviceStopArgs struct {
 }
 
 func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*core.Service], args serviceStopArgs) (res dagql.Result[core.ServiceID], _ error) {
-	if err := parent.Self().Stop(ctx, parent.ID(), args.Kill); err != nil {
+	parentDig, err := parent.ContentPreferredDigest()
+	if err != nil {
+		return res, fmt.Errorf("service digest: %w", err)
+	}
+	if err := parent.Self().Stop(ctx, parentDig, args.Kill); err != nil {
 		return res, err
 	}
-	id := dagql.NewID[*core.Service](parent.ID())
-	return dagql.NewResultForCurrentID(ctx, id)
+	parentID, err := parent.ID()
+	if err != nil {
+		return res, fmt.Errorf("service ID: %w", err)
+	}
+	id := dagql.NewID[*core.Service](parentID)
+	return dagql.NewResultForCurrentCall(ctx, id)
 }
 
 type serviceTerminalArgs struct {
@@ -405,6 +456,10 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	if err != nil {
 		return res, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
+	svcID, err := svc.ID()
+	if err != nil {
+		return res, fmt.Errorf("service ID: %w", err)
+	}
 
 	useNative := !args.Random && len(args.Ports) == 0
 
@@ -416,7 +471,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 		dagql.Selector{
 			Field: "tunnel",
 			Args: []dagql.NamedInput{
-				{Name: "service", Value: dagql.NewID[*core.Service](svc.ID())},
+				{Name: "service", Value: dagql.NewID[*core.Service](svcID)},
 				{Name: "ports", Value: dagql.ArrayInput[dagql.InputObject[core.PortForward]](args.Ports)},
 				{Name: "native", Value: dagql.Boolean(useNative)},
 			},
@@ -424,6 +479,10 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	)
 	if err != nil {
 		return res, fmt.Errorf("failed to select host service: %w", err)
+	}
+	hostSvcDig, err := hostSvc.ContentPreferredDigest()
+	if err != nil {
+		return res, fmt.Errorf("host service digest: %w", err)
 	}
 
 	query, err := core.CurrentQuery(ctx)
@@ -434,7 +493,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	if err != nil {
 		return res, fmt.Errorf("failed to get host services: %w", err)
 	}
-	runningSvc, err := svcs.Start(ctx, hostSvc.ID(), hostSvc.Self(), true)
+	runningSvc, err := svcs.Start(ctx, hostSvcDig, hostSvc.Self(), true)
 	if err != nil {
 		return res, fmt.Errorf("failed to start host service: %w", err)
 	}

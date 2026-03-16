@@ -2175,6 +2175,203 @@ func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestObjectResultResultCallAndReceiver(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	srv := cacheTestServer(t, cacheIface)
+
+	objType := (&cacheTestObject{}).Type()
+
+	parentFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "parent",
+		Type:  NewResultCallType(objType),
+	}
+	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
+	attachedParentAny, err := srv.Cache.AttachResult(ctx, parentRes)
+	assert.NilError(t, err)
+	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
+
+	parentID, err := attachedParent.ID()
+	assert.NilError(t, err)
+	parentDig, err := attachedParent.ContentPreferredDigest()
+	assert.NilError(t, err)
+	parentRecipeID, err := attachedParent.RecipeID()
+	assert.NilError(t, err)
+	assert.Equal(t, parentRecipeID.ContentPreferredDigest().String(), parentDig.String())
+
+	argOnlyFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "argOnly",
+		Type:  NewResultCallType(objType),
+		Args: []*ResultCallArg{
+			{
+				Name:  "msg",
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
+			},
+		},
+	}
+	argOnlyRes := cacheTestObjectResult(t, srv, argOnlyFrame, 12, nil)
+	attachedArgOnlyAny, err := srv.Cache.AttachResult(ctx, argOnlyRes)
+	assert.NilError(t, err)
+	attachedArgOnly := attachedArgOnlyAny.(ObjectResult[*cacheTestObject])
+	argOnlyDig, err := attachedArgOnly.ContentPreferredDigest()
+	assert.NilError(t, err)
+	argOnlyRecipeID, err := attachedArgOnly.RecipeID()
+	assert.NilError(t, err)
+	assert.Equal(t, argOnlyRecipeID.ContentPreferredDigest().String(), argOnlyDig.String())
+
+	receiverOnlyFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "receiverOnly",
+		Type:  NewResultCallType(objType),
+		Receiver: &ResultCallRef{
+			ResultID: parentID.EngineResultID(),
+		},
+	}
+	receiverOnlyRes := cacheTestObjectResult(t, srv, receiverOnlyFrame, 13, nil)
+	attachedReceiverOnlyAny, err := srv.Cache.AttachResult(ctx, receiverOnlyRes)
+	assert.NilError(t, err)
+	attachedReceiverOnly := attachedReceiverOnlyAny.(ObjectResult[*cacheTestObject])
+	receiverOnlyDig, err := attachedReceiverOnly.ContentPreferredDigest()
+	assert.NilError(t, err)
+	receiverOnlyRecipeID, err := attachedReceiverOnly.RecipeID()
+	assert.NilError(t, err)
+	assert.Equal(t, receiverOnlyRecipeID.ContentPreferredDigest().String(), receiverOnlyDig.String())
+
+	childFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "child",
+		Type:  NewResultCallType(objType),
+		Receiver: &ResultCallRef{
+			ResultID: parentID.EngineResultID(),
+		},
+	}
+	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
+	attachedChildAny, err := srv.Cache.AttachResult(ctx, childRes)
+	assert.NilError(t, err)
+	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
+
+	childCall, err := attachedChild.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, "child", childCall.Field)
+	assert.Equal(t, parentID.EngineResultID(), childCall.Receiver.ResultID)
+
+	receiver, err := attachedChild.Receiver(ctx, srv)
+	assert.NilError(t, err)
+	assert.Assert(t, receiver != nil)
+
+	receiverObj := receiver.(ObjectResult[*cacheTestObject])
+	assert.Equal(t, 11, receiverObj.Self().Value)
+
+	receiverCall, err := receiverObj.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, "parent", receiverCall.Field)
+}
+
+func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	specs := NewInputSpecs(
+		InputSpec{Name: "msg", Type: String("")},
+		InputSpec{Name: "count", Type: Int(0), Default: NewInt(7)},
+	)
+	args := []*ResultCallArg{
+		{
+			Name:  "msg",
+			Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
+		},
+	}
+
+	inputs, err := specs.InputsFromResultCallArgs(ctx, args, "")
+	assert.NilError(t, err)
+
+	msg := inputs["msg"].(String)
+	count := inputs["count"].(Int)
+	assert.Equal(t, "hello", msg.String())
+	assert.Equal(t, 7, count.Int())
+}
+
+func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	srv := cacheTestServer(t, cacheIface)
+
+	objType := (&cacheTestObject{}).Type()
+
+	parentFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "parent",
+		Type:  NewResultCallType(objType),
+	}
+	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
+	attachedParentAny, err := srv.Cache.AttachResult(ctx, parentRes)
+	assert.NilError(t, err)
+	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
+
+	parentID, err := attachedParent.ID()
+	assert.NilError(t, err)
+
+	childFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: "child",
+		Type:  NewResultCallType(objType),
+		Receiver: &ResultCallRef{
+			ResultID: parentID.EngineResultID(),
+		},
+		Args: []*ResultCallArg{
+			{
+				Name:  "msg",
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
+			},
+		},
+	}
+	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
+	attachedChildAny, err := srv.Cache.AttachResult(ctx, childRes)
+	assert.NilError(t, err)
+	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
+
+	got, err := attachedChild.ContentPreferredDigest()
+	assert.NilError(t, err)
+	recipeID, err := attachedChild.RecipeID()
+	assert.NilError(t, err)
+	assert.Equal(t, recipeID.ContentPreferredDigest().String(), got.String())
+}
+
+func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	srv := cacheTestServer(t, cacheIface)
+
+	contentDig := digest.FromString("service-content")
+	objType := (&cacheTestObject{}).Type()
+	frame := &ResultCall{
+		Kind:         ResultCallKindField,
+		Field:        "service",
+		Type:         NewResultCallType(objType),
+		ExtraDigests: []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: contentDig}},
+	}
+	res := cacheTestObjectResult(t, srv, frame, 33, nil)
+	attachedAny, err := srv.Cache.AttachResult(ctx, res)
+	assert.NilError(t, err)
+	attached := attachedAny.(ObjectResult[*cacheTestObject])
+
+	got, err := attached.ContentPreferredDigest()
+	assert.NilError(t, err)
+	assert.Equal(t, contentDig.String(), got.String())
+
+	recipeID, err := attached.RecipeID()
+	assert.NilError(t, err)
+	assert.Equal(t, contentDig.String(), recipeID.ContentPreferredDigest().String())
+}
+
 func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 	t.Parallel()
 

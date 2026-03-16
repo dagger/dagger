@@ -25,6 +25,7 @@ import (
 	gwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -110,7 +111,7 @@ func (svc *Service) WithHostname(hostname string) *Service {
 	return svc
 }
 
-func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
+func (svc *Service) Hostname(ctx context.Context, dig digest.Digest) (string, error) {
 	if svc.CustomHostname != "" {
 		return svc.CustomHostname, nil
 	}
@@ -126,7 +127,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		upstream, err := svcs.Get(ctx, id, true)
+		upstream, err := svcs.Get(ctx, dig, true)
 		if err != nil {
 			return "", err
 		}
@@ -134,22 +135,16 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
 		len(svc.HostSockets) > 0: // container=>host
-		if id == nil {
-			return "", errors.New("service ID is nil")
+		if dig == "" {
+			return "", errors.New("service digest is empty")
 		}
-		// Hostname identity follows output-equivalence identity so equivalent
-		// services can converge and share bindings.
-		hostDigest := id.ContentPreferredDigest()
-		if hostDigest == "" {
-			hostDigest = id.Digest()
-		}
-		return network.HostHash(hostDigest), nil
+		return network.HostHash(dig), nil
 	default:
 		return "", errors.New("unknown service type")
 	}
 }
 
-func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
+func (svc *Service) Ports(ctx context.Context, dig digest.Digest) ([]Port, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -161,7 +156,7 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 		if err != nil {
 			return nil, err
 		}
-		running, err := svcs.Get(ctx, id, svc.TunnelUpstream.Self() != nil)
+		running, err := svcs.Get(ctx, dig, svc.TunnelUpstream.Self() != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +169,7 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	}
 }
 
-func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme string) (string, error) {
+func (svc *Service) Endpoint(ctx context.Context, dig digest.Digest, port int, scheme string) (string, error) {
 	var host string
 
 	query, err := CurrentQuery(ctx)
@@ -184,7 +179,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 
 	switch {
 	case svc.Container != nil:
-		host, err = svc.Hostname(ctx, id)
+		host, err = svc.Hostname(ctx, dig)
 		if err != nil {
 			return "", err
 		}
@@ -201,7 +196,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 		if err != nil {
 			return "", err
 		}
-		tunnel, err := svcs.Get(ctx, id, true)
+		tunnel, err := svcs.Get(ctx, dig, true)
 		if err != nil {
 			return "", err
 		}
@@ -216,7 +211,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			port = tunnel.Ports[0].Port
 		}
 	case len(svc.HostSockets) > 0:
-		host, err = svc.Hostname(ctx, id)
+		host, err = svc.Hostname(ctx, dig)
 		if err != nil {
 			return "", err
 		}
@@ -244,7 +239,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 	return endpoint, nil
 }
 
-func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
+func (svc *Service) StartAndTrack(ctx context.Context, dig digest.Digest) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -253,11 +248,11 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	if err != nil {
 		return err
 	}
-	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream.Self() != nil)
+	_, err = svcs.Start(ctx, dig, svc, svc.TunnelUpstream.Self() != nil)
 	return err
 }
 
-func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
+func (svc *Service) Stop(ctx context.Context, dig digest.Digest, kill bool) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -266,7 +261,7 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	if err != nil {
 		return err
 	}
-	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream.Self() != nil)
+	return svcs.Stop(ctx, dig, kill, svc.TunnelUpstream.Self() != nil)
 }
 
 type ServiceIO struct {
@@ -303,16 +298,16 @@ func (io *ServiceIO) Close() error {
 
 func (svc *Service) Start(
 	ctx context.Context,
-	id *call.ID,
+	dig digest.Digest,
 	sio *ServiceIO,
 ) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, id, sio)
+		return svc.startContainer(ctx, dig, sio)
 	case svc.TunnelUpstream.Self() != nil:
 		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
-		return svc.startReverseTunnel(ctx, id)
+		return svc.startReverseTunnel(ctx, dig)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
@@ -321,7 +316,7 @@ func (svc *Service) Start(
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
-	id *call.ID,
+	dig digest.Digest,
 	sio *ServiceIO,
 ) (running *RunningService, rerr error) {
 	var cleanup cleanups.Cleanups
@@ -331,11 +326,9 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	dig := id.Digest()
+	slog := slog.With("service", dig.String())
 
-	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
-
-	host, err := svc.Hostname(ctx, id)
+	host, err := svc.Hostname(ctx, dig)
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +760,11 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
+	upstreamDig, err := svc.TunnelUpstream.ContentPreferredDigest()
+	if err != nil {
+		return nil, fmt.Errorf("upstream service digest: %w", err)
+	}
+	upstream, err := svcs.Start(svcCtx, upstreamDig, svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
@@ -832,8 +829,8 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 	}, nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
-	host, err := svc.Hostname(ctx, id)
+func (svc *Service) startReverseTunnel(ctx context.Context, dig digest.Digest) (running *RunningService, rerr error) {
+	host, err := svc.Hostname(ctx, dig)
 	if err != nil {
 		return nil, err
 	}
@@ -1072,7 +1069,7 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 	snapshot.LazyInitComplete = true
 
-	inst, err := dagql.NewObjectResultForCurrentID(ctx, srv, snapshot)
+	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
 	if err != nil {
 		return res, false, err
 	}

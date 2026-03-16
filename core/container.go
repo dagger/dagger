@@ -2389,11 +2389,11 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
-	svcID, err := svc.RecipeID()
+	svcDig, err := svc.ContentPreferredDigest()
 	if err != nil {
 		return nil, err
 	}
-	host, err := svc.Self().Hostname(ctx, svcID)
+	host, err := svc.Self().Hostname(ctx, svcDig)
 	if err != nil {
 		return nil, err
 	}

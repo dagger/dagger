@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
@@ -91,13 +90,14 @@ func NewServices() *Services {
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
 // is returned.
-func (ss *Services) Get(ctx context.Context, id *call.ID, clientSpecific bool) (*RunningService, error) {
+func (ss *Services) Get(ctx context.Context, dig digest.Digest, clientSpecific bool) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	dig := id.ContentPreferredDigest()
+	if dig == "" {
+		return nil, fmt.Errorf("service digest is empty")
+	}
 
 	key := ServiceKey{
 		Digest:    dig,
@@ -129,7 +129,7 @@ func (ss *Services) Get(ctx context.Context, id *call.ID, clientSpecific bool) (
 type Startable interface {
 	Start(
 		ctx context.Context,
-		id *call.ID,
+		digest digest.Digest,
 		io *ServiceIO,
 	) (*RunningService, error)
 }
@@ -138,13 +138,13 @@ type Startable interface {
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable, clientSpecific bool) (*RunningService, error) {
-	return ss.StartWithIO(ctx, id, svc, clientSpecific, nil)
+func (ss *Services) Start(ctx context.Context, dig digest.Digest, svc Startable, clientSpecific bool) (*RunningService, error) {
+	return ss.StartWithIO(ctx, dig, svc, clientSpecific, nil)
 }
 
 func (ss *Services) StartWithIO(
 	ctx context.Context,
-	id *call.ID,
+	dig digest.Digest,
 	svc Startable,
 	clientSpecific bool,
 	sio *ServiceIO,
@@ -153,8 +153,9 @@ func (ss *Services) StartWithIO(
 	if err != nil {
 		return nil, err
 	}
-
-	dig := id.ContentPreferredDigest()
+	if dig == "" {
+		return nil, fmt.Errorf("service digest is empty")
+	}
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
@@ -195,7 +196,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, sio)
+	running, err := svc.Start(svcCtx, dig, sio)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()
@@ -238,7 +239,11 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.Service.ID(), bnd.Service.Self(), false)
+			serviceDig, err := bnd.Service.ContentPreferredDigest()
+			if err != nil {
+				return fmt.Errorf("service %s content-preferred digest: %w", bnd.Hostname, err)
+			}
+			runningSvc, err := ss.Start(ctx, serviceDig, bnd.Service.Self(), false)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
@@ -257,13 +262,14 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool, clientSpecific bool) error {
+func (ss *Services) Stop(ctx context.Context, dig digest.Digest, kill bool, clientSpecific bool) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
 	}
-
-	dig := id.ContentPreferredDigest()
+	if dig == "" {
+		return fmt.Errorf("service digest is empty")
+	}
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
