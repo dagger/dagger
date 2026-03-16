@@ -48,10 +48,9 @@ func TestToolArgStyle(t *testing.T) {
 	assert.Equal(t, argStyleContent, toolArgStyle("Write", "contents"))
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "content"))
 
-	// oldText/newText on Edit
-	assert.Equal(t, argStyleContent, toolArgStyle("Edit", "oldText"))
+	// newText on Edit (oldText intentionally omitted)
 	assert.Equal(t, argStyleContent, toolArgStyle("Edit", "newText"))
-	assert.Equal(t, argStyleNone, toolArgStyle("Read", "oldText"))
+	assert.Equal(t, argStyleContent, toolArgStyle("Edit", "new_text"))
 
 	// Grep.regex and Grep.pattern
 	assert.Equal(t, argStyleDesc, toolArgStyle("Grep", "regex"))

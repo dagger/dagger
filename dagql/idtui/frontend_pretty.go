@@ -1309,7 +1309,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		),
 		key.NewBinding(key.WithKeys("b"),
 			key.WithHelp("b", "branch"),
-			KeyEnabled(focused != nil && focused.LLMCallDigest != "" && fe.shell != nil),
+			KeyEnabled(focused != nil && spanLLMCallDigest(focused) != "" && fe.shell != nil),
 		),
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
@@ -2349,7 +2349,7 @@ func (fe *frontendPretty) branch() {
 		return
 	}
 	focused := fe.db.Spans.Map[fe.FocusedSpan]
-	if focused == nil || focused.LLMCallDigest == "" {
+	if focused == nil || spanLLMCallDigest(focused) == "" {
 		return
 	}
 
@@ -2359,13 +2359,73 @@ func (fe *frontendPretty) branch() {
 		return
 	}
 
-	work := fe.shell.BranchFromID(fe.shellCtx, encodedID)
+	// Show the summary selection form (like pi: No summary / Summarize / Summarize with custom prompt)
+	const (
+		choiceNoSummary    = "No summary"
+		choiceSummarize    = "Summarize"
+		choiceCustomPrompt = "Summarize with custom prompt"
+	)
+	var choice string
+	fe.handlePromptForm(
+		NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Branch from this point").
+					Options(
+						huh.NewOption(choiceNoSummary, choiceNoSummary),
+						huh.NewOption(choiceSummarize, choiceSummarize),
+						huh.NewOption(choiceCustomPrompt, choiceCustomPrompt),
+					).
+					Value(&choice),
+			),
+		),
+		func(f *huh.Form) {
+			if f.State == huh.StateAborted || choice == "" {
+				return
+			}
+			switch choice {
+			case choiceCustomPrompt:
+				// Show a follow-up form for the custom prompt
+				var customPrompt string
+				fe.handlePromptForm(
+					NewForm(
+						huh.NewGroup(
+							huh.NewText().
+								Title("Custom summarization instructions").
+								Value(&customPrompt),
+						),
+					),
+					func(f *huh.Form) {
+						if f.State == huh.StateAborted {
+							return
+						}
+						fe.doBranch(encodedID, BranchSummary{
+							Summarize:    true,
+							CustomPrompt: customPrompt,
+						})
+					},
+				)
+			case choiceSummarize:
+				fe.doBranch(encodedID, BranchSummary{Summarize: true})
+			default:
+				fe.doBranch(encodedID, BranchSummary{})
+			}
+		},
+	)
+	fe.Update()
+}
+
+// doBranch performs the actual branch operation asynchronously.
+func (fe *frontendPretty) doBranch(encodedID string, summary BranchSummary) {
+	work := fe.shell.BranchFromID(fe.shellCtx, encodedID, summary)
 	if work != nil {
 		fe.runShellAsync(func() {
 			work()
 			fe.dispatch(func() {
-				// After branching, switch to insert mode so the user
-				// can immediately type a new prompt.
+				// After branching, switch to auto-follow mode and
+				// insert mode so the user can immediately see new
+				// spans and type a new prompt.
+				fe.goEnd()
 				fe.enterInsertMode(false)
 				fe.syncPrompt()
 				fe.Update()
@@ -2447,18 +2507,32 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 	return nil
 }
 
+// spanLLMCallDigest returns the LLMCallDigest for the given span,
+// walking up the parent chain if the span itself doesn't have one.
+// This allows branching from tool result spans, tool execution spans,
+// and other children of LLM conversation spans.
+func spanLLMCallDigest(span *dagui.Span) string {
+	for s := span; s != nil; s = s.ParentSpan {
+		if s.LLMCallDigest != "" {
+			return s.LLMCallDigest
+		}
+	}
+	return ""
+}
+
 // llmBranchID returns the encoded DAG ID for branching from the focused
-// span's LLMCallDigest. Returns "" if the span doesn't have a call digest
-// or the call can't be found/encoded.
+// span's LLMCallDigest. Returns "" if the span (or its ancestors) don't
+// have a call digest or the call can't be found/encoded.
 func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
-	if span.LLMCallDigest == "" {
+	digest := spanLLMCallDigest(span)
+	if digest == "" {
 		return ""
 	}
 	// Find a span in the DB whose CallDigest matches the LLMCallDigest.
 	// This is the dagql call span (e.g., LLM.withPrompt) that produced
 	// the LLM state we want to branch from.
 	for _, s := range fe.db.Spans.Map {
-		if s.CallDigest == span.LLMCallDigest {
+		if s.CallDigest == digest {
 			id, err := loadIDFromSpan(s)
 			if err != nil {
 				slog.Debug("failed to load ID from LLM call span", "err", err)
@@ -2907,23 +2981,27 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 
 	// Render content-style fields (prompt, command, content, etc.)
 	// as truncated italic lines beneath the header.
-	for argName, val := range fields {
-		if val == "" || toolArgStyle(toolName, argName) != argStyleContent {
+	for argName, field := range fields {
+		if field.Value == "" || toolArgStyle(toolName, argName) != argStyleContent {
 			continue
 		}
 		maxWidth := fe.window.Width - row.Depth*2 - 4
 		if maxWidth < 20 {
 			maxWidth = 20
 		}
-		line := val
+		line := field.Value
 		if idx := strings.IndexByte(line, '\n'); idx >= 0 {
 			line = line[:idx] + "…"
 		}
 		if len(line) > maxWidth {
 			line = line[:maxWidth-1] + "…"
 		}
+		styled := out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String()
+		if !field.Complete {
+			styled += out.String(glitchText(0)).Faint().String()
+		}
 		r.fancyIndent(out, row, true, false)
-		fmt.Fprintln(out, prefix+out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String())
+		fmt.Fprintln(out, prefix+styled)
 	}
 
 	// Build a compact JSON line from remaining (non-conventional) args.

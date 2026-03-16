@@ -93,6 +93,11 @@ func toolArgStyle(toolName, argName string) argStyle {
 		}
 	}
 
+	// Fallback: prompt is always content-style regardless of tool.
+	if argLower == "prompt" {
+		return argStyleContent
+	}
+
 	return argStyleNone
 }
 

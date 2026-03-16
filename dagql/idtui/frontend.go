@@ -159,6 +159,16 @@ func (sec SidebarSection) Body(width int) string {
 	return ""
 }
 
+// BranchSummary controls how the conversation is summarized when branching.
+type BranchSummary struct {
+	// Summarize indicates whether to summarize the old conversation.
+	Summarize bool
+	// CustomPrompt is an optional custom summarization prompt. Only used
+	// when Summarize is true. If empty, the default summarization prompt
+	// is used.
+	CustomPrompt string
+}
+
 // ShellHandler defines the interface for handling shell interactions.
 // All methods are called on the UI goroutine unless noted otherwise.
 type ShellHandler interface {
@@ -197,10 +207,12 @@ type ShellHandler interface {
 	DecodeHistory(entry string) string
 
 	// BranchFromID branches the LLM conversation from the state
-	// identified by the given encoded DAG ID. Returns a function that
-	// performs any async work needed (e.g. loading the LLM state),
-	// or nil if branching is not supported.
-	BranchFromID(ctx context.Context, encodedID string) func()
+	// identified by the given encoded DAG ID. The summary mode controls
+	// whether the old conversation is summarized before branching.
+	// Returns a function that performs any async work needed (e.g.
+	// loading the LLM state, running summarization), or nil if
+	// branching is not supported.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
 
 	// QueueMessage queues a user message to be picked up by the
 	// currently running Handle loop at the next opportunity (e.g.
@@ -541,19 +553,23 @@ func (r *renderer) renderSpan(
 			if len(toolArgs) > 0 && toolArgs[0] != "" {
 				fields := partialJSONFields(toolArgs[0])
 				var sawPath, sawDesc bool
-				for argName, val := range fields {
-					if val == "" {
+				for argName, field := range fields {
+					if field.Value == "" {
 						continue
+					}
+					glitch := ""
+					if !field.Complete {
+						glitch = out.String(glitchText(0)).Faint().String()
 					}
 					switch toolArgStyle(span.LLMTool, argName) {
 					case argStylePath:
 						if !sawPath {
-							fmt.Fprint(out, " ", out.String(val).Foreground(termenv.ANSICyan))
+							fmt.Fprint(out, " ", out.String(field.Value).Foreground(termenv.ANSICyan).String()+glitch)
 							sawPath = true
 						}
 					case argStyleDesc:
 						if !sawDesc {
-							fmt.Fprint(out, " ", out.String(val).Faint())
+							fmt.Fprint(out, " ", out.String(field.Value).Faint().String()+glitch)
 							sawDesc = true
 						}
 					}
