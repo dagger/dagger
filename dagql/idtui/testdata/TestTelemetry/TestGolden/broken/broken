@@ -6,19 +6,11 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
 
-✔ load module: ./viztest/broken-dep/broken X.Xs
-├╴✔ finding module configuration X.Xs
-├╴✔ initializing module X.Xs
-├╴✔ inspecting module metadata X.Xs
+✔ load workspace: . X.Xs
+├╴✔ resolve module selection: ./viztest/broken-dep/broken X.Xs
 ╰╴✔ loading type definitions X.Xs
 
-✔ parsing command line arguments X.Xs
-
-✔ broken: Broken! X.Xs
-✘ .broken: Void X.Xs ERROR
-✘ go SDK: load runtime X.Xs ERROR
-# dagger/broken
-./main.go:6:6: undefined: ctx
-! exit code: 1
+✘ parsing command line arguments X.Xs ERROR
+! unknown command "broken" for "dagger call"
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

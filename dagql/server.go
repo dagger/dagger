@@ -723,7 +723,14 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
-	if !isNonInternal(ctx) {
+	if isNonInternal(ctx) {
+		// We only want "non internal" to apply to the immediate call, so flip it
+		// from here on; it already did its job in avoiding the withInternal below.
+		//
+		// FIXME: this is an absurd dance, we should maybe just remove the
+		// auto-Internaling, but that'll be a game of wack-a-mole
+		ctx = withoutNonInternalTelemetry(ctx)
+	} else {
 		// Annotate ctx with the internal flag so we can distinguish self-calls from
 		// user-calls in the UI.
 		//

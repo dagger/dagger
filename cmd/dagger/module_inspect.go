@@ -102,8 +102,11 @@ type explicitModuleSelection struct {
 	visibleModuleNames []string
 }
 
-func resolveExplicitModuleSelection(ctx context.Context, dag *dagger.Client, modRef string) (explicitModuleSelection, error) {
+func resolveExplicitModuleSelection(ctx context.Context, dag *dagger.Client, modRef string) (_ explicitModuleSelection, rerr error) {
 	selection := explicitModuleSelection{ref: modRef}
+	ctx, span := Tracer().Start(ctx, "resolve module selection: "+modRef, telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
 	src := dag.ModuleSource(modRef)
 
 	seen := map[string]struct{}{}

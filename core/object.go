@@ -417,6 +417,10 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		dag.Root().ObjectType().Extend(
 			proxySpec,
 			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				// Prevent dag.Select from marking the inner constructor
+				// and method calls as internal — they are the real
+				// user-facing calls and should appear in telemetry.
+				ctx = dagql.WithNonInternalTelemetry(ctx)
 				var result dagql.AnyResult
 				if err := dag.Select(ctx, dag.Root(), &result,
 					dagql.Selector{
