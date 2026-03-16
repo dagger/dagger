@@ -1036,6 +1036,43 @@ func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCa
 	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
 }
 
+func (c *cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {
+	if frame == nil {
+		return 0, fmt.Errorf("resolve result ID for call: nil call")
+	}
+
+	frame = frame.clone()
+	frame.bindCache(c)
+
+	requestDigest, err := frame.RecipeDigest()
+	if err != nil {
+		return 0, fmt.Errorf("resolve result ID for call: derive request digest: %w", err)
+	}
+	requestSelf, requestInputRefs, err := frame.SelfDigestAndInputRefs()
+	if err != nil {
+		return 0, fmt.Errorf("resolve result ID for call: derive request term digests: %w", err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return 0, fmt.Errorf("resolve result ID for call: derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	match, err := c.lookupMatchForCallLocked(ctx, frame, requestDigest, requestSelf, requestInputs)
+	if err != nil {
+		return 0, err
+	}
+	if match.hitRes == nil || match.hitRes.id == 0 {
+		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
+	}
+	return match.hitRes.id, nil
+}
+
 func isBuiltinPersistedScalarType(typeName string) bool {
 	switch typeName {
 	case "String", "Int", "Float", "Boolean", "JSON", "Void":
@@ -1509,7 +1546,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 
 	// TODO: ??? Why do we do this here...?
 	if res.depOfPersistedResult {
-		c.markResultAsDepOfPersistedLocked(ctx, res)
+		if _, err := c.markResultAsDepOfPersistedLocked(ctx, res); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1519,16 +1558,20 @@ func addPersistedCallRefDep(
 	ref *ResultCallRef,
 	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
-) {
+) error {
 	if ref == nil {
-		return
+		return nil
+	}
+	if ref.Call != nil {
+		return fmt.Errorf("pending result call ref leaked into persisted closure graph")
 	}
 	depID := sharedResultID(ref.ResultID)
 	if depID == 0 || depID == parentID {
-		return
+		return nil
 	}
 	graph.addDep(parentID, depID)
 	*stack = append(*stack, depID)
+	return nil
 }
 
 func addPersistedCallLiteralDeps(
@@ -1536,25 +1579,30 @@ func addPersistedCallLiteralDeps(
 	lit *ResultCallLiteral,
 	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
-) {
+) error {
 	if lit == nil {
-		return
+		return nil
 	}
 	switch lit.Kind {
 	case ResultCallLiteralKindResultRef:
-		addPersistedCallRefDep(parentID, lit.ResultRef, graph, stack)
+		return addPersistedCallRefDep(parentID, lit.ResultRef, graph, stack)
 	case ResultCallLiteralKindList:
 		for _, item := range lit.ListItems {
-			addPersistedCallLiteralDeps(parentID, item, graph, stack)
+			if err := addPersistedCallLiteralDeps(parentID, item, graph, stack); err != nil {
+				return err
+			}
 		}
 	case ResultCallLiteralKindObject:
 		for _, field := range lit.ObjectFields {
 			if field == nil {
 				continue
 			}
-			addPersistedCallLiteralDeps(parentID, field.Value, graph, stack)
+			if err := addPersistedCallLiteralDeps(parentID, field.Value, graph, stack); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func addPersistedCallDeps(
@@ -1562,35 +1610,44 @@ func addPersistedCallDeps(
 	frame *ResultCall,
 	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
-) {
+) error {
 	if frame == nil {
-		return
+		return nil
 	}
-	addPersistedCallRefDep(parentID, frame.Receiver, graph, stack)
+	if err := addPersistedCallRefDep(parentID, frame.Receiver, graph, stack); err != nil {
+		return err
+	}
 	if frame.Module != nil {
-		addPersistedCallRefDep(parentID, frame.Module.ResultRef, graph, stack)
+		if err := addPersistedCallRefDep(parentID, frame.Module.ResultRef, graph, stack); err != nil {
+			return err
+		}
 	}
 	for _, arg := range frame.Args {
 		if arg == nil {
 			continue
 		}
-		addPersistedCallLiteralDeps(parentID, arg.Value, graph, stack)
+		if err := addPersistedCallLiteralDeps(parentID, arg.Value, graph, stack); err != nil {
+			return err
+		}
 	}
 	for _, input := range frame.ImplicitInputs {
 		if input == nil {
 			continue
 		}
-		addPersistedCallLiteralDeps(parentID, input.Value, graph, stack)
+		if err := addPersistedCallLiteralDeps(parentID, input.Value, graph, stack); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // walks exact materialized dependencies for persisted results: explicit
 // sharedResult.deps plus exact result refs reachable through resultCall
 // metadata. Symbolic term/eq-class state is still gathered for persisted cache
 // hitability, but no longer pulls in extra materialized results by provenance.
-func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) persistedClosureGraph {
+func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) (persistedClosureGraph, error) {
 	if rootResultID == 0 {
-		return persistedClosureGraph{}
+		return persistedClosureGraph{}, nil
 	}
 	graph := persistedClosureGraph{
 		resultIDs:      make(map[sharedResultID]struct{}),
@@ -1619,7 +1676,9 @@ func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) persist
 			graph.addDep(curID, depID)
 			stack = append(stack, depID)
 		}
-		addPersistedCallDeps(curID, res.resultCall, &graph, &stack)
+		if err := addPersistedCallDeps(curID, res.resultCall, &graph, &stack); err != nil {
+			return persistedClosureGraph{}, err
+		}
 		for termID := range c.termIDsForResultLocked(curID) {
 			term := c.egraphTerms[termID]
 			if term == nil {
@@ -1628,18 +1687,21 @@ func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) persist
 			graph.addTerm(termID)
 		}
 	}
-	return graph
+	return graph, nil
 }
 
-func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *sharedResult) bool {
+func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *sharedResult) (bool, error) {
 	if root == nil {
-		return false
+		return false, nil
 	}
 	changed := false
 	// Persisted-closure invariant: once a result is marked as dependency-of-
 	// persisted, every transitive materialized dependency reachable through
 	// explicit deps and resultCall refs must also be marked.
-	graph := c.persistedClosureGraphLocked(root.id)
+	graph, err := c.persistedClosureGraphLocked(root.id)
+	if err != nil {
+		return false, err
+	}
 	for curID := range graph.resultIDs {
 		cur := c.resultsByID[curID]
 		if cur == nil {
@@ -1651,7 +1713,7 @@ func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *shar
 		}
 		cur.depOfPersistedResult = true
 	}
-	return changed
+	return changed, nil
 }
 
 func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedResult) error {

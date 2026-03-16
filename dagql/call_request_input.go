@@ -206,16 +206,23 @@ func resultCallLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*R
 }
 
 func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.ID, error) {
-	if ref == nil || ref.ResultID == 0 {
-		return nil, fmt.Errorf("missing result ref")
+	if err := ref.Validate(); err != nil {
+		return nil, err
 	}
 	srv := CurrentDagqlServer(ctx)
 	if srv == nil || srv.Cache == nil {
-		return nil, fmt.Errorf("cannot resolve result ref %d without dagql server cache", ref.ResultID)
+		return nil, fmt.Errorf("cannot resolve result ref without dagql server cache")
 	}
 	base, ok := srv.Cache.cache.(*cache)
 	if !ok {
 		return nil, fmt.Errorf("unexpected cache implementation %T", srv.Cache.cache)
+	}
+	if ref.Call != nil {
+		resultID, err := base.resultIDForCall(ctx, ref.Call)
+		if err != nil {
+			return nil, err
+		}
+		ref = &ResultCallRef{ResultID: uint64(resultID)}
 	}
 	res, err := base.sharedResultByResultID(sharedResultID(ref.ResultID))
 	if err != nil {

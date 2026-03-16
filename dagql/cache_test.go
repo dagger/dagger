@@ -2110,6 +2110,71 @@ func TestTeachCallEquivalentToResult(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestPendingResultCallRefRecipeID(t *testing.T) {
+	t.Parallel()
+
+	parentCall := cacheTestIntCall("pending-parent")
+	childCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(Int(0).Type()),
+		Field: "pending-child",
+		Receiver: &ResultCallRef{
+			Call: parentCall.clone(),
+		},
+	}
+
+	childRes, err := NewResultForCall(NewInt(2), childCall)
+	assert.NilError(t, err)
+
+	parentRecipeID, err := parentCall.RecipeID()
+	assert.NilError(t, err)
+	childRecipeID, err := childRes.RecipeID()
+	assert.NilError(t, err)
+	assert.Assert(t, childRecipeID.Receiver() != nil)
+	assert.Equal(t, parentRecipeID.Digest(), childRecipeID.Receiver().Digest())
+}
+
+func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	parentCall := cacheTestIntCall("normalize-parent")
+	parentRes, err := NewResultForCall(NewInt(1), parentCall)
+	assert.NilError(t, err)
+	attachedParent, err := c.AttachResult(ctx, parentRes)
+	assert.NilError(t, err)
+
+	childCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(Int(0).Type()),
+		Field: "normalize-child",
+		Receiver: &ResultCallRef{
+			Call: parentCall.clone(),
+		},
+	}
+	childRes, err := NewResultForCall(NewInt(2), childCall)
+	assert.NilError(t, err)
+	attachedChild, err := c.AttachResult(ctx, childRes)
+	assert.NilError(t, err)
+
+	parentShared := attachedParent.cacheSharedResult()
+	childShared := attachedChild.cacheSharedResult()
+	assert.Assert(t, parentShared != nil && parentShared.id != 0)
+	assert.Assert(t, childShared != nil && childShared.id != 0)
+	assert.Assert(t, childShared.resultCall != nil)
+	assert.Assert(t, childShared.resultCall.Receiver != nil)
+	assert.Equal(t, uint64(parentShared.id), childShared.resultCall.Receiver.ResultID)
+	assert.Assert(t, childShared.resultCall.Receiver.Call == nil)
+
+	assert.NilError(t, attachedChild.Release(ctx))
+	assert.NilError(t, attachedParent.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 	t.Parallel()
 
@@ -3898,8 +3963,10 @@ func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
 
 	c.egraphMu.Lock()
 	c.resultsByID = results
-	graph := c.persistedClosureGraphLocked(root.id)
-	changed := c.markResultAsDepOfPersistedLocked(ctx, root)
+	graph, err := c.persistedClosureGraphLocked(root.id)
+	assert.NilError(t, err)
+	changed, err := c.markResultAsDepOfPersistedLocked(ctx, root)
+	assert.NilError(t, err)
 	c.egraphMu.Unlock()
 
 	assert.Assert(t, changed)
@@ -3958,8 +4025,10 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 
-	graph := c.persistedClosureGraphLocked(root.id)
-	changed := c.markResultAsDepOfPersistedLocked(ctx, root)
+	graph, err := c.persistedClosureGraphLocked(root.id)
+	assert.NilError(t, err)
+	changed, err := c.markResultAsDepOfPersistedLocked(ctx, root)
+	assert.NilError(t, err)
 	c.egraphMu.Unlock()
 
 	assert.Assert(t, changed)
@@ -3971,6 +4040,37 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 	assert.Assert(t, termIncluded)
 	assert.Assert(t, root.depOfPersistedResult)
 	assert.Assert(t, !provenanceOnly.depOfPersistedResult)
+}
+
+func TestPersistedClosureGraphRejectsPendingResultCallRef(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	root := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     Int(1),
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
+			Field: "root",
+			Receiver: &ResultCallRef{
+				Call: cacheTestIntCall("pending-parent"),
+			},
+		},
+	}
+
+	c.egraphMu.Lock()
+	c.resultsByID = map[sharedResultID]*sharedResult{root.id: root}
+	_, err = c.persistedClosureGraphLocked(root.id)
+	c.egraphMu.Unlock()
+
+	assert.ErrorContains(t, err, "pending result call ref leaked into persisted closure graph")
 }
 
 func TestCacheResultCallDerivedFromRequestID(t *testing.T) {

@@ -533,6 +533,96 @@ func setTypedPersistedResultID(val Typed, resultID sharedResultID) {
 	setter.SetPersistedResultID(uint64(resultID))
 }
 
+func (c *cache) normalizePendingResultCallRefs(ctx context.Context, frame *ResultCall) error {
+	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
+}
+
+func (c *cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, frame *ResultCall, seen map[*ResultCall]struct{}) error {
+	if frame == nil {
+		return nil
+	}
+	if _, ok := seen[frame]; ok {
+		return fmt.Errorf("cycle while normalizing pending call refs")
+	}
+	seen[frame] = struct{}{}
+	defer delete(seen, frame)
+
+	frame.bindCache(c)
+	if err := c.normalizePendingResultCallRefWithSeen(ctx, frame.Receiver, seen); err != nil {
+		return fmt.Errorf("receiver: %w", err)
+	}
+	if frame.Module != nil {
+		if err := c.normalizePendingResultCallRefWithSeen(ctx, frame.Module.ResultRef, seen); err != nil {
+			return fmt.Errorf("module: %w", err)
+		}
+	}
+	for _, arg := range frame.Args {
+		if arg == nil {
+			continue
+		}
+		if err := c.normalizePendingResultCallLiteralWithSeen(ctx, arg.Value, seen); err != nil {
+			return fmt.Errorf("arg %q: %w", arg.Name, err)
+		}
+	}
+	for _, input := range frame.ImplicitInputs {
+		if input == nil {
+			continue
+		}
+		if err := c.normalizePendingResultCallLiteralWithSeen(ctx, input.Value, seen); err != nil {
+			return fmt.Errorf("implicit input %q: %w", input.Name, err)
+		}
+	}
+	return nil
+}
+
+func (c *cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *ResultCallRef, seen map[*ResultCall]struct{}) error {
+	if ref == nil {
+		return nil
+	}
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if ref.Call == nil {
+		return nil
+	}
+	if err := c.normalizePendingResultCallRefsWithSeen(ctx, ref.Call, seen); err != nil {
+		return err
+	}
+	resultID, err := c.resultIDForCall(ctx, ref.Call)
+	if err != nil {
+		return err
+	}
+	ref.ResultID = uint64(resultID)
+	ref.Call = nil
+	return nil
+}
+
+func (c *cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, lit *ResultCallLiteral, seen map[*ResultCall]struct{}) error {
+	if lit == nil {
+		return nil
+	}
+	switch lit.Kind {
+	case ResultCallLiteralKindResultRef:
+		return c.normalizePendingResultCallRefWithSeen(ctx, lit.ResultRef, seen)
+	case ResultCallLiteralKindList:
+		for _, item := range lit.ListItems {
+			if err := c.normalizePendingResultCallLiteralWithSeen(ctx, item, seen); err != nil {
+				return err
+			}
+		}
+	case ResultCallLiteralKindObject:
+		for _, field := range lit.ObjectFields {
+			if field == nil {
+				continue
+			}
+			if err := c.normalizePendingResultCallLiteralWithSeen(ctx, field.Value, seen); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
 	if res == nil {
 		return nil, nil
@@ -548,6 +638,11 @@ func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, err
 		ResultCall: shared.resultCall.clone(),
 	}
 	req.ResultCall.bindCache(c)
+	if err := c.normalizePendingResultCallRefs(ctx, req.ResultCall); err != nil {
+		return nil, fmt.Errorf("attach owned result: normalize pending result call refs: %w", err)
+	}
+	shared.resultCall = req.ResultCall.clone()
+	shared.resultCall.bindCache(c)
 	attached, err := c.GetOrInitCall(ctx, req, ValueFunc(res))
 	if err != nil {
 		return nil, fmt.Errorf("attach owned result: %w", err)
@@ -1636,7 +1731,10 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 		return indexErr
 	}
 	if oc.isPersistable {
-		c.markResultAsDepOfPersistedLocked(ctx, oc.res)
+		if _, err := c.markResultAsDepOfPersistedLocked(ctx, oc.res); err != nil {
+			c.egraphMu.Unlock()
+			return err
+		}
 	}
 	c.egraphMu.Unlock()
 
@@ -1722,7 +1820,9 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 		c.traceExplicitDepAdded(ctx, parentRes.id, depID, "attached_owned_result")
 		if parentRes.depOfPersistedResult {
 			if depRes := c.resultsByID[depID]; depRes != nil {
-				c.markResultAsDepOfPersistedLocked(ctx, depRes)
+				if _, err := c.markResultAsDepOfPersistedLocked(ctx, depRes); err != nil {
+					return err
+				}
 			}
 		}
 	}

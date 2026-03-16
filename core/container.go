@@ -2855,8 +2855,9 @@ func updatedDirMount(
 	dir *Directory,
 	mntTarget string,
 ) (*dagql.ObjectResult[*Directory], error) {
-	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	updatedDirMnt, err := updatedContainerSelectionResult(ctx, owner, dir, "directory", []*call.Argument{dirIDPathArg})
+	updatedDirMnt, err := updatedContainerSelectionResult(ctx, owner, dir, "directory", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(mntTarget)},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -2871,8 +2872,9 @@ func updatedFileMount(
 	file *File,
 	mntTarget string,
 ) (*dagql.ObjectResult[*File], error) {
-	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	updatedFileMnt, err := updatedContainerSelectionResult(ctx, owner, file, "file", []*call.Argument{fileIDPathArg})
+	updatedFileMnt, err := updatedContainerSelectionResult(ctx, owner, file, "file", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(mntTarget)},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -2884,18 +2886,14 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	owner *Container,
 	val T,
 	fieldName string,
-	args []*call.Argument,
+	args []dagql.NamedInput,
 ) (dagql.ObjectResult[T], error) {
 	if owner == nil {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("missing container owner for %s selection", fieldName)
 	}
-	// WARNING: this relies on UpdatedRootFS/updatedDirMount/updatedFileMount only
-	// being called in the active container operation context, not from a later
-	// lazy callback. If that changes in the future, this presentation-ID base
-	// needs to be revisited.
-	opID := dagql.CurrentID(ctx)
-	if opID == nil {
-		return dagql.ObjectResult[T]{}, fmt.Errorf("missing current operation ID on container for %s selection", fieldName)
+	opCall := dagql.CurrentCall(ctx)
+	if opCall == nil {
+		return dagql.ObjectResult[T]{}, fmt.Errorf("missing current operation call on container for %s selection", fieldName)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -2906,29 +2904,22 @@ func updatedContainerSelectionResult[T dagql.Typed](
 	if err != nil {
 		return dagql.ObjectResult[T]{}, err
 	}
-	view := opID.View()
-	objType, ok := curSrv.ObjectType("Container")
-	if !ok {
-		return dagql.ObjectResult[T]{}, fmt.Errorf("object type Container not found in server")
+	req := &dagql.CallRequest{
+		ResultCall: &dagql.ResultCall{
+			Kind:  dagql.ResultCallKindField,
+			Type:  dagql.NewResultCallType(val.Type()),
+			Field: fieldName,
+			View:  opCall.View,
+			Receiver: &dagql.ResultCallRef{
+				Call: opCall,
+			},
+		},
 	}
-	fieldSpec, ok := objType.FieldSpec(fieldName, view)
-	if !ok {
-		return dagql.ObjectResult[T]{}, fmt.Errorf("field spec for %s not found in object type Container", fieldName)
+	for _, arg := range args {
+		if err := req.SetArgInput(ctx, arg.Name, arg.Value, false); err != nil {
+			return dagql.ObjectResult[T]{}, fmt.Errorf("set %s input %q: %w", fieldName, arg.Name, err)
+		}
 	}
-	newID := opID.Append(
-		fieldSpec.Type.Type(),
-		fieldName,
-		call.WithView(view),
-		call.WithArgs(args...),
-	)
-	inputArgs, err := dagql.ExtractIDArgs(fieldSpec.Args, newID)
-	if err != nil {
-		return dagql.ObjectResult[T]{}, fmt.Errorf("decode %s input args: %w", fieldName, err)
-	}
-	identityOpt, err := fieldSpec.IdentityOpt(ctx, inputArgs)
-	if err != nil {
-		return dagql.ObjectResult[T]{}, fmt.Errorf("resolve %s identity: %w", fieldName, err)
-	}
-	newID = newID.With(identityOpt)
-	return dagql.NewObjectResultForID(val, curSrv, newID)
+
+	return dagql.NewObjectResultForCall(val, curSrv, req.ResultCall)
 }

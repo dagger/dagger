@@ -60,7 +60,8 @@ func (typ *ResultCallType) toAST() *ast.Type {
 }
 
 type ResultCallRef struct {
-	ResultID uint64 `json:"resultID,omitempty"`
+	ResultID uint64      `json:"resultID,omitempty"`
+	Call     *ResultCall `json:"call,omitempty"`
 }
 
 type ResultCallModule struct {
@@ -422,7 +423,13 @@ func (frame *ResultCall) AllEffectIDs() ([]string, error) {
 	var walkLiteral func(*ResultCallLiteral) error
 
 	walkRef = func(ref *ResultCallRef) error {
-		if ref == nil || ref.ResultID == 0 {
+		if ref == nil {
+			return nil
+		}
+		if ref.Call != nil {
+			return walkFrame(ref.Call)
+		}
+		if ref.ResultID == 0 {
 			return nil
 		}
 		resultID := sharedResultID(ref.ResultID)
@@ -521,6 +528,8 @@ func (ref ResultCallStructuralInputRef) Validate() error {
 	switch {
 	case ref.Result != nil && ref.Digest != "":
 		return fmt.Errorf("structural input ref cannot have both result and digest")
+	case ref.Result != nil:
+		return ref.Result.Validate()
 	case ref.Result == nil && ref.Digest == "":
 		return fmt.Errorf("structural input ref must have either result or digest")
 	default:
@@ -545,7 +554,24 @@ func (ref *ResultCallRef) clone() *ResultCallRef {
 	if ref == nil {
 		return nil
 	}
-	return &ResultCallRef{ResultID: ref.ResultID}
+	return &ResultCallRef{
+		ResultID: ref.ResultID,
+		Call:     ref.Call.clone(),
+	}
+}
+
+func (ref *ResultCallRef) Validate() error {
+	if ref == nil {
+		return fmt.Errorf("missing result ref")
+	}
+	switch {
+	case ref.ResultID != 0 && ref.Call != nil:
+		return fmt.Errorf("result ref cannot have both result ID and call")
+	case ref.ResultID == 0 && ref.Call == nil:
+		return fmt.Errorf("missing result ref")
+	default:
+		return nil
+	}
 }
 
 func resultCallIdentityField(frame *ResultCall) (string, error) {
@@ -588,8 +614,12 @@ func recipeDigestForCachedResult(c *cache, resultID sharedResultID, visiting map
 }
 
 func recipeDigestForResultCallRef(c *cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
-	if ref == nil || ref.ResultID == 0 {
-		return "", fmt.Errorf("missing result ref")
+	if err := ref.Validate(); err != nil {
+		return "", err
+	}
+	if ref.Call != nil {
+		ref.Call.bindCache(c)
+		return ref.Call.recipeDigestWithVisiting(visiting)
 	}
 	return recipeDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
 }
@@ -976,8 +1006,12 @@ func (frame *ResultCall) recipeIDWithVisiting(visiting map[sharedResultID]struct
 }
 
 func (frame *ResultCall) resolveRefRecipeID(ref *ResultCallRef, visiting map[sharedResultID]struct{}) (*call.ID, error) {
-	if ref == nil || ref.ResultID == 0 {
-		return nil, fmt.Errorf("missing result ref")
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	if ref.Call != nil {
+		ref.Call.bindCache(frame.cache)
+		return ref.Call.recipeIDWithVisiting(visiting)
 	}
 	if frame == nil || frame.cache == nil {
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
