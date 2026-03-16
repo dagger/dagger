@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -199,6 +201,19 @@ func (op DangEvalOp) eval(
 		return nil, fmt.Errorf("mount source: %w", err)
 	}
 
+	// Module initialization: register typedefs.
+	if op.ParentName == "" {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get dagql server: %w", err)
+		}
+		dagMod, err := initModule(ctx, srv, env)
+		if err != nil {
+			return nil, fmt.Errorf("init module: %w", err)
+		}
+		return json.Marshal(dagMod)
+	}
+
 	// Build input args map.
 	inputArgs := make(map[string][]byte, len(op.InputArgs))
 	for _, arg := range op.InputArgs {
@@ -313,6 +328,341 @@ func (op DangEvalOp) eval(
 	}
 
 	return json.Marshal(result)
+}
+
+func initModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (res dagql.ObjectResult[*core.Module], _ error) {
+	sels := []dagql.Selector{
+		{
+			Field: "module",
+		},
+	}
+
+	// Handle module-level description if present
+	if descBinding, found := env.Get("description"); found {
+		sels = append(sels, dagql.Selector{
+			Field: "withDescription",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "description",
+					Value: dagql.String(descBinding.String()),
+				},
+			},
+		})
+	}
+
+	binds := env.Bindings(dang.PublicVisibility)
+	for _, binding := range binds {
+		log.Println("Binding:", binding.Key)
+		switch val := binding.Value.(type) {
+		case *dang.ConstructorFunction:
+			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val)
+			if err != nil {
+				return res, fmt.Errorf("failed to create object %s: %w", binding.Key, err)
+			}
+			directives := processedDirectives{}
+			for _, slot := range val.Parameters {
+				slotName := slot.Name.Name
+				for _, dir := range slot.Directives {
+					if directives[slotName] == nil {
+						directives[slotName] = map[string]map[string]any{}
+					}
+					for _, arg := range dir.Args {
+						if directives[slotName][dir.Name] == nil {
+							directives[slotName][dir.Name] = map[string]any{}
+						}
+						val, err := evalConstantValue(arg.Value)
+						if err != nil {
+							return res, fmt.Errorf("failed to evaluate directive argument %s.%s.%s: %w", slotName, dir.Name, arg.Key, err)
+						}
+						directives[slotName][dir.Name][arg.Key] = val
+					}
+				}
+			}
+			fnDef, err := createFunction(ctx, srv, binding.Key, val.FnType, directives)
+			if err != nil {
+				return res, fmt.Errorf("failed to create constructor for %s: %w", binding.Key, err)
+			}
+
+			var objDefWithCtor dagql.ObjectResult[*core.TypeDef]
+			if err := srv.Select(ctx, objDef, &objDefWithCtor, dagql.Selector{
+				Field: "withConstructor",
+				Args:  []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](fnDef.ID())}},
+			}); err != nil {
+				return res, fmt.Errorf("failed to add constructor to object: %w", err)
+			}
+
+			sels = append(sels, dagql.Selector{
+				Field: "withObject",
+				Args:  []dagql.NamedInput{{Name: "object", Value: dagql.NewID[*core.TypeDef](objDefWithCtor.ID())}},
+			})
+
+		default:
+			slog.Info("skipping non-class public binding", "name", binding.Key, "type", fmt.Sprintf("%T", val))
+		}
+	}
+
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("failed to select module: %w", err)
+	}
+
+	return res, nil
+}
+
+// processedDirectives maps arg => directive => directive args
+type processedDirectives = map[string]map[string]map[string]any
+
+func createFunction(ctx context.Context, srv *dagql.Server, name string, fn *hm.FunctionType, directives processedDirectives) (dagql.ObjectResult[*core.Function], error) {
+	var res dagql.ObjectResult[*core.Function]
+
+	retTypeDef, err := dangTypeToTypeDef(ctx, srv, fn.Ret(false))
+	if err != nil {
+		return res, fmt.Errorf("failed to convert return type for %s: %w", fn, err)
+	}
+
+	sels := []dagql.Selector{
+		{
+			Field: "function",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(name)},
+				{Name: "returnType", Value: dagql.NewID[*core.TypeDef](retTypeDef.ID())},
+			},
+		},
+	}
+
+	for _, arg := range fn.Arg().(*dang.RecordType).Fields {
+		argType, mono := arg.Value.Type()
+		if !mono {
+			return res, fmt.Errorf("non-monotype argument %s", arg.Key)
+		}
+		typeDef, err := dangTypeToTypeDef(ctx, srv, argType)
+		if err != nil {
+			return res, fmt.Errorf("failed to convert argument type for %s: %w", arg.Key, err)
+		}
+
+		if _, isNonNull := argType.(hm.NonNullType); !isNonNull {
+			var optTypeDef dagql.ObjectResult[*core.TypeDef]
+			if err := srv.Select(ctx, typeDef, &optTypeDef, dagql.Selector{
+				Field: "withOptional",
+				Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+			}); err != nil {
+				return res, fmt.Errorf("failed to make argument optional: %w", err)
+			}
+			typeDef = optTypeDef
+		}
+
+		argArgs := []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(arg.Key)},
+			{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](typeDef.ID())},
+		}
+
+		if argDirectives, hasDirectives := directives[arg.Key]; hasDirectives {
+			if defaultPath, hasDefaultPath := argDirectives["defaultPath"]; hasDefaultPath {
+				if path, ok := defaultPath["path"].(string); ok {
+					argArgs = append(argArgs, dagql.NamedInput{Name: "defaultPath", Value: dagql.String(path)})
+				}
+			}
+			if ignorePatterns, hasIgnorePatterns := argDirectives["ignorePatterns"]; hasIgnorePatterns {
+				ignoreVal, hasIgnore := ignorePatterns["patterns"]
+				if patterns, ok := ignoreVal.([]any); ok {
+					var ignorePatterns []string
+					for _, pattern := range patterns {
+						if str, ok := pattern.(string); ok {
+							ignorePatterns = append(ignorePatterns, str)
+						} else {
+							return res, fmt.Errorf("invalid ignore argument %s: %T (expected string)", arg.Key, pattern)
+						}
+					}
+					if len(ignorePatterns) > 0 {
+						argArgs = append(argArgs, dagql.NamedInput{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignorePatterns...))})
+					}
+				} else if hasIgnore {
+					return res, fmt.Errorf("invalid ignore directive for argument %s: %T (expected []any)", arg.Key, ignoreVal)
+				}
+			}
+		}
+
+		sels = append(sels, dagql.Selector{
+			Field: "withArg",
+			Args:  argArgs,
+		})
+	}
+
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("failed to create function: %w", err)
+	}
+
+	return res, nil
+}
+
+func evalConstantValue(node dang.Node) (any, error) {
+	switch n := node.(type) {
+	case *dang.String:
+		return n.Value, nil
+	case *dang.Int:
+		return n.Value, nil
+	case *dang.Boolean:
+		return n.Value, nil
+	case *dang.List:
+		var elements []any
+		for _, elem := range n.Elements {
+			if evalElem, err := evalConstantValue(elem); err == nil {
+				elements = append(elements, evalElem)
+			} else {
+				return nil, fmt.Errorf("failed to evaluate list element: %w", err)
+			}
+		}
+		return elements, nil
+	default:
+		return nil, fmt.Errorf("unsupported directive argument type: %T", node)
+	}
+}
+
+func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction) (dagql.ObjectResult[*core.TypeDef], error) {
+	var res dagql.ObjectResult[*core.TypeDef]
+
+	sels := []dagql.Selector{
+		{Field: "typeDef"},
+		{
+			Field: "withObject",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(name)}},
+		},
+	}
+
+	for name, scheme := range module.ClassType.Bindings(dang.PublicVisibility) {
+		slotType, isMono := scheme.Type()
+		if !isMono {
+			return res, fmt.Errorf("non-monotype method %s", name)
+		}
+		switch x := slotType.(type) {
+		case *hm.FunctionType:
+			fn := x
+			fnDef, err := createFunction(ctx, srv, name, fn, nil)
+			if err != nil {
+				return res, fmt.Errorf("failed to create method %s for %s: %w", name, name, err)
+			}
+
+			if desc, ok := module.ClassType.GetDocString(name); ok {
+				var descFnDef dagql.ObjectResult[*core.Function]
+				if err := srv.Select(ctx, fnDef, &descFnDef, dagql.Selector{
+					Field: "withDescription",
+					Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(desc)}},
+				}); err != nil {
+					return res, fmt.Errorf("failed to add description to function: %w", err)
+				}
+				fnDef = descFnDef
+			}
+
+			sels = append(sels, dagql.Selector{
+				Field: "withFunction",
+				Args:  []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](fnDef.ID())}},
+			})
+		default:
+			fieldDef, err := dangTypeToTypeDef(ctx, srv, slotType)
+			if err != nil {
+				return res, fmt.Errorf("failed to create field %s: %w", name, err)
+			}
+
+			fieldArgs := []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(name)},
+				{Name: "typeDef", Value: dagql.NewID[*core.TypeDef](fieldDef.ID())},
+			}
+
+			if desc, ok := module.ClassType.GetDocString(name); ok {
+				fieldArgs = append(fieldArgs, dagql.NamedInput{Name: "description", Value: dagql.String(desc)})
+			}
+
+			sels = append(sels, dagql.Selector{
+				Field: "withField",
+				Args:  fieldArgs,
+			})
+		}
+	}
+
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("failed to create object typedef: %w", err)
+	}
+
+	return res, nil
+}
+
+func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type) (dagql.ObjectResult[*core.TypeDef], error) {
+	var res dagql.ObjectResult[*core.TypeDef]
+
+	sels := []dagql.Selector{{Field: "typeDef"}}
+
+	if nonNull, isNonNull := dangType.(hm.NonNullType); isNonNull {
+		inner, err := dangTypeToTypeDef(ctx, srv, nonNull.Type)
+		if err != nil {
+			return res, fmt.Errorf("failed to convert non-null type: %w", err)
+		}
+		if err := srv.Select(ctx, inner, &res, dagql.Selector{
+			Field: "withOptional",
+			Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(false)}},
+		}); err != nil {
+			return res, err
+		}
+		return res, nil
+	}
+
+	sels = append(sels, dagql.Selector{
+		Field: "withOptional",
+		Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+	})
+
+	switch t := dangType.(type) {
+	case dang.ListType:
+		elemTypeDef, err := dangTypeToTypeDef(ctx, srv, t.Type)
+		if err != nil {
+			return res, fmt.Errorf("failed to convert list element type: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withListOf",
+			Args: []dagql.NamedInput{
+				{Name: "elementType", Value: dagql.NewID[*core.TypeDef](elemTypeDef.ID())},
+			},
+		})
+
+	case *dang.Module:
+		switch t.Named {
+		case "String":
+			sels = append(sels, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
+			})
+		case "Int":
+			sels = append(sels, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindInteger}},
+			})
+		case "Boolean":
+			sels = append(sels, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindBoolean}},
+			})
+		case "Void":
+			sels = append(sels, dagql.Selector{
+				Field: "withKind",
+				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindVoid}},
+			})
+		case "":
+			return res, fmt.Errorf("cannot directly expose ad-hoc object type: %s", t)
+		default:
+			sels = append(sels, dagql.Selector{
+				Field: "withObject",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
+			})
+		}
+
+	default:
+		slog.Info("unknown type, defaulting to string", "type", fmt.Sprintf("%T", dangType), "value", dangType.String())
+		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
+	}
+
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("failed to select typedef: %w", err)
+	}
+
+	return res, nil
 }
 
 // writeSnapshot writes data to a buildkit snapshot file and returns it as a solver result.
