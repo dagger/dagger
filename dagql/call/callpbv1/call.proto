@@ -11,7 +11,18 @@ option go_package = "./callpbv1";
 // It may be binary=>base64-encoded to be used as a GraphQL ID value for
 // objects. Alternatively it may be stored in a database and referred to via an
 // RFC-6920 ni://sha-256;... URI.
+//
+// A DAG is either:
+// - a recipe DAG of Calls
+// - an opaque engine-local handle to a cached result
 message DAG {
+  oneof value {
+    RecipeDAG recipe = 1;
+    EngineResultRef engineResult = 2;
+  }
+}
+
+message RecipeDAG {
   // The digest of the Call representing the "root" of the DAG. All other Calls
   // in this message are referenced through the root Call's receiver, args or
   // module.
@@ -20,6 +31,13 @@ message DAG {
   // Map of Call digests to the Calls they represent. This structure
   // allows us to deduplicate occurrences of the same Call in the DAG.
   map<string, Call> callsByDigest = 2;
+}
+
+message EngineResultRef {
+  // Engine-local opaque shared-result handle.
+  uint64 resultID = 1;
+  // GraphQL type of the referenced result for boundary type checking.
+  Type rootType = 2;
 }
 
 // Call represents a function call, including all inputs necessary to call it

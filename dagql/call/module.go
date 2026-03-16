@@ -12,6 +12,10 @@ type Module struct {
 }
 
 func NewModule(id *ID, name, ref, pin string) *Module {
+	if id == nil {
+		panic("call.Module requires non-nil recipe-form ID")
+	}
+	id.mustBeRecipe("NewModule")
 	return &Module{
 		pb: &callpbv1.Module{
 			Name:       name,

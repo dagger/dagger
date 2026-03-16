@@ -10,6 +10,83 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
+func requirePanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	fn()
+}
+
+func TestHandleIDRoundTrip(t *testing.T) {
+	typ := NewType(&ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	})
+	orig := NewEngineResultID(42, typ)
+
+	if !orig.IsHandle() {
+		t.Fatal("expected handle-form ID")
+	}
+	if got := orig.EngineResultID(); got != 42 {
+		t.Fatalf("unexpected engine result id: got %d, want 42", got)
+	}
+
+	enc, err := orig.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	decoded := new(ID)
+	if err := decoded.Decode(enc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if !decoded.IsHandle() {
+		t.Fatal("expected decoded handle-form ID")
+	}
+	if got := decoded.EngineResultID(); got != 42 {
+		t.Fatalf("unexpected decoded engine result id: got %d, want 42", got)
+	}
+	if got := decoded.Type().NamedType(); got != "String" {
+		t.Fatalf("unexpected decoded type: got %q, want String", got)
+	}
+	decodedEnc, err := decoded.Encode()
+	if err != nil {
+		t.Fatalf("decoded encode: %v", err)
+	}
+	if decodedEnc != enc {
+		t.Fatalf("handle encoding mismatch after round-trip: got %q, want %q", decodedEnc, enc)
+	}
+}
+
+func TestHandleIDRecipeOperationsPanic(t *testing.T) {
+	id := NewEngineResultID(7, NewType(&ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}))
+
+	requirePanic(t, func() { _ = id.Call() })
+	requirePanic(t, func() { _ = id.Digest() })
+	requirePanic(t, func() { _ = id.Field() })
+	requirePanic(t, func() { _ = id.Args() })
+	requirePanic(t, func() { _ = id.Append(&ast.Type{NamedType: "String"}, "child") })
+	requirePanic(t, func() {
+		_, _, _ = id.SelfDigestAndInputRefs()
+	})
+}
+
+func TestLiteralIDRejectsHandleID(t *testing.T) {
+	id := NewEngineResultID(9, NewType(&ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}))
+
+	requirePanic(t, func() { _ = NewLiteralID(id) })
+}
+
 func TestImplicitInputsAffectDigest(t *testing.T) {
 	base := New().Append(&ast.Type{
 		NamedType: "String",

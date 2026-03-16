@@ -13,6 +13,7 @@ import (
 // 1. content digest (if set)
 // 2. content-preferred fallback digest
 func (id *ID) ContentPreferredDigest() digest.Digest {
+	id.mustBeRecipe("ContentPreferredDigest")
 	if id == nil {
 		return ""
 	}
@@ -31,6 +32,7 @@ func (id *ID) ContentPreferredDigest() digest.Digest {
 }
 
 func (id *ID) calcContentPreferredDigest() (digest.Digest, error) {
+	id.mustBeRecipe("calcContentPreferredDigest")
 	if id == nil {
 		return "", nil
 	}

@@ -27,10 +27,11 @@ func New() *ID {
 }
 
 /*
-ID represents a GraphQL value of a certain type, constructed by evaluating
-its contained pipeline. In other words, it represents a
-constructor-addressed value, which may be an object, an array, or a scalar
-value.
+ID represents a boundary GraphQL ID value.
+
+It is either:
+- a recipe-form constructor-addressed DAG of Calls
+- a handle-form opaque engine-local reference to a cached result
 
 It may be binary=>base64-encoded to be used as a GraphQL ID value for
 objects. Alternatively it may be stored in a database and referred to via an
@@ -40,11 +41,17 @@ This type wraps the underlying proto DAG+Call types in order to enforce immutabi
 of its fields and give it a name more appropriate for how it's used in the
 context of dagql + the engine.
 
-IDs are immutable from the consumer's perspective. Rather than mutating an ID,
-methods on ID can be used to create a new ID on top of an existing (immutable)
-Receiver ID (e.g. Append, SelectNth, etc.).
+IDs are immutable from the consumer's perspective.
+
+Recipe-form IDs support the historical recipe-manipulation operations such as
+Append, WithArgument, SelectNth, etc.
+
+Handle-form IDs are opaque top-level references only. Recipe-manipulation
+operations on handle-form IDs panic rather than faking recipe structure.
 */
 type ID struct {
+	mode idMode
+
 	pb *callpbv1.Call
 
 	// Wrappers around the various proto types in ID.pb
@@ -53,11 +60,19 @@ type ID struct {
 	implicitInputs []*Argument
 	module         *Module
 	typ            *Type
+	engineResultID uint64
 
 	// Memoized on-demand in ContentPreferredDigest.
 	contentPreferredDigest     digest.Digest
 	contentPreferredDigestOnce sync.Once
 }
+
+type idMode uint8
+
+const (
+	idModeRecipe idMode = iota
+	idModeHandle
+)
 
 const (
 	ExtraDigestLabelContent = "content"
@@ -74,6 +89,45 @@ func (v View) String() string {
 	return string(v)
 }
 
+func NewEngineResultID(resultID uint64, typ *Type) *ID {
+	if typ == nil {
+		panic("call.ID handle-form requires non-nil type")
+	}
+	return &ID{
+		mode:           idModeHandle,
+		typ:            typ,
+		engineResultID: resultID,
+	}
+}
+
+func (id *ID) IsRecipe() bool {
+	return id == nil || id.mode != idModeHandle
+}
+
+func (id *ID) IsHandle() bool {
+	return id != nil && id.mode == idModeHandle
+}
+
+func (id *ID) EngineResultID() uint64 {
+	if id == nil {
+		return 0
+	}
+	id.mustBeHandle("EngineResultID")
+	return id.engineResultID
+}
+
+func (id *ID) mustBeRecipe(op string) {
+	if id != nil && id.mode == idModeHandle {
+		panic(fmt.Sprintf("call.ID.%s is not valid for handle-form IDs", op))
+	}
+}
+
+func (id *ID) mustBeHandle(op string) {
+	if id == nil || id.mode != idModeHandle {
+		panic(fmt.Sprintf("call.ID.%s requires a handle-form ID", op))
+	}
+}
+
 // The ID of the object that the field selection will be evaluated against.
 //
 // If nil, the root Query object is implied.
@@ -81,6 +135,7 @@ func (id *ID) Receiver() *ID {
 	if id == nil {
 		return nil
 	}
+	id.mustBeRecipe("Receiver")
 	return id.receiver
 }
 
@@ -91,6 +146,7 @@ func (id *ID) Receiver() *ID {
 // WARRANTY VOID IF MUTATIONS ARE MADE TO THE INNER PROTOBUF. Perform a
 // proto.Clone before mutating.
 func (id *ID) Call() *callpbv1.Call {
+	id.mustBeRecipe("Call")
 	return id.pb
 }
 
@@ -101,11 +157,13 @@ func (id *ID) Type() *Type {
 
 // GraphQL field name.
 func (id *ID) Field() string {
+	id.mustBeRecipe("Field")
 	return id.pb.Field
 }
 
 // GraphQL view.
 func (id *ID) View() View {
+	id.mustBeRecipe("View")
 	return View(id.pb.View)
 }
 
@@ -113,6 +171,7 @@ func (id *ID) View() View {
 // NOTE: use with caution, any inplace writes to elements of the returned slice
 // can corrupt the ID
 func (id *ID) Args() []*Argument {
+	id.mustBeRecipe("Args")
 	return id.args
 }
 
@@ -122,10 +181,12 @@ func (id *ID) Args() []*Argument {
 // NOTE: use with caution, any inplace writes to elements of the returned slice
 // can corrupt the ID
 func (id *ID) ImplicitInputs() []*Argument {
+	id.mustBeRecipe("ImplicitInputs")
 	return id.implicitInputs
 }
 
 func (id *ID) Arg(name string) *Argument {
+	id.mustBeRecipe("Arg")
 	for _, arg := range id.args {
 		if arg.pb.Name == name {
 			return arg
@@ -138,11 +199,13 @@ func (id *ID) Arg(name string) *Argument {
 // Note that this defaults to zero, which means there is no selection of
 // an element in the list. Non-zero indexes are 1-based.
 func (id *ID) Nth() int64 {
+	id.mustBeRecipe("Nth")
 	return id.pb.Nth
 }
 
 // The module that provides the implementation of the field, if any.
 func (id *ID) Module() *Module {
+	id.mustBeRecipe("Module")
 	return id.module
 }
 
@@ -152,10 +215,12 @@ func (id *ID) Digest() digest.Digest {
 	if id == nil {
 		return ""
 	}
+	id.mustBeRecipe("Digest")
 	return digest.Digest(id.pb.Digest)
 }
 
 func (id *ID) ContentDigest() digest.Digest {
+	id.mustBeRecipe("ContentDigest")
 	if id == nil {
 		return ""
 	}
@@ -170,6 +235,7 @@ func (id *ID) ContentDigest() digest.Digest {
 }
 
 func (id *ID) ExtraDigests() []ExtraDigest {
+	id.mustBeRecipe("ExtraDigests")
 	if id == nil || len(id.pb.ExtraDigests) == 0 {
 		return nil
 	}
@@ -187,6 +253,7 @@ func (id *ID) ExtraDigests() []ExtraDigest {
 }
 
 func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
+	id.mustBeRecipe("ExtraDigestByLabel")
 	if id == nil || len(id.pb.ExtraDigests) == 0 {
 		return nil
 	}
@@ -204,6 +271,7 @@ func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
 
 // EffectIDs returns the effect IDs directly attached to this call.
 func (id *ID) EffectIDs() []string {
+	id.mustBeRecipe("EffectIDs")
 	if id == nil {
 		return nil
 	}
@@ -212,6 +280,7 @@ func (id *ID) EffectIDs() []string {
 
 // AllEffectIDs returns the effect IDs attached to this call and any of its inputs.
 func (id *ID) AllEffectIDs() []string {
+	id.mustBeRecipe("AllEffectIDs")
 	if id == nil {
 		return nil
 	}
@@ -278,6 +347,7 @@ func (id *ID) AllEffectIDs() []string {
 // Inputs returns the ID digests referenced by this ID, starting with the
 // receiver, if any.
 func (id *ID) Inputs() ([]digest.Digest, error) {
+	id.mustBeRecipe("Inputs")
 	seen := map[digest.Digest]struct{}{}
 	var inputs []digest.Digest
 	see := func(dig digest.Digest) {
@@ -311,6 +381,7 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 }
 
 func (id *ID) Modules() []*Module {
+	id.mustBeRecipe("Modules")
 	if id == nil {
 		return nil
 	}
@@ -392,6 +463,9 @@ func (id *ID) Modules() []*Module {
 
 // NOTE: Path can be very expensive, do not use in hot paths
 func (id *ID) Path() string {
+	if id != nil && id.mode == idModeHandle {
+		return fmt.Sprintf("engineResult(%d)", id.engineResultID)
+	}
 	buf := new(strings.Builder)
 	if id.receiver != nil {
 		fmt.Fprintf(buf, "%s.", id.receiver.Path())
@@ -402,6 +476,7 @@ func (id *ID) Path() string {
 
 // NOTE: DisplaySelf can be very expensive, do not use in hot paths
 func (id *ID) DisplaySelf() string {
+	id.mustBeRecipe("DisplaySelf")
 	buf := new(strings.Builder)
 	fmt.Fprintf(buf, "%s", id.pb.Field)
 	displayArgs := make([]*Argument, 0, len(id.args))
@@ -433,10 +508,16 @@ func (id *ID) Display() string {
 	if id == nil {
 		return "<nil>"
 	}
+	if id.mode == idModeHandle {
+		return fmt.Sprintf("engineResult(%d): %s", id.engineResultID, id.typ.ToAST())
+	}
 	return fmt.Sprintf("%s: %s", id.Path(), id.typ.ToAST())
 }
 
 func (id *ID) Name() string {
+	if id != nil && id.mode == idModeHandle {
+		return fmt.Sprintf("engineResult(%d)", id.engineResultID)
+	}
 	name := id.pb.Field
 	if id.receiver != nil {
 		name = id.receiver.typ.NamedType() + "." + name
@@ -446,6 +527,7 @@ func (id *ID) Name() string {
 
 // Return a new ID that's the selection of the nth element of the return value of the existing ID.
 func (id *ID) SelectNth(nth int) *ID {
+	id.mustBeRecipe("SelectNth")
 	return id.With(
 		WithReceiver(id),
 		WithNth(nth),
@@ -457,6 +539,7 @@ type IDOpt func(*ID)
 
 func WithModule(mod *Module) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithModule")
 		if mod != nil {
 			id.module = mod
 			id.pb.Module = mod.pb
@@ -470,24 +553,30 @@ func WithModule(mod *Module) IDOpt {
 func WithType(typ *ast.Type) IDOpt {
 	return func(id *ID) {
 		id.typ = NewType(typ)
+		if id.mode == idModeHandle {
+			return
+		}
 		id.pb.Type = id.typ.pb
 	}
 }
 
 func WithNth(n int) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithNth")
 		id.pb.Nth = int64(n)
 	}
 }
 
 func WithView(view View) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithView")
 		id.pb.View = view.String()
 	}
 }
 
 func WithContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithContentDigest")
 		if dig != "" {
 			id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), ExtraDigestLabelContent)
 		} else {
@@ -498,6 +587,7 @@ func WithContentDigest(dig digest.Digest) IDOpt {
 
 func WithReplacedContentDigest(dig digest.Digest) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithReplacedContentDigest")
 		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, ExtraDigestLabelContent)
 		if dig == "" {
 			return
@@ -508,6 +598,7 @@ func WithReplacedContentDigest(dig digest.Digest) IDOpt {
 
 func WithExtraDigest(extra ExtraDigest) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithExtraDigest")
 		if extra.Digest == "" {
 			return
 		}
@@ -521,6 +612,7 @@ func WithExtraDigest(extra ExtraDigest) IDOpt {
 
 func WithReplacedExtraDigest(extra ExtraDigest) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithReplacedExtraDigest")
 		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extra.Label)
 		if extra.Digest == "" {
 			return
@@ -545,6 +637,7 @@ func WithReplacedExtraDigest(extra ExtraDigest) IDOpt {
 // merged as equivalents.
 func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithScopeToDigest")
 		origExtraDigests := id.ExtraDigests()
 
 		// ensure recipe digest is scoped to this operation
@@ -570,12 +663,14 @@ func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
 
 func WithEffectIDs(effectIDs []string) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithEffectIDs")
 		id.pb.EffectIds = slices.Clone(effectIDs)
 	}
 }
 
 // AppendEffectIDs returns a new ID with the given effect IDs appended.
 func (id *ID) AppendEffectIDs(effectIDs ...string) *ID {
+	id.mustBeRecipe("AppendEffectIDs")
 	if id == nil || len(effectIDs) == 0 {
 		return id
 	}
@@ -585,6 +680,7 @@ func (id *ID) AppendEffectIDs(effectIDs ...string) *ID {
 
 func WithArgs(args ...*Argument) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithArgs")
 		id.args = args
 		id.pb.Args = make([]*callpbv1.Argument, 0, len(args))
 		for _, arg := range args {
@@ -597,6 +693,7 @@ func WithArgs(args ...*Argument) IDOpt {
 
 func WithImplicitInputs(inputs ...*Argument) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithImplicitInputs")
 		id.implicitInputs = inputs
 		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(inputs))
 		for _, input := range inputs {
@@ -609,6 +706,7 @@ func WithImplicitInputs(inputs ...*Argument) IDOpt {
 
 func WithAppendedImplicitInputs(inputs ...*Argument) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithAppendedImplicitInputs")
 		id.implicitInputs = append(id.implicitInputs, inputs...)
 		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(id.implicitInputs))
 		for _, input := range id.implicitInputs {
@@ -635,6 +733,7 @@ func redactedArgForID(arg *Argument) *Argument {
 
 func WithReceiver(recv *ID) IDOpt {
 	return func(id *ID) {
+		id.mustBeRecipe("WithReceiver")
 		id.receiver = recv
 		if recv != nil {
 			id.pb.ReceiverDigest = recv.pb.Digest
@@ -645,12 +744,17 @@ func WithReceiver(recv *ID) IDOpt {
 }
 
 func (id *ID) With(opts ...IDOpt) *ID {
+	id.mustBeRecipe("With")
 	return id.shallowClone().apply(opts...)
 }
 
 func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
+	if id != nil {
+		id.mustBeRecipe("Append")
+	}
 	typ := NewType(ret)
 	newID := &ID{
+		mode: idModeRecipe,
 		pb: &callpbv1.Call{
 			Type:           typ.pb,
 			ReceiverDigest: id.Digest().String(),
@@ -665,6 +769,7 @@ func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
 // WithExtraDigest returns a copy of the ID with the given extra digest
 // metadata appended.
 func (id *ID) WithExtraDigest(extra ExtraDigest) *ID {
+	id.mustBeRecipe("WithExtraDigest")
 	return id.With(WithExtraDigest(extra))
 }
 
@@ -672,6 +777,7 @@ func (id *ID) WithExtraDigest(extra ExtraDigest) *ID {
 // given argument added to the ID's arguments. If an argument with the same
 // name already exists, it will be replaced with the new one.
 func (id *ID) WithArgument(arg *Argument) *ID {
+	id.mustBeRecipe("WithArgument")
 	if id == nil {
 		return nil
 	}
@@ -732,25 +838,70 @@ func (id *ID) UnmarshalJSON(data []byte) error {
 
 // NOTE: use with caution, any mutations to the returned proto can corrupt the ID
 func (id *ID) ToProto() (*callpbv1.DAG, error) {
-	dagPB := &callpbv1.DAG{
+	if id == nil {
+		return &callpbv1.DAG{}, nil
+	}
+	if id.mode == idModeHandle {
+		if id.typ == nil {
+			return nil, fmt.Errorf("handle-form ID missing type")
+		}
+		return &callpbv1.DAG{
+			Value: &callpbv1.DAG_EngineResult{
+				EngineResult: &callpbv1.EngineResultRef{
+					ResultID: id.engineResultID,
+					RootType: id.typ.pb,
+				},
+			},
+		}, nil
+	}
+	recipePB := &callpbv1.RecipeDAG{
 		CallsByDigest: map[string]*callpbv1.Call{},
 	}
-	id.gatherCalls(dagPB.CallsByDigest)
-	dagPB.RootDigest = id.pb.Digest
-	return dagPB, nil
+	id.gatherCalls(recipePB.CallsByDigest)
+	recipePB.RootDigest = id.pb.Digest
+	return &callpbv1.DAG{
+		Value: &callpbv1.DAG_Recipe{
+			Recipe: recipePB,
+		},
+	}, nil
 }
 
 func (id *ID) FromProto(dagPB *callpbv1.DAG) error {
 	if id == nil {
 		return fmt.Errorf("cannot decode into nil ID")
 	}
-	if err := id.decode(dagPB.RootDigest, dagPB.CallsByDigest, map[string]*ID{}); err != nil {
-		return fmt.Errorf("failed to decode DAG: %w", err)
+	*id = ID{}
+	switch v := dagPB.GetValue().(type) {
+	case nil:
+		return nil
+	case *callpbv1.DAG_Recipe:
+		if v.Recipe == nil {
+			return nil
+		}
+		if err := id.decode(v.Recipe.RootDigest, v.Recipe.CallsByDigest, map[string]*ID{}); err != nil {
+			return fmt.Errorf("failed to decode DAG: %w", err)
+		}
+		return nil
+	case *callpbv1.DAG_EngineResult:
+		if v.EngineResult == nil {
+			return nil
+		}
+		id.mode = idModeHandle
+		id.engineResultID = v.EngineResult.ResultID
+		if v.EngineResult.RootType != nil {
+			id.typ = &Type{pb: v.EngineResult.RootType}
+		}
+		if id.typ == nil {
+			return fmt.Errorf("handle-form DAG missing root type")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown DAG value type %T", v)
 	}
-	return nil
 }
 
 func (id *ID) shallowClone() *ID {
+	id.mustBeRecipe("shallowClone")
 	cp := *id
 	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
 	// reflection in proto.CloneOf
@@ -771,6 +922,7 @@ func (id *ID) shallowClone() *ID {
 }
 
 func (id *ID) apply(opts ...IDOpt) *ID {
+	id.mustBeRecipe("apply")
 	for _, opt := range opts {
 		opt(id)
 	}
@@ -792,6 +944,7 @@ func (id *ID) apply(opts ...IDOpt) *ID {
 }
 
 func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
+	id.mustBeRecipe("gatherCalls")
 	if id == nil {
 		return
 	}
@@ -818,7 +971,7 @@ func (id *ID) FromAnyPB(data *anypb.Any) error {
 	if err := data.UnmarshalTo(&dagPB); err != nil {
 		return err
 	}
-	return id.decode(dagPB.RootDigest, dagPB.CallsByDigest, map[string]*ID{})
+	return id.FromProto(&dagPB)
 }
 
 func (id *ID) Decode(str string) error {
@@ -831,7 +984,7 @@ func (id *ID) Decode(str string) error {
 		return fmt.Errorf("failed to unmarshal proto: %w", err)
 	}
 
-	return id.decode(dagPB.RootDigest, dagPB.CallsByDigest, map[string]*ID{})
+	return id.FromProto(&dagPB)
 }
 
 func (id *ID) decode(
@@ -842,6 +995,7 @@ func (id *ID) decode(
 	if id == nil {
 		return fmt.Errorf("cannot decode into nil ID")
 	}
+	*id = ID{}
 
 	if existingID, ok := memo[dgst]; ok {
 		*id = *existingID
@@ -857,6 +1011,7 @@ func (id *ID) decode(
 		// should never happen, just out of caution
 		return fmt.Errorf("call digest mismatch %q != %q", dgst, pb.Digest)
 	}
+	id.mode = idModeRecipe
 	id.pb = pb
 	id.contentPreferredDigest = ""
 	id.contentPreferredDigestOnce = sync.Once{}
@@ -906,6 +1061,7 @@ func (id *ID) decode(
 // ID literals contribute only their type marker to the self digest; their digest
 // values are returned via the inputs slice.
 func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
+	id.mustBeRecipe("SelfDigestAndInputs")
 	selfDigest, inputRefs, err := id.SelfDigestAndInputRefs()
 	if err != nil {
 		return "", nil, err
@@ -957,6 +1113,7 @@ func (ref StructuralInputRef) InputDigest() (digest.Digest, error) {
 // but preserves the kind of each ordered structural input instead of flattening
 // them all to bare digests.
 func (id *ID) SelfDigestAndInputRefs() (digest.Digest, []StructuralInputRef, error) {
+	id.mustBeRecipe("SelfDigestAndInputRefs")
 	if id == nil {
 		return "", nil, nil
 	}
@@ -1049,6 +1206,7 @@ func (id *ID) SelfDigestAndInputRefs() (digest.Digest, []StructuralInputRef, err
 // It includes recipe data for this call shape, explicit/implicit recipe inputs,
 // and module recipe identity.
 func (id *ID) calcDigest() (string, error) {
+	id.mustBeRecipe("calcDigest")
 	if id == nil {
 		return "", nil
 	}

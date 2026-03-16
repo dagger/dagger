@@ -69,6 +69,10 @@ type LiteralID struct {
 }
 
 func NewLiteralID(id *ID) *LiteralID {
+	if id == nil {
+		panic("call.LiteralID requires non-nil recipe-form ID")
+	}
+	id.mustBeRecipe("NewLiteralID")
 	return &LiteralID{id: id}
 }
 
@@ -104,6 +108,7 @@ func (lit *LiteralID) ToAST() *ast.Value {
 }
 
 func (lit *LiteralID) pb() *callpbv1.Literal {
+	lit.id.mustBeRecipe("LiteralID.pb")
 	return &callpbv1.Literal{
 		Value: &callpbv1.Literal_CallDigest{
 			CallDigest: lit.id.pb.Digest,
@@ -112,6 +117,7 @@ func (lit *LiteralID) pb() *callpbv1.Literal {
 }
 
 func (lit *LiteralID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
+	lit.id.mustBeRecipe("LiteralID.gatherCalls")
 	lit.id.gatherCalls(callsByDigest)
 }
 
