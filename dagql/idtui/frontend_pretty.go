@@ -3111,7 +3111,7 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 }
 
 // tryRenderEditDiff checks whether this is an edit tool call with complete
-// old+new text and, if so, renders a syntax-highlighted side-by-side diff.
+// old+new text and, if so, renders a unified diff with intraline highlighting.
 // Returns true if the diff was rendered (caller should skip normal arg rendering).
 func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields map[string]parsedField) bool {
 	if !isEditTool(toolName) {

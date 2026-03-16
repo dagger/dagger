@@ -1,7 +1,10 @@
 package idtui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -40,7 +43,6 @@ func TestLineLevelDiff(t *testing.T) {
 		t.Error("expected added lines")
 	}
 
-	// Verify context lines appear between removed/added (not all-removed then all-added).
 	// The first line "func hello() {" should be context.
 	if lines[0].Kind != diffContext {
 		t.Errorf("expected first line to be context, got %v", lines[0].Kind)
@@ -50,7 +52,7 @@ func TestLineLevelDiff(t *testing.T) {
 	}
 }
 
-func TestPairDiffLines(t *testing.T) {
+func TestPairForIntraline(t *testing.T) {
 	lines := []diffLine{
 		{OldNo: 1, NewNo: 1, Kind: diffContext, Content: "a"},
 		{OldNo: 2, Kind: diffRemoved, Content: "old1"},
@@ -61,43 +63,33 @@ func TestPairDiffLines(t *testing.T) {
 		{OldNo: 4, NewNo: 5, Kind: diffContext, Content: "b"},
 	}
 
-	pairs := pairDiffLines(lines)
+	pairs := pairForIntraline(lines)
 
-	// Should have: 1 context + 2 paired + 1 right-only + 1 context = 5 pairs
-	if len(pairs) != 5 {
-		t.Fatalf("expected 5 pairs, got %d", len(pairs))
+	// Context lines should have no pair.
+	if pairs[0] != nil {
+		t.Error("context line 0 should have nil pair")
 	}
-
-	// First: context
-	if pairs[0].left == nil || pairs[0].left.Kind != diffContext {
-		t.Error("pair 0: expected context on left")
+	if pairs[6] != nil {
+		t.Error("context line 6 should have nil pair")
 	}
 
-	// Pairs 1-2: removed/added paired
-	if pairs[1].left == nil || pairs[1].left.Content != "old1" {
-		t.Error("pair 1: expected old1 on left")
+	// removed[0] paired with added[0], removed[1] paired with added[1]
+	if pairs[1] == nil || pairs[1].Content != "new1" {
+		t.Error("removed line 1 should pair with added new1")
 	}
-	if pairs[1].right == nil || pairs[1].right.Content != "new1" {
-		t.Error("pair 1: expected new1 on right")
+	if pairs[2] == nil || pairs[2].Content != "new2" {
+		t.Error("removed line 2 should pair with added new2")
 	}
-	if pairs[2].left == nil || pairs[2].left.Content != "old2" {
-		t.Error("pair 2: expected old2 on left")
+	if pairs[3] == nil || pairs[3].Content != "old1" {
+		t.Error("added line 3 should pair with removed old1")
 	}
-	if pairs[2].right == nil || pairs[2].right.Content != "new2" {
-		t.Error("pair 2: expected new2 on right")
-	}
-
-	// Pair 3: right-only added
-	if pairs[3].left != nil {
-		t.Error("pair 3: expected nil left")
-	}
-	if pairs[3].right == nil || pairs[3].right.Content != "new3" {
-		t.Error("pair 3: expected new3 on right")
+	if pairs[4] == nil || pairs[4].Content != "old2" {
+		t.Error("added line 4 should pair with removed old2")
 	}
 
-	// Pair 4: context
-	if pairs[4].left == nil || pairs[4].left.Kind != diffContext {
-		t.Error("pair 4: expected context")
+	// Third added line has no removed partner.
+	if pairs[5] != nil {
+		t.Error("added line 5 (new3) should have nil pair (no removed partner)")
 	}
 }
 
@@ -105,10 +97,8 @@ func TestRenderEditDiffWidth(t *testing.T) {
 	old := `fmt.Println("hello")`
 	new := `fmt.Println("hello world")`
 
-	// Render at a controlled width (no tabs to avoid tab-stop ambiguity).
 	result := renderEditDiff(0, "test.go", old, new, 80)
 
-	// Each line should be no wider than 80 visible characters.
 	for i, line := range splitLines(result) {
 		if line == "" {
 			continue
@@ -118,6 +108,99 @@ func TestRenderEditDiffWidth(t *testing.T) {
 			t.Errorf("line %d: visible width %d > 80: %q", i, w, line)
 		}
 	}
+}
+
+func TestRenderEditDiffTabWidth(t *testing.T) {
+	// Simulate real Go source code with tab indentation, similar to what
+	// an LLM edit tool call would produce.
+	old := "\t\t\treturn ToValue(centered)\n\t\t})\n"
+	new := "\t\t\treturn ToValue(centered)\n\t\t})\n\n" +
+		"\t\t// String.reverse method: reverse -> String!\n" +
+		"\t\tMethod(StringType, \"reverse\").\n" +
+		"\t\t\tDoc(\"reverses the characters in the string\").\n" +
+		"\t\t\tReturns(NonNull(StringType)).\n" +
+		"\t\t\tImpl(func(ctx context.Context, self Value, args Args) (Value, error) {\n" +
+		"\t\t\t\trunes := []rune(self.(StringValue).Val)\n" +
+		"\t\t\t\tfor i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {\n" +
+		"\t\t\t\t\trunes[i], runes[j] = runes[j], runes[i]\n" +
+		"\t\t\t\t}\n" +
+		"\t\t\t\treturn ToValue(string(runes))\n" +
+		"\t\t\t})\n"
+
+	for _, totalWidth := range []int{80, 120, 160, 200} {
+		t.Run(fmt.Sprintf("width=%d", totalWidth), func(t *testing.T) {
+			result := renderEditDiff(0, "test.go", old, new, totalWidth)
+			for i, line := range splitLines(result) {
+				if line == "" {
+					continue
+				}
+				rendered := terminalRenderWidth(line)
+				if rendered > totalWidth {
+					t.Errorf("line %d: rendered width %d > %d (ansi.StringWidth=%d): %q",
+						i, rendered, totalWidth, ansi.StringWidth(line), line)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderEditDiffUnifiedFormat(t *testing.T) {
+	old := "hello world\n"
+	new := "hello there\ngoodbye\n"
+
+	result := renderEditDiff(0, "test.txt", old, new, 80)
+
+	// Should contain removed and added markers.
+	if !strings.Contains(result, "- ") {
+		t.Error("expected removed line marker '- '")
+	}
+	if !strings.Contains(result, "+ ") {
+		t.Error("expected added line marker '+ '")
+	}
+
+	// Should be unified (single column), not side-by-side.
+	// Each non-empty line should start with a line number gutter.
+	for i, line := range splitLines(result) {
+		if line == "" {
+			continue
+		}
+		// Should have the gutter pattern: digits/spaces in first 10 chars.
+		if len(line) < 12 {
+			t.Errorf("line %d too short: %q", i, line)
+		}
+	}
+}
+
+// terminalRenderWidth computes the actual visual width of a string as a
+// terminal would render it, expanding tabs to the next tab stop (every 8
+// columns) and skipping ANSI escape sequences.
+func terminalRenderWidth(s string) int {
+	col := 0
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' {
+			// Skip ANSI escape sequence.
+			j := i + 1
+			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+				j++
+			}
+			if j < len(s) {
+				j++ // include final letter
+			}
+			i = j
+			continue
+		}
+		if s[i] == '\t' {
+			col += 8 - (col % 8) // advance to next tab stop
+			i++
+			continue
+		}
+		// Decode UTF-8 rune and count as 1 column of width.
+		_, size := utf8.DecodeRuneInString(s[i:])
+		col++
+		i += size
+	}
+	return col
 }
 
 func splitLines(s string) []string {

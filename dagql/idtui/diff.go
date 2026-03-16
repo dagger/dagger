@@ -1,14 +1,10 @@
 package idtui
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/formatters"
-	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -31,24 +27,23 @@ type diffLine struct {
 	Content string       // raw text (no newline)
 }
 
-// diffLinePair pairs left/right columns for side-by-side display.
-type diffLinePair struct {
-	left  *diffLine
-	right *diffLine
-}
-
 // diffContextLines is the number of context lines to show around changes.
 const diffContextLines = 3
 
-// renderEditDiff produces a side-by-side diff view for an edit tool call.
+// diffTabWidth is the number of spaces used to expand tab characters in diff
+// content. Tabs must be expanded because ansi.StringWidth (and Truncate)
+// treat them as zero-width, but terminals render them at 8-column tab stops.
+const diffTabWidth = 4
+
+// renderEditDiff produces a unified diff view for an edit tool call.
 // It tries to read the file from the local filesystem for context and line
 // numbers. If the file is unavailable it falls back to a plain old/new diff.
 //
-// fileName is used both for file I/O and to select a syntax lexer.
+// fileName is used for file I/O and context lookup.
 // totalWidth is the terminal width available for the entire diff.
 func renderEditDiff(profile termenv.Profile, fileName, oldText, newText string, totalWidth int) string {
-	if totalWidth < 40 {
-		totalWidth = 40
+	if totalWidth < 20 {
+		totalWidth = 20
 	}
 
 	// Compute the line-level diff between old and new text.
@@ -60,20 +55,145 @@ func renderEditDiff(profile termenv.Profile, fileName, oldText, newText string, 
 	// Try to add file context (real line numbers + surrounding lines).
 	lines = addFileContext(fileName, oldText, lines)
 
-	// Pair lines for side-by-side.
-	pairs := pairDiffLines(lines)
+	// Pair consecutive removed/added lines for intraline highlighting.
+	paired := pairForIntraline(lines)
 
-	colWidth := totalWidth / 2
-	leftW := colWidth
-	rightW := totalWidth - colWidth
-
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
 	var sb strings.Builder
-	for _, p := range pairs {
-		sb.WriteString(renderLeftCol(profile, fileName, p.left, p.right, leftW))
-		sb.WriteString(renderRightCol(profile, fileName, p.right, p.left, rightW))
+	for i, dl := range lines {
+		sb.WriteString(renderUnifiedLine(out, dl, paired[i], totalWidth))
 		sb.WriteByte('\n')
 	}
 	return sb.String()
+}
+
+// renderUnifiedLine renders a single unified diff line with gutter, marker,
+// and optional intraline emphasis, truncated to fit within width.
+func renderUnifiedLine(out TermOutput, dl diffLine, pair *diffLine, width int) string {
+	// Expand tabs to spaces so width math is correct.
+	content := expandTabs(dl.Content, diffTabWidth)
+
+	// Gutter: "NNNN NNNN " (10 chars) + marker "X " (2 chars) = 12 chars.
+	const gutterW = 12
+	var gutter string
+	if dl.OldNo > 0 && dl.NewNo > 0 {
+		gutter = fmt.Sprintf("%4d %4d ", dl.OldNo, dl.NewNo)
+	} else if dl.OldNo > 0 {
+		gutter = fmt.Sprintf("%4d      ", dl.OldNo)
+	} else if dl.NewNo > 0 {
+		gutter = fmt.Sprintf("     %4d ", dl.NewNo)
+	} else {
+		gutter = "          "
+	}
+
+	var marker string
+	var lineColor termenv.Color
+	switch dl.Kind {
+	case diffRemoved:
+		marker = "- "
+		lineColor = termenv.ANSIRed
+	case diffAdded:
+		marker = "+ "
+		lineColor = termenv.ANSIGreen
+	default:
+		marker = "  "
+		lineColor = termenv.ANSIBrightBlack
+	}
+
+	gutterStr := out.String(gutter).Foreground(lineColor).Faint().String()
+	markerStr := out.String(marker).Foreground(lineColor).String()
+
+	// Apply intraline emphasis if we have a paired line.
+	var styled string
+	if pair != nil {
+		pairedContent := expandTabs(pair.Content, diffTabWidth)
+		if dl.Kind == diffRemoved {
+			oldRanges, _ := intralineRanges(content, pairedContent)
+			styled = applyIntralineColor(out, content, oldRanges, lineColor)
+		} else if dl.Kind == diffAdded {
+			_, newRanges := intralineRanges(pairedContent, content)
+			styled = applyIntralineColor(out, content, newRanges, lineColor)
+		}
+	}
+	if styled == "" {
+		// No intraline — just color the whole content line.
+		if dl.Kind != diffContext {
+			styled = out.String(content).Foreground(lineColor).String()
+		} else {
+			styled = content
+		}
+	}
+
+	contentW := width - gutterW
+	if contentW < 1 {
+		contentW = 1
+	}
+
+	truncated := ansi.Truncate(styled, contentW, "…")
+	return gutterStr + markerStr + truncated
+}
+
+// applyIntralineColor colors the entire line in lineColor and applies
+// bold+underline emphasis to the changed byte ranges.
+func applyIntralineColor(out TermOutput, content string, ranges []emphRange, lineColor termenv.Color) string {
+	if len(ranges) == 0 {
+		return out.String(content).Foreground(lineColor).String()
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(content) + len(ranges)*30)
+
+	pos := 0
+	for _, r := range ranges {
+		// Unchanged portion before this range.
+		if r.Start > pos {
+			sb.WriteString(out.String(content[pos:r.Start]).Foreground(lineColor).String())
+		}
+		// Emphasised (changed) portion: bold + underline.
+		if r.End > r.Start {
+			sb.WriteString(out.String(content[r.Start:r.End]).Foreground(lineColor).Bold().Underline().String())
+		}
+		pos = r.End
+	}
+	// Remainder after last range.
+	if pos < len(content) {
+		sb.WriteString(out.String(content[pos:]).Foreground(lineColor).String())
+	}
+	return sb.String()
+}
+
+// pairForIntraline returns a parallel slice where each entry is the
+// "partner" line for intraline diffing, or nil. Consecutive removed lines
+// are paired 1:1 with the consecutive added lines that follow them.
+func pairForIntraline(lines []diffLine) []*diffLine {
+	pairs := make([]*diffLine, len(lines))
+	i := 0
+	for i < len(lines) {
+		if lines[i].Kind != diffRemoved {
+			i++
+			continue
+		}
+		remStart := i
+		for i < len(lines) && lines[i].Kind == diffRemoved {
+			i++
+		}
+		addStart := i
+		for i < len(lines) && lines[i].Kind == diffAdded {
+			i++
+		}
+		remCount := addStart - remStart
+		addCount := i - addStart
+		// Pair up 1:1.
+		n := remCount
+		if addCount < n {
+			n = addCount
+		}
+		for j := range n {
+			pairs[remStart+j] = &lines[addStart+j]
+			pairs[addStart+j] = &lines[remStart+j]
+		}
+	}
+	return pairs
 }
 
 // lineLevelDiff uses diffmatchpatch's line-mode diff to produce properly
@@ -234,222 +354,27 @@ func intralineRanges(oldContent, newContent string) (oldRanges, newRanges []emph
 	return
 }
 
-// applyEmphasis wraps emphasised byte ranges in an already-ANSI-styled string
-// with bold+underline escapes. It tracks ANSI sequences so emphasis is applied
-// to the correct visible characters.
-func applyEmphasis(styled string, ranges []emphRange) string {
-	if len(ranges) == 0 {
-		return styled
+// expandTabs replaces tab characters with spaces, advancing to the next
+// tab stop of the given width (like a terminal would). This ensures that
+// width measurement and truncation functions see the true visual width.
+func expandTabs(s string, tabWidth int) string {
+	if !strings.Contains(s, "\t") {
+		return s
 	}
-
 	var sb strings.Builder
-	sb.Grow(len(styled) + len(ranges)*20)
-
-	rawIdx := 0 // byte position in the original raw content
-	inEmph := false
-
-	for i := 0; i < len(styled); {
-		// Skip over ANSI escape sequences.
-		if styled[i] == '\x1b' {
-			j := i + 1
-			for j < len(styled) && !((styled[j] >= 'A' && styled[j] <= 'Z') || (styled[j] >= 'a' && styled[j] <= 'z')) {
-				j++
+	sb.Grow(len(s) + 8) // small extra for typical expansion
+	col := 0
+	for _, r := range s {
+		if r == '\t' {
+			spaces := tabWidth - (col % tabWidth)
+			for range spaces {
+				sb.WriteByte(' ')
 			}
-			if j < len(styled) {
-				j++ // include the final letter
-			}
-			sb.WriteString(styled[i:j])
-			i = j
-			continue
+			col += spaces
+		} else {
+			sb.WriteRune(r)
+			col++
 		}
-
-		// Visible character — check emphasis transitions.
-		shouldEmph := false
-		for _, r := range ranges {
-			if rawIdx >= r.Start && rawIdx < r.End {
-				shouldEmph = true
-				break
-			}
-		}
-
-		if shouldEmph && !inEmph {
-			sb.WriteString("\x1b[1;4m") // bold + underline
-			inEmph = true
-		} else if !shouldEmph && inEmph {
-			sb.WriteString("\x1b[22;24m") // reset bold + underline
-			inEmph = false
-		}
-
-		sb.WriteByte(styled[i])
-		rawIdx++
-		i++
 	}
-
-	if inEmph {
-		sb.WriteString("\x1b[22;24m")
-	}
-
 	return sb.String()
-}
-
-// pairDiffLines groups lines into left/right pairs for side-by-side display.
-func pairDiffLines(lines []diffLine) []diffLinePair {
-	var pairs []diffLinePair
-	i := 0
-	for i < len(lines) {
-		switch lines[i].Kind {
-		case diffRemoved:
-			// Collect consecutive removed lines.
-			remStart := i
-			for i < len(lines) && lines[i].Kind == diffRemoved {
-				i++
-			}
-			// Collect consecutive added lines that follow.
-			addStart := i
-			for i < len(lines) && lines[i].Kind == diffAdded {
-				i++
-			}
-			remCount := addStart - remStart
-			addCount := i - addStart
-
-			// Pair them up: min(rem, add) paired rows, then leftovers.
-			j := 0
-			for j < remCount && j < addCount {
-				pairs = append(pairs, diffLinePair{left: &lines[remStart+j], right: &lines[addStart+j]})
-				j++
-			}
-			for j < remCount {
-				pairs = append(pairs, diffLinePair{left: &lines[remStart+j]})
-				j++
-			}
-			for k := j; k < addCount; k++ {
-				pairs = append(pairs, diffLinePair{right: &lines[addStart+k]})
-			}
-		case diffAdded:
-			pairs = append(pairs, diffLinePair{right: &lines[i]})
-			i++
-		default: // context
-			pairs = append(pairs, diffLinePair{left: &lines[i], right: &lines[i]})
-			i++
-		}
-	}
-	return pairs
-}
-
-// ── column renderers ────────────────────────────────────────────────────
-
-func renderLeftCol(profile termenv.Profile, fileName string, dl *diffLine, paired *diffLine, width int) string {
-	if dl == nil {
-		return strings.Repeat(" ", width)
-	}
-	return renderCol(profile, fileName, dl, paired, dl.OldNo, width, true)
-}
-
-func renderRightCol(profile termenv.Profile, fileName string, dl *diffLine, paired *diffLine, width int) string {
-	if dl == nil {
-		return strings.Repeat(" ", width)
-	}
-	return renderCol(profile, fileName, dl, paired, dl.NewNo, width, false)
-}
-
-func renderCol(profile termenv.Profile, fileName string, dl *diffLine, paired *diffLine, lineNo int, width int, isLeft bool) string {
-	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
-
-	// Line number gutter: "NNNN " (5 chars) + marker "X " (2 chars) = 7 chars.
-	var gutter string
-	if lineNo > 0 {
-		gutter = fmt.Sprintf("%4d ", lineNo)
-	} else {
-		gutter = "     "
-	}
-
-	var marker string
-	var lineColor termenv.Color
-	switch dl.Kind {
-	case diffRemoved:
-		if isLeft {
-			marker = "- "
-			lineColor = termenv.ANSIRed
-		} else {
-			marker = "  "
-			lineColor = termenv.ANSIBrightBlack
-		}
-	case diffAdded:
-		if !isLeft {
-			marker = "+ "
-			lineColor = termenv.ANSIGreen
-		} else {
-			marker = "  "
-			lineColor = termenv.ANSIBrightBlack
-		}
-	default:
-		marker = "  "
-		lineColor = termenv.ANSIBrightBlack
-	}
-
-	gutterStr := out.String(gutter).Foreground(lineColor).Faint().String()
-	markerStr := out.String(marker).Foreground(lineColor).String()
-
-	// Syntax-highlight the content.
-	content := syntaxHighlightLine(fileName, dl.Content)
-
-	// Apply intra-line emphasis for paired removed/added lines.
-	if paired != nil && dl.Kind == diffRemoved && paired.Kind == diffAdded && isLeft {
-		oldRanges, _ := intralineRanges(dl.Content, paired.Content)
-		content = applyEmphasis(content, oldRanges)
-	} else if paired != nil && dl.Kind == diffAdded && paired.Kind == diffRemoved && !isLeft {
-		_, newRanges := intralineRanges(paired.Content, dl.Content)
-		content = applyEmphasis(content, newRanges)
-	}
-
-	const gutterW = 7 // "NNNN " + "X "
-	contentW := width - gutterW
-	if contentW < 1 {
-		contentW = 1
-	}
-
-	// Truncate content to fit.
-	truncated := ansi.Truncate(content, contentW, "…")
-
-	line := gutterStr + markerStr + truncated
-
-	// Pad to full column width with spaces.
-	lineVisW := ansi.StringWidth(line)
-	if lineVisW < width {
-		line += strings.Repeat(" ", width-lineVisW)
-	}
-
-	return line
-}
-
-// syntaxHighlightLine highlights a single line of code using chroma.
-func syntaxHighlightLine(fileName, line string) string {
-	if line == "" {
-		return ""
-	}
-	lexer := lexers.Match(fileName)
-	if lexer == nil {
-		lexer = lexers.Fallback
-	}
-	lexer = chroma.Coalesce(lexer)
-
-	formatter := formatters.Get("terminal16")
-	if formatter == nil {
-		formatter = formatters.Fallback
-	}
-
-	style := TTYStyle()
-
-	it, err := lexer.Tokenise(nil, line)
-	if err != nil {
-		return line
-	}
-
-	var buf bytes.Buffer
-	if err := formatter.Format(&buf, style, it); err != nil {
-		return line
-	}
-
-	// Chroma may append a trailing newline; strip it.
-	return strings.TrimRight(buf.String(), "\n")
 }
