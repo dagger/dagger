@@ -26,11 +26,12 @@ import (
 )
 
 type Cache interface {
-	// GetOrInitCall caches dagql call results keyed by CacheKey.ID (a call ID).
-	// It returns the call result for that ID, initializing it with fn when needed.
+	// GetOrInitCall caches dagql call results keyed by the request's canonical
+	// recipe identity. It returns the call result for that request,
+	// initializing it with fn when needed.
 	GetOrInitCall(
 		context.Context,
-		CacheKey,
+		*CallRequest,
 		func(context.Context) (AnyResult, error),
 	) (AnyResult, error)
 
@@ -72,30 +73,6 @@ func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
 	return func(context.Context) (AnyResult, error) {
 		return v, nil
 	}
-}
-
-type CacheKey struct {
-	ID *call.ID
-
-	// ConcurrencyKey is used to determine whether *in-progress* calls should be deduplicated.
-	// If a call with a given (ResultKey, ConcurrencyKey) pair is already in progress, and
-	// another one comes in with the same pair, the second caller will wait for the first
-	// to complete and receive the same result.
-	//
-	// If two calls have the same ResultKey but different ConcurrencyKeys, they will not be deduped.
-	//
-	// If ConcurrencyKey is empty, no deduplication of in-progress calls will be done.
-	ConcurrencyKey string
-
-	// TTL is the time-to-live for the cached result of this call, in seconds.
-	TTL int64
-
-	// DoNotCache indicates that this call should not be cached at all, simply ran.
-	DoNotCache bool
-
-	// IsPersistable indicates whether this field call is eligible for persistent
-	// cache storage.
-	IsPersistable bool
 }
 
 type CacheEntryStats struct {
@@ -538,22 +515,27 @@ func (c *cache) attachResult(ctx context.Context, res AnyResult) (AnyResult, err
 	if res == nil {
 		return nil, nil
 	}
-	if res.ID() == nil {
-		return nil, fmt.Errorf("attach owned result: nil ID")
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.resultCallFrame == nil {
+		return nil, fmt.Errorf("attach owned result: missing result call frame")
 	}
-	if shared := res.cacheSharedResult(); shared != nil && shared.id != 0 {
+	if shared.id != 0 {
 		return res, nil
 	}
-	attached, err := c.GetOrInitCall(ctx, CacheKey{ID: res.ID()}, ValueFunc(res))
+	req := &CallRequest{
+		ResultCallFrame: shared.resultCallFrame.clone(),
+	}
+	req.ResultCallFrame.bindCache(c)
+	attached, err := c.GetOrInitCall(ctx, req, ValueFunc(res))
 	if err != nil {
-		return nil, fmt.Errorf("attach owned result %q: %w", res.ID().Digest(), err)
+		return nil, fmt.Errorf("attach owned result: %w", err)
 	}
 	if attached == nil {
-		return nil, fmt.Errorf("attach owned result %q: nil result", res.ID().Digest())
+		return nil, fmt.Errorf("attach owned result: nil result")
 	}
-	shared := attached.cacheSharedResult()
-	if shared == nil || shared.id == 0 {
-		return nil, fmt.Errorf("attach owned result %q: attached result missing shared result ID", res.ID().Digest())
+	attachedShared := attached.cacheSharedResult()
+	if attachedShared == nil || attachedShared.id == 0 {
+		return nil, fmt.Errorf("attach owned result: attached result missing shared result ID")
 	}
 	return attached, nil
 }
@@ -1238,14 +1220,16 @@ func (c *cache) activeDependencyClosureLocked() map[sharedResultID]struct{} {
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *cache) GetOrInitCall(
 	ctx context.Context,
-	key CacheKey,
+	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 ) (AnyResult, error) {
-	if key.ID == nil {
-		return nil, fmt.Errorf("cache key ID is nil")
+	if req == nil || req.ResultCallFrame == nil {
+		return nil, fmt.Errorf("call request is nil")
 	}
+	req = req.Clone()
+	req.ResultCallFrame.bindCache(c)
 
-	if key.DoNotCache {
+	if req.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
 
 		val, err := fn(ctx)
@@ -1258,22 +1242,24 @@ func (c *cache) GetOrInitCall(
 
 		detached := &sharedResult{
 			self:               val.Unwrap(),
-			resultCallFrame:    val.cacheSharedResult().resultCallFrame.clone(),
+			resultCallFrame:    req.ResultCallFrame.clone(),
 			hasValue:           true,
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
-			outputEffectIDs:    val.ID().AllEffectIDs(),
 		}
+		detached.resultCallFrame.bindCache(c)
+		outputEffects, err := detached.resultCallFrame.AllEffectIDs()
+		if err != nil {
+			return nil, fmt.Errorf("derive do-not-cache output effects: %w", err)
+		}
+		detached.outputEffectIDs = outputEffects
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			detached.onRelease = onReleaser.OnRelease
 		}
 		if obj, ok := val.(AnyObjectResult); ok {
 			detached.objType = obj.ObjectType()
 		}
-		perCall := Result[Typed]{
-			shared: detached,
-			id:     val.ID(),
-		}
+		perCall := Result[Typed]{shared: detached}
 		if detached.objType != nil {
 			normalized, err := detached.objType.New(perCall)
 			if err != nil {
@@ -1284,18 +1270,21 @@ func (c *cache) GetOrInitCall(
 		return perCall, nil
 	}
 
-	// Call identity is recipe-based; extra digests are output-equivalence digests.
-	callKey := key.ID.Digest().String()
+	callDigest, err := req.RecipeDigest()
+	if err != nil {
+		return nil, fmt.Errorf("derive request digest: %w", err)
+	}
+	callKey := callDigest.String()
 	if ctx.Value(cacheContextKey{callKey, c}) != nil {
 		return nil, ErrCacheRecursiveCall
 	}
 	callConcKeys := callConcurrencyKeys{
 		callKey:        callKey,
-		concurrencyKey: key.ConcurrencyKey,
+		concurrencyKey: req.ConcurrencyKey,
 	}
 
 	c.egraphMu.Lock()
-	hitRes, hit, err := c.lookupCacheForID(ctx, key.ID, key.IsPersistable, key.TTL)
+	hitRes, hit, err := c.lookupCacheForRequest(ctx, req)
 	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, err
@@ -1315,15 +1304,15 @@ func (c *cache) GetOrInitCall(
 		c.ongoingCalls = make(map[callConcurrencyKeys]*ongoingCall)
 	}
 
-	if key.ConcurrencyKey != "" {
+	if req.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
-			if key.IsPersistable {
+			if req.IsPersistable {
 				oc.isPersistable = true
 			}
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
-			return c.wait(ctx, oc, key.ID)
+			return c.wait(ctx, oc, req)
 		}
 	}
 
@@ -1338,14 +1327,14 @@ func (c *cache) GetOrInitCall(
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
-		isPersistable:       key.IsPersistable,
-		ttlSeconds:          key.TTL,
+		isPersistable:       req.IsPersistable,
+		ttlSeconds:          req.TTL,
 		waitCh:              make(chan struct{}),
 		cancel:              cancel,
 		waiters:             1,
 	}
 
-	if key.ConcurrencyKey != "" {
+	if req.ConcurrencyKey != "" {
 		c.ongoingCalls[callConcKeys] = oc
 	}
 
@@ -1357,13 +1346,13 @@ func (c *cache) GetOrInitCall(
 	}()
 
 	c.callsMu.Unlock()
-	return c.wait(ctx, oc, key.ID)
+	return c.wait(ctx, oc, req)
 }
 
 func (c *cache) wait(
 	ctx context.Context,
 	oc *ongoingCall,
-	requestID *call.ID,
+	req *CallRequest,
 ) (AnyResult, error) {
 	var waitErr error
 	sessionID := ""
@@ -1392,7 +1381,7 @@ func (c *cache) wait(
 	}
 
 	oc.initCompletedResultOnce.Do(func() {
-		oc.initCompletedResultErr = c.initCompletedResult(ctx, oc, requestID, sessionID)
+		oc.initCompletedResultErr = c.initCompletedResult(ctx, oc, req, sessionID)
 	})
 	if oc.initCompletedResultErr != nil {
 		return nil, oc.initCompletedResultErr
@@ -1405,42 +1394,11 @@ func (c *cache) wait(
 	c.traceRefAcquired(ctx, oc.res, atomic.LoadInt64(&oc.res.refCount))
 	c.egraphMu.Lock()
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
-	var contentDigest call.ExtraDigest
-	for outputEqID := range c.outputEqClassesForResultLocked(oc.res.id) {
-		// NOTE: if multiple content-labeled digests end up in one eq class, we
-		// intentionally tolerate that for now and just use the first one we
-		// encounter.
-		for extra := range c.eqClassExtraDigests[outputEqID] {
-			if extra.Label != call.ExtraDigestLabelContent || extra.Digest == "" {
-				continue
-			}
-			contentDigest = extra
-			break
-		}
-		if contentDigest.Digest != "" {
-			break
-		}
-	}
 	c.egraphMu.Unlock()
-
-	retID := requestID
-	if contentDigest.Digest != "" {
-		retID = retID.With(call.WithExtraDigest(contentDigest))
-	}
-	retID = retID.AppendEffectIDs(oc.res.outputEffectIDs...)
-
-	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
-	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
-		retID = retID.With(call.WithAppendedImplicitInputs(call.NewArgument(
-			"sessionID",
-			call.NewLiteralString(sessionID),
-			false,
-		)))
-	}
 
 	retRes := Result[Typed]{
 		shared:   oc.res,
-		id:       retID,
+		id:       nil,
 		hitCache: false,
 	}
 
@@ -1457,16 +1415,20 @@ func (c *cache) wait(
 	return retObjRes, nil
 }
 
-func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, requestID *call.ID, sessionID string) error {
+func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
-		resultID         *call.ID
 		resultTermSelf   digest.Digest
 		resultTermInputs []digest.Digest
-		resultTermRefs   []call.StructuralInputRef
+		resultTermRefs   []ResultCallFrameStructuralInputRef
 		hasResultTerm    bool
 	)
+	if req == nil || req.ResultCallFrame == nil {
+		return fmt.Errorf("call request is nil")
+	}
+	req = req.Clone()
+	req.ResultCallFrame.bindCache(c)
 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{
@@ -1481,6 +1443,10 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 			oc.res.self = oc.val.Unwrap()
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				oc.res.resultCallFrame = shared.resultCallFrame.clone()
+				oc.res.resultCallFrame.bindCache(c)
+			}
+			if oc.res.resultCallFrame == nil {
+				oc.res.resultCallFrame = req.ResultCallFrame.clone()
 				oc.res.resultCallFrame.bindCache(c)
 			}
 			oc.res.hasValue = true
@@ -1499,31 +1465,37 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 			}
 		}
 	}
-	requestIDForIndex := requestID
+	requestForIndex := req
 	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
 	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
-		requestIDForIndex = requestID.With(call.WithAppendedImplicitInputs(call.NewArgument(
-			"sessionID",
-			call.NewLiteralString(sessionID),
-			false,
-		)))
+		requestForIndex = req.Clone()
+		requestForIndex.ImplicitInputs = append(requestForIndex.ImplicitInputs, &ResultCallFrameArg{
+			Name: "sessionID",
+			Value: &ResultCallFrameLiteral{
+				Kind:        ResultCallFrameLiteralKindString,
+				StringValue: sessionID,
+			},
+		})
 	}
+	requestForIndex.ResultCallFrame.bindCache(c)
 
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
 	}
 	touchSharedResultLastUsed(oc.res, now.UnixNano())
 	if oc.res.recordType == "" {
-		oc.res.recordType = requestIDForIndex.Name()
+		oc.res.recordType = requestForIndex.Field
 	}
 	if oc.res.recordType == "" {
 		oc.res.recordType = "dagql.unknown"
 	}
 	if oc.res.description == "" {
-		oc.res.description = requestIDForIndex.Field()
+		oc.res.description = requestForIndex.Field
 	}
 	if oc.res.description == "" {
-		oc.res.description = requestIDForIndex.Digest().String()
+		if reqDig, err := requestForIndex.RecipeDigest(); err == nil {
+			oc.res.description = reqDig.String()
+		}
 	}
 	if oc.res.usageIdentity == "" {
 		if usageIdentity, ok := cacheUsageIdentity(oc.res); ok {
@@ -1539,14 +1511,15 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 		oc.res.expiresAtUnix,
 		candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds),
 	)
-	if oc.val != nil {
-		resultID = oc.val.ID()
-		if !resWasCacheBacked {
-			oc.res.outputEffectIDs = resultID.AllEffectIDs()
+	if !resWasCacheBacked && oc.res.resultCallFrame != nil {
+		outputEffects, err := oc.res.resultCallFrame.AllEffectIDs()
+		if err != nil {
+			return fmt.Errorf("derive result output effects: %w", err)
 		}
+		oc.res.outputEffectIDs = outputEffects
 	}
-	if resultID != nil && !resWasCacheBacked {
-		selfDigest, inputRefs, deriveErr := resultID.SelfDigestAndInputRefs()
+	if oc.res.resultCallFrame != nil && !resWasCacheBacked {
+		selfDigest, inputRefs, deriveErr := oc.res.resultCallFrame.SelfDigestAndInputRefs()
 		if deriveErr != nil {
 			return fmt.Errorf("derive result term digests: %w", deriveErr)
 		}
@@ -1564,7 +1537,7 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 		hasResultTerm = true
 	}
 
-	requestSelf, requestInputRefs, err := requestIDForIndex.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := requestForIndex.SelfDigestAndInputRefs()
 	if err != nil {
 		return fmt.Errorf("derive request term digests: %w", err)
 	}
@@ -1580,8 +1553,8 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 	c.egraphMu.Lock()
 	indexErr := c.indexWaitResultInEgraphLocked(
 		ctx,
-		requestIDForIndex,
-		resultID,
+		requestForIndex.ResultCallFrame,
+		oc.res.resultCallFrame,
 		requestSelf,
 		requestInputs,
 		requestInputRefs,

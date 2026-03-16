@@ -144,14 +144,14 @@ func (c *cache) ensureTermInputEqIDsLocked(ctx context.Context, inputDigests []d
 	return inputEqIDs
 }
 
-func (c *cache) inputProvenanceForRefs(inputRefs []call.StructuralInputRef) ([]egraphInputProvenanceKind, error) {
+func (c *cache) inputProvenanceForRefs(inputRefs []ResultCallFrameStructuralInputRef) ([]egraphInputProvenanceKind, error) {
 	inputProvenance := make([]egraphInputProvenanceKind, 0, len(inputRefs))
 	for _, ref := range inputRefs {
 		if err := ref.Validate(); err != nil {
 			return nil, err
 		}
 		switch {
-		case ref.ID != nil:
+		case ref.Result != nil:
 			inputProvenance = append(inputProvenance, egraphInputProvenanceKindResult)
 		case ref.Digest != "":
 			inputProvenance = append(inputProvenance, egraphInputProvenanceKindDigest)
@@ -646,6 +646,86 @@ type lookupMatch struct {
 	termSetSize           int
 }
 
+func (c *cache) lookupMatchForFrameLocked(ctx context.Context, frame *ResultCallFrame) (lookupMatch, error) {
+	match := lookupMatch{
+		primaryLookupPossible: true,
+		missingInputIndex:     -1,
+	}
+	if frame == nil {
+		return match, nil
+	}
+	frame.bindCache(c)
+
+	nowUnix := time.Now().Unix()
+	recipeDigest, err := frame.RecipeDigest()
+	if err != nil {
+		return match, fmt.Errorf("derive call recipe digest: %w", err)
+	}
+
+	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
+	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
+	if match.hitRes != nil {
+		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
+		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[recipeDigest.String()])
+		return match, nil
+	}
+	for _, extra := range frame.ExtraDigests {
+		if extra.Digest == "" {
+			continue
+		}
+		resultSet := c.egraphResultsByDigest[extra.Digest.String()]
+		match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
+		if match.hitRes == nil {
+			continue
+		}
+		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
+		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[extra.Digest.String()])
+		return match, nil
+	}
+
+	selfDigest, inputRefs, err := frame.SelfDigestAndInputRefs()
+	if err != nil {
+		return match, fmt.Errorf("derive call term: %w", err)
+	}
+	inputDigests := make([]digest.Digest, 0, len(inputRefs))
+	for _, ref := range inputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return match, fmt.Errorf("derive call term input digest: %w", err)
+		}
+		inputDigests = append(inputDigests, dig)
+	}
+	match.selfDigest = selfDigest
+	match.inputDigests = inputDigests
+	match.inputEqIDs = make([]eqClassID, len(inputDigests))
+	for i, inDig := range inputDigests {
+		classID, ok := c.egraphDigestToClass[inDig.String()]
+		if !ok {
+			match.primaryLookupPossible = false
+			match.missingInputIndex = i
+			break
+		}
+		root := c.findEqClassLocked(classID)
+		if root == 0 {
+			match.primaryLookupPossible = false
+			match.missingInputIndex = i
+			break
+		}
+		match.inputEqIDs[i] = root
+	}
+	if match.primaryLookupPossible {
+		match.termDigest = calcEgraphTermDigest(selfDigest, match.inputEqIDs)
+		termSet := c.egraphTermsByTermDigest[match.termDigest]
+		match.termSetSize = len(termSet)
+		match.hitTerm = c.firstLiveTermInSetLocked(termSet)
+		match.hitRes = c.firstResultForTermSetDeterministicallyAtLocked(termSet, nowUnix)
+		if match.hitTerm != nil {
+			match.hitEqClassID = c.findEqClassLocked(match.hitTerm.outputEqID)
+		}
+	}
+	return match, nil
+}
+
 func (c *cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookupMatch, error) {
 	match := lookupMatch{
 		primaryLookupPossible: true,
@@ -728,9 +808,9 @@ func (c *cache) resolveSharedResultForInputIDLocked(ctx context.Context, id *cal
 	return match.hitRes, nil
 }
 
-func (c *cache) indexResultDigestsLocked(res *sharedResult, requestID, responseID *call.ID) {
+func (c *cache) indexResultDigestsLocked(res *sharedResult, requestFrame, responseFrame *ResultCallFrame) error {
 	if res == nil {
-		return
+		return nil
 	}
 	c.initEgraphLocked()
 
@@ -746,18 +826,27 @@ func (c *cache) indexResultDigestsLocked(res *sharedResult, requestID, responseI
 		set[res.id] = struct{}{}
 	}
 
-	if requestID != nil {
-		indexDigest(requestID.Digest())
-		for _, extra := range requestID.ExtraDigests() {
+	indexFrame := func(frame *ResultCallFrame) error {
+		if frame == nil {
+			return nil
+		}
+		dig, err := frame.RecipeDigest()
+		if err != nil {
+			return err
+		}
+		indexDigest(dig)
+		for _, extra := range frame.ExtraDigests {
 			indexDigest(extra.Digest)
 		}
+		return nil
 	}
-	if responseID != nil {
-		indexDigest(responseID.Digest())
-		for _, extra := range responseID.ExtraDigests() {
-			indexDigest(extra.Digest)
-		}
+	if err := indexFrame(requestFrame); err != nil {
+		return fmt.Errorf("index request digests: %w", err)
 	}
+	if err := indexFrame(responseFrame); err != nil {
+		return fmt.Errorf("index response digests: %w", err)
+	}
+	return nil
 }
 
 func (c *cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses map[eqClassID]struct{}) {
@@ -788,27 +877,28 @@ func (c *cache) removeResultDigestsLocked(resID sharedResultID, outputEqClasses 
 // back to the canonical term lookup using (self, input eq-classes).
 //
 // This method assumes egraphMu is already held by the caller.
-func (c *cache) lookupCacheForID(
+func (c *cache) lookupCacheForRequest(
 	ctx context.Context,
-	id *call.ID,
-	persistable bool,
-	ttlSeconds int64,
+	req *CallRequest,
 ) (AnyResult, bool, error) {
-	// (self digest, input eqSet IDs) are digested to create the "real" cache key we do a lookup on.
-	// Figure those out first.
-	if id == nil {
+	if req == nil || req.ResultCallFrame == nil {
 		return nil, false, nil
 	}
-	match, err := c.lookupMatchForIDLocked(ctx, id)
+	req.ResultCallFrame.bindCache(c)
+	match, err := c.lookupMatchForFrameLocked(ctx, req.ResultCallFrame)
 	if err != nil {
 		return nil, false, err
 	}
-	c.traceLookupAttempt(ctx, id.Digest().String(), match.selfDigest.String(), match.inputDigests, persistable)
+	requestDigest, err := req.RecipeDigest()
+	if err != nil {
+		return nil, false, err
+	}
+	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
 	hitTerm := match.hitTerm
 	hitRes := match.hitRes
 
 	if hitRes == nil {
-		c.traceLookupMissNoMatch(ctx, id.Digest().String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
+		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
 		return nil, false, nil
 	}
 
@@ -819,7 +909,7 @@ func (c *cache) lookupCacheForID(
 		// the resolver path can re-materialize safely instead of failing or
 		// recursing.
 		if !persistedEnvelopeDecodableInContext(ctx, hitRes.persistedEnvelope) {
-			c.traceLookupMissUndecodableEnvelope(ctx, id.Digest().String(), hitRes.id)
+			c.traceLookupMissUndecodableEnvelope(ctx, requestDigest.String(), hitRes.id)
 			return nil, false, nil
 		}
 	}
@@ -833,10 +923,10 @@ func (c *cache) lookupCacheForID(
 	nowUnix := now.Unix()
 	res.expiresAtUnix = mergeSharedResultExpiryUnix(
 		res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(nowUnix, ttlSeconds),
+		candidateSharedResultExpiryUnix(nowUnix, req.TTL),
 	)
 	touchSharedResultLastUsed(res, now.UnixNano())
-	if persistable {
+	if req.IsPersistable {
 		// NOTE: this is an intentional experiment behavior. If a persistable field
 		// hits a result originally produced by a non-persistable field, we
 		// "upgrade" the shared result to persisted-dependency liveness so future
@@ -845,52 +935,33 @@ func (c *cache) lookupCacheForID(
 		// persistence policy is finalized.
 		c.markResultAsDepOfPersistedLocked(ctx, res)
 	}
-	if err := c.teachResultIdentityLocked(ctx, res, id); err != nil {
+	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCallFrame); err != nil {
 		return nil, false, err
 	}
 	newRefCount := atomic.AddInt64(&res.refCount, 1)
 	c.traceRefAcquired(ctx, res, newRefCount)
-
-	// Materialize caller-facing result preserving request recipe identity.
-	retID := id
-	for outputEqID := range c.outputEqClassesForResultLocked(res.id) {
-		// NOTE: if multiple content-labeled digests end up in one eq class, we
-		// intentionally tolerate that for now and just use the first one we
-		// encounter.
-		for extra := range c.eqClassExtraDigests[outputEqID] {
-			if extra.Label != call.ExtraDigestLabelContent || extra.Digest == "" {
-				continue
-			}
-			retID = retID.With(call.WithExtraDigest(extra))
-			break
-		}
-		if retID.ContentDigest() != "" {
-			break
-		}
-	}
-	retID = retID.AppendEffectIDs(res.outputEffectIDs...)
 	if !res.hasValue {
-		c.traceLookupHit(ctx, id.Digest().String(), res, hitTerm, match.termDigest)
+		c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
 		return Result[Typed]{
 			shared:   res,
-			id:       retID,
+			id:       nil,
 			hitCache: true,
 		}, true, nil
 	}
 	retRes := Result[Typed]{
 		shared:   res,
-		id:       retID,
+		id:       nil,
 		hitCache: true,
 	}
 	if res.objType == nil {
-		c.traceLookupHit(ctx, id.Digest().String(), res, hitTerm, match.termDigest)
+		c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
 		return retRes, true, nil
 	}
 	retObjRes, err := res.objType.New(retRes)
 	if err != nil {
 		return nil, false, fmt.Errorf("reconstruct structural-hit object result from cache: %w", err)
 	}
-	c.traceLookupHit(ctx, id.Digest().String(), res, hitTerm, match.termDigest)
+	c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
 	return retObjRes, true, nil
 }
 
@@ -1046,13 +1117,14 @@ func (c *cache) associateResultWithTermLocked(
 	}
 }
 
-func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult, requestID *call.ID) error {
-	if res == nil || res.id == 0 || requestID == nil {
+func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult, requestFrame *ResultCallFrame) error {
+	if res == nil || res.id == 0 || requestFrame == nil {
 		return nil
 	}
 	c.initEgraphLocked()
+	requestFrame.bindCache(c)
 
-	requestSelf, requestInputRefs, err := requestID.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := requestFrame.SelfDigestAndInputRefs()
 	if err != nil {
 		return fmt.Errorf("derive request term digests: %w", err)
 	}
@@ -1069,12 +1141,16 @@ func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult
 	if rootSet == nil {
 		rootSet = make(map[eqClassID]struct{})
 	}
-	if requestID.Digest() != "" {
-		if eqID := c.ensureEqClassForDigestLocked(ctx, requestID.Digest().String()); eqID != 0 {
+	requestDigest, err := requestFrame.RecipeDigest()
+	if err != nil {
+		return fmt.Errorf("derive request recipe digest: %w", err)
+	}
+	if requestDigest != "" {
+		if eqID := c.ensureEqClassForDigestLocked(ctx, requestDigest.String()); eqID != 0 {
 			rootSet[c.findEqClassLocked(eqID)] = struct{}{}
 		}
 	}
-	for _, extra := range requestID.ExtraDigests() {
+	for _, extra := range requestFrame.ExtraDigests {
 		if extra.Digest == "" {
 			continue
 		}
@@ -1153,7 +1229,9 @@ func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
 
-	c.indexResultDigestsLocked(res, requestID, nil)
+	if err := c.indexResultDigestsLocked(res, requestFrame, nil); err != nil {
+		return err
+	}
 	for termID := range c.termIDsForResultLocked(res.id) {
 		term := c.egraphTerms[termID]
 		if term == nil {
@@ -1168,7 +1246,7 @@ func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult
 			extras = make(map[call.ExtraDigest]struct{})
 			c.eqClassExtraDigests[outputEqID] = extras
 		}
-		for _, extra := range requestID.ExtraDigests() {
+		for _, extra := range requestFrame.ExtraDigests {
 			if extra.Digest == "" {
 				continue
 			}
@@ -1181,18 +1259,24 @@ func (c *cache) teachResultIdentityLocked(ctx context.Context, res *sharedResult
 
 func (c *cache) indexWaitResultInEgraphLocked(
 	ctx context.Context,
-	requestID *call.ID,
-	responseID *call.ID,
+	requestFrame *ResultCallFrame,
+	responseFrame *ResultCallFrame,
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
-	requestInputRefs []call.StructuralInputRef,
+	requestInputRefs []ResultCallFrameStructuralInputRef,
 	resultTermSelf digest.Digest,
 	resultTermInputs []digest.Digest,
-	resultTermInputRefs []call.StructuralInputRef,
+	resultTermInputRefs []ResultCallFrameStructuralInputRef,
 	hasResultTerm bool,
 	res *sharedResult,
 ) error {
 	c.initEgraphLocked()
+	if requestFrame != nil {
+		requestFrame.bindCache(c)
+	}
+	if responseFrame != nil {
+		responseFrame.bindCache(c)
+	}
 
 	digestSet := make(map[string]struct{}, 6)
 	addDigest := func(dig string) {
@@ -1202,17 +1286,25 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		digestSet[dig] = struct{}{}
 	}
 
-	if requestID != nil {
-		addDigest(requestID.Digest().String())
-		for _, extra := range requestID.ExtraDigests() {
+	addFrameDigests := func(frame *ResultCallFrame) error {
+		if frame == nil {
+			return nil
+		}
+		dig, err := frame.RecipeDigest()
+		if err != nil {
+			return err
+		}
+		addDigest(dig.String())
+		for _, extra := range frame.ExtraDigests {
 			addDigest(extra.Digest.String())
 		}
+		return nil
 	}
-	if responseID != nil {
-		addDigest(responseID.Digest().String())
-		for _, extra := range responseID.ExtraDigests() {
-			addDigest(extra.Digest.String())
-		}
+	if err := addFrameDigests(requestFrame); err != nil {
+		return fmt.Errorf("index request digests: %w", err)
+	}
+	if err := addFrameDigests(responseFrame); err != nil {
+		return fmt.Errorf("index response digests: %w", err)
 	}
 	if len(digestSet) == 0 {
 		return nil
@@ -1254,8 +1346,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		c.nextSharedResultID++
 	}
 	c.resultsByID[res.id] = res
-	if err := c.ensureResultCallFrameLocked(ctx, res, requestID); err != nil {
-		return fmt.Errorf("derive result call frame: %w", err)
+	if res.resultCallFrame == nil && requestFrame != nil {
+		res.resultCallFrame = requestFrame.clone()
+		res.resultCallFrame.bindCache(c)
 	}
 	setTypedPersistedResultID(res.self, res.id)
 	c.traceResultCreated(ctx, res)
@@ -1267,7 +1360,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	termsToIndex := []struct {
 		selfDigest   digest.Digest
 		inputDigests []digest.Digest
-		inputRefs    []call.StructuralInputRef
+		inputRefs    []ResultCallFrameStructuralInputRef
 	}{
 		{
 			selfDigest:   requestSelf,
@@ -1284,7 +1377,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		termsToIndex = append(termsToIndex, struct {
 			selfDigest   digest.Digest
 			inputDigests []digest.Digest
-			inputRefs    []call.StructuralInputRef
+			inputRefs    []ResultCallFrameStructuralInputRef
 		}{
 			selfDigest:   resultTermSelf,
 			inputDigests: resultTermInputs,
@@ -1362,7 +1455,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
 	}
 
-	c.indexResultDigestsLocked(res, requestID, responseID)
+	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {
+		return err
+	}
 	for termID := range c.termIDsForResultLocked(res.id) {
 		term := c.egraphTerms[termID]
 		if term == nil {
@@ -1377,16 +1472,16 @@ func (c *cache) indexWaitResultInEgraphLocked(
 			extras = make(map[call.ExtraDigest]struct{})
 			c.eqClassExtraDigests[outputEqID] = extras
 		}
-		if requestID != nil {
-			for _, extra := range requestID.ExtraDigests() {
+		if requestFrame != nil {
+			for _, extra := range requestFrame.ExtraDigests {
 				if extra.Digest == "" {
 					continue
 				}
 				extras[extra] = struct{}{}
 			}
 		}
-		if responseID != nil {
-			for _, extra := range responseID.ExtraDigests() {
+		if responseFrame != nil {
+			for _, extra := range responseFrame.ExtraDigests {
 				if extra.Digest == "" {
 					continue
 				}

@@ -265,9 +265,13 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult,
 	if requestedID == nil {
 		return nil, fmt.Errorf("wrap persisted shared result: nil requested ID")
 	}
+	requestedFrame, err := c.resultCallFrameForIDLocked(ctx, requestedID)
+	if err != nil {
+		return nil, fmt.Errorf("derive persisted requested frame %q: %w", requestedID.Digest(), err)
+	}
 
 	c.egraphMu.Lock()
-	if err := c.teachResultIdentityLocked(ctx, res, requestedID); err != nil {
+	if err := c.teachResultIdentityLocked(ctx, res, requestedFrame); err != nil {
 		c.egraphMu.Unlock()
 		return nil, fmt.Errorf("teach persisted shared result identity %q: %w", requestedID.Digest(), err)
 	}

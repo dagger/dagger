@@ -106,7 +106,7 @@ func telemetryKeys(ctx context.Context) *sync.Map {
 
 func (c *SessionCache) GetOrInitCall(
 	ctx context.Context,
-	key CacheKey,
+	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 	opts ...CacheCallOpt,
 ) (res AnyResult, err error) {
@@ -132,25 +132,29 @@ func (c *SessionCache) GetOrInitCall(
 	for _, opt := range opts {
 		opt.SetCacheCallOpt(&o)
 	}
-	if key.ID == nil {
-		return nil, errors.New("cache key ID is nil")
+	if req == nil {
+		return nil, errors.New("call request is nil")
+	}
+	callDigest, err := req.RecipeDigest()
+	if err != nil {
+		return nil, err
 	}
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
 		keys = &c.seenKeys
 	}
-	callKey := key.ID.Digest().String()
+	callKey := callDigest.String()
 	switch o.TelemetryPolicy {
 	case TelemetryPolicyCacheHitOnly:
-		res, err = c.cache.GetOrInitCall(ctx, key, fn)
+		res, err = c.cache.GetOrInitCall(ctx, req, fn)
 		if err != nil {
 			return nil, err
 		}
 
 		if o.Telemetry != nil && res != nil && res.HitCache() {
 			_, seen := keys.LoadOrStore(callKey, struct{}{})
-			if !seen || key.DoNotCache {
+			if !seen || req.DoNotCache {
 				// track keys globally in addition to any local key stores, otherwise we'll
 				// see dupes when e.g. IDs returned out of the "bubble" are loaded
 				c.seenKeys.Store(callKey, struct{}{})
@@ -162,7 +166,7 @@ func (c *SessionCache) GetOrInitCall(
 
 	default:
 		_, seen := keys.LoadOrStore(callKey, struct{}{})
-		if o.Telemetry != nil && (!seen || key.DoNotCache) {
+		if o.Telemetry != nil && (!seen || req.DoNotCache) {
 			// track keys globally in addition to any local key stores, otherwise we'll
 			// see dupes when e.g. IDs returned out of the "bubble" are loaded
 			c.seenKeys.Store(callKey, struct{}{})
@@ -178,7 +182,7 @@ func (c *SessionCache) GetOrInitCall(
 			ctx = telemetryCtx
 		}
 
-		res, err = c.cache.GetOrInitCall(ctx, key, fn)
+		res, err = c.cache.GetOrInitCall(ctx, req, fn)
 		if err != nil {
 			return nil, err
 		}
@@ -193,7 +197,7 @@ func (c *SessionCache) GetOrInitCall(
 
 	c.mu.Lock()
 	isClosed := c.isClosed
-	if !isClosed && res != nil && !key.DoNotCache {
+	if !isClosed && res != nil && !req.DoNotCache {
 		c.results = append(c.results, res)
 	}
 	c.mu.Unlock()

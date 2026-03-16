@@ -406,6 +406,107 @@ func (frame *ResultCallFrame) SelfDigestAndInputRefs() (digest.Digest, []ResultC
 	return digest.Digest(h.DigestAndClose()), inputRefs, nil
 }
 
+func (frame *ResultCallFrame) AllEffectIDs() ([]string, error) {
+	if frame == nil {
+		return nil, nil
+	}
+	seenResults := map[sharedResultID]struct{}{}
+	seenEffects := map[string]struct{}{}
+	var out []string
+
+	var walkFrame func(*ResultCallFrame) error
+	var walkRef func(*ResultCallFrameRef) error
+	var walkLiteral func(*ResultCallFrameLiteral) error
+
+	walkRef = func(ref *ResultCallFrameRef) error {
+		if ref == nil || ref.ResultID == 0 {
+			return nil
+		}
+		resultID := sharedResultID(ref.ResultID)
+		if _, seen := seenResults[resultID]; seen {
+			return nil
+		}
+		seenResults[resultID] = struct{}{}
+		if frame.cache == nil {
+			return fmt.Errorf("cannot resolve effect IDs for result ref %d without cache", ref.ResultID)
+		}
+		target := frame.cache.resultCallFrameByResultID(resultID)
+		if target == nil {
+			return fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
+		}
+		return walkFrame(target)
+	}
+
+	walkLiteral = func(lit *ResultCallFrameLiteral) error {
+		if lit == nil {
+			return nil
+		}
+		switch lit.Kind {
+		case ResultCallFrameLiteralKindResultRef:
+			return walkRef(lit.ResultRef)
+		case ResultCallFrameLiteralKindList:
+			for _, item := range lit.ListItems {
+				if err := walkLiteral(item); err != nil {
+					return err
+				}
+			}
+		case ResultCallFrameLiteralKindObject:
+			for _, field := range lit.ObjectFields {
+				if field == nil {
+					continue
+				}
+				if err := walkLiteral(field.Value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	walkFrame = func(cur *ResultCallFrame) error {
+		if cur == nil {
+			return nil
+		}
+		for _, effect := range cur.EffectIDs {
+			if _, seen := seenEffects[effect]; seen {
+				continue
+			}
+			seenEffects[effect] = struct{}{}
+			out = append(out, effect)
+		}
+		if err := walkRef(cur.Receiver); err != nil {
+			return err
+		}
+		if cur.Module != nil {
+			if err := walkRef(cur.Module.ResultRef); err != nil {
+				return err
+			}
+		}
+		for _, arg := range cur.Args {
+			if arg == nil {
+				continue
+			}
+			if err := walkLiteral(arg.Value); err != nil {
+				return err
+			}
+		}
+		for _, input := range cur.ImplicitInputs {
+			if input == nil {
+				continue
+			}
+			if err := walkLiteral(input.Value); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := walkFrame(frame); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (frame *ResultCallFrame) bindCache(c *cache) {
 	if frame == nil {
 		return
