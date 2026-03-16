@@ -2955,7 +2955,7 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 	}
 
 	if span.Message == "" && // messages are displayed in renderStep
-		(row.Expanded || (row.Span.LLMTool != "" && !isFileContentTool(row.Span.LLMTool))) {
+		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
 	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded {
 		// in shell mode, we print top-level command logs unindented, like shells
@@ -3040,18 +3040,8 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 	toolName := row.Span.LLMTool
 	fields := partialJSONFields(args)
 
-	// For edit tools, render a unified diff with intraline highlighting.
+	// For edit tools with complete old+new text, render a side-by-side diff.
 	if fe.tryRenderEditDiff(out, r, row, prefix, toolName, fields) {
-		return
-	}
-
-	// For write tools, render the content as a line-numbered file view.
-	if fe.tryRenderWriteContent(out, r, row, prefix, toolName, fields) {
-		return
-	}
-
-	// For read tools, render the response content as a line-numbered file view.
-	if fe.tryRenderReadContent(out, r, row, prefix, toolName, fields) {
 		return
 	}
 
@@ -3173,126 +3163,15 @@ func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *da
 	return true
 }
 
-// tryRenderWriteContent renders the content of a write tool call as a
-// line-numbered file view. Returns true if rendered.
-func (fe *frontendPretty) tryRenderWriteContent(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields map[string]parsedField) bool {
-	if !isWriteTool(toolName) {
-		return false
-	}
-
-	contentField := firstFieldEntry(fields, "content", "contents")
-	if contentField == nil || contentField.Value == "" {
-		return false
-	}
-	if !contentField.Complete {
-		return false
-	}
-
-	diffWidth := fe.window.Width - row.Depth*2 - 4
-	if diffWidth < 40 {
-		diffWidth = 40
-	}
-
-	view := renderFileView(fe.profile, contentField.Value, 1, diffWidth, termenv.ANSIGreen)
-	if view == "" {
-		return false
-	}
-
-	for _, line := range strings.Split(strings.TrimRight(view, "\n"), "\n") {
-		r.fancyIndent(out, row, true, false)
-		fmt.Fprintln(out, prefix+line)
-	}
-	return true
-}
-
-// tryRenderReadContent renders the content of a read tool's response logs
-// as a line-numbered file view. Returns true if rendered.
-func (fe *frontendPretty) tryRenderReadContent(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields map[string]parsedField) bool {
-	if !isReadTool(toolName) {
-		return false
-	}
-
-	// Read tool content comes from the tool response (logs), not from args.
-	vt := fe.logs.Logs[row.Span.ID]
-	if vt == nil || vt.UsedHeight() == 0 {
-		return false
-	}
-
-	// Extract plain text content from the vterm.
-	var contentBuf strings.Builder
-	term := vt.Term()
-	used := term.UsedHeight()
-	for lineIdx, l := range term.Content {
-		if lineIdx > used {
-			break
-		}
-		if contentBuf.Len() > 0 {
-			contentBuf.WriteByte('\n')
-		}
-		contentBuf.WriteString(strings.TrimRight(string(l), " "))
-	}
-	content := contentBuf.String()
-	if content == "" {
-		return false
-	}
-
-	// Determine starting line number from the offset arg if present.
-	startLine := 1
-	offsetStr := firstField(fields, "offset")
-	if offsetStr != "" {
-		if n, err := strconv.Atoi(offsetStr); err == nil && n > 0 {
-			startLine = n
-		}
-	}
-
-	diffWidth := fe.window.Width - row.Depth*2 - 4
-	if diffWidth < 40 {
-		diffWidth = 40
-	}
-
-	view := renderFileView(fe.profile, content, startLine, diffWidth, nil)
-	if view == "" {
-		return false
-	}
-
-	for _, line := range strings.Split(strings.TrimRight(view, "\n"), "\n") {
-		r.fancyIndent(out, row, true, false)
-		fmt.Fprintln(out, prefix+line)
-	}
-	return true
-}
-
 // isEditTool returns true if the tool name matches "edit" (case-insensitive,
 // handles "Type_edit" Dagger method tools).
 func isEditTool(toolName string) bool {
-	return matchToolSuffix(toolName, "edit")
-}
-
-// isReadTool returns true if the tool name matches "read".
-func isReadTool(toolName string) bool {
-	return matchToolSuffix(toolName, "read")
-}
-
-// isWriteTool returns true if the tool name matches "write".
-func isWriteTool(toolName string) bool {
-	return matchToolSuffix(toolName, "write")
-}
-
-// isFileContentTool returns true for edit, read, or write tools —
-// tools that render file content with line numbers.
-func isFileContentTool(toolName string) bool {
-	return isEditTool(toolName) || isReadTool(toolName) || isWriteTool(toolName)
-}
-
-// matchToolSuffix checks if toolName matches suffix (case-insensitive),
-// handling "Type_suffix" Dagger method tool naming.
-func matchToolSuffix(toolName, suffix string) bool {
 	lower := strings.ToLower(toolName)
-	if lower == suffix {
+	if lower == "edit" {
 		return true
 	}
 	if idx := strings.LastIndex(lower, "_"); idx >= 0 {
-		return lower[idx+1:] == suffix
+		return lower[idx+1:] == "edit"
 	}
 	return false
 }
