@@ -67,6 +67,10 @@ type Cache interface {
 	// DebugEGraphSnapshot returns a deterministic point-in-time dump of the
 	// current in-memory e-graph/cache state for debugging.
 	DebugEGraphSnapshot() *EGraphDebugSnapshot
+
+	// LoadResultByResultID loads a cache-backed result by its stable shared
+	// result handle.
+	LoadResultByResultID(context.Context, *Server, uint64) (AnyResult, error)
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {

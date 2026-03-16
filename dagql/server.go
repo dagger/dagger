@@ -672,6 +672,12 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	if id == nil {
+		return nil, fmt.Errorf("load: nil ID")
+	}
+	if !id.IsHandle() {
+		return nil, fmt.Errorf("load %s: recipe-form IDs are not valid inputs", idInputDebugString(id))
+	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, err
@@ -693,16 +699,24 @@ func (s *Server) loadNthValue(
 		return nil, nil
 	}
 
-	parentID := parent.ID()
-	if parentID == nil {
-		return nil, fmt.Errorf("nth %d: parent enumerable has no ID", nth)
+	shared := parent.cacheSharedResult()
+	if shared == nil || shared.id == 0 || shared.resultCallFrame == nil {
+		return nil, fmt.Errorf("nth %d: parent enumerable is not cache-backed", nth)
 	}
-	nthID := parentID.SelectNth(nth)
-	callCtx := srvToContext(idToContext(ctx, nthID), s)
+	if shared.resultCallFrame.Type == nil || shared.resultCallFrame.Type.Elem == nil {
+		return nil, fmt.Errorf("nth %d: parent enumerable has no element type", nth)
+	}
 
-	if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
-		ID: nthID,
-	}, func(context.Context) (AnyResult, error) {
+	req := &CallRequest{
+		ResultCallFrame: shared.resultCallFrame.clone(),
+	}
+	req.Type = req.Type.Elem.clone()
+	req.Receiver = &ResultCallFrameRef{ResultID: uint64(shared.id)}
+	req.Nth = int64(nth)
+
+	callCtx := srvToContext(ctx, s)
+
+	if res, err := s.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("cache miss")
 	}, opts...); err == nil {
 		return res, nil
@@ -727,62 +741,26 @@ func (s *Server) loadNthValue(
 		return nil, nil
 	}
 
-	return s.Cache.GetOrInitCall(callCtx, CacheKey{
-		ID: nthID,
-	}, func(context.Context) (AnyResult, error) {
+	return s.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
 		return res, nil
 	}, opts...)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
-	callCtx := srvToContext(idToContext(ctx, id), s)
-
-	// Before recursing, check if we already have a cached result for this ID.
-	var opts []CacheCallOpt
-	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, id)
-		}))
-		// only emit telemetry in this case if there was a cache hit, otherwise don't send telemetry until we really execute it
-		opts = append(opts, WithTelemetryPolicy(TelemetryPolicyCacheHitOnly))
+	if id == nil {
+		return nil, fmt.Errorf("load type: nil ID")
 	}
-	if res, err := s.Cache.GetOrInitCall(callCtx, CacheKey{
-		ID: id,
-	}, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("cache miss")
-	}, opts...); err == nil {
-		return res, nil
+	if !id.IsHandle() {
+		return nil, fmt.Errorf("load %s: recipe-form IDs are not valid inputs", idInputDebugString(id))
 	}
-
-	var base AnyResult
-	var err error
-	if id.Receiver() != nil {
-		nth := int(id.Nth())
-		if nth == 0 {
-			base, err = s.LoadType(ctx, id.Receiver())
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			// we are selecting the nth element of an enumerable, load the list
-			// we are selecting from and then select the nth element from it rather
-			// than trying to call the field on the object. Promote the nth ID into
-			// a real cached result the first time it is materialized.
-			baseValue, err := s.LoadType(ctx, id.Receiver())
-			if err != nil {
-				return nil, fmt.Errorf("load base enumerable: %w", err)
-			}
-			return s.loadNthValue(ctx, baseValue, nth, true, opts...)
-		}
-	} else {
-		base = s.root
-	}
-
-	baseObj, err := s.toSelectable(base)
+	res, err := s.Cache.LoadResultByResultID(srvToContext(idToContext(ctx, id), s), s, id.EngineResultID())
 	if err != nil {
-		return nil, fmt.Errorf("toSelectable: %w", err)
+		return nil, err
 	}
-	return baseObj.Call(callCtx, s, id)
+	if id.Type() != nil && res.Type() != nil && res.Type().Name() != id.Type().NamedType() {
+		return nil, fmt.Errorf("load %s: expected %s, got %s", idInputDebugString(id), id.Type().ToAST(), res.Type())
+	}
+	return res, nil
 }
 
 // Select evaluates a series of chained field selections starting from the
@@ -1311,7 +1289,8 @@ func (f DecoderFunc) DecodeInput(val any) (Input, error) {
 }
 
 type InputObject[T Type] struct {
-	Value T
+	Value  T
+	fields []inputObjectField
 }
 
 var _ Input = InputObject[Type]{} // TODO
@@ -1331,22 +1310,34 @@ func (InputObject[T]) Decoder() InputDecoder {
 			return nil, fmt.Errorf("expected map[string]any, got %T", val)
 		}
 		var obj T
-		if err := setInputObjectFields(&obj, vals); err != nil {
+		fields, err := setInputObjectFields(&obj, vals)
+		if err != nil {
 			return nil, err
 		}
 		return InputObject[T]{
-			Value: obj,
+			Value:  obj,
+			fields: fields,
 		}, nil
 	})
 }
 
-func setInputObjectFields(obj any, vals map[string]any) error {
+type inputObjectField struct {
+	name  string
+	value Input
+}
+
+func (input InputObject[T]) frameInputObjectFields() []inputObjectField {
+	return input.fields
+}
+
+func setInputObjectFields(obj any, vals map[string]any) ([]inputObjectField, error) {
 	objT := reflect.TypeOf(obj).Elem()
 	objV := reflect.ValueOf(obj)
 	if objT.Kind() != reflect.Struct {
 		// TODO handle pointer?
-		return fmt.Errorf("object must be a struct, got %T", obj)
+		return nil, fmt.Errorf("object must be a struct, got %T", obj)
 	}
+	fields := make([]inputObjectField, 0, objT.NumField())
 	for i := range objT.NumField() {
 		fieldT := objT.Field(i)
 		fieldV := objV.Elem().Field(i)
@@ -1361,85 +1352,51 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		if fieldT.Anonymous {
 			// embedded struct
 			val := reflect.New(fieldT.Type)
-			if err := setInputObjectFields(val.Interface(), vals); err != nil {
-				return err
+			embeddedFields, err := setInputObjectFields(val.Interface(), vals)
+			if err != nil {
+				return nil, err
 			}
 			fieldV.Set(val.Elem())
+			fields = append(fields, embeddedFields...)
 			continue
 		}
 		zeroInput, err := builtinOrInput(fieldI)
 		if err != nil {
-			return fmt.Errorf("arg %q: %w", fieldT.Name, err)
+			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
 		}
 		var input Input
 		if val, ok := vals[name]; ok {
 			var err error
 			input, err = zeroInput.Decoder().DecodeInput(val)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		} else if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
 			var err error
 			input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
-				return fmt.Errorf("convert default value for arg %s: %w", name, err)
+				return nil, fmt.Errorf("convert default value for arg %s: %w", name, err)
 			}
 		} else if zeroInput.Type().NonNull {
-			return fmt.Errorf("missing required input field %q", name)
+			return nil, fmt.Errorf("missing required input field %q", name)
 		}
 		if input != nil { // will be nil for optional fields
 			if err := assign(fieldV, input); err != nil {
-				return fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
+				return nil, fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
 			}
+			fields = append(fields, inputObjectField{name: name, value: input})
 		}
 	}
-	return nil
+	return fields, nil
 }
 
 func (input InputObject[T]) ToLiteral() call.Literal {
-	obj := input.Value
-	args, err := collectLiteralArgs(obj)
-	if err != nil {
-		panic(fmt.Errorf("collectLiteralArgs: %w", err))
+	if input.fields == nil {
+		panic(fmt.Errorf("input object %T is missing decoded fields", input.Value))
+	}
+	args := make([]*call.Argument, 0, len(input.fields))
+	for _, field := range input.fields {
+		args = append(args, call.NewArgument(field.name, field.value.ToLiteral(), false))
 	}
 	return call.NewLiteralObject(args...)
-}
-
-func collectLiteralArgs(obj any) ([]*call.Argument, error) {
-	objT := reflect.TypeOf(obj)
-	objV := reflect.ValueOf(obj)
-	if objV.Kind() != reflect.Struct {
-		// TODO handle pointer?
-		return nil, fmt.Errorf("object must be a struct, got %T", obj)
-	}
-	args := []*call.Argument{}
-	for i := range objV.NumField() {
-		fieldT := objT.Field(i)
-		name := fieldT.Tag.Get("name")
-		if name == "" {
-			name = strcase.ToLowerCamel(fieldT.Name)
-		}
-		if name == "-" {
-			continue
-		}
-		fieldI := objV.Field(i).Interface()
-		if fieldT.Anonymous {
-			subArgs, err := collectLiteralArgs(fieldI)
-			if err != nil {
-				return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
-			}
-			args = append(args, subArgs...)
-			continue
-		}
-		input, err := builtinOrInput(fieldI)
-		if err != nil {
-			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
-		}
-		args = append(args, call.NewArgument(
-			name,
-			input.ToLiteral(),
-			false,
-		))
-	}
-	return args, nil
 }

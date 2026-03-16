@@ -85,6 +85,13 @@ func (o Optional[I]) Decoder() InputDecoder {
 	return o
 }
 
+func (o Optional[I]) frameOptionalValue() (Input, bool) {
+	if !o.Valid {
+		return nil, false
+	}
+	return o.Value, true
+}
+
 func (o Optional[I]) ToLiteral() call.Literal {
 	if !o.Valid {
 		return call.NewLiteralNull()
@@ -174,6 +181,13 @@ func (o DynamicOptional) Type() *ast.Type {
 
 func (o DynamicOptional) Decoder() InputDecoder {
 	return o
+}
+
+func (o DynamicOptional) frameOptionalValue() (Input, bool) {
+	if !o.Valid {
+		return nil, false
+	}
+	return o.Value, true
 }
 
 func (o DynamicOptional) ToLiteral() call.Literal {

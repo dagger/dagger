@@ -905,6 +905,19 @@ func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
 func (i ID[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case *call.ID:
+		if x == nil {
+			return nil, fmt.Errorf("cannot create ID[%T] from nil *call.ID", i.inner)
+		}
+		if !x.IsHandle() {
+			return nil, fmt.Errorf("recipe-form IDs are not valid %q inputs", i.TypeName())
+		}
+		expectedName := i.inner.Type().Name()
+		if x.Type() == nil {
+			return nil, fmt.Errorf("expected %q ID, got untyped ID", expectedName)
+		}
+		if x.Type().NamedType() != expectedName {
+			return nil, fmt.Errorf("expected %q ID, got %s ID", expectedName, x.Type().ToAST())
+		}
 		return ID[T]{id: x, inner: i.inner}, nil
 	case string:
 		if err := (&i).Decode(x); err != nil {
@@ -916,9 +929,17 @@ func (i ID[T]) DecodeInput(val any) (Input, error) {
 	}
 }
 
-// String returns the ID in ClassID@sha256:... format.
+// String returns the ID in TypeName@<encoded-id> debug format.
 func (i ID[T]) String() string {
-	return fmt.Sprintf("%s@%s", i.inner.Type().Name(), i.id.Digest())
+	typeName := i.inner.Type().Name()
+	if i.id == nil {
+		return fmt.Sprintf("%s@<nil>", typeName)
+	}
+	enc, err := i.id.Encode()
+	if err != nil {
+		return fmt.Sprintf("%s@<encode-error:%v>", typeName, err)
+	}
+	return fmt.Sprintf("%s@%s", typeName, enc)
 }
 
 var _ Setter = ID[Typed]{}
@@ -941,7 +962,17 @@ func (i ID[T]) Decoder() InputDecoder {
 }
 
 func (i ID[T]) ToLiteral() call.Literal {
-	return call.NewLiteralID(i.id)
+	if i.id == nil {
+		panic("dagql.ID.ToLiteral: nil ID")
+	}
+	if !i.id.IsHandle() {
+		panic("dagql.ID.ToLiteral: recipe-form IDs are not valid inputs")
+	}
+	enc, err := i.id.Encode()
+	if err != nil {
+		panic(fmt.Errorf("dagql.ID.ToLiteral: encode handle ID: %w", err))
+	}
+	return call.NewLiteralString(enc)
 }
 
 func (i ID[T]) Encode() (string, error) {
@@ -960,6 +991,9 @@ func (i *ID[T]) Decode(str string) error {
 	var idp call.ID
 	if err := idp.Decode(str); err != nil {
 		return err
+	}
+	if !idp.IsHandle() {
+		return fmt.Errorf("recipe-form IDs are not valid %q inputs", i.TypeName())
 	}
 	if idp.Type() == nil {
 		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
@@ -997,13 +1031,16 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 
 // Load loads the instance with the given ID from the server.
 func (i ID[T]) Load(ctx context.Context, server *Server) (res ObjectResult[T], _ error) {
+	if i.id == nil {
+		return res, fmt.Errorf("load %s: nil ID", i.TypeName())
+	}
 	val, err := server.Load(ctx, i.id)
 	if err != nil {
-		return res, fmt.Errorf("load %s: %w", i.id.DisplaySelf(), err)
+		return res, fmt.Errorf("load %s: %w", i.String(), err)
 	}
 	obj, ok := val.(ObjectResult[T])
 	if !ok {
-		return res, fmt.Errorf("load %s: expected %T, got %T", i.id.DisplaySelf(), obj, val)
+		return res, fmt.Errorf("load %s: expected %T, got %T", i.String(), obj, val)
 	}
 	return obj, nil
 }
@@ -1054,6 +1091,14 @@ var _ Input = ArrayInput[Input]{}
 
 func (a ArrayInput[S]) Decoder() InputDecoder {
 	return a
+}
+
+func (a ArrayInput[S]) frameArrayValues() []Input {
+	values := make([]Input, len(a))
+	for i, val := range a {
+		values[i] = val
+	}
+	return values
 }
 
 var _ InputDecoder = ArrayInput[Input]{}

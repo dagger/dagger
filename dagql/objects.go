@@ -421,10 +421,6 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		}
 		return nil, fmt.Errorf("failed to resolve receiver for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
-	mod, err := frameModuleFromCallModule(ctx, field.Spec.Module)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve module for %s.%s: %w", r.class.TypeName(), sel.Field, err)
-	}
 	req := &CallRequest{
 		ResultCallFrame: &ResultCallFrame{
 			Kind:           ResultCallFrameKindField,
@@ -433,7 +429,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			View:           view,
 			Nth:            int64(sel.Nth),
 			Receiver:       receiverRef,
-			Module:         mod,
+			Module:         field.Spec.Module.clone(),
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
@@ -455,9 +451,31 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
 		r.sortFrameArgsToSchema(field.Spec, view, req.Args)
-		inputArgs, err = ExtractRequestArgs(ctx, field.Spec.Args, req)
-		if err != nil {
-			return nil, err
+		inputArgs = make(map[string]Input, len(req.Args))
+		for _, argSpec := range field.Spec.Args.Inputs(view) {
+			var requestArg *ResultCallFrameArg
+			for _, arg := range req.Args {
+				if arg != nil && arg.Name == argSpec.Name {
+					requestArg = arg
+					break
+				}
+			}
+			switch {
+			case requestArg != nil:
+				inputVal, err := inputValueFromFrameLiteral(ctx, requestArg.Value)
+				if err != nil {
+					return nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
+				}
+				input, err := argSpec.Type.Decoder().DecodeInput(inputVal)
+				if err != nil {
+					return nil, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+				}
+				inputArgs[argSpec.Name] = input
+			case argSpec.Default != nil:
+				inputArgs[argSpec.Name] = argSpec.Default
+			case argSpec.Type.Type().NonNull:
+				return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			}
 		}
 	}
 
@@ -745,8 +763,9 @@ type FieldSpec struct {
 	DeprecatedReason *string
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
-	// Module is the module that provides the field's implementation.
-	Module *call.Module
+	// Module is frame-native provenance for the module that provides the field's
+	// implementation.
+	Module *ResultCallFrameModule
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
 	// BuiltinLoadByIDFunc is the execution path for schema-generated

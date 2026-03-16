@@ -5,7 +5,31 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/vektah/gqlparser/v2/ast"
 )
+
+type frameOptionalInput interface {
+	frameOptionalValue() (Input, bool)
+}
+
+type frameArrayInput interface {
+	frameArrayValues() []Input
+}
+
+type frameInputObject interface {
+	frameInputObjectFields() []inputObjectField
+}
+
+func idInputDebugString(id *call.ID) string {
+	if id == nil {
+		return "<nil>"
+	}
+	enc, err := id.Encode()
+	if err == nil {
+		return enc
+	}
+	return "<encode-error>"
+}
 
 func frameRefFromResult(res AnyResult) (*ResultCallFrameRef, error) {
 	if res == nil {
@@ -25,35 +49,18 @@ func frameRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallFrameRef,
 	if id == nil {
 		return nil, fmt.Errorf("nil ID input")
 	}
+	if !id.IsHandle() {
+		return nil, fmt.Errorf("recipe-form IDs are not valid inputs: %s", idInputDebugString(id))
+	}
 	srv := CurrentDagqlServer(ctx)
 	if srv == nil {
-		return nil, fmt.Errorf("cannot resolve ID input %q without dagql server", id.DisplaySelf())
+		return nil, fmt.Errorf("cannot resolve ID input %q without dagql server", idInputDebugString(id))
 	}
 	val, err := srv.Load(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load ID input %q: %w", id.DisplaySelf(), err)
+		return nil, fmt.Errorf("load ID input %q: %w", idInputDebugString(id), err)
 	}
 	return frameRefFromResult(val)
-}
-
-func frameModuleFromCallModule(ctx context.Context, mod *call.Module) (*ResultCallFrameModule, error) {
-	if mod == nil {
-		return nil, nil
-	}
-	modID := mod.ID()
-	if modID == nil {
-		return nil, fmt.Errorf("module %q missing ID", mod.Name())
-	}
-	ref, err := frameRefFromIDInput(ctx, modID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve module %q: %w", mod.Name(), err)
-	}
-	return &ResultCallFrameModule{
-		ResultRef: ref,
-		Name:      mod.Name(),
-		Ref:       mod.Ref(),
-		Pin:       mod.Pin(),
-	}, nil
 }
 
 func frameArgFromInput(ctx context.Context, name string, input Input, sensitive bool) (*ResultCallFrameArg, error) {
@@ -74,6 +81,60 @@ func frameArgFromInput(ctx context.Context, name string, input Input, sensitive 
 func frameLiteralFromInput(ctx context.Context, input Input) (*ResultCallFrameLiteral, error) {
 	if input == nil {
 		return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
+	}
+	if idable, ok := input.(IDable); ok {
+		id := idable.ID()
+		if id == nil {
+			return nil, fmt.Errorf("ID input %T is missing an ID", input)
+		}
+		ref, err := frameRefFromIDInput(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return &ResultCallFrameLiteral{
+			Kind:      ResultCallFrameLiteralKindResultRef,
+			ResultRef: ref,
+		}, nil
+	}
+	if opt, ok := input.(frameOptionalInput); ok {
+		val, valid := opt.frameOptionalValue()
+		if !valid {
+			return &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindNull}, nil
+		}
+		return frameLiteralFromInput(ctx, val)
+	}
+	if arr, ok := input.(frameArrayInput); ok {
+		values := arr.frameArrayValues()
+		items := make([]*ResultCallFrameLiteral, 0, len(values))
+		for _, value := range values {
+			item, err := frameLiteralFromInput(ctx, value)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return &ResultCallFrameLiteral{
+			Kind:      ResultCallFrameLiteralKindList,
+			ListItems: items,
+		}, nil
+	}
+	if obj, ok := input.(frameInputObject); ok {
+		decodedFields := obj.frameInputObjectFields()
+		if decodedFields == nil {
+			return nil, fmt.Errorf("input object %T is missing decoded fields", input)
+		}
+		fields := make([]*ResultCallFrameArg, 0, len(decodedFields))
+		for _, field := range decodedFields {
+			arg, err := frameArgFromInput(ctx, field.name, field.value, false)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.name, err)
+			}
+			fields = append(fields, arg)
+		}
+		return &ResultCallFrameLiteral{
+			Kind:         ResultCallFrameLiteralKindObject,
+			ObjectFields: fields,
+		}, nil
 	}
 	return frameLiteralFromCallLiteral(ctx, input.ToLiteral())
 }
@@ -144,7 +205,7 @@ func frameLiteralFromCallLiteral(ctx context.Context, lit call.Literal) (*Result
 	}
 }
 
-func callIDFromFrameRef(ctx context.Context, ref *ResultCallFrameRef) (*call.ID, error) {
+func handleIDFromFrameRef(ctx context.Context, ref *ResultCallFrameRef) (*call.ID, error) {
 	if ref == nil || ref.ResultID == 0 {
 		return nil, fmt.Errorf("missing result ref")
 	}
@@ -156,7 +217,21 @@ func callIDFromFrameRef(ctx context.Context, ref *ResultCallFrameRef) (*call.ID,
 	if !ok {
 		return nil, fmt.Errorf("unexpected cache implementation %T", srv.Cache.cache)
 	}
-	return base.persistedCallIDByResultID(ctx, sharedResultID(ref.ResultID))
+	res, err := base.sharedResultByResultID(sharedResultID(ref.ResultID))
+	if err != nil {
+		return nil, err
+	}
+	var gqlType *ast.Type
+	if res.resultCallFrame != nil && res.resultCallFrame.Type != nil {
+		gqlType = res.resultCallFrame.Type.toAST()
+	}
+	if gqlType == nil && res.self != nil {
+		gqlType = res.self.Type()
+	}
+	if gqlType == nil {
+		return nil, fmt.Errorf("result ref %d is missing a GraphQL type", ref.ResultID)
+	}
+	return call.NewEngineResultID(ref.ResultID, call.NewType(gqlType)), nil
 }
 
 func inputValueFromFrameLiteral(ctx context.Context, lit *ResultCallFrameLiteral) (any, error) {
@@ -179,7 +254,7 @@ func inputValueFromFrameLiteral(ctx context.Context, lit *ResultCallFrameLiteral
 	case ResultCallFrameLiteralKindDigestedString:
 		return lit.DigestedStringValue, nil
 	case ResultCallFrameLiteralKindResultRef:
-		return callIDFromFrameRef(ctx, lit.ResultRef)
+		return handleIDFromFrameRef(ctx, lit.ResultRef)
 	case ResultCallFrameLiteralKindList:
 		values := make([]any, 0, len(lit.ListItems))
 		for _, item := range lit.ListItems {
@@ -206,38 +281,4 @@ func inputValueFromFrameLiteral(ctx context.Context, lit *ResultCallFrameLiteral
 	default:
 		return nil, fmt.Errorf("unsupported frame literal kind %q", lit.Kind)
 	}
-}
-
-func ExtractRequestArgs(ctx context.Context, specs InputSpecs, req *CallRequest) (map[string]Input, error) {
-	if req == nil {
-		return nil, fmt.Errorf("request is nil")
-	}
-	view := req.View
-	inputArgs := make(map[string]Input, len(req.Args))
-	for _, argSpec := range specs.Inputs(view) {
-		var requestArg *ResultCallFrameArg
-		for _, arg := range req.Args {
-			if arg != nil && arg.Name == argSpec.Name {
-				requestArg = arg
-				break
-			}
-		}
-		switch {
-		case requestArg != nil:
-			inputVal, err := inputValueFromFrameLiteral(ctx, requestArg.Value)
-			if err != nil {
-				return nil, fmt.Errorf("request arg %q: %w", argSpec.Name, err)
-			}
-			input, err := argSpec.Type.Decoder().DecodeInput(inputVal)
-			if err != nil {
-				return nil, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
-			}
-			inputArgs[argSpec.Name] = input
-		case argSpec.Default != nil:
-			inputArgs[argSpec.Name] = argSpec.Default
-		case argSpec.Type.Type().NonNull:
-			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
-		}
-	}
-	return inputArgs, nil
 }

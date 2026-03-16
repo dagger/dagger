@@ -260,6 +260,10 @@ type DynamicArrayInput struct {
 
 var _ InputDecoder = DynamicArrayInput{}
 
+func (d DynamicArrayInput) frameArrayValues() []Input {
+	return d.Values
+}
+
 func (d DynamicArrayInput) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case []any:
