@@ -106,6 +106,23 @@ func getCompatVersion() string {
 	return compatVersion
 }
 
+func initRequestedChanges(cmd *cobra.Command) bool {
+	for _, name := range []string{
+		"sdk",
+		"name",
+		"source",
+		"license",
+		"include",
+		"blueprint",
+		"with-self-calls",
+	} {
+		if flag := cmd.Flags().Lookup(name); flag != nil && flag.Changed {
+			return true
+		}
+	}
+	return false
+}
+
 // moduleAddFlags adds common module-related flags to a command.
 // If optional is true, it also adds the --no-mod flag and marks --mod and --no-mod as mutually exclusive.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
@@ -248,6 +265,9 @@ dagger init --sdk=go
 				return localModuleErrorf("failed to check if module already exists: %w", err)
 			}
 			if alreadyExists {
+				if !initRequestedChanges(cmd) {
+					return nil
+				}
 				return fmt.Errorf("module already exists")
 			}
 
