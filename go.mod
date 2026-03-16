@@ -157,8 +157,9 @@ require (
 	github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
-	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
+	github.com/vito/midterm v0.2.4
 	github.com/vito/tuist v0.0.6-0.20260316153320-d7b0953fcda9
+	github.com/vito/tuist/teav1 v0.0.0-20260316235816-9547c6ba5a39
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
@@ -352,7 +353,6 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
-	github.com/vito/tuist/teav1 v0.0.0-20260310163840-a0e602329c24
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
