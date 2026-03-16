@@ -218,6 +218,13 @@ func focusRootModuleFunctions(def *moduleDef, modName string, visibleModuleNames
 		filteredFns = append(filteredFns, fn)
 	}
 
+	// When no entrypoint-proxied methods survive filtering (e.g. the only
+	// method shares its name with the constructor), fall back to presenting
+	// the module's own main object so its methods remain accessible.
+	if len(filteredFns) == 0 {
+		return focusedModule
+	}
+
 	focused := *def
 	rootCopy := *root
 	objCopy := *root.AsObject
