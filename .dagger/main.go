@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-
-	"github.com/dagger/dagger/util/patchpreview"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -22,36 +20,11 @@ func (dev *DaggerDev) Generated(ctx context.Context) error {
 		return err
 	} else if !empty {
 		changes := generated.Changes()
-		diffStat, err := changes.DiffStat(ctx)
+		rawPatch, err := changes.AsPatch().Contents(ctx)
 		if err != nil {
 			return err
 		}
-		entries := make([]patchpreview.Entry, len(diffStat))
-		for i, s := range diffStat {
-			path, err := s.Path(ctx)
-			if err != nil {
-				return err
-			}
-			kind, err := s.Kind(ctx)
-			if err != nil {
-				return err
-			}
-			added, err := s.AddedLines(ctx)
-			if err != nil {
-				return err
-			}
-			removed, err := s.RemovedLines(ctx)
-			if err != nil {
-				return err
-			}
-			entries[i] = patchpreview.Entry{
-				Path:    path,
-				Kind:    string(kind),
-				Added:   added,
-				Removed: removed,
-			}
-		}
-		fmt.Fprintln(os.Stderr, patchpreview.SummarizeString(entries, 80))
+		fmt.Fprintln(os.Stderr, rawPatch)
 		return errors.New("generated files are not up-to-date")
 	}
 	return nil
