@@ -118,7 +118,7 @@ func (file *File) AttachOwnedResults(
 	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if file == nil || file.Parent.ID() == nil {
+	if file == nil || file.Parent.Self() == nil {
 		return nil, nil
 	}
 	attached, err := attach(file.Parent)
@@ -203,7 +203,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	switch {
 	case file.Snapshot != nil:
 		payload.Form = persistedFileFormSnapshot
-	case file.Parent.ID() != nil:
+	case file.Parent.Self() != nil:
 		parentID, err := encodePersistedObjectRef(cache, file.Parent, "file parent")
 		if err != nil {
 			return nil, err

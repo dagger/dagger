@@ -129,8 +129,7 @@ func (dir *Directory) AttachOwnedResults(
 	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	parentID, err := dir.Parent.ID()
-	if dir == nil || err != nil || parentID == nil {
+	if dir == nil || dir.Parent.Self() == nil {
 		return nil, nil
 	}
 	attached, err := attach(dir.Parent)
@@ -208,7 +207,6 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	if dir == nil {
 		return nil, fmt.Errorf("encode persisted directory: nil directory")
 	}
-	parentID, _ := dir.Parent.ID()
 	payload := persistedDirectoryPayload{
 		Dir:      dir.Dir,
 		Platform: dir.Platform,
@@ -216,7 +214,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	switch {
 	case dir.Snapshot != nil:
 		payload.Form = persistedDirectoryFormSnapshot
-	case parentID != nil:
+	case dir.Parent.Self() != nil:
 		parentID, err := encodePersistedObjectRef(cache, dir.Parent, "directory parent")
 		if err != nil {
 			return nil, err

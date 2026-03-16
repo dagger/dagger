@@ -207,7 +207,7 @@ func (s *fileSchema) withName(ctx context.Context, parent dagql.ObjectResult[*co
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 type fileExportArgs struct {
@@ -238,7 +238,7 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.String, error) {
@@ -284,7 +284,7 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
 type fileChownArgs struct {
@@ -306,7 +306,7 @@ func (s *fileSchema) chown(
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
 func (s *fileSchema) asJSON(ctx context.Context, parent *core.File, args struct{}) (*core.JSONValue, error) {
