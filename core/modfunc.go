@@ -665,32 +665,20 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	return cacheCfgResp, nil
 }
 
-func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], rerr error) {
+func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (_ ModuleRuntime, rerr error) {
 	// hide all this internal plumbing making up the call
 	ctx, hideSpan := Tracer(ctx).Start(ctx, "load sdk runtime", telemetry.Internal())
 	defer telemetry.EndWithCause(hideSpan, &rerr)
 
 	mod := fn.mod
-	srv := dagql.CurrentDagqlServer(ctx)
-
-	modObj, err := dagql.NewObjectResultForID(mod, srv, mod.ResultID)
-	if err != nil {
-		return runtime, fmt.Errorf("failed to load module: %w", err)
+	if mod.Runtime != nil {
+		return mod.Runtime, nil
 	}
 
-	err = srv.Select(ctx, modObj, &runtime,
-		dagql.Selector{
-			Field: "runtime",
-		},
-	)
-	if err != nil {
-		return runtime, fmt.Errorf("failed to load runtime: %w", err)
-	}
-
-	return runtime, nil
+	return mod.LoadRuntime(ctx)
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) {
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -789,8 +777,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("marshal function call: %w", err)
 	}
 
-	srv := dagql.CurrentDagqlServer(ctx)
-
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -799,90 +785,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
-	var metaDir dagql.ObjectResult[*Directory]
-	err = srv.Select(hideCtx, srv.Root(), &metaDir,
-		dagql.Selector{
-			Field: "directory",
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create mod metadata directory: %w", err)
-	}
+	fnCall.Module = fn.mod
 
-	var ctr dagql.ObjectResult[*Container]
-	err = srv.Select(hideCtx, runtime, &ctr,
-		dagql.Selector{
-			Field: "withMountedDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(modMetaDirPath)},
-				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
-			},
-		},
-	)
+	// Delegate the actual function execution to the runtime
+	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall)
 	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
-	}
-
-	err = srv.Select(hideCtx, ctr, &ctr,
-		dagql.Selector{
-			Field: "withExec",
-			Args: []dagql.NamedInput{
-				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
-				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
-				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
-				{Name: "execMD", Value: dagql.NewSerializedString(&execMD)},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
+		return nil, err
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get buildkit client: %w", err)
-	}
-
-	_, err = ctr.Self().Evaluate(ctx)
-	if err != nil {
-		id, ok, extractErr := extractError(ctx, bk, err)
-		if extractErr != nil {
-			// if the module hasn't provided us with a nice error, just return the
-			// original error
-			return nil, err
-		}
-		if ok {
-			errInst, err := id.Load(ctx, opts.Server)
-			if err != nil {
-				return nil, fmt.Errorf("load error instance: %w", err)
-			}
-			return nil, errInst.Self()
-		}
-		if fn.metadata.OriginalName == "" {
-			return nil, fmt.Errorf("call constructor: %w", err)
-		} else {
-			return nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
-		}
-	}
-
-	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
-	if err != nil {
-		return nil, fmt.Errorf("get function output directory: %w", err)
-	}
-
-	modMetaFile, err := ctrOutputDir.File(ctx, modMetaOutputPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
-	}
-
-	// Read the output of the function
-	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("read function output file: %w", err)
 	}
 
 	var returnValueAny any
@@ -899,14 +812,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	safeToPersistCache := true
 	if returnValue != nil {
-		// Get the client ID actually used during the function call - this might not
-		// be the same as execMD.ClientID if the function call was cached at the
-		// buildkit level
-		clientID, err := ctr.Self().usedClientID(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("could not get used client id")
-		}
-
 		// If the function returned anything that's isolated per-client, this caller client should
 		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 		returnedContent := NewCollectedContent()
