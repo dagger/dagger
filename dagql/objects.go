@@ -544,8 +544,12 @@ func (r ObjectResult[T]) call(
 	}
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
+		telemetryID, err := s.Cache.CallIDFromFrame(ctx, req.ResultCallFrame)
+		if err != nil {
+			return nil, fmt.Errorf("derive telemetry call ID: %w", err)
+		}
 		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, nil)
+			return s.telemetry(ctx, telemetryID)
 		}))
 	}
 

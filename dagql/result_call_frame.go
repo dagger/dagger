@@ -782,67 +782,6 @@ func appendResultCallFrameLiteralSelfRefs(
 	return h, inputs, nil
 }
 
-func (c *cache) resultCallFrameForIDLocked(ctx context.Context, id *call.ID) (*ResultCallFrame, error) {
-	if id == nil {
-		return nil, nil
-	}
-	frame := &ResultCallFrame{
-		Kind:         ResultCallFrameKindField,
-		Type:         NewResultCallFrameType(id.Type().ToAST()),
-		Field:        id.Field(),
-		View:         id.View(),
-		Nth:          id.Nth(),
-		EffectIDs:    slices.Clone(id.EffectIDs()),
-		ExtraDigests: slices.Clone(id.ExtraDigests()),
-		cache:        c,
-	}
-	if id.Receiver() != nil {
-		ref, err := c.resultCallFrameRefForInputIDLocked(ctx, id.Receiver())
-		if err != nil {
-			return nil, fmt.Errorf("frame receiver %s: %w", id.Receiver().Digest(), err)
-		}
-		frame.Receiver = ref
-	}
-	if id.Module() != nil {
-		mod := &ResultCallFrameModule{
-			Name: id.Module().Name(),
-			Ref:  id.Module().Ref(),
-			Pin:  id.Module().Pin(),
-		}
-		if id.Module().ID() != nil {
-			ref, err := c.resultCallFrameRefForInputIDLocked(ctx, id.Module().ID())
-			if err != nil {
-				return nil, fmt.Errorf("frame module %s: %w", id.Module().ID().Digest(), err)
-			}
-			mod.ResultRef = ref
-		}
-		frame.Module = mod
-	}
-	for _, arg := range id.Args() {
-		lit, err := c.resultCallFrameLiteralFromCallLiteralLocked(ctx, arg.Value())
-		if err != nil {
-			return nil, fmt.Errorf("frame arg %q: %w", arg.Name(), err)
-		}
-		frame.Args = append(frame.Args, &ResultCallFrameArg{
-			Name:        arg.Name(),
-			IsSensitive: arg.IsSensitive(),
-			Value:       lit,
-		})
-	}
-	for _, arg := range id.ImplicitInputs() {
-		lit, err := c.resultCallFrameLiteralFromCallLiteralLocked(ctx, arg.Value())
-		if err != nil {
-			return nil, fmt.Errorf("frame implicit input %q: %w", arg.Name(), err)
-		}
-		frame.ImplicitInputs = append(frame.ImplicitInputs, &ResultCallFrameArg{
-			Name:        arg.Name(),
-			IsSensitive: arg.IsSensitive(),
-			Value:       lit,
-		})
-	}
-	return frame, nil
-}
-
 func (c *cache) resultCallFrameLiteralFromCallLiteralLocked(
 	ctx context.Context,
 	lit call.Literal,
@@ -924,18 +863,6 @@ func (c *cache) resultCallFrameRefForInputIDLocked(ctx context.Context, inputID 
 		return nil, fmt.Errorf("missing shared result")
 	}
 	return &ResultCallFrameRef{ResultID: uint64(shared.id)}, nil
-}
-
-func (c *cache) ensureResultCallFrameLocked(ctx context.Context, res *sharedResult, id *call.ID) error {
-	if res == nil || res.resultCallFrame != nil || id == nil {
-		return nil
-	}
-	frame, err := c.resultCallFrameForIDLocked(ctx, id)
-	if err != nil {
-		return err
-	}
-	res.resultCallFrame = frame
-	return nil
 }
 
 func (c *cache) resultCallFrameSnapshot(resultID sharedResultID) *ResultCallFrame {
@@ -1119,6 +1046,17 @@ func (c *cache) resolveFrameRefCallID(
 		rebuilt = rebuilt.With(call.WithExtraDigest(extra))
 	}
 	return rebuilt, true
+}
+
+func (c *cache) CallIDFromFrame(ctx context.Context, frame *ResultCallFrame) (*call.ID, error) {
+	if frame == nil {
+		return nil, fmt.Errorf("rebuild call ID from frame: nil frame")
+	}
+	rebuilt, ok := c.callIDFromFrame(ctx, frame, map[sharedResultID]struct{}{})
+	if !ok || rebuilt == nil {
+		return nil, fmt.Errorf("rebuild call ID from frame: failed")
+	}
+	return rebuilt, nil
 }
 
 func (c *cache) callArgsFromFrame(

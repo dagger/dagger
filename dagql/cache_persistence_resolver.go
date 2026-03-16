@@ -160,9 +160,9 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult,
 	if requestedID == nil {
 		return nil, fmt.Errorf("wrap persisted shared result: nil requested ID")
 	}
-	requestedFrame, err := c.resultCallFrameForIDLocked(ctx, requestedID)
-	if err != nil {
-		return nil, fmt.Errorf("derive persisted requested frame %q: %w", requestedID.Digest(), err)
+	requestedFrame := c.resultCallFrameSnapshot(res.id)
+	if requestedFrame == nil {
+		return nil, fmt.Errorf("derive persisted requested frame for result %d: missing result call frame", res.id)
 	}
 
 	c.egraphMu.Lock()

@@ -71,6 +71,10 @@ type Cache interface {
 	// LoadResultByResultID loads a cache-backed result by its stable shared
 	// result handle.
 	LoadResultByResultID(context.Context, *Server, uint64) (AnyResult, error)
+
+	// CallIDFromFrame rebuilds the canonical recipe-form call ID for the given
+	// semantic frame.
+	CallIDFromFrame(context.Context, *ResultCallFrame) (*call.ID, error)
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
