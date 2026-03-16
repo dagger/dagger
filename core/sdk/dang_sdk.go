@@ -1,7 +1,6 @@
 package sdk
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -147,9 +146,45 @@ func (r *DangRuntime) Call(
 		execMD.HostAliases = make(map[string][]string)
 	}
 
+	// For module initialization (no parentName), we always run directly
+	// since the result isn't meaningful to cache at the buildkit level.
+	if fnCall.ParentName == "" {
+		outputBytes, err := r.evalInit(ctx, execMD, fnCall)
+		if err != nil {
+			return nil, "", err
+		}
+		return outputBytes, clientID, nil
+	}
+
+	// Get schema introspection file — needed both for the op's serialized
+	// state and for cache key computation.
+	schemaJSONFile, err := fnCall.Module.Deps.SchemaIntrospectionJSONFile(ctx, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("get schema introspection: %w", err)
+	}
+
+	// For regular function calls, wrap in a DangEvalOp for persistent
+	// caching through buildkit. On cache hit, the Dang evaluation is skipped
+	// entirely. On cache miss, the evaluation runs and the result is
+	// persisted to buildkit's cache.
+	callID := dagql.CurrentID(ctx)
+	outputBytes, err := solveDangEval(ctx, callID, execMD.CacheMixin, r.modSource, schemaJSONFile, execMD, fnCall)
+	if err != nil {
+		return nil, "", err
+	}
+	return outputBytes, execMD.ClientID, nil
+}
+
+// evalInit runs the module initialization (typedef registration) call.
+// This is not cached at the buildkit level since it only defines types.
+func (r *DangRuntime) evalInit(
+	ctx context.Context,
+	execMD *buildkit.ExecutionMetadata,
+	fnCall *core.FunctionCall,
+) ([]byte, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to open listener for dang SDK: %w", err)
+		return nil, fmt.Errorf("listen: %w", err)
 	}
 	defer l.Close()
 
@@ -164,7 +199,7 @@ func (r *DangRuntime) Call(
 		}), http2Srv),
 	}
 	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {
-		return nil, "", fmt.Errorf("configure nested client http2 server: %w", err)
+		return nil, fmt.Errorf("configure http2: %w", err)
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -174,7 +209,7 @@ func (r *DangRuntime) Call(
 	srvPool.Go(func(_ context.Context) error {
 		err := httpSrv.Serve(l)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
-			return fmt.Errorf("serve nested client listener: %w", err)
+			return fmt.Errorf("serve: %w", err)
 		}
 		return nil
 	})
@@ -183,19 +218,18 @@ func (r *DangRuntime) Call(
 
 	schemaJSONFile, err := fnCall.Module.Deps.SchemaIntrospectionJSONFile(ctx, nil)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get current served deps: %w", err)
+		return nil, fmt.Errorf("get schema: %w", err)
 	}
 	var intro introspection.Response
 	f, err := schemaJSONFile.Self().Open(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to open schema JSON file: %w", err)
+		return nil, fmt.Errorf("open schema file: %w", err)
 	}
 	defer f.Close()
 	if err := json.NewDecoder(f).Decode(&intro); err != nil {
-		return nil, "", fmt.Errorf("failed to decode schema JSON: %w", err)
+		return nil, fmt.Errorf("decode schema: %w", err)
 	}
 
-	// Set up the Dagger import config so dang code can use `import Dag` implicitly
 	ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
 		Name:       "Dagger",
 		Client:     gqlClient,
@@ -207,163 +241,30 @@ func (r *DangRuntime) Call(
 	ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 	ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 
-	parentName := fnCall.ParentName
-	fnName := fnCall.Name
-	parentJSON := fnCall.Parent
-	fnArgs := fnCall.InputArgs
-
 	modCtx := r.modSource.Self().ContextDirectory
-
-	inputArgs := make(map[string][]byte)
-	for _, fnArg := range fnArgs {
-		argName := fnArg.Name
-		argValue := fnArg.Value
-		inputArgs[argName] = []byte(argValue)
-	}
-
 	var env dang.EvalEnv
 	err = modCtx.Self().Mount(ctx, func(path string) error {
 		modSrcDir := filepath.Join(path, r.modSource.Self().SourceSubpath)
-		env, err = dang.RunDir(ctx, modSrcDir, false /* debug */)
+		env, err = dang.RunDir(ctx, modSrcDir, false)
 		if err != nil {
-			return fmt.Errorf("failed to run dir: %w", err)
+			return fmt.Errorf("run dir: %w", err)
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("run: %w", err)
+		return nil, fmt.Errorf("mount source: %w", err)
 	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, "", fmt.Errorf("get current dagql server: %w", err)
+		return nil, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	// initializing module
-	if parentName == "" {
-		dagMod, err := r.initModule(ctx, srv, env)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to init module: %w", err)
-		}
-		jsonBytes, err := json.Marshal(dagMod)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to marshal module: %w", err)
-		}
-		return jsonBytes, clientID, nil
-	}
-
-	parentModBase, found := env.Get(parentName)
-	if !found {
-		return nil, "", fmt.Errorf("unknown parent type: %s", parentName)
-	}
-	var parentState map[string]any
-	dec := json.NewDecoder(bytes.NewReader(parentJSON))
-	dec.UseNumber()
-	if err := dec.Decode(&parentState); err != nil {
-		return nil, "", fmt.Errorf("failed to unmarshal parent JSON: %w", err)
-	}
-
-	parentConstructor := parentModBase.(*dang.ConstructorFunction)
-	parentModType := parentConstructor.ClassType
-
-	var fnType *hm.FunctionType
-
-	if fnName == "" {
-		fnType = parentConstructor.FnType
-	} else {
-		fnScheme, found := parentModType.SchemeOf(fnName)
-		if !found {
-			return nil, "", fmt.Errorf("unknown function: %s", fnName)
-		}
-		t, mono := fnScheme.Type()
-		if !mono {
-			return nil, "", fmt.Errorf("non-monotype function %s", fnName)
-		}
-		var ok bool
-		fnType, ok = t.(*hm.FunctionType)
-		if !ok {
-			return nil, "", fmt.Errorf("expected function type, got %T", fnScheme)
-		}
-	}
-
-	var args dang.Record
-	argMap := make(map[string]dang.Value, len(args))
-	for _, arg := range fnType.Arg().(*dang.RecordType).Fields {
-		argType, mono := arg.Value.Type()
-		if !mono {
-			return nil, "", fmt.Errorf("non-monotype argument %s", arg.Key)
-		}
-		jsonValue, provided := inputArgs[arg.Key]
-		if !provided {
-			continue
-		}
-		dec := json.NewDecoder(bytes.NewReader(jsonValue))
-		dec.UseNumber()
-		var val any
-		if err := dec.Decode(&val); err != nil {
-			return nil, "", fmt.Errorf("failed to unmarshal input argument %s: %w", arg.Key, err)
-		}
-		dangVal, err := anyToDang(ctx, env, val, argType)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to convert input argument %s to dang value: %w", arg.Key, err)
-		}
-		argMap[arg.Key] = dangVal
-		args = append(args, dang.Keyed[dang.Node]{
-			Key:   arg.Key,
-			Value: &dang.ValueNode{Val: dangVal},
-		})
-	}
-
-	var result dang.Value
-	if fnName == "" {
-		result, err = parentConstructor.Call(ctx, env, argMap)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to call parent constructor: %w", err)
-		}
-	} else {
-		parentModEnv := dang.NewModuleValue(parentModType)
-		parentModEnv.SetDynamicScope(parentModEnv)
-
-		for name, value := range parentState {
-			scheme, found := parentModType.SchemeOf(name)
-			if !found {
-				return nil, "", fmt.Errorf("unknown field: %s", name)
-			}
-			fieldType, isMono := scheme.Type()
-			if !isMono {
-				return nil, "", fmt.Errorf("non-monotype argument %s", name)
-			}
-			dangVal, err := anyToDang(ctx, env, value, fieldType)
-			if err != nil {
-				return nil, "", fmt.Errorf("failed to convert parent state %s to dang value: %w", name, err)
-			}
-			parentModEnv.Set(name, dangVal)
-		}
-
-		bodyEnv := dang.CreateCompositeEnv(parentModEnv, env)
-		_, err := dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
-		if err != nil {
-			return nil, "", fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ClassName, err)
-		}
-
-		call := &dang.FunCall{
-			Fun: &dang.Select{
-				Receiver: &dang.ValueNode{Val: parentModEnv},
-				Field:    &dang.Symbol{Name: fnName},
-			},
-			Args: args,
-		}
-		result, err = call.Eval(ctx, env)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to evaluate call: %w", err)
-		}
-	}
-
-	jsonBytes, err := json.Marshal(result)
+	dagMod, err := r.initModule(ctx, srv, env)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to marshal result: %w", err)
+		return nil, fmt.Errorf("init module: %w", err)
 	}
-	return jsonBytes, execMD.ClientID, nil
+	return json.Marshal(dagMod)
 }
 
 func (r *DangRuntime) initModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (res dagql.ObjectResult[*core.Module], _ error) {
