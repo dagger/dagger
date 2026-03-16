@@ -357,6 +357,64 @@ func intralineRanges(oldContent, newContent string) (oldRanges, newRanges []emph
 // expandTabs replaces tab characters with spaces, advancing to the next
 // tab stop of the given width (like a terminal would). This ensures that
 // width measurement and truncation functions see the true visual width.
+// renderFileView produces a line-numbered view of file content, suitable
+// for displaying read or write tool results. If startLine > 0, line numbers
+// begin at that value; otherwise they start at 1. Lines are colored with
+// the given color (green for writes/added content, default for reads).
+func renderFileView(profile termenv.Profile, content string, startLine, totalWidth int, color termenv.Color) string {
+	if content == "" {
+		return ""
+	}
+	if totalWidth < 20 {
+		totalWidth = 20
+	}
+	if startLine <= 0 {
+		startLine = 1
+	}
+
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
+
+	var sb strings.Builder
+	// Gutter: "NNNN X " = 7 chars (same as unified diff single-number gutter).
+	const gutterW = 7
+	contentW := totalWidth - gutterW
+	if contentW < 1 {
+		contentW = 1
+	}
+
+	for i, line := range lines {
+		lineNo := startLine + i
+		gutter := fmt.Sprintf("%4d ", lineNo)
+
+		var marker string
+		if color != nil {
+			marker = "+ "
+		} else {
+			marker = "  "
+		}
+
+		var lineColor termenv.Color
+		if color != nil {
+			lineColor = color
+		} else {
+			lineColor = termenv.ANSIBrightBlack
+		}
+
+		gutterStr := out.String(gutter).Foreground(lineColor).Faint().String()
+		markerStr := out.String(marker).Foreground(lineColor).String()
+
+		expanded := expandTabs(line, diffTabWidth)
+		truncated := ansi.Truncate(expanded, contentW, "…")
+
+		sb.WriteString(gutterStr)
+		sb.WriteString(markerStr)
+		sb.WriteString(truncated)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
 func expandTabs(s string, tabWidth int) string {
 	if !strings.Contains(s, "\t") {
 		return s

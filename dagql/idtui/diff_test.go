@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestLineLevelDiff(t *testing.T) {
@@ -169,6 +170,54 @@ func TestRenderEditDiffUnifiedFormat(t *testing.T) {
 			t.Errorf("line %d too short: %q", i, line)
 		}
 	}
+}
+
+func TestRenderFileView(t *testing.T) {
+	content := "\tfunc hello() {\n\t\tfmt.Println(\"hello\")\n\t}\n"
+
+	t.Run("width", func(t *testing.T) {
+		for _, width := range []int{40, 80, 120} {
+			t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+				result := renderFileView(0, content, 1, width, nil)
+				for i, line := range splitLines(result) {
+					if line == "" {
+						continue
+					}
+					w := terminalRenderWidth(line)
+					if w > width {
+						t.Errorf("line %d: rendered width %d > %d: %q", i, w, width, line)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("line numbers", func(t *testing.T) {
+		result := renderFileView(0, "line1\nline2\nline3\n", 10, 80, nil)
+		// Should contain line numbers starting at 10.
+		if !strings.Contains(result, "  10") {
+			t.Error("expected line number 10")
+		}
+		if !strings.Contains(result, "  12") {
+			t.Error("expected line number 12")
+		}
+	})
+
+	t.Run("with color", func(t *testing.T) {
+		result := renderFileView(0, "hello\n", 1, 80, termenv.ANSIGreen)
+		// Should contain the '+' marker for colored (write) content.
+		if !strings.Contains(result, "+ ") {
+			t.Error("expected '+ ' marker for colored content")
+		}
+	})
+
+	t.Run("no color", func(t *testing.T) {
+		result := renderFileView(0, "hello\n", 1, 80, nil)
+		// Context lines use '  ' (no marker).
+		if strings.Contains(result, "+ ") || strings.Contains(result, "- ") {
+			t.Error("expected no +/- marker for uncolored content")
+		}
+	})
 }
 
 // terminalRenderWidth computes the actual visual width of a string as a
