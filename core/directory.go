@@ -129,7 +129,8 @@ func (dir *Directory) AttachOwnedResults(
 	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if dir == nil || dir.Parent.ID() == nil {
+	parentID, err := dir.Parent.ID()
+	if dir == nil || err != nil || parentID == nil {
 		return nil, nil
 	}
 	attached, err := attach(dir.Parent)
@@ -207,6 +208,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	if dir == nil {
 		return nil, fmt.Errorf("encode persisted directory: nil directory")
 	}
+	parentID, _ := dir.Parent.ID()
 	payload := persistedDirectoryPayload{
 		Dir:      dir.Dir,
 		Platform: dir.Platform,
@@ -214,7 +216,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	switch {
 	case dir.Snapshot != nil:
 		payload.Form = persistedDirectoryFormSnapshot
-	case dir.Parent.ID() != nil:
+	case parentID != nil:
 		parentID, err := encodePersistedObjectRef(cache, dir.Parent, "directory parent")
 		if err != nil {
 			return nil, err
@@ -761,7 +763,7 @@ func (cf *CopyFilter) IsEmpty() bool {
 func (dir *Directory) WithDirectory(
 	ctx context.Context,
 	destDir string,
-	srcID *call.ID,
+	srcID DirectoryID,
 	filter CopyFilter,
 	owner string,
 	permissions *int,
@@ -786,7 +788,7 @@ func (dir *Directory) WithDirectory(
 			return err
 		}
 
-		srcObj, err := dagql.NewID[*Directory](srcID).Load(ctx, srv)
+		srcObj, err := srcID.Load(ctx, srv)
 		if err != nil {
 			return err
 		}
@@ -1781,7 +1783,7 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (Lazy
 	}, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, opID *call.ID, paths ...string) (LazyInitFunc, error) {
+func (dir *Directory) Without(ctx context.Context, opCall *dagql.ResultCall, paths ...string) (LazyInitFunc, error) {
 	return func(ctx context.Context) error {
 		query, err := CurrentQuery(ctx)
 		if err != nil {
@@ -1847,22 +1849,13 @@ func (dir *Directory) Without(ctx context.Context, opID *call.ID, paths ...strin
 		}
 		dir.Snapshot = snapshot
 
-		if !anyPathsRemoved && opID.Receiver() != nil {
-			dag, err := CurrentDagqlServer(ctx)
+		if !anyPathsRemoved && opCall != nil && dir.Parent.Self() != nil {
+			cache, err := query.Cache(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get dagql server: %w", err)
+				return fmt.Errorf("failed to get dagql cache: %w", err)
 			}
-			// trigger an equivalence union between this ID and its parent, which makes
-			// sense when we don't actually remove any paths (i.e. this is a no-op)
-			// TODO: this id load works but could be more aesthetic looking by adding a dedicated
-			// method to the dagql cache for just adding a newly discovered digest to an existing op
-			opID := opID.With(call.WithExtraDigest(call.ExtraDigest{
-				Digest: opID.Receiver().Digest(),
-				Label:  "Directory.Without no-op equivalence union",
-			}))
-			_, err = dag.Load(ctx, opID)
-			if err != nil {
-				return fmt.Errorf("failed to load op ID for equivalence union: %w", err)
+			if err := cache.TeachCallEquivalentToResult(ctx, opCall, dir.Parent); err != nil {
+				return fmt.Errorf("teach directory without no-op equivalence: %w", err)
 			}
 		}
 

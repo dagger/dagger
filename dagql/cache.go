@@ -79,6 +79,11 @@ type Cache interface {
 	// RecipeIDForCall derives the semantic recipe ID for a result call using
 	// the cache to resolve any cached result refs it depends on.
 	RecipeIDForCall(*ResultCall) (*call.ID, error)
+
+	// TeachCallEquivalentToResult records that the given call is equivalent to
+	// the provided existing result, updating e-graph/cache identity state
+	// without re-executing or synthetic loading.
+	TeachCallEquivalentToResult(context.Context, *ResultCall, AnyResult) error
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {

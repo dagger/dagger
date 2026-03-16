@@ -2067,6 +2067,49 @@ func TestStructuralHitCanReuseResultFromSameOutputEqClass(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestTeachCallEquivalentToResult(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	parentCall := cacheTestIntCall("teach-parent")
+	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestPlainResult(NewInt(42)), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !parentRes.HitCache())
+
+	parentShared := parentRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+
+	childCall := &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType(Int(0).Type()),
+		Field:    "teach-child",
+		Receiver: &ResultCallRef{ResultID: uint64(parentShared.id)},
+	}
+
+	assert.NilError(t, c.TeachCallEquivalentToResult(ctx, childCall, parentRes))
+
+	childInitCalls := 0
+	childRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall.clone()}, func(context.Context) (AnyResult, error) {
+		childInitCalls++
+		return cacheTestPlainResult(NewInt(99)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, childInitCalls)
+	assert.Assert(t, childRes.HitCache())
+	assert.Equal(t, 42, cacheTestUnwrapInt(t, childRes))
+	assert.Equal(t, cacheTestMustEncodeID(t, parentRes), cacheTestMustEncodeID(t, childRes))
+
+	assert.NilError(t, childRes.Release(ctx))
+	assert.NilError(t, parentRes.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 	t.Parallel()
 

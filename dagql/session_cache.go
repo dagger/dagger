@@ -225,6 +225,17 @@ func (c *SessionCache) RecipeIDForCall(call *ResultCall) (*call.ID, error) {
 	return c.cache.RecipeIDForCall(call)
 }
 
+func (c *SessionCache) TeachCallEquivalentToResult(ctx context.Context, call *ResultCall, res AnyResult) error {
+	if res != nil {
+		attached, err := c.AttachResult(ctx, res)
+		if err != nil {
+			return err
+		}
+		res = attached
+	}
+	return c.cache.TeachCallEquivalentToResult(ctx, call, res)
+}
+
 func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
 	return c.cache.AttachResult(ctx, res)
 }

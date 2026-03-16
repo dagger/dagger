@@ -990,6 +990,52 @@ func persistedEnvelopeDecodableInContext(ctx context.Context, env *PersistedResu
 	}
 }
 
+func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCall, res AnyResult) error {
+	if frame == nil {
+		return fmt.Errorf("teach call equivalence: nil call")
+	}
+	if res == nil {
+		return fmt.Errorf("teach call equivalence: nil result")
+	}
+
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		attached, err := c.AttachResult(ctx, res)
+		if err != nil {
+			return fmt.Errorf("teach call equivalence: attach result: %w", err)
+		}
+		res = attached
+		shared = res.cacheSharedResult()
+	}
+	if shared == nil || shared.id == 0 {
+		return fmt.Errorf("teach call equivalence: target result missing shared result ID")
+	}
+
+	frame = frame.clone()
+	frame.bindCache(c)
+
+	requestDigest, err := frame.RecipeDigest()
+	if err != nil {
+		return fmt.Errorf("teach call equivalence: derive request digest: %w", err)
+	}
+	requestSelf, requestInputRefs, err := frame.SelfDigestAndInputRefs()
+	if err != nil {
+		return fmt.Errorf("teach call equivalence: derive request term digests: %w", err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return fmt.Errorf("teach call equivalence: derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
+}
+
 func isBuiltinPersistedScalarType(typeName string) bool {
 	switch typeName {
 	case "String", "Int", "Float", "Boolean", "JSON", "Void":
