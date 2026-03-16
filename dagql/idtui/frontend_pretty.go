@@ -102,6 +102,7 @@ type frontendPretty struct {
 	queuedMsgLabel   *QueuedMessageLabel
 	textInput         *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
+	statusLine      *StatusLine
 	keymapBar       *KeymapBar
 	editlineFocused bool
 	inputHistory    []string // raw encoded history entries (with mode prefix)
@@ -587,6 +588,16 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	})
 }
 
+func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
+	fe.dispatch(func() {
+		if fe.statusLine != nil {
+			fe.statusLine.SetData(data)
+			fe.statusLine.Update()
+		}
+		fe.Update()
+	})
+}
+
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.dispatch(func() {
 		fe.startShell(ctx, handler)
@@ -620,14 +631,16 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert errorLabel + queuedMsg + textInput before keymapBar:
-	// output → error → queued → prompt → keymap
+	// Insert errorLabel + queuedMsg + textInput before statusLine + keymapBar:
+	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel(fe.profile)
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
+	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
 
@@ -801,10 +814,12 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 		fe.applyTuistFocus() // restore focus to the correct SpanTreeView
 		fe.Update()
 	})
-	// Insert before keymapBar
+	// Insert before statusLine + keymapBar
+	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
 	fe.tui.AddChild(formSpacer)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.formWrap)
 }
@@ -915,12 +930,16 @@ func (fe *frontendPretty) startTUI() {
 			fe.tui.SetDebugWriter(f)
 		}
 	}
+	fe.statusLine = &StatusLine{
+		profile: fe.profile,
+	}
 	fe.keymapBar = &KeymapBar{
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
 		Keys:             fe.keys,
 	}
 	fe.tui.AddChild(fe)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
 	fe.tui.Start()
@@ -1013,7 +1032,10 @@ func (fe *frontendPretty) handleEOF() {
 }
 
 func (fe *frontendPretty) doQuit() {
-	// Remove the keymap bar so it doesn't appear in the final frame.
+	// Remove the status line and keymap bar so they don't appear in the final frame.
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+	}
 	if fe.keymapBar != nil {
 		fe.tui.RemoveChild(fe.keymapBar)
 	}
@@ -1388,6 +1410,9 @@ func (fe *frontendPretty) Render(ctx tuist.Context) tuist.RenderResult {
 	logsLines := fe.renderLogsLines(progPrefix)
 
 	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
+	if fe.statusLine != nil && fe.statusLine.data.Model != "" {
+		chromeHeight += 1 // status line (1 line, sibling)
+	}
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
 	}
@@ -2317,9 +2342,11 @@ func (fe *frontendPretty) enterSearchMode() {
 	}
 	fe.searchInput.KeyInterceptor = fe.interceptSearchKey
 
-	// Insert before keymapBar.
+	// Insert before statusLine + keymapBar.
+	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.searchInput)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.searchInput)
 	fe.tui.SetShowHardwareCursor(true)
@@ -3013,6 +3040,11 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 	toolName := row.Span.LLMTool
 	fields := partialJSONFields(args)
 
+	// For edit tools with complete old+new text, render a side-by-side diff.
+	if fe.tryRenderEditDiff(out, r, row, prefix, toolName, fields) {
+		return
+	}
+
 	// Render content-style fields (prompt, command, content, etc.)
 	// as truncated italic lines beneath the header.
 	for argName, field := range fields {
@@ -3076,6 +3108,97 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 		r.fancyIndent(out, row, true, false)
 		fmt.Fprintln(out, prefix+out.String(remaining).Foreground(termenv.ANSIBrightBlack).String())
 	}
+}
+
+// tryRenderEditDiff checks whether this is an edit tool call with complete
+// old+new text and, if so, renders a syntax-highlighted side-by-side diff.
+// Returns true if the diff was rendered (caller should skip normal arg rendering).
+func (fe *frontendPretty) tryRenderEditDiff(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, toolName string, fields map[string]parsedField) bool {
+	if !isEditTool(toolName) {
+		return false
+	}
+
+	// Look up the fields we need. Accept various naming conventions.
+	filePath := firstField(fields, "path", "filepath", "file_path")
+	oldField := firstFieldEntry(fields, "oldtext", "old_text")
+	newField := firstFieldEntry(fields, "newtext", "new_text")
+
+	// Need at least one of old or new to show a diff.
+	if oldField == nil && newField == nil {
+		return false
+	}
+
+	// If the fields are still streaming, fall back to the default rendering
+	// so the user sees the streaming glitch animation.
+	if (oldField != nil && !oldField.Complete) || (newField != nil && !newField.Complete) {
+		return false
+	}
+
+	oldText := ""
+	newText := ""
+	if oldField != nil {
+		oldText = oldField.Value
+	}
+	if newField != nil {
+		newText = newField.Value
+	}
+
+	// Compute available width for the diff.
+	// fancyIndent with selfBar=true uses (row.Depth+1)*2 chars,
+	// matching the existing maxWidth formula for content-style args.
+	diffWidth := fe.window.Width - row.Depth*2 - 4
+	if diffWidth < 40 {
+		diffWidth = 40
+	}
+
+	diffView := renderEditDiff(fe.profile, filePath, oldText, newText, diffWidth)
+	if diffView == "" {
+		return false
+	}
+
+	for _, line := range strings.Split(strings.TrimRight(diffView, "\n"), "\n") {
+		r.fancyIndent(out, row, true, false)
+		fmt.Fprintln(out, prefix+line)
+	}
+	return true
+}
+
+// isEditTool returns true if the tool name matches "edit" (case-insensitive,
+// handles "Type_edit" Dagger method tools).
+func isEditTool(toolName string) bool {
+	lower := strings.ToLower(toolName)
+	if lower == "edit" {
+		return true
+	}
+	if idx := strings.LastIndex(lower, "_"); idx >= 0 {
+		return lower[idx+1:] == "edit"
+	}
+	return false
+}
+
+// firstField returns the value of the first matching field name (case-insensitive).
+func firstField(fields map[string]parsedField, names ...string) string {
+	for _, name := range names {
+		for k, f := range fields {
+			if strings.EqualFold(k, name) && f.Value != "" {
+				return f.Value
+			}
+		}
+	}
+	return ""
+}
+
+// firstFieldEntry returns the parsedField pointer for the first matching name.
+func firstFieldEntry(fields map[string]parsedField, names ...string) *parsedField {
+	for _, name := range names {
+		for k := range fields {
+			if strings.EqualFold(k, name) {
+				f := fields[k]
+				return &f
+			}
+		}
+	}
+	return nil
 }
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
