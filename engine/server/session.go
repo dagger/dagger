@@ -1805,6 +1805,17 @@ type moduleLoadRequest struct {
 	extra bool
 }
 
+type resolvedModuleLoad struct {
+	primary           *core.Module
+	primaryEntrypoint bool
+	related           []resolvedServedModule
+}
+
+type resolvedServedModule struct {
+	mod        *core.Module
+	entrypoint bool
+}
+
 const maxParallelModuleResolves = 8
 
 // findBlueprint returns the index of the first blueprint module in pending,
@@ -1977,9 +1988,13 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 			name := cwdModuleName(ctx, readFile, moduleDir)
 			pending = append(pending, pendingModule{
-				Ref:       resolveLocalRef(ws, rel),
-				Name:      name,
-				Blueprint: true,
+				Ref:  resolveLocalRef(ws, rel),
+				Name: name,
+				// If the root module references a separate blueprint, only that
+				// blueprint should contribute Query-root entrypoint proxies.
+				// The root app module still needs to be served, but only as a
+				// namespaced module.
+				Blueprint: legacyBlueprint == nil,
 			})
 		}
 	}
@@ -2100,7 +2115,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	}
 
 	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules)
-	resolvedMods := make([]*core.Module, len(loads))
+	resolvedLoads := make([]resolvedModuleLoad, len(loads))
 	resolveErrs := make([]error, len(loads))
 
 	// Resolve modules in parallel, then apply to client state in deterministic order.
@@ -2111,12 +2126,12 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		i := i
 		load := load
 		jobs = jobs.WithJob(moduleLoadJobName(load), func(ctx context.Context) error {
-			resolved, err := srv.resolveModule(ctx, client.dag, load.mod)
+			resolved, err := srv.resolveModuleLoad(ctx, client.dag, load)
 			if err != nil {
 				resolveErrs[i] = err
 				return nil
 			}
-			resolvedMods[i] = resolved
+			resolvedLoads[i] = resolved
 			return nil
 		})
 	}
@@ -2137,7 +2152,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	for i, load := range loads {
-		if err := srv.serveModuleWithDeps(client, resolvedMods[i], load.mod.Blueprint); err != nil {
+		if err := srv.serveResolvedModuleLoad(client, resolvedLoads[i]); err != nil {
 			client.modulesErr = moduleLoadErr(load, err)
 			client.modulesLoaded = true
 			return client.modulesErr
@@ -2146,6 +2161,84 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	client.modulesLoaded = true
 	return nil
+}
+
+func (srv *Server) resolveModuleLoad(
+	ctx context.Context,
+	dag *dagql.Server,
+	load moduleLoadRequest,
+) (resolvedModuleLoad, error) {
+	primary, err := srv.resolveModule(ctx, dag, load.mod)
+	if err != nil {
+		return resolvedModuleLoad{}, err
+	}
+
+	resolved := resolvedModuleLoad{
+		primary:           primary,
+		primaryEntrypoint: load.mod.Blueprint,
+	}
+	if !load.extra {
+		return resolved, nil
+	}
+
+	src := primary.GetSource()
+	if src == nil {
+		return resolved, nil
+	}
+
+	for _, toolchainSrc := range src.Toolchains {
+		if toolchainSrc.Self() == nil {
+			continue
+		}
+		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc)
+		if err != nil {
+			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
+		}
+		resolved.related = append(resolved.related, resolvedServedModule{
+			mod:        toolchainMod,
+			entrypoint: false,
+		})
+	}
+
+	if src.Blueprint.Self() != nil {
+		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Blueprint)
+		if err != nil {
+			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
+		}
+		resolved.related = append(resolved.related, resolvedServedModule{
+			mod:        blueprintMod,
+			entrypoint: true,
+		})
+		// When the selected module points at a separate blueprint, only the
+		// blueprint should contribute Query-root entrypoint proxies.
+		resolved.primaryEntrypoint = false
+	}
+
+	return resolved, nil
+}
+
+func (srv *Server) resolveModuleSourceAsModule(
+	ctx context.Context,
+	dag *dagql.Server,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (*core.Module, error) {
+	var resolved dagql.ObjectResult[*core.Module]
+	err := dag.Select(ctx, src, &resolved,
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.Self(), nil
+}
+
+func (srv *Server) serveResolvedModuleLoad(client *daggerClient, load resolvedModuleLoad) error {
+	for _, related := range load.related {
+		if err := srv.serveModuleWithDeps(client, related.mod, related.entrypoint); err != nil {
+			return err
+		}
+	}
+	return srv.serveModuleWithDeps(client, load.primary, load.primaryEntrypoint)
 }
 
 func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {

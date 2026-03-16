@@ -140,7 +140,10 @@ func findAutoAliasedModule(def *moduleDef) *moduleDef {
 		return nil
 	}
 	for _, fn := range fp.GetFunctions() {
-		if fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName != "" && fn.Name == gqlFieldName(fn.ReturnType.AsObject.SourceModuleName) {
+		if fn.ReturnType != nil &&
+			fn.ReturnType.AsObject != nil &&
+			fn.ReturnType.AsObject.SourceModuleName != "" &&
+			fn.Name == gqlFieldName(fn.ReturnType.AsObject.SourceModuleName) {
 			return focusRootModule(def, fn.ReturnType.AsObject.SourceModuleName)
 		}
 	}
@@ -156,7 +159,7 @@ func focusRootModule(def *moduleDef, modName string) *moduleDef {
 		return nil
 	}
 	for _, fn := range fp.GetFunctions() {
-		if fn.ReturnType.AsObject == nil {
+		if fn.ReturnType == nil || fn.ReturnType.AsObject == nil {
 			continue
 		}
 		if fn.ReturnType.AsObject.SourceModuleName != modName {
@@ -165,14 +168,73 @@ func focusRootModule(def *moduleDef, modName string) *moduleDef {
 		if fn.Name != gqlFieldName(modName) {
 			continue
 		}
-		return &moduleDef{
-			Name:       modName,
-			MainObject: fn.ReturnType,
-			Objects:    def.Objects,
-			Interfaces: def.Interfaces,
-			Enums:      def.Enums,
-			Inputs:     def.Inputs,
-		}
+		focused := *def
+		focused.Name = modName
+		focused.MainObject = fn.ReturnType
+		return &focused
 	}
 	return def
+}
+
+func focusRootModuleFunctions(def *moduleDef, modName string, visibleModuleNames []string) *moduleDef {
+	if def == nil {
+		return nil
+	}
+	root := def.GetTypeDef("Query")
+	if root == nil || root.AsObject == nil {
+		return nil
+	}
+
+	focusedModule := focusRootModule(def, modName)
+	if focusedModule == nil ||
+		focusedModule.MainObject == nil ||
+		focusedModule.MainObject.AsObject == nil ||
+		focusedModule.MainObject.AsObject.Name == "Query" {
+		return nil
+	}
+
+	if len(visibleModuleNames) == 0 {
+		visibleModuleNames = []string{modName}
+	}
+	visibleModules := map[string]struct{}{}
+	for _, name := range visibleModuleNames {
+		if name == "" {
+			continue
+		}
+		visibleModules[name] = struct{}{}
+	}
+
+	filteredFns := make([]*modFunction, 0, len(root.AsObject.GetFunctions()))
+	for _, fn := range root.AsObject.GetFunctions() {
+		if fn.SourceModuleName == "" {
+			continue
+		}
+		if _, ok := visibleModules[fn.SourceModuleName]; !ok {
+			continue
+		}
+		if fn.Name == gqlFieldName(modName) && fn.ReturnType != nil && fn.ReturnType.AsObject != nil && fn.ReturnType.AsObject.SourceModuleName == modName {
+			continue
+		}
+		filteredFns = append(filteredFns, fn)
+	}
+
+	focused := *def
+	rootCopy := *root
+	objCopy := *root.AsObject
+	objCopy.Fields = nil
+	objCopy.Functions = filteredFns
+	rootCopy.AsObject = &objCopy
+
+	constructor := &modFunction{ReturnType: &rootCopy}
+	if focusedModule.MainObject.AsObject.Constructor != nil {
+		constructorCopy := *focusedModule.MainObject.AsObject.Constructor
+		constructorCopy.Name = ""
+		constructorCopy.ReturnType = &rootCopy
+		constructor = &constructorCopy
+	}
+	objCopy.Constructor = constructor
+
+	focused.Name = modName
+	focused.MainObject = &rootCopy
+	return &focused
 }

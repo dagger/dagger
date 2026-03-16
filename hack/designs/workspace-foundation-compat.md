@@ -2434,33 +2434,65 @@ Current blocker summary:
     - trace: `https://dagger.cloud/dagger/traces/9bb1f6aa6a8acf126b0639ee675bf16f`
     - result: all retained workspace entrypoint tests pass
 
-Recommended next step for the next session:
+Explicit `-m` follow-up outcome under the same direct `engine-dev test` harness:
 
-- return to the explicit `-m` follow-up under the same direct `engine-dev test`
-  harness; do not go back to the playground/toolchains path for primary
-  verification
-- recover or discard the local `cmd/dagger/mcp.go` / `cmd/dagger/module_inspect.go`
-  WIP only against still-reproduced explicit `-m` failures
-- keep the now-passing blueprint, root-field-conflict, and constructor-conflict
-  workspace tests as regression guards
-- do not change tests without discussion; the current bucket now passes under the
-  intended harness
+- the older `cmd/dagger/mcp.go` / `cmd/dagger/module_inspect.go` WIP was not
+  sufficient by itself
+  - direct reruns still reproduced:
+    - `TestUserDefaults/TestLocalBlueprint`
+    - `TestUserDefaults/TestLocalToolchain`
+  - concrete failures before the landing work:
+    - `dagger -m ./app call message`
+    - `dagger -m ./app call defaults message`
+    - both failed as unknown commands because the explicit `-m` Query root did
+      not expose the wrapper app's related blueprint/toolchain entrypoints
+- diagnosis after the direct rerun:
+  - explicit `-m` still arrives as connect-time module loading via
+    `ExtraModules`; that part remains correct
+  - the missing piece was not only CLI focus
+  - on the explicit `-m` path, `engine/server/session.go` was serving the
+    selected module plus type-only deps, but wrapper-app related modules live on
+    `ModuleSource.Blueprint` / `ModuleSource.Toolchains`, not in `Deps`
+  - so a wrapper app like `./app` could be loaded explicitly while still
+    omitting the related modules that actually contribute the visible Query-root
+    entrypoints
+- landed fix boundary:
+  - keep `-m` as connect-time loading via `ExtraModules`; do not reintroduce a
+    second client-side targeting model
+  - `engine/server/session.go` now resolves and serves the selected module's
+    related blueprint/toolchain modules on the explicit `-m` path before
+    serving the primary module
+  - `cmd/dagger/module_inspect.go` now resolves the selected module name plus
+    visible related module names before CLI introspection
+  - `cmd/dagger/mcp.go` now presents explicit `-m` as a filtered real
+    `Query`-root view based on those visible module names, instead of
+    refocusing `MainObject` to the module object or falling back to raw
+    unfiltered `Query`
+  - the filtered Query-root view still omits core `Query` functions and the
+    selected module constructor proxy, while preserving namespaced constructor
+    and default behavior for explicit module access
+  - the retained blueprint, root-field-conflict, and constructor-conflict
+    workspace behavior remains the regression guard for this path
+- landing hygiene:
+  - the debug-only `user_defaults_test.go` logging was dropped before landing
+  - tests were kept unchanged
 
-Implementation constraints for any CLI follow-up:
+Verification after the explicit `-m` follow-up:
 
-- keep `-m` as connect-time module loading via `ExtraModules`; do not reintroduce a
-  second client-side targeting model
-- repair explicit `-m` by presenting the selected module's entrypoints as a
-  filtered Query-root view, not by refocusing `MainObject` to the module object
-- preserve namespaced constructor/default behavior for explicit module access
-  while repairing Query-root entrypoint visibility
-- do not fall back from explicit `-m` to an unfiltered raw `Query`
-- keep the now-passing blueprint, root-field-conflict, and constructor-conflict
-  behavior intact while fixing any remaining explicit `-m` regressions
-- drop the debug-only `user_defaults_test.go` logging before landing unless there
-  is an explicit reason to keep diagnostic output
-- do not change tests without discussion; the current targeted bucket now passes
-  under the intended harness
+- `dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='Test(WorkspaceLoadLocation|FocusRootModuleFunctions|RewriteQueryRootConstructorArgs)$' --test-verbose`
+  - trace: `https://dagger.cloud/dagger/traces/3da702adcba3a138eec8fea8bb65da7f`
+  - result: passes
+- `dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestUserDefaults/(TestLocalBlueprint|TestLocalToolchain)' --test-verbose`
+  - trace: `https://dagger.cloud/dagger/traces/692e8d3ebb818920a1f72a6b0c7a90fa`
+  - result: passes
+  - important explicit `-m` cases now succeed:
+    - `dagger -m ./app call message`
+    - `dagger -m ./app call defaults message`
+    - both return the expected outer-defaults output
+- `dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)' --test-verbose`
+  - trace: `https://dagger.cloud/dagger/traces/91c8c327c0fbef408564cee8c7521963`
+  - result: all retained workspace entrypoint tests still pass after the
+    explicit `-m` engine change
 
 ## User-Visible Breakage In The Foundation PR
 

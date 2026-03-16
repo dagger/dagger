@@ -35,9 +35,9 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 // initializeWorkspace loads type definitions from the workspace.
 // Modules are already served by the engine at connect time.
 //
-// When a specific module was requested via -m, the CLI identifies that module
-// among the loaded types and sets it as the MainObject so that the module's
-// constructor flags are available at the top level (e.g. dagger call --model x run).
+// When a specific module was requested via -m, the CLI presents that module's
+// Query-root functions as a filtered Query view so explicit entrypoints stay
+// available at the top level while preserving namespaced module access.
 //
 // When no specific module was requested, MainObject is the Query root and the
 // CLI consumes workspace entrypoint methods and module constructors directly
@@ -47,20 +47,43 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client, workspaceRef *
 	defer telemetry.EndWithCause(span, &rerr)
 
 	def := &moduleDef{}
+	explicitModule := explicitModuleSelection{}
 
-	// If a specific module was requested via -m, resolve its name so that
-	// loadTypeDefs can match it and set MainObject to the module's type
-	// (rather than Query). This makes the module's constructor flags
-	// available at the top level (e.g. dagger call --model x run).
+	// If a specific module was requested via -m, remember the ref and try to
+	// resolve the selected module plus any related blueprint/toolchain names.
+	// TypeDefs are still loaded from the Query root, then we filter that real
+	// Query surface down to the selected module view after introspection.
 	if modRef, explicit := getExplicitModuleSourceRef(); explicit && modRef != "" {
-		modName, err := dag.ModuleSource(modRef).ModuleName(ctx)
-		if err == nil && modName != "" {
-			def.Name = modName
+		explicitModule.ref = modRef
+		selected, err := resolveExplicitModuleSelection(ctx, dag, modRef)
+		if err == nil {
+			explicitModule = selected
 		}
 	}
 
 	if err := def.loadTypeDefs(ctx, dag, true); err != nil {
 		return nil, err
+	}
+
+	if explicitModule.ref != "" {
+		if explicitModule.moduleName == "" {
+			if focused := findAutoAliasedModule(def); focused != nil {
+				explicitModule.moduleName = focused.Name
+				if len(explicitModule.visibleModuleNames) == 0 && focused.Name != "" {
+					explicitModule.visibleModuleNames = []string{focused.Name}
+				}
+			}
+		}
+
+		if explicitModule.moduleName == "" {
+			return nil, fmt.Errorf("failed to identify module loaded from %q", explicitModule.ref)
+		}
+
+		focused := focusRootModuleFunctions(def, explicitModule.moduleName, explicitModule.visibleModuleNames)
+		if focused == nil {
+			return nil, fmt.Errorf("failed to focus Query root on module %q", explicitModule.moduleName)
+		}
+		def = focused
 	}
 
 	return def, nil
@@ -71,6 +94,51 @@ func workspaceLoadLocation(workspaceRef *string) string {
 		return "."
 	}
 	return *workspaceRef
+}
+
+type explicitModuleSelection struct {
+	ref                string
+	moduleName         string
+	visibleModuleNames []string
+}
+
+func resolveExplicitModuleSelection(ctx context.Context, dag *dagger.Client, modRef string) (explicitModuleSelection, error) {
+	selection := explicitModuleSelection{ref: modRef}
+	src := dag.ModuleSource(modRef)
+
+	seen := map[string]struct{}{}
+	addVisibleModule := func(name string) {
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		selection.visibleModuleNames = append(selection.visibleModuleNames, name)
+	}
+
+	modName, err := src.ModuleName(ctx)
+	if err != nil {
+		return selection, err
+	}
+	selection.moduleName = modName
+	addVisibleModule(modName)
+
+	if blueprintName, err := src.Blueprint().ModuleName(ctx); err == nil {
+		addVisibleModule(blueprintName)
+	}
+	if toolchains, err := src.Toolchains(ctx); err == nil {
+		for _, toolchain := range toolchains {
+			toolchainName, err := toolchain.ModuleName(ctx)
+			if err != nil {
+				continue
+			}
+			addVisibleModule(toolchainName)
+		}
+	}
+
+	return selection, nil
 }
 
 // initializeModule loads the module at the given source ref
