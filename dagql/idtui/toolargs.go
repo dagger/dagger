@@ -61,8 +61,7 @@ var toolArgStyles = map[string]argStyle{
 	"save.description":          argStyleDesc,
 
 	// Commit
-	"commit.message":     argStyleContent,
-	"withcommit.message": argStyleContent,
+	"commit.message": argStyleDesc,
 
 	// Check/test tools
 	"checks.include": argStyleDesc,
