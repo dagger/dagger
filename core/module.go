@@ -43,9 +43,6 @@ type Module struct {
 	// Runtime is the execution environment that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime ModuleRuntime
 
-	// runtimeContainer is a cached container view of the runtime, for the GraphQL "runtime" field
-	runtimeContainer dagql.Nullable[dagql.ObjectResult[*Container]]
-
 	// The following are populated while initializing the module
 
 	// The doc string of the module, if any
@@ -233,13 +230,12 @@ func CacheModuleByContentDigest(
 // RuntimeContainer returns the runtime as a Container for the GraphQL field.
 // Returns nil if the runtime doesn't use a container.
 func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
-	if !mod.runtimeContainer.Valid && mod.Runtime != nil {
-		// Cache the container view
+	if mod.Runtime != nil {
 		if ctr, ok := mod.Runtime.AsContainer(); ok {
-			mod.runtimeContainer = dagql.NonNull(ctr)
+			return dagql.NonNull(ctr)
 		}
 	}
-	return mod.runtimeContainer
+	return dagql.Null[dagql.ObjectResult[*Container]]()
 }
 
 // Return all user defaults for this module
