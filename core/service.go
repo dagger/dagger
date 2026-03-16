@@ -492,7 +492,11 @@ func (svc *Service) startContainer(
 		resize = convertResizeChannel(ctx, sio.ResizeCh)
 	}
 
-	secretEnv, err := loadSecretEnv(ctx, bksession.NewGroup(bk.ID()), bk.SessionManager, ctr.secretEnvs())
+	secretEnvs, err := ctr.secretEnvs()
+	if err != nil {
+		return nil, err
+	}
+	secretEnv, err := loadSecretEnv(ctx, bksession.NewGroup(bk.ID()), bk.SessionManager, secretEnvs)
 	if err != nil {
 		return nil, err
 	}

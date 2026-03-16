@@ -67,12 +67,20 @@ func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) 
 }
 
 func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
-	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
+	beforeID, err := ch.Before.ID()
+	if err != nil {
+		return nil, fmt.Errorf("before ID: %w", err)
+	}
+	afterID, err := ch.After.ID()
+	if err != nil {
+		return nil, fmt.Errorf("after ID: %w", err)
+	}
+	if beforeID.Digest() == afterID.Digest() {
 		return &ChangesetPaths{}, nil
 	}
 
 	var result *ChangesetPaths
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
 		fileChanges, err := compareDirectories(ctx, beforeDir, afterDir)
 		if err != nil {
 			return err
@@ -153,9 +161,17 @@ type changesetJSONEnvelope struct {
 
 // MarshalJSON implements custom JSON marshaling that stores directory IDs
 func (ch *Changeset) MarshalJSON() ([]byte, error) {
+	beforeID, err := ch.Before.ID()
+	if err != nil {
+		return nil, fmt.Errorf("before ID: %w", err)
+	}
+	afterID, err := ch.After.ID()
+	if err != nil {
+		return nil, fmt.Errorf("after ID: %w", err)
+	}
 	return json.Marshal(changesetJSONEnvelope{
-		BeforeID: dagql.NewID[*Directory](ch.Before.ID()),
-		AfterID:  dagql.NewID[*Directory](ch.After.ID()),
+		BeforeID: dagql.NewID[*Directory](beforeID),
+		AfterID:  dagql.NewID[*Directory](afterID),
 	})
 }
 
@@ -237,12 +253,20 @@ func (ch *Changeset) Sync(ctx context.Context) error {
 const ChangesetPatchFilename = "diff.patch"
 
 func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
-	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
+	beforeID, err := ch.Before.RecipeID()
+	if err != nil {
+		return false, fmt.Errorf("before recipe ID: %w", err)
+	}
+	afterID, err := ch.After.RecipeID()
+	if err != nil {
+		return false, fmt.Errorf("after recipe ID: %w", err)
+	}
+	if beforeID.Digest() == afterID.Digest() {
 		return true, nil
 	}
 
 	var isEmpty bool
-	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
 		identical, err := directoriesAreIdentical(ctx, beforeDir, afterDir)
 		if err != nil {
 			return err
@@ -362,11 +386,15 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return err
 	}
 	var dir dagql.ObjectResult[*Directory]
+	afterID, err := ch.After.ID()
+	if err != nil {
+		return fmt.Errorf("after ID: %w", err)
+	}
 	if err := srv.Select(ctx, ch.Before, &dir,
 		dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](ch.After.ID())},
+				{Name: "other", Value: dagql.NewID[*Directory](afterID)},
 			},
 		},
 	); err != nil {
@@ -643,10 +671,18 @@ func mergeBeforeDirectories(ctx context.Context, ch *Changeset, others ...*Chang
 
 	selectors := []dagql.Selector{
 		{Field: "directory"},
-		withDirectorySelector(ch.Before.ID()),
 	}
+	beforeID, err := ch.Before.ID()
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, fmt.Errorf("before ID: %w", err)
+	}
+	selectors = append(selectors, withDirectorySelector(beforeID))
 	for _, other := range others {
-		selectors = append(selectors, withDirectorySelector(other.Before.ID()))
+		otherBeforeID, err := other.Before.ID()
+		if err != nil {
+			return dagql.ObjectResult[*Directory]{}, fmt.Errorf("other before ID: %w", err)
+		}
+		selectors = append(selectors, withDirectorySelector(otherBeforeID))
 	}
 
 	selectors = append(selectors, dagql.Selector{

@@ -94,19 +94,6 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	if parent != nil {
 		execMD = *parent
 	}
-	preAliasKeys := slices.Collect(maps.Keys(execMD.HostAliases))
-	slices.Sort(preAliasKeys)
-	serviceHosts := make([]string, 0, len(container.Services))
-	for _, bnd := range container.Services {
-		serviceHosts = append(serviceHosts, bnd.Hostname)
-	}
-	slices.Sort(serviceHosts)
-	slog.Info("execMeta init",
-		"parentSet", parent != nil,
-		"preHostAliases", preAliasKeys,
-		"serviceHosts", serviceHosts,
-		"args", opts.Args,
-	)
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -182,12 +169,6 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 			execMD.HostAliases[bnd.Hostname] = append(execMD.HostAliases[bnd.Hostname], alias)
 		}
 	}
-	postAliasKeys := slices.Collect(maps.Keys(execMD.HostAliases))
-	slices.Sort(postAliasKeys)
-	slog.Info("execMeta host aliases",
-		"hostAliases", postAliasKeys,
-		"args", opts.Args,
-	)
 
 	for i, secret := range container.Secrets {
 		switch {
@@ -259,16 +240,20 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 	return pb.NetMode_UNSET, nil
 }
 
-func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv) {
+func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv, err error) {
 	for _, secret := range container.Secrets {
 		if secret.EnvName != "" {
+			secretID, err := secret.Secret.ID()
+			if err != nil {
+				return nil, fmt.Errorf("secret env %q ID: %w", secret.EnvName, err)
+			}
 			secretEnvs = append(secretEnvs, &pb.SecretEnv{
-				ID:   SecretIDDigest(secret.Secret.ID()).String(),
+				ID:   SecretIDDigest(secretID).String(),
 				Name: secret.EnvName,
 			})
 		}
 	}
-	return secretEnvs
+	return secretEnvs, nil
 }
 
 type execMountState struct {
@@ -571,11 +556,15 @@ func prepareMounts(
 		if secret.Owner != nil {
 			uid, gid = secret.Owner.UID, secret.Owner.GID
 		}
+		secretID, err := secret.Secret.ID()
+		if err != nil {
+			return materialized, fmt.Errorf("secret mount %q ID: %w", secret.MountPath, err)
+		}
 		secretState := &execMountState{
 			Dest:      secret.MountPath,
 			MountType: pb.MountType_SECRET,
 			SecretOpt: &pb.SecretOpt{
-				ID:   SecretIDDigest(secret.Secret.ID()).String(),
+				ID:   SecretIDDigest(secretID).String(),
 				Uid:  uint32(uid),
 				Gid:  uint32(gid),
 				Mode: uint32(secret.Mode),
@@ -1017,7 +1006,10 @@ func (container *Container) WithExec(
 			return fmt.Errorf("get current query: %w", err)
 		}
 
-		secretEnvs := container.secretEnvs()
+		secretEnvs, err := container.secretEnvs()
+		if err != nil {
+			return err
+		}
 
 		execMD, err = container.execMeta(ctx, opts, execMD)
 		if err != nil {
@@ -1323,11 +1315,15 @@ func (container *Container) WithExec(
 			if secret.Owner != nil {
 				uid, gid = secret.Owner.UID, secret.Owner.GID
 			}
+			secretID, err := secret.Secret.ID()
+			if err != nil {
+				return failPrepare(fmt.Errorf("secret mount %q ID: %w", secret.MountPath, err))
+			}
 			secretState := &execMountState{
 				Dest:      secret.MountPath,
 				MountType: pb.MountType_SECRET,
 				SecretOpt: &pb.SecretOpt{
-					ID:   SecretIDDigest(secret.Secret.ID()).String(),
+					ID:   SecretIDDigest(secretID).String(),
 					Uid:  uint32(uid),
 					Gid:  uint32(gid),
 					Mode: uint32(secret.Mode),
