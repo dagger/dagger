@@ -84,7 +84,7 @@ func (build *Builder) WithGPUSupport() *Builder {
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	sdks := []sdkContentF{build.dangSDKContent, build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
+	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
 	sdkContents := make([]*sdkContent, len(sdks))
 	for i, sdk := range sdks {
 		eg.Go(func() error {
@@ -201,10 +201,6 @@ func (build *Builder) dnsnameBinary() *dagger.File {
 
 func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false, false)
-}
-
-func (build *Builder) dangBinary() *dagger.File {
-	return build.binary("./cmd/dang-entrypoint", false, false)
 }
 
 //nolint:unparam
