@@ -2861,7 +2861,7 @@ This is the key re-redesign:
 * current iteration:
   * move the center off `call.ID` entirely
   * use `CallRequest` internally
-  * use `ResultCallFrame` as the immutable materialized provenance record
+  * use `ResultCallFrame` as the materialized semantic call shape and provenance record
   * use `call.ID` only at the API / wire / explicit debug boundary
 
 ## The three core internal concepts
@@ -2881,19 +2881,29 @@ should actually be centered on.
 
 This is **not** a wire format and **not** a persisted type.
 
+Implementation refinement:
+
+* `CallRequest` should be thinner than first described
+* it should mostly be:
+  * embedded `ResultCallFrame`
+  * cache / execution policy fields
+* semantic identity math should live on `ResultCallFrame`, not be duplicated on `CallRequest`
+
 ### `ResultCallFrame`
 
-Immutable materialized provenance/construction record stored on `sharedResult`.
+Materialized semantic/provenance record stored on `sharedResult`.
 
 This is what:
 
+* native recipe digest derivation
+* native self-digest / structural-input derivation
 * canonical recipe reconstruction
 * persistence export
 * later lazy/provenance reconstruction
 
 should use.
 
-This is **not** the mutable planning object.
+This is still **not** the mutable planning object, but it now owns more semantic logic than we first expected.
 
 ### `call.ID`
 
@@ -2976,22 +2986,22 @@ This is a bridge on `sharedResult`, not a retreat back to wrapper-local IDs.
 
 ## `CallRequest` detailed design
 
-`CallRequest` should hold the semantic call shape directly, not a pre-encoded `call.ID`.
+`CallRequest` should **not** duplicate the semantic call tree.
+
+Implementation refinement from actually writing the code:
+
+* the first pass at a separate `CallRequest` tree duplicated too much of `ResultCallFrame`
+* that duplication was not buying enough safety to justify itself
+* the better shape is:
+  * `CallRequest` embeds/reuses `ResultCallFrame`
+  * `CallRequest` only adds request-only policy fields
+* identity math should be implemented on `ResultCallFrame` and reused by `CallRequest`, not reimplemented separately
 
 ### current expected fields
 
 At minimum:
 
-* receiver result ref or nil for `Query`
-* return type
-* field name
-* explicit args as typed `Input`s
-* implicit inputs as typed `Input`s
-* module result ref plus module metadata (`name`, `ref`, `pin`)
-* `view`
-* `nth`
-* effect IDs
-* extra digests
+* embedded `ResultCallFrame`
 * cache policy fields currently carried near `CacheKey` / `FieldSpec`:
   * `DoNotCache`
   * `TTL`
@@ -3000,25 +3010,30 @@ At minimum:
 
 Important nuance:
 
-* this object is not just "field + args"
-* it is the full internal planned call plus the cache policy that will govern it
+* the semantic call shape itself should now live on the embedded frame
+* `CallRequest` is "semantic frame + request policy", not a second near-identical semantic tree
 
-### native methods it must provide
-
-This is the real replacement for the current `call.ID`-centric internal identity logic.
+### methods / behavior it must provide
 
 At minimum:
 
-* `RecipeDigest()`
-* `SelfDigestAndInputRefs()`
 * `ToResultCallFrame()`
-* likely `ToRecipeID()` for explicit boundary/debug output only
 
-The key thing is that internal cache/egraph logic must use the native digest methods directly, not round-trip through a temporary `call.ID`.
+And in practice:
 
-### digest semantics it must preserve exactly
+* it should rely on `ResultCallFrame` for:
+  * `RecipeDigest()`
+  * `SelfDigestAndInputRefs()`
+  * original attached `ExtraDigests`
 
-The current `call.ID` logic in `dagql/call/id.go` is subtle. `CallRequest` must preserve these semantics exactly:
+The key thing is:
+
+* internal cache/egraph logic must use native frame-based identity methods directly
+* `CallRequest` should not become a second identity-bearing layer
+
+### digest semantics the frame-native path must preserve exactly
+
+The current `call.ID` logic in `dagql/call/id.go` is subtle. The native frame-based identity path must preserve these semantics exactly:
 
 * receiver contributes as a structural input, not to self digest bytes
 * module contributes as a structural input, not to self digest bytes
@@ -3031,56 +3046,74 @@ The current `call.ID` logic in `dagql/call/id.go` is subtle. `CallRequest` must 
 * effect IDs do **not** contribute to recipe digest
 * extra digests do **not** contribute to recipe digest
 
-This means the native `CallRequest` digest path must replace both current `call.ID` methods:
+This means the native frame-based path must replace both current `call.ID` methods:
 
 * `calcDigest()`
 * `SelfDigestAndInputRefs()`
 
 ### structural input refs remain important
 
-The native `CallRequest` path must preserve the current distinction between:
+The native frame-based path must preserve the current distinction between:
 
 * result-backed structural inputs
 * digest-only witness inputs
 
 This distinction is currently expressed by `call.StructuralInputRef`.
 
-We likely keep that concept, but it should be derived from `CallRequest`, not from `call.ID`.
+We likely keep that concept, but it should now be derived from `ResultCallFrame`, not from `call.ID`.
 
 ## `ResultCallFrame` detailed role
 
-`ResultCallFrame` remains the immutable materialized provenance record.
+`ResultCallFrame` remains the materialized semantic/provenance record.
 
 ### what it is
 
 * field/view/nth/effect/module/arg/implicit-input/receiver structure
+* original attached `ExtraDigests` at creation time
 * internal result refs, not public caller-facing IDs
-* immutable after first attachment to a `sharedResult`
+* runtime-only cache binding for nested result-ref resolution
+* effectively immutable once we start using it for identity math
 
 ### what it is not
 
-* not the mutable planning object
-* not the cache-proof digest object
-* not the place to attach recipe/egraph digests
+* not the mutable planning policy object
+* not the authoritative merged digest-equivalence state
 
-We explicitly do **not** want to put digests onto the frame. Digests belong to the cache/egraph logic derived from `CallRequest`, not to the immutable provenance record itself.
+Important refinement from implementation:
+
+* we **do** now want recipe/self structural identity math on the frame itself
+* we also want the frame to store the original `ExtraDigests` that were attached when the call/result was created
+* but we still do **not** want the frame to pretend it is the authoritative merged digest state
+* the cache/e-graph remains authoritative for the full merged output-equivalence digest set
 
 ### canonical recipe derivation from frame
 
-`sharedResult` should lazily memoize its canonical recipe digest and canonical recipe `call.ID`, both derived from its `resultCallFrame`.
+Current refinement:
 
-This is important because later `CallRequest` digest computation will often need:
+* `ResultCallFrame` itself should own `RecipeDigest()`
+* `ResultCallFrame` itself should own `SelfDigestAndInputRefs()`
+* `RecipeDigest()` on the frame should be memoized
+* the frame may carry a runtime-only `cache *cache` binding so nested `ResultCallFrameRef.ResultID` values can be resolved recursively without going back through `call.ID`
 
-* the canonical recipe digest of referenced input results
+This is a slight departure from the earlier writeup, but it is the better simplification:
 
-We do not want that to recursively rebuild full `call.ID`s from scratch every time.
+* if the frame is the semantic call shape, its identity math should live there too
+* `CallRequest` should not become a second place where call identity is calculated
 
-So:
+Important caveat:
 
-* frame -> canonical recipe digest should be lazy and memoized on `sharedResult`
-* frame -> canonical recipe `call.ID` should also likely be lazy and memoized on `sharedResult`
+* once `RecipeDigest()` has been used and memoized, the frame must be treated as frozen
+* we are explicitly okay with that discipline
+* we do **not** need some larger future "frozen request object" design to justify this
 
-This keeps recipe reconstruction available without making `call.ID` the planning center.
+### original vs authoritative extra digests
+
+This needs to be explicit:
+
+* `ResultCallFrame.ExtraDigests` are the original extra digests attached when the call/result was created
+* they are useful provenance and help preserve original intent
+* they are **not** the authoritative merged digest set
+* the cache/e-graph remains authoritative for all merged output-equivalence digests learned later
 
 ## Preselect / Dynamic Inputs redesign
 
@@ -3196,12 +3229,13 @@ Current indexing in `cache.go` / `cache_egraph.go` relies on:
 * request structural input refs
 * result recipe/self/input digests
 
-That all needs to become native to `CallRequest` + `sharedResult` canonical frame-derived identity.
+That all needs to become native to `ResultCallFrame` + `CallRequest` policy, not `call.ID`.
 
 The native split should be:
 
-* `CallRequest` provides request identity math
-* `sharedResult` provides canonical recipe digest of referenced results via memoized frame-derived identity
+* `ResultCallFrame` provides request/result identity math
+* `CallRequest` provides cache/execution policy
+* referenced results are resolved recursively through `ResultCallFrameRef.ResultID` using the runtime cache binding on the frame
 
 ## Boundary `call.ID` redesign
 
@@ -3443,18 +3477,23 @@ Change:
 ## Recommended implementation order
 
 1. Introduce `CallRequest` with:
-   * semantic fields
-   * native `RecipeDigest()`
-   * native `SelfDigestAndInputRefs()`
+   * embedded `ResultCallFrame`
+   * request-only cache / execution policy fields
    * `ToResultCallFrame()`
-2. Move `preselect` and `GetDynamicInput` to `CallRequest`.
-3. Move `GetOrInitCall` / cache identity math to `CallRequest`.
-4. Move canonical identity ownership fully onto `sharedResult`.
-5. Remove wrapper-local IDs and caller-bias machinery.
-6. Add top-level handle-form support to `call.proto` / `call.ID`.
-7. Switch `.id` / `.sync` default output to handle-form with `recipe: true`.
-8. Branch `Server.Load` by recipe vs handle.
-9. After that, do the embedded-handle retention work.
+2. Move native identity math onto `ResultCallFrame`:
+   * `RecipeDigest()`
+   * `SelfDigestAndInputRefs()`
+   * original `ExtraDigests`
+   * memoized recipe digest
+   * runtime cache binding for recursive `ResultCallFrameRef` resolution
+3. Move `preselect` and `GetDynamicInput` to `CallRequest`.
+4. Move `GetOrInitCall` / cache identity math to `ResultCallFrame` + `CallRequest` policy.
+5. Move canonical identity ownership fully onto `sharedResult`.
+6. Remove wrapper-local IDs and caller-bias machinery.
+7. Add top-level handle-form support to `call.proto` / `call.ID`.
+8. Switch `.id` / `.sync` default output to handle-form with `recipe: true`.
+9. Branch `Server.Load` by recipe vs handle.
+10. After that, do the embedded-handle retention work.
 
 ## Explicit tripwires
 
@@ -3464,7 +3503,7 @@ If, after `CallRequest` exists, we discover major internal planning code that st
 
 ### Tripwire: digest semantic drift
 
-If the native `CallRequest` digest logic cannot preserve current recipe/self/input semantics exactly, stop and investigate. This is not an area where "close enough" is acceptable.
+If the native frame-based digest logic cannot preserve current recipe/self/input semantics exactly, stop and investigate. This is not an area where "close enough" is acceptable.
 
 ### Tripwire: wrapper-local identity creep
 

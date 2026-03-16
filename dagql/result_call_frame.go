@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type ResultCallFrameKind string
@@ -161,17 +163,39 @@ func (lit *ResultCallFrameLiteral) clone() *ResultCallFrameLiteral {
 }
 
 type ResultCallFrame struct {
-	Kind           ResultCallFrameKind    `json:"kind"`
-	Type           *ResultCallFrameType   `json:"type,omitempty"`
-	Field          string                 `json:"field,omitempty"`
-	SyntheticOp    string                 `json:"syntheticOp,omitempty"`
-	View           call.View              `json:"view,omitempty"`
-	Nth            int64                  `json:"nth,omitempty"`
-	EffectIDs      []string               `json:"effectIDs,omitempty"`
+	Kind        ResultCallFrameKind  `json:"kind"`
+	Type        *ResultCallFrameType `json:"type,omitempty"`
+	Field       string               `json:"field,omitempty"`
+	SyntheticOp string               `json:"syntheticOp,omitempty"`
+	View        call.View            `json:"view,omitempty"`
+	Nth         int64                `json:"nth,omitempty"`
+	EffectIDs   []string             `json:"effectIDs,omitempty"`
+	// ExtraDigests are the original extra digests explicitly attached when this
+	// call/result was first created. They are useful provenance, but they are
+	// not the authoritative merged digest state. The cache/e-graph remains the
+	// source of truth for the full merged output-equivalence digest set.
+	ExtraDigests   []call.ExtraDigest     `json:"extraDigests,omitempty"`
 	Receiver       *ResultCallFrameRef    `json:"receiver,omitempty"`
 	Module         *ResultCallFrameModule `json:"module,omitempty"`
 	Args           []*ResultCallFrameArg  `json:"args,omitempty"`
 	ImplicitInputs []*ResultCallFrameArg  `json:"implicitInputs,omitempty"`
+
+	// cache is a runtime-only backpointer used for recursive digest resolution
+	// through ResultCallFrameRef.ResultID. It is not persisted.
+	cache *cache
+
+	// recipeDigest is memoized once the frame has reached its finalized
+	// semantic shape. Do not mutate the frame after calling RecipeDigest.
+	recipeDigestOnce sync.Once
+	recipeDigestErr  error
+	recipeDigest     digest.Digest
+}
+
+type ResultCallFrameStructuralInputRef struct {
+	Result *ResultCallFrameRef
+	Digest digest.Digest
+
+	cache *cache
 }
 
 func (frame *ResultCallFrame) clone() *ResultCallFrame {
@@ -179,15 +203,17 @@ func (frame *ResultCallFrame) clone() *ResultCallFrame {
 		return nil
 	}
 	cp := &ResultCallFrame{
-		Kind:        frame.Kind,
-		Type:        frame.Type.clone(),
-		Field:       frame.Field,
-		SyntheticOp: frame.SyntheticOp,
-		View:        frame.View,
-		Nth:         frame.Nth,
-		EffectIDs:   slices.Clone(frame.EffectIDs),
-		Receiver:    frame.Receiver.clone(),
-		Module:      frame.Module.clone(),
+		Kind:         frame.Kind,
+		Type:         frame.Type.clone(),
+		Field:        frame.Field,
+		SyntheticOp:  frame.SyntheticOp,
+		View:         frame.View,
+		Nth:          frame.Nth,
+		EffectIDs:    slices.Clone(frame.EffectIDs),
+		ExtraDigests: slices.Clone(frame.ExtraDigests),
+		Receiver:     frame.Receiver.clone(),
+		Module:       frame.Module.clone(),
+		cache:        frame.cache,
 	}
 	if len(frame.Args) > 0 {
 		cp.Args = make([]*ResultCallFrameArg, 0, len(frame.Args))
@@ -204,6 +230,213 @@ func (frame *ResultCallFrame) clone() *ResultCallFrame {
 	return cp
 }
 
+func (frame *ResultCallFrame) RecipeDigest() (digest.Digest, error) {
+	return frame.recipeDigestWithVisiting(map[sharedResultID]struct{}{})
+}
+
+func (frame *ResultCallFrame) recipeDigestWithVisiting(visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+	if frame == nil {
+		return "", nil
+	}
+
+	frame.recipeDigestOnce.Do(func() {
+		field, err := resultCallFrameIdentityField(frame)
+		if err != nil {
+			frame.recipeDigestErr = err
+			return
+		}
+		if frame.Type == nil {
+			frame.recipeDigestErr = fmt.Errorf("missing call type")
+			return
+		}
+
+		h := hashutil.NewHasher()
+
+		if frame.Receiver != nil {
+			receiverDigest, err := recipeDigestForFrameRef(frame.cache, frame.Receiver, visiting)
+			if err != nil {
+				h.Close()
+				frame.recipeDigestErr = fmt.Errorf("receiver: %w", err)
+				return
+			}
+			h = h.WithString(receiverDigest.String())
+		}
+		h = h.WithDelim()
+
+		h = appendResultCallFrameTypeBytes(h, frame.Type).
+			WithDelim()
+
+		h = h.WithString(field).
+			WithDelim()
+
+		for _, arg := range frame.Args {
+			arg = redactedFrameArgForDigest(arg)
+			if arg == nil {
+				continue
+			}
+			h, err = appendResultCallFrameArgBytes(frame.cache, arg, h, visiting)
+			if err != nil {
+				h.Close()
+				frame.recipeDigestErr = fmt.Errorf("args: %w", err)
+				return
+			}
+			h = h.WithDelim()
+		}
+		h = h.WithDelim()
+
+		for _, input := range frame.ImplicitInputs {
+			input = redactedFrameArgForDigest(input)
+			if input == nil {
+				continue
+			}
+			h, err = appendResultCallFrameArgBytes(frame.cache, input, h, visiting)
+			if err != nil {
+				h.Close()
+				frame.recipeDigestErr = fmt.Errorf("implicit inputs: %w", err)
+				return
+			}
+			h = h.WithDelim()
+		}
+		h = h.WithDelim()
+
+		if frame.Module != nil && frame.Module.ResultRef != nil {
+			moduleDigest, err := recipeDigestForFrameRef(frame.cache, frame.Module.ResultRef, visiting)
+			if err != nil {
+				h.Close()
+				frame.recipeDigestErr = fmt.Errorf("module: %w", err)
+				return
+			}
+			h = h.WithString(moduleDigest.String())
+		}
+		h = h.WithDelim()
+
+		h = h.WithInt64(frame.Nth).
+			WithDelim()
+
+		h = h.WithString(frame.View.String()).
+			WithDelim()
+
+		frame.recipeDigest = digest.Digest(h.DigestAndClose())
+	})
+	return frame.recipeDigest, frame.recipeDigestErr
+}
+
+func (frame *ResultCallFrame) SelfDigestAndInputRefs() (digest.Digest, []ResultCallFrameStructuralInputRef, error) {
+	if frame == nil {
+		return "", nil, nil
+	}
+
+	field, err := resultCallFrameIdentityField(frame)
+	if err != nil {
+		return "", nil, err
+	}
+	if frame.Type == nil {
+		return "", nil, fmt.Errorf("result call frame %q: missing type", field)
+	}
+
+	var inputRefs []ResultCallFrameStructuralInputRef
+	h := hashutil.NewHasher()
+
+	if frame.Receiver != nil {
+		inputRefs = append(inputRefs, ResultCallFrameStructuralInputRef{
+			Result: frame.Receiver,
+			cache:  frame.cache,
+		})
+	}
+	h = h.WithDelim()
+
+	h = appendResultCallFrameTypeBytes(h, frame.Type).
+		WithDelim()
+
+	h = h.WithString(field).
+		WithDelim()
+
+	for _, arg := range frame.Args {
+		arg = redactedFrameArgForDigest(arg)
+		if arg == nil {
+			continue
+		}
+		h, inputRefs, err = appendResultCallFrameArgSelfRefs(arg, h, inputRefs)
+		if err != nil {
+			h.Close()
+			return "", nil, fmt.Errorf("result call frame %q args: %w", field, err)
+		}
+		h = h.WithDelim()
+	}
+	h = h.WithDelim()
+
+	for _, input := range frame.ImplicitInputs {
+		input = redactedFrameArgForDigest(input)
+		if input == nil {
+			continue
+		}
+		h, inputRefs, err = appendResultCallFrameArgSelfRefs(input, h, inputRefs)
+		if err != nil {
+			h.Close()
+			return "", nil, fmt.Errorf("result call frame %q implicit inputs: %w", field, err)
+		}
+		h = h.WithDelim()
+	}
+
+	if frame.Module != nil {
+		if frame.Module.ResultRef == nil {
+			h.Close()
+			return "", nil, fmt.Errorf("result call frame %q module: missing result ref", field)
+		}
+		inputRefs = append(inputRefs, ResultCallFrameStructuralInputRef{
+			Result: frame.Module.ResultRef,
+			cache:  frame.cache,
+		})
+	}
+	h = h.WithDelim()
+
+	h = h.WithInt64(frame.Nth).
+		WithDelim()
+
+	h = h.WithString(frame.View.String()).
+		WithDelim()
+
+	for _, ref := range inputRefs {
+		if err := ref.Validate(); err != nil {
+			h.Close()
+			return "", nil, fmt.Errorf("result call frame %q structural inputs: %w", field, err)
+		}
+	}
+
+	return digest.Digest(h.DigestAndClose()), inputRefs, nil
+}
+
+func (frame *ResultCallFrame) bindCache(c *cache) {
+	if frame == nil {
+		return
+	}
+	frame.cache = c
+}
+
+func (ref ResultCallFrameStructuralInputRef) Validate() error {
+	switch {
+	case ref.Result != nil && ref.Digest != "":
+		return fmt.Errorf("structural input ref cannot have both result and digest")
+	case ref.Result == nil && ref.Digest == "":
+		return fmt.Errorf("structural input ref must have either result or digest")
+	default:
+		return nil
+	}
+}
+
+func (ref ResultCallFrameStructuralInputRef) InputDigest() (digest.Digest, error) {
+	switch {
+	case ref.Result != nil && ref.Digest != "":
+		return "", fmt.Errorf("structural input ref cannot have both result and digest")
+	case ref.Result != nil:
+		return recipeDigestForFrameRef(ref.cache, ref.Result, map[sharedResultID]struct{}{})
+	case ref.Digest != "":
+		return ref.Digest, nil
+	default:
+		return "", fmt.Errorf("structural input ref must have either result or digest")
+	}
+}
+
 func (ref *ResultCallFrameRef) clone() *ResultCallFrameRef {
 	if ref == nil {
 		return nil
@@ -211,17 +444,256 @@ func (ref *ResultCallFrameRef) clone() *ResultCallFrameRef {
 	return &ResultCallFrameRef{ResultID: ref.ResultID}
 }
 
+func resultCallFrameIdentityField(frame *ResultCallFrame) (string, error) {
+	if frame == nil {
+		return "", fmt.Errorf("missing result call frame")
+	}
+	switch frame.Kind {
+	case ResultCallFrameKindSynthetic:
+		if frame.SyntheticOp == "" {
+			return "", fmt.Errorf("synthetic result call frame missing synthetic op")
+		}
+		return frame.SyntheticOp, nil
+	default:
+		if frame.Field == "" {
+			return "", fmt.Errorf("field result call frame missing field")
+		}
+		return frame.Field, nil
+	}
+}
+
+func recipeDigestForCachedResult(c *cache, resultID sharedResultID, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+	if resultID == 0 {
+		return "", fmt.Errorf("missing result ref")
+	}
+	if c == nil {
+		return "", fmt.Errorf("cannot resolve result ref %d without cache", resultID)
+	}
+	if _, seen := visiting[resultID]; seen {
+		return "", fmt.Errorf("cycle while reconstructing recipe digest for shared result %d", resultID)
+	}
+	frame := c.resultCallFrameByResultID(resultID)
+	if frame == nil {
+		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
+	}
+
+	visiting[resultID] = struct{}{}
+	defer delete(visiting, resultID)
+
+	return frame.recipeDigestWithVisiting(visiting)
+}
+
+func recipeDigestForFrameRef(c *cache, ref *ResultCallFrameRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+	if ref == nil || ref.ResultID == 0 {
+		return "", fmt.Errorf("missing result ref")
+	}
+	return recipeDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
+}
+
+func appendResultCallFrameTypeBytes(h *hashutil.Hasher, typ *ResultCallFrameType) *hashutil.Hasher {
+	for curType := typ; curType != nil; curType = curType.Elem {
+		h = h.WithString(curType.NamedType)
+		if curType.NonNull {
+			h = h.WithByte(2)
+		} else {
+			h = h.WithByte(1)
+		}
+		h = h.WithDelim()
+	}
+	return h
+}
+
+func redactedFrameArgForDigest(arg *ResultCallFrameArg) *ResultCallFrameArg {
+	if arg == nil {
+		return nil
+	}
+	if !arg.IsSensitive {
+		return arg
+	}
+	return &ResultCallFrameArg{
+		Name:  arg.Name,
+		Value: &ResultCallFrameLiteral{Kind: ResultCallFrameLiteralKindString, StringValue: "***"},
+	}
+}
+
+func appendResultCallFrameArgBytes(
+	c *cache,
+	arg *ResultCallFrameArg,
+	h *hashutil.Hasher,
+	visiting map[sharedResultID]struct{},
+) (*hashutil.Hasher, error) {
+	h = h.WithString(arg.Name)
+	h, err := appendResultCallFrameLiteralBytes(c, arg.Value, h, visiting)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+	}
+	return h, nil
+}
+
+func appendResultCallFrameArgSelfRefs(
+	arg *ResultCallFrameArg,
+	h *hashutil.Hasher,
+	inputs []ResultCallFrameStructuralInputRef,
+) (*hashutil.Hasher, []ResultCallFrameStructuralInputRef, error) {
+	h = h.WithString(arg.Name)
+	h, inputs, err := appendResultCallFrameLiteralSelfRefs(arg.Value, h, inputs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+	}
+	return h, inputs, nil
+}
+
+func appendResultCallFrameLiteralBytes(
+	c *cache,
+	lit *ResultCallFrameLiteral,
+	h *hashutil.Hasher,
+	visiting map[sharedResultID]struct{},
+) (*hashutil.Hasher, error) {
+	var err error
+	switch {
+	case lit == nil || lit.Kind == ResultCallFrameLiteralKindNull:
+		const prefix = '1'
+		h = h.WithByte(prefix).WithByte(1)
+	case lit.Kind == ResultCallFrameLiteralKindResultRef:
+		const prefix = '0'
+		dig, err := recipeDigestForFrameRef(c, lit.ResultRef, visiting)
+		if err != nil {
+			return nil, fmt.Errorf("result ref digest: %w", err)
+		}
+		h = h.WithByte(prefix).WithString(dig.String())
+	case lit.Kind == ResultCallFrameLiteralKindBool:
+		const prefix = '2'
+		h = h.WithByte(prefix)
+		if lit.BoolValue {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case lit.Kind == ResultCallFrameLiteralKindEnum:
+		const prefix = '3'
+		h = h.WithByte(prefix).WithString(lit.EnumValue)
+	case lit.Kind == ResultCallFrameLiteralKindInt:
+		const prefix = '4'
+		h = h.WithByte(prefix).WithInt64(lit.IntValue)
+	case lit.Kind == ResultCallFrameLiteralKindFloat:
+		const prefix = '5'
+		h = h.WithByte(prefix).WithFloat64(lit.FloatValue)
+	case lit.Kind == ResultCallFrameLiteralKindString:
+		const prefix = '6'
+		h = h.WithByte(prefix).WithString(lit.StringValue)
+	case lit.Kind == ResultCallFrameLiteralKindList:
+		const prefix = '7'
+		h = h.WithByte(prefix)
+		for _, elem := range lit.ListItems {
+			h, err = appendResultCallFrameLiteralBytes(c, elem, h, visiting)
+			if err != nil {
+				return nil, err
+			}
+		}
+	case lit.Kind == ResultCallFrameLiteralKindObject:
+		const prefix = '8'
+		h = h.WithByte(prefix)
+		for _, field := range lit.ObjectFields {
+			h, err = appendResultCallFrameArgBytes(c, field, h, visiting)
+			if err != nil {
+				return nil, err
+			}
+			h = h.WithDelim()
+		}
+	case lit.Kind == ResultCallFrameLiteralKindDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if lit.DigestedStringDigest != "" {
+			h = h.WithString(lit.DigestedStringDigest.String())
+		}
+	default:
+		return nil, fmt.Errorf("unknown result call frame literal kind %q", lit.Kind)
+	}
+	h = h.WithDelim()
+	return h, nil
+}
+
+func appendResultCallFrameLiteralSelfRefs(
+	lit *ResultCallFrameLiteral,
+	h *hashutil.Hasher,
+	inputs []ResultCallFrameStructuralInputRef,
+) (*hashutil.Hasher, []ResultCallFrameStructuralInputRef, error) {
+	var err error
+	switch {
+	case lit == nil || lit.Kind == ResultCallFrameLiteralKindNull:
+		const prefix = '1'
+		h = h.WithByte(prefix).WithByte(1)
+	case lit.Kind == ResultCallFrameLiteralKindResultRef:
+		const prefix = '0'
+		h = h.WithByte(prefix)
+		inputs = append(inputs, ResultCallFrameStructuralInputRef{
+			Result: lit.ResultRef,
+		})
+	case lit.Kind == ResultCallFrameLiteralKindBool:
+		const prefix = '2'
+		h = h.WithByte(prefix)
+		if lit.BoolValue {
+			h = h.WithByte(1)
+		} else {
+			h = h.WithByte(2)
+		}
+	case lit.Kind == ResultCallFrameLiteralKindEnum:
+		const prefix = '3'
+		h = h.WithByte(prefix).WithString(lit.EnumValue)
+	case lit.Kind == ResultCallFrameLiteralKindInt:
+		const prefix = '4'
+		h = h.WithByte(prefix).WithInt64(lit.IntValue)
+	case lit.Kind == ResultCallFrameLiteralKindFloat:
+		const prefix = '5'
+		h = h.WithByte(prefix).WithFloat64(lit.FloatValue)
+	case lit.Kind == ResultCallFrameLiteralKindString:
+		const prefix = '6'
+		h = h.WithByte(prefix).WithString(lit.StringValue)
+	case lit.Kind == ResultCallFrameLiteralKindList:
+		const prefix = '7'
+		h = h.WithByte(prefix)
+		for _, elem := range lit.ListItems {
+			h, inputs, err = appendResultCallFrameLiteralSelfRefs(elem, h, inputs)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	case lit.Kind == ResultCallFrameLiteralKindObject:
+		const prefix = '8'
+		h = h.WithByte(prefix)
+		for _, field := range lit.ObjectFields {
+			h, inputs, err = appendResultCallFrameArgSelfRefs(field, h, inputs)
+			if err != nil {
+				return nil, nil, err
+			}
+			h = h.WithDelim()
+		}
+	case lit.Kind == ResultCallFrameLiteralKindDigestedString:
+		const prefix = '9'
+		h = h.WithByte(prefix)
+		if lit.DigestedStringDigest != "" {
+			inputs = append(inputs, ResultCallFrameStructuralInputRef{Digest: lit.DigestedStringDigest})
+		}
+	default:
+		return nil, nil, fmt.Errorf("unknown result call frame literal kind %q", lit.Kind)
+	}
+	h = h.WithDelim()
+	return h, inputs, nil
+}
+
 func (c *cache) resultCallFrameForIDLocked(ctx context.Context, id *call.ID) (*ResultCallFrame, error) {
 	if id == nil {
 		return nil, nil
 	}
 	frame := &ResultCallFrame{
-		Kind:      ResultCallFrameKindField,
-		Type:      NewResultCallFrameType(id.Type().ToAST()),
-		Field:     id.Field(),
-		View:      id.View(),
-		Nth:       id.Nth(),
-		EffectIDs: slices.Clone(id.EffectIDs()),
+		Kind:         ResultCallFrameKindField,
+		Type:         NewResultCallFrameType(id.Type().ToAST()),
+		Field:        id.Field(),
+		View:         id.View(),
+		Nth:          id.Nth(),
+		EffectIDs:    slices.Clone(id.EffectIDs()),
+		ExtraDigests: slices.Clone(id.ExtraDigests()),
+		cache:        c,
 	}
 	if id.Receiver() != nil {
 		ref, err := c.resultCallFrameRefForInputIDLocked(ctx, id.Receiver())
@@ -380,6 +852,19 @@ func (c *cache) resultCallFrameSnapshot(resultID sharedResultID) *ResultCallFram
 	return res.resultCallFrame.clone()
 }
 
+func (c *cache) resultCallFrameByResultID(resultID sharedResultID) *ResultCallFrame {
+	if resultID == 0 {
+		return nil
+	}
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	res := c.resultsByID[resultID]
+	if res == nil || res.resultCallFrame == nil {
+		return nil
+	}
+	return res.resultCallFrame
+}
+
 func (c *cache) persistedCallIDByResultID(ctx context.Context, resultID sharedResultID) (*call.ID, error) {
 	if resultID == 0 {
 		return nil, fmt.Errorf("resolve persisted call ID: zero result ID")
@@ -447,6 +932,18 @@ func (c *cache) resultCallFrameExtraDigestsSnapshot(resultID sharedResultID) []c
 
 	seen := make(map[call.ExtraDigest]struct{})
 	extras := make([]call.ExtraDigest, 0)
+	if res := c.resultsByID[resultID]; res != nil && res.resultCallFrame != nil {
+		for _, extra := range res.resultCallFrame.ExtraDigests {
+			if extra.Digest == "" {
+				continue
+			}
+			if _, ok := seen[extra]; ok {
+				continue
+			}
+			seen[extra] = struct{}{}
+			extras = append(extras, extra)
+		}
+	}
 	for outputEqID := range outputEqClasses {
 		for extra := range c.eqClassExtraDigests[outputEqID] {
 			if extra.Digest == "" {

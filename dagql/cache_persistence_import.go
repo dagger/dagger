@@ -166,6 +166,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 				recordType:           row.RecordType,
 				persistedEnvelope:    &env,
 			}
+			res.resultCallFrame.bindCache(c)
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true
@@ -208,149 +209,149 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			})
 		}
 
-	var maxTermID egraphTermID
-	for _, row := range termRows {
-		termID := egraphTermID(row.ID)
-		if termID == 0 {
-			return fmt.Errorf("import term: zero ID")
-		}
-		if termID > maxTermID {
-			maxTermID = termID
-		}
-
-		inputs := inputsByTermID[termID]
-		slices.SortFunc(inputs, func(a, b importTermInput) int {
-			switch {
-			case a.position < b.position:
-				return -1
-			case a.position > b.position:
-				return 1
-			default:
-				return 0
+		var maxTermID egraphTermID
+		for _, row := range termRows {
+			termID := egraphTermID(row.ID)
+			if termID == 0 {
+				return fmt.Errorf("import term: zero ID")
 			}
-		})
-		inputEqIDs := make([]eqClassID, 0, len(inputs))
-		inputProvenance := make([]egraphInputProvenanceKind, 0, len(inputs))
-		for idx, input := range inputs {
-			if input.position != idx {
-				return fmt.Errorf("import term %d inputs: missing position %d", termID, idx)
+			if termID > maxTermID {
+				maxTermID = termID
 			}
-			inputEqIDs = append(inputEqIDs, c.findEqClassLocked(input.inputEqClassID))
-			inputProvenance = append(inputProvenance, input.provenanceKind)
-		}
 
-		selfDigest := normalizeImportedDigest(row.SelfDigest)
-		outputEqID := c.findEqClassLocked(eqClassID(row.OutputEqClassID))
-		termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
-		if row.TermDigest != "" && row.TermDigest != termDigest {
-			return fmt.Errorf("import term %d digest mismatch: stored=%s rebuilt=%s", termID, row.TermDigest, termDigest)
-		}
-
-		term := newEgraphTerm(termID, selfDigest, inputEqIDs, outputEqID)
-		c.egraphTerms[termID] = term
-		c.termInputProvenance[termID] = inputProvenance
-		digestTerms := c.egraphTermsByTermDigest[term.termDigest]
-		if digestTerms == nil {
-			digestTerms = make(map[egraphTermID]struct{})
-			c.egraphTermsByTermDigest[term.termDigest] = digestTerms
-		}
-		digestTerms[termID] = struct{}{}
-		for _, inputEqID := range inputEqIDs {
-			if inputEqID == 0 {
-				continue
-			}
-			classTerms := c.inputEqClassToTerms[inputEqID]
-			if classTerms == nil {
-				classTerms = make(map[egraphTermID]struct{})
-				c.inputEqClassToTerms[inputEqID] = classTerms
-			}
-			classTerms[termID] = struct{}{}
-		}
-		outputTerms := c.outputEqClassToTerms[outputEqID]
-		if outputTerms == nil {
-			outputTerms = make(map[egraphTermID]struct{})
-			c.outputEqClassToTerms[outputEqID] = outputTerms
-		}
-		outputTerms[termID] = struct{}{}
-		c.traceTermCreated(ctx, "import", importRunID, term)
-	}
-
-	for _, row := range resultOutputEqClassRows {
-		resultID := sharedResultID(row.ResultID)
-		res := c.resultsByID[resultID]
-		if res == nil {
-			return fmt.Errorf("import result_output_eq_class: missing result %d", row.ResultID)
-		}
-		outputEqID := c.findEqClassLocked(eqClassID(row.EqClassID))
-		if outputEqID == 0 {
-			return fmt.Errorf("import result_output_eq_class: missing eq_class %d", row.EqClassID)
-		}
-		outputEqClasses := c.resultOutputEqClasses[resultID]
-		if outputEqClasses == nil {
-			outputEqClasses = make(map[eqClassID]struct{})
-			c.resultOutputEqClasses[resultID] = outputEqClasses
-		}
-		outputEqClasses[outputEqID] = struct{}{}
-	}
-
-	for _, row := range resultDepRows {
-		parentID := sharedResultID(row.ParentResultID)
-		parent := c.resultsByID[parentID]
-		if parent == nil {
-			return fmt.Errorf("import result_dep: missing parent result %d", row.ParentResultID)
-		}
-		depID := sharedResultID(row.DepResultID)
-		if c.resultsByID[depID] == nil {
-			return fmt.Errorf("import result_dep: missing dep result %d", row.DepResultID)
-		}
-		if parent.deps == nil {
-			parent.deps = make(map[sharedResultID]struct{})
-		}
-		parent.deps[depID] = struct{}{}
-		c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
-		c.traceExplicitDepAdded(ctx, parentID, depID, "import")
-	}
-
-	for _, row := range resultSnapshotRows {
-		resultID := sharedResultID(row.ResultID)
-		res := c.resultsByID[resultID]
-		if res == nil {
-			return fmt.Errorf("import result_snapshot_link: missing result %d", row.ResultID)
-		}
-		res.persistedSnapshotLinks = append(res.persistedSnapshotLinks, PersistedSnapshotRefLink{
-			RefKey: row.RefKey,
-			Role:   row.Role,
-			Slot:   row.Slot,
-		})
-		c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role, row.Slot)
-	}
-
-	for resultID := range c.resultsByID {
-		outputEqClasses := c.outputEqClassesForResultLocked(resultID)
-		for outputEqID := range outputEqClasses {
-			for dig := range c.eqClassToDigests[outputEqID] {
-				set := c.egraphResultsByDigest[dig]
-				if set == nil {
-					set = make(map[sharedResultID]struct{})
-					c.egraphResultsByDigest[dig] = set
+			inputs := inputsByTermID[termID]
+			slices.SortFunc(inputs, func(a, b importTermInput) int {
+				switch {
+				case a.position < b.position:
+					return -1
+				case a.position > b.position:
+					return 1
+				default:
+					return 0
 				}
-				set[resultID] = struct{}{}
+			})
+			inputEqIDs := make([]eqClassID, 0, len(inputs))
+			inputProvenance := make([]egraphInputProvenanceKind, 0, len(inputs))
+			for idx, input := range inputs {
+				if input.position != idx {
+					return fmt.Errorf("import term %d inputs: missing position %d", termID, idx)
+				}
+				inputEqIDs = append(inputEqIDs, c.findEqClassLocked(input.inputEqClassID))
+				inputProvenance = append(inputProvenance, input.provenanceKind)
+			}
+
+			selfDigest := normalizeImportedDigest(row.SelfDigest)
+			outputEqID := c.findEqClassLocked(eqClassID(row.OutputEqClassID))
+			termDigest := calcEgraphTermDigest(selfDigest, inputEqIDs)
+			if row.TermDigest != "" && row.TermDigest != termDigest {
+				return fmt.Errorf("import term %d digest mismatch: stored=%s rebuilt=%s", termID, row.TermDigest, termDigest)
+			}
+
+			term := newEgraphTerm(termID, selfDigest, inputEqIDs, outputEqID)
+			c.egraphTerms[termID] = term
+			c.termInputProvenance[termID] = inputProvenance
+			digestTerms := c.egraphTermsByTermDigest[term.termDigest]
+			if digestTerms == nil {
+				digestTerms = make(map[egraphTermID]struct{})
+				c.egraphTermsByTermDigest[term.termDigest] = digestTerms
+			}
+			digestTerms[termID] = struct{}{}
+			for _, inputEqID := range inputEqIDs {
+				if inputEqID == 0 {
+					continue
+				}
+				classTerms := c.inputEqClassToTerms[inputEqID]
+				if classTerms == nil {
+					classTerms = make(map[egraphTermID]struct{})
+					c.inputEqClassToTerms[inputEqID] = classTerms
+				}
+				classTerms[termID] = struct{}{}
+			}
+			outputTerms := c.outputEqClassToTerms[outputEqID]
+			if outputTerms == nil {
+				outputTerms = make(map[egraphTermID]struct{})
+				c.outputEqClassToTerms[outputEqID] = outputTerms
+			}
+			outputTerms[termID] = struct{}{}
+			c.traceTermCreated(ctx, "import", importRunID, term)
+		}
+
+		for _, row := range resultOutputEqClassRows {
+			resultID := sharedResultID(row.ResultID)
+			res := c.resultsByID[resultID]
+			if res == nil {
+				return fmt.Errorf("import result_output_eq_class: missing result %d", row.ResultID)
+			}
+			outputEqID := c.findEqClassLocked(eqClassID(row.EqClassID))
+			if outputEqID == 0 {
+				return fmt.Errorf("import result_output_eq_class: missing eq_class %d", row.EqClassID)
+			}
+			outputEqClasses := c.resultOutputEqClasses[resultID]
+			if outputEqClasses == nil {
+				outputEqClasses = make(map[eqClassID]struct{})
+				c.resultOutputEqClasses[resultID] = outputEqClasses
+			}
+			outputEqClasses[outputEqID] = struct{}{}
+		}
+
+		for _, row := range resultDepRows {
+			parentID := sharedResultID(row.ParentResultID)
+			parent := c.resultsByID[parentID]
+			if parent == nil {
+				return fmt.Errorf("import result_dep: missing parent result %d", row.ParentResultID)
+			}
+			depID := sharedResultID(row.DepResultID)
+			if c.resultsByID[depID] == nil {
+				return fmt.Errorf("import result_dep: missing dep result %d", row.DepResultID)
+			}
+			if parent.deps == nil {
+				parent.deps = make(map[sharedResultID]struct{})
+			}
+			parent.deps[depID] = struct{}{}
+			c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
+			c.traceExplicitDepAdded(ctx, parentID, depID, "import")
+		}
+
+		for _, row := range resultSnapshotRows {
+			resultID := sharedResultID(row.ResultID)
+			res := c.resultsByID[resultID]
+			if res == nil {
+				return fmt.Errorf("import result_snapshot_link: missing result %d", row.ResultID)
+			}
+			res.persistedSnapshotLinks = append(res.persistedSnapshotLinks, PersistedSnapshotRefLink{
+				RefKey: row.RefKey,
+				Role:   row.Role,
+				Slot:   row.Slot,
+			})
+			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role, row.Slot)
+		}
+
+		for resultID := range c.resultsByID {
+			outputEqClasses := c.outputEqClassesForResultLocked(resultID)
+			for outputEqID := range outputEqClasses {
+				for dig := range c.eqClassToDigests[outputEqID] {
+					set := c.egraphResultsByDigest[dig]
+					if set == nil {
+						set = make(map[sharedResultID]struct{})
+						c.egraphResultsByDigest[dig] = set
+					}
+					set[resultID] = struct{}{}
+				}
 			}
 		}
-	}
 
-	c.nextSharedResultID = maxResultID + 1
-	c.nextEgraphTermID = maxTermID + 1
-	c.nextEgraphClassID = maxEqClassID + 1
-	if c.nextSharedResultID == 0 {
-		c.nextSharedResultID = 1
-	}
-	if c.nextEgraphTermID == 0 {
-		c.nextEgraphTermID = 1
-	}
-	if c.nextEgraphClassID == 0 {
-		c.nextEgraphClassID = 1
-	}
+		c.nextSharedResultID = maxResultID + 1
+		c.nextEgraphTermID = maxTermID + 1
+		c.nextEgraphClassID = maxEqClassID + 1
+		if c.nextSharedResultID == 0 {
+			c.nextSharedResultID = 1
+		}
+		if c.nextEgraphTermID == 0 {
+			c.nextEgraphTermID = 1
+		}
+		if c.nextEgraphClassID == 0 {
+			c.nextEgraphClassID = 1
+		}
 
 		return nil
 	}()

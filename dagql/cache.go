@@ -1481,6 +1481,7 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, reques
 			oc.res.self = oc.val.Unwrap()
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				oc.res.resultCallFrame = shared.resultCallFrame.clone()
+				oc.res.resultCallFrame.bindCache(c)
 			}
 			oc.res.hasValue = true
 			oc.res.postCall = oc.val.PostCall
