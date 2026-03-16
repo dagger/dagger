@@ -216,7 +216,7 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 	}
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	parentCtx := ctx
 
 	dp := newDisplayPhases(parentCtx)
@@ -276,10 +276,15 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return nil, fmt.Errorf("failed to convert tools: %w", err)
 	}
 
-	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, &genai.GenerateContentConfig{
+	genaiConfig := &genai.GenerateContentConfig{
 		SystemInstruction: systemInstruction,
 		Tools:             genaiTools,
-	}, chatHistoryForGenai)
+	}
+	if opts != nil && opts.MaxTokens > 0 {
+		genaiConfig.MaxOutputTokens = int32(opts.MaxTokens)
+	}
+
+	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, genaiConfig, chatHistoryForGenai)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat: %w", err)
 	}

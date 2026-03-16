@@ -9567,16 +9567,18 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
-	hasPrompt    *bool
-	historyJSON  *JSON
-	id           *LLMID
-	lastReply    *string
-	model        *string
-	provider     *string
-	step         *LLMID
-	sync         *LLMID
-	systemPrompt *string
-	tools        *string
+	hasPrompt        *bool
+	historyJSON      *JSON
+	id               *LLMID
+	lastReply        *string
+	model            *string
+	provider         *string
+	replay           *LLMID
+	serializeHistory *string
+	step             *LLMID
+	sync             *LLMID
+	systemPrompt     *string
+	tools            *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -9791,6 +9793,32 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("replay")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
+}
+
+// return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+func (r *LLM) SerializeHistory(ctx context.Context) (string, error) {
+	if r.serializeHistory != nil {
+		return *r.serializeHistory, nil
+	}
+	q := r.query.Select("serializeHistory")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
 func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("step")
@@ -9805,19 +9833,6 @@ func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 }
 
 // synchronize LLM state
-// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
-func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
-	q := r.query.Select("replay")
-
-	var id LLMID
-	if err := q.Bind(&id).Execute(ctx); err != nil {
-		return nil, err
-	}
-	return &LLM{
-		query: q.Root().Select("loadLLMFromID").Arg("id", id),
-	}, nil
-}
-
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
 
@@ -9893,6 +9908,16 @@ func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	q := r.query.Select("withMCPServer")
 	q = q.Arg("name", name)
 	q = q.Arg("service", service)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set the maximum number of output tokens the model may generate per API call
+func (r *LLM) WithMaxTokens(tokens int) *LLM {
+	q := r.query.Select("withMaxTokens")
+	q = q.Arg("tokens", tokens)
 
 	return &LLM{
 		query: q,
@@ -14813,6 +14838,7 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 type Workspace struct {
 	query *querybuilder.Selection
 
+	apply    *bool
 	branch   *string
 	clientId *string
 	commit   *string
@@ -14835,6 +14861,29 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	return &Workspace{
 		query: q,
 	}
+}
+
+// Export a Changeset to the workspace directory without staging in git.
+//
+// Use this for files that should not be tracked by git (e.g. build
+//
+// artifacts, binary files). Added and modified files are written to
+//
+// disk; removed files are deleted.
+//
+// Returns true if any files were changed, false if the changeset was empty.
+func (r *Workspace) Apply(ctx context.Context, changes *Changeset) (bool, error) {
+	assertNotNil("changes", changes)
+	if r.apply != nil {
+		return *r.apply, nil
+	}
+	q := r.query.Select("apply")
+	q = q.Arg("changes", changes)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The Git branch this workspace is on.
@@ -15159,6 +15208,16 @@ func (r *Workspace) Search(ctx context.Context, pattern string, opts ...Workspac
 	return convert(response), nil
 }
 
+// WorkspaceStageOpts contains options for Workspace.Stage
+type WorkspaceStageOpts struct {
+	// Skip the 3-way merge for modified files and overwrite the working
+	//
+	// tree directly. Use this to recover from merge conflicts or when
+	//
+	// the changeset already contains the complete desired file content.
+	Force bool
+}
+
 // Apply a Changeset to the workspace and stage the affected paths in git.
 //
 // Files are written (added/modified) and removed on disk, then precisely
@@ -15168,12 +15227,18 @@ func (r *Workspace) Search(ctx context.Context, pattern string, opts ...Workspac
 // unstaged user edits are preserved as unstaged changes.
 //
 // Returns true if any changes were staged, false if the changeset was empty.
-func (r *Workspace) Stage(ctx context.Context, changes *Changeset) (bool, error) {
+func (r *Workspace) Stage(ctx context.Context, changes *Changeset, opts ...WorkspaceStageOpts) (bool, error) {
 	assertNotNil("changes", changes)
 	if r.stage != nil {
 		return *r.stage, nil
 	}
 	q := r.query.Select("stage")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `force` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Force) {
+			q = q.Arg("force", opts[i].Force)
+		}
+	}
 	q = q.Arg("changes", changes)
 
 	var response bool
@@ -15182,13 +15247,24 @@ func (r *Workspace) Stage(ctx context.Context, changes *Changeset) (bool, error)
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceWithBranchOpts contains options for Workspace.WithBranch
+type WorkspaceWithBranchOpts struct {
+	Base string
+}
+
 // Return a Workspace for the given branch. If the branch is different from
 //
 // the currently checked-out branch, a git worktree is created on the host.
 //
 // If the branch does not exist, it is created from the current branch tip.
-func (r *Workspace) WithBranch(branch string) *Workspace {
+func (r *Workspace) WithBranch(branch string, opts ...WorkspaceWithBranchOpts) *Workspace {
 	q := r.query.Select("withBranch")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `base` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Base) {
+			q = q.Arg("base", opts[i].Base)
+		}
+	}
 	q = q.Arg("branch", branch)
 
 	return &Workspace{

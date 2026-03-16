@@ -56,7 +56,7 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	parentCtx := ctx
 
 	dp := newDisplayPhases(parentCtx)

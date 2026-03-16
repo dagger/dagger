@@ -92,6 +92,10 @@ type LLM struct {
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
+
+	// maxTokens limits the number of output tokens the model may generate
+	// per API call. Zero means use provider defaults.
+	maxTokens int
 }
 
 type LLMEndpoint struct {
@@ -296,8 +300,15 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (*LLMResponse, error)
 	IsRetryable(err error) bool
+}
+
+// LLMCallOpts carries per-call options from the LLM state to the provider.
+type LLMCallOpts struct {
+	// MaxTokens limits the number of output/completion tokens. Zero means
+	// the provider should use its own default.
+	MaxTokens int
 }
 
 // LLMResponse is the internal result returned by a provider's SendQuery.
@@ -1477,7 +1488,9 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	authRefreshAttempted := false
 	err = backoff.Retry(func() error {
 		var sendErr error
-		res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
+		res, sendErr = client.SendQuery(ctx, messagesToSend, tools, &LLMCallOpts{
+			MaxTokens: llm.maxTokens,
+		})
 		if sendErr != nil {
 			var finished *ModelFinishedError
 			if errors.As(sendErr, &finished) {
@@ -2038,6 +2051,74 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 		return nil, err
 	}
 	return JSON(result), nil
+}
+
+// SerializeHistory returns the message history as plain text suitable for
+// LLM consumption (e.g. for summarization). The format is analogous to
+// pi's serializeConversation: role-tagged lines with no emojis, tool calls
+// shown as function signatures, and tool results included inline.
+func (llm *LLM) SerializeHistory() string {
+	var parts []string
+	for _, msg := range llm.Messages {
+		switch msg.Role {
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					prefix := "[Tool result]"
+					if block.Errored {
+						prefix = "[Tool result ERROR]"
+					}
+					if block.Text != "" {
+						parts = append(parts, prefix+": "+block.Text)
+					}
+				case LLMContentText:
+					if block.Text != "" {
+						parts = append(parts, "[User]: "+block.Text)
+					}
+				}
+			}
+		case LLMMessageRoleAssistant:
+			var thinkingParts, textParts []string
+			var toolCalls []string
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentThinking:
+					if block.Text != "" {
+						thinkingParts = append(thinkingParts, block.Text)
+					}
+				case LLMContentText:
+					if block.Text != "" {
+						textParts = append(textParts, block.Text)
+					}
+				case LLMContentToolCall:
+					// Format as function call signature
+					toolCalls = append(toolCalls,
+						fmt.Sprintf("%s(%s)", block.ToolName, string(block.Arguments)))
+				}
+			}
+			if len(thinkingParts) > 0 {
+				parts = append(parts, "[Assistant thinking]: "+strings.Join(thinkingParts, "\n"))
+			}
+			if len(textParts) > 0 {
+				parts = append(parts, "[Assistant]: "+strings.Join(textParts, "\n"))
+			}
+			if len(toolCalls) > 0 {
+				parts = append(parts, "[Assistant tool calls]: "+strings.Join(toolCalls, "; "))
+			}
+		case LLMMessageRoleSystem:
+			// System prompts are omitted from serialization
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// WithMaxTokens returns a new LLM with the maximum output tokens set.
+// Zero means use provider defaults.
+func (llm *LLM) WithMaxTokens(tokens int) *LLM {
+	llm = llm.Clone()
+	llm.maxTokens = tokens
+	return llm
 }
 
 func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {

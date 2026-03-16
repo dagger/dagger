@@ -697,6 +697,50 @@ func (s *LLMSession) Clear() *LLMSession {
 //go:embed llm_compact.md
 var compactPrompt string
 
+//go:embed llm_branch_summary.md
+var branchSummaryPrompt string
+
+// BranchSummary generates a summary of the current conversation branch.
+// This is used when branching to describe what was explored in the branch
+// being abandoned, so the summary can be injected at the branch target.
+//
+// Like pi, we serialize the conversation to text first (preventing the
+// model from treating it as a conversation to continue), then pass it to
+// a fresh lightweight LLM call with maxTokens=2048.
+// If customInstructions is non-empty, it is appended to the default prompt.
+func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions string) (_ string, rerr error) {
+	ctx, span := Tracer().Start(ctx, "branch summary", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	// Serialize the conversation to plain text so the summarizer sees
+	// it as data to summarize, not a conversation to continue.
+	conversationText, err := s.llm.SerializeHistory(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize history: %w", err)
+	}
+
+	instructions := branchSummaryPrompt
+	if customInstructions != "" {
+		instructions += "\n\nAdditional focus: " + customInstructions
+	}
+
+	prompt := fmt.Sprintf("<conversation>\n%s\n</conversation>\n\n%s", conversationText, instructions)
+
+	// Use a fresh LLM (no tools, no history) with a small output budget.
+	summaryText, err := s.llm.
+		WithoutMessageHistory().
+		WithoutSystemPrompts().
+		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
+		WithMaxTokens(2048).
+		WithPrompt(prompt).
+		Loop(dagger.LLMLoopOpts{MaxAPICalls: 1}).
+		LastReply(ctx)
+	if err != nil {
+		return "", err
+	}
+	return summaryText, nil
+}
+
 func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)

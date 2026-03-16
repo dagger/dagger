@@ -55,7 +55,7 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 }
 
 //nolint:gocyclo
-func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	// parentCtx is the context we create sibling spans from (response, tool calls).
 	parentCtx := ctx
 
@@ -125,6 +125,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		Model:    c.endpoint.Model,
 		Messages: openAIMessages,
 		// call tools one at a time, or else chaining breaks
+	}
+
+	if opts != nil && opts.MaxTokens > 0 {
+		params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
 	}
 
 	if len(tools) > 0 {

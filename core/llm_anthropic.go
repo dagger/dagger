@@ -72,7 +72,7 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 }
 
 //nolint:gocyclo
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (res *LLMResponse, rerr error) {
 	// parentCtx is the context we create sibling spans from (thinking, response).
 	// Each phase of the streaming response gets its own span.
 	parentCtx := ctx
@@ -230,6 +230,9 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 	// Prepare parameters for the streaming call.
 	maxTokens := int64(8192)
+	if opts != nil && opts.MaxTokens > 0 {
+		maxTokens = int64(opts.MaxTokens)
+	}
 
 	// Configure thinking/reasoning if requested
 	var thinkingConfig anthropic.ThinkingConfigParamUnion

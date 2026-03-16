@@ -30,6 +30,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("return the provider used by the llm"),
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
+		dagql.Func("serializeHistory", s.serializeHistory).
+			Doc("return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)"),
 		dagql.Func("historyJSON", s.historyJSON).
 			View(AllVersion).
 			Doc("return the raw llm message history as json"),
@@ -101,6 +103,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("tag").Doc("Arbitrary string, typically in TypeName#Number format"),
 				dagql.Arg("object").Doc("Arbitrary object ID"),
+			),
+		dagql.Func("withMaxTokens", s.withMaxTokens).
+			Doc("Set the maximum number of output tokens the model may generate per API call").
+			Args(
+				dagql.Arg("tokens").Doc("The maximum number of output tokens (0 to use provider defaults)"),
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
@@ -326,6 +333,16 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
 	return llm.History(ctx)
+}
+
+func (s *llmSchema) serializeHistory(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
+	return llm.SerializeHistory(), nil
+}
+
+func (s *llmSchema) withMaxTokens(_ context.Context, llm *core.LLM, args struct {
+	Tokens int
+}) (*core.LLM, error) {
+	return llm.WithMaxTokens(args.Tokens), nil
 }
 
 func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (core.JSON, error) {

@@ -841,15 +841,35 @@ func (h *shellCallHandler) EncodeHistory(entry string) string {
 	return entry
 }
 
-func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string) func() {
+func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, summary idtui.BranchSummary) func() {
 	return func() {
 		s, err := h.llm(ctx)
 		if err != nil {
 			slog.Error("failed to initialize LLM for branch", "error", err)
 			return
 		}
-		// Load the LLM from the encoded ID
+
+		// Load the target LLM state (the point we're branching to).
 		loadedLLM := h.dag.LoadLLMFromID(dagger.LLMID(encodedID))
+
+		// If the user requested summarization, summarize the OLD branch
+		// (the current conversation state being abandoned) and inject
+		// the summary into the branch target. This matches pi's behavior:
+		// the summary describes what was explored in the branch being
+		// left, providing context when continuing from the earlier point.
+		if summary.Summarize {
+			summaryText, err := s.BranchSummary(ctx, summary.CustomPrompt)
+			if err != nil {
+				slog.Error("failed to summarize old branch", "error", err)
+				// Fall through to branch without summary
+			} else {
+				loadedLLM = loadedLLM.WithPrompt(fmt.Sprintf(
+					"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
+					summaryText,
+				))
+			}
+		}
+
 		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
