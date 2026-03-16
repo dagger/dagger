@@ -62,10 +62,10 @@ type DangEvalOp struct {
 	ExecMD *buildkit.ExecutionMetadata `json:"execMD"`
 
 	// Function call data.
-	ParentName string                        `json:"parentName"`
-	FnName     string                        `json:"fnName"`
-	ParentJSON json.RawMessage               `json:"parentJSON"`
-	InputArgs  []*core.FunctionCallArgValue   `json:"inputArgs"`
+	ParentName string                       `json:"parentName"`
+	FnName     string                       `json:"fnName"`
+	ParentJSON json.RawMessage              `json:"parentJSON"`
+	InputArgs  []*core.FunctionCallArgValue `json:"inputArgs"`
 }
 
 func (op DangEvalOp) Name() string {

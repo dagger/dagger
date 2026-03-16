@@ -36,9 +36,6 @@ type dangSDK struct {
 	rawConfig map[string]any
 }
 
-type dangSDKConfig struct {
-}
-
 func (sdk *dangSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
 }
@@ -410,10 +407,10 @@ func createFunction(ctx context.Context, srv *dagql.Server, name string, fn *hm.
 				}
 			}
 			if ignorePatterns, hasIgnorePatterns := argDirectives["ignorePatterns"]; hasIgnorePatterns {
-				ignore, hasIgnore := ignorePatterns["patterns"]
-				if ignore, ok := ignore.([]any); ok {
+				ignoreVal, hasIgnore := ignorePatterns["patterns"]
+				if patterns, ok := ignoreVal.([]any); ok {
 					var ignorePatterns []string
-					for _, pattern := range ignore {
+					for _, pattern := range patterns {
 						if str, ok := pattern.(string); ok {
 							ignorePatterns = append(ignorePatterns, str)
 						} else {
@@ -424,7 +421,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, name string, fn *hm.
 						argArgs = append(argArgs, dagql.NamedInput{Name: "ignore", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignorePatterns...))})
 					}
 				} else if hasIgnore {
-					return res, fmt.Errorf("invalid ignore directive for argument %s: %T (expected []any)", arg.Key, ignore)
+					return res, fmt.Errorf("invalid ignore directive for argument %s: %T (expected []any)", arg.Key, ignoreVal)
 				}
 			}
 		}
@@ -619,7 +616,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type)
 	default:
 		// For type variables and other complex types, default to string for now
 		// TODO: Handle type variables more gracefully
-		slog.Info("unknown type, defaulting to string", "type", fmt.Sprintf("%T", dangType), "value", fmt.Sprintf("%s", dangType))
+		slog.Info("unknown type, defaulting to string", "type", fmt.Sprintf("%T", dangType), "value", dangType.String())
 		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
 	}
 
