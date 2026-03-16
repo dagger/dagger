@@ -10,10 +10,11 @@ const (
 	argStyleNone argStyle = iota
 	// argStylePath means the value is a file path shown in cyan in the span header.
 	argStylePath
-	// argStyleDesc means the value is a short description shown faint in the span header.
+	// argStyleDesc means the value is a description shown faint in the span header,
+	// truncated to the first line.
 	argStyleDesc
-	// argStyleContent means the value is content (e.g. a prompt) rendered as a
-	// truncated italic line beneath the span header.
+	// argStyleContent means the value is content (e.g. a prompt) shown as a
+	// truncated faint italic string in the span header.
 	argStyleContent
 )
 

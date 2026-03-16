@@ -3040,74 +3040,12 @@ func (fe *frontendPretty) renderToolArgs(out TermOutput, r *renderer, row *dagui
 	toolName := row.Span.LLMTool
 	fields := partialJSONFields(args)
 
-	// For edit tools with complete old+new text, render a side-by-side diff.
+	// For edit tools with complete old+new text, render a unified diff.
 	if fe.tryRenderEditDiff(out, r, row, prefix, toolName, fields) {
 		return
 	}
 
-	// Render content-style fields (prompt, command, content, etc.)
-	// as truncated italic lines beneath the header.
-	for argName, field := range fields {
-		if field.Value == "" || toolArgStyle(toolName, argName) != argStyleContent {
-			continue
-		}
-		maxWidth := fe.window.Width - row.Depth*2 - 4
-		if maxWidth < 20 {
-			maxWidth = 20
-		}
-		line := field.Value
-		if idx := strings.IndexByte(line, '\n'); idx >= 0 {
-			line = line[:idx] + "…"
-		}
-		if len(line) > maxWidth {
-			line = line[:maxWidth-1] + "…"
-		}
-		styled := out.String(line).Foreground(termenv.ANSIBrightBlack).Italic().String()
-		if !field.Complete {
-			styled += out.String(streamingGlitch(field.Value)).Foreground(termenv.ANSIBrightBlack).String()
-		}
-		r.fancyIndent(out, row, true, false)
-		fmt.Fprintln(out, prefix+styled)
-	}
-
-	// Build a compact JSON line from remaining (non-conventional) args.
-	// Parse the full JSON; if it doesn't parse (still streaming), try partial fields.
-	var remaining string
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(args), &parsed); err == nil {
-		// Full JSON available — filter out conventional fields.
-		filtered := make(map[string]any, len(parsed))
-		for k, v := range parsed {
-			if !isConventionalArg(toolName, k) {
-				filtered[k] = v
-			}
-		}
-		if len(filtered) > 0 {
-			if b, err := json.Marshal(filtered); err == nil {
-				remaining = string(b)
-			}
-		}
-	} else {
-		// Streaming/partial — fall back to compact raw JSON.
-		var compacted bytes.Buffer
-		if err := json.Compact(&compacted, []byte(args)); err != nil {
-			compacted.Reset()
-			compacted.WriteString(args)
-		}
-		remaining = compacted.String()
-	}
-
-	if remaining != "" {
-		maxWidth := fe.window.Width - row.Depth*2 - 4
-		if maxWidth < 20 {
-			maxWidth = 20
-		}
-		if len(remaining) > maxWidth {
-			remaining = remaining[:maxWidth-5] + "[...]"
-		}
-		r.fancyIndent(out, row, true, false)
-		fmt.Fprintln(out, prefix+out.String(remaining).Foreground(termenv.ANSIBrightBlack).String())
-	}
+	// All args are now rendered inline on the title line by renderSpan.
 }
 
 // tryRenderEditDiff checks whether this is an edit tool call with complete

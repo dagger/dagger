@@ -23,7 +23,7 @@ func TestToolArgStyle(t *testing.T) {
 
 	// Type_method matching: tries method part after _
 	assert.Equal(t, argStyleContent, toolArgStyle("Container_withExec", "args"))
-	assert.Equal(t, argStyleContent, toolArgStyle("Git_withCommit", "message"))
+	assert.Equal(t, argStyleNone, toolArgStyle("Git_withCommit", "message")) // no "withcommit.message" rule
 	// No rule for "file.path", so Directory_file doesn't match
 	assert.Equal(t, argStyleNone, toolArgStyle("Directory_file", "path"))
 
@@ -58,7 +58,7 @@ func TestToolArgStyle(t *testing.T) {
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "regex"))
 
 	// Commit.message
-	assert.Equal(t, argStyleContent, toolArgStyle("Commit", "message"))
+	assert.Equal(t, argStyleDesc, toolArgStyle("Commit", "message"))
 	assert.Equal(t, argStyleNone, toolArgStyle("Read", "message"))
 
 	// Checks.include

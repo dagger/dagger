@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -577,10 +578,10 @@ func (r *renderer) renderSpan(
 				fmt.Fprint(out, " ")
 			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
-			// Parse conventional fields from streaming args
+			// Parse and render all args inline on the title line.
 			if len(toolArgs) > 0 && toolArgs[0] != "" {
 				fields := partialJSONFields(toolArgs[0])
-				var sawPath, sawDesc bool
+				var sawPath, sawDesc, sawContent bool
 				for argName, field := range fields {
 					if field.Value == "" {
 						continue
@@ -597,13 +598,51 @@ func (r *renderer) renderSpan(
 						}
 					case argStyleDesc:
 						if !sawDesc {
-							s := out.String(field.Value).Faint().String()
+							val := field.Value
+							if idx := strings.IndexByte(val, '\n'); idx >= 0 {
+								val = val[:idx] + "…"
+							}
+							s := out.String(val).Faint().String()
 							if !field.Complete {
 								s += out.String(streamingGlitch(field.Value)).Faint().String()
 							}
 							fmt.Fprint(out, " ", s)
 							sawDesc = true
 						}
+					case argStyleContent:
+						if !sawContent {
+							val := field.Value
+							if idx := strings.IndexByte(val, '\n'); idx >= 0 {
+								val = val[:idx] + "…"
+							}
+							s := out.String(val).Foreground(termenv.ANSIBrightBlack).Italic().String()
+							if !field.Complete {
+								s += out.String(streamingGlitch(field.Value)).Foreground(termenv.ANSIBrightBlack).String()
+							}
+							fmt.Fprint(out, " ", s)
+							sawContent = true
+						}
+					}
+				}
+
+				// Render non-conventional args as key=value pairs.
+				var parsed map[string]any
+				if err := json.Unmarshal([]byte(toolArgs[0]), &parsed); err == nil {
+					for k, v := range parsed {
+						if isConventionalArg(span.LLMTool, k) {
+							continue
+						}
+						valBytes, err := json.Marshal(v)
+						if err != nil {
+							continue
+						}
+						val := string(valBytes)
+						// Unquote simple strings for cleaner display.
+						if str, ok := v.(string); ok {
+							val = str
+						}
+						s := out.String(k + "=" + val).Foreground(termenv.ANSIBrightBlack).String()
+						fmt.Fprint(out, " ", s)
 					}
 				}
 			}
