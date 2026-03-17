@@ -24,6 +24,13 @@ type CheckGroup struct {
 	Checks []*Check     `json:"checks"`
 }
 
+func withChecksCacheBuster(ctx context.Context, cacheBuster string) context.Context {
+	if cacheBuster == "" {
+		return ctx
+	}
+	return dagql.WithCacheBuster(ctx, cacheBuster)
+}
+
 func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
@@ -65,8 +72,9 @@ func (r *CheckGroup) List() []*Check {
 }
 
 // Run all the checks in the group
-func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
+func (r *CheckGroup) Run(ctx context.Context, cacheBuster string) (*CheckGroup, error) {
 	r = r.Clone()
+	ctx = withChecksCacheBuster(ctx, cacheBuster)
 
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, check := range r.Checks {
@@ -74,7 +82,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		check.Completed = false
 		check.Passed = false
 		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
-			err := check.Node.RunCheck(ctx, nil, nil)
+			err := check.Node.RunCheck(ctx, nil, nil, cacheBuster)
 			check.Completed = true
 			if err != nil {
 				check.Passed = false
@@ -191,10 +199,11 @@ func (c *Check) Clone() *Check {
 	return &cp
 }
 
-func (c *Check) Run(ctx context.Context) (*Check, error) {
+func (c *Check) Run(ctx context.Context, cacheBuster string) (*Check, error) {
 	c = c.Clone()
+	ctx = withChecksCacheBuster(ctx, cacheBuster)
 
-	err := c.Node.RunCheck(ctx, nil, nil)
+	err := c.Node.RunCheck(ctx, nil, nil, cacheBuster)
 	c.Completed = true
 	if err != nil {
 		c.Passed = false

@@ -1336,9 +1336,21 @@ func (r *Check) ResultEmoji(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// CheckRunOpts contains options for Check.Run
+type CheckRunOpts struct {
+	// Mix this value into cache identity for this run subtree.
+	CacheBuster string
+}
+
 // Execute the check
-func (r *Check) Run() *Check {
+func (r *Check) Run(opts ...CheckRunOpts) *Check {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cacheBuster` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CacheBuster) {
+			q = q.Arg("cacheBuster", opts[i].CacheBuster)
+		}
+	}
 
 	return &Check{
 		query: q,
@@ -1447,9 +1459,21 @@ func (r *CheckGroup) Report() *File {
 	}
 }
 
+// CheckGroupRunOpts contains options for CheckGroup.Run
+type CheckGroupRunOpts struct {
+	// Mix this value into cache identity for this run subtree.
+	CacheBuster string
+}
+
 // Execute all selected checks
-func (r *CheckGroup) Run() *CheckGroup {
+func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	q := r.query.Select("run")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cacheBuster` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CacheBuster) {
+			q = q.Arg("cacheBuster", opts[i].CacheBuster)
+		}
+	}
 
 	return &CheckGroup{
 		query: q,

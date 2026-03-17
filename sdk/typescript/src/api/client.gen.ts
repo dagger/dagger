@@ -253,6 +253,20 @@ function ChangesetsMergeConflictNameToValue(
       return name as ChangesetsMergeConflict
   }
 }
+export type CheckRunOpts = {
+  /**
+   * Mix this value into cache identity for this run subtree.
+   */
+  cacheBuster?: string
+}
+
+export type CheckGroupRunOpts = {
+  /**
+   * Mix this value into cache identity for this run subtree.
+   */
+  cacheBuster?: string
+}
+
 /**
  * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
  */
@@ -3591,9 +3605,10 @@ export class Check extends BaseClient {
 
   /**
    * Execute the check
+   * @param opts.cacheBuster Mix this value into cache identity for this run subtree.
    */
-  run = (): Check => {
-    const ctx = this._ctx.select("run")
+  run = (opts?: CheckRunOpts): Check => {
+    const ctx = this._ctx.select("run", { ...opts })
     return new Check(ctx)
   }
 
@@ -3659,9 +3674,10 @@ export class CheckGroup extends BaseClient {
 
   /**
    * Execute all selected checks
+   * @param opts.cacheBuster Mix this value into cache identity for this run subtree.
    */
-  run = (): CheckGroup => {
-    const ctx = this._ctx.select("run")
+  run = (opts?: CheckGroupRunOpts): CheckGroup => {
+    const ctx = this._ctx.select("run", { ...opts })
     return new CheckGroup(ctx)
   }
 

@@ -2711,6 +2711,12 @@ pub struct Check {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct CheckRunOpts<'a> {
+    /// Mix this value into cache identity for this run subtree.
+    #[builder(setter(into, strip_option), default)]
+    pub cache_buster: Option<&'a str>,
+}
 impl Check {
     /// Whether the check completed
     pub async fn completed(&self) -> Result<bool, DaggerError> {
@@ -2766,8 +2772,28 @@ impl Check {
         query.execute(self.graphql_client.clone()).await
     }
     /// Execute the check
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn run(&self) -> Check {
         let query = self.selection.select("run");
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Execute the check
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn run_opts<'a>(&self, opts: CheckRunOpts<'a>) -> Check {
+        let mut query = self.selection.select("run");
+        if let Some(cache_buster) = opts.cache_buster {
+            query = query.arg("cacheBuster", cache_buster);
+        }
         Check {
             proc: self.proc.clone(),
             selection: query,
@@ -2780,6 +2806,12 @@ pub struct CheckGroup {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct CheckGroupRunOpts<'a> {
+    /// Mix this value into cache identity for this run subtree.
+    #[builder(setter(into, strip_option), default)]
+    pub cache_buster: Option<&'a str>,
 }
 impl CheckGroup {
     /// A unique identifier for this CheckGroup.
@@ -2806,8 +2838,28 @@ impl CheckGroup {
         }
     }
     /// Execute all selected checks
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn run(&self) -> CheckGroup {
         let query = self.selection.select("run");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Execute all selected checks
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn run_opts<'a>(&self, opts: CheckGroupRunOpts<'a>) -> CheckGroup {
+        let mut query = self.selection.select("run");
+        if let Some(cache_buster) = opts.cache_buster {
+            query = query.arg("cacheBuster", cache_buster);
+        }
         CheckGroup {
             proc: self.proc.clone(),
             selection: query,

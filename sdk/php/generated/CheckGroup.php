@@ -40,9 +40,12 @@ class CheckGroup extends Client\AbstractObject implements Client\IdAble
     /**
      * Execute all selected checks
      */
-    public function run(): CheckGroup
+    public function run(?string $cacheBuster = null): CheckGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        if (null !== $cacheBuster) {
+        $innerQueryBuilder->setArgument('cacheBuster', $cacheBuster);
+        }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

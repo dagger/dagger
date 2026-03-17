@@ -94,9 +94,12 @@ class Check extends Client\AbstractObject implements Client\IdAble
     /**
      * Execute the check
      */
-    public function run(): Check
+    public function run(?string $cacheBuster = null): Check
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('run');
+        if (null !== $cacheBuster) {
+        $innerQueryBuilder->setArgument('cacheBuster', $cacheBuster);
+        }
         return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

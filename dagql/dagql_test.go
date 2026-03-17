@@ -2679,6 +2679,49 @@ func TestCustomDigest(t *testing.T) {
 	}
 }
 
+func TestContextCacheBuster(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	var calls atomic.Int32
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithCacheKey(
+			"cacheBusted",
+			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{}) (dagql.String, error) {
+				return dagql.NewString(fmt.Sprintf("call-%d", calls.Add(1))), nil
+			},
+			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{}, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+				resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(digest.FromString("stable-cache-key"))
+				return resp, nil
+			},
+		),
+	}.Install(srv)
+
+	run := func(ctx context.Context) string {
+		t.Helper()
+		var res dagql.String
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{Field: "cacheBusted"})
+		assert.NilError(t, err)
+		return string(res)
+	}
+
+	baseA := run(t.Context())
+	baseB := run(t.Context())
+	assert.Equal(t, "call-1", baseA)
+	assert.Equal(t, baseA, baseB)
+
+	ctxA := dagql.WithCacheBuster(t.Context(), "buster-a")
+	bustedA1 := run(ctxA)
+	bustedA2 := run(ctxA)
+	assert.Equal(t, "call-2", bustedA1)
+	assert.Equal(t, bustedA1, bustedA2)
+
+	ctxB := dagql.WithCacheBuster(t.Context(), "buster-b")
+	bustedB := run(ctxB)
+	assert.Equal(t, "call-3", bustedB)
+	assert.Assert(t, bustedB != bustedA1)
+}
+
 func TestServerSelect(t *testing.T) {
 	// Create a new server with a simple object hierarchy for testing
 	srv := dagql.NewServer(Query{}, newCache(t))

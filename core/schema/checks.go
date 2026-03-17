@@ -11,13 +11,27 @@ type checksSchema struct{}
 
 var _ SchemaResolvers = &checksSchema{}
 
+type checkRunArgs struct {
+	CacheBuster dagql.Optional[dagql.String]
+}
+
+func cacheBusterArgValue(args checkRunArgs) string {
+	if !args.CacheBuster.Valid {
+		return ""
+	}
+	return string(args.CacheBuster.Value)
+}
+
 func (s checksSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.CheckGroup]{
 		dagql.Func("list", s.list).
 			Doc("Return a list of individual checks and their details"),
 
 		dagql.Func("run", s.run).
-			Doc("Execute all selected checks"),
+			Doc("Execute all selected checks").
+			Args(
+				dagql.Arg("cacheBuster").Doc("Mix this value into cache identity for this run subtree."),
+			),
 
 		dagql.Func("report", s.report).
 			Doc("Generate a markdown report"),
@@ -37,7 +51,10 @@ func (s checksSchema) Install(srv *dagql.Server) {
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
 		dagql.Func("run", s.runSingleCheck).
-			Doc("Execute the check"),
+			Doc("Execute the check").
+			Args(
+				dagql.Arg("cacheBuster").Doc("Mix this value into cache identity for this run subtree."),
+			),
 	}.Install(srv)
 }
 
@@ -65,14 +82,14 @@ func (s checksSchema) list(_ context.Context, parent *core.CheckGroup, args stru
 	return parent.List(), nil
 }
 
-func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.CheckGroup, error) {
-	return parent.Run(ctx)
+func (s checksSchema) run(ctx context.Context, parent *core.CheckGroup, args checkRunArgs) (*core.CheckGroup, error) {
+	return parent.Run(ctx, cacheBusterArgValue(args))
 }
 
 func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args struct{}) (*core.File, error) {
 	return parent.Report(ctx)
 }
 
-func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args struct{}) (*core.Check, error) {
-	return parent.Run(ctx)
+func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args checkRunArgs) (*core.Check, error) {
+	return parent.Run(ctx, cacheBusterArgValue(args))
 }

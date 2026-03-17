@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 // Class is a class of Object types.
@@ -432,6 +433,8 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		}
 	}
 
+	newID, cacheKey = applyContextCacheBuster(ctx, newID, cacheKey)
+
 	return &preselectResult{
 		inputArgs: inputArgs,
 		newID:     newID,
@@ -459,6 +462,25 @@ func newCacheKey(ctx context.Context, id *call.ID, fieldSpec *FieldSpec) CacheKe
 	}
 
 	return cacheKey
+}
+
+func applyContextCacheBuster(ctx context.Context, id *call.ID, cacheKey CacheKey) (*call.ID, CacheKey) {
+	cacheBuster := cacheBusterFromContext(ctx)
+	if cacheBuster == "" {
+		return id, cacheKey
+	}
+	if cacheKey.ID == nil {
+		cacheKey.ID = id
+	}
+	if cacheKey.ID == nil {
+		return id, cacheKey
+	}
+
+	cacheKey.ID = cacheKey.ID.WithDigest(hashutil.HashStrings(
+		cacheKey.ID.Digest().String(),
+		cacheBuster,
+	))
+	return cacheKey.ID, cacheKey
 }
 
 // Call calls the field on the instance specified by the ID.

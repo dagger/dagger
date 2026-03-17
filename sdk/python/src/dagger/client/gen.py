@@ -1442,9 +1442,17 @@ class Check(Type):
         _ctx = self._select("resultEmoji", _args)
         return await _ctx.execute(str)
 
-    def run(self) -> Self:
-        """Execute the check"""
-        _args: list[Arg] = []
+    def run(self, *, cache_buster: str | None = None) -> Self:
+        """Execute the check
+
+        Parameters
+        ----------
+        cache_buster:
+            Mix this value into cache identity for this run subtree.
+        """
+        _args = [
+            Arg("cacheBuster", cache_buster, None),
+        ]
         _ctx = self._select("run", _args)
         return Check(_ctx)
 
@@ -1494,9 +1502,17 @@ class CheckGroup(Type):
         _ctx = self._select("report", _args)
         return File(_ctx)
 
-    def run(self) -> Self:
-        """Execute all selected checks"""
-        _args: list[Arg] = []
+    def run(self, *, cache_buster: str | None = None) -> Self:
+        """Execute all selected checks
+
+        Parameters
+        ----------
+        cache_buster:
+            Mix this value into cache identity for this run subtree.
+        """
+        _args = [
+            Arg("cacheBuster", cache_buster, None),
+        ]
         _ctx = self._select("run", _args)
         return CheckGroup(_ctx)
 

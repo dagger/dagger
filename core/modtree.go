@@ -111,13 +111,13 @@ func (node *ModTreeNode) Run(
 	return jobs.Run(ctx) // don't suppress the error. That can be handled by the top-level caller if necessary
 }
 
-func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
+func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string, cacheBuster string) error {
 	return node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsCheck },
 		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			// Try scale-out if enabled (will be false for scaled-out sessions)
 			if clientMD != nil && clientMD.EnableCloudScaleOut {
-				if ok, err := node.tryRunCheckScaleOut(ctx); ok {
+				if ok, err := node.tryRunCheckScaleOut(ctx, cacheBuster); ok {
 					return err
 				}
 			}
@@ -162,7 +162,7 @@ func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {
 	return nil
 }
 
-func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
+func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context, cacheBuster string) (_ bool, rerr error) {
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return true, err
@@ -190,6 +190,9 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 
 	query = query.Select("check").Arg("name", node.PathString())
 	query = query.Select("run")
+	if cacheBuster != "" {
+		query = query.Arg("cacheBuster", cacheBuster)
+	}
 	query = query.Select("error")
 	query = query.Select("id")
 

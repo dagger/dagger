@@ -3,6 +3,7 @@ package dagql
 import "context"
 
 type internalKey struct{}
+type cacheBusterKey struct{}
 
 // withInternal returns a new context with the internal flag set.
 //
@@ -40,4 +41,24 @@ func IsSkipped(ctx context.Context) bool {
 		return val.(bool)
 	}
 	return false
+}
+
+// WithCacheBuster returns a new context with the cache-buster value set.
+//
+// Callers can use this to isolate a subtree of dagql execution onto a distinct
+// cache branch without clearing or disabling shared cache entries globally.
+func WithCacheBuster(ctx context.Context, cacheBuster string) context.Context {
+	return context.WithValue(ctx, cacheBusterKey{}, cacheBuster)
+}
+
+// CacheBuster returns the cache-buster value from the context, if any.
+func CacheBuster(ctx context.Context) string {
+	return cacheBusterFromContext(ctx)
+}
+
+func cacheBusterFromContext(ctx context.Context) string {
+	if val := ctx.Value(cacheBusterKey{}); val != nil {
+		return val.(string)
+	}
+	return ""
 }

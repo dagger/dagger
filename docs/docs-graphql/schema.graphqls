@@ -354,7 +354,10 @@ type Check {
   resultEmoji: String!
 
   """Execute the check"""
-  run: Check!
+  run(
+    """Mix this value into cache identity for this run subtree."""
+    cacheBuster: String
+  ): Check!
 }
 
 type CheckGroup {
@@ -368,7 +371,10 @@ type CheckGroup {
   report: File!
 
   """Execute all selected checks"""
-  run: CheckGroup!
+  run(
+    """Mix this value into cache identity for this run subtree."""
+    cacheBuster: String
+  ): CheckGroup!
 }
 
 """
