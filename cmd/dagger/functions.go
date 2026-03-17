@@ -337,18 +337,6 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	// No args to the parent command
 	if cmd == c {
-		// `dagger call` needs a module entrypoint when the workspace root is Query.
-		// Executing the synthetic Query constructor falls through to an invalid `id`
-		// selection, so fail or show help before trying to run it.
-		if !fc.DisableModuleLoad &&
-			fc.mod.MainObject != nil &&
-			fc.mod.MainObject.AsObject != nil &&
-			fc.mod.MainObject.AsObject.Name == "Query" {
-			if cmd.HasAvailableSubCommands() {
-				return fc.Help(cmd)
-			}
-			return errModuleNotFound
-		}
 		return fc.RunE(ctx, fc.mod.MainObject.AsObject.Constructor)(cmd, flags)
 	}
 
