@@ -453,27 +453,13 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
-	// Use a visited set to avoid re-propagating to the same span via
-	// different causal paths. In large traces with shared causal chains,
-	// this reduces O(C*D) to O(C+D).
-	visited := make(map[SpanID]bool)
 	for causal := range span.CausalSpans {
-		if visited[causal.ID] {
-			continue
-		}
-		visited[causal.ID] = true
-
 		// propagate activity and failure, since causal spans inherit both
 		if propagate(causal, true, true) {
 			span.db.update(causal)
 		}
 
 		for parent := range causal.Parents {
-			if visited[parent.ID] {
-				continue
-			}
-			visited[parent.ID] = true
-
 			// don't propagate failure, to respect encapsulation
 			// do propagate activity, since these are indirect parents
 			if propagate(parent, false, true) {
