@@ -140,6 +140,31 @@ func (fe *frontendPretty) refreshSearchMatches() {
 	fe.keymapBar.Update()
 }
 
+// matchRowIndex returns the row index for a search match. If the match's
+// span is visible, its row index is returned directly. If it's hidden
+// (inside a collapsed subtree), the nearest visible ancestor's index is
+// returned. Returns -1 if no ancestor is visible.
+func (fe *frontendPretty) matchRowIndex(m searchMatch) int {
+	if row := fe.rows.BySpan[m.spanID]; row != nil {
+		return row.Index
+	}
+	// Walk up the span tree to find the nearest visible ancestor.
+	for id := m.spanID; id.IsValid(); {
+		span := fe.db.Spans.Map[id]
+		if span == nil {
+			break
+		}
+		if !span.ParentID.IsValid() {
+			break
+		}
+		if row := fe.rows.BySpan[span.ParentID]; row != nil {
+			return row.Index
+		}
+		id = span.ParentID
+	}
+	return -1
+}
+
 // searchFirstForward finds the first match at or after the currently focused
 // span and navigates to it. Matches in collapsed spans are included — they
 // will be revealed when navigated to.
@@ -147,14 +172,9 @@ func (fe *frontendPretty) searchFirstForward() {
 	if len(fe.searchMatches) == 0 {
 		return
 	}
+	curIdx := fe.focusedIndex()
 	for i, m := range fe.searchMatches {
-		row := fe.rows.BySpan[m.spanID]
-		if row != nil && row.Index >= fe.focusedIdx {
-			fe.searchIdx = i
-			fe.goToSearchMatch(i)
-			return
-		}
-		if row == nil {
+		if fe.matchRowIndex(m) >= curIdx {
 			fe.searchIdx = i
 			fe.goToSearchMatch(i)
 			return
@@ -170,15 +190,10 @@ func (fe *frontendPretty) searchFirstBackward() {
 	if len(fe.searchMatches) == 0 {
 		return
 	}
+	curIdx := fe.focusedIndex()
 	for i := len(fe.searchMatches) - 1; i >= 0; i-- {
 		m := fe.searchMatches[i]
-		row := fe.rows.BySpan[m.spanID]
-		if row != nil && row.Index <= fe.focusedIdx {
-			fe.searchIdx = i
-			fe.goToSearchMatch(i)
-			return
-		}
-		if row == nil {
+		if fe.matchRowIndex(m) <= curIdx {
 			fe.searchIdx = i
 			fe.goToSearchMatch(i)
 			return

@@ -260,8 +260,8 @@ type SpanSnapshot struct {
 	Message     string `json:",omitempty"`
 	ContentType string `json:",omitempty"`
 
-	LLMRole          string   `json:",omitempty"`
-	LLMThinking      bool     `json:",omitempty"`
+	LLMRole       string `json:",omitempty"`
+	LLMThinking   bool   `json:",omitempty"`
 	LLMTool       string `json:",omitempty"`
 	LLMToolServer string `json:",omitempty"`
 	LLMCallDigest string `json:",omitempty"`

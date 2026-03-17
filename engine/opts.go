@@ -191,8 +191,8 @@ type GitStageOpts struct {
 	Added    []string `json:"added"`
 	Modified []string `json:"modified"`
 	Removed  []string `json:"removed"`
-	TempDir  string   `json:"temp_dir"`  // path to exported changeset content
-	Force    bool     `json:"force"`     // skip 3-way merge, overwrite working tree
+	TempDir  string   `json:"temp_dir"` // path to exported changeset content
+	Force    bool     `json:"force"`    // skip 3-way merge, overwrite working tree
 }
 
 // GitCommitOpts configures a git commit operation on the client.

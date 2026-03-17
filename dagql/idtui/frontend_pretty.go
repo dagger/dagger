@@ -118,7 +118,6 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
@@ -1519,8 +1518,8 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.topTrees = nil
 		return
 	}
-	if len(fe.rows.Order) < fe.focusedIdx {
-		// durability: everything disappeared?
+	if fe.focusedIndex() < 0 {
+		// durability: focused span disappeared from view
 		fe.autoFocus = true
 	}
 	if fe.autoFocus {
@@ -1923,19 +1922,29 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 	return nil
 }
 
+// focusedIndex returns the current index of the focused span in rows.Order,
+// or -1 if nothing is focused or the span is not in the current row list.
+func (fe *frontendPretty) focusedIndex() int {
+	if !fe.FocusedSpan.IsValid() || fe.rows == nil {
+		return -1
+	}
+	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
+		return row.Index
+	}
+	return -1
+}
+
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	oldSpan := fe.FocusedSpan
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		fe.focusedIdx = -1
 		if !fe.editlineFocused && !fe.searchActive {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		fe.focusedIdx = row.Index
 		if !fe.editlineFocused && !fe.searchActive {
 			if sr, ok := fe.spanTrees[newSpan]; ok {
 				fe.tui.SetFocus(sr)
@@ -2637,8 +2646,11 @@ func (fe *frontendPretty) historyUp() bool {
 		return false
 	}
 	if fe.historyIndex == -1 {
-		// Start browsing: save current input
+		// Start browsing: save current input and mode
 		fe.historySaved = fe.textInput.Value()
+		if fe.shell != nil {
+			fe.shell.SaveBeforeHistory()
+		}
 		fe.historyIndex = len(fe.inputHistory) - 1
 	} else if fe.historyIndex > 0 {
 		fe.historyIndex--
@@ -2658,9 +2670,13 @@ func (fe *frontendPretty) historyDown() bool {
 		fe.historyIndex++
 		fe.setHistoryEntry(fe.historyIndex)
 	} else {
-		// Restore saved input
+		// Restore saved input and mode
 		fe.historyIndex = -1
 		fe.textInput.SetValue(fe.historySaved)
+		if fe.shell != nil {
+			fe.shell.RestoreAfterHistory()
+		}
+		fe.syncPrompt()
 	}
 	return true
 }
@@ -2674,6 +2690,7 @@ func (fe *frontendPretty) setHistoryEntry(idx int) {
 		entry = fe.shell.DecodeHistory(entry)
 	}
 	fe.textInput.SetValue(entry)
+	fe.syncPrompt()
 }
 
 func (fe *frontendPretty) initTextInput() {
@@ -2758,7 +2775,7 @@ func (fe *frontendPretty) goEnd() {
 
 func (fe *frontendPretty) goUp() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx - 1
+	newIdx := fe.focusedIndex() - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
 	}
@@ -2767,7 +2784,7 @@ func (fe *frontendPretty) goUp() {
 
 func (fe *frontendPretty) goDown() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx + 1
+	newIdx := fe.focusedIndex() + 1
 	if newIdx >= len(fe.rows.Order) {
 		// at bottom
 		return
@@ -2786,12 +2803,13 @@ func (fe *frontendPretty) goOut() {
 
 func (fe *frontendPretty) goIn() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx + 1
-	if newIdx >= len(fe.rows.Order) {
+	curIdx := fe.focusedIndex()
+	newIdx := curIdx + 1
+	if curIdx < 0 || newIdx >= len(fe.rows.Order) {
 		// at bottom
 		return
 	}
-	cur := fe.rows.Order[fe.focusedIdx]
+	cur := fe.rows.Order[curIdx]
 	next := fe.rows.Order[newIdx]
 	if next.Depth <= cur.Depth {
 		// has no children
@@ -2878,9 +2896,6 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 	// Rebuild flat rows from existing tree. This is O(visible nodes)
 	// and skips the expensive RowsView rebuild (WalkSpans + ShouldShow).
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
-	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
-		fe.focusedIdx = row.Index
-	}
 	// Sync just the affected subtree's SpanTreeView children.
 	if st, ok := fe.spanTrees[id]; ok {
 		fe.syncTreeNode(st, st.prefix)
@@ -2983,7 +2998,7 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 	} else {
 		fe.renderStepError(out, r, row, prefix)
 	}
-	fe.renderDebug(out, row.Span, prefix+BorderLeft+" ", false)
+	fe.renderDebug(out, row.Span, prefix+Block0250+" ", false)
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {

@@ -302,7 +302,6 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				return nil
 			},
 		},
-
 	}
 }
 

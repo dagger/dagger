@@ -8,11 +8,11 @@ import (
 	"sync"
 	"unicode"
 
+	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
-	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
 )

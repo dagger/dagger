@@ -358,7 +358,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		CacheReads:        sessionCacheReads,
 		CacheWrites:       sessionCacheWrites,
 		TotalCost:         totalCost,
-		ContextPercent:     -1, // unknown by default
+		ContextPercent:    -1, // unknown by default
 		AutoCompact:       s.ShouldAutocompact(),
 	}
 

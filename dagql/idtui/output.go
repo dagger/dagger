@@ -39,7 +39,7 @@ func ColorProfile() termenv.Profile {
 }
 
 var (
-	bgOnce   = &sync.Once{}
+	bgOnce    = &sync.Once{}
 	hasDarkBG bool
 )
 
