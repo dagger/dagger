@@ -17,11 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
