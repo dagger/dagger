@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 )
@@ -61,10 +62,10 @@ var llmConfigCmd = &cobra.Command{
 					if label == "" {
 						label = "OAuth"
 					}
-					fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s: %s\n", name, label)
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s\n", idtui.IconSuccess, name, label)
 				} else {
 					redacted := redactAPIKey(provider.APIKey)
-					fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s: %s\n", name, redacted)
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s\n", idtui.IconSuccess, name, redacted)
 				}
 				if provider.BaseURL != "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "    Base URL: %s\n", provider.BaseURL)
@@ -104,7 +105,7 @@ var llmSetupCmd = &cobra.Command{
 		if aborted {
 			fmt.Fprintln(os.Stderr, "Setup cancelled.")
 		} else if configured {
-			msg := "✓ LLM configuration saved successfully!"
+			msg := idtui.IconSuccess + " LLM configuration saved successfully!"
 			// Show subscription type if OAuth was configured
 			if cfg, err := llmconfig.Load(); err == nil && cfg != nil {
 				for _, p := range cfg.LLM.Providers {
@@ -201,7 +202,7 @@ Supported providers:
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ API key for %s saved successfully!\n", provider)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s API key for %s saved successfully!\n", idtui.IconSuccess, provider)
 		return nil
 	},
 }
@@ -236,7 +237,7 @@ var llmRemoveKeyCmd = &cobra.Command{
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ API key for %s removed.\n", provider)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s API key for %s removed.\n", idtui.IconSuccess, provider)
 		return nil
 	},
 }
@@ -271,9 +272,9 @@ var llmSetDefaultCmd = &cobra.Command{
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "✓ Default provider set to: %s\n", provider)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s Default provider set to: %s\n", idtui.IconSuccess, provider)
 		if len(args) > 1 {
-			fmt.Fprintf(cmd.OutOrStdout(), "✓ Default model set to: %s\n", args[1])
+			fmt.Fprintf(cmd.OutOrStdout(), "%s Default model set to: %s\n", idtui.IconSuccess, args[1])
 		}
 		return nil
 	},
@@ -305,7 +306,7 @@ var llmResetCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "✓ LLM configuration has been reset.")
+		fmt.Fprintln(cmd.OutOrStdout(), idtui.IconSuccess+" LLM configuration has been reset.")
 		return nil
 	},
 }

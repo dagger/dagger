@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/dagql/idtui"
 )
 
 // ErrAborted is returned when the user cancels a setup form (e.g. ctrl+c).
@@ -99,7 +100,7 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		if p, ok := cfg.LLM.Providers[e.configKey]; ok && p.Enabled {
 			// Only show checkmark if the auth type matches this entry.
 			if e.wantOAuth == p.IsOAuth() {
-				label += " \033[1;32m✓ " + providerSummary(p) + "\033[0m"
+				label += " \033[1;32m" + idtui.IconSuccess + " " + providerSummary(p) + "\033[0m"
 			}
 		}
 		opts = append(opts, huh.NewOption(label, e.value))
