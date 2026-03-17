@@ -167,12 +167,14 @@ type OnReleaser interface {
 // lifecycle bookkeeping or persistence.
 //
 // Implementations must:
+//   - use self when they need to rewrite internal references to the attached
+//     owner result itself
 //   - call attach for each embedded child result that should be normalized
 //   - rewrite themselves in place to point at the attached result returned by attach
 //   - return only the subset of attached child results that should become
 //     explicit non-structural cache dependency edges
 type HasOwnedResults interface {
-	AttachOwnedResults(context.Context, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
+	AttachOwnedResults(context.Context, AnyResult, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

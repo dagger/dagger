@@ -509,6 +509,7 @@ func (obj *ModuleObject) SetPersistedResultID(resultID uint64) {
 
 func (obj *ModuleObject) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if obj == nil || len(obj.Fields) == 0 {

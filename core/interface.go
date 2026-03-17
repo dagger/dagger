@@ -657,6 +657,7 @@ func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
 
 func (iface *InterfaceAnnotatedValue) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if iface == nil || len(iface.Fields) == 0 {

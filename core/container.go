@@ -213,6 +213,7 @@ func (container *Container) PreparePersistedObject(ctx context.Context) error {
 
 func (container *Container) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if container == nil {

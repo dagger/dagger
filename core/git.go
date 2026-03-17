@@ -152,6 +152,7 @@ func (repo *GitRepository) PersistedSnapshotRefLinks() []dagql.PersistedSnapshot
 
 func (repo *GitRepository) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if repo == nil {
@@ -232,6 +233,7 @@ func (repo *GitRepository) AttachOwnedResults(
 
 func (ref *GitRef) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if ref == nil || ref.Repo.Self() == nil {

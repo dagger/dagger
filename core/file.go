@@ -116,6 +116,7 @@ func (file *File) PreparePersistedObject(ctx context.Context) error {
 
 func (file *File) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if file == nil || file.Parent.Self() == nil {

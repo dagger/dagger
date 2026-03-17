@@ -56,7 +56,7 @@ func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
 		return attached, nil
 	}
 
-	deps, err := obj.AttachOwnedResults(context.Background(), attach)
+	deps, err := obj.AttachOwnedResults(context.Background(), nil, attach)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, len(deps))
 

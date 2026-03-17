@@ -82,6 +82,7 @@ type cacheTestOwnedDepsInt struct {
 
 func (v *cacheTestOwnedDepsInt) AttachOwnedResults(
 	ctx context.Context,
+	_ AnyResult,
 	attach func(AnyResult) (AnyResult, error),
 ) ([]AnyResult, error) {
 	if v == nil {

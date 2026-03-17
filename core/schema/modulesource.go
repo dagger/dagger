@@ -2851,10 +2851,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-	if typeDefsEnabled && isSelfCallsEnabled(src) {
-		// append module types to the module itself so self calls are possible
-		mod.Deps = mod.Deps.Append(mod)
-	}
+		if typeDefsEnabled && isSelfCallsEnabled(src) {
+			mod.includeSelfInDeps = true
+		}
 
 	// Verify if lazy loading is disabled ; if so, load the runtime eagerly.
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -2862,11 +2861,23 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
-		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, src)
-		if err != nil {
-			return nil, err
-		}
+		if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
+			runtimeDeps := mod.Deps
+			if mod.includeSelfInDeps {
+				// This eager runtime path happens before the final asModule result exists,
+				// so we localize the self-call special case to just this runtime load by
+				// using a temporary attached synthetic self module. The final returned
+				// module gets its real attached self dep later during AttachOwnedResults.
+				selfInst, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "eagerRuntimeSelfDeps", dag)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create temporary self module for eager runtime: %w", err)
+				}
+				runtimeDeps = runtimeDeps.Append(core.NewUserMod(selfInst))
+			}
+			runtime, err := runtimeImpl.Runtime(ctx, runtimeDeps, src)
+			if err != nil {
+				return nil, err
+			}
 		mod.Runtime = dagql.NonNull(runtime)
 
 		// Force load the runtime to fill the cache
@@ -3543,9 +3554,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod, err = s.runModuleDefInSDK(ctx, mod)
 		if err != nil {
 			return inst, err
-		}
-		if _, ok := src.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(src) {
-			mod.Deps = mod.Deps.Append(mod)
 		}
 	} else if len(originalSrc.Self().Toolchains) == 0 {
 		// No SDK, no toolchains, and no blueprint - create stub module

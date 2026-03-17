@@ -223,6 +223,7 @@ func (mod *Module) Sync(ctx context.Context) error {
 
 func (mod *Module) AttachOwnedResults(
 	ctx context.Context,
+	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if mod == nil {
@@ -298,6 +299,39 @@ func (mod *Module) AttachOwnedResults(
 			}
 			mod.Deps.mods[i] = NewUserMod(attachedInst)
 			owned = append(owned, attachedRes)
+		}
+	}
+	if mod.includeSelfInDeps {
+		if mod.Deps == nil {
+			return nil, fmt.Errorf("attach module self dependency: missing module deps")
+		}
+		attachedSelf, ok := self.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach module self dependency: expected attached module result, got %T", self)
+		}
+		attachedSelfID, err := attachedSelf.ID()
+		if err != nil {
+			return nil, fmt.Errorf("attach module self dependency: self ID: %w", err)
+		}
+		seenSelf := false
+		for i, dep := range mod.Deps.mods {
+			depInst := dep.ModuleResult()
+			if depInst.Self() == nil {
+				continue
+			}
+			depID, err := depInst.ID()
+			if err != nil {
+				return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.Name(), err)
+			}
+			if depID == nil || depID.Digest() != attachedSelfID.Digest() {
+				continue
+			}
+			mod.Deps.mods[i] = NewUserMod(attachedSelf)
+			seenSelf = true
+			break
+		}
+		if !seenSelf {
+			mod.Deps = mod.Deps.Append(NewUserMod(attachedSelf))
 		}
 	}
 	if mod.Toolchains != nil {
@@ -378,6 +412,9 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		for _, dep := range mod.Deps.Mods() {
 			depInst := dep.ModuleResult()
 			if depInst.Self() == nil {
+				continue
+			}
+			if mod.includeSelfInDeps && depInst.Self() == mod {
 				continue
 			}
 			if depInst.Self().PersistedResultID() == 0 {

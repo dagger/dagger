@@ -1800,7 +1800,16 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 	if !ok {
 		return nil
 	}
-	deps, err := withOwned.AttachOwnedResults(ctx, func(child AnyResult) (AnyResult, error) {
+	self := Result[Typed]{shared: parent}
+	var attachedSelf AnyResult = self
+	if parent.hasValue && parent.objType != nil {
+		objSelf, err := parent.objType.New(self)
+		if err != nil {
+			return fmt.Errorf("attach owned results: reconstruct attached self: %w", err)
+		}
+		attachedSelf = objSelf
+	}
+	deps, err := withOwned.AttachOwnedResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
 		return c.AttachResult(ctx, child)
 	})
 	if err != nil {

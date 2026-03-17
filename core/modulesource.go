@@ -287,6 +287,7 @@ func (src *ModuleSource) Sync(ctx context.Context) error {
 
 func (src *ModuleSource) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if src == nil {

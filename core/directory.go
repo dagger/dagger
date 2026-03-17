@@ -127,6 +127,7 @@ func (dir *Directory) PreparePersistedObject(ctx context.Context) error {
 
 func (dir *Directory) AttachOwnedResults(
 	ctx context.Context,
+	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if dir == nil || dir.Parent.Self() == nil {
