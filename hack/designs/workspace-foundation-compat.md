@@ -2494,6 +2494,122 @@ Verification after the explicit `-m` follow-up:
   - result: all retained workspace entrypoint tests still pass after the
     explicit `-m` engine change
 
+### 2026-03-17: Drop The Local CLI Repair Layer, Keep The Engine Fix
+
+Reread the authoritative design text in:
+
+- `workspace` PR [#11812](https://github.com/dagger/dagger/pull/11812)
+- `workspace-plumbing` PR [#11995](https://github.com/dagger/dagger/pull/11995)
+
+Important design restatement:
+
+- the engine owns workspace binding and entrypoint projection onto `Query`
+- clients are supposed to consume the real introspected schema
+- `Workspace.defaultModule` and CLI-side prefixing are temporary workarounds,
+  not the target contract
+- PR A (`workspace-plumbing`) should not keep adding new client-specific
+  root-entrypoint repair logic on top of the schema-level design
+
+What had happened locally after the Query-root entrypoint cherry-pick:
+
+- `2cc7e4573` added `rewriteQueryRootConstructorArgs` in
+  `cmd/dagger/functions.go`
+  - this rewrote user argv so constructor flags could stay in the old
+    pre-Query-root order
+- `a3ed6cb14` added an explicit-`-m` focused-`Query` projection in
+  `cmd/dagger/module_inspect.go` and `cmd/dagger/mcp.go`
+  - this resolved the selected module plus related blueprint/toolchain names,
+    then synthesized a filtered `Query` view client-side
+- `0fad6e504` added one more fallback on top of that synthetic view when no
+  proxied methods survived filtering
+
+Why that local layer was wrong:
+
+- it made `workspace-plumbing` diverge from the schema-first design instead of
+  converging toward it
+- it created a second client-side contract for explicit `-m`
+  - synthetic `Query` roots
+  - constructor-flag argv rewriting
+  - extra CLI-only fallback behavior
+- that is exactly the class of workaround the ledger already said not to keep
+  investing in after the upstream entrypoint-module cherry-pick
+
+What is retained from the explicit `-m` follow-up:
+
+- keep the engine-side part in `engine/server/session.go`
+  - explicit `-m` still loads through `ExtraModules`
+  - the engine still resolves and serves the selected module's related
+    blueprint/toolchain modules, so the real Query root contains the visible
+    entrypoint methods that wrapper apps depend on
+- this retained engine behavior is required by the design
+  - wrapper-app related modules live on `ModuleSource.Blueprint` and
+    `ModuleSource.Toolchains`, not only in `Deps`
+  - without serving them, the real schema would still be incomplete
+
+What is removed now:
+
+- `cmd/dagger/module_inspect.go`
+  - `initializeWorkspace` no longer special-cases explicit `-m`
+  - it now always introspects the real Query root from the engine
+- `cmd/dagger/functions.go`
+  - removed `rewriteQueryRootConstructorArgs`
+  - removed the synthetic-Query root special-case in `execute`
+- `cmd/dagger/mcp.go`
+  - removed `focusRootModuleFunctions`
+  - kept only the older module-object fallback helpers already inherited from
+    `workspace`
+- dropped the branch-only helper tests that only existed to lock in the local
+  repair layer
+
+Behavioral consequence of this cleanup:
+
+- explicit `-m` now follows the real schema again
+- if a user wants constructor args for a namespaced module constructor, those
+  args belong after the constructor token, not before it
+- no CLI-side argv surgery remains to emulate the pre-Query-root call shape
+- Query-root entrypoint methods from related blueprint/toolchain modules remain
+  available because the engine-side related-module serving fix stays in place
+
+Scope note:
+
+- this cleanup only removes the extra local repair layer added on
+  `workspace-plumbing`
+- some older temporary client-side workarounds still exist upstream on
+  `workspace` itself, for example:
+  - top-level `functions` / help filtering on Query-root ownership metadata
+  - `mcp` fallback to `CurrentWorkspace().DefaultModule()` / auto-alias
+- do not treat those inherited workarounds as justification to restore the
+  removed local shims here
+- use this checkpoint later when cleaning `workspace` itself
+
+Supersession note:
+
+- the earlier "explicit `-m` follow-up" ledger entry above remains historically
+  useful for the engine-side diagnosis and retained `engine/server/session.go`
+  fix
+- its CLI-side focused-Query repair description is now superseded by this entry
+  and should not be reintroduced during rebase or later cleanup
+
+Verification after this cleanup:
+
+- `env GOCACHE=/tmp/go-build GOOS=linux GOARCH=amd64 go test -c ./cmd/dagger`
+  - result: passes
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestUserDefaults/(TestLocalBlueprint|TestLocalToolchain)' --test-verbose`
+  - trace: `https://dagger.cloud/dagger/traces/0db4655ed4a108a6943ab65d7bffc35e`
+  - result: inconclusive locally
+  - the outer harness progressed through module load and into
+    `EngineDev.test(...)`, then stopped surfacing attributable output within the
+    local validation window
+- `dagger --progress=plain call -m ./toolchains/engine-dev test --pkg=./core/integration --run='TestWorkspace/(TestBlueprintFunctionsIncludesOtherModules|TestEntrypointProxySkipsRootFieldConflicts|TestEntrypointProxySkipsConstructorArgConflicts)' --test-verbose`
+  - trace: `https://dagger.cloud/dagger/traces/6dcc985ce2da8db25f7a2fc61fe2945b`
+  - result: inconclusive locally for the same reason
+- interpretation:
+  - the cleanup is compile-validated
+  - the retained explicit-`-m` engine fix still has the earlier historical pass
+    evidence recorded above
+  - this new pass did not obtain fresh attributable integration output from the
+    direct `EngineDev.test(...)` surface, so do not overstate it as a rerun pass
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
