@@ -3,8 +3,7 @@ package idtui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 	"github.com/vito/tuist"
 )
 
@@ -13,13 +12,12 @@ import (
 // Long error messages are word-wrapped to fit the available width.
 type ErrorLabel struct {
 	tuist.Compo
-	err     error
-	profile termenv.Profile
+	err error
 }
 
 // NewErrorLabel creates a new ErrorLabel.
-func NewErrorLabel(profile termenv.Profile) *ErrorLabel {
-	return &ErrorLabel{profile: profile}
+func NewErrorLabel() *ErrorLabel {
+	return &ErrorLabel{}
 }
 
 // SetError sets the error to display. Pass nil to clear it.
@@ -33,7 +31,7 @@ func (e *ErrorLabel) Render(ctx tuist.Context) tuist.RenderResult {
 		return tuist.RenderResult{}
 	}
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.ANSIColor(termenv.ANSIRed)).
+		Foreground(lipgloss.Red).
 		Width(ctx.Width)
 	rendered := style.Render("Error: " + e.err.Error())
 	return tuist.RenderResult{
