@@ -30,53 +30,44 @@ func TestCall(t *testing.T) {
 func (CallSuite) TestHelp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := modInit(t, c, "go", `package main
+	modGen := goGitBase(t, c).
+		With(initStandaloneDangModule("test", `
+type Test {
+  pub source: Directory!
 
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
+  pub ctr: Container! {
+    container
+      .from("`+alpineImage+`")
+      .withDirectory("/src", source)
+  }
 
-func New(source *dagger.Directory) *Test {
-	return &Test{
-		Source: source,
-	}
+  pub conflict(mod: Module!): String! {
+    mod.name
+  }
 }
-
-type Test struct {
-	Source *dagger.Directory
-}
-
-func (m *Test) Container() *dagger.Container {
-	return dag.
-		Container().
-		From("`+alpineImage+`").
-		WithDirectory("/src", m.Source)
-}
-
-func (m *Test) Conflict(ctx context.Context, mod *dagger.Module) (string, error) {
-	return mod.Name(ctx)
-}
-`,
-	)
+`))
 
 	t.Run("no required arg validation", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("container", "--help")).Stdout(ctx)
+		out, err := modGen.With(daggerCall("test", "ctr", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
-		require.Contains(t, out, "dagger call container <function>")
+		require.Contains(t, out, "dagger call test ctr <function>")
 	})
 
 	t.Run("globally parsed", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("container", "--help", "directory")).Stdout(ctx)
+		out, err := modGen.With(daggerCall("test", "ctr", "--help", "directory")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
-		require.Contains(t, out, "dagger call container directory [arguments] <function>")
+		require.Contains(t, out, "dagger call test ctr directory [arguments] <function>")
 	})
 
-	t.Run("flag conflict", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerCall("conflict", "--help")).Sync(ctx)
-		requireErrOut(t, err, "flag already exists: mod")
+	t.Run("no flag conflict via namespace", func(ctx context.Context, t *testctx.T) {
+		// When accessed via the constructor namespace (test conflict),
+		// the --mod function arg doesn't collide with the global --mod
+		// flag since they're on different command levels.
+		out, err := modGen.With(daggerCall("test", "conflict", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "--mod")
 	})
 }
 
@@ -1464,28 +1455,18 @@ func (CallSuite) TestReturnTypes(ctx context.Context, t *testctx.T) {
 	t.Run("return list objects", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-			WithNewFile("main.go", `package main
-type Minimal struct {}
-
-type Foo struct {
-	Bar int `+"`"+`json:"bar"`+"`"+`
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("minimal", `
+type Minimal {
+  pub fn: [MinimalFoo!]! {
+    [MinimalFoo(bar: 0), MinimalFoo(bar: 1), MinimalFoo(bar: 2)]
+  }
 }
 
-func (m *Minimal) Fn() []*Foo {
-	var foos []*Foo
-	for i := 0; i < 3; i++ {
-		foos = append(foos, &Foo{Bar: i})
-	}
-	return foos
+type MinimalFoo {
+  pub bar: Int!
 }
-`,
-			)
-
-		logGen(ctx, t, modGen.Directory("."))
+`))
 		expected := "0\n1\n2\n"
 		expectedJSON := `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`
 
@@ -1522,34 +1503,23 @@ func (m *Minimal) Fn() []*Foo {
 	t.Run("return container", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", fmt.Sprintf(`package main
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub ctr: Container! {
+    container
+      .from("`+alpineImage+`")
+      .withDefaultArgs(["echo", "hello"])
+      .withExec([])
+  }
 
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {}
-
-func (m *Test) Ctr() *dagger.Container {
-    return dag.Container().
-        From("%[1]s").
-        WithDefaultArgs([]string{"echo", "hello"}).
-        WithExec([]string{})
+  pub fail: Container! {
+    container
+      .from("`+alpineImage+`")
+      .withExec(["sh", "-c", "echo goodbye; exit 127"])
+  }
 }
-
-func (m *Test) Fail() *dagger.Container {
-    return dag.Container().
-        From("%[1]s").
-        WithExec([]string{"sh", "-c", "echo goodbye; exit 127"})
-}
-`, alpineImage),
-			)
-
-		logGen(ctx, t, modGen.Directory("."))
+`))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
@@ -1578,29 +1548,16 @@ func (m *Test) Fail() *dagger.Container {
 	t.Run("return directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{
-		Dir: dag.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar"),
-	}
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub dir: Directory! {
+    directory
+      .withNewFile("foo.txt", "foo")
+      .withNewFile("bar.txt", "bar")
+  }
 }
-
-type Test struct {
-	Dir *dagger.Directory
-}
-`,
-			)
-
-		logGen(ctx, t, modGen.Directory("."))
+`))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
@@ -1629,39 +1586,24 @@ type Test struct {
 	t.Run("return file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{
-		File: dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
-	}
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub file: File! {
+    directory.withNewFile("foo.txt", "foo").file("foo.txt")
+  }
 }
-
-type Test struct {
-	File *dagger.File
-}
-`,
-			)
-
-		logGen(ctx, t, modGen.Directory("."))
+`))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("file")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("test", "file")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Regexp(t, `File@xxh3:[a-f0-9]{16}`, out)
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
-				With(daggerCall("file", "-o", "./outfile")).
+				With(daggerCall("test", "file", "-o", "./outfile")).
 				File("./outfile").
 				Contents(ctx)
 			require.NoError(t, err)
@@ -1672,34 +1614,26 @@ type Test struct {
 	t.Run("return secret", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := modInit(t, c, "go", `package main
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub getSecret: Secret! {
+    setSecret("foo", "bar")
+  }
 
-import (
-	"dagger/test/internal/dagger"
-)
+  pub getSecret2: Secret! {
+    setSecret("fizz", "buzz")
+  }
 
-type Test struct{}
-
-func (*Test) Secret() *dagger.Secret {
-    return dag.SetSecret("foo", "bar")
+  pub secrets: [Secret!]! {
+    [getSecret, getSecret2]
+  }
 }
-
-func (*Test) Secret2() *dagger.Secret {
-    return dag.SetSecret("fizz", "buzz")
-}
-
-func (m *Test) Secrets() []*dagger.Secret {
-    return []*dagger.Secret{
-        m.Secret(),
-        m.Secret2(),
-    }
-}
-`,
-		)
+`))
 
 		t.Run("single", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
-				With(daggerCall("secret")).
+				With(daggerCall("test", "get-secret")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -1708,7 +1642,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 
 		t.Run("multiple", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
-				With(daggerCall("secrets")).
+				With(daggerCall("test", "secrets")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -1719,25 +1653,14 @@ func (m *Test) Secrets() []*dagger.Secret {
 	t.Run("sync", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", fmt.Sprintf(`package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub ctr: Container! {
+    container.from("`+alpineImage+`").withExec(["echo", "hello", "world"])
+  }
 }
-
-type Test struct {
-	Ctr *dagger.Container
-}
-`, alpineImage),
-			)
+`))
 
 		// adding sync disables the default behavior of **not** printing the ID
 		// just verify it works without error for now
@@ -1750,25 +1673,14 @@ func (CallSuite) TestCoreChaining(ctx context.Context, t *testctx.T) {
 	t.Run("container", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", fmt.Sprintf(`package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{Ctr: dag.Container().From("%s")}
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub ctr: Container! {
+    container.from("`+alpineImage+`")
+  }
 }
-
-type Test struct {
-	Ctr *dagger.Container
-}
-`, alpineImage),
-			)
+`))
 
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
@@ -1788,27 +1700,16 @@ type Test struct {
 	t.Run("directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{
-		Dir: dag.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar"),
-	}
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub dir: Directory! {
+    directory
+      .withNewFile("foo.txt", "foo")
+      .withNewFile("bar.txt", "bar")
+  }
 }
-
-type Test struct {
-	Dir *dagger.Directory
-}
-`,
-			)
+`))
 
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("dir", "file", "--path=foo.txt", "contents")).Stdout(ctx)
@@ -1828,36 +1729,23 @@ type Test struct {
 	t.Run("return file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{
-		File: dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
-	}
+		modGen := goGitBase(t, c).
+			With(initStandaloneDangModule("test", `
+type Test {
+  pub file: File! {
+    directory.withNewFile("foo.txt", "foo").file("foo.txt")
+  }
 }
-
-type Test struct {
-	File *dagger.File
-}
-`,
-			)
+`))
 
 		t.Run("size", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("file", "size")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("test", "file", "size")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "3", out)
 		})
 
 		t.Run("export", func(ctx context.Context, t *testctx.T) {
-			modGen, err := modGen.With(daggerCall("file", "export", "--path=./outfile")).Sync(ctx)
+			modGen, err := modGen.With(daggerCall("test", "file", "export", "--path=./outfile")).Sync(ctx)
 			require.NoError(t, err)
 			contents, err := modGen.File("./outfile").Contents(ctx)
 			require.NoError(t, err)
@@ -1869,45 +1757,34 @@ type Test struct {
 func (CallSuite) TestReturnObject(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := modInit(t, c, "go", `package main
+	modGen := goGitBase(t, c).
+		With(initStandaloneDangModule("test", `
+type Test {
+  let baseImage: String! = "`+alpineImage+`"
 
-import (
-	"dagger/test/internal/dagger"
-)
+  pub foo: TestFoo! {
+    TestFoo(ctr: container.from(baseImage))
+  }
 
-func New() *Test {
-    return &Test{
-        BaseImage: "`+alpineImage+`",
-    }
+  pub files: [File!]! {
+    [
+      directory.withNewFile("foo.txt", "foo").file("foo.txt"),
+      directory.withNewFile("bar.txt", "bar").file("bar.txt")
+    ]
+  }
+
+  pub deploy: String! {
+    "here be dragons!"
+  }
 }
 
-type Test struct {
-    BaseImage string
+type TestFoo {
+  pub ctr: Container!
 }
-
-func (t *Test) Foo() *Foo {
-    return &Foo{Ctr: dag.Container().From(t.BaseImage)}
-}
-
-func (t *Test) Files() []*dagger.File {
-    return []*dagger.File{
-        dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
-        dag.Directory().WithNewFile("bar.txt", "bar").File("bar.txt"),
-    }
-}
-
-func (*Test) Deploy() string {
-    return "here be dragons!"
-}
-
-type Foo struct {
-    Ctr *dagger.Container
-}
-`,
-	)
+`))
 
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall()).Stdout(ctx)
+		out, err := modGen.With(daggerCall("test")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Regexp(t, `Test@xxh3:[a-f0-9]{16}`, out)
 	})
@@ -1930,30 +1807,18 @@ func (CallSuite) TestSaveOutput(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
+	modGen := goGitBase(t, c).
+		With(initStandaloneDangModule("test", `
+type Test {
+  pub hello: String! {
+    "hello"
+  }
 
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {
+  pub file: File! {
+    directory.withNewFile("foo.txt", "foo").file("foo.txt")
+  }
 }
-
-func (t *Test) Hello() string {
-    return "hello"
-}
-
-func (t *Test) File() *dagger.File {
-    return dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt")
-}
-`,
-		)
-
-	logGen(ctx, t, modGen.Directory("."))
+`))
 
 	t.Run("truncate file", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
@@ -1972,7 +1837,7 @@ func (t *Test) File() *dagger.File {
 
 	t.Run("allow dir for file", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			With(daggerCall("file", "-o", ".")).
+			With(daggerCall("test", "file", "-o", ".")).
 			File("foo.txt").
 			Contents(ctx)
 		require.NoError(t, err)
