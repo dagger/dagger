@@ -441,6 +441,109 @@ type StageTest {
 		"hello.txt should have the expected content")
 }
 
+// TestWorkspaceStageMultipleEdits verifies that staging multiple sequential
+// edits to the same file preserves all changes in the git index. This
+// reproduces a bug where the second edit would overwrite the first edit's
+// staging — the working tree had both edits, but only the second was staged.
+func (LLMSuite) TestWorkspaceStageMultipleEdits(ctx context.Context, t *testctx.T) {
+	configPath := llmconfig.ConfigFile
+	if !llmconfig.LLMConfigured() {
+		t.Skip("no LLM config found; pass --config-file to engine-dev test")
+	}
+	c := connect(ctx, t, dagger.WithConfigPath(configPath))
+
+	base := workspaceBase(t, c).
+		WithNewFile("target.txt", "line 1\nline 2\nline 3\n").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init"}).
+		With(initDangModule("multi-edit-test", `
+type MultiEditTest {
+  """
+  Run an LLM session that edits a file twice: once at the start, once at the end.
+  """
+  pub run(source: Workspace!): LLM! {
+    llm
+      .withEnv(env.withCurrentModule.withWorkspace(source))
+      .withPrompt(
+        "Edit the file target.txt twice using the MultiEditTest edit tool:\n" +
+        "1. First, replace 'line 1' with 'HEADER\nline 1'\n" +
+        "2. Then, replace 'line 3' with 'line 3\nFOOTER'\n" +
+        "Make exactly two separate edit tool calls. Do not use any other tool.",
+      )
+      .loop
+  }
+
+  """
+  Edit a file by replacing exact text.
+  """
+  pub edit(
+    source: Workspace!,
+    """
+    Relative path within the workspace
+    """
+    filePath: String!,
+    """
+    Exact text to find
+    """
+    oldText: String!,
+    """
+    Replacement text
+    """
+    newText: String!,
+  ): Changeset! {
+    let normalizedPath = filePath
+    let base = source.directory(".", include: [normalizedPath])
+    let changes = base
+      .withFile(
+        normalizedPath,
+        source
+          .file(normalizedPath)
+          .withReplaced(oldText, newText),
+      )
+      .changes(base)
+    source.stage(changes)
+    changes
+  }
+}
+`)).
+		WithMountedSecret("/root/.config/dagger/config.toml",
+			c.Secret("file://"+configPath))
+
+	result := base.With(daggerCall("multi-edit-test", "run", "last-reply"))
+
+	// The LLM should have completed and returned a reply.
+	reply, err := result.Stdout(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(reply), "LLM should have replied")
+
+	// The file should have both edits on disk.
+	fileOut, err := result.
+		WithExec([]string{"cat", "target.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, fileOut, "HEADER", "working tree should contain the first edit")
+	require.Contains(t, fileOut, "FOOTER", "working tree should contain the second edit")
+
+	// Both edits should be staged (in the index). Use "git diff --cached"
+	// to see what's staged relative to HEAD.
+	diffOut, err := result.
+		WithExec([]string{"git", "diff", "--cached", "target.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, diffOut, "HEADER",
+		"first edit (HEADER) should be staged in the index")
+	require.Contains(t, diffOut, "FOOTER",
+		"second edit (FOOTER) should be staged in the index")
+
+	// There should be no unstaged changes — working tree should match the index.
+	unstagedDiff, err := result.
+		WithExec([]string{"git", "diff", "target.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Empty(t, strings.TrimSpace(unstagedDiff),
+		"there should be no unstaged changes — both edits should be fully staged")
+}
+
 // TestWorkspaceCommit verifies that an LLM tool can create a file, stage the
 // changeset, and commit it to the current branch. The module's run method
 // orchestrates the LLM, whose write tool returns a Changeset. The LLM loop

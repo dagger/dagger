@@ -188,7 +188,7 @@ type workspaceDirectoryArgs struct {
 }
 
 func (workspaceDirectoryArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
+	return dagql.CacheTypePerCall
 }
 
 func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -255,7 +255,7 @@ type workspaceFileArgs struct {
 }
 
 func (workspaceFileArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
+	return dagql.CacheTypePerCall
 }
 
 func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFileArgs) (inst dagql.Result[*core.File], _ error) {
@@ -306,7 +306,7 @@ type workspaceSearchArgs struct {
 }
 
 func (workspaceSearchArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
+	return dagql.CacheTypePerCall
 }
 
 func (s *workspaceSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceSearchArgs) (dagql.Array[*core.SearchResult], error) {
@@ -383,7 +383,7 @@ type workspaceGlobArgs struct {
 }
 
 func (workspaceGlobArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
+	return dagql.CacheTypePerCall
 }
 
 func (s *workspaceSchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceGlobArgs) (dagql.Array[dagql.String], error) {
@@ -418,7 +418,7 @@ type workspaceExistsArgs struct {
 }
 
 func (workspaceExistsArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
+	return dagql.CacheTypePerCall
 }
 
 func (s *workspaceSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceExistsArgs) (dagql.Boolean, error) {
@@ -479,7 +479,7 @@ type workspaceFindUpArgs struct {
 }
 
 func (workspaceFindUpArgs) CacheType() dagql.CacheControlType {
-	return dagql.CacheTypePerClient
+	return dagql.CacheTypePerCall
 }
 
 func (s *workspaceSchema) findUp(ctx context.Context, parent dagql.ObjectResult[*core.Workspace], args workspaceFindUpArgs) (dagql.Nullable[dagql.String], error) {
