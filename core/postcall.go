@@ -21,10 +21,41 @@ func ResourceTransferPostCall(
 	sourceClientID string,
 	ids ...*resource.ID,
 ) (func(context.Context) error, bool, error) {
+	// Ensure any handle-form IDs are normalized against the source client's dag/cache
+	// before we try to walk them for nested resource references.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get source client metadata: %w", err)
+	}
+	srcClientCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  sourceClientID,
+		SessionID: clientMetadata.SessionID,
+	})
+
+	srcSecretStore, err := query.Secrets(srcClientCtx)
+	if err != nil {
+		// If we can't find the source client, we must have called a function that is persistently cached
+		// *on the buildkit cache* (as opposed to dagql cache). Currently this is just internal SDK calls
+		// like ModuleRuntime. In this case, the only secrets involved are any related to pulling the module
+		// source (like a git auth token). These secrets are already known by the caller and the secret transfer
+		// is thus not needed.
+		return nil, false, nil //nolint:nilerr
+	}
+	srcSocketStore, err := query.Sockets(srcClientCtx)
+	if err != nil {
+		// see rationale above for secrets lookup; socket transfer can be skipped for
+		// this same source-client-missing case.
+		return nil, false, nil //nolint:nilerr
+	}
+	srcDag, err := query.Server.Server(srcClientCtx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get source client dagql server: %w", err)
+	}
+
 	secretsByDgst := map[digest.Digest]dagql.ID[*Secret]{}
 	socketsByDgst := map[digest.Digest]dagql.ID[*Socket]{}
 	for _, id := range ids {
-		walked, err := dagql.WalkID(id.ID, false)
+		walked, err := dagql.WalkID(srcClientCtx, srcDag, id.ID, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to walk ID: %w", err)
 		}
@@ -64,36 +95,6 @@ func ResourceTransferPostCall(
 	var socketIDs []dagql.ID[*Socket]
 	for _, dgst := range slices.Sorted(maps.Keys(socketsByDgst)) {
 		socketIDs = append(socketIDs, socketsByDgst[dgst])
-	}
-
-	// ensure that when we load secrets, we are doing so from the source client
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get source client metadata: %w", err)
-	}
-	srcClientCtx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
-		ClientID:  sourceClientID,
-		SessionID: clientMetadata.SessionID,
-	})
-
-	srcSecretStore, err := query.Secrets(srcClientCtx)
-	if err != nil {
-		// If we can't find the source client, we must have called a function that is persistently cached
-		// *on the buildkit cache* (as opposed to dagql cache). Currently this is just internal SDK calls
-		// like ModuleRuntime. In this case, the only secrets involved are any related to pulling the module
-		// source (like a git auth token). These secrets are already known by the caller and the secret transfer
-		// is thus not needed.
-		return nil, false, nil //nolint:nilerr
-	}
-	srcSocketStore, err := query.Sockets(srcClientCtx)
-	if err != nil {
-		// see rationale above for secrets lookup; socket transfer can be skipped for
-		// this same source-client-missing case.
-		return nil, false, nil //nolint:nilerr
-	}
-	srcDag, err := query.Server.Server(srcClientCtx)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get source client dagql server: %w", err)
 	}
 
 	secrets, err := dagql.LoadIDResults(srcClientCtx, srcDag, secretIDs)

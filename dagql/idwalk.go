@@ -1,14 +1,19 @@
 package dagql
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 )
 
-func WalkID(id *call.ID, skipTopLevel bool) (*IDWalker, error) {
+func WalkID(ctx context.Context, srv *Server, id *call.ID, skipTopLevel bool) (*IDWalker, error) {
 	idWalker := &IDWalker{
 		typeNameToIDs: map[string][]*call.ID{},
 		memo:          map[digest.Digest]struct{}{},
+		ctx:           ctx,
+		srv:           srv,
 	}
 	if err := idWalker.walkID(id, skipTopLevel); err != nil {
 		return nil, err
@@ -19,6 +24,8 @@ func WalkID(id *call.ID, skipTopLevel bool) (*IDWalker, error) {
 type IDWalker struct {
 	typeNameToIDs map[string][]*call.ID
 	memo          map[digest.Digest]struct{}
+	ctx           context.Context
+	srv           *Server
 }
 
 func WalkedIDs[T Typed](idWalker *IDWalker) []ID[T] {
@@ -35,6 +42,15 @@ func WalkedIDs[T Typed](idWalker *IDWalker) []ID[T] {
 }
 
 func (idWalker *IDWalker) walkID(id *call.ID, skipCurrent bool) error {
+	var err error
+	id, err = idWalker.normalizeID(id)
+	if err != nil {
+		return err
+	}
+	if id == nil {
+		return nil
+	}
+
 	dgst := id.Digest()
 	if _, ok := idWalker.memo[dgst]; ok {
 		return nil
@@ -60,6 +76,25 @@ func (idWalker *IDWalker) walkID(id *call.ID, skipCurrent bool) error {
 	}
 
 	return nil
+}
+
+func (idWalker *IDWalker) normalizeID(id *call.ID) (*call.ID, error) {
+	if id == nil || !id.IsHandle() {
+		return id, nil
+	}
+	if idWalker.srv == nil {
+		return nil, fmt.Errorf("walk handle-form ID: dagql server required")
+	}
+
+	res, err := idWalker.srv.LoadType(idWalker.ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("load handle-form ID: %w", err)
+	}
+	recipeID, err := res.RecipeID()
+	if err != nil {
+		return nil, fmt.Errorf("rebuild recipe ID from handle-form ID: %w", err)
+	}
+	return recipeID, nil
 }
 
 func (idWalker *IDWalker) walkLiteral(lit call.Literal) error {

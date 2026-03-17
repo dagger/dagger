@@ -21,61 +21,14 @@ func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID
 }
 
 func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
-	walked, err := dagql.WalkID(id.ID, skipTopLevel)
-	if err != nil {
-		return fmt.Errorf("failed to walk ID: %w", err)
-	}
-
-	secretIDs := dagql.WalkedIDs[*core.Secret](walked)
-	socketIDs := dagql.WalkedIDs[*core.Socket](walked)
-
-	// Filter out resources that this client already knows about. If the source client
-	// is unavailable (e.g. cache skipped execution and source caller disconnected), we
-	// can safely skip transfer for already-known resources.
-	var filteredSecretIDs []dagql.ID[*core.Secret]
-	for _, secretID := range secretIDs {
-		id, err := secretID.ID()
-		if err != nil {
-			return fmt.Errorf("failed to get secret ID: %w", err)
-		}
-		secretDigest, err := core.SecretIDDigest(id)
-		if err != nil {
-			return fmt.Errorf("failed to get secret digest: %w", err)
-		}
-		if ok := destClient.secretStore.HasSecret(secretDigest); !ok {
-			filteredSecretIDs = append(filteredSecretIDs, secretID)
-		}
-	}
-	secretIDs = filteredSecretIDs
-
-	var filteredSocketIDs []dagql.ID[*core.Socket]
-	for _, socketID := range socketIDs {
-		id, err := socketID.ID()
-		if err != nil {
-			return fmt.Errorf("failed to get socket ID: %w", err)
-		}
-		socketDigest, err := core.SocketIDDigest(id)
-		if err != nil {
-			return fmt.Errorf("failed to get socket digest: %w", err)
-		}
-		if ok := destClient.socketStore.HasSocket(socketDigest); !ok {
-			filteredSocketIDs = append(filteredSocketIDs, socketID)
-		}
-	}
-	socketIDs = filteredSocketIDs
-
 	srcClient, err := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
 	if err != nil {
-		if len(secretIDs) > 0 || len(socketIDs) > 0 {
-			slog.Warn("skipping client resource transfer; source client unavailable",
-				"err", err,
-				"destClientID", destClient.clientID,
-				"sourceClientID", sourceClientID,
-				"numUnknownSecretIDs", len(secretIDs),
-				"numUnknownSocketIDs", len(socketIDs),
-				"idOptional", id.Optional,
-			)
-		}
+		slog.Warn("skipping client resource transfer; source client unavailable",
+			"err", err,
+			"destClientID", destClient.clientID,
+			"sourceClientID", sourceClientID,
+			"idOptional", id.Optional,
+		)
 		return nil
 	}
 
@@ -92,6 +45,49 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}
+
+	walked, err := dagql.WalkID(srcClientCtx, srcDag, id.ID, skipTopLevel)
+	if err != nil {
+		return fmt.Errorf("failed to walk ID: %w", err)
+	}
+
+	secretIDs := dagql.WalkedIDs[*core.Secret](walked)
+	socketIDs := dagql.WalkedIDs[*core.Socket](walked)
+
+	// Filter out resources that this client already knows about. If the source client
+	// is unavailable (e.g. cache skipped execution and source caller disconnected), we
+	// can safely skip transfer for already-known resources.
+	var filteredSecretIDs []dagql.ID[*core.Secret]
+	for _, secretID := range secretIDs {
+		secretIDCall, err := secretID.ID()
+		if err != nil {
+			return fmt.Errorf("failed to get secret ID: %w", err)
+		}
+		secretDigest, err := core.SecretIDDigest(secretIDCall)
+		if err != nil {
+			return fmt.Errorf("failed to get secret digest: %w", err)
+		}
+		if ok := destClient.secretStore.HasSecret(secretDigest); !ok {
+			filteredSecretIDs = append(filteredSecretIDs, secretID)
+		}
+	}
+	secretIDs = filteredSecretIDs
+
+	var filteredSocketIDs []dagql.ID[*core.Socket]
+	for _, socketID := range socketIDs {
+		socketIDCall, err := socketID.ID()
+		if err != nil {
+			return fmt.Errorf("failed to get socket ID: %w", err)
+		}
+		socketDigest, err := core.SocketIDDigest(socketIDCall)
+		if err != nil {
+			return fmt.Errorf("failed to get socket digest: %w", err)
+		}
+		if ok := destClient.socketStore.HasSocket(socketDigest); !ok {
+			filteredSocketIDs = append(filteredSocketIDs, socketID)
+		}
+	}
+	socketIDs = filteredSocketIDs
 
 	if len(secretIDs) > 0 {
 		secrets, err := dagql.LoadIDResults(srcClientCtx, srcDag, secretIDs)

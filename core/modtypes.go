@@ -55,6 +55,15 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 	if idp == nil {
 		return nil
 	}
+	if collectedContentInvalidID(idp) {
+		if unknown {
+			// Unknown/private fields are collected on a best-effort basis only.
+			// Some SDK paths can surface zero-value IDs for unset optional fields;
+			// treat those as absent rather than crashing the engine.
+			return content.CollectJSONable(nil)
+		}
+		return fmt.Errorf("invalid ID")
+	}
 	rid := &resource.ID{
 		ID:       idp,
 		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
@@ -94,6 +103,16 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 	}
 	content.hasher.WithString(string(dgst))
 	return nil
+}
+
+func collectedContentInvalidID(idp *call.ID) bool {
+	if idp == nil {
+		return true
+	}
+	if idp.IsHandle() {
+		return idp.EngineResultID() == 0 || idp.Type() == nil
+	}
+	return idp.Call() == nil
 }
 
 // CollectUnknown naively walks a typically JSON-decoded value, e.g. from a

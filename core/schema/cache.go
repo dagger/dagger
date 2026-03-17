@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -55,7 +54,10 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 			return err
 		}
-		namespaceKey := namespaceFromModule(m.Self())
+		namespaceKey, err := namespaceFromModule(ctx, m.Self())
+		if err != nil {
+			return err
+		}
 		args.Namespace = namespaceKey
 		if err := req.SetArgInput(ctx, "namespace", dagql.NewString(namespaceKey), false); err != nil {
 			return err
@@ -87,9 +89,9 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult
 	return dagql.NewResultForCurrentCall(ctx, cache)
 }
 
-func namespaceFromModule(m *core.Module) string {
+func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
 	if m == nil {
-		return "mainClient"
+		return "mainClient", nil
 	}
 
 	src := m.Source.Value
@@ -102,12 +104,12 @@ func namespaceFromModule(m *core.Module) string {
 	case core.ModuleSourceKindGit:
 		symbolic = src.Self().Git.Symbolic
 	case core.ModuleSourceKindDir:
-		sourceID, err := m.Source.Value.ID()
+		sourceDigest, err := src.Self().SourceImplementationDigest(ctx)
 		if err != nil {
-			panic(fmt.Sprintf("module source handle ID: %v", err))
+			return "", err
 		}
-		symbolic = sourceID.Digest().String()
+		symbolic = sourceDigest.String()
 	}
 
-	return "mod(" + name + symbolic + ")"
+	return "mod(" + name + symbolic + ")", nil
 }

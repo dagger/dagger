@@ -284,7 +284,9 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 		if frame.Receiver != nil {
 			receiverDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Receiver, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.recipeDigestErr = fmt.Errorf("receiver: %w", err)
 				return
 			}
@@ -303,12 +305,15 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 			if arg == nil {
 				continue
 			}
-			h, err = appendResultCallArgBytes(frame.cache, arg, h, visiting)
+			nextH, err := appendResultCallArgBytes(frame.cache, arg, h, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.recipeDigestErr = fmt.Errorf("args: %w", err)
 				return
 			}
+			h = nextH
 			h = h.WithDelim()
 		}
 		h = h.WithDelim()
@@ -318,12 +323,15 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 			if input == nil {
 				continue
 			}
-			h, err = appendResultCallArgBytes(frame.cache, input, h, visiting)
+			nextH, err := appendResultCallArgBytes(frame.cache, input, h, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.recipeDigestErr = fmt.Errorf("implicit inputs: %w", err)
 				return
 			}
+			h = nextH
 			h = h.WithDelim()
 		}
 		h = h.WithDelim()
@@ -331,7 +339,9 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 		if frame.Module != nil && frame.Module.ResultRef != nil {
 			moduleDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Module.ResultRef, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.recipeDigestErr = fmt.Errorf("module: %w", err)
 				return
 			}
@@ -376,7 +386,9 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 		if frame.Receiver != nil {
 			receiverDigest, err := contentPreferredDigestForResultCallRef(frame.cache, frame.Receiver, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.contentPreferredDigestErr = fmt.Errorf("receiver: %w", err)
 				return
 			}
@@ -395,12 +407,15 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 			if arg == nil {
 				continue
 			}
-			h, err = appendResultCallArgContentPreferredBytes(frame.cache, arg, h, visiting)
+			nextH, err := appendResultCallArgContentPreferredBytes(frame.cache, arg, h, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.contentPreferredDigestErr = fmt.Errorf("args: %w", err)
 				return
 			}
+			h = nextH
 			h = h.WithDelim()
 		}
 		h = h.WithDelim()
@@ -410,19 +425,24 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 			if input == nil {
 				continue
 			}
-			h, err = appendResultCallArgContentPreferredBytes(frame.cache, input, h, visiting)
+			nextH, err := appendResultCallArgContentPreferredBytes(frame.cache, input, h, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.contentPreferredDigestErr = fmt.Errorf("implicit inputs: %w", err)
 				return
 			}
+			h = nextH
 			h = h.WithDelim()
 		}
 
 		if frame.Module != nil && frame.Module.ResultRef != nil {
 			moduleDigest, err := contentPreferredDigestForResultCallRef(frame.cache, frame.Module.ResultRef, visiting)
 			if err != nil {
-				h.Close()
+				if h != nil {
+					h.Close()
+				}
 				frame.contentPreferredDigestErr = fmt.Errorf("module: %w", err)
 				return
 			}
@@ -476,11 +496,15 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		if arg == nil {
 			continue
 		}
-		h, inputRefs, err = appendResultCallArgSelfRefs(frame.cache, arg, h, inputRefs)
+		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(frame.cache, arg, h, inputRefs)
 		if err != nil {
-			h.Close()
+			if h != nil {
+				h.Close()
+			}
 			return "", nil, fmt.Errorf("result call frame %q args: %w", field, err)
 		}
+		h = nextH
+		inputRefs = nextInputRefs
 		h = h.WithDelim()
 	}
 	h = h.WithDelim()
@@ -490,17 +514,23 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		if input == nil {
 			continue
 		}
-		h, inputRefs, err = appendResultCallArgSelfRefs(frame.cache, input, h, inputRefs)
+		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(frame.cache, input, h, inputRefs)
 		if err != nil {
-			h.Close()
+			if h != nil {
+				h.Close()
+			}
 			return "", nil, fmt.Errorf("result call frame %q implicit inputs: %w", field, err)
 		}
+		h = nextH
+		inputRefs = nextInputRefs
 		h = h.WithDelim()
 	}
 
 	if frame.Module != nil {
 		if frame.Module.ResultRef == nil {
-			h.Close()
+			if h != nil {
+				h.Close()
+			}
 			return "", nil, fmt.Errorf("result call frame %q module: missing result ref", field)
 		}
 		inputRefs = append(inputRefs, ResultCallStructuralInputRef{
@@ -518,7 +548,9 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 
 	for _, ref := range inputRefs {
 		if err := ref.Validate(); err != nil {
-			h.Close()
+			if h != nil {
+				h.Close()
+			}
 			return "", nil, fmt.Errorf("result call frame %q structural inputs: %w", field, err)
 		}
 	}
@@ -805,11 +837,11 @@ func appendResultCallArgBytes(
 	visiting map[sharedResultID]struct{},
 ) (*hashutil.Hasher, error) {
 	h = h.WithString(arg.Name)
-	h, err := appendResultCallLiteralBytes(c, arg.Value, h, visiting)
+	nextH, err := appendResultCallLiteralBytes(c, arg.Value, h, visiting)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+		return h, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
-	return h, nil
+	return nextH, nil
 }
 
 func appendResultCallArgContentPreferredBytes(
@@ -819,11 +851,11 @@ func appendResultCallArgContentPreferredBytes(
 	visiting map[sharedResultID]struct{},
 ) (*hashutil.Hasher, error) {
 	h = h.WithString(arg.Name)
-	h, err := appendResultCallLiteralContentPreferredBytes(c, arg.Value, h, visiting)
+	nextH, err := appendResultCallLiteralContentPreferredBytes(c, arg.Value, h, visiting)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+		return h, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
-	return h, nil
+	return nextH, nil
 }
 
 func appendResultCallArgSelfRefs(
@@ -833,11 +865,11 @@ func appendResultCallArgSelfRefs(
 	inputs []ResultCallStructuralInputRef,
 ) (*hashutil.Hasher, []ResultCallStructuralInputRef, error) {
 	h = h.WithString(arg.Name)
-	h, inputs, err := appendResultCallLiteralSelfRefs(c, arg.Value, h, inputs)
+	nextH, nextInputs, err := appendResultCallLiteralSelfRefs(c, arg.Value, h, inputs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
+		return h, inputs, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
-	return h, inputs, nil
+	return nextH, nextInputs, nil
 }
 
 func appendResultCallLiteralBytes(
