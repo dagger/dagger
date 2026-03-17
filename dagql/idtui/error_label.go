@@ -1,14 +1,16 @@
 package idtui
 
 import (
-	"io"
+	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
 
 // ErrorLabel is a simple component that displays an error message.
 // When the error is nil, it renders nothing (zero lines).
+// Long error messages are word-wrapped to fit the available width.
 type ErrorLabel struct {
 	tuist.Compo
 	err     error
@@ -30,9 +32,11 @@ func (e *ErrorLabel) Render(ctx tuist.Context) tuist.RenderResult {
 	if e.err == nil {
 		return tuist.RenderResult{}
 	}
-	out := termenv.NewOutput(io.Discard, termenv.WithProfile(e.profile))
-	line := out.String("Error: " + e.err.Error()).Foreground(termenv.ANSIRed).String()
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.ANSIColor(termenv.ANSIRed)).
+		Width(ctx.Width)
+	rendered := style.Render("Error: " + e.err.Error())
 	return tuist.RenderResult{
-		Lines: []string{line},
+		Lines: strings.Split(rendered, "\n"),
 	}
 }
