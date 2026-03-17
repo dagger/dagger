@@ -78,6 +78,10 @@ type ExecutionMetadata struct {
 	// Arbitrary to mixin to the cache key for this operation.
 	CacheMixin digest.Digest
 
+	// Cache-buster to apply to nested client dagql requests originating from
+	// this execution.
+	CacheBuster string
+
 	// hostname -> list of aliases
 	HostAliases map[string][]string
 	// search domains to install prior to the session's domain

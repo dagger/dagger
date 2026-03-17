@@ -447,6 +447,9 @@ type ClientInitOpts struct {
 	// that this client should have access to due to being set in the parent
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
+
+	// Cache-buster to mix into dagql requests for this client.
+	CacheBuster string
 }
 
 // requires that client.stateMu is held
@@ -980,6 +983,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		EncodedModuleID:     execMD.EncodedModuleID,
 		EncodedFunctionCall: execMD.EncodedFunctionCall,
 		ParentIDs:           execMD.ParentIDs,
+		CacheBuster:         execMD.CacheBuster,
 	}).ServeHTTP(w, r)
 }
 
@@ -993,6 +997,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
+	if opts.CacheBuster != "" {
+		ctx = dagql.WithCacheBuster(ctx, opts.CacheBuster)
+	}
 
 	// propagate span context and baggage from the client
 	ctx = telemetry.Propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))

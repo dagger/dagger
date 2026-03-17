@@ -704,6 +704,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+		CacheBuster:       dagql.CacheBuster(ctx),
 	}
 
 	var cacheMixins []string
