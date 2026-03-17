@@ -723,6 +723,9 @@ func (res *sharedResult) release(ctx context.Context) error {
 	newRefCount := atomic.AddInt64(&res.refCount, -1)
 	if res.cache != nil {
 		res.cache.traceRefReleased(ctx, res, newRefCount)
+		if newRefCount < 0 {
+			res.cache.traceRefUnderflow(ctx, res, newRefCount)
+		}
 	}
 	if newRefCount == 0 {
 		res.cache.egraphMu.Lock()
@@ -740,9 +743,12 @@ func (res *sharedResult) release(ctx context.Context) error {
 	}
 
 	rerr := removeErr
-	for _, dep := range heldDependencyResults {
+	for i, dep := range heldDependencyResults {
 		if dep == nil {
 			continue
+		}
+		if res.cache != nil {
+			res.cache.traceHeldDependencyReleasing(ctx, res, dep, newRefCount, i+1, len(heldDependencyResults))
 		}
 		rerr = errors.Join(rerr, dep.Release(ctx))
 	}
@@ -1847,7 +1853,7 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	return nil
 }
 
-func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, val AnyResult) error {
+func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, val AnyResult) (rerr error) {
 	if parent == nil || val == nil {
 		return nil
 	}
@@ -1864,30 +1870,37 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 		}
 		attachedSelf = objSelf
 	}
+	var temporarilyAttachedDeps []AnyResult
 	deps, err := withOwned.AttachOwnedResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
-		return c.AttachResult(ctx, child)
+		wasDetached := false
+		if shared := child.cacheSharedResult(); shared == nil || shared.id == 0 {
+			wasDetached = true
+		}
+		attached, err := c.AttachResult(ctx, child)
+		if err != nil {
+			return nil, err
+		}
+		if wasDetached && attached != nil {
+			temporarilyAttachedDeps = append(temporarilyAttachedDeps, attached)
+		}
+		return attached, nil
 	})
 	if err != nil {
 		return err
 	}
-	if len(deps) == 0 {
+	defer func() {
+		for _, dep := range temporarilyAttachedDeps {
+			if dep == nil {
+				continue
+			}
+			rerr = errors.Join(rerr, dep.Release(ctx))
+		}
+	}()
+	if len(deps) == 0 || parent.id == 0 {
 		return nil
 	}
 
-	attachedDepIDs := make([]sharedResultID, 0, len(deps))
-	attachedDepRefs := make([]AnyResult, 0, len(deps))
 	seen := make(map[sharedResultID]struct{}, len(deps))
-	addDepID := func(depID sharedResultID) {
-		if depID == 0 {
-			return
-		}
-		if _, ok := seen[depID]; ok {
-			return
-		}
-		seen[depID] = struct{}{}
-		attachedDepIDs = append(attachedDepIDs, depID)
-	}
-
 	for _, dep := range deps {
 		if dep == nil {
 			continue
@@ -1896,48 +1909,17 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 		if attachedDepRes == nil || attachedDepRes.id == 0 {
 			return fmt.Errorf("attach owned result %T: unexpected detached result", dep)
 		}
-		attachedDepRefs = append(attachedDepRefs, dep)
-		addDepID(attachedDepRes.id)
-	}
-
-	if parent.id == 0 || len(attachedDepIDs) == 0 {
-		for _, dep := range attachedDepRefs {
-			if dep == nil {
-				continue
-			}
-			if err := dep.Release(ctx); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-
-	parentRes := c.resultsByID[parent.id]
-	if parentRes == nil {
-		return nil
-	}
-	if parentRes.deps == nil {
-		parentRes.deps = make(map[sharedResultID]struct{})
-	}
-
-	for _, depID := range attachedDepIDs {
-		if depID == parentRes.id {
+		if attachedDepRes.id == parent.id {
 			continue
 		}
-		parentRes.deps[depID] = struct{}{}
-		c.traceExplicitDepAdded(ctx, parentRes.id, depID, "attached_owned_result")
-		if parentRes.depOfPersistedResult {
-			if depRes := c.resultsByID[depID]; depRes != nil {
-				if _, err := c.markResultAsDepOfPersistedLocked(ctx, depRes); err != nil {
-					return err
-				}
-			}
+		if _, ok := seen[attachedDepRes.id]; ok {
+			continue
+		}
+		seen[attachedDepRes.id] = struct{}{}
+		if err := c.AddExplicitDependency(ctx, attachedSelf, dep, "attached_owned_result"); err != nil {
+			return err
 		}
 	}
-	parentRes.heldDependencyResults = append(parentRes.heldDependencyResults, attachedDepRefs...)
 
 	return nil
 }

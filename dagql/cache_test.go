@@ -4059,6 +4059,45 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	assert.Assert(t, childRetained)
 }
 
+func TestCacheAttachOwnedResultsAlreadyAttachedChild(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	childCall := cacheTestIntCall("child-already-attached")
+	attachedChild, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
+	assert.NilError(t, err)
+	childShared := attachedChild.cacheSharedResult()
+	assert.Assert(t, childShared != nil)
+
+	parentCall := cacheTestIntCall("parent-already-attached-child")
+	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestDetachedResult(parentCall, &cacheTestOwnedDepsInt{
+			Int:          NewInt(1),
+			ownedResults: []AnyResult{attachedChild},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	assert.NilError(t, attachedChild.Release(ctx))
+
+	c.egraphMu.RLock()
+	heldChild := c.resultsByID[childShared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, heldChild != nil)
+	assert.Equal(t, int64(1), atomic.LoadInt64(&childShared.refCount))
+
+	assert.NilError(t, parentRes.Release(ctx))
+
+	c.egraphMu.RLock()
+	removedChild := c.resultsByID[childShared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, removedChild == nil)
+	assert.Equal(t, int64(0), atomic.LoadInt64(&childShared.refCount))
+}
+
 func TestCacheAddExplicitDependency(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

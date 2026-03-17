@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -162,9 +163,117 @@ func (c *cache) traceRefReleased(ctx context.Context, res *sharedResult, refCoun
 	})
 }
 
+func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, refCount int64) {
+	c.traceLazy(ctx, "ref_underflow", func() []any {
+		payloadState := "uninitialized"
+		switch {
+		case res == nil:
+			payloadState = "unknown"
+		case res.persistedEnvelope != nil && !res.hasValue:
+			payloadState = "imported_lazy_envelope"
+		case res.hasValue && res.self == nil:
+			payloadState = "nil"
+		case res.hasValue:
+			payloadState = "materialized"
+		}
+		args := []any{
+			"phase", "runtime",
+			"shared_result_id", res.id,
+			"ref_count", refCount,
+			"record_type", res.recordType,
+			"description", res.description,
+			"payload_state", payloadState,
+		}
+		if res.self != nil {
+			args = append(args, "type_name", fmt.Sprintf("%T", res.self))
+		}
+		args = append(args, "stack", string(debug.Stack()))
+		return args
+	})
+}
+
 func (c *cache) traceRefAcquired(ctx context.Context, res *sharedResult, refCount int64) {
 	c.traceLazy(ctx, "ref_acquired", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id, "ref_count", refCount}
+	})
+}
+
+func (c *cache) traceSessionResultTracked(ctx context.Context, sessionCache *SessionCache, res AnyResult, hitCache bool, trackedCount, trackedCountForResult int) {
+	c.traceLazy(ctx, "session_result_tracked", func() []any {
+		shared := res.cacheSharedResult()
+		args := []any{
+			"phase", "runtime",
+			"session_cache_ptr", fmt.Sprintf("%p", sessionCache),
+			"hit_cache", hitCache,
+			"tracked_count", trackedCount,
+			"tracked_count_for_result", trackedCountForResult,
+		}
+		if shared != nil {
+			args = append(args,
+				"shared_result_id", shared.id,
+				"ref_count", atomic.LoadInt64(&shared.refCount),
+				"record_type", shared.recordType,
+				"description", shared.description,
+			)
+			if shared.resultCall != nil {
+				if field, err := resultCallIdentityField(shared.resultCall); err == nil {
+					args = append(args, "result_call_field", field)
+				}
+			}
+		}
+		return args
+	})
+}
+
+func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionCache *SessionCache, res AnyResult, reason string, releaseIndex, totalTracked, trackedCountForResult, releaseOrdinalForResult int) {
+	c.traceLazy(ctx, "session_result_releasing", func() []any {
+		shared := res.cacheSharedResult()
+		args := []any{
+			"phase", "runtime",
+			"reason", reason,
+			"session_cache_ptr", fmt.Sprintf("%p", sessionCache),
+			"release_index", releaseIndex,
+			"total_tracked", totalTracked,
+			"tracked_count_for_result", trackedCountForResult,
+			"release_ordinal_for_result", releaseOrdinalForResult,
+		}
+		if shared != nil {
+			args = append(args,
+				"shared_result_id", shared.id,
+				"ref_count", atomic.LoadInt64(&shared.refCount),
+				"record_type", shared.recordType,
+				"description", shared.description,
+			)
+			if shared.resultCall != nil {
+				if field, err := resultCallIdentityField(shared.resultCall); err == nil {
+					args = append(args, "result_call_field", field)
+				}
+			}
+		}
+		return args
+	})
+}
+
+func (c *cache) traceHeldDependencyReleasing(ctx context.Context, parent *sharedResult, dep AnyResult, parentRefCount int64, depIndex, depCount int) {
+	c.traceLazy(ctx, "held_dependency_releasing", func() []any {
+		args := []any{
+			"phase", "runtime",
+			"parent_shared_result_id", parent.id,
+			"parent_ref_count", parentRefCount,
+			"dep_index", depIndex,
+			"dep_count", depCount,
+		}
+		if depShared := dep.cacheSharedResult(); depShared != nil {
+			args = append(args,
+				"dep_shared_result_id", depShared.id,
+				"dep_ref_count", atomic.LoadInt64(&depShared.refCount),
+				"dep_record_type", depShared.recordType,
+				"dep_description", depShared.description,
+			)
+		} else {
+			args = append(args, "dep_type", fmt.Sprintf("%T", dep))
+		}
+		return args
 	})
 }
 

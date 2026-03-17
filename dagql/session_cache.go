@@ -106,6 +106,11 @@ func telemetryKeys(ctx context.Context) *sync.Map {
 	return nil
 }
 
+func (c *SessionCache) traceCache() *cache {
+	inner, _ := c.cache.(*cache)
+	return inner
+}
+
 func (c *SessionCache) GetOrInitCall(
 	ctx context.Context,
 	req *CallRequest,
@@ -200,15 +205,39 @@ func (c *SessionCache) GetOrInitCall(
 
 	c.mu.Lock()
 	isClosed := c.isClosed
+	var traceCache *cache
+	trackedCount := 0
+	trackedCountForResult := 0
 	if !isClosed && res != nil && !req.DoNotCache {
 		c.results = append(c.results, res)
+		traceCache = c.traceCache()
+		trackedCount = len(c.results)
+		if traceCache != nil && traceCache.traceEnabled() {
+			if shared := res.cacheSharedResult(); shared != nil {
+				for _, tracked := range c.results {
+					if tracked == nil {
+						continue
+					}
+					trackedShared := tracked.cacheSharedResult()
+					if trackedShared != nil && trackedShared.id == shared.id {
+						trackedCountForResult++
+					}
+				}
+			}
+		}
 	}
 	c.mu.Unlock()
+	if traceCache != nil && traceCache.traceEnabled() {
+		traceCache.traceSessionResultTracked(ctx, c, res, res.HitCache(), trackedCount, trackedCountForResult)
+	}
 
 	// if the session cache is closed, ensure we release the result so it doesn't leak
 	if isClosed {
 		err := errors.New("session cache was closed during execution")
 		if res != nil {
+			if traceCache := c.traceCache(); traceCache != nil && traceCache.traceEnabled() {
+				traceCache.traceSessionResultReleasing(ctx, c, res, "closed_during_execution", 0, 0, 0, 0)
+			}
 			err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
 		}
 		return nil, err
@@ -304,9 +333,30 @@ func (c *SessionCache) ReleaseAndClose(ctx context.Context) error {
 	c.mu.Unlock()
 
 	var rerr error
+	traceCache := c.traceCache()
+	trackedCountByResult := make(map[sharedResultID]int)
 	for _, res := range results {
 		if res == nil {
 			continue
+		}
+		if shared := res.cacheSharedResult(); shared != nil {
+			trackedCountByResult[shared.id]++
+		}
+	}
+	releasedCountByResult := make(map[sharedResultID]int, len(trackedCountByResult))
+	for i, res := range results {
+		if res == nil {
+			continue
+		}
+		ordinalForResult := 0
+		trackedCountForResult := 0
+		if shared := res.cacheSharedResult(); shared != nil {
+			ordinalForResult = releasedCountByResult[shared.id] + 1
+			releasedCountByResult[shared.id] = ordinalForResult
+			trackedCountForResult = trackedCountByResult[shared.id]
+		}
+		if traceCache != nil && traceCache.traceEnabled() {
+			traceCache.traceSessionResultReleasing(ctx, c, res, "release_and_close", i+1, len(results), trackedCountForResult, ordinalForResult)
 		}
 		rerr = errors.Join(rerr, res.Release(context.WithoutCancel(ctx)))
 	}
