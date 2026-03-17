@@ -17,11 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
@@ -633,7 +633,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 
 	// Insert errorLabel + queuedMsg + textInput before statusLine + keymapBar:
 	// output → error → queued → prompt → statusLine → keymap
-	fe.promptErrLabel = NewErrorLabel(fe.profile)
+	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.tui.RemoveChild(fe.statusLine)
 	fe.tui.RemoveChild(fe.keymapBar)
@@ -4055,20 +4055,20 @@ func handleTelemetryErrorOutput(w io.Writer, to TermOutput, err error) {
 }
 
 var (
-	ANSIBlack         = lipgloss.Color("0")
-	ANSIRed           = lipgloss.Color("1")
-	ANSIGreen         = lipgloss.Color("2")
-	ANSIYellow        = lipgloss.Color("3")
-	ANSIBlue          = lipgloss.Color("4")
-	ANSIMagenta       = lipgloss.Color("5")
-	ANSICyan          = lipgloss.Color("6")
-	ANSIWhite         = lipgloss.Color("7")
-	ANSIBrightBlack   = lipgloss.Color("8")
-	ANSIBrightRed     = lipgloss.Color("9")
-	ANSIBrightGreen   = lipgloss.Color("10")
-	ANSIBrightYellow  = lipgloss.Color("11")
-	ANSIBrightBlue    = lipgloss.Color("12")
-	ANSIBrightMagenta = lipgloss.Color("13")
-	ANSIBrightCyan    = lipgloss.Color("14")
-	ANSIBrightWhite   = lipgloss.Color("15")
+	ANSIBlack         = lipgloss.Black
+	ANSIRed           = lipgloss.Red
+	ANSIGreen         = lipgloss.Green
+	ANSIYellow        = lipgloss.Yellow
+	ANSIBlue          = lipgloss.Blue
+	ANSIMagenta       = lipgloss.Magenta
+	ANSICyan          = lipgloss.Cyan
+	ANSIWhite         = lipgloss.White
+	ANSIBrightBlack   = lipgloss.BrightBlack
+	ANSIBrightRed     = lipgloss.BrightRed
+	ANSIBrightGreen   = lipgloss.BrightGreen
+	ANSIBrightYellow  = lipgloss.BrightYellow
+	ANSIBrightBlue    = lipgloss.BrightBlue
+	ANSIBrightMagenta = lipgloss.BrightMagenta
+	ANSIBrightCyan    = lipgloss.BrightCyan
+	ANSIBrightWhite   = lipgloss.BrightWhite
 )

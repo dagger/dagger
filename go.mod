@@ -13,6 +13,7 @@ replace (
 )
 
 require (
+	charm.land/lipgloss/v2 v2.0.1
 	github.com/1password/onepassword-sdk-go v0.3.1
 	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
@@ -39,7 +40,6 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/huh v0.8.0
-	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/ultraviolet v0.0.0-20260309091805-903bfd0cf188
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/cilium/ebpf v0.17.3
@@ -205,7 +205,6 @@ require github.com/openai/openai-go/v3 v3.26.0
 require github.com/mattn/go-pointer v0.0.1 // indirect
 
 require (
-	charm.land/lipgloss/v2 v2.0.1 // indirect
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.16.2 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -241,6 +240,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
+	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
