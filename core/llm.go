@@ -637,9 +637,11 @@ type LLMRouter struct {
 	OpenAICodexModel        string
 	OpenAICodexThinkingMode string // Reasoning effort: "none", "low", "medium", "high", "xhigh"
 
-	GeminiAPIKey  string
-	GeminiBaseURL string
-	GeminiModel   string
+	GeminiAPIKey         string
+	GeminiBaseURL        string
+	GeminiModel          string
+	GeminiThinkingMode   string // "adaptive", "enabled", "disabled", or a ThinkingLevel ("low", "medium", "high")
+	GeminiThinkingBudget int64  // Max thinking tokens (when mode == "enabled")
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -736,9 +738,11 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 
 func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 	endpoint := &LLMEndpoint{
-		BaseURL:  r.GeminiBaseURL,
-		Key:      r.GeminiAPIKey,
-		Provider: Google,
+		BaseURL:        r.GeminiBaseURL,
+		Key:            r.GeminiAPIKey,
+		Provider:       Google,
+		ThinkingMode:   r.GeminiThinkingMode,
+		ThinkingBudget: r.GeminiThinkingBudget,
 	}
 	client, err := newGenaiClient(endpoint)
 	if err != nil {
@@ -971,6 +975,13 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 		case "google":
 			if r.GeminiAPIKey == "" {
 				r.GeminiAPIKey = provider.APIKey
+			}
+			if r.GeminiBaseURL == "" && provider.BaseURL != "" {
+				r.GeminiBaseURL = provider.BaseURL
+			}
+			if provider.ThinkingMode != "" {
+				r.GeminiThinkingMode = provider.ThinkingMode
+				r.GeminiThinkingBudget = provider.ThinkingBudget
 			}
 		}
 	}

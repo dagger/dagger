@@ -759,9 +759,13 @@ func promptThinkingConfig(ctx context.Context, ph PromptHandler, provider, model
 		}
 	}
 
-	// For providers we know support reasoning (OpenAI Codex), always offer it
-	if provider == "openai-codex" {
+	// For providers where all models support reasoning, always offer the prompt
+	// regardless of whether the specific model is in our curated list.
+	switch provider {
+	case "openai-codex":
 		return promptOpenAIReasoning(ctx, ph, cfg)
+	case "google":
+		return promptGoogleThinking(ctx, ph, cfg)
 	}
 
 	if !supportsThinking {
@@ -847,6 +851,61 @@ func promptOpenAIReasoning(ctx context.Context, ph PromptHandler, cfg *Provider)
 	}
 
 	cfg.ThinkingMode = effort
+	return nil
+}
+
+func promptGoogleThinking(ctx context.Context, ph PromptHandler, cfg *Provider) error {
+	var mode string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Height(8).
+				Title("Thinking").
+				Description("Gemini 2.5 models can think through problems step-by-step before responding.").
+				Options(
+					huh.NewOption("Off (default)", ""),
+					huh.NewOption("Adaptive (model decides)", "adaptive"),
+					huh.NewOption("Enabled (with token budget)", "enabled"),
+					huh.NewOption("Low", "low"),
+					huh.NewOption("Medium", "medium"),
+					huh.NewOption("High", "high"),
+				).
+				Value(&mode),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return err
+	}
+
+	cfg.ThinkingMode = mode
+
+	if mode == "enabled" {
+		budget := "10000"
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Thinking budget (tokens)").
+					Description("How many tokens the model can use for reasoning.").
+					Value(&budget).
+					Validate(func(s string) error {
+						if s == "" {
+							return fmt.Errorf("budget cannot be empty")
+						}
+						return nil
+					}),
+			),
+		)
+		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+			return err
+		}
+		var n int64
+		if _, err := fmt.Sscanf(budget, "%d", &n); err == nil && n >= 1 {
+			cfg.ThinkingBudget = n
+		} else {
+			cfg.ThinkingBudget = 10000
+		}
+	}
+
 	return nil
 }
 

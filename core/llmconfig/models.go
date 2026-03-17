@@ -45,8 +45,8 @@ var ProviderModels = map[string][]ModelInfo{
 		{ID: "meta-llama/llama-4-maverick", Label: "Llama 4 Maverick"},
 	},
 	"google": {
-		{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash (latest)", Default: true},
-		{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro"},
+		{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash (latest)", SupportsThinking: true, Default: true},
+		{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", SupportsThinking: true},
 	},
 }
 

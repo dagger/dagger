@@ -2,10 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"net/http"
 	"strings"
@@ -115,14 +115,35 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 				if err := json.Unmarshal(block.Arguments.Bytes(), &args); err != nil {
 					return nil, nil, err
 				}
-				content.Parts = append(content.Parts, &genai.Part{
+				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
 						Name: block.CallID,
 						Args: args,
 					},
-				})
+				}
+				// Restore thought signature if present (required by Gemini
+				// thinking models to associate tool calls with thoughts).
+				if block.Signature != "" {
+					sig, err := base64.StdEncoding.DecodeString(block.Signature)
+					if err != nil {
+						return nil, nil, fmt.Errorf("failed to decode thought signature: %w", err)
+					}
+					part.ThoughtSignature = sig
+				}
+				content.Parts = append(content.Parts, part)
 			case LLMContentThinking:
-				// Gemini doesn't support thinking blocks; skip them
+				part := &genai.Part{
+					Text:    block.Text,
+					Thought: true,
+				}
+				if block.Signature != "" {
+					sig, err := base64.StdEncoding.DecodeString(block.Signature)
+					if err != nil {
+						return nil, nil, fmt.Errorf("failed to decode thought signature: %w", err)
+					}
+					part.ThoughtSignature = sig
+				}
+				content.Parts = append(content.Parts, part)
 			}
 		}
 
@@ -140,11 +161,21 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 
 func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
-	textWriter io.Writer,
-	onToolCall func(callID, name string, argsJSON []byte),
+	dp *displayPhases,
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
 	var textContent strings.Builder
+	var thinkingContent strings.Builder
+	var thinkingSignature string // base64-encoded thought signature for the thinking block
+
+	// Phase index counter. Index 0 is reserved for thinking (if present),
+	// index 1 for text. Tool calls start at 2.
+	var toolIdx int64 = 1
+
+	// Track whether we've started a thinking phase so we can close it
+	// when the first non-thinking part arrives.
+	var inThinking bool
+
 	for res, err := range stream {
 		if err != nil {
 			if apiErr, ok := err.(*apierror.APIError); ok {
@@ -170,34 +201,115 @@ func (c *GenaiClient) processStreamResponse(
 		}
 
 		for _, part := range candidate.Content.Parts {
-			if x := part.Text; x != "" {
-				fmt.Fprint(textWriter, x)
+			if part.Thought && part.Text != "" {
+				// Thinking/reasoning content from the model.
+				if !inThinking {
+					dp.StartThinking(0)
+					inThinking = true
+				}
+				if p := dp.Phase(0); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, part.Text)
+				}
+				thinkingContent.WriteString(part.Text)
+				// Capture thought signature (typically on the last thinking chunk).
+				if len(part.ThoughtSignature) > 0 {
+					thinkingSignature = base64.StdEncoding.EncodeToString(part.ThoughtSignature)
+				}
+			} else if x := part.Text; x != "" {
+				// Regular text content. Close thinking phase if open.
+				if inThinking {
+					dp.Close(0)
+					inThinking = false
+				}
+				p := dp.Phase(1)
+				if p == nil {
+					p = dp.StartText(1)
+				}
+				fmt.Fprint(p.MarkdownW, x)
 				textContent.WriteString(x)
 			} else if x := part.FunctionCall; x != nil {
+				// Close thinking phase if still open.
+				if inThinking {
+					dp.Close(0)
+					inThinking = false
+				}
 				bytes, err := json.Marshal(x.Args)
 				if err != nil {
 					return contentBlocks, tokenUsage, err
 				}
-				contentBlocks = append(contentBlocks, &LLMContentBlock{
+				block := &LLMContentBlock{
 					Kind:      LLMContentToolCall,
 					CallID:    x.Name,
 					ToolName:  x.Name,
 					Arguments: JSON(bytes),
-				})
-				onToolCall(x.Name, x.Name, bytes)
+				}
+				// Preserve thought signature so it can be sent back in
+				// subsequent requests (required by Gemini thinking models).
+				if len(part.ThoughtSignature) > 0 {
+					block.Signature = base64.StdEncoding.EncodeToString(part.ThoughtSignature)
+				}
+				contentBlocks = append(contentBlocks, block)
+
+				toolIdx++
+				p := dp.StartToolCall(toolIdx, x.Name, x.Name)
+				fmt.Fprint(p.Stdio.Stdout, string(bytes))
+				dp.Close(toolIdx)
 			} else {
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
 		}
 	}
-	// Prepend text content if any was accumulated
+
+	// Build content blocks: thinking first, then text, then tool calls.
+	var result []*LLMContentBlock
+	if thinkingContent.Len() > 0 {
+		result = append(result, &LLMContentBlock{
+			Kind:      LLMContentThinking,
+			Text:      thinkingContent.String(),
+			Signature: thinkingSignature,
+		})
+	}
 	if textContent.Len() > 0 {
-		contentBlocks = append([]*LLMContentBlock{{
+		result = append(result, &LLMContentBlock{
 			Kind: LLMContentText,
 			Text: textContent.String(),
-		}}, contentBlocks...)
+		})
 	}
+	contentBlocks = append(result, contentBlocks...)
 	return contentBlocks, tokenUsage, nil
+}
+
+// buildThinkingConfig returns a ThinkingConfig based on the endpoint settings,
+// or nil if thinking is not configured.
+func (c *GenaiClient) buildThinkingConfig() *genai.ThinkingConfig {
+	mode := c.endpoint.ThinkingMode
+	if mode == "" {
+		return nil
+	}
+	tc := &genai.ThinkingConfig{
+		IncludeThoughts: true,
+	}
+	switch mode {
+	case "enabled":
+		budget := int32(c.endpoint.ThinkingBudget)
+		if budget < 1 {
+			budget = 10000 // reasonable default
+		}
+		tc.ThinkingBudget = &budget
+	case "disabled":
+		return nil
+	case "low":
+		tc.ThinkingLevel = genai.ThinkingLevelLow
+	case "medium":
+		tc.ThinkingLevel = genai.ThinkingLevelMedium
+	case "high":
+		tc.ThinkingLevel = genai.ThinkingLevelHigh
+	case "minimal":
+		tc.ThinkingLevel = genai.ThinkingLevelMinimal
+	default:
+		// "adaptive" or unrecognized — just enable with IncludeThoughts
+	}
+	return tc
 }
 
 var _ LLMClient = (*GenaiClient)(nil)
@@ -220,8 +332,6 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	parentCtx := ctx
 
 	dp := newDisplayPhases(parentCtx)
-	// Eagerly create the text response phase (Google always streams text first)
-	textPhase := dp.StartText(0)
 	defer func() {
 		dp.CloseAll()
 		if rerr != nil {
@@ -284,6 +394,11 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		genaiConfig.MaxOutputTokens = int32(opts.MaxTokens)
 	}
 
+	// Configure thinking/reasoning if requested
+	if tc := c.buildThinkingConfig(); tc != nil {
+		genaiConfig.ThinkingConfig = tc
+	}
+
 	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, genaiConfig, chatHistoryForGenai)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat: %w", err)
@@ -320,29 +435,17 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return usageSummary
 	}
 
-	// toolIdx is a counter for generating unique phase indices for tool calls.
-	// Starts at 1 because index 0 is used for the text response phase.
-	var toolIdx int64
-
-	// onToolCall creates a display span for each tool call as it arrives.
-	// Gemini delivers tool calls as complete objects, so we create the span,
-	// write the full args, and close it immediately.
-	onToolCall := func(callID, name string, argsJSON []byte) {
-		toolIdx++
-		p := dp.StartToolCall(toolIdx, callID, name)
-		fmt.Fprint(p.Stdio.Stdout, string(argsJSON))
-		dp.Close(toolIdx)
-	}
-
 	contentBlocks, tokenUsage, err := c.processStreamResponse(
 		stream,
-		textPhase.MarkdownW,
-		onToolCall,
+		dp,
 		tokenHandler,
 	)
 	if err != nil {
 		return nil, err
 	}
+
+	// Close all phases so their spans are collected before building the response.
+	dp.CloseAll()
 
 	displaySpans, toolCalls := dp.Response()
 	return &LLMResponse{
