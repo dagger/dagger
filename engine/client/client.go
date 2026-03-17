@@ -476,6 +476,9 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 }
 
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
+	if silent, _ := strconv.ParseBool(os.Getenv("DAGGER_SILENT")); silent {
+		return nil
+	}
 	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
 		telemetry.Encapsulated())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -1397,6 +1400,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
 		CloudAuth:                 c.CloudAuth,
+		CredentialsPath:           auth.CredentialsFile(),
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"resenje.org/singleflight"
 
@@ -57,6 +59,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
 )
 
@@ -664,8 +667,23 @@ func (srv *Server) initializeDaggerClient(
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
+	var (
+		cloudSpans   sdktrace.SpanExporter
+		cloudLogs    sdklog.Exporter
+		cloudMetrics sdkmetric.Exporter
+	)
+
+	// export to Dagger Cloud if the client has cloud auth
+	if client.clientMetadata.CloudAuth != nil {
+		// in-memory token refresher since this code runs in the engine
+		cloudSpans, cloudLogs, cloudMetrics, err = enginetel.NewCloudExporters(ctx, client.clientMetadata.CloudAuth, refreshAndPersistCredentials)
+		if err != nil {
+			slog.Warn("failed to configure cloud exporters for session", "error", err)
+		}
+	}
+
 	// configure OTel providers that export to SQLite
-	client.spanExporter = srv.telemetryPubSub.Spans(client)
+	client.spanExporter = srv.telemetryPubSub.Spans(client, cloudSpans)
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format
@@ -678,7 +696,7 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	logs := srv.telemetryPubSub.Logs(client)
+	logs := srv.telemetryPubSub.Logs(client, cloudLogs)
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
@@ -687,7 +705,7 @@ func (srv *Server) initializeDaggerClient(
 
 	const metricReaderInterval = 5 * time.Second
 
-	client.metricExporter = srv.telemetryPubSub.Metrics(client)
+	client.metricExporter = srv.telemetryPubSub.Metrics(client, cloudMetrics)
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
@@ -700,15 +718,15 @@ func (srv *Server) initializeDaggerClient(
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
 			telemetry.NewLiveSpanProcessor(
-				srv.telemetryPubSub.Spans(parent),
+				srv.telemetryPubSub.Spans(parent, cloudSpans),
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			clientLogs{client: parent},
+			clientLogs{client: parent, exp: cloudLogs},
 		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
-				srv.telemetryPubSub.Metrics(parent),
+				srv.telemetryPubSub.Metrics(parent, cloudMetrics),
 				sdkmetric.WithInterval(metricReaderInterval),
 			),
 		))
@@ -719,6 +737,60 @@ func (srv *Server) initializeDaggerClient(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+func refreshAndPersistCredentials(ctx context.Context) (*oauth2.Token, error) {
+	cPath := ""
+	clientID := ""
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		cPath = md.CredentialsPath
+		clientID = md.ClientID
+	}
+	if cPath == "" || clientID == "" {
+		return nil, fmt.Errorf("no credentials path or client id available: %s - %s", cPath, clientID)
+	}
+
+	sv, ok := ctx.Value(serverCtxKey{}).(*Server)
+	if !ok {
+		return nil, fmt.Errorf("get server return false")
+	}
+
+	ss, err := sv.Secrets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get secrets store: %w", err)
+	}
+
+	tokenData, err := ss.GetSecretPlaintextDirect(ctx, &core.Secret{URI: "file://" + cPath, BuildkitSessionID: clientID})
+	if err != nil {
+		return nil, fmt.Errorf("get secret: %w", err)
+	}
+	var token oauth2.Token
+	if err := json.Unmarshal([]byte(tokenData), &token); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	ts, err := cloudauth.TokenSource(ctx, &token)
+	if err != nil {
+		return nil, fmt.Errorf("get token source: %w", err)
+	}
+	newToken, err := ts.Token()
+	if err != nil {
+		return nil, fmt.Errorf("get new token: %w", err)
+	}
+	bt, err := json.Marshal(newToken)
+	if err != nil {
+		return nil, fmt.Errorf("marshal token: %w", err)
+	}
+
+	bk, err := sv.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get buildkit client: %w", err)
+	}
+	if err := bk.IOReaderExport(ctx, bytes.NewReader(bt), cPath, 0o600); err != nil {
+		return nil, fmt.Errorf("write config: %w", err)
+	}
+	slog.Info("refreshed cloud credentials", "credentialsPath", cPath)
+	return newToken, nil
 }
 
 func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error) {
@@ -886,6 +958,9 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
+		if client.clientMetadata.CredentialsPath == "" && opts.ClientMetadata.CredentialsPath != "" {
+			client.clientMetadata.CredentialsPath = opts.ClientMetadata.CredentialsPath
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -956,10 +1031,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 	allowedLLMModules := execMD.AllowedLLMModules
 	eagerRuntime := false
+	credentialsPath := execMD.CredentialsPath
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		eagerRuntime = md.EagerRuntime
+		credentialsPath = md.CredentialsPath
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -974,6 +1051,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
 			EagerRuntime:      eagerRuntime,
+			CredentialsPath:   credentialsPath,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -985,8 +1063,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 const InstrumentationLibrary = "dagger.io/engine.server"
 
+type serverCtxKey struct{}
+
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, serverCtxKey{}, srv)
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
