@@ -557,6 +557,15 @@ func (obj *ModuleObject) entrypointProxyCacheConfig(
 			methodResp.CacheKey.TTL = constructorResp.CacheKey.TTL
 		}
 
+		// The caller (preselect) re-extracts inputArgs from the returned
+		// ID's leaf args. The chained constructor→method ID only carries
+		// method args at its leaf, so constructor args would be lost.
+		// Preserve the original request ID which has all proxy args
+		// (constructor + method merged) at the leaf, so ExtractIDArgs
+		// can find them all. Cache policy from the inner calls is still
+		// applied.
+		methodResp.CacheKey.ID = req.CacheKey.ID
+
 		return methodResp, nil
 	}
 }

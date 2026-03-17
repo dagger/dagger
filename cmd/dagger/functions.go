@@ -434,14 +434,18 @@ func queryRootModuleConstructors(rootType *modTypeDef) []*modFunction {
 	fns, _ := GetSupportedFunctions(fp)
 	constructors := make([]*modFunction, 0, len(fns))
 	for _, fn := range fns {
-		obj := fn.ReturnType.AsObject
-		if obj == nil || obj.SourceModuleName == "" {
+		// Include module constructors (fn.Name matches module name).
+		if obj := fn.ReturnType.AsObject; obj != nil && obj.SourceModuleName != "" &&
+			fn.Name == gqlFieldName(obj.SourceModuleName) {
+			constructors = append(constructors, fn)
 			continue
 		}
-		if fn.Name != gqlFieldName(obj.SourceModuleName) {
-			continue
+		// Include entrypoint proxy commands (module-sourced functions
+		// that aren't constructors). Their args include the merged
+		// constructor args, so prefix flags may belong to them.
+		if fn.SourceModuleName != "" {
+			constructors = append(constructors, fn)
 		}
-		constructors = append(constructors, fn)
 	}
 	return constructors
 }
