@@ -228,7 +228,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
-			ifaceModule, err := ifaceType.mod.Self().IDModule(ctx)
+			ifaceModule, err := NewUserMod(ifaceType.mod).ResultCallModule(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve module identity for interface %q: %w", iface.Name, err)
 			}

@@ -3,12 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -31,11 +30,19 @@ func ResourceTransferPostCall(
 		}
 		secretIDs := dagql.WalkedIDs[*Secret](walked)
 		for _, secretID := range secretIDs {
-			secretsByDgst[SecretIDDigest(secretID.ID())] = secretID
+			id, err := secretID.ID()
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get secret ID: %w", err)
+			}
+			secretsByDgst[SecretIDDigest(id)] = secretID
 		}
 		socketIDs := dagql.WalkedIDs[*Socket](walked)
 		for _, socketID := range socketIDs {
-			socketsByDgst[SocketIDDigest(socketID.ID())] = socketID
+			id, err := socketID.ID()
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get socket ID: %w", err)
+			}
+			socketsByDgst[SocketIDDigest(id)] = socketID
 		}
 	}
 	if len(secretsByDgst) == 0 && len(socketsByDgst) == 0 {
@@ -43,21 +50,13 @@ func ResourceTransferPostCall(
 	}
 
 	var secretIDs []dagql.ID[*Secret]
-	for _, secretID := range secretsByDgst {
-		secretIDs = append(secretIDs, secretID)
+	for _, dgst := range slices.Sorted(maps.Keys(secretsByDgst)) {
+		secretIDs = append(secretIDs, secretsByDgst[dgst])
 	}
-	// just in case order matters for caching somehow someday
-	slices.SortFunc(secretIDs, func(a, b dagql.ID[*Secret]) int {
-		return strings.Compare(SecretIDDigest(a.ID()).String(), SecretIDDigest(b.ID()).String())
-	})
 	var socketIDs []dagql.ID[*Socket]
-	for _, socketID := range socketsByDgst {
-		socketIDs = append(socketIDs, socketID)
+	for _, dgst := range slices.Sorted(maps.Keys(socketsByDgst)) {
+		socketIDs = append(socketIDs, socketsByDgst[dgst])
 	}
-	// just in case order matters for caching somehow someday
-	slices.SortFunc(socketIDs, func(a, b dagql.ID[*Socket]) int {
-		return strings.Compare(SocketIDDigest(a.ID()).String(), SocketIDDigest(b.ID()).String())
-	})
 
 	// ensure that when we load secrets, we are doing so from the source client
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -182,11 +181,7 @@ func ResourceTransferPostCall(
 				// cache results such that a function call return value result inherently results in any referenced
 				// secrets also staying in cache.
 				secretDigest := SecretDigest(secret.inst)
-				cacheKeyID := secret.inst.ID().
-					With(call.WithContentDigest(secretDigest))
-				_, err = destDag.Cache.GetOrInitCall(ctx, dagql.CacheKey{ID: cacheKeyID}, func(context.Context) (dagql.AnyResult, error) {
-					return secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall), nil
-				})
+				_, err = destDag.Cache.AttachResult(ctx, secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall))
 				if err != nil {
 					return fmt.Errorf("failed to cache secret: %w", err)
 				}
@@ -200,7 +195,11 @@ func ResourceTransferPostCall(
 			for _, socket := range sockets {
 				socketDigest := socket.Self().IDDigest
 				if socketDigest == "" {
-					socketDigest = SocketIDDigest(socket.ID())
+					socketID, err := socket.ID()
+					if err != nil {
+						return fmt.Errorf("failed to get socket ID: %w", err)
+					}
+					socketDigest = SocketIDDigest(socketID)
 				}
 				if socketDigest == "" {
 					slog.Warn("skipping socket transfer with empty digest",

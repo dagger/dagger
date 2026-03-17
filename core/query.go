@@ -248,11 +248,8 @@ func (q *Query) NewModule() *Module {
 	return &Module{}
 }
 
-// IDDeps loads the module dependencies of a given ID.
-//
-// The returned ModDeps extends the inner DefaultDeps with all modules found in
-// the ID, loaded by using the DefaultDeps schema.
-func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
+// ModDepsForCall loads the module dependencies referenced by the given result call.
+func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) (*ModDeps, error) {
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("default deps: %w", err)
@@ -263,20 +260,135 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	}
 
 	deps := defaultDeps
-	for _, modID := range id.Modules() {
-		inst, err := dagql.NewID[*Module](modID.ID()).Load(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("loading module from ID: %w", err)
+	seenCalls := map[*dagql.ResultCall]struct{}{}
+	seenResultIDs := map[uint64]struct{}{}
+	seenModuleResultIDs := map[uint64]struct{}{}
+
+	var appendModule func(dagql.ObjectResult[*Module]) error
+	appendModule = func(inst dagql.ObjectResult[*Module]) error {
+		if inst.Self() == nil {
+			return nil
 		}
+		instID, err := inst.ID()
+		if err != nil {
+			return fmt.Errorf("module %q handle ID: %w", inst.Self().Name(), err)
+		}
+		if instID == nil || instID.EngineResultID() == 0 {
+			return fmt.Errorf("module %q is not attached", inst.Self().Name())
+		}
+		if _, seen := seenModuleResultIDs[instID.EngineResultID()]; seen {
+			return nil
+		}
+		seenModuleResultIDs[instID.EngineResultID()] = struct{}{}
 		deps = deps.Append(NewUserMod(inst))
 		if inst.Self().Toolchains != nil {
 			for _, entry := range inst.Self().Toolchains.Entries() {
-				if entry.Module.Self() == nil {
-					continue
+				if err := appendModule(entry.Module); err != nil {
+					return fmt.Errorf("toolchain module for %q: %w", inst.Self().Name(), err)
 				}
-				deps = deps.Append(NewUserMod(entry.Module))
 			}
 		}
+		return nil
+	}
+
+	var walkLiteral func(*dagql.ResultCallLiteral) error
+	var walkRef func(*dagql.ResultCallRef) error
+	var walkCall func(*dagql.ResultCall) error
+
+	walkLiteral = func(lit *dagql.ResultCallLiteral) error {
+		if lit == nil {
+			return nil
+		}
+		switch lit.Kind {
+		case dagql.ResultCallLiteralKindResultRef:
+			return walkRef(lit.ResultRef)
+		case dagql.ResultCallLiteralKindList:
+			for _, item := range lit.ListItems {
+				if err := walkLiteral(item); err != nil {
+					return err
+				}
+			}
+		case dagql.ResultCallLiteralKindObject:
+			for _, field := range lit.ObjectFields {
+				if field == nil {
+					continue
+				}
+				if err := walkLiteral(field.Value); err != nil {
+					return fmt.Errorf("field %q: %w", field.Name, err)
+				}
+			}
+		}
+		return nil
+	}
+
+	walkRef = func(ref *dagql.ResultCallRef) error {
+		if ref == nil {
+			return nil
+		}
+		if ref.Call != nil {
+			return walkCall(ref.Call)
+		}
+		if ref.ResultID == 0 {
+			return nil
+		}
+		if _, seen := seenResultIDs[ref.ResultID]; seen {
+			return nil
+		}
+		seenResultIDs[ref.ResultID] = struct{}{}
+		res, err := dag.Cache.LoadResultByResultID(ctx, dag, ref.ResultID)
+		if err != nil {
+			return fmt.Errorf("load result %d: %w", ref.ResultID, err)
+		}
+		if modInst, ok := res.(dagql.ObjectResult[*Module]); ok {
+			if err := appendModule(modInst); err != nil {
+				return err
+			}
+		}
+		call, err := res.ResultCall()
+		if err != nil {
+			return fmt.Errorf("result %d call: %w", ref.ResultID, err)
+		}
+		return walkCall(call)
+	}
+
+	walkCall = func(call *dagql.ResultCall) error {
+		if call == nil {
+			return nil
+		}
+		if _, seen := seenCalls[call]; seen {
+			return nil
+		}
+		seenCalls[call] = struct{}{}
+
+		if call.Module != nil {
+			if err := walkRef(call.Module.ResultRef); err != nil {
+				return fmt.Errorf("module %q: %w", call.Module.Name, err)
+			}
+		}
+		if err := walkRef(call.Receiver); err != nil {
+			return fmt.Errorf("receiver: %w", err)
+		}
+		for _, arg := range call.Args {
+			if arg == nil {
+				continue
+			}
+			if err := walkLiteral(arg.Value); err != nil {
+				return fmt.Errorf("arg %q: %w", arg.Name, err)
+			}
+		}
+		for _, input := range call.ImplicitInputs {
+			if input == nil {
+				continue
+			}
+			if err := walkLiteral(input.Value); err != nil {
+				return fmt.Errorf("implicit input %q: %w", input.Name, err)
+			}
+		}
+		return nil
+	}
+
+	if err := walkCall(rootCall); err != nil {
+		return nil, err
 	}
 	return deps, nil
 }

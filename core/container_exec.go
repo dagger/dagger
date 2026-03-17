@@ -144,9 +144,13 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 			return nil, fmt.Errorf("failed to decode module ID: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod.Self() != nil {
-		callerModID, err = callerMod.Self().SourceContentScopedID(ctx)
+		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get caller module content-scoped ID: %w", err)
+			return nil, fmt.Errorf("failed to get caller implementation-scoped module: %w", err)
+		}
+		callerModID, err = implementationScopedMod.ID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get caller implementation-scoped module ID: %w", err)
 		}
 	}
 

@@ -83,7 +83,6 @@ func (r *ToolchainRegistry) Entries() []*ToolchainEntry {
 // This consolidates the toolchainProxyFunction logic from object.go.
 func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod dagql.ObjectResult[*Module], fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	tcMod := entry.Module.Self()
-	parent := parentMod.Self()
 
 	// Find the toolchain's main object type
 	if len(tcMod.ObjectDefs) == 0 {
@@ -100,7 +99,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod dag
 	if mainObjDef == nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", tcMod.Name())
 	}
-	parentModuleID, err := parent.IDModule(ctx)
+	parentModuleID, err := NewUserMod(parentMod).ResultCallModule(ctx)
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve parent module identity for toolchain %q: %w", tcMod.Name(), err)
 	}

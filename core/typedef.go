@@ -135,6 +135,11 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 		Type:             fn.ReturnType.ToTyped(),
 		DeprecatedReason: fn.Deprecated,
 	}
+	module, err := mod.ResultCallModule(ctx)
+	if err != nil {
+		return spec, fmt.Errorf("failed to resolve module provenance for function %q: %w", fn.Name, err)
+	}
+	spec.Module = module
 	if fn.SourceMap.Valid {
 		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
 	}

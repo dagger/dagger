@@ -96,9 +96,21 @@ func (sdk *goSDK) GenerateClient(
 	contextDir := modSource.Self().ContextDirectory
 	rootSourcePath := modSource.Self().SourceRootSubpath
 
-	modSourceID, err := modSource.ID().Encode()
+	modSourceIDHandle, err := modSource.ID()
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module source id: %w", err)
+	}
+	modSourceID, err := modSourceIDHandle.Encode()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module source id: %w", err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID: %w", err)
+	}
+	contextDirID, err := contextDir.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module context directory ID: %w", err)
 	}
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
@@ -117,10 +129,10 @@ func (sdk *goSDK) GenerateClient(
 					Name:  "path",
 					Value: dagql.NewString(goSDKIntrospectionJSONPath),
 				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.File](schemaJSONFileID),
+					},
 			},
 		},
 		dagql.Selector{
@@ -133,10 +145,10 @@ func (sdk *goSDK) GenerateClient(
 					Name:  "path",
 					Value: dagql.String(goSDKUserModContextDirPath),
 				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.Directory](contextDir.ID()),
-				},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.Directory](contextDirID),
+					},
 			},
 		},
 		dagql.Selector{
@@ -257,7 +269,10 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
 	}
-	currentModuleID := scopedMod.ID()
+	currentModuleID, err := scopedMod.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current module ID for go module sdk module types: %w", err)
+	}
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
@@ -269,6 +284,14 @@ func (sdk *goSDK) ModuleTypes(
 	modName := src.Self().ModuleOriginalName
 	contextDir := src.Self().ContextDirectory
 	srcSubpath := src.Self().SourceSubpath
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID: %w", err)
+	}
+	contextDirID, err := contextDir.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module context directory ID: %w", err)
+	}
 
 	ctr, err = sdk.base(ctx)
 	if err != nil {
@@ -302,10 +325,10 @@ func (sdk *goSDK) ModuleTypes(
 					Name:  "path",
 					Value: dagql.NewString(goSDKIntrospectionJSONPath),
 				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.File](schemaJSONFileID),
+					},
 			},
 		},
 		dagql.Selector{
@@ -315,10 +338,10 @@ func (sdk *goSDK) ModuleTypes(
 					Name:  "path",
 					Value: dagql.NewString(goSDKUserModContextDirPath),
 				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.Directory](contextDir.ID()),
-				},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.Directory](contextDirID),
+					},
 			},
 		},
 		dagql.Selector{
@@ -571,10 +594,10 @@ func (sdk *goSDK) baseWithCodegen(
 					Name:  "path",
 					Value: dagql.NewString(goSDKIntrospectionJSONPath),
 				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.File](schemaJSONFileID),
+					},
 			},
 		},
 		{
@@ -584,10 +607,10 @@ func (sdk *goSDK) baseWithCodegen(
 					Name:  "path",
 					Value: dagql.NewString(goSDKUserModContextDirPath),
 				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
-				},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.Directory](updatedContextDirID),
+					},
 			},
 		},
 		{
@@ -765,18 +788,18 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 					Name:  "path",
 					Value: dagql.String("/go/pkg/mod"),
 				},
-				{
-					Name:  "cache",
-					Value: dagql.NewID[*core.CacheVolume](modCache.ID()),
-				},
+					{
+						Name:  "cache",
+						Value: dagql.NewID[*core.CacheVolume](modCacheID),
+					},
 				{
 					Name:  "sharing",
 					Value: core.CacheSharingModeShared,
 				},
-				{
-					Name:  "source",
-					Value: dagql.Opt(dagql.NewID[*core.Directory](modCacheBaseDir.ID())),
-				},
+					{
+						Name:  "source",
+						Value: dagql.Opt(dagql.NewID[*core.Directory](modCacheBaseDirID)),
+					},
 			},
 		},
 		dagql.Selector{

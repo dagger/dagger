@@ -242,11 +242,17 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.A
 	for i, item := range list {
 		var err error
 
-		curID := dagql.CurrentID(ctx)
-		itemID := curID.SelectNth(i + 1)
-		ctx := dagql.ContextWithID(ctx, itemID)
+		itemCtx := ctx
+		if curCall := dagql.CurrentCall(ctx); curCall != nil {
+			itemCall := cloneResultCall(curCall)
+			itemCall.Nth = int64(i + 1)
+			if itemCall.Type != nil {
+				itemCall.Type = itemCall.Type.Elem
+			}
+			itemCtx = dagql.ContextWithCall(ctx, itemCall)
+		}
 
-		t, err := t.Underlying.ConvertFromSDKResult(ctx, item)
+		t, err := t.Underlying.ConvertFromSDKResult(itemCtx, item)
 		if err != nil {
 			return nil, err
 		}
@@ -296,17 +302,17 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 			continue
 		}
 
-		itemID, err := item.ID()
+		itemCtx := ctx
+		itemCall, err := item.ResultCall()
 		if err != nil {
 			return err
 		}
-		if itemID == nil {
-			continue
+		if itemCall != nil {
+			itemCtx = dagql.ContextWithCall(ctx, itemCall)
 		}
-		ctx := dagql.ContextWithID(ctx, itemID)
 
 		if err := content.CollectIndexed(i, func() error {
-			return t.Underlying.CollectContent(ctx, item, content)
+			return t.Underlying.CollectContent(itemCtx, item, content)
 		}); err != nil {
 			return err
 		}

@@ -146,8 +146,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
 
-		dagql.NodeFunc("_sourceContentScoped", s.moduleSourceContentScoped).
-			Doc(`The module object with a cache key scoped to just the parts of the module that impact SDKs and function calls, i.e. the source code and dependencies but not the specific git commit or local path the module was loaded from. Must be used with caution as providing it to any operation that depends on non-source aspects of the module specific to a given client could result in unexpected cache collisions.`),
+		dagql.NodeFunc("_implementationScoped", s.moduleImplementationScoped).
+			Doc(`The module object scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -721,7 +721,7 @@ func (s *moduleSchema) functionWithCachePolicy(
 }
 
 type currentModuleArgs struct {
-	SourceContentScopedMod dagql.Optional[core.ModuleID] `internal:"true"`
+	ImplementationScopedMod dagql.Optional[core.ModuleID] `internal:"true"`
 }
 
 func (s *moduleSchema) currentModuleCacheKey(
@@ -730,7 +730,7 @@ func (s *moduleSchema) currentModuleCacheKey(
 	args currentModuleArgs,
 	req *dagql.CallRequest,
 ) error {
-	if args.SourceContentScopedMod.Valid {
+	if args.ImplementationScopedMod.Valid {
 		return nil
 	}
 
@@ -738,12 +738,16 @@ func (s *moduleSchema) currentModuleCacheKey(
 	if err != nil {
 		return fmt.Errorf("failed to get current module: %w", err)
 	}
-	contentScopedID, err := mod.Self().SourceContentScopedID(ctx)
+	scopedMod, err := core.ImplementationScopedModule(ctx, mod)
 	if err != nil {
-		return fmt.Errorf("failed to get source content scoped ID for current module: %w", err)
+		return fmt.Errorf("failed to get implementation-scoped current module: %w", err)
 	}
-	args.SourceContentScopedMod = dagql.Opt(contentScopedID)
-	return req.SetArgInput(ctx, "sourceContentScopedMod", dagql.NewID[*core.Module](contentScopedID), false)
+	scopedModID, err := scopedMod.ID()
+	if err != nil {
+		return fmt.Errorf("failed to get implementation-scoped current module ID: %w", err)
+	}
+	args.ImplementationScopedMod = dagql.Opt(scopedModID)
+	return req.SetArgInput(ctx, "implementationScopedMod", dagql.NewID[*core.Module](scopedModID), false)
 }
 
 func (s *moduleSchema) currentModule(
@@ -751,16 +755,16 @@ func (s *moduleSchema) currentModule(
 	self *core.Query,
 	args currentModuleArgs,
 ) (*core.CurrentModule, error) {
-	if !args.SourceContentScopedMod.Valid {
+	if !args.ImplementationScopedMod.Valid {
 		return nil, errors.New("missing source module argument")
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	mod, err := args.SourceContentScopedMod.Value.Load(ctx, dag)
+	mod, err := args.ImplementationScopedMod.Value.Load(ctx, dag)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load source content scoped module: %w", err)
+		return nil, fmt.Errorf("failed to load implementation-scoped module: %w", err)
 	}
 	return &core.CurrentModule{Module: mod}, nil
 }
@@ -1184,42 +1188,25 @@ func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Option
 	return sourceMapI.Self(), nil
 }
 
-func (s *moduleSchema) moduleSourceContentScoped(
+func (s *moduleSchema) moduleImplementationScoped(
 	ctx context.Context,
 	parentMod dagql.ObjectResult[*core.Module],
 	args struct{},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
-	contentScopedID, err := parentMod.Self().SourceContentScopedID(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get source content scoped ID for module: %w", err)
-	}
 	if !parentMod.Self().Source.Valid {
-		return inst, fmt.Errorf("failed to get source content digest for module: no module source available")
+		return inst, fmt.Errorf("failed to get source implementation digest for module: no module source available")
 	}
-	sourceDigest, err := parentMod.Self().Source.Value.Self().ContentDigestForSDK(ctx)
+	sourceDigest, err := parentMod.Self().Source.Value.Self().SourceImplementationDigest(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get source content digest for module: %w", err)
+		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	inst, err = dagql.NewObjectResultForID(parentMod.Self(), dag, contentScopedID)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self())
 	if err != nil {
 		return inst, err
 	}
-	return inst.ObjectResultWithCall(&dagql.ResultCall{
-		Kind:        dagql.ResultCallKindSynthetic,
-		SyntheticOp: "_sourceContentScoped",
-		Type:        dagql.NewResultCallType(parentMod.Type()),
-		Args: []*dagql.ResultCallArg{
-			{
-				Name: "scopeDigest",
-				Value: &dagql.ResultCallLiteral{
-					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: sourceDigest.String(),
-				},
-			},
-		},
-	}), nil
+	return inst.WithContentDigest(sourceDigest), nil
 }

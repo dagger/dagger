@@ -24,7 +24,6 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/containersource"
 	"github.com/dagger/dagger/engine/buildkit/exporter/containerimage/exptypes"
-	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"

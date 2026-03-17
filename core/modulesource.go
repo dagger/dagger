@@ -295,7 +295,7 @@ func (src *ModuleSource) AttachOwnedResults(
 
 	owned := make([]dagql.AnyResult, 0, 4+len(src.Dependencies)+len(src.Toolchains))
 
-	if src.ContextDirectory.ID() != nil {
+	if src.ContextDirectory.Self() != nil {
 		attached, err := attach(src.ContextDirectory)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source context directory: %w", err)
@@ -309,7 +309,7 @@ func (src *ModuleSource) AttachOwnedResults(
 	}
 
 	for i, dep := range src.Dependencies {
-		if dep.ID() == nil {
+		if dep.Self() == nil {
 			continue
 		}
 		attached, err := attach(dep)
@@ -324,7 +324,7 @@ func (src *ModuleSource) AttachOwnedResults(
 		owned = append(owned, typed)
 	}
 
-	if src.Blueprint.ID() != nil {
+	if src.Blueprint.Self() != nil {
 		attached, err := attach(src.Blueprint)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source blueprint: %w", err)
@@ -338,7 +338,7 @@ func (src *ModuleSource) AttachOwnedResults(
 	}
 
 	for i, toolchain := range src.Toolchains {
-		if toolchain.ID() == nil {
+		if toolchain.Self() == nil {
 			continue
 		}
 		attached, err := attach(toolchain)
@@ -353,7 +353,7 @@ func (src *ModuleSource) AttachOwnedResults(
 		owned = append(owned, typed)
 	}
 
-	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.ID() != nil {
+	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.Self() != nil {
 		attached, err := attach(src.ToolchainContextSource.Value)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source toolchain context source: %w", err)
@@ -365,7 +365,7 @@ func (src *ModuleSource) AttachOwnedResults(
 		src.ToolchainContextSource = dagql.NonNull(typed)
 	}
 
-	if src.Git != nil && src.Git.UnfilteredContextDir.ID() != nil {
+	if src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
 		attached, err := attach(src.Git.UnfilteredContextDir)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source git unfiltered context dir: %w", err)
@@ -378,7 +378,7 @@ func (src *ModuleSource) AttachOwnedResults(
 		owned = append(owned, typed)
 	}
 
-	if src.DirSrc != nil && src.DirSrc.OriginalContextDir.ID() != nil {
+	if src.DirSrc != nil && src.DirSrc.OriginalContextDir.Self() != nil {
 		attached, err := attach(src.DirSrc.OriginalContextDir)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source dir original context dir: %w", err)
@@ -673,7 +673,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			ClientGenerator: hasClientGenerator,
 		}
 	}
-	if src.ContextDirectory.ID() != nil {
+	if src.ContextDirectory.Self() != nil {
 		contextDirID, err := encodePersistedObjectRef(cache, src.ContextDirectory, "module source context directory")
 		if err != nil {
 			return nil, err
@@ -682,7 +682,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	}
 	payload.DependencyResultIDs = make([]uint64, 0, len(src.Dependencies))
 	for _, dep := range src.Dependencies {
-		if dep.ID() == nil {
+		if dep.Self() == nil {
 			continue
 		}
 		depID, err := encodePersistedObjectRef(cache, dep, "module source dependency")
@@ -691,7 +691,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		}
 		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
 	}
-	if src.Blueprint.ID() != nil {
+	if src.Blueprint.Self() != nil {
 		blueprintID, err := encodePersistedObjectRef(cache, src.Blueprint, "module source blueprint")
 		if err != nil {
 			return nil, err
@@ -700,7 +700,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	}
 	payload.ToolchainResultIDs = make([]uint64, 0, len(src.Toolchains))
 	for _, toolchain := range src.Toolchains {
-		if toolchain.ID() == nil {
+		if toolchain.Self() == nil {
 			continue
 		}
 		toolchainID, err := encodePersistedObjectRef(cache, toolchain, "module source toolchain")
@@ -709,7 +709,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		}
 		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
 	}
-	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.ID() != nil {
+	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.Self() != nil {
 		toolchainContextSourceID, err := encodePersistedObjectRef(cache, src.ToolchainContextSource.Value, "module source toolchain context source")
 		if err != nil {
 			return nil, err
@@ -727,7 +727,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			Commit:       src.Git.Commit,
 			Ref:          src.Git.Ref,
 		}
-		if src.Git.UnfilteredContextDir.ID() != nil {
+		if src.Git.UnfilteredContextDir.Self() != nil {
 			unfilteredID, err := encodePersistedObjectRef(cache, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
 			if err != nil {
 				return nil, err
@@ -739,7 +739,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		payload.DirSrc = &persistedDirModuleSourcePayload{
 			OriginalSourceRootSubpath: src.DirSrc.OriginalSourceRootSubpath,
 		}
-		if src.DirSrc.OriginalContextDir.ID() != nil {
+		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
 			if err != nil {
 				return nil, err
@@ -811,7 +811,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		Kind:                          persisted.Kind,
 		Local:                         persisted.Local,
 	}
-	if toolchainContextSource.ID() != nil {
+	if toolchainContextSource.Self() != nil {
 		src.ToolchainContextSource = dagql.NonNull(toolchainContextSource)
 	}
 	if persisted.Git != nil {
@@ -1067,13 +1067,11 @@ func (src *ModuleSource) LoadUserDefaults(ctx context.Context) error {
 // with any others
 const moduleSourceHashMix = "moduleSource"
 
-// ContentDigestForSDK calculates a content-hash of the module source. It is used during codegen; two module
-// sources with the same digest will share cache for codegen-related calls. It's also used to as part of function
-// call caching and contextual dir loading.
-// The value is thus scoped to the source code and dependencies but not client-specific values like specific git
-// git commits or local source paths the module was sourced from; things that matter to the implementation but not
-// anything else from the client.
-func (src *ModuleSource) ContentDigestForSDK(ctx context.Context) (digest.Digest, error) {
+// SourceImplementationDigest calculates a content-hash of the module source's
+// implementation. Two module sources with the same digest should share
+// implementation-scoped cache identity for SDK operations and module function
+// calls even if they came from different client-specific sources.
+func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest.Digest, error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get dag server: %w", err)
@@ -1162,6 +1160,22 @@ func (src *ModuleSource) ContentDigestForSDK(ctx context.Context) (digest.Digest
 	return hashutil.HashStrings(inputs...), nil
 }
 
+func ImplementationScopedModuleSource(
+	ctx context.Context,
+	src dagql.ObjectResult[*ModuleSource],
+) (dagql.ObjectResult[*ModuleSource], error) {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*ModuleSource]{}, fmt.Errorf("implementation-scoped module source: current dagql server: %w", err)
+	}
+
+	var scoped dagql.ObjectResult[*ModuleSource]
+	if err := dag.Select(ctx, src, &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+		return dagql.ObjectResult[*ModuleSource]{}, fmt.Errorf("implementation-scoped module source: select field: %w", err)
+	}
+	return scoped, nil
+}
+
 // LoadContextDir loads addition files+directories from the module source's context, including those that
 // may have not been included in the original module source load.
 func (src *ModuleSource) LoadContextDir(
@@ -1203,7 +1217,11 @@ func (src *ModuleSource) LoadContextDir(
 	if err != nil {
 		return inst, err
 	}
-	if inst.ID() != nil && inst.ID().ContentDigest() == "" {
+	instID, err := inst.ID()
+	if err != nil {
+		return inst, fmt.Errorf("context directory ID: %w", err)
+	}
+	if instID != nil && instID.ContentDigest() == "" {
 		inst, err = MakeDirectoryContentHashed(ctx, inst)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
@@ -1218,7 +1236,11 @@ func (src *ModuleSource) LoadContextDir(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+	instID, err = inst.ID()
+	if err != nil {
+		return inst, fmt.Errorf("context directory ID after hashing: %w", err)
+	}
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: instID}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
@@ -1351,6 +1373,10 @@ func (src *ModuleSource) loadContextFromSource(
 		}
 
 		if len(filterInputs) > 0 {
+			ctxDirID, err := ctxDir.ID()
+			if err != nil {
+				return inst, fmt.Errorf("context directory ID for filtering: %w", err)
+			}
 			if err := dag.Select(ctx, dag.Root(), &ctxDir,
 				dagql.Selector{
 					Field: "directory",
@@ -1359,7 +1385,7 @@ func (src *ModuleSource) loadContextFromSource(
 					Field: "withDirectory",
 					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						{Name: "source", Value: dagql.NewID[*Directory](ctxDirID)},
 					}, filterInputs...),
 				},
 			); err != nil {
@@ -1391,6 +1417,10 @@ func (src *ModuleSource) loadContextFromSource(
 		}
 
 		if len(filterInputs) > 0 {
+			ctxDirID, err := ctxDir.ID()
+			if err != nil {
+				return inst, fmt.Errorf("context directory ID for filtering: %w", err)
+			}
 			if err := dag.Select(ctx, dag.Root(), &ctxDir,
 				dagql.Selector{
 					Field: "directory",
@@ -1399,7 +1429,7 @@ func (src *ModuleSource) loadContextFromSource(
 					Field: "withDirectory",
 					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						{Name: "source", Value: dagql.NewID[*Directory](ctxDirID)},
 					}, filterInputs...),
 				},
 			); err != nil {
@@ -1526,7 +1556,11 @@ func (src *ModuleSource) LoadContextFile(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+	instID, err := inst.ID()
+	if err != nil {
+		return inst, fmt.Errorf("directory source ID: %w", err)
+	}
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: instID}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 

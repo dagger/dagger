@@ -222,6 +222,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			WithInput(dagql.PerClientInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
+			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 		dagql.NodeFunc("_asToolchain", s.moduleSourceAsToolchain).
 			Doc(`Internal helper that projects this module source to load as a toolchain in the context of a parent module source.`).
 			Args(
@@ -1117,7 +1119,7 @@ func (s *moduleSourceSchema) moduleSourceDigest(
 	src *core.ModuleSource,
 	args struct{},
 ) (string, error) {
-	digestForSDK, err := src.ContentDigestForSDK(ctx)
+	digestForSDK, err := src.SourceImplementationDigest(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -2731,7 +2733,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		contextDirIDDigest = src.Self().ContextDirectory.ID().Digest().String()
 		contextDirContentDigest = src.Self().ContextDirectory.ID().ContentDigest().String()
 	}
-	if dgst, err := src.Self().ContentDigestForSDK(ctx); err == nil {
+	if dgst, err := src.Self().SourceImplementationDigest(ctx); err == nil {
 		sdkContentDigest = dgst.String()
 	} else {
 		sdkContentDigest = "error:" + err.Error()
@@ -3415,6 +3417,26 @@ func (s *moduleSourceSchema) moduleSourceAsToolchain(
 	return toolchainSrc, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceImplementationScoped(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
+	sourceDigest, err := src.Self().SourceImplementationDigest(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module source implementation digest: %w", err)
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, src.Self())
+	if err != nil {
+		return inst, err
+	}
+	return inst.WithContentDigest(sourceDigest), nil
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3554,24 +3576,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
-
-	// Ensure that the entry for this module scoped by the source content hash is
-	// in our cache too as it is used by IDModule (which impacts function caching)
-	// and IDDeps.
-	// FIXME: once the cache handles dependency relationships in pruning the post-call nonsense
-	// will no longer be needed since the content digested entry can be tied to the main entry.
-	contentScopedID, err := mod.SourceContentScopedID(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get content-scoped ID for module %q: %w", src.Self().ModuleName, err)
-	}
-	return inst.ObjectResultWithPostCall(func(ctx context.Context) error {
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
-		_, err = dagql.NewID[*core.Module](contentScopedID).Load(ctx, dag)
-		return err
-	}), nil
+	return inst, nil
 }
 
 // load the given module source's dependencies as modules

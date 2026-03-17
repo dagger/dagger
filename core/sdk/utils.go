@@ -7,8 +7,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/util/hashutil"
 )
 
 // Return true if the given module is a builtin SDK.
@@ -19,51 +17,10 @@ func IsModuleSDKBuiltin(module string) bool {
 func scopeSourceForSDKOperation(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	op string,
-	dag *dagql.Server,
+	_ string,
+	_ *dagql.Server,
 ) (inst dagql.ObjectResult[*core.ModuleSource], err error) {
-	srcContentDigestForSDK, err := src.Self().ContentDigestForSDK(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get source content digest for sdk operation %q: %w", op, err)
-	}
-	scopedID := src.ID().With(call.WithScopeToDigest(op, srcContentDigestForSDK))
-	scopedContentDigest := hashutil.HashStrings(
-		"sdk-scoped-module-source",
-		op,
-		srcContentDigestForSDK.String(),
-	)
-
-	scopedSrc, err := dagql.NewObjectResultForID(src.Self(), dag, scopedID)
-	if err != nil {
-		return inst, err
-	}
-	scopedSrc = scopedSrc.ObjectResultWithCall(&dagql.ResultCall{
-		Kind:        dagql.ResultCallKindSynthetic,
-		SyntheticOp: "sdk_scope_source",
-		Type:        dagql.NewResultCallType(src.Type()),
-		Args: []*dagql.ResultCallArg{
-			{
-				Name:  "op",
-				Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: op},
-			},
-			{
-				Name: "scopeDigest",
-				Value: &dagql.ResultCallLiteral{
-					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: srcContentDigestForSDK.String(),
-				},
-			},
-		},
-	})
-	scopedSrc = scopedSrc.WithContentDigest(scopedContentDigest)
-	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
-		ID: scopedSrc.ID(),
-	}, dagql.ValueFunc(scopedSrc))
-	if err != nil {
-		return inst, err
-	}
-
-	return scopedSrc, nil
+	return core.ImplementationScopedModuleSource(ctx, src)
 }
 
 func ScopeModuleForSDKOperation(

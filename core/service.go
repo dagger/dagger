@@ -32,7 +32,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
@@ -377,9 +376,13 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
-		modID, err := mod.Self().SourceContentScopedID(ctx)
+		implementationScopedMod, err := ImplementationScopedModule(ctx, mod)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get module source content scoped ID: %w", err)
+			return nil, fmt.Errorf("failed to get implementation-scoped module: %w", err)
+		}
+		modID, err := implementationScopedMod.ID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get implementation-scoped module ID: %w", err)
 		}
 		domain = network.ModuleDomain(modID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {

@@ -119,10 +119,11 @@ func (container *Container) terminal(
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
 
+	svcDig := svcID.ContentPreferredDigest()
 	eg, egctx := errgroup.WithContext(ctx)
 	runningSvc, err := svc.Start(
 		ctx,
-		svcID,
+		svcDig,
 		&ServiceIO{
 			Stdin:       term.Stdin,
 			Stdout:      term.Stdout,
@@ -196,7 +197,11 @@ func (*Service) Terminal(
 	svc dagql.ObjectResult[*Service],
 	args *ExecTerminalArgs,
 ) error {
-	term, output, err := prepTerminal(ctx, svc.ID(), nil)
+	svcID, err := svc.ID()
+	if err != nil {
+		return fmt.Errorf("service terminal ID: %w", err)
+	}
+	term, output, err := prepTerminal(ctx, svcID, nil)
 	if err != nil {
 		return err
 	}
@@ -220,7 +225,7 @@ func (*Service) Terminal(
 
 	running := runnings[0]
 	if running.Exec == nil {
-		return fmt.Errorf("service %s does not support terminal", svc.ID().Digest())
+		return fmt.Errorf("service %s does not support terminal", svcID.Digest())
 	}
 	return running.Exec(ctx, args.Cmd, env, &ServiceIO{
 		Stdin:       term.Stdin,

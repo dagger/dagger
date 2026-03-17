@@ -16,7 +16,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 )
 
 type Module struct {
@@ -164,28 +163,20 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-// SourceContentScopedID is an ID of the module with cache scope to just parts
-// that matter to SDK operations and function calls. E.g. it is scoped to the
-// source code and dependencies but not client-specific values like specific git
-// git commits or local source paths the module was sourced from.
-// Use with caution as providing it to an operation that dependes on any client-specific
-// values may result in unexpected cache collisions.
-func (mod *Module) SourceContentScopedID(ctx context.Context) (*call.ID, error) {
-	if !mod.Source.Valid {
-		return nil, fmt.Errorf("no module source available for function content-scoped ID")
-	}
-	sourceDigest, err := mod.Source.Value.Self().ContentDigestForSDK(ctx)
+func ImplementationScopedModule(
+	ctx context.Context,
+	mod dagql.ObjectResult[*Module],
+) (dagql.ObjectResult[*Module], error) {
+	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get source content digest: %w", err)
+		return dagql.ObjectResult[*Module]{}, fmt.Errorf("implementation-scoped module: current dagql server: %w", err)
 	}
-	return mod.ResultID.Append(
-		mod.ResultID.Type().ToAST(),
-		"_sourceContentScoped",
-		call.WithContentDigest(hashutil.HashStrings(
-			"_sourceContentScoped",
-			"source:"+sourceDigest.String(),
-		)),
-	), nil
+
+	var scoped dagql.ObjectResult[*Module]
+	if err := dag.Select(ctx, mod, &scoped, dagql.Selector{Field: "_implementationScoped"}); err != nil {
+		return dagql.ObjectResult[*Module]{}, fmt.Errorf("implementation-scoped module: select field: %w", err)
+	}
+	return scoped, nil
 }
 
 // Return all user defaults for this module
@@ -220,55 +211,6 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 		return modDefaults, nil
 	}
 	return modDefaults.Namespace(ctx, objName)
-}
-
-// IDModule defines the call.Module field that will be set on call.IDs that represent calls on fields
-// from this module. The module field on call.IDs contribute to the recipe digest and also serve as
-// an input to calls when checking cache (so the digests included on the return call.Module.ID here
-// impact function call caching)
-func (mod *Module) IDModule(ctx context.Context) (*call.Module, error) {
-	if mod.ResultID == nil {
-		return nil, fmt.Errorf("module ID is not set")
-	}
-	if !mod.Source.Valid {
-		return nil, fmt.Errorf("no module source")
-	}
-	src := mod.Source.Value.Self()
-
-	var ref, pin string
-	switch src.Kind {
-	case ModuleSourceKindLocal:
-		ref = filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
-
-	case ModuleSourceKindGit:
-		ref = src.Git.CloneRef
-		if src.SourceRootSubpath != "" {
-			ref += "/" + strings.TrimPrefix(src.SourceRootSubpath, "/")
-		}
-		if src.Git.Version != "" {
-			ref += "@" + src.Git.Version
-		}
-		pin = src.Git.Commit
-
-	case ModuleSourceKindDir:
-		// no need to set ref/pin, the ID itself defines the module entirely
-
-	default:
-		return nil, fmt.Errorf("unexpected module source kind %q", src.Kind)
-	}
-
-	contentScopedID, err := mod.SourceContentScopedID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get function content scoped ID for module: %w", err)
-	}
-
-	return call.NewModule(
-		// Scope function call cache to module implementation source content.
-		// Contextual inputs (workspace/defaultPath/etc.) are modeled as explicit call inputs
-		// and should not invalidate unrelated function calls via module identity.
-		contentScopedID,
-		mod.Name(), ref, pin,
-	), nil
 }
 
 func (mod *Module) Evaluate(context.Context) error {
@@ -1048,6 +990,10 @@ type Mod interface {
 	// Source returns the ModuleSource for this module
 	GetSource() *ModuleSource
 
+	// ResultCallModule returns the native module provenance attached to calls
+	// provided by this module.
+	ResultCallModule(context.Context) (*dagql.ResultCallModule, error)
+
 	// ModuleResult returns the wrapped module result for user modules, or the
 	// zero value for non-module implementations like core.
 	ModuleResult() dagql.ObjectResult[*Module]
@@ -1125,6 +1071,54 @@ func (mod *userMod) GetSource() *ModuleSource {
 		return nil
 	}
 	return self.GetSource()
+}
+
+func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModule, error) {
+	self := mod.self()
+	if self == nil {
+		return nil, fmt.Errorf("module provenance: missing module result wrapper")
+	}
+	if !self.Source.Valid {
+		return nil, fmt.Errorf("module provenance: module %q has no source", self.Name())
+	}
+
+	scoped, err := ImplementationScopedModule(ctx, mod.res)
+	if err != nil {
+		return nil, fmt.Errorf("module provenance: implementation-scoped module %q: %w", self.Name(), err)
+	}
+	scopedID, err := scoped.ID()
+	if err != nil {
+		return nil, fmt.Errorf("module provenance: module %q handle ID: %w", self.Name(), err)
+	}
+	if scopedID == nil || scopedID.EngineResultID() == 0 {
+		return nil, fmt.Errorf("module provenance: implementation-scoped module %q is not attached", self.Name())
+	}
+
+	src := self.Source.Value.Self()
+	var ref, pin string
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		ref = filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
+	case ModuleSourceKindGit:
+		ref = src.Git.CloneRef
+		if src.SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(src.SourceRootSubpath, "/")
+		}
+		if src.Git.Version != "" {
+			ref += "@" + src.Git.Version
+		}
+		pin = src.Git.Commit
+	case ModuleSourceKindDir:
+	default:
+		return nil, fmt.Errorf("module provenance: unexpected module source kind %q", src.Kind)
+	}
+
+	return &dagql.ResultCallModule{
+		ResultRef: &dagql.ResultCallRef{ResultID: scopedID.EngineResultID()},
+		Name:      self.Name(),
+		Ref:       ref,
+		Pin:       pin,
+	}, nil
 }
 
 func (mod *userMod) ModuleResult() dagql.ObjectResult[*Module] {

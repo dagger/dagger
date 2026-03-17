@@ -112,20 +112,31 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)
 	}
-	deps, err := query.IDDeps(ctx, id)
+	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("schema: %w", err)
+		return nil, fmt.Errorf("current dagql server: %w", err)
 	}
-	dag, err := deps.Schema(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("schema: %w", err)
+	if id == nil || id.EngineResultID() == 0 {
+		return nil, fmt.Errorf("load interface implementation: expected attached result ID")
 	}
-	val, err := dag.Load(ctx, id)
+	val, err := dag.Cache.LoadResultByResultID(ctx, dag, id.EngineResultID())
 	if err != nil {
 		return nil, fmt.Errorf("load interface ID %s: %w", id.DisplaySelf(), err)
 	}
+	objVal, ok := val.(dagql.AnyObjectResult)
+	if !ok {
+		return nil, fmt.Errorf("load interface ID %s: unexpected result %T", id.DisplaySelf(), val)
+	}
+	call, err := val.ResultCall()
+	if err != nil {
+		return nil, fmt.Errorf("load interface implementation call: %w", err)
+	}
+	deps, err := query.ModDepsForCall(ctx, call)
+	if err != nil {
+		return nil, fmt.Errorf("schema: %w", err)
+	}
 
-	typeName := val.ObjectType().TypeName()
+	typeName := objVal.ObjectType().TypeName()
 
 	var modType ModType
 	var found bool
@@ -150,7 +161,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	}
 
 	loadedImpl := &loadedIfaceImpl{
-		val:     val,
+		val:     objVal,
 		valType: modType,
 	}
 	return loadedImpl, nil
@@ -275,7 +286,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
-	moduleID, err := iface.mod.Self().IDModule(ctx)
+	moduleID, err := NewUserMod(iface.mod).ResultCallModule(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
 	}

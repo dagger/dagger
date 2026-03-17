@@ -44,6 +44,10 @@ func (m *CoreMod) View() (call.View, bool) {
 	return m.Dag.View, true
 }
 
+func (m *CoreMod) ResultCallModule(context.Context) (*dagql.ResultCallModule, error) {
+	return nil, nil
+}
+
 func (m *CoreMod) ModuleResult() dagql.ObjectResult[*core.Module] {
 	return dagql.ObjectResult[*core.Module]{}
 }
@@ -469,8 +473,16 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		if err != nil {
 			return nil, fmt.Errorf("current dagql server: %w", err)
 		}
-		if len(idp.Modules()) > 0 {
-			deps, err := q.IDDeps(ctx, &idp)
+		if idp.EngineResultID() != 0 {
+			res, err := dag.Cache.LoadResultByResultID(ctx, dag, idp.EngineResultID())
+			if err != nil {
+				return nil, fmt.Errorf("load result from ID: %w", err)
+			}
+			call, err := res.ResultCall()
+			if err != nil {
+				return nil, fmt.Errorf("get result call from ID: %w", err)
+			}
+			deps, err := q.ModDepsForCall(ctx, call)
 			if err != nil {
 				return nil, fmt.Errorf("get result dependencies: %w", err)
 			}

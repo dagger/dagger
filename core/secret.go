@@ -78,7 +78,11 @@ func SecretIDDigest(id *call.ID) digest.Digest {
 }
 
 func SecretDigest(secret dagql.ObjectResult[*Secret]) digest.Digest {
-	return SecretIDDigest(secret.ID())
+	id, err := secret.ID()
+	if err != nil {
+		return ""
+	}
+	return SecretIDDigest(id)
 }
 
 func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
@@ -97,7 +101,14 @@ func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
 	if canonicalDigest == "" {
 		return fmt.Errorf("secret must have a digest")
 	}
-	idDigest := secret.ID().Digest()
+	secretID, err := secret.ID()
+	if err != nil {
+		return err
+	}
+	var idDigest digest.Digest
+	if secretID != nil {
+		idDigest = secretID.Digest()
+	}
 
 	store.mu.Lock()
 	defer store.mu.Unlock()

@@ -722,13 +722,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("encode module ID: %w", err)
 	}
 
-	contentScopedModID, err := mod.SourceContentScopedID(ctx)
+	implementationScopedMod, err := ImplementationScopedModule(ctx, fn.mod)
 	if err != nil {
-		return nil, fmt.Errorf("get content-scoped module ID: %w", err)
+		return nil, fmt.Errorf("get implementation-scoped module: %w", err)
 	}
-	execMD.EncodedContentModuleID, err = contentScopedModID.Encode()
+	implementationScopedModID, err := implementationScopedMod.ID()
 	if err != nil {
-		return nil, fmt.Errorf("encode content-scoped module ID: %w", err)
+		return nil, fmt.Errorf("get implementation-scoped module ID: %w", err)
+	}
+	execMD.EncodedContentModuleID, err = implementationScopedModID.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode implementation-scoped module ID: %w", err)
 	}
 
 	fnCall := &FunctionCall{

@@ -299,8 +299,12 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, _ bksession.Group, opt
 }
 
 func Supports(ctx context.Context, minVersion string) bool {
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return false
+	}
 	return AfterVersion(minVersion).Contains(
-		dagql.CurrentID(ctx).View(),
+		curCall.View,
 	)
 }
 

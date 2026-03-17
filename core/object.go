@@ -147,51 +147,34 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case dagql.ObjectResult[*ModuleObject]:
-		curID := dagql.CurrentID(ctx)
-		if curID == nil {
-			curID = x.ID()
-		}
-		return moduleObjectFieldsToSDKInput(ctx, t, curID, x.ObjectType(), x.Self().Fields)
+		return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
 	case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-		curID := dagql.CurrentID(ctx)
-		if curID == nil {
-			curID = x.ID()
-		}
-		return moduleObjectFieldsToSDKInput(ctx, t, curID, x.ObjectType(), x.Self().Fields)
+		return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
 	case *ModuleObject:
-		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentID(ctx), nil, x.Fields)
+		return moduleObjectFieldsToSDKInput(ctx, t, x.Fields)
 	case *InterfaceAnnotatedValue:
-		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentID(ctx), nil, x.Fields)
+		return moduleObjectFieldsToSDKInput(ctx, t, x.Fields)
 	case DynamicID:
-		query, err := CurrentQuery(ctx)
+		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current query: %w", err)
+			return nil, fmt.Errorf("current dagql server: %w", err)
 		}
-		deps, err := query.IDDeps(ctx, x.ID())
+		id, err := x.ID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
+			return nil, fmt.Errorf("load DynamicID ID: %w", err)
 		}
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
+		if id == nil || id.EngineResultID() == 0 {
+			return nil, fmt.Errorf("load DynamicID: expected attached result ID")
 		}
-		val, err := dag.Load(ctx, x.ID())
+		val, err := dag.Cache.LoadResultByResultID(ctx, dag, id.EngineResultID())
 		if err != nil {
 			return nil, fmt.Errorf("load DynamicID: %w", err)
 		}
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
-			curID := dagql.CurrentID(ctx)
-			if curID == nil {
-				curID = x.ID()
-			}
-			return moduleObjectFieldsToSDKInput(ctx, t, curID, x.ObjectType(), x.Self().Fields)
+			return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
 		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-			curID := dagql.CurrentID(ctx)
-			if curID == nil {
-				curID = x.ID()
-			}
-			return moduleObjectFieldsToSDKInput(ctx, t, curID, x.ObjectType(), x.Self().Fields)
+			return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
@@ -200,36 +183,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func moduleObjectFieldID(ctx context.Context, curID *call.ID, runtimeObjType dagql.ObjectType, fieldTypeDef *FieldTypeDef) (*call.ID, error) {
-	if curID == nil {
-		return nil, fmt.Errorf("nil module object ID")
-	}
-	fieldID := curID.Append(
-		fieldTypeDef.TypeDef.ToType(),
-		fieldTypeDef.Name,
-		call.WithView(curID.View()),
-	)
-	if runtimeObjType != nil {
-		if runtimeFieldSpec, found := runtimeObjType.FieldSpec(fieldTypeDef.Name, curID.View()); found {
-			inputArgs, err := dagql.ExtractIDArgs(runtimeFieldSpec.Args, fieldID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode field %q identity args: %w", fieldTypeDef.Name, err)
-			}
-			identityOpt, err := runtimeFieldSpec.IdentityOpt(ctx, inputArgs)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve field %q identity: %w", fieldTypeDef.Name, err)
-			}
-			fieldID = fieldID.With(identityOpt)
-		} else {
-			fieldID = fieldID.With(call.WithModule(curID.Module()))
-		}
-	} else {
-		fieldID = fieldID.With(call.WithModule(curID.Module()))
-	}
-	return fieldID, nil
-}
-
-func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, curID *call.ID, runtimeObjType dagql.ObjectType, fields map[string]any) (map[string]any, error) {
+func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, fields map[string]any) (map[string]any, error) {
 	if len(fields) == 0 {
 		return map[string]any{}, nil
 	}
@@ -252,11 +206,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, curI
 		if !ok {
 			return nil, fmt.Errorf("could not find mod type for field %q", name)
 		}
-		fieldID, err := moduleObjectFieldID(ctx, curID, runtimeObjType, fieldTypeDef)
-		if err != nil {
-			return nil, fmt.Errorf("field %q ID: %w", name, err)
-		}
-		updated, err := moduleObjectValueToSDKInput(dagql.ContextWithID(ctx, fieldID), modType, value)
+		updated, err := moduleObjectValueToSDKInput(ctx, modType, value)
 		if err != nil {
 			return nil, fmt.Errorf("convert field %q: %w", name, err)
 		}
@@ -272,29 +222,41 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		case nil:
 			return nil, nil
 		case dagql.AnyResult:
-			curID := dagql.CurrentID(ctx)
-			if curID == nil {
-				if value.ID() == nil {
-					return nil, nil
-				}
-				return value.ID().Encode()
+			id, err := value.ID()
+			if err != nil {
+				return nil, err
 			}
-			return curID.Encode()
+			if id != nil {
+				if id.EngineResultID() == 0 {
+					return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+				}
+				return id.Encode()
+			}
+			return modType.ConvertToSDKInput(ctx, value.Unwrap())
 		case dagql.IDable:
-			curID := dagql.CurrentID(ctx)
-			if curID == nil {
-				if value.ID() == nil {
-					return nil, nil
-				}
-				return value.ID().Encode()
+			id, err := value.ID()
+			if err != nil {
+				return nil, err
 			}
-			return curID.Encode()
+			if id == nil {
+				return nil, nil
+			}
+			if id.EngineResultID() == 0 {
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+			}
+			return id.Encode()
 		case *call.ID:
 			if value == nil {
 				return nil, nil
 			}
+			if value.EngineResultID() == 0 {
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+			}
 			return value.Encode()
 		case call.ID:
+			if value.EngineResultID() == 0 {
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+			}
 			return value.Encode()
 		default:
 			typed, err := modType.ConvertFromSDKResult(ctx, value)
@@ -313,11 +275,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 		case []any:
 			items := make([]any, 0, len(value))
 			for i, item := range value {
-				itemCtx := ctx
-				if curID := dagql.CurrentID(ctx); curID != nil {
-					itemCtx = dagql.ContextWithID(ctx, curID.SelectNth(i+1))
-				}
-				updated, err := moduleObjectValueToSDKInput(itemCtx, modType.Underlying, item)
+				updated, err := moduleObjectValueToSDKInput(ctx, modType.Underlying, item)
 				if err != nil {
 					return nil, fmt.Errorf("item %d: %w", i, err)
 				}
@@ -346,21 +304,41 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 	case nil:
 		return nil, nil
 	case dagql.AnyResult:
-		if value.ID() == nil {
-			return nil, nil
+		id, err := value.ID()
+		if err != nil {
+			return nil, err
 		}
-		return value.ID().Encode()
+		if id != nil {
+			if id.EngineResultID() == 0 {
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+			}
+			return id.Encode()
+		}
+		return unknownModuleObjectValueToSDKInput(ctx, value.Unwrap())
 	case dagql.IDable:
-		if value.ID() == nil {
+		id, err := value.ID()
+		if err != nil {
+			return nil, err
+		}
+		if id == nil {
 			return nil, nil
 		}
-		return value.ID().Encode()
+		if id.EngineResultID() == 0 {
+			return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+		}
+		return id.Encode()
 	case *call.ID:
 		if value == nil {
 			return nil, nil
 		}
+		if value.EngineResultID() == 0 {
+			return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+		}
 		return value.Encode()
 	case call.ID:
+		if value.EngineResultID() == 0 {
+			return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+		}
 		return value.Encode()
 	case []any:
 		items := make([]any, 0, len(value))
@@ -390,11 +368,6 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
-	}
-
-	var runtimeObjType dagql.ObjectType
-	if objVal, ok := value.(dagql.AnyObjectResult); ok {
-		runtimeObjType = objVal.ObjectType()
 	}
 	var objFields map[string]any
 	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
@@ -427,36 +400,6 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		if !ok {
 			return fmt.Errorf("could not find mod type for field %q", k)
 		}
-
-		curID := value.ID()
-		if curID == nil {
-			return fmt.Errorf("resolve field %q raw id: nil", k)
-		}
-		fieldID := curID.Append(
-			fieldTypeDef.TypeDef.ToType(),
-			fieldTypeDef.Name,
-			call.WithView(curID.View()),
-		)
-		if runtimeObjType != nil {
-			if runtimeFieldSpec, found := runtimeObjType.FieldSpec(fieldTypeDef.Name, curID.View()); found {
-				inputArgs, err := dagql.ExtractIDArgs(runtimeFieldSpec.Args, fieldID)
-				if err != nil {
-					return fmt.Errorf("failed to decode field %q identity args: %w", k, err)
-				}
-				identityOpt, err := runtimeFieldSpec.IdentityOpt(ctx, inputArgs)
-				if err != nil {
-					return fmt.Errorf("failed to resolve field %q identity: %w", k, err)
-				}
-				fieldID = fieldID.With(identityOpt)
-			} else {
-				// Best-effort fallback for field specs unavailable from runtime object type.
-				fieldID = fieldID.With(call.WithModule(curID.Module()))
-			}
-		} else {
-			// Best-effort fallback for non-object runtime values.
-			fieldID = fieldID.With(call.WithModule(curID.Module()))
-		}
-		ctx := dagql.ContextWithID(ctx, fieldID)
 
 		typed, err := modType.ConvertFromSDKResult(ctx, v)
 		if err != nil {
@@ -726,7 +669,10 @@ func encodePersistedModuleObjectValue(ctx context.Context, cache dagql.Persisted
 			ResultID: resultID,
 		}, nil
 	case dagql.IDable:
-		id := x.ID()
+		id, err := x.ID()
+		if err != nil {
+			return persistedModuleObjectValue{}, err
+		}
 		if id == nil {
 			return persistedModuleObjectValue{Kind: persistedModuleObjectValueKindNull}, nil
 		}
@@ -1000,7 +946,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
 	objDef := obj.TypeDef
 	mod := obj.Module.Self()
-	moduleID, err := mod.IDModule(ctx)
+	moduleID, err := NewUserMod(obj.Module).ResultCallModule(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for object %q constructor: %w", objDef.Name, err)
 	}
@@ -1113,7 +1059,7 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 }
 
 func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
-	moduleID, err := mod.Self().IDModule(ctx)
+	moduleID, err := NewUserMod(mod).ResultCallModule(ctx)
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
 	}
@@ -1189,7 +1135,7 @@ func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *Object
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
-	moduleID, err := mod.Self().IDModule(ctx)
+	moduleID, err := NewUserMod(mod).ResultCallModule(ctx)
 	if err != nil {
 		return f, fmt.Errorf("failed to resolve module identity for function %q: %w", fun.Name, err)
 	}
