@@ -439,6 +439,51 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		)
 	}
 
+	for _, field := range obj.TypeDef.Fields {
+		fieldName := gqlFieldName(field.Name)
+		if _, exists := dag.Root().ObjectType().FieldSpec(fieldName, dag.View); exists {
+			slog.ExtraDebug("skipping entrypoint field proxy due to root field conflict",
+				"module", obj.Module.Name(),
+				"field", fieldName,
+			)
+			continue
+		}
+
+		proxySpec := dagql.FieldSpec{
+			Name:        fieldName,
+			Description: field.Description,
+			Type:        field.TypeDef.ToTyped(),
+			Module:      obj.Module.IDModule(),
+			NoTelemetry: true,
+		}
+
+		// Fields have no args of their own; only constructor args are needed.
+		proxySpec.Args = dagql.NewInputSpecs(constructorArgs...)
+		fieldSpec := proxySpec
+		proxySpec.GetCacheConfig = obj.entrypointProxyCacheConfig(constructorSpec, fieldSpec, constructorArgs, nil)
+
+		proxiedFieldName := fieldName
+		dag.Root().ObjectType().Extend(
+			proxySpec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				ctx = dagql.WithNonInternalTelemetry(ctx)
+				var result dagql.AnyResult
+				if err := dag.Select(ctx, dag.Root(), &result,
+					dagql.Selector{
+						Field: constructorName,
+						Args:  orderedNamedInputs(constructorArgs, args),
+					},
+					dagql.Selector{
+						Field: proxiedFieldName,
+					},
+				); err != nil {
+					return nil, err
+				}
+				return result, nil
+			},
+		)
+	}
+
 	return nil
 }
 
