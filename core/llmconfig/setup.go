@@ -85,12 +85,12 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		wantOAuth bool     // true if this entry expects OAuth auth
 	}
 	entries := []providerEntry{
-		{"OpenRouter (recommended)", "openrouter", "openrouter", false},
-		{"Anthropic (Claude Code OAuth - use your Pro/Max subscription)", "anthropic-oauth", "anthropic", true},
-		{"OpenAI Codex (ChatGPT Plus/Pro subscription)", "openai-codex", "openai-codex", true},
 		{"Anthropic (API key)", "anthropic", "anthropic", false},
+		{"Anthropic (Claude Code OAuth)", "anthropic-oauth", "anthropic", true},
+		{"Google (Gemini)", "google", "google", false},
 		{"OpenAI (API key)", "openai", "openai", false},
-		{"Google (Gemini models)", "google", "google", false},
+		{"OpenAI Codex (ChatGPT subscription)", "openai-codex", "openai-codex", true},
+		{"OpenRouter", "openrouter", "openrouter", false},
 	}
 
 	opts := make([]huh.Option[string], 0, len(entries))
