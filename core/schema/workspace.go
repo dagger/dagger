@@ -215,6 +215,7 @@ func (s *workspaceSchema) directory(ctx context.Context, parent dagql.ObjectResu
 
 	dirArgs := []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(absPath)},
+		{Name: "noCache", Value: dagql.NewBoolean(true)},
 	}
 	if len(args.Include) > 0 {
 		includes := make(dagql.ArrayInput[dagql.String], len(args.Include))
@@ -284,6 +285,7 @@ func (s *workspaceSchema) file(ctx context.Context, parent dagql.ObjectResult[*c
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(fileDir)},
 				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)}},
+				{Name: "noCache", Value: dagql.NewBoolean(true)},
 			},
 		},
 		dagql.Selector{
