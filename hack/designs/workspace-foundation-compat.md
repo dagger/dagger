@@ -2692,6 +2692,31 @@ Behavioral consequence:
   unless the design itself changes to make that syntax part of the public
   contract
 
+### 2026-03-17: Stop Swallowing `initializeWorkspace` Errors In `mcp`
+
+Found one more `workspace-plumbing` CLI divergence from `main` that did not
+carry its own design value:
+
+- `cmd/dagger/mcp.go` called `initializeWorkspace(...)` and discarded the
+  returned error
+- this let MCP continue into its fallback logic even when the underlying
+  workspace/type-def load had actually failed
+
+Why remove it:
+
+- there is nothing MCP-specific in the workspace design that justifies masking
+  arbitrary workspace introspection or schema-load failures
+- `main` already propagates real module-load errors in this path
+- keeping the fallback policy while restoring direct error propagation both
+  improves correctness and shrinks the diff from `main`
+
+What changed:
+
+- `mcpStart` now returns `initializeWorkspace(...)` errors directly
+- no other MCP policy changed in the same commit
+- in particular, the existing default-module / auto-alias fallback logic stays
+  in place for now and should be evaluated separately
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
