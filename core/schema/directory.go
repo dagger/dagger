@@ -1683,11 +1683,11 @@ func maintainContentHashing[A any](
 			return res, err
 		}
 
-		parentID, err := parent.ID()
+		parentCall, err := parent.ResultCall()
 		if err != nil {
 			return res, err
 		}
-		if parentID.ContentDigest() != "" {
+		if parentCall.ContentDigest() != "" {
 			res, err = core.MakeDirectoryContentHashed(ctx, res)
 			if err != nil {
 				return res, fmt.Errorf("failed to make directory content hashed: %w", err)

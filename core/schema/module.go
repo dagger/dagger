@@ -137,7 +137,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("runtime", s.moduleRuntime).
 			Doc(`The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.`),
 
-		dagql.Func("serve", s.moduleServe).
+		dagql.NodeFunc("serve", s.moduleServe).
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
@@ -780,7 +780,7 @@ func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ st
 	return mod.LoadRuntime(ctx)
 }
 
-func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {
+func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResult[*core.Module], args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()

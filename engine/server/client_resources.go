@@ -34,7 +34,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	// can safely skip transfer for already-known resources.
 	var filteredSecretIDs []dagql.ID[*core.Secret]
 	for _, secretID := range secretIDs {
-		if ok := destClient.secretStore.HasSecret(core.SecretIDDigest(secretID.ID())); !ok {
+		id, err := secretID.ID()
+		if err != nil {
+			return fmt.Errorf("failed to get secret ID: %w", err)
+		}
+		if ok := destClient.secretStore.HasSecret(core.SecretIDDigest(id)); !ok {
 			filteredSecretIDs = append(filteredSecretIDs, secretID)
 		}
 	}
@@ -42,7 +46,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 
 	var filteredSocketIDs []dagql.ID[*core.Socket]
 	for _, socketID := range socketIDs {
-		if ok := destClient.socketStore.HasSocket(core.SocketIDDigest(socketID.ID())); !ok {
+		id, err := socketID.ID()
+		if err != nil {
+			return fmt.Errorf("failed to get socket ID: %w", err)
+		}
+		if ok := destClient.socketStore.HasSocket(core.SocketIDDigest(id)); !ok {
 			filteredSocketIDs = append(filteredSocketIDs, socketID)
 		}
 	}

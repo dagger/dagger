@@ -31,7 +31,7 @@ type mockServer struct {
 	clientMetadata *engine.ClientMetadata
 }
 
-func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error {
+func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool) error {
 	return nil
 }
 

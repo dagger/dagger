@@ -1413,6 +1413,7 @@ func (c *cache) GetOrInitCall(
 	}
 	req = req.Clone()
 	req.ResultCall.bindCache(c)
+	ctx = ContextWithCall(ctx, req.ResultCall)
 
 	if req.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
