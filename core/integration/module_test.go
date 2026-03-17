@@ -622,7 +622,7 @@ export class Test {
 			out, err := modInit(t, c, tc.sdk, tc.source).
 				With(withModInitAt("./dep", "go", src)).
 				With(daggerExec("install", "./dep")).
-				With(daggerCall("test")).
+				With(daggerCall("test", "test")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -2846,7 +2846,7 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerCall("test")).Stdout(ctx)
+			out, err := ctr.With(daggerCall("test", "test")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "HELLO FROM FOO", out)
 		})
@@ -2910,7 +2910,7 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerCall("test")).Stdout(ctx)
+			out, err := ctr.With(daggerCall("test", "test")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "HELLO FROM FOO", out)
 		})
@@ -6023,19 +6023,19 @@ class Test:
 				With(daggerExec("install", "./dep"))
 
 			t.Run("float64", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test", "--n=3.14")).Stdout(ctx)
+				out, err := modGen.With(daggerCall("test", "test", "--n=3.14")).Stdout(ctx)
 				require.NoError(t, err)
 				require.JSONEq(t, `3.14`, out)
 			})
 
 			t.Run("float32", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-float-32", "--n=1.73424")).Stdout(ctx)
+				out, err := modGen.With(daggerCall("test", "test-float-32", "--n=1.73424")).Stdout(ctx)
 				require.NoError(t, err)
 				require.JSONEq(t, `1.73424`, out)
 			})
 
 			t.Run("call dep with float64 to float32 conversion", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("dep", "--n=232.3454")).Stdout(ctx)
+				out, err := modGen.With(daggerCall("test", "dep", "--n=232.3454")).Stdout(ctx)
 				require.NoError(t, err)
 				require.JSONEq(t, `232.3454`, out)
 			})
