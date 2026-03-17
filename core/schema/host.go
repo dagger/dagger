@@ -138,7 +138,7 @@ func (s *hostSchema) builtinContainer(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
 }
 
 type hostDirectoryArgs struct {
@@ -283,7 +283,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		Snapshot:  ref,
 	}
 
-	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create directory result: %w", err)
 	}
@@ -309,7 +309,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	dgst := hashutil.HashStrings(accessor)
 
 	sock := &core.Socket{IDDigest: dgst}
-	inst, err = dagql.NewResultForCurrentID(ctx, sock)
+	inst, err = dagql.NewResultForCurrentCall(ctx, sock)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -402,7 +402,7 @@ func (s *hostSchema) sshAuthSocket(ctx context.Context, host dagql.ObjectResult[
 	}
 
 	scopedSocket := &core.Socket{IDDigest: scopedDigest}
-	inst, err = dagql.NewResultForCurrentID(ctx, scopedSocket)
+	inst, err = dagql.NewResultForCurrentCall(ctx, scopedSocket)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -676,7 +676,7 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 
-		return dagql.NewResultForCurrentID(ctx, ctr)
+		return dagql.NewResultForCurrentCall(ctx, ctr)
 	}
 
 	if src := imageReader.Tarball; src != nil {
@@ -688,7 +688,7 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 
-		return dagql.NewResultForCurrentID(ctx, ctr)
+		return dagql.NewResultForCurrentCall(ctx, ctr)
 	}
 
 	return inst, errors.New("invalid save config")
@@ -742,5 +742,5 @@ func (s *hostSchema) service(ctx context.Context, parent dagql.ObjectResult[*cor
 		Creator:     trace.SpanContextFromContext(ctx),
 		HostSockets: socks,
 	}
-	return dagql.NewObjectResultForCurrentID(ctx, srv, svc)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 }

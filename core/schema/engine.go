@@ -127,7 +127,7 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectRes
 		return inst, fmt.Errorf("failed to load cache entries: %w", err)
 	}
 
-	return dagql.NewResultForCurrentID(ctx, entrySet)
+	return dagql.NewResultForCurrentCall(ctx, entrySet)
 }
 
 func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {

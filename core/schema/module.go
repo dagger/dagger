@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 )
 
 type moduleSchema struct{}
@@ -78,28 +77,28 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		Syncer[*core.Module]().
 			Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
 
-		dagql.Func("checks", s.moduleChecks).
+		dagql.NodeFunc("checks", s.moduleChecks).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 			),
 
-		dagql.Func("check", s.moduleCheck).
+		dagql.NodeFunc("check", s.moduleCheck).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Return the check defined by the module with the given name. Must match to exactly one check.`).
 			Args(
 				dagql.Arg("name").Doc("The name of the check to retrieve"),
 			),
 
-		dagql.Func("generators", s.moduleGenerators).
+		dagql.NodeFunc("generators", s.moduleGenerators).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Return all generators defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
 
-		dagql.Func("generator", s.moduleGenerator).
+		dagql.NodeFunc("generator", s.moduleGenerator).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
 			Doc(`Return the generator defined by the module with the given name. Must match to exactly one generator.`).
 			Args(
@@ -746,7 +745,7 @@ func (s *moduleSchema) currentModuleCacheKey(
 	if err != nil {
 		return fmt.Errorf("failed to get implementation-scoped current module ID: %w", err)
 	}
-	args.ImplementationScopedMod = dagql.Opt(scopedModID)
+	args.ImplementationScopedMod = dagql.Opt(dagql.NewID[*core.Module](scopedModID))
 	return req.SetArgInput(ctx, "implementationScopedMod", dagql.NewID[*core.Module](scopedModID), false)
 }
 
@@ -952,9 +951,11 @@ func (s *moduleSchema) moduleDependencies(
 ) (dagql.Array[*core.Module], error) {
 	depMods := make([]*core.Module, 0, len(mod.Deps.Mods()))
 	for _, dep := range mod.Deps.Mods() {
-		switch dep := dep.(type) {
-		case *core.Module:
-			depMods = append(depMods, dep)
+		if depInst := dep.ModuleResult(); depInst.Self() != nil {
+			depMods = append(depMods, depInst.Self())
+			continue
+		}
+		switch dep.(type) {
 		case *CoreMod:
 			// skip
 		default:
@@ -1083,13 +1084,17 @@ func (s *moduleSchema) currentModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
+	generatedDiffID, err := generatedDiff.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get generated context directory ID: %w", err)
+	}
 
 	err = dag.Select(ctx, curSrc.Self().ContextDirectory, &inst,
 		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String("/")},
-				{Name: "source", Value: dagql.NewID[*core.Directory](generatedDiff.ID())},
+				{Name: "source", Value: dagql.NewID[*core.Directory](generatedDiffID)},
 			},
 		},
 		dagql.Selector{

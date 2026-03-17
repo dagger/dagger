@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
@@ -89,7 +88,11 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		if err != nil {
 			return inst, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secret.ID()))
+		secretID, err := secret.ID()
+		if err != nil {
+			return inst, err
+		}
+		authHeaderRaw, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secretID))
 		if err != nil {
 			return inst, err
 		}
@@ -101,7 +104,11 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		if err != nil {
 			return inst, err
 		}
-		host, err := svc.Self().Hostname(ctx, svc.ID())
+		svcDig, err := svc.ContentPreferredDigest()
+		if err != nil {
+			return inst, err
+		}
+		host, err := svc.Self().Hostname(ctx, svcDig)
 		if err != nil {
 			return inst, err
 		}
@@ -148,7 +155,6 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		resp.Header.Get("Last-Modified"),
 		expectedChecksum.String(),
 	)
-	resultID := dagql.CurrentID(ctx).With(call.WithContentDigest(outputDigest))
 	file := &core.File{
 		File:      filename,
 		Platform:  parent.Self().Platform(),
@@ -157,11 +163,11 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	}
 	file.LazyInitComplete = true
 
-	inst, err = dagql.NewObjectResultForID(file, srv, resultID)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 	if err != nil {
 		return inst, err
 	}
-	return inst, nil
+	return inst.WithContentDigest(outputDigest), nil
 }
 
 func parseChecksumArg(checksum *string) (digest.Digest, error) {

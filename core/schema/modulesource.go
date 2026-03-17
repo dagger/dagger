@@ -503,6 +503,10 @@ func (s *moduleSourceSchema) localModuleSource(
 		if err := dag.Select(ctx, dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
 			return inst, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
 		}
+		srcRootDirID, err := srcRootDir.ID()
+		if err != nil {
+			return inst, fmt.Errorf("failed to get empty directory ID for source root subpath: %w", err)
+		}
 
 		err = dag.Select(ctx, dag.Root(), &localSrc.ContextDirectory,
 			dagql.Selector{Field: "directory"},
@@ -510,7 +514,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(localSrc.SourceRootSubpath)},
-					{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDir.ID())},
+					{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDirID)},
 				},
 			},
 		)
@@ -571,7 +575,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
 
-	return dagql.NewResultForCurrentID(ctx, localSrc)
+	return dagql.NewResultForCurrentCall(ctx, localSrc)
 }
 
 func (s *moduleSourceSchema) gitModuleSource(
@@ -731,7 +735,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
 
-	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
+	inst, err = dagql.NewResultForCurrentCall(ctx, gitSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -740,8 +744,12 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
+	contextDirID, err := gitSrc.ContextDirectory.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get git module source context directory ID: %w", err)
+	}
 	secretTransferPostCall, _, err := core.ResourceTransferPostCall(ctx, query.Self(), clientMetadata.ClientID, &resource.ID{
-		ID: gitSrc.ContextDirectory.ID(),
+		ID: contextDirID,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
@@ -911,7 +919,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, err
 	}
 
-	inst, err = dagql.NewResultForCurrentID(ctx, dirSrc)
+	inst, err = dagql.NewResultForCurrentCall(ctx, dirSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -1078,14 +1086,18 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 
 	case core.ModuleSourceKindGit:
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+		unfilteredContextDirID, err := src.Git.UnfilteredContextDir.ID()
+		if err != nil {
+			return fmt.Errorf("failed to get git unfiltered context directory ID: %w", err)
+		}
 
-		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
+		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
-					{Name: "source", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
+					{Name: "source", Value: dagql.NewID[*core.Directory](unfilteredContextDirID)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
 				},
 			},
@@ -1627,7 +1639,11 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 				return nil, fmt.Errorf("failed to load existing %s: %w", accessor.typ, err)
 			}
 
-			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItem.ID()))
+			updatedItemID, err := updatedItem.ID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get updated %s ID: %w", accessor.typ, err)
+			}
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItemID))
 			continue
 		}
 
@@ -1707,13 +1723,21 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 				return nil, fmt.Errorf("failed to load updated %s: %w", accessor.typ, err)
 			}
 
-			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItem.ID()))
+			updatedItemID, err := updatedItem.ID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get updated %s ID: %w", accessor.typ, err)
+			}
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItemID))
 			break
 		}
 
 		// If this item wasn't matched for update, keep it as-is
 		if !matched {
-			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](existingItem.ID()))
+			existingItemID, err := existingItem.ID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get existing %s ID: %w", accessor.typ, err)
+			}
+			newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](existingItemID))
 		}
 	}
 
@@ -1946,13 +1970,17 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 	// Also preserve any existing Customizations configuration
 	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
 	for i, toolchain := range finalToolchains {
+		toolchainID, err := toolchain.ID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get toolchain ID: %w", err)
+		}
 		// Load as a dependency to get the proper config format
 		tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
-			Dependencies: []core.ModuleSourceID{dagql.NewID[*core.ModuleSource](toolchain.ID())},
+			Dependencies: []core.ModuleSourceID{dagql.NewID[*core.ModuleSource](toolchainID)},
 		}
 		tmpSrc := parentSrc.Clone()
 		tmpSrc.Dependencies = nil
-		tmpSrc, err := s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
+		tmpSrc, err = s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
 		}
@@ -2065,15 +2093,19 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	}
 
 	// Set the updated blueprint on the parent source
-	err = dag.Select(ctx, parentSrc, &inst,
-		dagql.Selector{
-			Field: "withBlueprint",
-			Args: []dagql.NamedInput{{
-				Name:  "blueprint",
-				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
-			}},
-		},
-	)
+		bpUpdatedID, err := bpUpdated.ID()
+		if err != nil {
+			return inst, fmt.Errorf("failed to get updated blueprint ID: %w", err)
+		}
+		err = dag.Select(ctx, parentSrc, &inst,
+			dagql.Selector{
+				Field: "withBlueprint",
+				Args: []dagql.NamedInput{{
+					Name:  "blueprint",
+					Value: dagql.NewID[*core.ModuleSource](bpUpdatedID),
+				}},
+			},
+		)
 	return inst, err
 }
 
@@ -2360,7 +2392,7 @@ func (s *moduleSourceSchema) runCodegen(
 				return res, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			deps = mod.Self().Deps.Append(core.NewUserMod(mod.ObjectResult))
+				deps = mod.Self().Deps.Append(core.NewUserMod(mod))
 		}
 	}
 
@@ -2548,7 +2580,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			deps = mod.Self().Deps.Append(core.NewUserMod(mod.ObjectResult))
+				deps = mod.Self().Deps.Append(core.NewUserMod(mod))
 		}
 	}
 
@@ -2560,6 +2592,10 @@ func (s *moduleSourceSchema) runClientGenerator(
 	)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
+	}
+	generatedClientDirID, err := generatedClientDir.ID()
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to get generated client directory ID: %w", err)
 	}
 
 	// Merge the generated client to the current generated instance
@@ -2573,7 +2609,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 				},
 				{
 					Name:  "source",
-					Value: dagql.NewID[*core.Directory](generatedClientDir.ID()),
+						Value: dagql.NewID[*core.Directory](generatedClientDirID),
 				},
 			},
 		})
@@ -2662,13 +2698,17 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	if err != nil {
 		return res, err
 	}
+	genDirInstID, err := genDirInst.ID()
+	if err != nil {
+		return res, fmt.Errorf("failed to get generated context directory ID: %w", err)
+	}
 
 	// return just the diff of what we generated relative to the original context directory
 	err = dag.Select(ctx, originalCtxDir, &res,
 		dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*core.Directory](genDirInst.ID())},
+					{Name: "other", Value: dagql.NewID[*core.Directory](genDirInstID)},
 			},
 		},
 	)
@@ -2693,13 +2733,17 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 	if err != nil {
 		return res, err
 	}
+	originalCtxDirID, err := originalCtxDir.ID()
+	if err != nil {
+		return res, fmt.Errorf("failed to get original context directory ID: %w", err)
+	}
 
 	// Build the changeset: genDirInst.Changes(originalCtxDir).
 	if err := dag.Select(ctx, genDirInst, &res,
 		dagql.Selector{
 			Field: "changes",
 			Args: []dagql.NamedInput{
-				{Name: "from", Value: dagql.NewID[*core.Directory](originalCtxDir.ID())},
+					{Name: "from", Value: dagql.NewID[*core.Directory](originalCtxDirID)},
 			},
 		},
 	); err != nil {
@@ -2729,9 +2773,10 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 	sdkContentDigest := ""
 	contextDirIDDigest := ""
 	contextDirContentDigest := ""
-	if src.Self().ContextDirectory.ID() != nil {
-		contextDirIDDigest = src.Self().ContextDirectory.ID().Digest().String()
-		contextDirContentDigest = src.Self().ContextDirectory.ID().ContentDigest().String()
+	contextDirID, err := src.Self().ContextDirectory.ID()
+	if err == nil && contextDirID != nil {
+		contextDirIDDigest = contextDirID.Digest().String()
+		contextDirContentDigest = contextDirID.ContentDigest().String()
 	}
 	if dgst, err := src.Self().SourceImplementationDigest(ctx); err == nil {
 		sdkContentDigest = dgst.String()
@@ -2852,7 +2897,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 	}
 
 		if typeDefsEnabled && isSelfCallsEnabled(src) {
-			mod.includeSelfInDeps = true
+			mod.IncludeSelfInDeps = true
 		}
 
 	// Verify if lazy loading is disabled ; if so, load the runtime eagerly.
@@ -2863,7 +2908,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 		if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
 			runtimeDeps := mod.Deps
-			if mod.includeSelfInDeps {
+			if mod.IncludeSelfInDeps {
 				// This eager runtime path happens before the final asModule result exists,
 				// so we localize the self-call special case to just this runtime load by
 				// using a temporary attached synthetic self module. The final returned
@@ -3235,12 +3280,16 @@ func findFunctionIndex(obj *core.ObjectTypeDef, name string) int {
 // addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
 func addToolchainFieldsToObject(
 	objectDef *core.TypeDef,
-	toolchainMods []*core.Module,
+	toolchainMods []dagql.ObjectResult[*core.Module],
 	mod *core.Module,
 ) (*core.TypeDef, error) {
 	objectDef = objectDef.Clone()
 
-	for _, tcMod := range toolchainMods {
+	for _, tcModInst := range toolchainMods {
+		tcMod := tcModInst.Self()
+		if tcMod == nil {
+			continue
+		}
 		for _, obj := range tcMod.ObjectDefs {
 			if obj.AsObject.Value.Name == strcase.ToCamel(tcMod.NameField) {
 				// Use the original name (with hyphens) as the map key,
@@ -3290,7 +3339,7 @@ func addToolchainFieldsToObject(
 // mergeToolchainsWithSDK merges toolchain fields into SDK's main object
 func mergeToolchainsWithSDK(
 	mod *core.Module,
-	toolchainMods []*core.Module,
+	toolchainMods []dagql.ObjectResult[*core.Module],
 ) error {
 	mainModuleObjectName := strcase.ToCamel(mod.NameField)
 
@@ -3312,7 +3361,7 @@ func mergeToolchainsWithSDK(
 func createShadowModuleForToolchains(
 	ctx context.Context,
 	mod *core.Module,
-	toolchainMods []*core.Module,
+	toolchainMods []dagql.ObjectResult[*core.Module],
 	dag *dagql.Server,
 ) (*core.Module, error) {
 	shadowTypeDef := &core.ObjectTypeDef{
@@ -3506,7 +3555,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// Copy toolchains from original source to blueprint source
 		var sourceIDs []core.ModuleSourceID
 		for _, src := range tcCtx.originalSrc.Self().Toolchains {
-			sourceIDs = append(sourceIDs, dagql.NewID[*core.ModuleSource](src.ID()))
+			srcID, err := src.ID()
+			if err != nil {
+				return inst, fmt.Errorf("failed to get toolchain source ID for blueprint: %w", err)
+			}
+			sourceIDs = append(sourceIDs, dagql.NewID[*core.ModuleSource](srcID))
 		}
 		err := dag.Select(ctx, tcCtx.src, &tcCtx.src, dagql.Selector{
 			Field: "withToolchains",
@@ -3614,7 +3667,11 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	// Load all toolchains as dependencies
 	tcMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Toolchains))
 	if len(src.Self().Toolchains) > 0 {
-		contextSourceID := dagql.NewID[*core.ModuleSource](src.ID())
+		contextSourceCallID, err := src.ID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get toolchain context source ID: %w", err)
+		}
+		contextSourceID := dagql.NewID[*core.ModuleSource](contextSourceCallID)
 		for i, tcSrc := range src.Self().Toolchains {
 			eg.Go(func() error {
 				err := dag.Select(ctx, tcSrc, &tcMods[i],
@@ -3656,10 +3713,10 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 	deps := core.NewModDeps(query, baseMods)
 	for _, depMod := range depMods {
-		deps = deps.Append(core.NewUserMod(depMod.ObjectResult))
+		deps = deps.Append(core.NewUserMod(depMod))
 	}
 	for _, tcMod := range tcMods {
-		deps = deps.Append(core.NewUserMod(tcMod.ObjectResult))
+		deps = deps.Append(core.NewUserMod(tcMod))
 	}
 
 	return deps, nil

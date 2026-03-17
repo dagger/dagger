@@ -175,7 +175,7 @@ func (s *querySchema) schemaJSONFile(
 	}
 	file.LazyInitComplete = true
 
-	return dagql.NewObjectResultForCurrentID(ctx, dag, file)
+	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
 }
 
 func dagqlToCodegenType(dagqlType *introspection.Type) (*codegenintrospection.Type, error) {

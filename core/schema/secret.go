@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
@@ -89,7 +88,7 @@ func (s *secretSchema) secret(
 		URI:               args.URI,
 		BuildkitSessionID: clientMetadata.ClientID,
 	}
-	i, err = dagql.NewObjectResultForCurrentID(ctx, srv, secret)
+	i, err = dagql.NewObjectResultForCurrentCall(ctx, srv, secret)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -169,14 +168,29 @@ func (s *secretSchema) setSecret(
 		accessor,
 	)
 
-	callID := dagql.CurrentID(ctx).With(
-		call.WithArgs(
-			call.NewArgument("name", call.NewLiteralString(args.Name), false),
-			// hide plaintext in the returned ID, we instead rely on the
-			// digest of the ID for uniqueness+identity
-			call.NewArgument("plaintext", call.NewLiteralString("***"), false),
-		),
-	)
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return i, fmt.Errorf("current call is nil")
+	}
+	sanitizedCall := *curCall
+	sanitizedCall.Args = []*dagql.ResultCallArg{
+		{
+			Name: "name",
+			Value: &dagql.ResultCallLiteral{
+				Kind:        dagql.ResultCallLiteralKindString,
+				StringValue: args.Name,
+			},
+		},
+		{
+			Name: "plaintext",
+			// Hide plaintext in the returned identity; content digest still
+			// carries uniqueness.
+			Value: &dagql.ResultCallLiteral{
+				Kind:        dagql.ResultCallLiteralKindString,
+				StringValue: "***",
+			},
+		},
+	}
 
 	secretStore, err := parent.Self().Secrets(ctx)
 	if err != nil {
@@ -186,7 +200,7 @@ func (s *secretSchema) setSecret(
 		Name:      args.Name,
 		Plaintext: []byte(args.Plaintext),
 	}
-	secret, err := dagql.NewObjectResultForID(secretVal, srv, callID)
+	secret, err := dagql.NewObjectResultForCall(secretVal, srv, &sanitizedCall)
 	if err != nil {
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}
@@ -207,9 +221,13 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	name, ok := secretStore.GetSecretName(core.SecretIDDigest(secret.ID()))
+	secretID, err := secret.ID()
+	if err != nil {
+		return "", err
+	}
+	name, ok := secretStore.GetSecretName(core.SecretIDDigest(secretID))
 	if !ok {
-		return "", fmt.Errorf("secret not found: %s", core.SecretIDDigest(secret.ID()))
+		return "", fmt.Errorf("secret not found: %s", core.SecretIDDigest(secretID))
 	}
 
 	return name, nil
@@ -224,9 +242,13 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	name, ok := secretStore.GetSecretURI(core.SecretIDDigest(secret.ID()))
+	secretID, err := secret.ID()
+	if err != nil {
+		return "", err
+	}
+	name, ok := secretStore.GetSecretURI(core.SecretIDDigest(secretID))
 	if !ok {
-		return "", fmt.Errorf("secret not found: %s", core.SecretIDDigest(secret.ID()))
+		return "", fmt.Errorf("secret not found: %s", core.SecretIDDigest(secretID))
 	}
 
 	return name, nil
@@ -241,7 +263,11 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	plaintext, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secret.ID()))
+	secretID, err := secret.ID()
+	if err != nil {
+		return "", err
+	}
+	plaintext, err := secretStore.GetSecretPlaintext(ctx, core.SecretIDDigest(secretID))
 	if err != nil {
 		return "", err
 	}

@@ -387,7 +387,7 @@ func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (
 	if err != nil {
 		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: failed to decode input: %w", err)
 	}
-	return dagql.NewResultForCurrentID(ctx, input)
+	return dagql.NewResultForCurrentCall(ctx, input)
 }
 
 func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -444,10 +444,14 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		}
 		return value, nil
 	case dagql.IDable:
-		if value.ID() == nil {
+		id, err := value.ID()
+		if err != nil {
+			return nil, err
+		}
+		if id == nil {
 			return nil, nil
 		}
-		return obj.ConvertFromSDKResult(ctx, value.ID())
+		return obj.ConvertFromSDKResult(ctx, id)
 	case *call.ID:
 		if value == nil {
 			return nil, nil
@@ -509,10 +513,14 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	case dagql.Input:
 		return x, nil
 	case dagql.AnyResult:
-		if x.ID() == nil {
+		id, err := x.ID()
+		if err != nil {
+			return nil, err
+		}
+		if id == nil {
 			return nil, nil
 		}
-		return x.ID().Encode()
+		return id.Encode()
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: unknown type %T", obj, value)
 	}
@@ -526,7 +534,11 @@ func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyRes
 	case dagql.Input:
 		return content.CollectJSONable(x)
 	case dagql.AnyResult:
-		return content.CollectID(x.ID(), false)
+		id, err := x.ID()
+		if err != nil {
+			return err
+		}
+		return content.CollectID(id, false)
 	default:
 		return content.CollectJSONable(value.Unwrap())
 	}
@@ -567,7 +579,7 @@ func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (d
 	if err != nil {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: failed to decode input: %w", err)
 	}
-	return dagql.NewResultForCurrentID(ctx, input)
+	return dagql.NewResultForCurrentCall(ctx, input)
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {

@@ -63,7 +63,7 @@ type Module struct {
 	Toolchains *ToolchainRegistry
 
 	persistedResultID uint64
-	includeSelfInDeps bool
+	IncludeSelfInDeps bool
 
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
@@ -301,7 +301,7 @@ func (mod *Module) AttachOwnedResults(
 			owned = append(owned, attachedRes)
 		}
 	}
-	if mod.includeSelfInDeps {
+	if mod.IncludeSelfInDeps {
 		if mod.Deps == nil {
 			return nil, fmt.Errorf("attach module self dependency: missing module deps")
 		}
@@ -406,7 +406,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		persisted.RuntimeResultID = runtimeID
 	}
 
-	persisted.IncludeSelfInDeps = mod.includeSelfInDeps
+	persisted.IncludeSelfInDeps = mod.IncludeSelfInDeps
 	if mod.Deps != nil {
 		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods()))
 		for _, dep := range mod.Deps.Mods() {
@@ -414,7 +414,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 			if depInst.Self() == nil {
 				continue
 			}
-			if mod.includeSelfInDeps && depInst.Self() == mod {
+			if mod.IncludeSelfInDeps && depInst.Self() == mod {
 				continue
 			}
 			if depInst.Self().PersistedResultID() == 0 {
@@ -535,7 +535,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		InterfaceDefs:                 persisted.InterfaceDefs,
 		EnumDefs:                      persisted.EnumDefs,
 		IsToolchain:                   persisted.IsToolchain,
-		includeSelfInDeps:             persisted.IncludeSelfInDeps,
+		IncludeSelfInDeps:             persisted.IncludeSelfInDeps,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
 	}
 	if mod.SDKConfig == nil {
