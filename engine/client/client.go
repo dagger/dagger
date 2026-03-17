@@ -1407,7 +1407,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 
 	if c.Module != "" {
-		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Blueprint: true}}
+		md.ExtraModules = []engine.ExtraModule{{Ref: c.Module, Entrypoint: true}}
 		md.SkipWorkspaceModules = true
 	}
 	if c.SkipWorkspaceModules {

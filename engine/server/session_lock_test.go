@@ -308,7 +308,7 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 			{Ref: "github.com/acme/b", Name: "b"},
 		},
 		[]engine.ExtraModule{
-			{Ref: "github.com/acme/extra1", Name: "extra1", Blueprint: true},
+			{Ref: "github.com/acme/extra1", Name: "extra1", Entrypoint: true},
 			{Ref: "github.com/acme/extra2", Name: "extra2"},
 		},
 	)
@@ -323,7 +323,7 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	require.Equal(t, "github.com/acme/b", loads[1].mod.Ref)
 	require.Equal(t, "github.com/acme/extra1", loads[2].mod.Ref)
 	require.Equal(t, "github.com/acme/extra2", loads[3].mod.Ref)
-	require.True(t, loads[2].mod.Blueprint)
+	require.True(t, loads[2].mod.Entrypoint)
 }
 
 func TestModuleResolveParallelism(t *testing.T) {

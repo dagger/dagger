@@ -1780,7 +1780,7 @@ type pendingModule struct {
 	// If true, this module is the workspace entrypoint: its main-object
 	// methods are proxied onto the Query root in addition to its namespaced
 	// constructor.
-	Blueprint bool
+	Entrypoint bool
 
 	// If true, resolve +defaultPath from workspace root instead of module source.
 	// Used for legacy blueprints/toolchains migrated to workspace modules.
@@ -1802,11 +1802,11 @@ type moduleLoadRequest struct {
 
 const maxParallelModuleResolves = 8
 
-// findBlueprint returns the index of the first blueprint module in pending,
+// findEntrypoint returns the index of the first entrypoint module in pending,
 // or -1 if none exists.
-func findBlueprint(pending []pendingModule) int {
+func findEntrypoint(pending []pendingModule) int {
 	for i, m := range pending {
-		if m.Blueprint {
+		if m.Entrypoint {
 			return i
 		}
 	}
@@ -1999,7 +1999,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			pendingMod := pendingModule{
 				Ref:                ref,
 				Name:               name,
-				Blueprint:          entry.Blueprint,
+				Entrypoint:         entry.Blueprint,
 				LegacyDefaultPath:  entry.LegacyDefaultPath,
 				DisableFindUp:      true,
 				ConfigDefaults:     entry.Config,
@@ -2052,7 +2052,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		pendingMod := pendingModule{
 			Ref:               ref,
 			Name:              legacyBlueprint.Name,
-			Blueprint:         true,
+			Entrypoint:        true,
 			LegacyDefaultPath: true,
 		}
 		if kind != core.ModuleSourceKindLocal && legacyBlueprint.Pin != "" {
@@ -2070,9 +2070,13 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 			name := cwdModuleName(ctx, readFile, moduleDir)
 			pending = append(pending, pendingModule{
-				Ref:       resolveLocalRef(ws, rel),
-				Name:      name,
-				Blueprint: true,
+				Ref:  resolveLocalRef(ws, rel),
+				Name: name,
+				// If the root module references a separate blueprint, only that
+				// blueprint should contribute Query-root entrypoint proxies.
+				// The root app module still needs to be served, but only as a
+				// namespaced module.
+				Entrypoint: legacyBlueprint == nil,
 			})
 		}
 	}
@@ -2085,7 +2089,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// Set the workspace's default module so the CLI knows which module
 	// to focus on without heuristics.
-	if idx := findBlueprint(pending); idx >= 0 {
+	if idx := findEntrypoint(pending); idx >= 0 {
 		client.workspace.DefaultModule = pending[idx].Name
 	}
 
@@ -2236,7 +2240,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	for i, load := range loads {
-		if err := srv.serveModuleWithDeps(client, resolvedMods[i], load.mod.Blueprint); err != nil {
+		if err := srv.serveModuleWithDeps(client, resolvedMods[i], load.mod.Entrypoint); err != nil {
 			client.modulesErr = moduleLoadErr(load, err)
 			client.modulesLoaded = true
 			return client.modulesErr
@@ -2255,9 +2259,9 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 	for _, extra := range extras {
 		loads = append(loads, moduleLoadRequest{
 			mod: pendingModule{
-				Ref:       extra.Ref,
-				Name:      extra.Name,
-				Blueprint: extra.Blueprint,
+				Ref:        extra.Ref,
+				Name:       extra.Name,
+				Entrypoint: extra.Entrypoint,
 			},
 			extra: true,
 		})
@@ -2331,7 +2335,7 @@ func (srv *Server) resolveModule(
 	if mod.Name != "" {
 		resolved.Self().NameField = mod.Name
 	}
-	// noop: Blueprint is handled during module gathering, not at load time.
+	// noop: Entrypoint is handled during module gathering, not at load time.
 	if mod.LegacyDefaultPath {
 		resolved.Self().LegacyDefaultPath = true
 	}
