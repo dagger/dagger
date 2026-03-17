@@ -2070,13 +2070,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			rel, _ := filepath.Rel(wsDir, moduleDir)
 			name := cwdModuleName(ctx, readFile, moduleDir)
 			pending = append(pending, pendingModule{
-				Ref:  resolveLocalRef(ws, rel),
-				Name: name,
-				// If the root module references a separate blueprint, only that
-				// blueprint should contribute Query-root entrypoint proxies.
-				// The root app module still needs to be served, but only as a
-				// namespaced module.
-				Entrypoint: legacyBlueprint == nil,
+				Ref:        resolveLocalRef(ws, rel),
+				Name:       name,
+				Entrypoint: true,
 			})
 		}
 	}
