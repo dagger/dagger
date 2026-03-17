@@ -221,13 +221,9 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	secretID, err := secret.ID()
-	if err != nil {
-		return "", err
-	}
-	secretDigest, err := core.SecretIDDigest(secretID)
-	if err != nil {
-		return "", err
+	secretDigest := core.SecretDigest(secret)
+	if secretDigest == "" {
+		return "", fmt.Errorf("secret must have a digest")
 	}
 	name, ok := secretStore.GetSecretName(secretDigest)
 	if !ok {
@@ -246,13 +242,9 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	secretID, err := secret.ID()
-	if err != nil {
-		return "", err
-	}
-	secretDigest, err := core.SecretIDDigest(secretID)
-	if err != nil {
-		return "", err
+	secretDigest := core.SecretDigest(secret)
+	if secretDigest == "" {
+		return "", fmt.Errorf("secret must have a digest")
 	}
 	name, ok := secretStore.GetSecretURI(secretDigest)
 	if !ok {
@@ -271,13 +263,9 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	secretID, err := secret.ID()
-	if err != nil {
-		return "", err
-	}
-	secretDigest, err := core.SecretIDDigest(secretID)
-	if err != nil {
-		return "", err
+	secretDigest := core.SecretDigest(secret)
+	if secretDigest == "" {
+		return "", fmt.Errorf("secret must have a digest")
 	}
 	plaintext, err := secretStore.GetSecretPlaintext(ctx, secretDigest)
 	if err != nil {

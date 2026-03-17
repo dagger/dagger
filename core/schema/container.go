@@ -2948,13 +2948,9 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 	if err != nil {
 		return nil, err
 	}
-	secretID, err := secret.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get secret ID: %w", err)
-	}
-	secretDigest, err := core.SecretIDDigest(secretID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get secret digest: %w", err)
+	secretDigest := core.SecretDigest(secret)
+	if secretDigest == "" {
+		return nil, fmt.Errorf("failed to get secret digest: secret must have a digest")
 	}
 	secretBytes, err := secretStore.GetSecretPlaintext(ctx, secretDigest)
 	if err != nil {

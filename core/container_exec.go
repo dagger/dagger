@@ -278,13 +278,9 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv, err error) {
 	for _, secret := range container.Secrets {
 		if secret.EnvName != "" {
-			secretID, err := secret.Secret.ID()
-			if err != nil {
-				return nil, fmt.Errorf("secret env %q ID: %w", secret.EnvName, err)
-			}
-			secretDigest, err := SecretIDDigest(secretID)
-			if err != nil {
-				return nil, fmt.Errorf("secret env %q digest: %w", secret.EnvName, err)
+			secretDigest := SecretDigest(secret.Secret)
+			if secretDigest == "" {
+				return nil, fmt.Errorf("secret env %q digest: secret must have a digest", secret.EnvName)
 			}
 			secretEnvs = append(secretEnvs, &pb.SecretEnv{
 				ID:   secretDigest.String(),
@@ -595,13 +591,9 @@ func prepareMounts(
 		if secret.Owner != nil {
 			uid, gid = secret.Owner.UID, secret.Owner.GID
 		}
-		secretID, err := secret.Secret.ID()
-		if err != nil {
-			return materialized, fmt.Errorf("secret mount %q ID: %w", secret.MountPath, err)
-		}
-		secretDigest, err := SecretIDDigest(secretID)
-		if err != nil {
-			return materialized, fmt.Errorf("secret mount %q digest: %w", secret.MountPath, err)
+		secretDigest := SecretDigest(secret.Secret)
+		if secretDigest == "" {
+			return materialized, fmt.Errorf("secret mount %q digest: secret must have a digest", secret.MountPath)
 		}
 		secretState := &execMountState{
 			Dest:      secret.MountPath,
@@ -1358,13 +1350,9 @@ func (container *Container) WithExec(
 			if secret.Owner != nil {
 				uid, gid = secret.Owner.UID, secret.Owner.GID
 			}
-			secretID, err := secret.Secret.ID()
-			if err != nil {
-				return failPrepare(fmt.Errorf("secret mount %q ID: %w", secret.MountPath, err))
-			}
-			secretDigest, err := SecretIDDigest(secretID)
-			if err != nil {
-				return failPrepare(fmt.Errorf("secret mount %q digest: %w", secret.MountPath, err))
+			secretDigest := SecretDigest(secret.Secret)
+			if secretDigest == "" {
+				return failPrepare(fmt.Errorf("secret mount %q digest: secret must have a digest", secret.MountPath))
 			}
 			secretState := &execMountState{
 				Dest:      secret.MountPath,

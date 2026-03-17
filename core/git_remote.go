@@ -175,19 +175,13 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil {
-		tokenID, err := token.ID()
-		if err == nil {
-			if tokenDigest, err := SecretIDDigest(tokenID); err == nil {
-				scope = append(scope, "token:"+tokenDigest.String())
-			}
+		if tokenDigest := SecretDigest(token); tokenDigest != "" {
+			scope = append(scope, "token:"+tokenDigest.String())
 		}
 	}
 	if header := repo.AuthHeader; header.Self() != nil {
-		headerID, err := header.ID()
-		if err == nil {
-			if headerDigest, err := SecretIDDigest(headerID); err == nil {
-				scope = append(scope, "header:"+headerDigest.String())
-			}
+		if headerDigest := SecretDigest(header); headerDigest != "" {
+			scope = append(scope, "header:"+headerDigest.String())
 		}
 	}
 	if repo.AuthUsername != "" {
@@ -298,13 +292,9 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		tokenID, err := repo.AuthToken.ID()
-		if err != nil {
-			return nil, nil, fmt.Errorf("get auth token ID: %w", err)
-		}
-		tokenDigest, err := SecretIDDigest(tokenID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("get auth token digest: %w", err)
+		tokenDigest := SecretDigest(repo.AuthToken)
+		if tokenDigest == "" {
+			return nil, nil, fmt.Errorf("get auth token digest: secret must have a digest")
 		}
 		password, err := secretStore.GetSecretPlaintext(ctx, tokenDigest)
 		if err != nil {
@@ -316,13 +306,9 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		headerID, err := repo.AuthHeader.ID()
-		if err != nil {
-			return nil, nil, fmt.Errorf("get auth header ID: %w", err)
-		}
-		headerDigest, err := SecretIDDigest(headerID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("get auth header digest: %w", err)
+		headerDigest := SecretDigest(repo.AuthHeader)
+		if headerDigest == "" {
+			return nil, nil, fmt.Errorf("get auth header digest: secret must have a digest")
 		}
 		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, headerDigest)
 		if err != nil {
