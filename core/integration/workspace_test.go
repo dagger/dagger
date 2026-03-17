@@ -18,8 +18,6 @@ func TestWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceSuite{})
 }
 
-const dangSDK = "github.com/vito/dang/dagger-sdk@8eba69d6ac5bcf1e4050bb855783e01d8b557ea9"
-
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
 func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
@@ -42,7 +40,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			WithWorkdir("toolchains/"+name).
-			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
+			With(daggerExec("init", "--sdk=dang", "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
 			With(daggerExec("toolchain", "install", "./toolchains/"+name))
@@ -57,7 +55,7 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 		return ctr.
 			// Create the blueprint module
 			WithWorkdir("blueprints/"+name).
-			With(daggerExec("init", "--sdk="+dangSDK, "--name="+name)).
+			With(daggerExec("init", "--sdk=dang", "--name="+name)).
 			WithNewFile("main.dang", source).
 			WithWorkdir("../../").
 			// Init the workspace root module using the blueprint

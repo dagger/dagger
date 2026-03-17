@@ -773,6 +773,7 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 			} else {
 				done <- formResult{}
 			}
+			close(done)
 		})
 		fe.Update()
 	})
@@ -2385,8 +2386,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
 	keyStr := k.String()
-	switch keyStr {
-	case "esc":
+	if keyStr == "esc" {
 		fe.exitSearchMode()
 		fe.Update()
 		return true

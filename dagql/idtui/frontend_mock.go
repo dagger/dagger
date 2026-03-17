@@ -5,6 +5,8 @@ package idtui
 
 import (
 	"context"
+	"sync"
+
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -12,7 +14,6 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"sync"
 )
 
 // Ensure, that FrontendMock does implement Frontend.

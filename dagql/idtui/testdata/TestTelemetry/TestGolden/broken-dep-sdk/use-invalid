@@ -19,6 +19,7 @@ Expected stderr:
     │   ┃
     │   ┃ The available SDKs are:
     │   ┃ - go
+    │   ┃ - dang
     │   ┃ - python
     │   ┃ - typescript
     │   ┃ - php
