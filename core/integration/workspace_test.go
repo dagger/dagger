@@ -937,7 +937,7 @@ type Ci {
 	})
 
 	t.Run("namespaced method still accepts both args", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--prefix", "ctor", "ci", "echo", "--prefix", "method")).Stdout(ctx)
+		out, err := base.With(daggerCall("ci", "--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})

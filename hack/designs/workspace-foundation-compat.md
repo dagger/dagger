@@ -2647,6 +2647,51 @@ Rebase guidance:
   targeting, that should come back as part of the real deferred workspace UX,
   not as an inert leftover in PR A's CLI module-loading path
 
+### 2026-03-17: Remove Query-Root Constructor Flag Hoisting
+
+Found one more `workspace-plumbing`-only CLI behavior that muddies the design
+boundary after entrypoint methods were projected onto `Query`:
+
+- `cmd/dagger/functions.go` hoisted constructor args from Query-root module
+  constructors onto the parent `dagger call` command
+- child proxy commands then read those parent-local flags back during
+  `selectFunc`
+- this allowed shorthand like:
+  - `dagger call --prefix ctor ci echo --prefix method`
+- instead of the schema-literal form:
+  - `dagger call ci --prefix ctor echo --prefix method`
+
+Why remove it:
+
+- the engine already projects constructor+method args onto the real Query-root
+  DAGQL field signature
+- the CLI does not need to reconstruct which proxy args "came from" the
+  constructor in order to execute the call correctly
+- hoisting them to the parent root re-inflates provenance the schema
+  intentionally collapsed and pushes the CLI back toward ownership heuristics
+- it also introduces root-level flag collision and validation edge cases that
+  the projected schema itself avoids
+
+What changed:
+
+- removed the root-local constructor-flag registration path from
+  `cmd/dagger/functions.go`
+- restored ordinary required-flag validation on the selected command
+- stopped looking at parent-local flags during Query-root proxy selection
+- updated the one retained integration assertion to the schema-literal command
+  form
+- deleted the branch-local unit test that only locked in the hoisting behavior
+
+Behavioral consequence:
+
+- users must now pass constructor args where the selected constructor/proxy
+  command actually exposes them
+- for the retained example above, the supported invocation is:
+  - `dagger call ci --prefix ctor echo --prefix method`
+- the old root-hoisted shorthand should not be restored during a future rebase
+  unless the design itself changes to make that syntax part of the public
+  contract
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
