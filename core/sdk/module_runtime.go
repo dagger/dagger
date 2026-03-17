@@ -36,6 +36,14 @@ func (sdk *runtimeModule) Runtime(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
+	sourceID, err := source.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get scoped module source ID for sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
 
 	err = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
@@ -43,11 +51,11 @@ func (sdk *runtimeModule) Runtime(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
-					Value: dagql.NewID[*core.ModuleSource](source.ID()),
+					Value: dagql.NewID[*core.ModuleSource](sourceID),
 				},
 				{
 					Name:  "introspectionJson",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+					Value: dagql.NewID[*core.File](schemaJSONFileID),
 				},
 			},
 		},

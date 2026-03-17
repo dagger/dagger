@@ -417,13 +417,17 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, err
 	}
 
+	modCallID, err := modID.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module ID handle from type defs json: %w", err)
+	}
 	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
 			Field: "loadModuleFromID",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "id",
-					Value: dagql.NewID[*core.Module](modID.ID()),
+					Value: dagql.NewID[*core.Module](modCallID),
 				},
 			},
 		})
@@ -540,6 +544,10 @@ func (sdk *goSDK) baseWithCodegen(
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get schema introspection json ID during module sdk codegen: %w", err)
+	}
 
 	modName := src.Self().ModuleOriginalName
 	contextDir := src.Self().ContextDirectory
@@ -566,6 +574,10 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	); err != nil {
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
+	}
+	updatedContextDirID, err := updatedContextDir.ID()
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get updated context directory ID during module sdk codegen: %w", err)
 	}
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
@@ -775,8 +787,24 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 				Value: dagql.String("internal"),
 			},
 		},
-	}); err != nil {
-		return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
+		}); err != nil {
+			return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
+		}
+	modCacheID, err := modCache.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module cache ID from go module sdk tarball: %w", err)
+	}
+	modCacheBaseDirID, err := modCacheBaseDir.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module cache base dir ID from go module sdk tarball: %w", err)
+	}
+	buildCacheID, err := buildCache.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get build cache ID from go module sdk tarball: %w", err)
+	}
+	buildCacheBaseDirID, err := buildCacheBaseDir.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get build cache base dir ID from go module sdk tarball: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]
@@ -809,18 +837,18 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 					Name:  "path",
 					Value: dagql.String("/root/.cache/go-build"),
 				},
-				{
-					Name:  "cache",
-					Value: dagql.NewID[*core.CacheVolume](buildCache.ID()),
-				},
+					{
+						Name:  "cache",
+						Value: dagql.NewID[*core.CacheVolume](buildCacheID),
+					},
 				{
 					Name:  "sharing",
 					Value: core.CacheSharingModeShared,
 				},
-				{
-					Name:  "source",
-					Value: dagql.Opt(dagql.NewID[*core.Directory](buildCacheBaseDir.ID())),
-				},
+					{
+						Name:  "source",
+						Value: dagql.Opt(dagql.NewID[*core.Directory](buildCacheBaseDirID)),
+					},
 			},
 		},
 		dagql.Selector{
@@ -922,6 +950,10 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 	if sockInst.Self() == nil {
 		return nil, nil, fmt.Errorf("sockInst.Self is NIL")
 	}
+	sockInstID, err := sockInst.ID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get ssh socket ID: %w", err)
+	}
 
 	sshSockPath := "/tmp/dagger-ssh-sock"
 	set := []dagql.Selector{
@@ -934,7 +966,7 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 				},
 				{
 					Name:  "source",
-					Value: dagql.NewID[*core.Socket](sockInst.ID()),
+					Value: dagql.NewID[*core.Socket](sockInstID),
 				},
 			},
 		},

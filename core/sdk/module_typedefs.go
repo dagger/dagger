@@ -45,11 +45,22 @@ func (sdk *moduleTypes) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
 	}
-	currentModuleID := scopedMod.ID()
+	currentModuleID, err := scopedMod.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current module ID for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+	}
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	sourceID, err := source.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get scoped module source ID for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json ID during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	execMD := buildkit.ExecutionMetadata{
@@ -77,11 +88,11 @@ func (sdk *moduleTypes) ModuleTypes(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
-					Value: dagql.NewID[*core.ModuleSource](source.ID()),
+					Value: dagql.NewID[*core.ModuleSource](sourceID),
 				},
 				{
 					Name:  "introspectionJson",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+					Value: dagql.NewID[*core.File](schemaJSONFileID),
 				},
 				{
 					Name:  "outputFilePath",
@@ -127,13 +138,17 @@ func (sdk *moduleTypes) ModuleTypes(
 		return inst, err
 	}
 
+	modCallID, err := modID.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module ID handle from type defs json: %w", err)
+	}
 	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
 			Field: "loadModuleFromID",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "id",
-					Value: dagql.NewID[*core.Module](modID.ID()),
+					Value: dagql.NewID[*core.Module](modCallID),
 				},
 			},
 		})

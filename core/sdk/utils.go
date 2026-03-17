@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 // Return true if the given module is a builtin SDK.
@@ -29,36 +30,16 @@ func ScopeModuleForSDKOperation(
 	op string,
 	dag *dagql.Server,
 ) (inst dagql.ObjectResult[*core.Module], err error) {
-	if mod.ResultID == nil {
-		return inst, fmt.Errorf("module has no ResultID to scope for sdk operation %s", op)
-	}
 	if !mod.Source.Valid {
-		return inst, fmt.Errorf("module has invalid source to scope for sdk operation %s", op)
+		return inst, fmt.Errorf("module has invalid source to scope for sdk operation %q", op)
 	}
 
-	srcContentDigestForSDK, err := mod.Source.Value.Self().ContentDigestForSDK(ctx)
+	sourceImplementationDigest, err := mod.Source.Value.Self().SourceImplementationDigest(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get module source content digest for sdk operation %q: %w", op, err)
+		return inst, fmt.Errorf("failed to get module source implementation digest for sdk operation %q: %w", op, err)
 	}
-	scopedID := mod.ResultID.With(call.WithScopeToDigest(op, hashutil.HashStrings(
-		srcContentDigestForSDK.String(),
-		"sdk-module-op",
-	)))
-
-	// ensure any extra digests are also scoped to this operation
-	for _, extraDigest := range mod.ResultID.ExtraDigests() {
-		extraDigest.Digest = hashutil.HashStrings(extraDigest.Digest.String(), op)
-		scopedID = scopedID.With(call.WithReplacedExtraDigest(extraDigest))
-	}
-
 	scopedMod := mod.Clone()
-	scopedMod.ResultID = scopedID
-
-	scopedModInst, err := dagql.NewObjectResultForID(scopedMod, dag, scopedID)
-	if err != nil {
-		return inst, err
-	}
-	scopedModInst = scopedModInst.ObjectResultWithCall(&dagql.ResultCall{
+	scopedModInst, err := dagql.NewObjectResultForCall(scopedMod, dag, &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "sdk_scope_module",
 		Type:        dagql.NewResultCallType(scopedMod.Type()),
@@ -68,20 +49,26 @@ func ScopeModuleForSDKOperation(
 				Value: &dagql.ResultCallLiteral{Kind: dagql.ResultCallLiteralKindString, StringValue: op},
 			},
 			{
-				Name: "scopeDigest",
+				Name: "sourceImplementationDigest",
 				Value: &dagql.ResultCallLiteral{
 					Kind:        dagql.ResultCallLiteralKindString,
-					StringValue: srcContentDigestForSDK.String(),
+					StringValue: sourceImplementationDigest.String(),
 				},
 			},
 		},
 	})
-	_, err = dag.Cache.GetOrInitCall(ctx, dagql.CacheKey{
-		ID: scopedModInst.ID(),
-	}, dagql.ValueFunc(scopedModInst))
 	if err != nil {
 		return inst, err
 	}
 
-	return scopedModInst, nil
+	scopedDigest := hashutil.HashStrings("sdk_scope_module", op, sourceImplementationDigest.String())
+	attached, err := dag.Cache.AttachResult(ctx, scopedModInst.WithContentDigest(scopedDigest))
+	if err != nil {
+		return inst, err
+	}
+	typed, ok := attached.(dagql.ObjectResult[*core.Module])
+	if !ok {
+		return inst, fmt.Errorf("scope module for sdk operation %q: unexpected attached result %T", op, attached)
+	}
+	return typed, nil
 }

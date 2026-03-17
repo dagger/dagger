@@ -36,6 +36,14 @@ func (sdk *codeGeneratorModule) Codegen(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
+	sourceID, err := source.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scoped module source ID for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	schemaJSONFileID, err := schemaJSONFile.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
 
 	var inst dagql.Result[*core.GeneratedCode]
 	err = dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
@@ -43,11 +51,11 @@ func (sdk *codeGeneratorModule) Codegen(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](source.ID()),
+				Value: dagql.NewID[*core.ModuleSource](sourceID),
 			},
 			{
 				Name:  "introspectionJson",
-				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				Value: dagql.NewID[*core.File](schemaJSONFileID),
 			},
 		},
 	})
