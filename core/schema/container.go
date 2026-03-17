@@ -1036,7 +1036,7 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 		return nil, err
 	}
 
-	buildctxDirID, err := buildctxDir.ID()
+	buildctxDirID, err := buildctxDir.RecipeID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get build context ID: %w", err)
 	}

@@ -715,7 +715,8 @@ func isKnownDockerfileSyntaxFrontend(syntaxRef string) bool {
 func (container *Container) Build(
 	ctx context.Context,
 	dockerfileDir *Directory,
-	// contextDirID is dockerfileDir with files excluded as per dockerignore file.
+	// contextDirID is dockerfileDir with files excluded as per dockerignore file,
+	// expressed as a recipe-form ID so llbtodagger can append to it.
 	contextDirID *call.ID,
 	dockerfile string,
 	buildArgs []BuildArg,
@@ -776,13 +777,13 @@ func (container *Container) Build(
 	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
 	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
 	for _, secret := range secrets {
-		secretID, err := secret.ID()
+		secretRecipeID, err := secret.RecipeID()
 		if err != nil {
-			return nil, fmt.Errorf("get dockerBuild secret ID: %w", err)
+			return nil, fmt.Errorf("get dockerBuild secret recipe ID: %w", err)
 		}
-		secretDgst, err := SecretIDDigest(secretID)
-		if err != nil {
-			return nil, fmt.Errorf("get dockerBuild secret digest: %w", err)
+		secretDgst := SecretDigest(secret)
+		if secretDgst == "" {
+			return nil, fmt.Errorf("get dockerBuild secret digest: missing secret digest")
 		}
 		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
@@ -792,12 +793,12 @@ func (container *Container) Build(
 			return nil, fmt.Errorf("secret %s has no name and cannot be referenced from Dockerfile secret id", secretDgst)
 		}
 		if existing, found := secretIDsByLLBID[secretName]; found {
-			if existing.Digest() != secretID.Digest() {
+			if existing.Digest() != secretRecipeID.Digest() {
 				return nil, fmt.Errorf("multiple secrets provided for dockerBuild secret id %q", secretName)
 			}
 			continue
 		}
-		secretIDsByLLBID[secretName] = secretID
+		secretIDsByLLBID[secretName] = secretRecipeID
 		returnedSecretMounts = append(returnedSecretMounts, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
@@ -805,7 +806,18 @@ func (container *Container) Build(
 	}
 	sshSocketIDsByLLBID := map[string]*call.ID{}
 	if sshSocketID != nil {
-		sshSocketIDsByLLBID[""] = sshSocketID
+		sshSocketRecipeID := sshSocketID
+		if sshSocketRecipeID.IsHandle() {
+			socketRes, err := dagql.NewID[*Socket](sshSocketID).Load(ctx, srv)
+			if err != nil {
+				return nil, fmt.Errorf("get dockerBuild ssh socket: %w", err)
+			}
+			sshSocketRecipeID, err = socketRes.RecipeID()
+			if err != nil {
+				return nil, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
+			}
+		}
+		sshSocketIDsByLLBID[""] = sshSocketRecipeID
 	}
 
 	convertOpt := dockerfile2llb.ConvertOpt{

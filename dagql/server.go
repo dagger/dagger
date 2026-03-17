@@ -675,9 +675,6 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	if id == nil {
 		return nil, fmt.Errorf("load: nil ID")
 	}
-	if !id.IsHandle() {
-		return nil, fmt.Errorf("load %s: recipe-form IDs are not valid inputs", idInputDebugString(id))
-	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, err
@@ -758,17 +755,230 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
 	}
-	if !id.IsHandle() {
-		return nil, fmt.Errorf("load %s: recipe-form IDs are not valid inputs", idInputDebugString(id))
+	if id.IsHandle() {
+		res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), s, id.EngineResultID())
+		if err != nil {
+			return nil, err
+		}
+		if id.Type() != nil && res.Type() != nil && res.Type().Name() != id.Type().NamedType() {
+			return nil, fmt.Errorf("load %s: expected %s, got %s", idInputDebugString(id), id.Type().ToAST(), res.Type())
+		}
+		return res, nil
 	}
-	res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), s, id.EngineResultID())
+
+	req, err := callRequestFromRecipeID(id)
 	if err != nil {
 		return nil, err
 	}
-	if id.Type() != nil && res.Type() != nil && res.Type().Name() != id.Type().NamedType() {
-		return nil, fmt.Errorf("load %s: expected %s, got %s", idInputDebugString(id), id.Type().ToAST(), res.Type())
+	callCtx := ContextWithCall(srvToContext(ctx, s), req.ResultCall)
+	if res, err := s.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}); err == nil {
+		return res, nil
 	}
-	return res, nil
+
+	var base AnyResult
+	if id.Receiver() != nil {
+		nth := int(id.Nth())
+		if nth == 0 {
+			base, err = s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			baseValue, err := s.LoadType(ctx, id.Receiver())
+			if err != nil {
+				return nil, fmt.Errorf("load base enumerable: %w", err)
+			}
+			return s.loadNthValue(ctx, baseValue, nth, true)
+		}
+	} else {
+		base = s.root
+	}
+
+	baseObj, err := s.toSelectable(ctx, base)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: instantiate base: %w", idInputDebugString(id), err)
+	}
+	sel, err := recipeSelectorFromID(id, baseObj)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
+	}
+	return baseObj.Select(callCtx, s, sel)
+}
+
+func callRequestFromRecipeID(id *call.ID) (*CallRequest, error) {
+	call, err := resultCallFromRecipeID(id)
+	if err != nil {
+		return nil, err
+	}
+	return &CallRequest{ResultCall: call}, nil
+}
+
+func resultCallFromRecipeID(id *call.ID) (*ResultCall, error) {
+	if id == nil {
+		return nil, nil
+	}
+	if id.IsHandle() {
+		return nil, fmt.Errorf("handle-form IDs cannot be converted to recipe call frames: %s", idInputDebugString(id))
+	}
+	var callType *ResultCallType
+	if id.Type() != nil {
+		callType = NewResultCallType(id.Type().ToAST())
+	}
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Field: id.Field(),
+		View:  id.View(),
+		Nth:   id.Nth(),
+		Type:  callType,
+	}
+	if receiverID := id.Receiver(); receiverID != nil {
+		receiverCall, err := resultCallFromRecipeID(receiverID)
+		if err != nil {
+			return nil, fmt.Errorf("receiver: %w", err)
+		}
+		frame.Receiver = &ResultCallRef{Call: receiverCall}
+	}
+	if mod := id.Module(); mod != nil {
+		modCall, err := resultCallFromRecipeID(mod.ID())
+		if err != nil {
+			return nil, fmt.Errorf("module: %w", err)
+		}
+		frame.Module = &ResultCallModule{
+			ResultRef: &ResultCallRef{Call: modCall},
+			Name:      mod.Name(),
+			Ref:       mod.Ref(),
+			Pin:       mod.Pin(),
+		}
+	}
+	for _, arg := range id.Args() {
+		converted, err := resultCallArgFromRecipeArgument(arg)
+		if err != nil {
+			return nil, fmt.Errorf("arg %q: %w", arg.Name(), err)
+		}
+		frame.Args = append(frame.Args, converted)
+	}
+	for _, input := range id.ImplicitInputs() {
+		converted, err := resultCallArgFromRecipeArgument(input)
+		if err != nil {
+			return nil, fmt.Errorf("implicit input %q: %w", input.Name(), err)
+		}
+		frame.ImplicitInputs = append(frame.ImplicitInputs, converted)
+	}
+	return frame, nil
+}
+
+func resultCallArgFromRecipeArgument(arg *call.Argument) (*ResultCallArg, error) {
+	if arg == nil {
+		return nil, nil
+	}
+	value, err := resultCallLiteralFromRecipeLiteral(arg.Value())
+	if err != nil {
+		return nil, err
+	}
+	return &ResultCallArg{
+		Name:        arg.Name(),
+		IsSensitive: arg.IsSensitive(),
+		Value:       value,
+	}, nil
+}
+
+func resultCallLiteralFromRecipeLiteral(lit call.Literal) (*ResultCallLiteral, error) {
+	switch v := lit.(type) {
+	case nil:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralNull:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
+	case *call.LiteralBool:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindBool, BoolValue: v.Value()}, nil
+	case *call.LiteralInt:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindInt, IntValue: v.Value()}, nil
+	case *call.LiteralFloat:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindFloat, FloatValue: v.Value()}, nil
+	case *call.LiteralString:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: v.Value()}, nil
+	case *call.LiteralEnum:
+		return &ResultCallLiteral{Kind: ResultCallLiteralKindEnum, EnumValue: v.Value()}, nil
+	case *call.LiteralDigestedString:
+		return &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
+			DigestedStringValue:  v.Value(),
+			DigestedStringDigest: v.Digest(),
+		}, nil
+	case *call.LiteralID:
+		callFrame, err := resultCallFromRecipeID(v.Value())
+		if err != nil {
+			return nil, err
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindResultRef,
+			ResultRef: &ResultCallRef{Call: callFrame},
+		}, nil
+	case *call.LiteralList:
+		items := make([]*ResultCallLiteral, 0, v.Len())
+		for _, item := range v.Values() {
+			converted, err := resultCallLiteralFromRecipeLiteral(item)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, converted)
+		}
+		return &ResultCallLiteral{
+			Kind:      ResultCallLiteralKindList,
+			ListItems: items,
+		}, nil
+	case *call.LiteralObject:
+		fields := make([]*ResultCallArg, 0, v.Len())
+		for _, field := range v.Args() {
+			converted, err := resultCallArgFromRecipeArgument(field)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", field.Name(), err)
+			}
+			fields = append(fields, converted)
+		}
+		return &ResultCallLiteral{
+			Kind:         ResultCallLiteralKindObject,
+			ObjectFields: fields,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported recipe literal %T", lit)
+	}
+}
+
+func recipeSelectorFromID(id *call.ID, baseObj AnyObjectResult) (Selector, error) {
+	if id == nil {
+		return Selector{}, fmt.Errorf("nil recipe ID")
+	}
+	view := id.View()
+	fieldSpec, ok := baseObj.ObjectType().FieldSpec(id.Field(), view)
+	if !ok {
+		return Selector{}, fmt.Errorf("field %q not found on %s", id.Field(), baseObj.Type().Name())
+	}
+	args := make([]NamedInput, 0, len(id.Args()))
+	for _, argSpec := range fieldSpec.Args.Inputs(view) {
+		var recipeArg *call.Argument
+		for _, arg := range id.Args() {
+			if arg != nil && arg.Name() == argSpec.Name {
+				recipeArg = arg
+				break
+			}
+		}
+		if recipeArg == nil {
+			continue
+		}
+		input, err := argSpec.Type.Decoder().DecodeInput(recipeArg.Value().ToInput())
+		if err != nil {
+			return Selector{}, fmt.Errorf("request arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+		}
+		args = append(args, NamedInput{Name: argSpec.Name, Value: input})
+	}
+	return Selector{
+		Field: id.Field(),
+		Args:  args,
+		Nth:   int(id.Nth()),
+		View:  view,
+	}, nil
 }
 
 // Select evaluates a series of chained field selections starting from the
