@@ -738,7 +738,7 @@ func (s *moduleSchema) currentModuleCacheKey(
 	if err != nil {
 		return fmt.Errorf("failed to get current module: %w", err)
 	}
-	contentScopedID, err := mod.SourceContentScopedID(ctx)
+	contentScopedID, err := mod.Self().SourceContentScopedID(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get source content scoped ID for current module: %w", err)
 	}

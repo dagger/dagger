@@ -55,7 +55,7 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 			return err
 		}
-		namespaceKey := namespaceFromModule(m)
+		namespaceKey := namespaceFromModule(m.Self())
 		args.Namespace = namespaceKey
 		if err := req.SetArgInput(ctx, "namespace", dagql.NewString(namespaceKey), false); err != nil {
 			return err

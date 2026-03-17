@@ -143,8 +143,8 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		if err := callerModID.Decode(execMD.EncodedModuleID); err != nil {
 			return nil, fmt.Errorf("failed to decode module ID: %w", err)
 		}
-	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod != nil {
-		callerModID, err = callerMod.SourceContentScopedID(ctx)
+	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod.Self() != nil {
+		callerModID, err = callerMod.Self().SourceContentScopedID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get caller module content-scoped ID: %w", err)
 		}

@@ -378,6 +378,10 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	if err != nil {
 		return fmt.Errorf("get dagql server: %w", err)
 	}
+	workspaceID, err := workspace.ID()
+	if err != nil {
+		return fmt.Errorf("get workspace ID: %w", err)
+	}
 
 	var newEnv dagql.ObjectResult[*Env]
 	if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
@@ -386,7 +390,7 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 		Args: []dagql.NamedInput{
 			{
 				Name:  "workspace",
-				Value: dagql.NewID[*Directory](workspace.ID()),
+				Value: dagql.NewID[*Directory](workspaceID),
 			},
 		},
 	}); err != nil {
@@ -736,7 +740,11 @@ func (m *MCP) call(ctx context.Context,
 		if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 			// Handle ID results by turning them back into Objects, since these are
 			// typically implementation details hinting to SDKs to unlazy the call.
-			syncedObj, err := srv.Load(ctx, id.ID())
+			syncedID, err := id.ID()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get synced object ID: %w", err)
+			}
+			syncedObj, err := srv.Load(ctx, syncedID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load synced object: %w", err)
 			}
@@ -766,6 +774,10 @@ func (m *MCP) call(ctx context.Context,
 	// NOTE: returning a Changeset behaves similarly to returning an Env; it is
 	// directly applied to the Env.
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
+		changesID, err := changes.ID()
+		if err != nil {
+			return "", fmt.Errorf("get changeset ID: %w", err)
+		}
 		var newWS dagql.ObjectResult[*Directory]
 		if err := srv.Select(ctx, m.env.Self().Workspace, &newWS, dagql.Selector{
 			View:  srv.View,
@@ -773,7 +785,7 @@ func (m *MCP) call(ctx context.Context,
 			Args: []dagql.NamedInput{
 				{
 					Name:  "changes",
-					Value: dagql.NewID[*Changeset](changes.ID()),
+					Value: dagql.NewID[*Changeset](changesID),
 				},
 			},
 		}); err != nil {
@@ -960,7 +972,11 @@ func (m *MCP) toolCallToSelections(
 				if !ok {
 					return nil, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 				}
-				val = obj.ID()
+				objID, err := obj.ID()
+				if err != nil {
+					return nil, fmt.Errorf("arg %q: get object ID: %w", arg.Name, err)
+				}
+				val = objID
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
@@ -1088,7 +1104,11 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), toolCall.Function.Arguments)
+	envID, err := m.env.ID()
+	if err != nil {
+		return toolErrorMessage(fmt.Errorf("failed to get env ID: %w", err)), true
+	}
+	result, err := tool.Call(EnvIDToContext(ctx, envID), toolCall.Function.Arguments)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -2276,7 +2296,10 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 }
 
 func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
-	id := obj.ID()
+	id, err := obj.ID()
+	if err != nil {
+		return ""
+	}
 	if id == nil {
 		return ""
 	}
@@ -2285,7 +2308,10 @@ func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
 }
 
 func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
-	id := obj.ID()
+	id, err := obj.ID()
+	if err != nil {
+		return ""
+	}
 	if id == nil {
 		return ""
 	}

@@ -63,9 +63,6 @@ type Module struct {
 	// Toolchains manages all toolchain modules and their configuration.
 	Toolchains *ToolchainRegistry
 
-	// ResultID is the ID of the initialized module.
-	ResultID *call.ID
-
 	persistedResultID uint64
 
 	// If true, disable the new default function caching behavior for this module. Functions will
@@ -590,7 +587,6 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		InterfaceDefs:                 persisted.InterfaceDefs,
 		EnumDefs:                      persisted.EnumDefs,
 		IsToolchain:                   persisted.IsToolchain,
-		ResultID:                      id,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
 	}
 	if mod.SDKConfig == nil {

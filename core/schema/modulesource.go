@@ -2768,7 +2768,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 
 			getModDefFn, err := core.NewModFunction(
 				ctx,
-				scopedMod.Self(),
+				scopedMod,
 				nil,
 				core.NewFunction("", &core.TypeDef{
 					Kind:     core.TypeDefKindObject,
@@ -3500,7 +3500,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		SDKConfig:                     src.Self().SDK,
 		IsToolchain:                   isToolchainProjection,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
-		ResultID:                      dagql.CurrentID(ctx),
 	}
 	if mod.SDKConfig == nil {
 		mod.SDKConfig = &core.SDKConfig{}

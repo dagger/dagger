@@ -18,8 +18,8 @@ func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName 
 	}
 
 	var scopeDigest digest.Digest
-	if m != nil {
-		id, err := m.SourceContentScopedID(ctx)
+	if m.Self() != nil {
+		id, err := m.Self().SourceContentScopedID(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -49,11 +49,11 @@ var CachePerCallerModule = dagql.ImplicitInput{
 		if err != nil {
 			return dagql.NewString(""), fmt.Errorf("failed to get current module: %w", err)
 		}
-		if m == nil {
+		if m.Self() == nil {
 			return dagql.NewString("mainClient"), nil
 		}
 
-		id, err := m.SourceContentScopedID(ctx)
+		id, err := m.Self().SourceContentScopedID(ctx)
 		if err != nil {
 			return nil, err
 		}

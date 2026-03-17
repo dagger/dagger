@@ -120,7 +120,7 @@ type environmentArgs struct {
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
 	var workspace dagql.ObjectResult[*core.Directory]
 	if mod, err := parent.CurrentModule(ctx); err == nil {
-		workspace = mod.GetSource().ContextDirectory
+		workspace = mod.Self().GetSource().ContextDirectory
 	} else {
 		// FIXME: inherit from somewhere?
 		if err := s.srv.Select(ctx, s.srv.Root(), &workspace, dagql.Selector{
@@ -159,6 +159,14 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 	if err != nil {
 		return res, err
 	}
+	modID, err := mod.ID()
+	if err != nil {
+		return res, fmt.Errorf("get current module ID: %w", err)
+	}
+	workspaceID, err := mod.Self().GetSource().ContextDirectory.ID()
+	if err != nil {
+		return res, fmt.Errorf("get current module workspace ID: %w", err)
+	}
 	var env dagql.ObjectResult[*core.Env]
 	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
 		Field: "env",
@@ -167,17 +175,15 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 		Args: []dagql.NamedInput{
 			{
 				Name:  "module",
-				Value: dagql.NewID[*core.Module](mod.ResultID),
+				Value: dagql.NewID[*core.Module](modID),
 			},
 		},
 	}, dagql.Selector{
 		Field: "withWorkspace",
 		Args: []dagql.NamedInput{
 			{
-				Name: "workspace",
-				Value: dagql.NewID[*core.Directory](
-					mod.GetSource().ContextDirectory.ID(),
-				),
+				Name:  "workspace",
+				Value: dagql.NewID[*core.Directory](workspaceID),
 			},
 		},
 	}); err != nil {
@@ -257,6 +263,10 @@ func (s environmentSchema) withCurrentModule(ctx context.Context, env dagql.Obje
 	if err != nil {
 		return res, fmt.Errorf("failed to get current module: %w", err)
 	}
+	modID, err := mod.ID()
+	if err != nil {
+		return res, fmt.Errorf("get current module ID: %w", err)
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get current dagql server: %w", err)
@@ -266,7 +276,7 @@ func (s environmentSchema) withCurrentModule(ctx context.Context, env dagql.Obje
 		Args: []dagql.NamedInput{
 			{
 				Name:  "module",
-				Value: dagql.NewID[*core.Module](mod.ResultID),
+				Value: dagql.NewID[*core.Module](modID),
 			},
 		},
 	})

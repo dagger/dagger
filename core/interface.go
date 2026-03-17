@@ -15,7 +15,7 @@ import (
 )
 
 type InterfaceType struct {
-	mod *Module
+	mod dagql.ObjectResult[*Module]
 
 	// the type def metadata, with namespacing already applied
 	typeDef *InterfaceTypeDef
@@ -63,7 +63,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		typeName := value.Type().Name()
 		loadedImpl := &loadedIfaceImpl{val: value}
 		var err error
-		loadedImpl.valType, _, err = iface.mod.Deps.ModTypeFor(ctx, &TypeDef{
+		loadedImpl.valType, _, err = iface.mod.Self().Deps.ModTypeFor(ctx, &TypeDef{
 			Kind: TypeDefKindObject,
 			AsObject: dagql.NonNull(&ObjectTypeDef{
 				Name: typeName,
@@ -73,7 +73,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 			return nil, fmt.Errorf("resolve interface implementation type: %w", err)
 		}
 		if loadedImpl.valType == nil {
-			loadedImpl.valType, _, err = iface.mod.Deps.ModTypeFor(ctx, &TypeDef{
+			loadedImpl.valType, _, err = iface.mod.Self().Deps.ModTypeFor(ctx, &TypeDef{
 				Kind: TypeDefKindInterface,
 				AsInterface: dagql.NonNull(&InterfaceTypeDef{
 					Name: typeName,
@@ -97,7 +97,11 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		}
 		return fromID(&id)
 	case dagql.IDable:
-		return fromID(value.ID())
+		id, err := value.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get interface ID: %w", err)
+		}
+		return fromID(id)
 	default:
 		return nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T: %+v", value, value)
 	}
@@ -162,16 +166,24 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		if !ok {
 			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
 		}
-		id := value.ID()
+		id, err := value.ID()
+		if err != nil {
+			return fmt.Errorf("resolve interface value raw id: %w", err)
+		}
 		if id == nil {
 			return fmt.Errorf("resolve interface value raw id: nil")
 		}
 
-		obj, err := dagql.NewResultForID(&ModuleObject{
+		call, err := value.ResultCall()
+		if err != nil {
+			return fmt.Errorf("resolve interface value call: %w", err)
+		}
+
+		obj, err := dagql.NewResultForCall(&ModuleObject{
 			Module:  mod,
 			TypeDef: interfaceValue.UnderlyingType.TypeDef().AsObject.Value,
 			Fields:  interfaceValue.Fields,
-		}, id)
+		}, call)
 		if err != nil {
 			return fmt.Errorf("create module object from interface value: %w", err)
 		}
@@ -180,7 +192,10 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 	}
 
 	if _, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		id := value.ID()
+		id, err := value.ID()
+		if err != nil {
+			return fmt.Errorf("resolve interface implementation raw id: %w", err)
+		}
 		if id == nil {
 			return fmt.Errorf("resolve interface implementation raw id: nil")
 		}
@@ -201,20 +216,27 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.T
 	}
 	switch value := value.(type) {
 	case dagql.AnyObjectResult:
-		id := value.ID()
+		id, err := value.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get interface object ID: %w", err)
+		}
 		if id == nil {
 			return nil, nil
 		}
 		return id.Encode()
 	case DynamicID:
-		return value.ID().Encode()
+		id, err := value.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get dynamic interface ID: %w", err)
+		}
+		return id.Encode()
 	default:
 		return nil, fmt.Errorf("unexpected interface value type for conversion to sdk input %T", value)
 	}
 }
 
 func (iface *InterfaceType) SourceMod() Mod {
-	return iface.mod
+	return iface.mod.Self()
 }
 
 func (iface *InterfaceType) TypeDef() *TypeDef {
@@ -228,7 +250,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("interface", iface.typeDef.Name))
 	slog.ExtraDebug("installing interface")
 
-	if iface.mod.ResultID == nil {
+	if iface.mod.Self() == nil {
 		return fmt.Errorf("installing interface %q too early", iface.typeDef.Name)
 	}
 
@@ -250,7 +272,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
-	moduleID, err := iface.mod.IDModule(ctx)
+	moduleID, err := iface.mod.Self().IDModule(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
 	}
@@ -260,7 +282,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		fnName := gqlFieldName(fnTypeDef.Name)
 
 		// check whether this is a pre-existing object from a dependency module
-		returnModType, ok, err := iface.mod.Deps.ModTypeFor(ctx, fnTypeDef.ReturnType)
+		returnModType, ok, err := iface.mod.Self().Deps.ModTypeFor(ctx, fnTypeDef.ReturnType)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
@@ -269,7 +291,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			switch {
 			case returnModType.SourceMod() == nil:
 			case returnModType.SourceMod().Name() == ModuleName:
-			case returnModType.SourceMod() == iface.mod:
+			case returnModType.SourceMod() == iface.mod.Self():
 			default:
 				return fmt.Errorf("interface %q function %q cannot return external type from dependency module %q",
 					ifaceName,
@@ -292,7 +314,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 		for _, argMetadata := range fnTypeDef.Args {
 			// check whether this is a pre-existing object from a dependency module
-			argModType, ok, err := iface.mod.Deps.ModTypeFor(ctx, argMetadata.TypeDef)
+			argModType, ok, err := iface.mod.Self().Deps.ModTypeFor(ctx, argMetadata.TypeDef)
 			if err != nil {
 				return fmt.Errorf("failed to get mod type for type def: %w", err)
 			}
@@ -301,7 +323,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				switch {
 				case argModType.SourceMod() == nil:
 				case argModType.SourceMod().Name() == ModuleName:
-				case argModType.SourceMod() == iface.mod:
+				case argModType.SourceMod() == iface.mod.Self():
 				default:
 					return fmt.Errorf("interface %q function %q cannot accept arg %q of external type from dependency module %q",
 						ifaceName,
@@ -396,7 +418,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				// if the return type of this function is an interface or list of interface, we may need to wrap the
 				// return value of the underlying object's function (due to support for covariant matching on return types)
 
-				underlyingReturnType, ok, err := iface.mod.ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
+				underlyingReturnType, ok, err := iface.mod.Self().ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get return mod type: %w", err)
 				}
@@ -442,7 +464,10 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			if !ok {
 				return nil, fmt.Errorf("expected IDable, got %T", args["id"])
 			}
-			id := idable.ID()
+			id, err := idable.ID()
+			if err != nil {
+				return nil, fmt.Errorf("get interface load ID: %w", err)
+			}
 			if id == nil {
 				return nil, fmt.Errorf("expected non-nil ID")
 			}

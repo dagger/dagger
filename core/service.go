@@ -377,7 +377,7 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
-		modID, err := mod.SourceContentScopedID(ctx)
+		modID, err := mod.Self().SourceContentScopedID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module source content scoped ID: %w", err)
 		}

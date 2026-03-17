@@ -35,27 +35,35 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDepen
 	return nil
 }
 
-func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
+func (ms *mockServer) CurrentModule(context.Context) (dagql.ObjectResult[*Module], error) {
+	var zero dagql.ObjectResult[*Module]
 	if ms.moduleSource == nil {
-		return nil, nil
+		return zero, nil
 	}
-	c := call.New().Append(&ast.Type{}, "caller1")
-	rs, err := dagql.NewResultForID(ms.moduleSource, c)
+	sourceRes, err := dagql.NewObjectResultForCall(ms.moduleSource, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "mock_module_source",
+		Type:        dagql.NewResultCallType(ms.moduleSource.Type()),
+	})
 	if err != nil {
 		panic(err)
 	}
 
 	dn := dagql.Nullable[dagql.ObjectResult[*ModuleSource]]{
 		Valid: true,
-		Value: dagql.ObjectResult[*ModuleSource]{Result: rs},
+		Value: sourceRes,
 	}
-	return &Module{
+	return dagql.NewObjectResultForCall(&Module{
 		Source: dn,
-	}, nil
+	}, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "mock_current_module",
+		Type:        dagql.NewResultCallType((&Module{}).Type()),
+	})
 }
 
-func (ms *mockServer) ModuleParent(context.Context) (*Module, error) {
-	return nil, nil
+func (ms *mockServer) ModuleParent(context.Context) (dagql.ObjectResult[*Module], error) {
+	return dagql.ObjectResult[*Module]{}, nil
 }
 
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
