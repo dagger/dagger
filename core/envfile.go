@@ -2,17 +2,61 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+type EnvFileVariableType string
+
+var EnvFileVariableTypes = dagql.NewEnum[EnvFileVariableType]()
+
+var (
+	EnvFileVariableTypeRaw    = EnvFileVariableTypes.Register("RAW", "do not apply any escaping logic to the variable value")
+	EnvFileVariableTypeAuto   = EnvFileVariableTypes.Register("AUTO", "automatically escape quotes")
+	EnvFileVariableTypeStatic = EnvFileVariableTypes.Register("STATIC", "escape all special characters, effectively disallowing variable substitution")
+)
+
+func (ft EnvFileVariableType) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "EnvFileVariableType",
+		NonNull:   false,
+	}
+}
+
+func (ft EnvFileVariableType) TypeDescription() string {
+	return "File type."
+}
+
+func (ft EnvFileVariableType) Decoder() dagql.InputDecoder {
+	return EnvFileVariableTypes
+}
+
+func (ft EnvFileVariableType) ToLiteral() call.Literal {
+	return EnvFileVariableTypes.Literal(ft)
+}
+
+func (ft EnvFileVariableType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(ft))
+}
+
+func (ft *EnvFileVariableType) UnmarshalJSON(payload []byte) error {
+	var str string
+	if err := json.Unmarshal(payload, &str); err != nil {
+		return err
+	}
+	*ft = EnvFileVariableType(str)
+	return nil
+}
 
 func NewEnvFile(expand bool) *EnvFile {
 	return &EnvFile{

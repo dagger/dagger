@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
@@ -24,6 +25,8 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	core.EnvFileVariableTypes.Install(srv)
+
 	dagql.Fields[*core.EnvFile]{
 		dagql.Func("variables", s.variables).
 			Doc("Return all variables").
@@ -35,6 +38,7 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("Variable name"),
 				dagql.Arg("value").Doc("Variable value"),
+				dagql.Arg("variableType").Doc(`Control how the variable value is parsed. "RAW": the values is used directly in the .env file, users will have to manually escape special characters, "STATIC": no variable expansion is performed, and all special characters are escaped, "AUTO" quotes will be automatically escaped, users will have to escape the $ character when it is used outside of a quoted string, and all \\ instances.`).View(AfterVersion("v0.20.1")),
 			),
 		dagql.Func("withoutVariable", s.withoutVariable).
 			Doc("Remove all occurrences of the named variable").
@@ -105,14 +109,24 @@ func (s envfileSchema) variables(ctx context.Context, parent *core.EnvFile, args
 }
 
 type withVariableArgs struct {
-	Name  dagql.String
-	Value dagql.String
+	Name         dagql.String
+	Value        dagql.String
+	VariableType dagql.Optional[core.EnvFileVariableType]
 
 	RawDagOpInternalArgs
 }
 
 func (s envfileSchema) withVariable(ctx context.Context, parent dagql.ObjectResult[*core.EnvFile], args withVariableArgs) (*core.EnvFile, error) {
-	escapedValue := dotenv.Escape(args.Value.String())
+	variableType := args.VariableType.GetOr(core.EnvFileVariableTypeAuto)
+	var escapedValue string
+	switch variableType {
+	case core.EnvFileVariableTypeRaw:
+		escapedValue = args.Value.String()
+	case core.EnvFileVariableTypeAuto:
+		escapedValue = dotenv.Escape(args.Value.String())
+	case core.EnvFileVariableTypeStatic:
+		escapedValue = shellescape.Quote(args.Value.String())
+	}
 	return parent.Self().WithVariable(args.Name.String(), escapedValue), nil
 }
 

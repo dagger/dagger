@@ -144,24 +144,66 @@ func (EnvFileSuite) TestUnboundVariable(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, "THISDOESNTEXIST: unbound variable")
 }
 
-func (EnvFileSuite) TestWithVariableParsing(ctx context.Context, t *testctx.T) {
+func (EnvFileSuite) TestWithVariableAuto(ctx context.Context, t *testctx.T) {
+	// these values should remain the same
 	for i, testStr := range []string{
 		`'`,
 		`"`,
 		`{"foo": "bar"}`,
+		`{"data": "we want the literal $dollar to stay here since it is inside quotes"}`,
+		`{"data": "the same applies to the \ (backslash) characters"}`,
 		`{"msg": "it's possible this could happen"}`,
 		`{"hardmode": ["it's", "possible", "this could happen"]}`,
 		"-----BEGIN OPENSSH PRIVATE KEY-----\nbmljZSB0cnkgaGFja2VyLCBhbmQgaGVyZSB5b3UgdGhvdWdodCB5b3UgY291bGQgZmluZCBteSBr\nZXkuIEl0IHdpbGwgdHJ5IGEgZmV3IG1vcmUgYXR0ZW1wdHMgYmVmb3JlIHlvdSB3aWxsIGJlIGFi\nbGUgdG8gZmluZCBpdA==\n-----END OPENSSH PRIVATE KEY-----",
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			s, err := c.Container().From(pythonImage).WithEnvFileVariables(
+			s, err := c.Container().From(alpineImage).WithEnvFileVariables(
 				c.EnvFile().WithVariable("TEST_THIS_VAR", testStr),
 			).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testStr, s)
 		})
 	}
+
+	// these values will change, since they are not quotted by the user
+	for i, tt := range []struct {
+		input  string
+		output string
+	}{
+		{input: `hello \$MYVAR`, output: `hello $MYVAR`},
+		{input: `hello $MYVAR`, output: `hello myvalue`},
+		{input: `\\n`, output: `\n`},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+				c.EnvFile().
+					WithVariable("MYVAR", "myvalue").
+					WithVariable("TEST_THIS_VAR", tt.input),
+			).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tt.output, s)
+		})
+	}
+}
+
+func (EnvFileSuite) TestWithVariableRaw(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+		c.EnvFile().WithVariable("MODE", "raw").WithVariable("TEST_THIS_VAR", `{\"mode\": \"$MODE\"}`, dagger.EnvFileWithVariableOpts{VariableType: dagger.EnvFileVariableTypeRaw}),
+	).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `{"mode": "raw"}`, s)
+}
+
+func (EnvFileSuite) TestWithVariableStatic(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	s, err := c.Container().From(alpineImage).WithEnvFileVariables(
+		c.EnvFile().WithVariable("MODE", "this-shouldnt-be-used").WithVariable("TEST_THIS_VAR", `{"mode": "$MODE"}`, dagger.EnvFileWithVariableOpts{VariableType: dagger.EnvFileVariableTypeStatic}),
+	).WithExec([]string{"sh", "-c", "echo -n \"$TEST_THIS_VAR\""}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `{"mode": "$MODE"}`, s)
 }
 
 func (EnvFileSuite) TestFile(ctx context.Context, t *testctx.T) {
