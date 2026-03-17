@@ -59,7 +59,7 @@ available functions.
 		functionPath := args
 		return withEngine(cmd.Context(), initModuleParams(functionPath), func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			// -m modules are loaded at engine connect time as extra modules.
-			mod, err := initializeWorkspace(ctx, engineClient.Dagger(), nil)
+			mod, err := initializeWorkspace(ctx, engineClient.Dagger())
 			if err != nil {
 				return err
 			}

@@ -59,7 +59,7 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return errors.New("currently MCP only works with stdio")
 	}
 	// -m modules are loaded at engine connect time as extra modules.
-	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger(), nil)
+	modDef, _ := initializeWorkspace(ctx, engineClient.Dagger())
 	if modDef != nil && !modDef.HasModule() {
 		if modName, err := engineClient.Dagger().CurrentWorkspace().DefaultModule(ctx); err == nil && modName != "" {
 			modDef = focusRootModule(modDef, modName)

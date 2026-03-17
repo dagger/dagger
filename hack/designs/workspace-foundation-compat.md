@@ -2610,6 +2610,43 @@ Verification after this cleanup:
   - this new pass did not obtain fresh attributable integration output from the
     direct `EngineDev.test(...)` surface, so do not overstate it as a rerun pass
 
+### 2026-03-17: Remove Leftover Workspace-Target Parameter Plumbing
+
+Found one more harmless but misleading leftover from the original
+`workspace` -> `workspace-plumbing` spinout:
+
+- `cmd/dagger/module_inspect.go` still exposed
+  `initializeWorkspace(ctx, dag, workspaceRef *string)`
+- `workspaceLoadLocation(...)` still existed only to pretty-print that old
+  CLI-targeted workspace ref in tracing
+- every current `workspace-plumbing` caller already passed `nil`
+- the only remaining test coverage was a unit test for that dead helper itself
+
+Why remove it:
+
+- `workspace-plumbing` intentionally removed the user-facing explicit workspace
+  target UX from `call` / `functions`
+- keeping a dead `workspaceRef` parameter in the CLI loader makes the branch
+  look like it still supports that old targeting path when it no longer does
+- this is exactly the kind of leftover round-trip that can confuse a later
+  `workspace` rebase and accidentally reintroduce the wrong client contract
+
+What changed:
+
+- `initializeWorkspace` now just takes `(ctx, dag)`
+- all callers in `call.go`, `functions.go`, and `mcp.go` use the simplified
+  signature
+- `workspaceLoadLocation(...)` was deleted
+- the unit test that only exercised that helper was deleted
+
+Rebase guidance:
+
+- when reconciling `workspace` onto `workspace-plumbing`, do not treat this
+  removed parameter as behavior to preserve here
+- if the full `workspace` branch still needs explicit user-facing workspace
+  targeting, that should come back as part of the real deferred workspace UX,
+  not as an inert leftover in PR A's CLI module-loading path
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
