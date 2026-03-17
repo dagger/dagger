@@ -177,13 +177,17 @@ func (repo *RemoteGitRepository) remoteCacheScope() []string {
 	if token := repo.AuthToken; token.Self() != nil {
 		tokenID, err := token.ID()
 		if err == nil {
-			scope = append(scope, "token:"+SecretIDDigest(tokenID).String())
+			if tokenDigest, err := SecretIDDigest(tokenID); err == nil {
+				scope = append(scope, "token:"+tokenDigest.String())
+			}
 		}
 	}
 	if header := repo.AuthHeader; header.Self() != nil {
 		headerID, err := header.ID()
 		if err == nil {
-			scope = append(scope, "header:"+SecretIDDigest(headerID).String())
+			if headerDigest, err := SecretIDDigest(headerID); err == nil {
+				scope = append(scope, "header:"+headerDigest.String())
+			}
 		}
 	}
 	if repo.AuthUsername != "" {
@@ -298,7 +302,11 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("get auth token ID: %w", err)
 		}
-		password, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(tokenID))
+		tokenDigest, err := SecretIDDigest(tokenID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get auth token digest: %w", err)
+		}
+		password, err := secretStore.GetSecretPlaintext(ctx, tokenDigest)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -312,7 +320,11 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("get auth header ID: %w", err)
 		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, SecretIDDigest(headerID))
+		headerDigest, err := SecretIDDigest(headerID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get auth header digest: %w", err)
+		}
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, headerDigest)
 		if err != nil {
 			return nil, nil, err
 		}

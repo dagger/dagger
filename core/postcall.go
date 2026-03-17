@@ -34,7 +34,11 @@ func ResourceTransferPostCall(
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to get secret ID: %w", err)
 			}
-			secretsByDgst[SecretIDDigest(id)] = secretID
+			secretDigest, err := SecretIDDigest(id)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get secret digest: %w", err)
+			}
+			secretsByDgst[secretDigest] = secretID
 		}
 		socketIDs := dagql.WalkedIDs[*Socket](walked)
 		for _, socketID := range socketIDs {
@@ -42,7 +46,11 @@ func ResourceTransferPostCall(
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to get socket ID: %w", err)
 			}
-			socketsByDgst[SocketIDDigest(id)] = socketID
+			socketDigest, err := SocketIDDigest(id)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get socket digest: %w", err)
+			}
+			socketsByDgst[socketDigest] = socketID
 		}
 	}
 	if len(secretsByDgst) == 0 && len(socketsByDgst) == 0 {
@@ -199,7 +207,10 @@ func ResourceTransferPostCall(
 					if err != nil {
 						return fmt.Errorf("failed to get socket ID: %w", err)
 					}
-					socketDigest = SocketIDDigest(socketID)
+					socketDigest, err = SocketIDDigest(socketID)
+					if err != nil {
+						return fmt.Errorf("failed to get socket digest: %w", err)
+					}
 				}
 				if socketDigest == "" {
 					slog.Warn("skipping socket transfer with empty digest",

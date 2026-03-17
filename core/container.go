@@ -780,7 +780,10 @@ func (container *Container) Build(
 		if err != nil {
 			return nil, fmt.Errorf("get dockerBuild secret ID: %w", err)
 		}
-		secretDgst := SecretIDDigest(secretID)
+		secretDgst, err := SecretIDDigest(secretID)
+		if err != nil {
+			return nil, fmt.Errorf("get dockerBuild secret digest: %w", err)
+		}
 		secretName, ok := secretStore.GetSecretName(secretDgst)
 		if !ok {
 			return nil, fmt.Errorf("secret not found: %s", secretDgst)

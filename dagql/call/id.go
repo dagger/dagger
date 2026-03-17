@@ -234,6 +234,16 @@ func (id *ID) ContentDigest() digest.Digest {
 	return last
 }
 
+func (id *ID) TryContentDigest() (digest.Digest, error) {
+	if id == nil {
+		return "", nil
+	}
+	if id.mode == idModeHandle {
+		return "", fmt.Errorf("call.ID.ContentDigest is not valid for handle-form IDs")
+	}
+	return id.ContentDigest(), nil
+}
+
 func (id *ID) ExtraDigests() []ExtraDigest {
 	id.mustBeRecipe("ExtraDigests")
 	if id == nil || len(id.pb.ExtraDigests) == 0 {

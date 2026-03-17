@@ -53,7 +53,8 @@ type SecretStore struct {
 	// secrets are keyed by canonical digest (content digest when set,
 	// otherwise recipe digest).
 	secrets map[digest.Digest]dagql.ObjectResult[*Secret]
-	// aliases from any seen secret ID digest (recipe or canonical) to canonical.
+	// aliases from any seen secret lookup digest (currently recipe or canonical)
+	// to canonical.
 	canonicalDigestByIDDigest map[digest.Digest]digest.Digest
 
 	mu sync.RWMutex
@@ -67,22 +68,33 @@ func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 	}
 }
 
-func SecretIDDigest(id *call.ID) digest.Digest {
+func SecretIDDigest(id *call.ID) (digest.Digest, error) {
 	if id == nil {
-		return ""
+		return "", nil
 	}
-	if contentDigest := id.ContentDigest(); contentDigest != "" {
-		return contentDigest
+	contentDigest, err := id.TryContentDigest()
+	if err != nil {
+		return "", err
 	}
-	return id.Digest()
+	if contentDigest != "" {
+		return contentDigest, nil
+	}
+	return id.Digest(), nil
 }
 
 func SecretDigest(secret dagql.ObjectResult[*Secret]) digest.Digest {
-	id, err := secret.ID()
+	call, err := secret.ResultCall()
 	if err != nil {
 		return ""
 	}
-	return SecretIDDigest(id)
+	if contentDigest := call.ContentDigest(); contentDigest != "" {
+		return contentDigest
+	}
+	recipeDigest, err := call.RecipeDigest()
+	if err != nil {
+		return ""
+	}
+	return recipeDigest
 }
 
 func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
@@ -97,31 +109,34 @@ func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
 		}
 	}
 
+	secretCall, err := secret.ResultCall()
+	if err != nil {
+		return fmt.Errorf("derive secret call: %w", err)
+	}
+	recipeDigest, err := secretCall.RecipeDigest()
+	if err != nil {
+		return fmt.Errorf("derive secret recipe digest: %w", err)
+	}
 	canonicalDigest := SecretDigest(secret)
 	if canonicalDigest == "" {
 		return fmt.Errorf("secret must have a digest")
-	}
-	secretID, err := secret.ID()
-	if err != nil {
-		return err
-	}
-	var idDigest digest.Digest
-	if secretID != nil {
-		idDigest = secretID.Digest()
 	}
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.secrets[canonicalDigest] = secret
 	store.canonicalDigestByIDDigest[canonicalDigest] = canonicalDigest
-	if idDigest != "" {
-		store.canonicalDigestByIDDigest[idDigest] = canonicalDigest
+	if recipeDigest != "" {
+		store.canonicalDigestByIDDigest[recipeDigest] = canonicalDigest
 	}
 	return nil
 }
 
 func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret dagql.ObjectResult[*Secret]) error {
 	secretDgst := SecretDigest(secret)
+	if secretDgst == "" {
+		return fmt.Errorf("secret must have a digest")
+	}
 	srcSecret, ok := srcStore.GetSecret(secretDgst)
 	if !ok {
 		return fmt.Errorf("secret %s not found in source store", secretDgst)

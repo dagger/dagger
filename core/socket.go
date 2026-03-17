@@ -54,14 +54,18 @@ func (socket *Socket) LLBID() string {
 	return socket.IDDigest.String()
 }
 
-func SocketIDDigest(id *call.ID) digest.Digest {
+func SocketIDDigest(id *call.ID) (digest.Digest, error) {
 	if id == nil {
-		return ""
+		return "", nil
 	}
-	if contentDigest := id.ContentDigest(); contentDigest != "" {
-		return contentDigest
+	contentDigest, err := id.TryContentDigest()
+	if err != nil {
+		return "", err
 	}
-	return id.Digest()
+	if contentDigest != "" {
+		return contentDigest, nil
+	}
+	return id.Digest(), nil
 }
 
 func GetHostIPSocketAccessor(ctx context.Context, query *Query, upstreamHost string, port PortForward) (string, error) {

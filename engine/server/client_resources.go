@@ -38,7 +38,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		if err != nil {
 			return fmt.Errorf("failed to get secret ID: %w", err)
 		}
-		if ok := destClient.secretStore.HasSecret(core.SecretIDDigest(id)); !ok {
+		secretDigest, err := core.SecretIDDigest(id)
+		if err != nil {
+			return fmt.Errorf("failed to get secret digest: %w", err)
+		}
+		if ok := destClient.secretStore.HasSecret(secretDigest); !ok {
 			filteredSecretIDs = append(filteredSecretIDs, secretID)
 		}
 	}
@@ -50,7 +54,11 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		if err != nil {
 			return fmt.Errorf("failed to get socket ID: %w", err)
 		}
-		if ok := destClient.socketStore.HasSocket(core.SocketIDDigest(id)); !ok {
+		socketDigest, err := core.SocketIDDigest(id)
+		if err != nil {
+			return fmt.Errorf("failed to get socket digest: %w", err)
+		}
+		if ok := destClient.socketStore.HasSocket(socketDigest); !ok {
 			filteredSocketIDs = append(filteredSocketIDs, socketID)
 		}
 	}

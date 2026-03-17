@@ -257,8 +257,12 @@ func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv, err error)
 			if err != nil {
 				return nil, fmt.Errorf("secret env %q ID: %w", secret.EnvName, err)
 			}
+			secretDigest, err := SecretIDDigest(secretID)
+			if err != nil {
+				return nil, fmt.Errorf("secret env %q digest: %w", secret.EnvName, err)
+			}
 			secretEnvs = append(secretEnvs, &pb.SecretEnv{
-				ID:   SecretIDDigest(secretID).String(),
+				ID:   secretDigest.String(),
 				Name: secret.EnvName,
 			})
 		}
@@ -570,11 +574,15 @@ func prepareMounts(
 		if err != nil {
 			return materialized, fmt.Errorf("secret mount %q ID: %w", secret.MountPath, err)
 		}
+		secretDigest, err := SecretIDDigest(secretID)
+		if err != nil {
+			return materialized, fmt.Errorf("secret mount %q digest: %w", secret.MountPath, err)
+		}
 		secretState := &execMountState{
 			Dest:      secret.MountPath,
 			MountType: pb.MountType_SECRET,
 			SecretOpt: &pb.SecretOpt{
-				ID:   SecretIDDigest(secretID).String(),
+				ID:   secretDigest.String(),
 				Uid:  uint32(uid),
 				Gid:  uint32(gid),
 				Mode: uint32(secret.Mode),
@@ -1329,11 +1337,15 @@ func (container *Container) WithExec(
 			if err != nil {
 				return failPrepare(fmt.Errorf("secret mount %q ID: %w", secret.MountPath, err))
 			}
+			secretDigest, err := SecretIDDigest(secretID)
+			if err != nil {
+				return failPrepare(fmt.Errorf("secret mount %q digest: %w", secret.MountPath, err))
+			}
 			secretState := &execMountState{
 				Dest:      secret.MountPath,
 				MountType: pb.MountType_SECRET,
 				SecretOpt: &pb.SecretOpt{
-					ID:   SecretIDDigest(secretID).String(),
+					ID:   secretDigest.String(),
 					Uid:  uint32(uid),
 					Gid:  uint32(gid),
 					Mode: uint32(secret.Mode),
