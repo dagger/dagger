@@ -2376,8 +2376,11 @@ func (fe *frontendPretty) historyUp() bool {
 		return false
 	}
 	if fe.historyIndex == -1 {
-		// Start browsing: save current input
+		// Start browsing: save current input and mode
 		fe.historySaved = fe.textInput.Value()
+		if fe.shell != nil {
+			fe.shell.SaveBeforeHistory()
+		}
 		fe.historyIndex = len(fe.inputHistory) - 1
 	} else if fe.historyIndex > 0 {
 		fe.historyIndex--
@@ -2397,9 +2400,13 @@ func (fe *frontendPretty) historyDown() bool {
 		fe.historyIndex++
 		fe.setHistoryEntry(fe.historyIndex)
 	} else {
-		// Restore saved input
+		// Restore saved input and mode
 		fe.historyIndex = -1
 		fe.textInput.SetValue(fe.historySaved)
+		if fe.shell != nil {
+			fe.shell.RestoreAfterHistory()
+		}
+		fe.syncPrompt()
 	}
 	return true
 }
@@ -2413,6 +2420,7 @@ func (fe *frontendPretty) setHistoryEntry(idx int) {
 		entry = fe.shell.DecodeHistory(entry)
 	}
 	fe.textInput.SetValue(entry)
+	fe.syncPrompt()
 }
 
 func (fe *frontendPretty) initTextInput() {

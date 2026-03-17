@@ -187,7 +187,12 @@ type ShellHandler interface {
 	// EncodeHistory encodes a history entry for persistence.
 	EncodeHistory(entry string) string
 	// DecodeHistory decodes a persisted history entry.
+	// May update internal state (e.g. mode) based on the entry prefix.
 	DecodeHistory(entry string) string
+	// SaveBeforeHistory saves the current mode before history navigation.
+	SaveBeforeHistory()
+	// RestoreAfterHistory restores the mode saved before history navigation.
+	RestoreAfterHistory()
 }
 
 type Dump struct {
