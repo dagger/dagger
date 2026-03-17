@@ -30,8 +30,6 @@ func NewIntrospector(sdkSourceDir *dagger.Directory) *Introspector {
 }
 
 func (i *Introspector) AsEntrypoint(
-	outputFilePath string,
-
 	moduleName string,
 
 	sourceCode *dagger.Directory,
@@ -51,6 +49,5 @@ func (i *Introspector) AsEntrypoint(
 		WithMountedDirectory("node_modules/@dagger.io/dagger", sdkPkg).
 		// Keep the old location too so the CLI arg still points to a file
 		WithMountedDirectory("sdk", sdkPkg).
-		WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }

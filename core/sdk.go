@@ -181,15 +181,14 @@ type ModuleTypes interface {
 		exposed by the module code.
 
 		This function prototype is different from the one exposed by the SDK.
-		SDK must implement the `ModuleTypes` function with the following signature:
+			SDK must implement the `ModuleTypes` function with the following signature:
 
-		```gql
-		  moduleTypes(
-		    modSource: ModuleSource!
-		    introspectionJSON: File!
-			outputFilePath: String!
-		  ): Container!
-		```
+			```gql
+			  moduleTypes(
+			    modSource: ModuleSource!
+			    introspectionJSON: File!
+			  ): Module!
+			```
 	*/
 	ModuleTypes(
 		context.Context,

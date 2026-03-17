@@ -122,8 +122,9 @@ func (c *cache) trace(ctx context.Context, event string, args ...any) {
 		)
 	}
 	if call := CurrentCall(ctx); call != nil {
-		if id, err := call.RecipeID(); err == nil {
-			base = append(base, "call_digest", id.Digest().String())
+		base = append(base, "call_kind", call.Kind)
+		if field, err := resultCallIdentityField(call); err == nil {
+			base = append(base, "call_field", field)
 		}
 	}
 	base = append(base, args...)

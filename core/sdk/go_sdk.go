@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -129,10 +130,10 @@ func (sdk *goSDK) GenerateClient(
 					Name:  "path",
 					Value: dagql.NewString(goSDKIntrospectionJSONPath),
 				},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.File](schemaJSONFileID),
-					},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFileID),
+				},
 			},
 		},
 		dagql.Selector{
@@ -145,10 +146,10 @@ func (sdk *goSDK) GenerateClient(
 					Name:  "path",
 					Value: dagql.String(goSDKUserModContextDirPath),
 				},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.Directory](contextDirID),
-					},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDirID),
+				},
 			},
 		},
 		dagql.Selector{
@@ -265,14 +266,6 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for go module sdk module types: %w", err)
 	}
-	scopedMod, err := ScopeModuleForSDKOperation(ctx, partiallyInitializedMod, "moduleTypesCurrentMod", dag)
-	if err != nil {
-		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
-	}
-	currentModuleID, err := scopedMod.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get current module ID for go module sdk module types: %w", err)
-	}
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
@@ -311,10 +304,6 @@ func (sdk *goSDK) ModuleTypes(
 		}
 		execMD.CallDigest = callDigest
 	}
-	execMD.EncodedModuleID, err = currentModuleID.Encode()
-	if err != nil {
-		return inst, err
-	}
 
 	var modDefsID string
 	err = dag.Select(ctx, ctr, &modDefsID,
@@ -325,10 +314,10 @@ func (sdk *goSDK) ModuleTypes(
 					Name:  "path",
 					Value: dagql.NewString(goSDKIntrospectionJSONPath),
 				},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.File](schemaJSONFileID),
-					},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFileID),
+				},
 			},
 		},
 		dagql.Selector{
@@ -338,10 +327,10 @@ func (sdk *goSDK) ModuleTypes(
 					Name:  "path",
 					Value: dagql.NewString(goSDKUserModContextDirPath),
 				},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.Directory](contextDirID),
-					},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDirID),
+				},
 			},
 		},
 		dagql.Selector{
@@ -412,25 +401,15 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
 	}
 
-	var modID core.ModuleID
-	if err = json.Unmarshal([]byte(modDefsID), &modID); err != nil {
-		return inst, err
+	// Temporary exception: Go generate-typedefs currently emits a recipe-form Module ID
+	// rather than a handle-form ModuleID scalar, so decode the raw call.ID and load it
+	// directly instead of routing through ModuleID input coercion.
+	modCallID := new(call.ID)
+	if err = json.Unmarshal([]byte(modDefsID), modCallID); err != nil {
+		return inst, fmt.Errorf("failed to decode module call ID from type defs json: %w", err)
 	}
 
-	modCallID, err := modID.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module ID handle from type defs json: %w", err)
-	}
-	err = dag.Select(ctx, dag.Root(), &inst,
-		dagql.Selector{
-			Field: "loadModuleFromID",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "id",
-					Value: dagql.NewID[*core.Module](modCallID),
-				},
-			},
-		})
+	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
 	}
@@ -606,10 +585,10 @@ func (sdk *goSDK) baseWithCodegen(
 					Name:  "path",
 					Value: dagql.NewString(goSDKIntrospectionJSONPath),
 				},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.File](schemaJSONFileID),
-					},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFileID),
+				},
 			},
 		},
 		{
@@ -619,10 +598,10 @@ func (sdk *goSDK) baseWithCodegen(
 					Name:  "path",
 					Value: dagql.NewString(goSDKUserModContextDirPath),
 				},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.Directory](updatedContextDirID),
-					},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](updatedContextDirID),
+				},
 			},
 		},
 		{
@@ -787,9 +766,9 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 				Value: dagql.String("internal"),
 			},
 		},
-		}); err != nil {
-			return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
-		}
+	}); err != nil {
+		return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
+	}
 	modCacheID, err := modCache.ID()
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module cache ID from go module sdk tarball: %w", err)
@@ -816,18 +795,18 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 					Name:  "path",
 					Value: dagql.String("/go/pkg/mod"),
 				},
-					{
-						Name:  "cache",
-						Value: dagql.NewID[*core.CacheVolume](modCacheID),
-					},
+				{
+					Name:  "cache",
+					Value: dagql.NewID[*core.CacheVolume](modCacheID),
+				},
 				{
 					Name:  "sharing",
 					Value: core.CacheSharingModeShared,
 				},
-					{
-						Name:  "source",
-						Value: dagql.Opt(dagql.NewID[*core.Directory](modCacheBaseDirID)),
-					},
+				{
+					Name:  "source",
+					Value: dagql.Opt(dagql.NewID[*core.Directory](modCacheBaseDirID)),
+				},
 			},
 		},
 		dagql.Selector{
@@ -837,18 +816,18 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 					Name:  "path",
 					Value: dagql.String("/root/.cache/go-build"),
 				},
-					{
-						Name:  "cache",
-						Value: dagql.NewID[*core.CacheVolume](buildCacheID),
-					},
+				{
+					Name:  "cache",
+					Value: dagql.NewID[*core.CacheVolume](buildCacheID),
+				},
 				{
 					Name:  "sharing",
 					Value: core.CacheSharingModeShared,
 				},
-					{
-						Name:  "source",
-						Value: dagql.Opt(dagql.NewID[*core.Directory](buildCacheBaseDirID)),
-					},
+				{
+					Name:  "source",
+					Value: dagql.Opt(dagql.NewID[*core.Directory](buildCacheBaseDirID)),
+				},
 			},
 		},
 		dagql.Selector{
