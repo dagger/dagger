@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/moby/buildkit/solver/pb"
-	srctypes "github.com/moby/buildkit/source/types"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 
@@ -123,6 +123,17 @@ func (dag *OpDAG) String() string {
 	return dag.toString(builder, "")
 }
 
+func (dag *OpDAG) EffectID() string {
+	if dag == nil || dag.Metadata == nil || dag.Metadata.Description == nil {
+		return dag.OpDigest.String()
+	}
+	desc := dag.Metadata.Description
+	if effectID, ok := desc["effectID"]; ok {
+		return effectID
+	}
+	return dag.OpDigest.String()
+}
+
 func (dag *OpDAG) toString(builder *strings.Builder, indent string) string {
 	fmt.Fprintf(builder, "%s%d %+v\n", indent, dag.outputIndex, dag.Op.Op)
 	for _, input := range dag.Inputs {
@@ -160,7 +171,7 @@ func (dag *OpDAG) walk(f func(*OpDAG) error, memo map[*OpDAG]struct{}) error {
 	return nil
 }
 
-var SkipInputs = fmt.Errorf("skip inputs") //nolint:stylecheck // Err prefix isn't convention for Walk control errors
+var SkipInputs = fmt.Errorf("skip inputs") //nolint:staticcheck // Err prefix isn't convention for Walk control errors
 
 // Marshal will convert the dag back to a flat pb.Definition, updating all digests
 // based on any modifications made to the dag.

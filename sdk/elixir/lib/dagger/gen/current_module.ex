@@ -16,6 +16,42 @@ defmodule Dagger.CurrentModule do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The dependencies of the module.
+  """
+  @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
+  def dependencies(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("dependencies") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(current_module.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.Module{
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleFromID")
+             |> QB.put_arg("id", id),
+           client: current_module.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  The generated files and directories made on top of the module source's context directory.
+  """
+  @spec generated_context_directory(t()) :: Dagger.Directory.t()
+  def generated_context_directory(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("generatedContextDirectory")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   A unique identifier for this CurrentModule.
   """
   @spec id(t()) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}
@@ -54,8 +90,11 @@ defmodule Dagger.CurrentModule do
   @doc """
   Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
   """
-  @spec workdir(t(), String.t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) ::
-          Dagger.Directory.t()
+  @spec workdir(t(), String.t(), [
+          {:exclude, [String.t()]},
+          {:include, [String.t()]},
+          {:gitignore, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def workdir(%__MODULE__{} = current_module, path, optional_args \\ []) do
     query_builder =
       current_module.query_builder
@@ -63,6 +102,7 @@ defmodule Dagger.CurrentModule do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
 
     %Dagger.Directory{
       query_builder: query_builder,

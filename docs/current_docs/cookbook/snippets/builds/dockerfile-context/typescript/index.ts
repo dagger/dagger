@@ -20,9 +20,8 @@ class MyModule {
       .directory("/src")
 
     // build using Dockerfile and publish to registry
-    const ref = await dag
-      .container()
-      .build(workspace, { dockerfile: "custom.Dockerfile" })
+    const ref = await workspace
+      .dockerBuild({ dockerfile: "custom.Dockerfile" })
       .publish("ttl.sh/hello-dagger")
 
     return ref

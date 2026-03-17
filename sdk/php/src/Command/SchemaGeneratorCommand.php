@@ -13,14 +13,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand('dagger:schema')]
 class SchemaGeneratorCommand extends Command
 {
-    private const WRITE_DIR =
-        __DIR__ . DIRECTORY_SEPARATOR .
-        '..' .
-        DIRECTORY_SEPARATOR .
-        '..' .
-        DIRECTORY_SEPARATOR .
-        'generated';
-
     private Connection $daggerConnection;
 
     public function __construct()

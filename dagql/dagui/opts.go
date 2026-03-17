@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,13 @@ type FrontendOpts struct {
 
 	// Verbosity is the level of detail to show in the TUI.
 	Verbosity int
+
+	// A distinct option from Verbosity just for disabling the 'reveal: true'
+	// mechanism - mostly for tests.
+	RevealNoisySpans bool
+
+	// Whether to leave steps expanded when they complete.
+	ExpandCompleted bool
 
 	// Don't show things that completed beneath this duration. (default 100ms)
 	TooFastThreshold time.Duration
@@ -54,17 +62,20 @@ type FrontendOpts struct {
 
 	// TelemetryError indicates if an error has occurred while sending telemetry
 	TelemetryError error
+
+	// UsingCloudEngine indicates whether the connected engine is a Cloud Engine
+	UsingCloudEngine bool
 }
 
 const (
 	HideErrorsVerbosity       = -1
 	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
-	ExpandCompletedVerbosity  = 2
 	ShowInternalVerbosity     = 3
 	ShowEncapsulatedVerbosity = 3
 	ShowSpammyVerbosity       = 4
 	ShowDigestsVerbosity      = 4
+	ExpandCompletedVerbosity  = 5
 )
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
@@ -74,9 +85,6 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	}
 	if opts.Debug {
 		// debug reveals all
-		return true
-	}
-	if span.Reveal {
 		return true
 	}
 	if opts.FocusedSpan == span.ID {
@@ -95,6 +103,13 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		return true
 	}
 	if span.Call() != nil {
+		if strings.HasPrefix(span.Call().Field, "_") && verbosity < ShowInternalVerbosity {
+			// treat underscore-prefixed calls as internal
+			//
+			// NOTE: this should arguably be done at emitting side, but we'll "defense
+			// in depth" against ugliness anyhow
+			return false
+		}
 		if span.Call().ReceiverDigest == "" {
 			if ShouldSkipFunction("Query", span.Call().Field) {
 				return false

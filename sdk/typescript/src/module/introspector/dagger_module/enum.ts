@@ -12,6 +12,7 @@ export class DaggerEnumValue extends Locatable implements DaggerEnumBaseValue {
   public name: string
   public value: string
   public description: string
+  public deprecated?: string
 
   private symbol: ts.Symbol
 
@@ -22,7 +23,9 @@ export class DaggerEnumValue extends Locatable implements DaggerEnumBaseValue {
     super(node)
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.name = this.node.name.getText()
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     const initializer = this.node.initializer
     if (!initializer) {
@@ -36,8 +39,10 @@ export class DaggerEnumValue extends Locatable implements DaggerEnumBaseValue {
 
   toJSON() {
     return {
-      name: this.value,
+      name: this.name,
+      value: this.value,
       description: this.description,
+      deprecated: this.deprecated,
     }
   }
 }

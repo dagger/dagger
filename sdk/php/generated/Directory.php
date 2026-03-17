@@ -47,6 +47,29 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the difference between this directory and another directory, typically an older snapshot.
+     *
+     * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+     */
+    public function changes(DirectoryId|Directory $from): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder->setArgument('from', $from);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Change the owner of the directory contents recursively.
+     */
+    public function chown(string $path, string $owner): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('chown');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('owner', $owner);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return the difference between this directory and an another directory. The difference is encoded as a directory.
      */
     public function diff(DirectoryId|Directory $other): Directory
@@ -85,6 +108,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?string $target = '',
         ?array $secrets = null,
         ?bool $noInit = false,
+        SocketId|Socket|null $ssh = null,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
         if (null !== $dockerfile) {
@@ -105,6 +129,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $noInit) {
         $innerQueryBuilder->setArgument('noInit', $noInit);
         }
+        if (null !== $ssh) {
+        $innerQueryBuilder->setArgument('ssh', $ssh);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -118,6 +145,22 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder->setArgument('path', $path);
         }
         return (array)$this->queryLeaf($leafQueryBuilder, 'entries');
+    }
+
+    /**
+     * check if a file or directory exists
+     */
+    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $expectedType) {
+        $leafQueryBuilder->setArgument('expectedType', $expectedType);
+        }
+        if (null !== $doNotFollowSymlinks) {
+        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
 
     /**
@@ -146,7 +189,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a snapshot with some paths included or excluded
      */
-    public function filter(?array $exclude = null, ?array $include = null): Directory
+    public function filter(?array $exclude = null, ?array $include = null, ?bool $gitignore = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
         if (null !== $exclude) {
@@ -155,7 +198,21 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Search up the directory tree for a file or directory, and return its path. If no match, return null
+     */
+    public function findUp(string $name, string $start): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
+        $leafQueryBuilder->setArgument('name', $name);
+        $leafQueryBuilder->setArgument('start', $start);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
     }
 
     /**
@@ -184,6 +241,72 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Searches for content matching the given regular expression or literal string.
+     *
+     * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+     */
+    public function search(
+        string $pattern,
+        ?array $paths = null,
+        ?array $globs = null,
+        ?bool $literal = false,
+        ?bool $multiline = false,
+        ?bool $dotall = false,
+        ?bool $insensitive = false,
+        ?bool $skipIgnored = false,
+        ?bool $skipHidden = false,
+        ?bool $filesOnly = false,
+        ?int $limit = null,
+    ): array {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $globs) {
+        $leafQueryBuilder->setArgument('globs', $globs);
+        }
+        if (null !== $literal) {
+        $leafQueryBuilder->setArgument('literal', $literal);
+        }
+        if (null !== $multiline) {
+        $leafQueryBuilder->setArgument('multiline', $multiline);
+        }
+        if (null !== $dotall) {
+        $leafQueryBuilder->setArgument('dotall', $dotall);
+        }
+        if (null !== $insensitive) {
+        $leafQueryBuilder->setArgument('insensitive', $insensitive);
+        }
+        if (null !== $skipIgnored) {
+        $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
+        }
+        if (null !== $skipHidden) {
+        $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
+        }
+        if (null !== $filesOnly) {
+        $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
+        }
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
+    }
+
+    /**
+     * Return file status
+     */
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $doNotFollowSymlinks) {
+        $innerQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -221,36 +344,71 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a directory with changes from another directory applied to it.
+     */
+    public function withChanges(ChangesetId|Changeset $changes): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return a snapshot with a directory added
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $directory,
+        DirectoryId|Directory $source,
         ?array $exclude = null,
         ?array $include = null,
+        ?bool $gitignore = false,
+        ?string $owner = '',
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('directory', $directory);
+        $innerQueryBuilder->setArgument('source', $source);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Raise an error.
+     */
+    public function withError(string $err): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withError');
+        $innerQueryBuilder->setArgument('err', $err);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Retrieves this directory plus the contents of the given file copied to the given path.
      */
-    public function withFile(string $path, FileId|File $source, ?int $permissions = null): Directory
-    {
+    public function withFile(
+        string $path,
+        FileId|File $source,
+        ?int $permissions = null,
+        ?string $owner = '',
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -293,6 +451,26 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory with the given Git-compatible patch applied.
+     */
+    public function withPatch(string $patch): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatch');
+        $innerQueryBuilder->setArgument('patch', $patch);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory with the given Git-compatible patch file applied.
+     */
+    public function withPatchFile(FileId|File $patch): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
+        $innerQueryBuilder->setArgument('patch', $patch);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

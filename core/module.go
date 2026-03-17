@@ -1,13 +1,17 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/util/hashutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -18,7 +22,10 @@ import (
 
 type Module struct {
 	// The source of the module
-	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
+	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
+
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints or toolchains
+	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
@@ -33,8 +40,8 @@ type Module struct {
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
 
-	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
+	// Runtime is the execution environment that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+	Runtime ModuleRuntime
 
 	// The following are populated while initializing the module
 
@@ -50,8 +57,19 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	// InstanceID is the ID of the initialized module.
-	InstanceID *call.ID
+	// IsToolchain indicates this module was loaded as a toolchain dependency.
+	// Toolchain modules are allowed to share types with the modules that depend on them.
+	IsToolchain bool
+
+	// Toolchains manages all toolchain modules and their configuration.
+	Toolchains *ToolchainRegistry
+
+	// ResultID is the ID of the initialized module.
+	ResultID *call.ID
+
+	// If true, disable the new default function caching behavior for this module. Functions will
+	// instead default to the old behavior of per-session caching.
+	DisableDefaultFunctionCaching bool
 }
 
 func (*Module) Type() *ast.Type {
@@ -71,40 +89,225 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+// isToolchainModule checks if a Mod is a toolchain Module.
+// This centralizes the validation logic that was scattered across the codebase.
+func isToolchainModule(m Mod) bool {
+	tcMod, ok := m.(*Module)
+	return ok && tcMod.IsToolchain
+}
+
+func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+	return NewCheckGroup(ctx, mod, include)
+}
+
+func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
+	return NewGeneratorGroup(ctx, mod, include)
+}
+
+func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	return mod.ObjectByName(mod.Name())
+}
+
+func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid {
+			obj := objDef.AsObject.Value
+			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+				return obj, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func functionRequiresArgs(fn *Function) bool {
+	for _, arg := range fn.Args {
+		// NOTE: we count on user defaults already merged in the schema at this point
+		// "regular optional" -> ok
+		if arg.TypeDef.Optional {
+			continue
+		}
+		// "contextual optional" -> ok
+		if arg.DefaultPath != "" {
+			continue
+		}
+		// default value -> ok
+		if arg.DefaultValue != nil {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func (mod *Module) GetSource() *ModuleSource {
-	return mod.Source.Self
+	if !mod.Source.Valid {
+		return nil
+	}
+	return mod.Source.Value.Self()
+}
+
+// The "context source" is the module used as the execution context for the module.
+// Usually it's simply the module source itself. But when using blueprints or
+// toolchains, it will point to the downstream module applying the toolchain,
+// not the toolchain itself.
+func (mod *Module) GetContextSource() *ModuleSource {
+	if !mod.ContextSource.Valid {
+		return nil
+	}
+	return mod.ContextSource.Value.Self()
+}
+
+func (mod *Module) ContentDigestCacheKey() string {
+	contextSource := mod.ContextSource.Value.Self()
+	contentDigest := ""
+	contentCacheScope := ""
+	if contextSource != nil {
+		contentDigest = contextSource.Digest
+		contentCacheScope = contextSource.ContentCacheScope()
+	}
+
+	return hashutil.HashStrings(
+		contentDigest,
+		contentCacheScope,
+		"asModule",
+	).String()
+}
+
+// GetModuleFromContentDigest loads a module based on the same content+provenance key used
+// in ModuleSource.asModule. We sometimes can't directly load a Module because the current
+// caching logic will result in that Module being re-loaded by clients (due to it being
+// CachePerClient) and then possibly trying to load it from the wrong context (in the case
+// of a cached result including a _contextDirectory call).
+func GetModuleFromContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	modName string,
+	dgst string,
+) (inst dagql.ObjectResult[*Module], err error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, err
+	}
+	cacheKey := hashutil.HashStrings(dgst, md.SessionID).String()
+	cacheRes, err := dag.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
+		return nil, fmt.Errorf("module not found: %s", modName)
+	})
+	if err != nil {
+		return inst, err
+	}
+	if cacheRes == nil {
+		return inst, fmt.Errorf("module cache returned nil result for key %q", cacheKey)
+	}
+	inst, ok := cacheRes.Value().(dagql.ObjectResult[*Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module has unexpected type: %T", cacheRes.Value())
+	}
+
+	return inst, nil
+}
+
+// CacheModuleByContentDigest caches the given module instance using its content+provenance
+// key + session ID, corresponding to the getter above (GetModuleFromContentDigest).
+func CacheModuleByContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	mod dagql.ObjectResult[*Module],
+) error {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	perSessionContentCacheKey := hashutil.HashStrings(mod.Self().ContentDigestCacheKey(), md.SessionID).String()
+	_, err = dag.Cache.GetOrInitArbitrary(ctx, perSessionContentCacheKey, dagql.ArbitraryValueFunc(mod))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// RuntimeContainer returns the runtime as a Container for the GraphQL field.
+// Returns nil if the runtime doesn't use a container.
+func (mod *Module) RuntimeContainer() dagql.Nullable[dagql.ObjectResult[*Container]] {
+	if mod.Runtime != nil {
+		if ctr, ok := mod.Runtime.AsContainer(); ok {
+			return dagql.NonNull(ctr)
+		}
+	}
+	return dagql.Null[dagql.ObjectResult[*Container]]()
+}
+
+// Return all user defaults for this module
+func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
+	defaults := NewEnvFile(true)
+
+	// Use ContextSource for loading .env files (it has the actual context directory)
+	// but use Source for the module name prefix lookups
+	contextSrc := mod.GetContextSource()
+	if contextSrc != nil && contextSrc.UserDefaults != nil {
+		defaults = defaults.WithEnvFiles(contextSrc.UserDefaults)
+	}
+
+	src := mod.GetSource()
+	if src != nil && src != contextSrc && src.UserDefaults != nil {
+		// Also merge in toolchain source defaults if different from context
+		defaults = defaults.WithEnvFiles(src.UserDefaults)
+	}
+
+	return defaults, nil
+}
+
+// Return local defaults for the specified object
+// An empty string as object name means the constructor.
+func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*EnvFile, error) {
+	modDefaults, err := mod.UserDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	isMainObject := objName == "" || strings.EqualFold(objName, strings.ReplaceAll(mod.OriginalName, "-", ""))
+	if isMainObject {
+		return modDefaults, nil
+	}
+	return modDefaults.Namespace(ctx, objName)
 }
 
 func (mod *Module) IDModule() *call.Module {
+	if !mod.Source.Valid {
+		panic("no module source")
+	}
+	src := mod.Source.Value.Self()
+
 	var ref, pin string
-	switch mod.Source.Self.Kind {
+	switch src.Kind {
 	case ModuleSourceKindLocal:
-		ref = filepath.Join(mod.Source.Self.Local.ContextDirectoryPath, mod.Source.Self.SourceRootSubpath)
+		ref = filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
 
 	case ModuleSourceKindGit:
-		ref = mod.Source.Self.Git.CloneRef
-		if mod.Source.Self.SourceRootSubpath != "" {
-			ref += "/" + strings.TrimPrefix(mod.Source.Self.SourceRootSubpath, "/")
+		ref = src.Git.CloneRef
+		if src.SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(src.SourceRootSubpath, "/")
 		}
-		if mod.Source.Self.Git.Version != "" {
-			ref += "@" + mod.Source.Self.Git.Version
+		if src.Git.Version != "" {
+			ref += "@" + src.Git.Version
 		}
-		pin = mod.Source.Self.Git.Commit
+		pin = src.Git.Commit
 
 	case ModuleSourceKindDir:
 		// FIXME: this is better than nothing, but no other code handles refs that
 		// are an encoded ID right now
 		var err error
-		ref, err = mod.Source.Self.ContextDirectory.ID().Encode()
+		ref, err = src.ContextDirectory.ID().Encode()
 		if err != nil {
 			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
 		}
 
 	default:
-		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self.Kind))
+		panic(fmt.Sprintf("unexpected module source kind %q", src.Kind))
 	}
 
-	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
+	contentCacheKey := mod.ContentDigestCacheKey()
+	return call.NewModule(mod.ResultID.WithDigest(digest.Digest(contentCacheKey)), mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -130,9 +333,15 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 		if ok {
 			// NB: this is defense-in-depth to prevent SDKs or some other future
 			// component from allowing modules to extend external objects.
-			return fmt.Errorf("type %q is already defined by module %q",
-				objDef.Name,
-				modType.SourceMod().Name())
+			if src := mod.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+				// TODO: temporarily authorize modules to be loaded two times when self calls are enabled
+				// This breaks enum support but it allows a module to be loaded as its own dependency, enabling self calls
+				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
+			} else {
+				return fmt.Errorf("type %q is already defined by module %q",
+					objDef.Name,
+					modType.SourceMod().Name())
+			}
 		}
 
 		obj := &ModuleObject{
@@ -206,83 +415,79 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 	return typeDefs, nil
 }
 
-func (mod *Module) View() (dagql.View, bool) {
+func (mod *Module) View() (call.View, bool) {
 	return "", false
 }
 
 func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
-	_ dagql.Object,
+	_ dagql.AnyResult,
 	_ map[string]dagql.Input,
-	_ dagql.View,
-	cacheCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
+	_ call.View,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
 	// Function calls on a module should be cached based on the module's content hash, not
 	// the module ID digest (which has a per-client cache key in order to deal with
 	// local dir and git repo loading)
 	id := dagql.CurrentID(ctx)
-	curIDNoMod := id.Receiver().Append(
-		id.Type().ToAST(),
-		id.Field(),
-		id.View(),
-		nil,
-		int(id.Nth()),
-		"",
-		id.Args()...,
-	)
-	cacheCfg.Digest = dagql.HashFrom(
-		curIDNoMod.Digest().String(),
-		mod.Source.Self.Digest,
-		mod.NameField, // the module source content digest only includes the original name
+	curIDNoMod := id.With(
+		call.WithModule(nil),
+		call.WithCustomDigest(""),
 	)
 
-	return &cacheCfg, nil
+	resp := &dagql.GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	if resp.CacheKey.ID == nil {
+		resp.CacheKey.ID = curIDNoMod
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+		curIDNoMod.Digest().String(),
+		mod.Source.Value.Self().Digest,
+		mod.NameField, // the module source content digest only includes the original name
+	))
+	return resp, nil
 }
 
-func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, local bool, err error) {
+func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		modType, ok = mod.modTypeForPrimitive(typeDef)
 	case TypeDefKindList:
-		modType, ok, local, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
+		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindObject:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = mod.modTypeForObject(typeDef)
-		local = true
 	case TypeDefKindInterface:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = mod.modTypeForInterface(typeDef)
-		local = true
 	case TypeDefKindScalar:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = nil, false
 		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
 	case TypeDefKindEnum:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
-			return modType, ok, false, err
+			return modType, ok, err
 		}
 		modType, ok = mod.modTypeForEnum(typeDef)
-		local = true
 	default:
-		return nil, false, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
-
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to get mod type: %w", err)
+		return nil, false, fmt.Errorf("failed to get mod type: %w", err)
 	}
-
 	if !ok {
-		return nil, false, false, nil
+		return nil, false, nil
 	}
 
 	if typeDef.Optional {
@@ -292,7 +497,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		}
 	}
 
-	return modType, true, local, nil
+	return modType, true, nil
 }
 
 func (mod *Module) modTypeFromDeps(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -312,19 +517,19 @@ func (mod *Module) modTypeForPrimitive(typedef *TypeDef) (ModType, bool) {
 	return &PrimitiveType{typedef}, true
 }
 
-func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, bool, error) {
-	underlyingType, ok, local, err := mod.ModTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
+func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	underlyingType, ok, err := mod.ModTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to get underlying type: %w", err)
+		return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
 	}
 	if !ok {
-		return nil, false, false, nil
+		return nil, false, nil
 	}
 
 	return &ListType{
 		Elem:       typedef.AsList.Value.ElementTypeDef,
 		Underlying: underlyingType,
-	}, true, local, nil
+	}, true, nil
 }
 
 func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
@@ -337,7 +542,7 @@ func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
+	slog.Trace("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
 	return nil, false
 }
 
@@ -351,7 +556,7 @@ func (mod *Module) modTypeForInterface(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
+	slog.Trace("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
 	return nil, false
 }
 
@@ -365,7 +570,7 @@ func (mod *Module) modTypeForEnum(typeDef *TypeDef) (ModType, bool) {
 		}
 	}
 
-	slog.ExtraDebug("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
+	slog.Trace("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
 	return nil, false
 }
 
@@ -382,6 +587,7 @@ func (mod *Module) validateTypeDef(ctx context.Context, typeDef *TypeDef) error 
 	return nil
 }
 
+//nolint:gocyclo
 func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) error {
 	// check whether this is a pre-existing object from core or another module
 	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
@@ -401,6 +607,13 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if gqlFieldName(field.Name) == "id" {
 			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 		}
+		// Workspace cannot be stored as a field on a module object
+		if field.TypeDef.Kind == TypeDefKindObject && field.TypeDef.AsObject.Value.Name == "Workspace" {
+			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+				obj.OriginalName,
+				field.OriginalName,
+			)
+		}
 		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
@@ -408,13 +621,16 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			sourceMod := fieldType.SourceMod()
 			// fields can reference core types and local types, but not types from
-			// other modules
+			// other modules (unless the source module is a toolchain)
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-					obj.OriginalName,
-					field.OriginalName,
-					sourceMod.Name(),
-				)
+				// Allow types from toolchain modules
+				if !isToolchainModule(sourceMod) {
+					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+						obj.OriginalName,
+						field.OriginalName,
+						sourceMod.Name(),
+					)
+				}
 			}
 		}
 		if err := mod.validateTypeDef(ctx, field.TypeDef); err != nil {
@@ -422,23 +638,25 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 	}
 
-	for _, fn := range obj.Functions {
+	for fn := range obj.functions() {
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 		}
-		// Check if this is a type from another (non-core) module, which is currently not allowed
+		// Check if this is a type from another (non-core) module
 		retType, ok, err := mod.Deps.ModTypeFor(ctx, fn.ReturnType)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// already validated, skip
-				return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-					obj.OriginalName,
-					fn.OriginalName,
-					sourceMod.Name(),
-				)
+				// Allow types from toolchain modules
+				if !isToolchainModule(sourceMod) {
+					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+						obj.OriginalName,
+						fn.OriginalName,
+						sourceMod.Name(),
+					)
+				}
 			}
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType); err != nil {
@@ -452,13 +670,15 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			}
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-					// already validated, skip
-					return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-						obj.OriginalName,
-						fn.OriginalName,
-						arg.OriginalName,
-						sourceMod.Name(),
-					)
+					// Allow types from toolchain modules
+					if !isToolchainModule(sourceMod) {
+						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+							obj.OriginalName,
+							fn.OriginalName,
+							arg.OriginalName,
+							sourceMod.Name(),
+						)
+					}
 				}
 			}
 			if err := mod.validateTypeDef(ctx, arg.TypeDef); err != nil {
@@ -528,22 +748,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			field.SourceMap = mod.namespaceSourceMap(modPath, field.SourceMap)
 		}
 
-		for _, fn := range obj.Functions {
-			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
-				return err
-			}
-			fn.SourceMap = mod.namespaceSourceMap(modPath, fn.SourceMap)
-
-			for _, arg := range fn.Args {
-				if err := mod.namespaceTypeDef(ctx, modPath, arg.TypeDef); err != nil {
-					return err
-				}
-				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
-			}
-		}
-
-		if obj.Constructor.Valid {
-			fn := obj.Constructor.Value
+		for fn := range obj.functions() {
 			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
 				return err
 			}
@@ -606,25 +811,109 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 	return nil
 }
 
-func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *SourceMap {
-	if sourceMap == nil {
-		return nil
+func (mod *Module) namespaceSourceMap(modPath string, sourceMap dagql.Nullable[*SourceMap]) dagql.Nullable[*SourceMap] {
+	if !sourceMap.Valid {
+		return sourceMap
 	}
 
-	if mod.Source.Self.Kind != ModuleSourceKindLocal {
-		// TODO: handle remote git files
-		return nil
+	sourceMap.Value.Module = mod.Name()
+	sourceMap.Value.Filename = filepath.Join(modPath, sourceMap.Value.Filename)
+
+	if mod.Source.Value.Self().Kind == ModuleSourceKindGit {
+		link, err := mod.Source.Value.Self().Git.Link(sourceMap.Value.Filename, sourceMap.Value.Line, sourceMap.Value.Column)
+		if err != nil {
+			return dagql.Null[*SourceMap]()
+		}
+		sourceMap.Value.URL = link
 	}
 
-	sourceMap.Module = mod.Name()
-	sourceMap.Filename = filepath.Join(modPath, sourceMap.Filename)
 	return sourceMap
 }
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
 // relative to the context directory
 func (mod *Module) modulePath() string {
-	return mod.Source.Self.SourceSubpath
+	return mod.Source.Value.Self().SourceSubpath
+}
+
+// Patch is called after all types have been loaded - here we can update any
+// definitions as required, and attempt to resolve references.
+func (mod *Module) Patch() error {
+	// patch a function's default arguments so that the default value
+	// correctly matches the Name, not the OriginalName (simplifies a lot of
+	// code downstream, and makes type introspection make sense)
+	patchFunctionEnumDefaults := func(fn *Function) error {
+		for _, arg := range fn.Args {
+			if arg.DefaultValue == nil {
+				continue
+			}
+			if arg.TypeDef.Kind != TypeDefKindEnum {
+				continue
+			}
+			enum, ok := mod.modTypeForEnum(arg.TypeDef)
+			if !ok {
+				continue
+			}
+
+			var val string
+			dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
+			dec.UseNumber()
+			if err := dec.Decode(&val); err != nil {
+				return fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+			}
+
+			found := false
+			for _, member := range enum.TypeDef().AsEnum.Value.Members {
+				if val == member.OriginalName {
+					val = member.Name
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("enum name %q not found", val)
+			}
+
+			res, err := json.Marshal(val)
+			if err != nil {
+				return err
+			}
+			arg.DefaultValue = JSON(res)
+		}
+		return nil
+	}
+	for _, obj := range mod.ObjectDefs {
+		for fn := range obj.AsObject.Value.functions() {
+			patchFunctionEnumDefaults(fn)
+		}
+	}
+	for _, obj := range mod.InterfaceDefs {
+		for _, fn := range obj.AsInterface.Value.Functions {
+			patchFunctionEnumDefaults(fn)
+		}
+	}
+	return nil
+}
+
+func (mod *Module) LoadRuntime(ctx context.Context) (ModuleRuntime, error) {
+	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return nil, fmt.Errorf("no runtime implemented")
+	}
+
+	if !mod.Source.Valid {
+		return nil, fmt.Errorf("no source")
+	}
+
+	src := mod.Source.Value
+	scopedSourceDigest := src.Self().ContentScopedDigest()
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(scopedSourceDigest))
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
+	return runtime, nil
 }
 
 /*
@@ -636,7 +925,7 @@ type Mod interface {
 	Name() string
 
 	// View gets the name of the module's view of its underlying schema
-	View() (dagql.View, bool)
+	View() (call.View, bool)
 
 	// Install modifies the provided server to install the contents of the
 	// modules declared fields.
@@ -645,7 +934,7 @@ type Mod interface {
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
-	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, bool, error)
+	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error)
 
 	// TypeDefs gets the TypeDefs exposed by this module (not including
 	// dependencies) from the given unified schema. Implicitly, TypeDefs
@@ -658,33 +947,8 @@ type Mod interface {
 	GetSource() *ModuleSource
 }
 
-var _ HasPBDefinitions = (*Module)(nil)
-
-func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if mod.Source.Self != nil {
-		dirDefs, err := mod.Source.Self.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.Runtime != nil {
-		dirDefs, err := mod.Runtime.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	return defs, nil
-}
-
 func (mod Module) Clone() *Module {
 	cp := mod
-
-	if mod.Source.Self != nil {
-		cp.Source.Self = mod.Source.Self.Clone()
-	}
 
 	if mod.SDKConfig != nil {
 		cp.SDKConfig = mod.SDKConfig.Clone()
@@ -692,10 +956,6 @@ func (mod Module) Clone() *Module {
 
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
-	}
-
-	if mod.Runtime != nil {
-		cp.Runtime = mod.Runtime.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))

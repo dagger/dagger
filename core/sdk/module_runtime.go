@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	telemetry "github.com/dagger/otel-go"
 )
 
 // A SDK module that implements the `Runtime` interface
@@ -17,17 +17,23 @@ type runtimeModule struct {
 func (sdk *runtimeModule) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
-	source dagql.Instance[*core.ModuleSource],
-) (_ *core.Container, rerr error) {
+	source dagql.ObjectResult[*core.ModuleSource],
+) (_ core.ModuleRuntime, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
+	defer telemetry.EndWithCause(span, &rerr)
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
-	var inst dagql.Instance[*core.Container]
-	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst,
+	dag, err := sdk.mod.dag(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
+	var inst dagql.ObjectResult[*core.Container]
+	err = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
 			Field: "moduleRuntime",
 			Args: []dagql.NamedInput{
@@ -54,5 +60,5 @@ func (sdk *runtimeModule) Runtime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
 	}
-	return inst.Self, nil
+	return &core.ContainerRuntime{Container: inst}, nil
 }

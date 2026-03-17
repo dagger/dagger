@@ -1,0 +1,67 @@
+---
+title: "Glossary"
+description: "A glossary of terms used in Dagger documentation"
+slug: /reference/glossary
+---
+
+In order to help you navigate the Dagger documentation, we have compiled a glossary of terms that are frequently used. This glossary will help you understand the key concepts and terminology used throughout the documentation.
+
+### Cache Volume
+A Cache Volume is a persistent storage volume used to speed up operations in Dagger by caching intermediate results. Cache volumes are particularly useful for operations like dependency installation, where the same dependencies might be needed across multiple builds.
+
+### Container
+A Container is a core type in Dagger that represents a lightweight, standalone, and executable package of software that includes everything needed to run an application. Containers are immutable in Dagger, with each operation creating a new Container instance.
+
+### Custom Application
+A Custom Application is a Dagger SDK embedded directly into your application code. This allows you to use Dagger features such as container operations, secret management, and more, without needing to create a separate Dagger module. Custom Applications can be written in various programming languages using the available Dagger SDKs, such as Go, TypeScript, PHP, and Python.
+
+### Custom Runner
+A Custom Runner is a Dagger Engine that is configured to run in a specific environment, such as Docker, Kubernetes, or Podman. It allows you to execute Dagger workflows in your own infrastructure, providing flexibility and control over how workflows are executed. Custom Runners can be configured with specific settings and requirements to suit your environment.
+
+### Dagger API
+The Dagger API is an unified interface for composing Dagger workflows. It provides a set of core functions and core types for creating and managing application delivery workflows, including types for containers, files, directories, network services, secrets, and more. You can call these functions from the Dagger CLI, or from custom functions written in any supported programming language.
+
+### Dagger CLI
+The Dagger CLI is a command-line tool that allows you to interact with the Dagger API, call Dagger Functions, and manage Dagger modules. It provides commands for initializing, developing, and running Dagger modules, as well as for executing queries against the Dagger API.
+
+### Dagger Cloud
+Dagger Cloud is a browser-based interface focused on tracing and debugging Dagger workflows. It provides visualization tools for operational telemetry, helping users understand and optimize their workflows.
+
+### Dagger Engine
+The Dagger Engine is the core component of the Dagger platform that executes workflows. It manages the execution of Dagger Functions and ensures that they are run in the correct order, with the appropriate inputs and outputs.
+
+### Dagger Function
+A Dagger Function is a reusable block of code that can be executed within a Dagger workflow. Functions can take inputs, perform actions, and return outputs, making them a powerful tool for building complex workflows.
+
+### Dagger module
+A Dagger module is a collection of Dagger Functions that can be used together to perform a specific task or set of tasks. Modules can be imported and used in different workflows, allowing for code reuse and modularity.
+
+### Dagger SDK
+A Dagger SDK is a software development kit that provides the tools and libraries needed to create Dagger modules and Functions in a specific programming language. Dagger SDKs are available for languages such as Go, TypeScript, PHP, and Python, allowing developers to use their preferred language to build Dagger workflows.
+
+### Dagger Shell
+The Dagger Shell is an interactive client for the Dagger API, giving you access to typed objects, built-in documentation, and the ability to execute Dagger Functions. It provides a more user-friendly interface for working with Dagger compared to using the CLI directly.
+
+### Daggerverse
+The Daggerverse is a free service run by Dagger that indexes all publicly available Dagger modules and Dagger Functions. It makes it easier to search and consume modules developed by your team, organization, or the broader Dagger community.
+
+### Directory
+A Directory is a core type in Dagger that represents a collection of files and subdirectories. Directories can be used to mount content into containers, export files to the local filesystem, or manipulate files within the Dagger environment.
+
+### Function Chaining
+Function Chaining is a core feature of Dagger that allows you to connect multiple functions together in sequence, with the output of one function becoming the input to the next function. This enables the creation of complex workflows through the composition of simpler functions.
+
+### GitRepository
+A GitRepository is a core type in Dagger that represents a Git repository. It provides functions for cloning, fetching, and manipulating Git repositories within Dagger workflows.
+
+### Runner
+A Runner is the backend component of the Dagger Engine that executes containers specified by pipelines. It is responsible for pulling container images, git repositories, and other sources needed for pipeline execution, as well as managing the cache backing pipeline execution.
+
+### Secret
+A Secret is a core type in Dagger that represents sensitive information, such as API keys, passwords, or certificates. Secrets in Dagger are handled securely, ensuring that sensitive information is not exposed in logs or outputs.
+
+### Service
+A Service is a core type in Dagger that represents a network service exposed by a container. Services allow containers to communicate with each other and with the host system, enabling complex multi-container workflows.
+
+### Session
+A Session in Dagger is a temporary environment that serves the GraphQL API to clients, manages the synchronization of local directories into pipeline containers, and handles the proxying of local sockets to exec containers. Sessions are created for the duration of a `dagger.Connect` call or a `dagger run` command.

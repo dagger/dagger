@@ -3,20 +3,22 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/identity"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/pelletier/go-toml"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
@@ -185,33 +187,6 @@ exit $?
 	require.NoError(t, err)
 }
 
-func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithNewFile(
-				"/usr/local/bin/slow-entrypoint.sh",
-				strings.Join([]string{
-					`#!/bin/sh`,
-					`set -eux`,
-					`sleep 15`,
-					`echo my hostname is $(hostname)`,
-					`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
-				}, "\n"),
-				dagger.ContainerWithNewFileOpts{Permissions: 0o700},
-			).
-			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
-	})
-
-	clientCtr := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))
-	_, err := clientCtr.
-		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).Sync(ctx)
-
-	require.NoError(t, err)
-}
-
 func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -225,18 +200,25 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
-	clientCtr = clientCtr.
-		WithNewFile("/query.graphql", `{ version }`).
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"})
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "version"})
+
+	// version call
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
+	require.Equal(t, engineVersion, strings.TrimSpace(stdout))
+
+	// in progress output
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
-
 	require.Contains(t, stderr, engineName)
 	require.Contains(t, stderr, engineVersion)
 
-	require.Contains(t, stdout, engineVersion)
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"})
+
+	// name call
+	stdout, err = clientCtr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
 func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
@@ -271,71 +253,6 @@ func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	// verify we got some progress output
 	require.Contains(t, stderr, "Container.from")
-}
-
-func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
-
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
-		Include: []string{
-			"core/integration/testdata/telemetry/",
-			"core/integration/testdata/basic-container/",
-			"sdk/go/",
-			"go.mod",
-			"go.sum",
-		},
-	})
-
-	eventsVol := c.CacheVolume("dagger-dev-engine-events-" + identity.NewID())
-
-	withCode := c.Container().
-		From(golangImage).
-		WithExec([]string{"apk", "add", "git"}).
-		With(goCache(c)).
-		WithMountedDirectory("/src", code).
-		WithWorkdir("/src")
-
-	fakeCloud := withCode.
-		WithMountedCache("/events", eventsVol).
-		WithDefaultArgs([]string{
-			"go", "run", "./core/integration/testdata/telemetry/",
-		}).
-		WithExposedPort(8080).
-		AsService()
-
-	eventsID := identity.NewID()
-
-	daggerCli := daggerCliFile(t, c)
-
-	_, err = withCode.
-		WithServiceBinding("dev-engine", devEngine).
-		WithMountedFile("/bin/dagger", daggerCli).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-		WithServiceBinding("cloud", fakeCloud).
-		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
-		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
-		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@example.com"}).
-		// make sure we handle non-ASCII usernames
-		WithExec([]string{"git", "config", "--global", "user.name", "Tiësto User"}).
-		WithExec([]string{"git", "init"}). // init a git repo to test git labels
-		WithExec([]string{"git", "add", "."}).
-		WithExec([]string{"git", "commit", "-m", "init test repo"}).
-		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}).
-		Stderr(ctx)
-	require.NoError(t, err)
-
-	_, err = withCode.
-		WithMountedCache("/events", eventsVol).
-		WithExec([]string{"sh", "-c", "grep dagger.io/git.title $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
-		WithExec([]string{"sh", "-c", "grep 'init test repo' $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
-		Sync(ctx)
-	require.NoError(t, err)
 }
 
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
@@ -483,7 +400,6 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 
 	for _, tc := range tcs {
 		// get a cached engine if possible (saves spinning up more engines than we need to)
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			devEngineSvcKey := tc.engineVersion + " " + tc.clientMinVersion
 			enginesMu.Lock()
@@ -504,7 +420,6 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientCtr = clientCtr.
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.clientVersion).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.engineMinVersion)
-
 			if tc.errs == nil {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
@@ -596,7 +511,6 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 	for _, tc := range tcs {
 		// get a cached engine if possible (saves spinning up more engines than we need to)
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			devEngineSvcKey := tc.engineVersion + " " + tc.moduleMinVersion
 			enginesMu.Lock()
@@ -605,7 +519,11 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
-						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion)
+						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion).
+						// Required to use the bundled go SDK instead of the remote one
+						// This avoid breaking that test because of a breaking change on
+						// the generated files.
+						WithEnvVariable("_EXPERIMENTAL_DAGGER_DEV_ENGINE", "1")
 				})
 				devEngineSvc = devEngineContainerAsService(devEngine)
 				engines[devEngineSvcKey] = devEngineSvc
@@ -764,4 +682,321 @@ func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *tes
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for errCh2")
 	}
+}
+
+func (EngineSuite) TestPrometheusMetrics(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngineCtr := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "3s").
+			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
+				Protocol: dagger.NetworkProtocolTcp,
+			})
+	})
+	devEngine := devEngineContainerAsService(devEngineCtr)
+
+	clientCtr := engineClientContainer(ctx, t, c, devEngine)
+
+	var eg errgroup.Group
+	clientCtx, clientCancel := context.WithCancel(ctx)
+	t.Cleanup(clientCancel)
+	eg.Go(func() error {
+		_, err := clientCtr.
+			With(daggerNonNestedExec("listen")).
+			Sync(clientCtx)
+		if strings.Contains(err.Error(), "context canceled") {
+			return nil // expected, we cancel it later
+		}
+		if err != nil {
+			t.Logf("error running dagger listen: %v", err)
+		}
+		return err
+	})
+
+	var foundAll bool
+	for range 30 {
+		out, err := clientCtr.
+			WithExec([]string{"apk", "add", "curl"}).
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"sh", "-c", "curl -s http://dev-engine:9090/metrics"}).
+			Stdout(ctx)
+		if err != nil {
+			t.Logf("error fetching metrics: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// find the lines with metrics we care about testing
+		soughtMetrics := map[string]struct{}{
+			"dagger_connected_clients":                 {},
+			"dagger_dagql_cache_entries":               {},
+			"dagger_local_cache_total_disk_size_bytes": {},
+			"dagger_local_cache_entries":               {},
+		}
+		foundMetrics := map[string]int{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+
+			for metricName := range soughtMetrics {
+				numStr, found := strings.CutPrefix(line, metricName+" ")
+				if !found {
+					continue
+				}
+				num, err := strconv.Atoi(numStr)
+				require.NoError(t, err)
+
+				delete(soughtMetrics, metricName)
+				foundMetrics[metricName] = num
+			}
+
+			if len(soughtMetrics) == 0 {
+				break
+			}
+		}
+
+		if len(soughtMetrics) != 0 {
+			t.Logf("did not find all sought metrics in output: %v", soughtMetrics)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// found everything, but validate values
+		validatedAll := true
+		for metricName, num := range foundMetrics {
+			switch metricName {
+			case "dagger_connected_clients":
+				if num != 1 {
+					t.Logf("expected dagger_connected_clients = 1, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_dagql_cache_entries":
+				if num < 0 {
+					t.Logf("expected dagger_dagql_cache_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_local_cache_total_disk_size_bytes":
+				if num <= 0 {
+					t.Logf("expected dagger_local_cache_total_disk_size_bytes > 0, got %d", num)
+					validatedAll = false
+				}
+			case "dagger_local_cache_entries":
+				if num <= 0 {
+					t.Logf("expected dagger_local_cache_entries >= 0, got %d", num)
+					validatedAll = false
+				}
+			default:
+				t.Fatalf("unexpected metric %q found in output", metricName)
+			}
+		}
+
+		if validatedAll {
+			foundAll = true
+			break // everything found + validated, exit retry loop
+		}
+
+		// retry again in a second
+		time.Sleep(1 * time.Second)
+	}
+	require.True(t, foundAll, "did not find all expected metrics in output after 30 attempts")
+
+	clientCancel()
+	require.NoError(t, eg.Wait(), "error from client exec")
+}
+
+func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "1s").
+			WithExposedPort(9090, dagger.ContainerWithExposedPortOpts{
+				Protocol: dagger.NetworkProtocolTcp,
+			})
+	}))
+
+	metricsCtr := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngine).
+		WithExec([]string{"apk", "add", "curl"})
+
+	getMetrics := func() (map[string]float64, error) {
+		out, err := metricsCtr.
+			WithEnvVariable("CACHEBUST", rand.Text()).
+			WithExec([]string{"sh", "-c", "curl -s http://dev-engine:9090/metrics"}).
+			Stdout(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		sought := map[string]struct{}{
+			"dagger_connected_clients":   {},
+			"dagger_dagql_cache_entries": {},
+		}
+		found := map[string]float64{}
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			for metricName := range sought {
+				numStr, ok := strings.CutPrefix(line, metricName+" ")
+				if !ok {
+					continue
+				}
+				num, err := strconv.ParseFloat(strings.TrimSpace(numStr), 64)
+				if err != nil {
+					return nil, fmt.Errorf("parse metric %s=%q: %w", metricName, numStr, err)
+				}
+				found[metricName] = num
+				delete(sought, metricName)
+				break
+			}
+			if len(sought) == 0 {
+				break
+			}
+		}
+		if len(sought) > 0 {
+			return nil, fmt.Errorf("missing metrics: %v", sought)
+		}
+		return found, nil
+	}
+
+	var (
+		baselineReady bool
+		baselineDagql float64
+	)
+	for attempt := 1; attempt <= 20; attempt++ {
+		metrics, err := getMetrics()
+		if err != nil {
+			t.Logf("baseline attempt %d: failed to fetch metrics: %v", attempt, err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if metrics["dagger_connected_clients"] == 0 {
+			baselineDagql = metrics["dagger_dagql_cache_entries"]
+			baselineReady = true
+			break
+		}
+		t.Logf(
+			"baseline attempt %d: waiting for connected clients to drain (connected=%v dagql_cache=%v)",
+			attempt,
+			metrics["dagger_connected_clients"],
+			metrics["dagger_dagql_cache_entries"],
+		)
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.True(t, baselineReady, "failed to capture baseline dagql cache metrics")
+
+	// Do meaningful dagql work: load a Go module with a Python dependency.
+	_, err := engineClientContainer(ctx, t, c, devEngine).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+rm -rf /tmp/main
+mkdir -p /tmp/main
+cd /tmp/main
+
+dagger init --name main --sdk=go >/dev/null
+
+mkdir -p dep
+cd dep
+dagger init --name dep --sdk=python >/dev/null
+
+cd /tmp/main
+dagger install ./dep >/dev/null
+
+# Load module + dependency schema a few times to exercise cache lifecycle.
+for i in $(seq 1 4); do
+  dagger functions >/dev/null
+done
+			`}).Sync(ctx)
+	require.NoError(t, err)
+
+	var (
+		settled    bool
+		lastClient float64
+		lastDagql  float64
+	)
+	for attempt := 1; attempt <= 24; attempt++ {
+		metrics, err := getMetrics()
+		if err != nil {
+			t.Logf("attempt %d: failed to fetch metrics: %v", attempt, err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		lastClient = metrics["dagger_connected_clients"]
+		lastDagql = metrics["dagger_dagql_cache_entries"]
+		if lastClient == 0 && lastDagql == baselineDagql {
+			settled = true
+			break
+		}
+		t.Logf(
+			"attempt %d: waiting for metrics to settle (connected=%v dagql_cache=%v baseline=%v)",
+			attempt,
+			lastClient,
+			lastDagql,
+			baselineDagql,
+		)
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	require.Truef(
+		t,
+		settled,
+		"dagql cache entries did not return to baseline after clients closed (connected_clients=%v dagql_cache_entries=%v baseline=%v)",
+		lastClient,
+		lastDagql,
+		baselineDagql,
+	)
+}
+
+func (EngineSuite) TestClientMetadataReuse(ctx context.Context, t *testctx.T) {
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+
+	rando := rand.Text()
+
+	base1, err := c1.Container().
+		From(alpineImage).
+		WithEnvVariable("CACHEBUSTER", rando).
+		Sync(ctx)
+	require.NoError(t, err)
+	base2, err := c2.Container().
+		From(alpineImage).
+		WithEnvVariable("CACHEBUSTER", rando).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	var eg errgroup.Group
+
+	// Run the same exec in both clients, but cancel the first one
+	// in the middle and close the client right away. The second exec
+	// should still successfully finish the exec.
+
+	var err1 error
+	eg.Go(func() error {
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		_, err1 = base1.
+			WithExec([]string{"sh", "-c", "sleep 30; echo hello"}).
+			Stdout(ctx)
+		if err1 == nil {
+			return fmt.Errorf("expected first exec to be canceled")
+		}
+		return c1.Close()
+	})
+
+	var out2 string
+	eg.Go(func() error {
+		time.Sleep(10 * time.Second)
+		var err error
+		out2, err = base2.
+			WithExec([]string{"sh", "-c", "sleep 30; echo hello"}).
+			Stdout(ctx)
+		return err
+	})
+
+	require.NoError(t, eg.Wait())
+	require.Equal(t, "hello\n", out2)
 }

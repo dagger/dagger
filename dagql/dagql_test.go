@@ -3,6 +3,7 @@ package dagql_test
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,11 +12,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/99designs/gqlgen/client"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -28,7 +31,6 @@ import (
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -65,12 +67,14 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 	assert.ErrorContains(t, err, substring)
 }
 
-func newCache() *dagql.SessionCache {
-	return dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]())
+func newCache(t *testing.T) *dagql.SessionCache {
+	baseCache, err := dagql.NewCache(t.Context(), "")
+	assert.NilError(t, err)
+	return dagql.NewSessionCache(baseCache)
 }
 
 func TestBasic(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 
 	points.Install[Query](srv)
 
@@ -111,7 +115,7 @@ func TestBasic(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -122,8 +126,8 @@ func TestBasic(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "shiftLeft", "", nil, 0, "")
+		)).
+		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -144,42 +148,107 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
 }
 
-func TestSelectID(t *testing.T) {
-	ctx := context.Background()
-	srv := dagql.NewServer(Query{}, newCache())
-	points.Install[Query](srv)
-
-	id, err := srv.SelectID(ctx, srv.Root(),
-		dagql.Selector{
-			Field: "point",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "x",
-					Value: dagql.NewInt(6),
-				},
-				{
-					Name:  "y",
-					Value: dagql.NewInt(7),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "shiftLeft",
-		},
-	)
-	require.NoError(t, err)
-
-	loaded, err := srv.Load(ctx, id)
-	require.NoError(t, err)
-	point := loaded.(dagql.Instance[*points.Point])
-	assert.Equal(t, point.Self.X, 5)
-	assert.Equal(t, point.Self.Y, 7)
-}
-
 func TestSelectArray(t *testing.T) {
 	ctx := context.Background()
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
+
+	dagql.Fields[Query]{
+		dagql.Func("listOfRandomObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			rando := rand.IntN(math.MaxInt)
+			return []*points.Point{
+				{X: rando, Y: rando},
+				{X: rando, Y: rando},
+			}, nil
+		}),
+	}.Install(srv)
+
+	dagql.Fields[*points.Point]{
+		dagql.Func("instanceNeighbors", func(ctx context.Context, self *points.Point, _ struct{}) (dagql.ResultArray[*points.Point], error) {
+			var pt0 dagql.Result[*points.Point]
+			err := srv.Select(ctx, srv.Root(), &pt0,
+				dagql.Selector{
+					Field: "point",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "x",
+							Value: dagql.NewInt(self.X - 1),
+						},
+						{
+							Name:  "y",
+							Value: dagql.NewInt(self.Y),
+						},
+					},
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			var pt1 dagql.Result[*points.Point]
+			err = srv.Select(ctx, srv.Root(), &pt1,
+				dagql.Selector{
+					Field: "point",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "x",
+							Value: dagql.NewInt(self.X + 1),
+						},
+						{
+							Name:  "y",
+							Value: dagql.NewInt(self.Y),
+						},
+					},
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			var pt2 dagql.Result[*points.Point]
+			err = srv.Select(ctx, srv.Root(), &pt2,
+				dagql.Selector{
+					Field: "point",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "x",
+							Value: dagql.NewInt(self.X),
+						},
+						{
+							Name:  "y",
+							Value: dagql.NewInt(self.Y - 1),
+						},
+					},
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			var pt3 dagql.Result[*points.Point]
+			err = srv.Select(ctx, srv.Root(), &pt3,
+				dagql.Selector{
+					Field: "point",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "x",
+							Value: dagql.NewInt(self.X),
+						},
+						{
+							Name:  "y",
+							Value: dagql.NewInt(self.Y + 1),
+						},
+					},
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			return []dagql.Result[*points.Point]{pt0, pt1, pt2, pt3}, nil
+		}),
+	}.Install(srv)
 
 	pointSel := dagql.Selector{
 		Field: "point",
@@ -195,19 +264,73 @@ func TestSelectArray(t *testing.T) {
 		},
 	}
 
-	t.Run("select all", func(t *testing.T) {
-		var points dagql.Array[dagql.Instance[*points.Point]]
+	t.Run("select all as array", func(t *testing.T) {
+		var points dagql.Array[*points.Point]
 		assert.NilError(t, srv.Select(ctx, srv.Root(), &points,
 			pointSel,
 			dagql.Selector{
 				Field: "neighbors",
 			},
 		))
-		assert.Equal(t, points[0].Self.X, 5)
-		assert.Equal(t, points[0].Self.Y, 7)
+		assert.Equal(t, points[0].X, 5)
+		assert.Equal(t, points[0].Y, 7)
 	})
 
-	t.Run("select all as Typed", func(t *testing.T) {
+	t.Run("select all as instance array", func(t *testing.T) {
+		var points dagql.ResultArray[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &points,
+			pointSel,
+			dagql.Selector{
+				Field: "neighbors",
+			},
+		))
+
+		assert.Equal(t, points[0].Self().X, 5)
+		assert.Equal(t, points[0].Self().Y, 7)
+		id0 := points[0].ID()
+		assert.Equal(t, id0.Type().NamedType(), "Point")
+		assert.Equal(t, id0.Type().ToAST().Elem, (*ast.Type)(nil))
+		assert.Equal(t, int(id0.Nth()), 1)
+
+		assert.Equal(t, points[1].Self().X, 7)
+		assert.Equal(t, points[1].Self().Y, 7)
+		id1 := points[1].ID()
+		assert.Equal(t, id1.Type().NamedType(), "Point")
+		assert.Equal(t, id1.Type().ToAST().Elem, (*ast.Type)(nil))
+		assert.Equal(t, int(id1.Nth()), 2)
+
+		// receiver id is the array itself and should be the same for each element in this case
+		assert.Equal(t, id0.Receiver().Display(), id1.Receiver().Display())
+	})
+
+	t.Run("select all individual instances", func(t *testing.T) {
+		var points dagql.ResultArray[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &points,
+			pointSel,
+			dagql.Selector{
+				Field: "instanceNeighbors",
+			},
+		))
+
+		assert.Equal(t, points[0].Self().X, 5)
+		assert.Equal(t, points[0].Self().Y, 7)
+		id0 := points[0].ID()
+		assert.Equal(t, id0.Type().NamedType(), "Point")
+		assert.Equal(t, id0.Type().ToAST().Elem, (*ast.Type)(nil))
+		assert.Equal(t, int(id0.Nth()), 0)
+
+		assert.Equal(t, points[1].Self().X, 7)
+		assert.Equal(t, points[1].Self().Y, 7)
+		id1 := points[1].ID()
+		assert.Equal(t, id1.Type().NamedType(), "Point")
+		assert.Equal(t, id1.Type().ToAST().Elem, (*ast.Type)(nil))
+		assert.Equal(t, int(id1.Nth()), 0)
+
+		// ids are not the same because they are returned as their own individual instances
+		assert.Check(t, id0.Display() != id1.Display())
+	})
+
+	t.Run("select all array as Typed", func(t *testing.T) {
 		var dest dagql.Typed
 		assert.NilError(t, srv.Select(ctx, srv.Root(), &dest,
 			pointSel,
@@ -215,13 +338,15 @@ func TestSelectArray(t *testing.T) {
 				Field: "neighbors",
 			},
 		))
-		pointsArr, ok := dest.(dagql.Array[*points.Point])
-		assert.Assert(t, ok)
+		res, ok := dest.(dagql.Result[dagql.Typed])
+		assert.Assert(t, ok, fmt.Sprintf("expected dagql.Array[*points.Point] but got %T", dest))
+		pointsArr, ok := res.Self().(dagql.Array[*points.Point])
+		assert.Assert(t, ok, fmt.Sprintf("expected dagql.Array[*points.Point] but got %T", res.Self()))
 		assert.Equal(t, len(pointsArr), 4)
 	})
 
 	t.Run("select all children", func(t *testing.T) {
-		var points dagql.Array[dagql.Instance[*points.Point]]
+		var points dagql.ResultArray[*points.Point]
 		assert.ErrorContains(t, srv.Select(ctx, srv.Root(), &points,
 			pointSel,
 			dagql.Selector{
@@ -234,7 +359,7 @@ func TestSelectArray(t *testing.T) {
 	})
 
 	t.Run("select nth", func(t *testing.T) {
-		var point dagql.Instance[*points.Point]
+		var point dagql.Result[*points.Point]
 		assert.NilError(t, srv.Select(ctx, srv.Root(), &point,
 			pointSel,
 			dagql.Selector{
@@ -242,13 +367,34 @@ func TestSelectArray(t *testing.T) {
 				Nth:   1,
 			},
 		))
-		assert.Equal(t, point.Self.X, 5)
-		assert.Equal(t, point.Self.Y, 7)
+		assert.Equal(t, point.Self().X, 5)
+		assert.Equal(t, point.Self().Y, 7)
+	})
+
+	t.Run("select nth caching", func(t *testing.T) {
+		var point1 dagql.Result[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &point1,
+			dagql.Selector{
+				Field: "listOfRandomObjects",
+				Nth:   1,
+			},
+		))
+
+		var point2 dagql.Result[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &point2,
+			dagql.Selector{
+				Field: "listOfRandomObjects",
+				Nth:   2,
+			},
+		))
+
+		assert.Equal(t, point1.Self().X, point2.Self().X)
+		assert.Equal(t, point1.Self().Y, point2.Self().Y)
 	})
 }
 
 func TestNullableResults(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 
 	points.Install[Query](srv)
 
@@ -263,7 +409,7 @@ func TestNullableResults(t *testing.T) {
 		}) (dagql.Nullable[*points.Point], error) {
 			return dagql.MapOpt(args.Point, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 				point, err := id.Load(ctx, srv)
-				return point.Self, err
+				return point.Self(), err
 			})
 		}),
 		dagql.Func("nullableScalarArray", func(ctx context.Context, self Query, args struct {
@@ -279,7 +425,7 @@ func TestNullableResults(t *testing.T) {
 			return dagql.MapOpt(args.Array, func(id dagql.ArrayInput[dagql.ID[*points.Point]]) (dagql.Array[*points.Point], error) {
 				return dagql.MapArrayInput(id, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 					point, err := id.Load(ctx, srv)
-					return point.Self, err
+					return point.Self(), err
 				})
 			})
 		}),
@@ -294,7 +440,10 @@ func TestNullableResults(t *testing.T) {
 			return dagql.MapArrayInput(args.Array, func(id dagql.Optional[dagql.ID[*points.Point]]) (dagql.Nullable[*points.Point], error) {
 				return dagql.MapOpt(id, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 					point, err := id.Load(ctx, srv)
-					return point.Self, err
+					if err != nil {
+						return nil, err
+					}
+					return point.Self(), err
 				})
 			})
 		}),
@@ -456,7 +605,7 @@ func TestNullableResults(t *testing.T) {
 }
 
 func TestListResults(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	dagql.Fields[Query]{
@@ -600,7 +749,7 @@ func ptr[T any](v T) *T {
 }
 
 func TestLoadingFromID(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 
 	points.Install[Query](srv)
 
@@ -707,7 +856,7 @@ func TestLoadingFromID(t *testing.T) {
 }
 
 func TestIDsReflectQuery(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -735,7 +884,7 @@ func TestIDsReflectQuery(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -746,8 +895,8 @@ func TestIDsReflectQuery(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "shiftLeft", "", nil, 0, "")
+		)).
+		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -789,7 +938,7 @@ func TestIDsReflectQuery(t *testing.T) {
 }
 
 func TestIDsDoNotContainSensitiveValues(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -837,7 +986,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -848,15 +997,15 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "loginTag", "", nil, 0, "")
+		)).
+		Append(pointT, "loginTag")
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -867,15 +1016,15 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "loginChain", "", nil, 0, "")
+		)).
+		Append(pointT, "loginChain")
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -886,21 +1035,21 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "loginTagFalse", "", nil, 0, "",
+		)).
+		Append(pointT, "loginTagFalse", call.WithArgs(
 			call.NewArgument(
 				"password",
 				call.NewLiteralString("hunter2"),
 				false,
 			),
-		)
+		))
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTagFalse.ID, expectedEnc)
 }
 
 func TestEmptyID(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -922,7 +1071,7 @@ func TestEmptyID(t *testing.T) {
 }
 
 func TestPureIDsDoNotReEvaluate(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -975,7 +1124,7 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 }
 
 func TestImpureIDsReEvaluate(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -1027,7 +1176,7 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 }
 
 func TestPassingObjectsAround(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -1064,7 +1213,7 @@ func TestPassingObjectsAround(t *testing.T) {
 }
 
 func TestEnums(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
 	gql := client.New(dagql.NewDefaultHandler(srv))
@@ -1227,7 +1376,7 @@ func (BuiltinsInput) TypeName() string {
 }
 
 func TestInputObjects(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	dagql.MustInputSpec(DefaultsInput{}).Install(srv)
@@ -1436,7 +1585,7 @@ func InstallDefaults(srv *dagql.Server) {
 }
 
 func TestDefaults(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallDefaults(srv)
@@ -1520,7 +1669,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestParallelism(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	pipes.Install[Query](srv)
@@ -1574,6 +1723,94 @@ func TestParallelism(t *testing.T) {
 	})
 }
 
+func TestArrayParallelism(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	points.Install[Query](srv)
+
+	// Barrier to detect parallel execution.
+	// The test creates 4 neighbors - if they're resolved in parallel,
+	// all 4 goroutines will reach the barrier and unblock together.
+	// If they're resolved serially, the first goroutine will block forever
+	// waiting for the others to arrive.
+	const numNeighbors = 4
+	var arrived atomic.Int32
+	allArrived := make(chan struct{})
+	var closeOnce sync.Once
+
+	// Add a field that blocks until all array elements have started resolving.
+	// This proves parallel execution without timing-based flakiness.
+	dagql.Fields[*points.Point]{
+		dagql.Func("barrierWait", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
+			// Signal that this goroutine has arrived at the barrier
+			count := arrived.Add(1)
+			if count == numNeighbors {
+				// Last one to arrive - unblock everyone
+				closeOnce.Do(func() { close(allArrived) })
+			}
+
+			// Wait for all goroutines to arrive (or timeout)
+			select {
+			case <-allArrived:
+				return self, nil
+			case <-time.After(5 * time.Second):
+				return nil, fmt.Errorf("timeout: only %d of %d goroutines arrived at barrier (serial execution detected)", arrived.Load(), numNeighbors)
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	var res struct {
+		Point struct {
+			X         int
+			Y         int
+			Neighbors []struct {
+				BarrierWait struct {
+					X int
+					Y int
+				}
+			}
+		}
+	}
+
+	// Query that fetches neighbors and calls barrierWait on each.
+	// If array elements are resolved in parallel, all 4 will reach the barrier
+	// and unblock. If serial, the first one will timeout waiting for the others.
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			x
+			y
+			neighbors {
+				barrierWait {
+					x
+					y
+				}
+			}
+		}
+	}`, &res)
+
+	// Verify the query completed successfully (proves parallel execution)
+	assert.Equal(t, 6, res.Point.X)
+	assert.Equal(t, 7, res.Point.Y)
+	assert.Assert(t, cmp.Len(res.Point.Neighbors, numNeighbors))
+
+	// Verify all neighbors resolved correctly
+	assert.Equal(t, 5, res.Point.Neighbors[0].BarrierWait.X)
+	assert.Equal(t, 7, res.Point.Neighbors[0].BarrierWait.Y)
+	assert.Equal(t, 7, res.Point.Neighbors[1].BarrierWait.X)
+	assert.Equal(t, 7, res.Point.Neighbors[1].BarrierWait.Y)
+	assert.Equal(t, 6, res.Point.Neighbors[2].BarrierWait.X)
+	assert.Equal(t, 6, res.Point.Neighbors[2].BarrierWait.Y)
+	assert.Equal(t, 6, res.Point.Neighbors[3].BarrierWait.X)
+	assert.Equal(t, 8, res.Point.Neighbors[3].BarrierWait.Y)
+
+	// Verify all goroutines actually arrived (sanity check)
+	assert.Equal(t, int32(numNeighbors), arrived.Load())
+}
+
 type Builtins struct {
 	Boolean     bool    `field:"true" default:"true"`
 	Int         int     `field:"true" default:"42"`
@@ -1602,7 +1839,7 @@ func InstallBuiltins(srv *dagql.Server) {
 }
 
 func TestBuiltins(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallBuiltins(srv)
@@ -1753,7 +1990,7 @@ func (IntrospectTest) Type() *ast.Type {
 }
 
 func TestIntrospection(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	introspection.Install[Query](srv)
 
 	// just a quick way to get more coverage
@@ -1820,10 +2057,10 @@ func TestIntrospection(t *testing.T) {
 
 func TestIDFormat(t *testing.T) {
 	ctx := context.Background()
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
-	var pointAInst dagql.Instance[*points.Point]
+	var pointAInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, srv.Root(), &pointAInst,
 		dagql.Selector{
 			Field: "point",
@@ -1835,7 +2072,7 @@ func TestIDFormat(t *testing.T) {
 	))
 	pointADgst := pointAInst.ID().Digest()
 
-	var pointBInst dagql.Instance[*points.Point]
+	var pointBInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, srv.Root(), &pointBInst,
 		dagql.Selector{
 			Field: "point",
@@ -1847,7 +2084,7 @@ func TestIDFormat(t *testing.T) {
 	))
 	pointBDgst := pointBInst.ID().Digest()
 
-	var lineAInst dagql.Instance[*points.Line]
+	var lineAInst dagql.ObjectResult[*points.Line]
 	assert.NilError(t, srv.Select(ctx, pointBInst, &lineAInst,
 		dagql.Selector{
 			Field: "line",
@@ -1858,13 +2095,13 @@ func TestIDFormat(t *testing.T) {
 	))
 	lineADgst := lineAInst.ID().Digest()
 
-	var pointBFromInst dagql.Instance[*points.Point]
+	var pointBFromInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, lineAInst, &pointBFromInst,
 		dagql.Selector{Field: "from"},
 	))
 	pointBFromDgst := pointBFromInst.ID().Digest()
 
-	var lineBInst dagql.Instance[*points.Line]
+	var lineBInst dagql.ObjectResult[*points.Line]
 	assert.NilError(t, srv.Select(ctx, pointAInst, &lineBInst,
 		dagql.Selector{
 			Field: "line",
@@ -1875,7 +2112,7 @@ func TestIDFormat(t *testing.T) {
 	))
 	lineBDgst := lineBInst.ID().Digest()
 
-	var pointAFromInst dagql.Instance[*points.Point]
+	var pointAFromInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, lineBInst, &pointAFromInst,
 		dagql.Selector{Field: "from"},
 	))
@@ -1989,7 +2226,7 @@ func InstallViewer(srv *dagql.Server) {
 }
 
 func TestViews(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallViewer(srv)
@@ -2090,7 +2327,7 @@ func TestViews(t *testing.T) {
 }
 
 func TestViewsCaching(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallViewer(srv)
@@ -2118,7 +2355,7 @@ func TestViewsCaching(t *testing.T) {
 }
 
 func TestViewsIntrospection(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	introspection.Install[Query](srv)
 	gql := client.New(dagql.NewDefaultHandler(srv))
 
@@ -2216,8 +2453,88 @@ func (*CoolInt) TypeDescription() string {
 	return "idk"
 }
 
+func TestNodeFuncResultZeroValueTypeInference(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	dagql.Fields[*CoolInt]{}.Install(srv)
+	dagql.Fields[Query]{
+		dagql.NodeFunc("typedResult", func(ctx context.Context, _ dagql.ObjectResult[Query], args struct {
+			Val int
+		}) (dagql.Result[*CoolInt], error) {
+			return dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	var res struct {
+		TypedResult struct {
+			Val int
+		}
+	}
+	req(t, gql, `query {
+		typedResult(val: 123) {
+			val
+		}
+	}`, &res)
+	assert.Equal(t, 123, res.TypedResult.Val)
+}
+
+func TestNullResultCachePathDoesNotPanic(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+	dagql.Fields[Query]{
+		dagql.Func("alwaysNull", func(context.Context, Query, struct{}) (dagql.Nullable[dagql.String], error) {
+			return dagql.Null[dagql.String](), nil
+		}),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+
+	for range 2 {
+		var res struct {
+			AlwaysNull *string
+		}
+		req(t, gql, `query {
+			alwaysNull
+		}`, &res)
+		assert.Assert(t, res.AlwaysNull == nil)
+	}
+}
+
+func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
+	srv := dagql.NewServer(Query{}, newCache(t))
+
+	calls := []int{}
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithCacheKey(
+			"rewrittenArg",
+			func(_ context.Context, _ dagql.ObjectResult[Query], args struct{ Val int }) (dagql.Int, error) {
+				calls = append(calls, args.Val)
+				return dagql.Int(args.Val), nil
+			},
+			func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{ Val int }, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+				resp.CacheKey.ID = resp.CacheKey.ID.WithArgument(call.NewArgument(
+					"val",
+					dagql.Int(7).ToLiteral(),
+					false,
+				))
+				return resp, nil
+			},
+		),
+	}.Install(srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+	var res struct {
+		RewrittenArg int
+	}
+	req(t, gql, `query { rewrittenArg(val: 1) }`, &res)
+	assert.Equal(t, 7, res.RewrittenArg)
+	assert.DeepEqual(t, calls, []int{7})
+}
+
 func TestCustomDigest(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 
 	type argsType struct {
 		Val      int
@@ -2226,8 +2543,8 @@ func TestCustomDigest(t *testing.T) {
 
 	dagql.Fields[*CoolInt]{}.Install(srv)
 	dagql.Fields[Query]{
-		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.Instance[Query], args argsType) (inst dagql.Instance[*CoolInt], err error) {
-			inst, err = dagql.NewInstanceForCurrentID(ctx, srv, self, &CoolInt{Val: args.Val})
+		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.ObjectResult[Query], args argsType) (inst dagql.Result[*CoolInt], err error) {
+			inst, err = dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
 			if err != nil {
 				return inst, err
 			}
@@ -2236,21 +2553,22 @@ func TestCustomDigest(t *testing.T) {
 
 		// like coolInt but set custom digest to the arg % 2 so we cache by whether it's even or odd
 		dagql.NodeFuncWithCacheKey("modInt",
-			func(ctx context.Context, self dagql.Instance[Query], args argsType) (inst dagql.Instance[*CoolInt], err error) {
-				inst, err = dagql.NewInstanceForCurrentID(ctx, srv, self, &CoolInt{Val: args.Val})
+			func(ctx context.Context, self dagql.ObjectResult[Query], args argsType) (inst dagql.Result[*CoolInt], err error) {
+				inst, err = dagql.NewResultForCurrentID(ctx, &CoolInt{Val: args.Val})
 				if err != nil {
 					return inst, err
 				}
 				return inst.WithDigest(digest.Digest(strconv.Itoa(args.Val % 2))), nil
 			},
-			func(ctx context.Context, _ dagql.Instance[Query], _ argsType, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
-				cacheCfg.Digest = digest.Digest(identity.NewID())
-				return &cacheCfg, nil
+			func(ctx context.Context, _ dagql.ObjectResult[Query], _ argsType, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+				resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(digest.FromString(cryptorand.Text()))
+				return resp, nil
 			}),
 
-		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.Instance[Query], args struct {
+		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.ObjectResult[Query], args struct {
 			CoolInt dagql.ID[*CoolInt]
-		}) (dagql.Instance[*CoolInt], error) {
+		}) (dagql.ObjectResult[*CoolInt], error) {
 			return args.CoolInt.Load(ctx, srv)
 		}),
 	}.Install(srv)
@@ -2363,7 +2681,7 @@ func TestCustomDigest(t *testing.T) {
 
 func TestServerSelect(t *testing.T) {
 	// Create a new server with a simple object hierarchy for testing
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 
 	// Install test types
 	InstallTestTypes(srv)
@@ -2372,25 +2690,27 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("basic selection", func(t *testing.T) {
 		// Create a test object and wrap it as a dagql.Object
-		testObj := &TestObject{Value: 42, Text: "hello"}
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"},
+			call.New().Append((TestObject{}).Type(), "fake"))
+		require.NoError(t, err)
 
 		// Get the installed class from the server
 		testObjClass, ok := srv.ObjectType("TestObject")
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(nil, testObj)
+		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a simple field
 		var result int
-		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "value"})
+		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "value"})
 		require.NoError(t, err)
 		assert.Equal(t, 42, result)
 
 		// Test selecting a string field
 		var textResult string
-		err = srv.Select(ctx, objInstance, &textResult, dagql.Selector{Field: "text"})
+		err = srv.Select(ctx, objResult, &textResult, dagql.Selector{Field: "text"})
 		require.NoError(t, err)
 		assert.Equal(t, "hello", textResult)
 	})
@@ -2398,22 +2718,23 @@ func TestServerSelect(t *testing.T) {
 	t.Run("chained selection", func(t *testing.T) {
 		// Create nested objects
 		innerObj := &TestObject{Value: 100, Text: "nested value"}
-		nestedObj := &NestedObject{
+		nestedObj, err := dagql.NewResultForID(&NestedObject{
 			Name:  "nested",
 			Inner: innerObj,
-		}
+		}, call.New().Append((TestObject{}).Type(), "fake"))
+		require.NoError(t, err)
 
 		// Get the installed class from the server
 		nestedObjClass, ok := srv.ObjectType("NestedObject")
 		require.True(t, ok, "NestedObject class not found")
 
 		// Create an instance
-		objInstance, err := nestedObjClass.New(nil, nestedObj)
+		objResult, err := nestedObjClass.New(nestedObj)
 		require.NoError(t, err)
 
 		// Test selecting through a chain of objects
 		var result int
-		err = srv.Select(ctx, objInstance, &result,
+		err = srv.Select(ctx, objResult, &result,
 			dagql.Selector{Field: "inner"},
 			dagql.Selector{Field: "value"})
 		require.NoError(t, err)
@@ -2422,19 +2743,22 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("null result", func(t *testing.T) {
 		// Create an object with a null field
-		testObj := &TestObject{Value: 42, Text: "hello", NullableField: nil}
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello", NullableField: nil},
+			call.New().Append((TestObject{}).Type(), "fake"),
+		)
+		require.NoError(t, err)
 
 		// Get the installed class from the server
 		testObjClass, ok := srv.ObjectType("TestObject")
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(nil, testObj)
+		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a null field
 		var result *string
-		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "nullableField"})
+		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "nullableField"})
 		require.NoError(t, err)
 		assert.Assert(t, result == nil)
 	})
@@ -2455,12 +2779,12 @@ func TestServerSelect(t *testing.T) {
 
 		// For arrays, we need to use a different approach
 		// First, get the array result
-		var arrayResult dagql.Typed
-		arrayResult, _, err := root.Select(ctx, srv, dagql.Selector{Field: "testArray"})
+		var arrayResult dagql.AnyResult
+		arrayResult, err := root.Select(ctx, srv, dagql.Selector{Field: "testArray"})
 		require.NoError(t, err)
 
 		// Verify it's enumerable
-		enum, ok := arrayResult.(dagql.Enumerable)
+		enum, ok := arrayResult.Unwrap().(dagql.Enumerable)
 		require.True(t, ok, "Expected array to be enumerable")
 		assert.Equal(t, 3, enum.Len())
 
@@ -2522,23 +2846,26 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("error cases", func(t *testing.T) {
 		// Create a test object
-		testObj := &TestObject{Value: 42, Text: "hello"}
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"},
+			call.New().Append((TestObject{}).Type(), "fake"),
+		)
+		require.NoError(t, err)
 
 		// Get the installed class from the server
 		testObjClass, ok := srv.ObjectType("TestObject")
 		require.True(t, ok, "TestObject class not found")
 
 		// Create an instance
-		objInstance, err := testObjClass.New(nil, testObj)
+		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
 		// Test selecting a non-existent field
 		var result int
-		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "nonExistentField"})
+		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "nonExistentField"})
 		require.Error(t, err)
 
 		// Test invalid selector chain (trying to select from a scalar)
-		err = srv.Select(ctx, objInstance, &result,
+		err = srv.Select(ctx, objResult, &result,
 			dagql.Selector{Field: "value"},
 			dagql.Selector{Field: "something"})
 		require.Error(t, err)
@@ -2611,8 +2938,8 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "value",
 				Type: dagql.Int(0),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-				return dagql.Int(self.Self.Value), nil
+			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				return dagql.NewResultForCurrentID(ctx, dagql.Int(self.Self().Value))
 			},
 		},
 		dagql.Field[*TestObject]{
@@ -2620,8 +2947,8 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "text",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-				return dagql.String(self.Self.Text), nil
+			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				return dagql.NewResultForCurrentID(ctx, dagql.String(self.Self().Text))
 			},
 		},
 		dagql.Field[*TestObject]{
@@ -2629,11 +2956,11 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "nullableField",
 				Type: dagql.Null[dagql.String](),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-				if self.Self.NullableField == nil {
-					return dagql.Null[dagql.String](), nil
+			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				if self.Self().NullableField == nil {
+					return dagql.NewResultForCurrentID(ctx, dagql.Null[dagql.String]())
 				}
-				return dagql.NonNull(dagql.String(*self.Self.NullableField)), nil
+				return dagql.NewResultForCurrentID(ctx, dagql.String(*self.Self().NullableField))
 			},
 		},
 	)
@@ -2650,8 +2977,8 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "name",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-				return dagql.String(self.Self.Name), nil
+			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				return dagql.NewResultForCurrentID(ctx, dagql.String(self.Self().Name))
 			},
 		},
 		dagql.Field[*NestedObject]{
@@ -2659,8 +2986,8 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "inner",
 				Type: &TestObject{},
 			},
-			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.Typed, error) {
-				return self.Self.Inner, nil
+			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				return dagql.NewResultForCurrentID(ctx, self.Self().Inner)
 			},
 		},
 	)
@@ -2680,7 +3007,7 @@ func (tp renamedType) TypeName() string {
 	return tp.Name
 }
 
-func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
+func (hook *testInstallHook) InstallObject(class dagql.ObjectType, _ ...*ast.Directive) {
 	if strings.HasSuffix(class.TypeName(), "Other") {
 		return
 	}
@@ -2691,10 +3018,9 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 			Name: "hello",
 			Type: dagql.String(""),
 		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			return dagql.String("hello world!"), nil
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			return dagql.NewResultForCurrentID(ctx, dagql.String("hello world!"))
 		},
-		dagql.CacheSpec{},
 	)
 
 	// test adding a new type
@@ -2705,15 +3031,14 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 			Name: "other" + class.TypeName(),
 			Type: classOther.Typed(),
 		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			return &points.Point{X: 100, Y: 200}, nil
+		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+			return dagql.NewResultForCurrentID(ctx, &points.Point{X: 100, Y: 200})
 		},
-		dagql.CacheSpec{},
 	)
 }
 
 func TestInstallHooks(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache())
+	srv := dagql.NewServer(Query{}, newCache(t))
 	srv.AddInstallHook(&testInstallHook{srv})
 	points.Install[Query](srv)
 

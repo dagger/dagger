@@ -7,8 +7,9 @@ import (
 	_ "embed"
 	"fmt"
 	"path"
-	"python-sdk/internal/dagger"
 	"strings"
+
+	"python-sdk/internal/dagger"
 )
 
 const (
@@ -91,6 +92,9 @@ type PythonSdk struct {
 	// Resulting container after each composing step
 	Container *dagger.Container
 
+	// Whether the module runtime should run in debug mode.
+	Debug bool
+
 	// The original module's name
 	ModName string
 
@@ -161,7 +165,10 @@ func (m *PythonSdk) Codegen(
 		genPaths = []string{m.VendorPath + "/**"}
 	}
 
-	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
+	return dag.
+		GeneratedCode(
+			m.Container.Directory(m.ContextDirPath).
+				WithoutDirectory("sdk/runtime")).
 		WithVCSGeneratedPaths(genPaths).
 		WithVCSIgnoredPaths(ignorePaths), nil
 }
@@ -172,11 +179,35 @@ func (m *PythonSdk) ModuleRuntime(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	m, err := m.Common(ctx, modSource, introspectionJSON)
+	runtime, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
-	return m.WithInstall().Container, nil
+	runtime = runtime.WithInstall()
+	ctr := runtime.Container
+	if runtime.Debug {
+		ctr = ctr.Terminal()
+	}
+	return ctr, nil
+}
+
+// Container for executing the Python module runtime
+func (m *PythonSdk) ModuleTypesExp(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	outputFilePath string,
+) (*dagger.Container, error) {
+	runtime, err := m.Common(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	runtime = runtime.WithInstall()
+	ctr := runtime.Container
+	return ctr.
+			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
+			WithEntrypoint([]string{RuntimeExecutablePath, "--register"}),
+		nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
@@ -213,6 +244,11 @@ func (m *PythonSdk) Common(
 func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*PythonSdk, error) {
 	m.ModSource = modSource
 	m.ContextDir = modSource.ContextDirectory()
+	debug, err := modSource.SDK().Debug(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("runtime module load: %w", err)
+	}
+	m.Debug = debug
 
 	if err := m.Discovery.Load(ctx, m); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
@@ -258,23 +294,20 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 }
 
 func (m *PythonSdk) uv() dagger.WithContainerFunc {
-	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
-	// Even if users don't use it, it's useful to create a faster virtual env
-	// and faster install for the codegen package.
 	uvImage := m.getImage(UvImageName)
 
-	bins := dag.Container().From(uvImage.String()).Rootfs()
-
 	return func(ctr *dagger.Container) *dagger.Container {
+		var bins *dagger.Directory
 		// Use bundled uv binaries if version wasn't overridden.
 		if m.Discovery.SdkHasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultImages[UvImageName]) {
 			bins = m.SdkSourceDir.Directory("dist")
+		} else {
+			bins = dag.Container().From(uvImage.String()).Rootfs()
 		}
 
 		return ctr.
-			WithDirectory("/usr/local/bin", bins, dagger.ContainerWithDirectoryOpts{
-				Include: []string{"uv*"}, // uv and uvx
-			}).
+			WithMountedFile("/usr/local/bin/uv", bins.File("uv")).
+			WithMountedFile("/usr/local/bin/uvx", bins.File("uvx")).
 			WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 			// These are informational only, to be leveraged by the target module if needed.
 			WithEnvVariable("DAGGER_UV_IMAGE", uvImage.String()).

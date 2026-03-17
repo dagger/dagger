@@ -511,7 +511,6 @@ func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 			modFlagVal: "..",
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.
 				WithWorkdir(tc.workdir).
@@ -672,6 +671,9 @@ func (m *Foo) CheckEnv() string {
 		var withoutSDKConfigSupport = `package main
 
 import (
+	"context"
+	"encoding/json"
+
 	"dagger/coolsdk/internal/dagger"
 )
 
@@ -691,6 +693,24 @@ func New(
 func (m *Coolsdk) WithDaggerJson(modSource *dagger.ModuleSource) *dagger.ModuleSource {
 	return modSource.ContextDirectory().WithNewFile("dagger.json", ` + fmt.Sprintf("`%s`", daggerjsonGoSDK) + `).
 		AsModuleSource()
+}
+
+func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	mod := m.WithDaggerJson(modSource).WithSDK("go").AsModule()
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
 }
 
 func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
@@ -884,10 +904,31 @@ func (m *Test) Fn() *dagger.Directory {
 			customSDKSource: `package main
 
 import (
+	"context"
+	"encoding/json"
+
 	"dagger/coolsdk/internal/dagger"
 )
 
 type Coolsdk struct {}
+
+func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	mod := modSource.WithSDK("go").AsModule()
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
+}
 
 func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
@@ -903,7 +944,6 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 `,
 		},
 	} {
-		tc := tc
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1065,10 +1105,31 @@ func (ConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testc
 		WithNewFile("main.go", `package main
 
 import (
+	"context"
+	"encoding/json"
+
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	mod := modSource.WithSDK("go").AsModule()
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
+}
 
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().
@@ -1129,12 +1190,18 @@ type vcsTestCase struct {
 
 	// encodedToken is a based64 encoded read-only PAT
 	encodedToken string
+	// encodedToken2 is an optional second token to test cases of using different tokens for the same repo
+	encodedToken2 string
 	// sshKey determines whether to propagate the host's ssh-key
 	sshKey bool
 }
 
 func (tc vcsTestCase) token() string {
-	decodedToken, err := base64.StdEncoding.DecodeString(tc.encodedToken)
+	return decodedGitToken(tc.encodedToken)
+}
+
+func decodedGitToken(encodedToken string) string {
+	decodedToken, err := base64.StdEncoding.DecodeString(encodedToken)
 	if err != nil {
 		return ""
 	}
@@ -1142,7 +1209,7 @@ func (tc vcsTestCase) token() string {
 	return string(decodedToken)
 }
 
-const vcsTestCaseCommit = "ca6493ac2a5ed309c44565121b7bdd20a17b1abb"
+const vcsTestCaseCommit = "d730fb3af8757e1ca293e01aa4fcfd510a6e40e5"
 
 var vcsTestCases = []vcsTestCase{
 	// Test cases for public repositories using Go-style references, without '.git' suffix (optional)
@@ -1212,7 +1279,10 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
-		encodedToken:             "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K",
+		// NOTE: this is not a security vulnerability, these tokens are read-only and scoped to a test repository
+		// with no actual private code
+		encodedToken:  "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx",
+		encodedToken2: "Z2xwYXQtcFVIWDVmZmVCUmdjZ2FYTHdndjNPVzg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxa2oyMHJi",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{
@@ -1257,7 +1327,6 @@ var vcsTestCases = []vcsTestCase{
 
 func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testctx.T, tc vcsTestCase)) {
 	for _, tc := range vcsTestCases {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			testFunc(ctx, t, tc)
 		})
@@ -1389,7 +1458,6 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		for _, modSubpath := range []string{"samedir", "subdir"} {
-			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				privateSetup, cleanup := privateRepoSetup(c, t, tc)
@@ -1529,7 +1597,10 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 
 		// get the latest commit on main
 		repo := "github.com/dagger/dagger-test-modules"
-		commit, err := c.Git(repo).Head().Commit(ctx)
+		head := c.Git(repo).Head()
+		commit, err := head.Commit(ctx)
+		require.NoError(t, err)
+		ref, err := head.Ref(ctx)
 		require.NoError(t, err)
 
 		ctr := goGitBase(t, c).
@@ -1549,7 +1620,7 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 		dep := modCfg.Dependencies[0]
 
 		require.Equal(t, "root-mod", dep.Name)
-		require.Equal(t, repo, dep.Source)
+		require.Equal(t, repo+"@"+strings.TrimPrefix(ref, "refs/heads/"), dep.Source)
 		require.Equal(t, commit, dep.Pin)
 	})
 

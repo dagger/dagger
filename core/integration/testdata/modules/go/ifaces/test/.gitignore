@@ -3,3 +3,4 @@
 /querybuilder/
 /internal/dagger
 /internal/telemetry
+/.env

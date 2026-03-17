@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json.Serialization;
 
 namespace Dagger.SDK.SourceGenerator.Types;
@@ -9,10 +10,10 @@ public class TypeRef
     public required string Kind { get; set; }
 
     [JsonPropertyName("name")]
-    public required string Name { get; set; }
+    public string Name { get; set; } = "";
 
     [JsonPropertyName("ofType")]
-    public required TypeRef OfType { get; set; }
+    public TypeRef? OfType { get; set; } = null;
 
     public bool IsLeaf()
     {
@@ -20,7 +21,7 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         if (tr.Kind == "ENUM")
@@ -42,7 +43,7 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         if (tr.Kind == "LIST")
@@ -59,7 +60,7 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         if (tr.Kind == "ENUM")
@@ -76,7 +77,7 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         if (tr.Kind == "INPUT_OBJECT")
@@ -93,7 +94,7 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         if (tr.Kind == "SCALAR")
@@ -110,7 +111,7 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         if (tr.Kind == "OBJECT")
@@ -127,9 +128,14 @@ public class TypeRef
 
         if (Kind == "NON_NULL")
         {
-            tr = OfType;
+            tr = OfType!;
         }
 
         return tr;
+    }
+
+    public String Describe_()
+    {
+        return $" [{Name} {Kind}{OfType?.Describe_()}]";
     }
 }

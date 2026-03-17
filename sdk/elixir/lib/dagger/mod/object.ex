@@ -59,13 +59,48 @@ defmodule Dagger.Mod.Object do
   alias Dagger.Mod.Object.Meta
 
   @doc """
+  Get module deprecation reason if deprecated from docs annotation metadata
+
+  Return `{:deprecated, reason}` or `nil` if the module did not specify `@moduledoc deprecated: "reason"`
+  """
+  def get_module_deprecated(module) do
+    with {_, metadatas, _} <- fetch_docs(module),
+         %{deprecated: reason} <- metadatas do
+      {:deprecated, reason}
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Get function deprecation reason if deprecated from docs or attribute
+
+  Return `{:deprecated, reason}` or `nil` if the function did not specify `@deprecated reason` attributes or `@doc deprecated: "reason" docstring`
+  """
+  def get_function_deprecated(module, func_name) do
+    fun = fn
+      {{:function, ^func_name, _}, _, _, _, _} -> true
+      _ -> false
+    end
+
+    with {_, _, func_docs} <- fetch_docs(module),
+         {{:function, ^func_name, _}, _, _, _, metadatas} <- Enum.find(func_docs, fun),
+         %{deprecated: reason} <- metadatas do
+      {:deprecated, reason}
+    else
+      _ ->
+        nil
+    end
+  end
+
+  @doc """
   Get module documentation.
 
   Returns module doc string or `nil` if the given module didn't have a documentation.
   """
   @spec get_module_doc(module()) :: String.t() | nil
   def get_module_doc(module) do
-    with {module_doc, _} <- fetch_docs(module),
+    with {module_doc, _, _} <- fetch_docs(module),
          %{"en" => doc} <- module_doc do
       String.trim(doc)
     else
@@ -87,7 +122,7 @@ defmodule Dagger.Mod.Object do
       _ -> false
     end
 
-    with {_, function_docs} <- fetch_docs(module),
+    with {_, _, function_docs} <- fetch_docs(module),
          {{:function, ^name, _}, _, _, doc_content, _} <- Enum.find(function_docs, fun),
          %{"en" => doc} <- doc_content do
       String.trim(doc)
@@ -99,8 +134,36 @@ defmodule Dagger.Mod.Object do
   end
 
   defp fetch_docs(module) do
-    {:docs_v1, _, :elixir, _, module_doc, _, function_docs} = Code.fetch_docs(module)
-    {module_doc, function_docs}
+    {:docs_v1, _, :elixir, _, module_doc, metadatas, function_docs} = Code.fetch_docs(module)
+    {module_doc, metadatas, function_docs}
+  end
+
+  @doc """
+  Get function cache policy.
+
+  Return `Dagger.FunctionCachePolicy` or `nil` if the function did not specify `@cache` attributes
+  """
+  @spec get_function_cache_policy(struct()) ::
+          Dagger.FunctionCachePolicy.t()
+          | {Dagger.FunctionCachePolicy.t(), {:ttl, String.t()}}
+          | nil
+
+  def get_function_cache_policy(fun_def) do
+    policy = fun_def |> Map.get(:cache_policy)
+
+    case policy do
+      :never ->
+        Dagger.FunctionCachePolicy.never()
+
+      :per_session ->
+        Dagger.FunctionCachePolicy.per_session()
+
+      [ttl: ttl] ->
+        {Dagger.FunctionCachePolicy.default(), [time_to_live: ttl]}
+
+      nil ->
+        nil
+    end
   end
 
   defmacro __before_compile__(env) do
@@ -134,6 +197,7 @@ defmodule Dagger.Mod.Object do
 
       Module.register_attribute(__MODULE__, :function, accumulate: true, persist: true)
       Module.register_attribute(__MODULE__, :field, accumulate: true, persist: true)
+      Module.register_attribute(__MODULE__, :cache, accumulate: false, persist: true)
 
       @before_compile Dagger.Mod.Object
 
@@ -172,9 +236,13 @@ defmodule Dagger.Mod.Object do
     return_def = compile_typespec!(return)
 
     quote do
+      cache_attr =
+        Module.get_attribute(__MODULE__, :cache)
+
       @function {unquote(name),
                  %Dagger.Mod.Object.FunctionDef{
                    self: unquote(has_self?),
+                   cache_policy: cache_attr,
                    args: unquote(arg_defs),
                    return: unquote(return_def)
                  }}
@@ -242,7 +310,12 @@ defmodule Dagger.Mod.Object do
     type = compile_typespec!(type)
     optional? = match?({:optional, _}, type)
     doc = opts[:doc]
-    field = Macro.escape({name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc}})
+    deprecated = opts[:deprecated]
+
+    field =
+      Macro.escape(
+        {name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc, deprecated: deprecated}}
+      )
 
     quote do
       @field unquote(field)

@@ -3,23 +3,24 @@ package buildkit
 import (
 	"context"
 	"net/http"
+	"os"
 	"sync"
 
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	"github.com/dagger/dagger/internal/buildkit/executor"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	"github.com/dagger/dagger/internal/buildkit/frontend"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/solver"
+	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/ops"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/dagger/dagger/internal/buildkit/worker/base"
 	"github.com/docker/docker/pkg/idtools"
-	bkcache "github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/executor"
-	"github.com/moby/buildkit/executor/oci"
-	"github.com/moby/buildkit/frontend"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver/ops"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/network"
-	"github.com/moby/buildkit/worker"
-	"github.com/moby/buildkit/worker/base"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 )
@@ -61,6 +62,9 @@ type sharedWorkerState struct {
 	parallelismSem   *semaphore.Weighted
 	workerCache      bkcache.Manager
 
+	hostMntNS  *os.File
+	cleanMntNS *os.File
+
 	running map[string]*execState
 	mu      sync.RWMutex
 }
@@ -70,7 +74,7 @@ type sessionHandler interface {
 }
 
 type dagqlServer interface {
-	DagqlServer(ctx context.Context) (*dagql.Server, error)
+	Server(ctx context.Context) (*dagql.Server, error)
 }
 
 type NewWorkerOpts struct {
@@ -93,6 +97,9 @@ type NewWorkerOpts struct {
 	NetworkProviders    map[pb.NetMode]network.Provider
 	ParallelismSem      *semaphore.Weighted
 	WorkerCache         bkcache.Manager
+
+	HostMntNS  *os.File
+	CleanMntNS *os.File
 }
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
@@ -116,6 +123,9 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		entitlements:     opts.Entitlements,
 		parallelismSem:   opts.ParallelismSem,
 		workerCache:      opts.WorkerCache,
+
+		hostMntNS:  opts.HostMntNS,
+		cleanMntNS: opts.CleanMntNS,
 
 		running: make(map[string]*execState),
 	}}
@@ -142,7 +152,7 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 				return nil, err
 			}
 			if ok {
-				w = w.execWorker(
+				w = w.ExecWorker(
 					SpanContextFromDescription(vtx.Options().Description),
 					*execMD,
 				)
@@ -164,7 +174,7 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 	return w.Worker.ResolveOp(vtx, s, sm)
 }
 
-func (w *Worker) execWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
+func (w *Worker) ExecWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
 	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
 }
 

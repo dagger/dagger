@@ -1,0 +1,33 @@
+{
+  "name": "python-sdk-dev",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel",
+    "../../util/dockerfileextractor",
+    "../../sdk/python/runtime/images"
+  ],
+  "dependencies": [
+    {
+      "name": "dagger-engine",
+      "source": "../engine-dev"
+    },
+    {
+      "name": "dockerd",
+      "source": "dockerd"
+    },
+    {
+      "name": "pytest",
+      "source": "github.com/dagger/pytest@main",
+      "pin": "6817c81a88531fa468ee43e559c361c0dc317dd4"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
+    }
+  ]
+}

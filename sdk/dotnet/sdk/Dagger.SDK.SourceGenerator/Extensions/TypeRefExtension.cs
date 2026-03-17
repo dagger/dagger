@@ -16,7 +16,7 @@ public static class TypeRefExtension
         var tr = typeRef.GetType_();
         if (tr.IsList())
         {
-            return $"{tr.OfType.GetTypeName()}[]";
+            return $"{tr.OfType!.GetTypeName()}[]";
         }
         return Formatter.FormatType(tr.Name);
     }

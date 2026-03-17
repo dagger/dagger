@@ -11,6 +11,10 @@ defmodule Defaults do
     value
   end
 
+  defn call_echo_value() :: String.t() do
+    echo_value()
+  end
+
   defn file_name(file: {Dagger.File.t(), default_path: "dagger.json"}) :: String.t() do
     Dagger.File.name(file)
   end

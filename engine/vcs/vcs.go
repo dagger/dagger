@@ -140,7 +140,7 @@ func (v *Cmd) run1(dir string, cmdline string, keyval []string, verbose bool) ([
 		return nil, err
 	}
 
-	cmd := exec.Command(v.Cmd, args...) //nolint:gosec
+	cmd := exec.Command(v.Cmd, args...)
 	cmd.Dir = dir
 	cmd.Env = envForDir(cmd.Dir)
 	if ShowCmd {
@@ -343,7 +343,6 @@ func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
 	rr, err := RepoRootForImportPathStatic(importPath, "")
 	if err == errUnknownSite {
 		rr, err = RepoRootForImportDynamic(importPath, verbose)
-
 		// RepoRootForImportDynamic returns error detail
 		// that is irrelevant if the user didn't intend to use a
 		// dynamic import in the first place.
@@ -663,10 +662,10 @@ var vcsPaths = []*vcsPath{
 	},
 
 	// Azure DevOps
-	// HTTPS ref
+	// Cloud (Azure DevOps Services): HTTPS ref
 	{
 		prefix: "dev.azure.com/",
-		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.\-]+)(/(?P<project>[A-Za-z0-9_.\-]+))?/_git/(?P<repo>[A-Za-z0-9_.\-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.% \-]+)(/(?P<project>[A-Za-z0-9_.% \-]+))?/_git/(?P<repo>[A-Za-z0-9_.% \-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 		check: func(match map[string]string) error {
@@ -674,10 +673,10 @@ var vcsPaths = []*vcsPath{
 			return nil
 		},
 	},
-	// SSH ref
+	// Cloud (Azure DevOps Services): SSH ref
 	{
 		prefix: "ssh.dev.azure.com/",
-		re:     `^(?P<root>ssh\.dev\.azure\.com/v\d+/(?P<account>[A-Za-z0-9_.\-]+)/(?P<project>[A-Za-z0-9_.\-]+)/(?P<repo>[A-Za-z0-9_.\-]+))(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		re:     `^(?P<root>ssh\.dev\.azure\.com/v\d+/(?P<account>[A-Za-z0-9_.% \-]+)/(?P<project>[A-Za-z0-9_.% \-]+)/(?P<repo>[A-Za-z0-9_.% \-]+))(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://dev.azure.com/{account}/{project}/_git/{repo}",
 		check: func(match map[string]string) error {
@@ -685,10 +684,20 @@ var vcsPaths = []*vcsPath{
 			return nil
 		},
 	},
-
-	// General syntax for any server.
+	// On-prem (Azure DevOps Server)
 	{
-		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
+		re:   `^(?P<root>[A-Za-z0-9_.% \-]+\/(tfs\/)?(?P<account>[A-Za-z0-9_.% \-]+)(/(?P<project>[A-Za-z0-9_.% \-]+))?/_git/(?P<repo>[A-Za-z0-9_.% \-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		vcs:  "git",
+		repo: "https://{root}",
+		check: func(match map[string]string) error {
+			match["repo"] = strings.TrimSuffix(match["repo"], ".git")
+			return nil
+		},
+	},
+
+	// General syntax for any server
+	{
+		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		ping: true,
 		repo: "https://{root}",
 		// for static analysis of general servers (GitLab ref with .git for example)

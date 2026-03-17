@@ -21,6 +21,7 @@ type Daggerverse struct {
 	Repo string
 }
 
+// +cache="session"
 func New(
 	ctx context.Context,
 	// GitHub Personal Access Token which access to dagger/dagger.io repo
@@ -57,6 +58,7 @@ func New(
 }
 
 // Deploy preview environment running Dagger main: dagger call --github-token=env:GITHUB_PAT deploy-preview-with-dagger-main
+// +cache="session"
 func (h *Daggerverse) DeployPreviewWithDaggerMain(
 	ctx context.Context,
 	target string,

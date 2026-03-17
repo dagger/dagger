@@ -313,6 +313,13 @@ func TestIface(t *testing.T) {
 		})
 	})
 
+	t.Run("depWithIface", func(t *testing.T) {
+		t.Parallel()
+		str, err := test.DepWithIface(impl.AsTestCustomIface()).DepIfaceStr(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a", str)
+	})
+
 	t.Run("returnCustomObj", func(t *testing.T) {
 		t.Parallel()
 		customObj := test.ReturnCustomObj(

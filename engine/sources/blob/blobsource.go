@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver/provenance"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/source"
-	"github.com/moby/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/cache"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/solver"
+	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/source"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/contenthash"
+	telemetry "github.com/dagger/otel-go"
 )
 
 const (

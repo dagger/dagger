@@ -30,8 +30,10 @@ import (
 	"text/template"
 	"time"
 
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -39,6 +41,7 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type ServiceSuite struct{}
@@ -644,6 +647,78 @@ func (m *Caller) Run(ctx context.Context) error {
 	require.NoError(t, err)
 }
 
+func (ServiceSuite) TestServiceTunnelStartsOnceForDifferentClients(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/starter").
+		With(daggerExec("init", "--source=.", "--name=starter", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	_ "embed"
+	"context"
+
+	"dagger/starter/internal/dagger"
+)
+
+type Starter struct{}
+
+
+func (m *Starter) Start(ctx context.Context, s *dagger.Service) {
+	go func() {s.Up(ctx)}()
+}
+`,
+		).
+		WithWorkdir("/work/caller").
+		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+		With(daggerExec("install", "../starter")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"time"
+	"dagger/caller/internal/dagger"
+
+)
+
+type Caller struct{}
+
+func (m *Caller) Run(ctx context.Context) (string, error) {
+	svcCache := dag.CacheVolume("svc_cache")
+
+	dag.Container().From("alpine").WithMountedCache("/cache", svcCache).
+		WithEnvVariable("CACHE", time.Now().String()).
+		WithExec([]string{"truncate", "-s", "0", "/cache/svc.txt"}).Sync(ctx)
+
+	svc := dag.Container().From("alpine").
+		WithMountedCache("/cache", svcCache).
+		WithExposedPort(8080, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
+		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && while true; do wc -l /cache/svc.txt && sleep 5; done"}).
+		AsService()
+
+	// we're passing the service to a different module that calls "up" on it so it's a different client
+	// which is what triggers the behavior this test is testing.
+	dag.Starter().Start(ctx, svc)
+
+	dag.Container().From("alpine").WithServiceBinding("db", svc).
+		WithEnvVariable("CACHE", time.Now().String()).
+		WithExec([]string{"echo", "hello"}).
+		Sync(ctx)
+
+	return dag.Container().From("alpine").WithMountedCache("/cache", svcCache).
+		WithEnvVariable("CACHE", time.Now().String()).
+		WithExec([]string{"wc", "-l", "/cache/svc.txt"}).Stdout(ctx)
+}
+`,
+		).
+		With(daggerCall("run")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1 /cache/svc.txt", strings.TrimSpace(out))
+}
+
 func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -926,6 +1001,33 @@ func (ServiceSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
 	require.Contains(t, stderr, "Host: "+hostname)
 }
 
+func (ServiceSuite) TestExecServicesWithDagOpsInChain(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	script := c.Container().
+		From(alpineImage).
+		WithNewFile("script", "#!/bin/sh\nwhile true; do echo -n cool | nc -l -p 1337; done").
+		WithExec([]string{"/bin/sh", "-c", "chmod +x script"}).
+		File("script")
+
+	srv := c.Container().
+		From(alpineImage).
+		WithFile("/bin/app", script).
+		WithSymlink("doesnt", "matter"). // Note this is done via a dagOp; which broke things at one point
+		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+		WithExposedPort(1337)
+
+	s, err := c.Container().
+		From(alpineImage).
+		WithServiceBinding("coolserver", srv.AsService()).
+		WithExec([]string{"sh", "-c", "nc coolserver 1337"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "cool", s)
+}
+
 func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1126,15 +1228,7 @@ func (ServiceSuite) TestExecServicesChained(ctx context.Context, t *testctx.T) {
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 	}
-
-	fileContent, err := c.Container().
-		From(alpineImage).
-		WithServiceBinding("www", srv).
-		WithExec([]string{"wget", "http://www:8000"}).
-		WithExec([]string{"cat", "index.html"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
+	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", httpQuery(t, c, srv, "http://www:8000"))
 }
 
 func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T) {
@@ -1988,36 +2082,49 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
+func tcpService(t *testctx.T, h func(http.ResponseWriter, *http.Request)) int {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-
 	t.Cleanup(func() { _ = l.Close() })
-
-	go http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, r.URL.Query().Get("content"))
-	}))
-
+	go http.Serve(l, http.HandlerFunc(h))
 	_, portStr, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
+	return port
+}
+
+func httpQuery(t *testctx.T, c *dagger.Client, svc *dagger.Service, urls ...string) string {
+	var cmds []string
+	for _, url := range urls {
+		quoted, err := syntax.Quote(url, syntax.LangBash)
+		require.NoError(t, err)
+		cmds = append(cmds, "wget -O- "+quoted)
+	}
+	script := strings.Join(cmds, "\n")
+	out, err := c.Container().
+		From(alpineImage).
+		WithServiceBinding("www", svc).
+		WithExec([]string{"sh", "-c", script}).
+		Stdout(t.Context())
+	require.NoError(t, err)
+	return out
+}
+
+func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	port := tcpService(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, r.URL.Query().Get("content"))
+	})
 
 	t.Run("simple", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-
 		for _, content := range []string{"yes", "no", "maybe", "so"} {
-			out, err := c.Container().
-				From(alpineImage).
-				WithServiceBinding("www", host).
-				WithExec([]string{"wget", "-O-", "http://www/?content=" + content}).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, content+"\n", out)
+			url := "http://www/?content=" + content
+			require.Equal(t, content+"\n", httpQuery(t, c, host, url))
 		}
 	})
 
@@ -2025,72 +2132,38 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-
 		hn, err := host.Hostname(ctx)
 		require.NoError(t, err)
-
-		out, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", host).
-			WithExec([]string{"wget", "-O-", "http://" + hn + "/?content=hello"}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
+		url := fmt.Sprintf("http://%s/?content=hello", hn)
+		require.Equal(t, "hello\n", httpQuery(t, c, host, url))
 	})
 
 	t.Run("using endpoint", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-
-		svcURL, err := host.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		rootURL, err := host.Endpoint(ctx, dagger.ServiceEndpointOpts{
 			Scheme: "http",
 		})
 		require.NoError(t, err)
-
-		out, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", host).
-			WithExec([]string{"wget", "-O-", svcURL + "/?content=hello"}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
+		require.Equal(t, "hello\n", httpQuery(t, c, host, rootURL+"/?content=hello"))
 	})
 
 	t.Run("multiple ports", func(ctx context.Context, t *testctx.T) {
-		l2, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-
-		defer l2.Close()
-
-		go http.Serve(l2, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		port2 := tcpService(t, func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, r.URL.Query().Get("content")+"-2")
-		}))
-
-		_, port2Str, err := net.SplitHostPort(l2.Addr().String())
-		require.NoError(t, err)
-		port2, err := strconv.Atoi(port2Str)
-		require.NoError(t, err)
-
+		})
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 			{Frontend: 8000, Backend: port2},
 		})
-
-		out, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", host).
-			WithExec([]string{"sh", "-c", `
-				a=$(wget -O- http://www/?content=hey)
-				b=$(wget -O- http://www:8000/?content=hey)
-				echo -n $a $b
-			`}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hey hey-2", out)
+		require.Equal(t, "hey\nhey-2\n", httpQuery(t, c, host,
+			"http://www/?content=hey",
+			"http://www:8000/?content=hey",
+		))
 	})
 
-	t.Run("no ports given", func(ctx context.Context, t *testctx.T) {
+	t.Run("invalid host service", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Host().Service(nil).ID(ctx)
 		require.Error(t, err)
 	})
@@ -2158,6 +2231,68 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 		}
 	}
 	require.True(t, found)
+}
+
+func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
+	privateRegistrySvc := c.Container().
+		From("registry:2").
+		WithNewFile("/auth/htpasswd", htpasswd).
+		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	engineSvc := devEngineContainerAsService(devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithServiceBinding("registry", privateRegistrySvc)
+		},
+		engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.Registries = map[string]resolverconfig.RegistryConfig{
+				"registry:5000": {
+					PlainHTTP: ptr(true),
+				},
+			}
+			return cfg
+		}),
+	))
+
+	const authFile = `{
+        "auths": {
+                "registry:5000": {
+                        "auth": "am9objp4RmxlamFQZGpydDI1RHZy"
+                }
+        }
+}`
+
+	privateImageRef := "registry:5000/test:latest"
+	ctr := engineClientContainer(ctx, t, c, engineSvc).
+		WithNewFile("/docker/config.json", authFile).
+		WithEnvVariable("DOCKER_CONFIG", "/docker").
+		With(daggerNonNestedExec("core",
+			"container",
+			"from", "--address", busyboxImage,
+			"with-workdir", "--path", "/srv",
+			"with-new-file", "--path", "index.html", "--contents", "yoyoyo",
+			"with-default-args", "--args", "httpd,-v,-f",
+			"with-exposed-port", "--port", "80",
+			"publish", "--address", privateImageRef,
+		)).
+		// prune the engine to ensure it's not cached no mo
+		With(daggerNonNestedExec("core",
+			"engine", "local-cache", "prune",
+		)).
+		With(daggerNonNestedExec("-c",
+			"container | from "+alpineImage+" | with-service-binding idc $(container | from "+privateImageRef+" | with-exposed-port 80 | as-service) | with-exec apk add curl | with-exec curl http://idc | stdout",
+		))
+
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "yoyoyo", strings.TrimSpace(out))
 }
 
 func httpService(ctx context.Context, t testing.TB, c *dagger.Client, content string) (*dagger.Service, string) {
@@ -2230,6 +2365,85 @@ server {
 	return svc, url
 }
 
+func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
+	t.Helper()
+
+	if username == "" {
+		username = "x-access-token"
+	}
+
+	var tokenPlaintext string
+	if token != nil {
+		var err error
+		tokenPlaintext, err = token.Plaintext(ctx)
+		require.NoError(t, err)
+	}
+
+	tmpl, err := template.New("").Parse(`
+server {
+	listen       80;
+	server_name  localhost;
+
+	# Route everything to git-http-backend (smart-HTTP)
+	location ~ ^/(.*)$ {
+		{{ if .token }}
+		auth_basic            "Git";
+		auth_basic_user_file  /usr/share/nginx/htpasswd;
+		{{ end }}
+
+		include               /etc/nginx/fastcgi_params;
+		fastcgi_param         GIT_HTTP_EXPORT_ALL "";
+		fastcgi_param         GIT_PROJECT_ROOT      /var/www;
+		fastcgi_param         PATH_INFO             /$1;
+		fastcgi_param         SCRIPT_FILENAME       /usr/lib/git-core/git-http-backend;
+		fastcgi_pass          unix:/var/run/fcgiwrap.socket;
+	}
+}
+`)
+	require.NoError(t, err)
+
+	var config bytes.Buffer
+	require.NoError(t, tmpl.Execute(&config, map[string]any{
+		"token": tokenPlaintext,
+	}))
+
+	ctr := c.Container().
+		From("nginx").
+		WithExec([]string{"sh", "-lc", `
+set -eux
+apt-get update
+apt-get install -y --no-install-recommends git fcgiwrap spawn-fcgi ca-certificates
+rm -rf /var/lib/apt/lists/*
+test -x /usr/lib/git-core/git-http-backend
+`}).
+		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
+		WithMountedDirectory("/var/www", dir).
+		WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%s-%d", username, time.Now().UnixNano()))
+
+	if token != nil {
+		ctr = ctr.WithMountedSecret(
+			"/usr/share/nginx/htpasswd",
+			c.SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext),
+			dagger.ContainerWithMountedSecretOpts{Owner: "nginx"},
+		)
+	}
+
+	svc := ctr.
+		WithExposedPort(80).
+		WithEntrypoint([]string{"sh", "-lc",
+			"spawn-fcgi -s /var/run/fcgiwrap.socket -M 766 /usr/sbin/fcgiwrap && exec nginx -g 'daemon off;'"}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	if hostname == "" {
+		var err error
+		hostname, err = svc.Hostname(ctx)
+		require.NoError(t, err)
+	} else {
+		svc = svc.WithHostname(hostname)
+	}
+	return svc, "http://" + hostname
+}
+
 func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	t.Helper()
 	return gitServiceWithBranch(ctx, t, c, content, "main")
@@ -2280,14 +2494,16 @@ git config --global user.name "Test User"
 mkdir srv
 
 cd repo
-	git init
-	git branch -m %s
-	git add * || true
-	git commit -m "init"
+	if [ ! -d .git ]; then
+		git init
+		git branch -m %s
+		git add * || true
+		git commit -m "init"
+	fi
 cd ..
 
 cd srv
-	git clone --bare ../repo repo.git
+	git clone --no-local --bare ../repo repo.git
 	cd repo.git
 		git update-server-info
 	cd ..
@@ -2374,4 +2590,116 @@ func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testctx.T) 
 	}
 
 	return calculatedNestingLimit
+}
+
+func (ServiceSuite) TestHealthcheckCommand(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	maingo := `package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+)
+
+func main() {
+	http.HandleFunc("/test-file-was-created", func(w http.ResponseWriter, r *http.Request) {
+		for i := 0; i < 10; i++ {
+			f, err := os.Open("/the-check-was-run")
+			if err != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			_ = f.Close()
+			fmt.Fprintf(w, "OK")
+			return
+		}
+		fmt.Fprintf(w, "FAIL")
+	})
+
+	fmt.Println(http.ListenAndServe(":8080", nil))
+}`
+	buildctr := c.Container().
+		From(golangImage).
+		WithWorkdir("/work").
+		WithNewFile("/work/main.go", maingo).
+		WithExec([]string{"go", "build", "-o=app", "main.go"})
+
+	for _, tt := range []struct {
+		name    string
+		shell   bool
+		command []string
+	}{
+		{
+			name:    "shell",
+			shell:   true,
+			command: []string{"touch /the-check-was-run"},
+		},
+		{
+			name:    "cmd",
+			shell:   false,
+			command: []string{"/bin/touch", "/the-check-was-run"},
+		},
+	} {
+		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
+			binctr := c.Container().
+				From(alpineImage).
+				WithFile("/bin/app", buildctr.File("/work/app")).
+				WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+				WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+				WithDockerHealthcheck(tt.command, dagger.ContainerWithDockerHealthcheckOpts{
+					Shell:         tt.shell,
+					Interval:      "1s",
+					Timeout:       "3s",
+					StartPeriod:   "10s",
+					StartInterval: "1s",
+					Retries:       1,
+				}).
+				WithExposedPort(8080)
+
+			curlctr := c.Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-c", "apk add curl"})
+
+			output, err := curlctr.
+				WithServiceBinding("myapp", binctr.AsService()).
+				WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/test-file-was-created'"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "OK", output)
+		})
+	}
+}
+
+func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From("python").
+		WithDefaultArgs([]string{"python", "-m", "http.server", "8080"}).
+		WithExposedPort(8080).
+		WithDockerHealthcheck([]string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}).
+		AsService()
+
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	client := c.Container().
+		From(alpineImage).
+		WithServiceBinding("www", srv).
+		WithExec([]string{"wget", "http://www:8080"})
+
+	_, err = client.Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "start "+host+" (aliased as www): health check errored: exit code:")
+
+	var execErr *dagger.ExecError
+	require.True(t, errors.As(err, &execErr), "expected error to be an ExecError, got %T", err)
+
+	// Verify the ExecError contains expected information
+	require.Equal(t, "check said no\n", execErr.Stdout)
+	require.Equal(t, "eek an error\n", execErr.Stderr)
+	require.Equal(t, []string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}, execErr.Cmd)
 }

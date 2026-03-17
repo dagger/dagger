@@ -103,23 +103,30 @@ func TestProvision(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
+	run := func() error {
+		c, err := Connect(ctx, WithLogOutput(os.Stderr))
+		if err != nil {
+			return fmt.Errorf("failed to connect: %w", err)
+		}
+		defer c.Close()
+		// do a trivial query to ensure the engine is actually there
+		_, err = c.DefaultPlatform(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to query: %w", err)
+		}
+		return nil
+	}
+
+	// force 1 first to avoid parallel downloads
+	require.NoError(t, run())
+
 	parallelism := runtime.NumCPU()
 	start := make(chan struct{})
 	var eg errgroup.Group
 	for i := 0; i < parallelism; i++ {
 		eg.Go(func() error {
 			<-start
-			c, err := Connect(ctx, WithLogOutput(os.Stderr))
-			if err != nil {
-				return fmt.Errorf("failed to connect: %w", err)
-			}
-			defer c.Close()
-			// do a trivial query to ensure the engine is actually there
-			_, err = c.DefaultPlatform(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to query: %w", err)
-			}
-			return nil
+			return run()
 		})
 	}
 	close(start)

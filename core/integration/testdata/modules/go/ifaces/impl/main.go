@@ -12,7 +12,6 @@ func New(
 	bools []bool,
 	dirs []*dagger.Directory,
 ) *Impl {
-
 	return &Impl{
 		Str:     strs[0],
 		StrList: strs,
@@ -156,6 +155,6 @@ type OtherImpl struct {
 // LocalOtherIface is the same as OtherIface and is used here to test interface
 // to interface compatibility.
 type LocalOtherIface interface {
-	DaggerObject
+	dagger.DaggerObject
 	Foo(ctx context.Context) (string, error)
 }

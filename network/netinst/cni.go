@@ -1,6 +1,7 @@
 package netinst
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -8,12 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/jackpal/gateway"
 	"github.com/sirupsen/logrus"
 )
 
-func InstallCNIConfig(name, subnet string) (string, error) {
-	cni, err := cniConfig(name, subnet)
+func InstallCNIConfig(ctx context.Context, name, subnet string) (string, error) {
+	cni, err := cniConfig(ctx, name, subnet)
 	if err != nil {
 		return "", err
 	}
@@ -31,7 +33,18 @@ func InstallCNIConfig(name, subnet string) (string, error) {
 	return cniConfigPath, nil
 }
 
-func cniConfig(name, subnet string) ([]byte, error) {
+// detectIPMasqBackend determines whether to use iptables or nftables for IP masquerading.
+// On kernels without CONFIG_NETFILTER_XTABLES_LEGACY (6.17+), legacy iptables fails.
+// Returns "nftables" if legacy xtables is unavailable, empty string to use default.
+func detectIPMasqBackend() string {
+	if !legacyXtablesAvailable() {
+		return "nftables"
+	}
+
+	return "iptables"
+}
+
+func cniConfig(ctx context.Context, name, subnet string) ([]byte, error) {
 	bridgePlugin := map[string]any{
 		"type":             "bridge",
 		"bridge":           name + "0",
@@ -44,6 +57,13 @@ func cniConfig(name, subnet string) ([]byte, error) {
 				[]any{map[string]any{"subnet": subnet}},
 			},
 		},
+	}
+
+	// Detect if we need nftables backend for IP masquerading
+	// On kernels without CONFIG_NETFILTER_XTABLES_LEGACY (6.17+), legacy iptables fails
+	if ipMasqBackend := detectIPMasqBackend(); ipMasqBackend != "" {
+		bklog.G(ctx).Infof("using ipMasqBackend: %s", ipMasqBackend)
+		bridgePlugin["ipMasqBackend"] = ipMasqBackend
 	}
 
 	if ip, err := gateway.DiscoverInterface(); err == nil {

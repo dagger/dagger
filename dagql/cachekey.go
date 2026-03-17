@@ -4,15 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/moby/buildkit/identity"
-	"github.com/opencontainers/go-digest"
-	"github.com/zeebo/xxh3"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/util/hashutil"
 
 	"github.com/dagger/dagger/engine"
-)
-
-const (
-	XXH3 digest.Algorithm = "xxh3"
 )
 
 // CachePerClient is a CacheKeyFunc that scopes the cache key to the client by mixing in the client ID to the original digest of the operation.
@@ -20,20 +15,20 @@ const (
 // Canonical examples include loading client filesystem data or referencing client-side sockets/ports.
 func CachePerClient[P Typed, A any](
 	ctx context.Context,
-	inst Instance[P],
+	inst ObjectResult[P],
 	args A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
-	return CachePerClientObject(ctx, inst, args, cacheCfg)
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
+	return CachePerClientObject(ctx, inst, args, req)
 }
 
-// CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Instance.
+// CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Result.
 func CachePerClientObject[A any](
 	ctx context.Context,
-	_ Object,
+	_ AnyObjectResult,
 	_ A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -42,28 +37,37 @@ func CachePerClientObject[A any](
 		return nil, fmt.Errorf("client ID not found in context")
 	}
 
-	cacheCfg.Digest = HashFrom(cacheCfg.Digest.String(), clientMD.ClientID)
-	return &cacheCfg, nil
+	resp := &GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	if resp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil")
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+		resp.CacheKey.ID.Digest().String(),
+		clientMD.ClientID,
+	))
+	return resp, nil
 }
 
 // CachePerSession is a CacheKeyFunc that scopes the cache key to the session by mixing in the session ID to the original digest of the operation.
 // It should be used when the operation should be run for each session, but not more than once for a given session.
 func CachePerSession[P Typed, A any](
 	ctx context.Context,
-	inst Instance[P],
+	inst ObjectResult[P],
 	args A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
-	return CachePerSessionObject(ctx, inst, args, cacheCfg)
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
+	return CachePerSessionObject(ctx, inst, args, req)
 }
 
-// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Instance.
+// CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Result.
 func CachePerSessionObject[A any](
 	ctx context.Context,
-	_ Object,
+	_ AnyObjectResult,
 	_ A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -72,8 +76,17 @@ func CachePerSessionObject[A any](
 		return nil, fmt.Errorf("session ID not found in context")
 	}
 
-	cacheCfg.Digest = HashFrom(cacheCfg.Digest.String(), clientMD.SessionID)
-	return &cacheCfg, nil
+	resp := &GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	if resp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil")
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+		resp.CacheKey.ID.Digest().String(),
+		clientMD.SessionID,
+	))
+	return resp, nil
 }
 
 // this could all be un-generic'd and repeated per-API. might be cleaner at the end of the day.
@@ -89,14 +102,15 @@ const (
 	CacheTypePerCall
 )
 
-func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i Instance[T], a A, cc CacheConfig) (*CacheConfig, error) {
+func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i ObjectResult[T], a A, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 	switch a.CacheType() {
 	case CacheTypePerClient:
-		return CachePerClient(ctx, i, a, cc)
+		return CachePerClient(ctx, i, a, req)
 	case CacheTypePerCall:
-		return CachePerCall(ctx, i, a, cc)
+		return CachePerCall(ctx, i, a, req)
 	default:
-		return &cc, nil
+		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		return resp, nil
 	}
 }
 
@@ -106,13 +120,17 @@ func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i I
 // always re-running.
 func CachePerCall[P Typed, A any](
 	_ context.Context,
-	_ Instance[P],
+	_ ObjectResult[P],
 	_ A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
 	randID := identity.NewID()
-	cacheCfg.Digest = HashFrom(randID)
-	return &cacheCfg, nil
+	resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+	if resp.CacheKey.ID == nil {
+		return nil, fmt.Errorf("cache key ID is nil")
+	}
+	resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(randID))
+	return resp, nil
 }
 
 // CachePerSchema is a CacheKeyFunc that scopes the cache key to the schema of
@@ -120,18 +138,23 @@ func CachePerCall[P Typed, A any](
 //
 // This should be used only in scenarios where literally the schema is all that
 // determines the result, irrespective of what client is making the call.
-func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, Instance[P], A, CacheConfig) (*CacheConfig, error) {
+func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 	return func(
 		ctx context.Context,
-		_ Instance[P],
+		_ ObjectResult[P],
 		_ A,
-		cfg CacheConfig,
-	) (*CacheConfig, error) {
-		cfg.Digest = HashFrom(
-			cfg.Digest.String(),
-			srv.SchemaDigest().String(),
-		)
-		return &cfg, nil
+		req GetCacheConfigRequest,
+	) (*GetCacheConfigResponse, error) {
+		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		schemaDgst := srv.SchemaDigest()
+		if resp.CacheKey.ID == nil {
+			return nil, fmt.Errorf("cache key ID is nil")
+		}
+		resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+			resp.CacheKey.ID.Digest().String(),
+			schemaDgst.String(),
+		))
+		return resp, nil
 	}
 }
 
@@ -140,13 +163,13 @@ func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, Instance[
 //
 // This should be used by anything that should invalidate when the schema
 // changes, but also has an element of per-client dynamism.
-func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Instance[P], A, CacheConfig) (*CacheConfig, error) {
+func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 	return func(
 		ctx context.Context,
-		_ Instance[P],
+		_ ObjectResult[P],
 		_ A,
-		cfg CacheConfig,
-	) (*CacheConfig, error) {
+		req GetCacheConfigRequest,
+	) (*GetCacheConfigResponse, error) {
 		clientMD, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -154,19 +177,16 @@ func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Ins
 		if clientMD.ClientID == "" {
 			return nil, fmt.Errorf("client ID not found in context")
 		}
-		cfg.Digest = HashFrom(
-			cfg.Digest.String(),
+
+		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		if resp.CacheKey.ID == nil {
+			return nil, fmt.Errorf("cache key ID is nil")
+		}
+		resp.CacheKey.ID = resp.CacheKey.ID.WithDigest(hashutil.HashStrings(
+			resp.CacheKey.ID.Digest().String(),
 			srv.SchemaDigest().String(),
 			clientMD.ClientID,
-		)
-		return &cfg, nil
+		))
+		return resp, nil
 	}
-}
-
-func HashFrom(ins ...string) digest.Digest {
-	h := xxh3.New()
-	for _, in := range ins {
-		h.WriteString(in)
-	}
-	return digest.NewDigest(XXH3, h)
 }

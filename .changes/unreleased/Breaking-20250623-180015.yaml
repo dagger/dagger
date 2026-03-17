@@ -1,7 +1,0 @@
-kind: Breaking
-body: |
-    Changed incorrect `sweep` option name to `sweepSize`
-time: 2025-06-23T18:00:15.18961196+01:00
-custom:
-    Author: jedevc
-    PR: "10560"

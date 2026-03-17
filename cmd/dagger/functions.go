@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
@@ -19,12 +20,12 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var (
@@ -37,15 +38,18 @@ var (
 
 const (
 	Directory     string = "Directory"
+	Changeset     string = "Changeset"
 	Container     string = "Container"
 	File          string = "File"
 	Secret        string = "Secret"
 	Service       string = "Service"
 	PortForward   string = "PortForward"
 	CacheVolume   string = "CacheVolume"
+	LLM           string = "LLM"
 	ModuleSource  string = "ModuleSource"
 	Module        string = "Module"
 	Platform      string = "Platform"
+	BuildArg      string = "BuildArg"
 	Socket        string = "Socket"
 	GitRepository string = "GitRepository"
 	GitRef        string = "GitRef"
@@ -138,7 +142,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				help := pflag.NewFlagSet("help", pflag.ContinueOnError)
 				help.AddFlag(c.Flags().Lookup("help"))
 
-				help.ParseErrorsWhitelist.UnknownFlags = true
+				help.ParseErrorsAllowlist.UnknownFlags = true
 				help.ParseAll(a, func(flag *pflag.Flag, value string) error {
 					fc.needsHelp = value == flag.NoOptDefVal
 					return nil
@@ -168,7 +172,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
-				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				return withEngine(c.Context(), initModuleParams(a), func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
@@ -195,9 +199,12 @@ func (fc *FuncCommand) Command() *cobra.Command {
 								c.PrintErrln("Stderr:")
 								c.PrintErrln(ex.Stderr)
 							}
-							return ExitError{Code: ex.ExitCode}
+							return idtui.ExitError{
+								OriginalCode: ex.ExitCode,
+								Original:     err,
+							}
 						}
-						return Fail
+						return idtui.ExitError{OriginalCode: 1, Original: err}
 					}
 
 					return nil
@@ -317,7 +324,7 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	ctx := c.Context()
 
 	spanCtx, span := Tracer().Start(ctx, "parsing command line arguments", telemetry.Encapsulate())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 	fc.ctx = spanCtx
 
 	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
@@ -570,7 +577,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
-			return handleResponse(fn.ReturnType, nil, o, e)
+			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
 
 		var response any
@@ -579,7 +586,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			return err
 		}
 
-		return handleResponse(fn.ReturnType, response, o, e)
+		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e, autoApply)
 	}
 }
 
@@ -644,21 +651,35 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	return nil
 }
 
-func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
+func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer, autoApply bool) error {
 	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
 	}
 
-	// Handle the `export` convenience, i.e, -o,--output flag.
-	switch returnType.Name() {
-	case Container, Directory, File:
-		if outputPath != "" {
-			respPath, ok := response.(string)
-			if !ok {
-				return fmt.Errorf("unexpected response %T: %+v", response, response)
+	if returnList := returnType.AsList; returnList != nil &&
+		returnList.ElementTypeDef.Name() == Changeset &&
+		outputPath == "" {
+		return handleChangesetResponse(ctx, dag, response, autoApply)
+	} else {
+		switch returnType.Name() {
+		case LLM:
+			return startInteractivePromptMode(ctx, dag, response)
+		case Changeset:
+			// Handle the `export` convenience, i.e, -o,--output flag.
+			if outputPath == "" {
+				return handleChangesetResponse(ctx, dag, response, autoApply)
 			}
-			fmt.Fprintf(e, "Saved to %q.\n", respPath)
-			return nil
+			fallthrough
+		case Container, Directory, File:
+			// Handle the `export` convenience, i.e, -o,--output flag.
+			if outputPath != "" {
+				respPath, ok := response.(string)
+				if !ok {
+					return fmt.Errorf("unexpected response %T: %+v", response, response)
+				}
+				fmt.Fprintf(e, "Saved to %q.\n", respPath)
+				return nil
+			}
 		}
 	}
 
@@ -691,6 +712,133 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 	}
 
 	return err
+}
+
+func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
+	switch v := item.(type) {
+	case string:
+		return dag.LoadChangesetFromID(dagger.ChangesetID(v)), nil
+	case map[string]interface{}:
+		if id, ok := v["id"]; ok {
+			return toChangeset(dag, id)
+		}
+		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
+	case *dagger.Changeset:
+		return v, nil
+	case []interface{}:
+		css := make([]*dagger.Changeset, len(v))
+		for i, el := range v {
+			if cs, err := toChangeset(dag, el); err != nil {
+				return nil, err
+			} else {
+				css[i] = cs
+			}
+		}
+		return dag.Changeset().WithChangesets(css), nil
+	default:
+		return nil, fmt.Errorf("unexpected response type for changeset: %T", v)
+	}
+}
+
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
+	changeset, err := toChangeset(dag, response)
+	if err != nil {
+		return err
+	}
+	if changeset == nil {
+		slog.Info("no changes to apply")
+		return nil
+	}
+
+	var summary strings.Builder
+	var noChanges bool
+	if err := (func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "analyzing changes")
+		defer telemetry.EndWithCause(span, &rerr)
+
+		preview, err := idtui.PreviewPatch(ctx, changeset)
+		if err != nil {
+			return err
+		}
+		noChanges = preview == nil
+		if noChanges {
+			slog.Info("no changes to apply")
+			return nil
+		}
+		return preview.Summarize(idtui.NewOutput(&summary), 80)
+	})(); err != nil {
+		return err
+	}
+
+	if noChanges {
+		return nil
+	}
+
+	if !autoApply {
+		var confirm bool
+		form := idtui.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Apply changes?").
+					Description(summary.String()).
+					Affirmative("Apply").
+					Negative("Discard").
+					Value(&confirm),
+			),
+		)
+		if err := Frontend.HandleForm(ctx, form); err != nil {
+			return err
+		}
+		if !confirm {
+			return nil
+		}
+	}
+
+	ctx, span := Tracer().Start(ctx, "applying changes")
+	defer telemetry.EndWithCause(span, &rerr)
+	if _, err := changeset.Export(ctx, "."); err != nil {
+		return err
+	}
+	return nil
+}
+
+// startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
+func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
+	// Extract the LLM ID from the response
+	var llmID string
+	switch v := response.(type) {
+	case string:
+		llmID = v
+	case map[string]any:
+		if id, ok := v["id"].(string); ok {
+			llmID = id
+		} else {
+			return fmt.Errorf("startInteractivePromptMode: no ID found in LLM object: %+v", v)
+		}
+	default:
+		return fmt.Errorf("startInteractivePromptMode: unexpected response type for LLM: %T", v)
+	}
+
+	// Set up the shell handler with prompt mode
+	handler := newShellCallHandler(dag, Frontend)
+	handler.mode = modePrompt
+
+	// Initialize the handler
+	if err := handler.Initialize(ctx); err != nil {
+		return err
+	}
+
+	// Load the LLM from the ID and assign it as $agent
+	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	if _, err := handler.llm(ctx); err != nil { // init llmSession
+		return err
+	}
+	if err := handler.llmSession.updateLLMAndAgentVar(llm); err != nil {
+		return err
+	}
+
+	// Start interactive mode
+	return handler.runInteractive(ctx)
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {
@@ -760,7 +908,7 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 func printPlainResult(w io.Writer, r any) error {

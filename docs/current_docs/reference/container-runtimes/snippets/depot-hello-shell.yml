@@ -1,0 +1,15 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  hello:
+    name: hello
+    runs-on: depot-ubuntu-24.04,dagger={{ version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Call Dagger Function
+        run: container | from alpine | file /etc/os-release | contents
+        shell: dagger {0}

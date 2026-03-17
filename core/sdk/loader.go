@@ -8,25 +8,23 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 )
 
 var (
-	errMissingSDKRef     = errors.New("sdk ref is required")
-	errUnknownBuiltinSDK = errors.New("unknown builtin sdk")
+	errMissingSDKRef     = errors.New("no sdk ref provided")
+	errUnknownBuiltinSDK = errors.New("unknown built-in sdk")
 )
 
-type Loader struct {
-	dag *dagql.Server
-}
+type Loader struct{}
 
-func NewLoader(dag *dagql.Server) *Loader {
-	return &Loader{dag: dag}
+func NewLoader() *Loader {
+	return &Loader{}
 }
 
 // SDKForModule loads an SDK module based on the given SDK configuration.
@@ -44,17 +42,36 @@ func (l *Loader) SDKForModule(
 		return nil, errMissingSDKRef
 	}
 
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("load SDK: %s", sdk.Source))
+	defer telemetry.EndWithCause(span, &rerr)
 
-	builtinSDK, err := l.namedSDK(ctx, query, sdk)
-	if err == nil {
+	builtinSDK, builtinErr := l.namedSDK(ctx, query, sdk)
+	if builtinErr == nil {
 		return builtinSDK, nil
-	} else if !errors.Is(err, errUnknownBuiltinSDK) {
-		return nil, err
+	} else if !errors.Is(builtinErr, errUnknownBuiltinSDK) {
+		return nil, builtinErr
 	}
 
-	return l.externalSDKForModule(ctx, query, sdk, parentSrc)
+	extSDK, extErr := l.externalSDKForModule(ctx, query, sdk, parentSrc)
+	if extErr == nil {
+		return extSDK, nil
+	}
+
+	stdio := telemetry.SpanStdio(ctx, "dagger.io/core/sdk")
+	fmt.Fprintf(stdio.Stderr, "Could not load SDK %q.\n", sdk.Source)
+	fmt.Fprintln(stdio.Stderr)
+	fmt.Fprintln(stdio.Stderr, "Errors:")
+	fmt.Fprintln(stdio.Stderr, "-", builtinErr)
+	fmt.Fprintln(stdio.Stderr, "-", extErr)
+	fmt.Fprintln(stdio.Stderr)
+	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
+	for _, sdk := range validInbuiltSDKs {
+		fmt.Fprintln(stdio.Stderr, "-", sdk)
+	}
+	fmt.Fprintln(stdio.Stderr, "- any git module ref, e.g. github.com/dagger/dagger/sdk/elixir@main")
+	fmt.Fprintln(stdio.Stderr, "- any local module path, e.g. ./my-sdk")
+
+	return nil, fmt.Errorf("invalid SDK: %q", sdk.Source)
 }
 
 // Load an SDK module from an external source (not builtin to the engine).
@@ -71,25 +88,31 @@ func (l *Loader) externalSDKForModule(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk.Source, err)
 	}
-
-	sdkModSrc, err := core.ResolveDepToSource(ctx, bk, l.dag, parentSrc, sdk.Source, "", "")
+	dag, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", err.Error(), getInvalidBuiltinSDKError(sdk.Source))
+		return nil, fmt.Errorf("failed to get dag for sdk %s: %w", sdk.Source, err)
 	}
 
-	if !sdkModSrc.Self.ConfigExists {
-		return nil, fmt.Errorf("sdk module source has no dagger.json: %w", getInvalidBuiltinSDKError(sdk.Source))
+	sdkModSrc, err := core.ResolveDepToSource(ctx, bk, dag, parentSrc, sdk.Source, "", "")
+	if err != nil {
+		return nil, err
 	}
 
-	var sdkMod dagql.Instance[*core.Module]
-	err = l.dag.Select(ctx, sdkModSrc, &sdkMod,
-		dagql.Selector{Field: "asModule"},
+	if !sdkModSrc.Self().ConfigExists {
+		return nil, fmt.Errorf("sdk module source has no dagger.json")
+	}
+
+	var sdkMod dagql.ObjectResult[*core.Module]
+	err = dag.Select(ctx, sdkModSrc, &sdkMod,
+		dagql.Selector{Field: "asModule", Args: []dagql.NamedInput{
+			{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+		}},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
 	}
 
-	return newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{}, sdk.Config)
+	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config)
 }
 
 func (l *Loader) namedSDK(
@@ -104,20 +127,22 @@ func (l *Loader) namedSDK(
 
 	switch sdkNamedParsed {
 	case sdkGo:
-		return &goSDK{root: root, dag: l.dag, rawConfig: sdk.Config}, nil
+		return &goSDK{root: root, rawConfig: sdk.Config}, nil
+	case sdkDang:
+		return &dangSDK{root: root, rawConfig: sdk.Config}, nil
 	case sdkPython:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case sdkJava:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config}, nil)
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkPHP:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config}, nil)
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkElixir:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config}, nil)
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	}
 
-	return nil, getInvalidBuiltinSDKError(sdk.Source)
+	return nil, errUnknownBuiltinSDK
 }
 
 // loads an SDK implemented as a module that is "builtin" to engine, which means its
@@ -129,11 +154,16 @@ func (l *Loader) loadBuiltinSDK(
 	sdk *core.SDKConfig,
 	manifestDigest digest.Digest,
 ) (*module, error) {
+	dag, err := root.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk %s: %w", sdk.Source, err)
+	}
+
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
 	// "runtime" subdir right under the *full* sdk source dir. Can be generalized once we support
 	// default-args/scripts in dagger.json
-	var fullSDKDir dagql.Instance[*core.Directory]
-	if err := l.dag.Select(ctx, l.dag.Root(), &fullSDKDir,
+	var fullSDKDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &fullSDKDir,
 		dagql.Selector{
 			Field: "_builtinContainer",
 			Args: []dagql.NamedInput{
@@ -150,8 +180,8 @@ func (l *Loader) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", sdk.Source, err)
 	}
 
-	var sdkMod dagql.Instance[*core.Module]
-	err := l.dag.Select(ctx, fullSDKDir, &sdkMod,
+	var sdkMod dagql.ObjectResult[*core.Module]
+	err = dag.Select(ctx, fullSDKDir, &sdkMod,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
@@ -163,6 +193,9 @@ func (l *Loader) loadBuiltinSDK(
 		},
 		dagql.Selector{
 			Field: "asModule",
+			Args: []dagql.NamedInput{
+				{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+			},
 		},
 	)
 	if err != nil {
@@ -189,11 +222,11 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	// this validation may seem redundant, but it helps keep the list of
 	// builtin sdk between invalidSDKError message and builtinSDK function in sync.
 	if !slices.Contains(validInbuiltSDKs, sdk(sdkNameParsed)) {
-		return "", "", getInvalidBuiltinSDKError(sdkName)
+		return "", "", errUnknownBuiltinSDK
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]sdk{sdkGo, sdkPython, sdkTypescript}, sdk(sdkNameParsed)) && hasVersion {
+	if slices.Contains([]sdk{sdkGo, sdkDang, sdkPython, sdkTypescript}, sdk(sdkNameParsed)) && hasVersion {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
@@ -208,18 +241,4 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 	}
 
 	return sdk(sdkNameParsed), sdkSuffix, nil
-}
-
-func getInvalidBuiltinSDKError(inputSDKName string) error {
-	inbuiltSDKs := []string{}
-
-	for _, sdk := range validInbuiltSDKs {
-		inbuiltSDKs = append(inbuiltSDKs, fmt.Sprintf("- %s", sdk))
-	}
-
-	return fmt.Errorf(`%w
-The %q SDK does not exist. The available SDKs are:
-%s
-- any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)`,
-		errUnknownBuiltinSDK, inputSDKName, strings.Join(inbuiltSDKs, "\n"))
 }

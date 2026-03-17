@@ -1,87 +1,135 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.18.10",
+  "engineVersion": "v0.20.1",
   "sdk": {
     "source": "go"
   },
-  "include": [
-    "engine/distconsts/**/*",
-    "sdk/typescript/runtime/**/*"
-  ],
-  "dependencies": [
+  "toolchains": [
     {
-      "name": "alpine",
-      "source": "modules/alpine"
+      "name": "changelog",
+      "source": "toolchains/changelog"
     },
     {
-      "name": "dagger-cli",
-      "source": "cmd/dagger"
+      "name": "ci",
+      "source": "toolchains/ci"
     },
     {
-      "name": "dagger-engine",
-      "source": "cmd/engine"
-    },
-    {
-      "name": "dirdiff",
-      "source": "modules/dirdiff"
+      "name": "cli",
+      "source": "toolchains/cli-dev"
     },
     {
       "name": "docs",
-      "source": "docs"
+      "source": "toolchains/docs-dev"
     },
     {
-      "name": "dotnet-sdk-dev",
-      "source": "sdk/dotnet/dev"
+      "name": "elixir-sdk",
+      "source": "toolchains/elixir-sdk-dev"
     },
     {
-      "name": "elixir-sdk-dev",
-      "source": "sdk/elixir/dev"
-    },
-    {
-      "name": "evals",
-      "source": "modules/evals"
-    },
-    {
-      "name": "evaluator",
-      "source": "modules/evaluator"
+      "name": "engine-dev",
+      "source": "toolchains/engine-dev"
     },
     {
       "name": "go",
-      "source": "modules/go"
+      "source": "toolchains/go",
+      "customizations": [
+        {
+          "argument": "source",
+          "ignore": [
+            "bin",
+            ".git",
+            "**/node_modules",
+            "**/.venv",
+            "**/__pycache__",
+            "**/sdk/runtime/**",
+            "docs/node_modules",
+            "sdk/typescript/node_modules",
+            "sdk/typescript/dist",
+            "sdk/rust/examples/backend/target",
+            "sdk/rust/target",
+            "sdk/php/vendor",
+            "docs/**",
+            "dagql/idtui/viztest/broken/**",
+            "**/broken*/**",
+            "core/integration/testdata/checks/hello-with-checks/",
+            "core/integration/testdata/generators/hello-with-generators/",
+            "toolchains/release/testdata/module/"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "go-sdk",
+      "source": "toolchains/go-sdk-dev"
     },
     {
       "name": "helm",
-      "source": "helm"
+      "source": "toolchains/helm-dev"
     },
     {
-      "name": "notify",
-      "source": "github.com/gerhard/daggerverse/notify",
-      "pin": "e4ee5778b10345d09a65a9655022d8ec40fc489f"
+      "name": "installers",
+      "source": "toolchains/installers"
     },
     {
-      "name": "php-sdk-dev",
-      "source": "sdk/php/dev"
+      "name": "java-sdk",
+      "source": "toolchains/java-sdk-dev"
     },
     {
-      "name": "ps-analyzer",
-      "source": "modules/ps-analyzer"
+      "name": "php-sdk",
+      "source": "toolchains/php-sdk-dev"
     },
     {
-      "name": "python-sdk-dev",
-      "source": "sdk/python/dev"
+      "name": "python-sdk",
+      "source": "toolchains/python-sdk-dev"
     },
     {
-      "name": "shellcheck",
-      "source": "modules/shellcheck"
+      "name": "release",
+      "source": "toolchains/release"
     },
     {
-      "name": "version",
-      "source": "version"
+      "name": "rust-sdk",
+      "source": "toolchains/rust-sdk-dev"
     },
     {
-      "name": "wolfi",
-      "source": "modules/wolfi"
+      "name": "sdks",
+      "source": "toolchains/all-sdks"
+    },
+    {
+      "name": "security",
+      "source": "toolchains/security",
+      "customizations": [
+        {
+          "function": [
+            "scanSource"
+          ],
+          "argument": "source",
+          "ignore": [
+            "bin",
+            ".git",
+            "docs",
+            "sdk/rust/examples",
+            "sdk/rust/crates/dagger-sdk/examples",
+            "core/integration/testdata",
+            "dagql/idtui/viztest"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "test-split",
+      "source": "toolchains/test-split"
+    },
+    {
+      "name": "typescript-sdk",
+      "source": "toolchains/typescript-sdk-dev"
     }
+  ],
+  "include": [
+    "sdk/typescript/runtime/**/*",
+    "engine/distconsts",
+    "go.mod",
+    "go.sum",
+    "util/patchpreview"
   ],
   "source": ".dagger"
 }

@@ -3,12 +3,10 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -41,9 +39,6 @@ type Services struct {
 
 // RunningService represents a service that is actively running.
 type RunningService struct {
-	// Service is the service that has been started.
-	Service *Service
-
 	// Key is the unique identifier for the service.
 	Key ServiceKey
 
@@ -65,8 +60,15 @@ type RunningService struct {
 	// have detached, but may also be called manually by the user.
 	Stop func(ctx context.Context, force bool) error
 
-	// Block until the service has exited or the provided context is canceled.
+	// Wait blocks until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
+
+	// Exec runs a command in the service. It is only supported for services
+	// with a backing container.
+	Exec func(ctx context.Context, cmd []string, env []string, io *ServiceIO) error
+
+	// The runc container ID, if any
+	ContainerID string
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -128,10 +130,7 @@ type Startable interface {
 	Start(
 		ctx context.Context,
 		id *call.ID,
-		interactive bool,
-		forwardStdin func(io.Writer, bkgw.ContainerProcess),
-		forwardStdout func(io.Reader),
-		forwardStderr func(io.Reader),
+		io *ServiceIO,
 	) (*RunningService, error)
 }
 
@@ -140,6 +139,16 @@ type Startable interface {
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
 func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable, clientSpecific bool) (*RunningService, error) {
+	return ss.StartWithIO(ctx, id, svc, clientSpecific, nil)
+}
+
+func (ss *Services) StartWithIO(
+	ctx context.Context,
+	id *call.ID,
+	svc Startable,
+	clientSpecific bool,
+	sio *ServiceIO,
+) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -159,7 +168,11 @@ dance:
 		ss.l.Lock()
 		starting, isStarting := ss.starting[key]
 		running, isRunning := ss.running[key]
+		isStopping := ss.bindings[key] == 0
 		switch {
+		case isRunning && isStopping:
+			ss.l.Unlock()
+			running.Wait(ctx)
 		case isRunning:
 			// already running; increment binding count and return
 			ss.bindings[key]++
@@ -182,7 +195,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
+	running, err := svc.Start(svcCtx, id, sio)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()
@@ -225,7 +238,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.Service.ID(), bnd.Service.Self, false)
+			runningSvc, err := ss.Start(ctx, bnd.Service.ID(), bnd.Service.Self(), false)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
@@ -323,7 +336,7 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
 
-	slog := slog.With("service", svc.Host, "bindings", ss.bindings[svc.Key])
+	slog := slog.With("service", svc.Host)
 
 	running, found := ss.running[svc.Key]
 	if !found {
@@ -335,6 +348,9 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	ss.bindings[svc.Key]--
 
+	// Log with the decremented value
+	slog = slog.With("bindings", ss.bindings[svc.Key])
+
 	if ss.bindings[svc.Key] > 0 {
 		ss.l.Unlock()
 		slog.Debug("detach: service still has binders")
@@ -344,10 +360,10 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	ss.l.Unlock()
 
-	slog.Trace("detach: stopping")
+	slog.Debug("detach: stopping")
 
 	// we should avoid blocking, and return immediately
-	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
+	go ss.stopGraceful(context.WithoutCancel(ctx), running, TerminateGracePeriod)
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {

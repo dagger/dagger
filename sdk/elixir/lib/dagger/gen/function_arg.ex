@@ -40,6 +40,17 @@ defmodule Dagger.FunctionArg do
   end
 
   @doc """
+  The reason this function is deprecated, if any.
+  """
+  @spec deprecated(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def deprecated(%__MODULE__{} = function_arg) do
+    query_builder =
+      function_arg.query_builder |> QB.select("deprecated")
+
+    Client.execute(function_arg.client, query_builder)
+  end
+
+  @doc """
   A doc string for the argument, if any.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
@@ -86,7 +97,7 @@ defmodule Dagger.FunctionArg do
   @doc """
   The location of this arg declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = function_arg) do
     query_builder =
       function_arg.query_builder |> QB.select("sourceMap")

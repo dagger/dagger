@@ -1,0 +1,46 @@
+### Build multi-arch image
+
+The following Dagger Function builds a single image for different CPU architectures using native emulation.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/multi-arch/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/multi-arch/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/multi-arch/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build and publish a multi-platform image:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'build https://github.com/golang/example#master:hello'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build https://github.com/golang/example#master:hello
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello"
+```
+</TabItem>
+</Tabs>

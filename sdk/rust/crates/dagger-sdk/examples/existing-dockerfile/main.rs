@@ -9,9 +9,8 @@ async fn main() -> eyre::Result<()> {
             .host()
             .directory("./examples/existing-dockerfile/app");
 
-        let ref_ = client
-            .container()
-            .build(context_dir)
+        let ref_ = context_dir
+            .docker_build()
             .publish(format!("ttl.sh/hello-dagger-sdk-{}:1h", rng.gen::<u64>()))
             .await?;
 

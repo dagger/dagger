@@ -2,6 +2,7 @@ package dagger_test
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strconv"
 	"strings"
@@ -73,7 +74,7 @@ func ExampleGitRepository() {
 	// Output: ## What is Dagger?
 }
 
-func ExampleContainer_Build() {
+func ExampleDirectory_DockerBuild() {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx)
 	if err != nil {
@@ -81,11 +82,10 @@ func ExampleContainer_Build() {
 	}
 	defer client.Close()
 
-	repo := client.Git("https://github.com/dagger/dagger").
+	daggerImg := client.Git("https://github.com/dagger/dagger").
 		Tag("v0.3.0").
-		Tree()
-
-	daggerImg := client.Container().Build(repo)
+		Tree().
+		DockerBuild()
 
 	out, err := daggerImg.WithExec([]string{"dagger", "version"}).Stdout(ctx)
 	if err != nil {
@@ -156,7 +156,7 @@ func ExampleContainer_WithMountedCache() {
 	}
 	defer client.Close()
 
-	cacheKey := "example-cache"
+	cacheKey := "example-cache-" + rand.Text()
 
 	cache := client.CacheVolume(cacheKey)
 

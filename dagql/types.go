@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 // Typed is any value that knows its GraphQL type.
@@ -41,18 +41,18 @@ type ObjectType interface {
 	// IDType returns the scalar type for the object's IDs.
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
-	New(id *call.ID, val Typed) (Object, error)
+	New(val AnyResult) (AnyObjectResult, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
-	ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
+	ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
 	// Extend registers an additional field onto the type.
 	//
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
-	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
-	Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
+	// cacheConfigFunc is optional, if not set the default dagql ID cache key will be used.
+	Extend(spec FieldSpec, fun FieldFunc)
 	// FieldSpec looks up a field spec by name.
-	FieldSpec(name string, view View) (FieldSpec, bool)
+	FieldSpec(name string, view call.View) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -63,19 +63,52 @@ type IDType interface {
 
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
-type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
+type FieldFunc func(context.Context, AnyResult, map[string]Input) (AnyResult, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
 	ID() *call.ID
 }
 
-// Object represents an Object in the graph which has an ID and can have
-// sub-selections.
-type Object interface {
+// AnyResult is a Typed value wrapped with an ID constructor. The wrapped value may
+// be any graphql type, including scalars, objects, arrays, etc.
+// It's a Result but as an interface and without any type params, allowing it
+// to be passed around without knowing the concrete type at compile-time.
+type AnyResult interface {
 	Typed
+	Wrapper
 	IDable
 	PostCallable
+	Setter
+
+	// DerefValue returns an AnyResult when the wrapped value is Derefable and
+	// has a value set. If the value is not derefable, it returns itself.
+	DerefValue() (AnyResult, bool)
+
+	// NthValue returns the Nth value of the wrapped value when the wrapped value
+	// is an Enumerable. If the wrapped value is not Enumerable, it returns an error.
+	NthValue(int) (AnyResult, error)
+
+	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
+	WithPostCall(fn PostCallFunc) AnyResult
+
+	// IsSafeToPersistCache returns whether it's safe to persist this result in the cache.
+	IsSafeToPersistCache() bool
+
+	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
+	WithSafeToPersistCache(safe bool) AnyResult
+
+	// WithContentDigest returns a new AnyResult with the given content digest.
+	WithContentDigestAny(digest.Digest) AnyResult
+
+	HitCache() bool
+	HitContentDigestCache() bool
+	Release(context.Context) error
+}
+
+// AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)
+type AnyObjectResult interface {
+	AnyResult
 
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
@@ -86,7 +119,7 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+	Call(context.Context, *Server, *call.ID) (AnyResult, error)
 
 	// Select evaluates the field selected by the given selector and returns the result.
 	//
@@ -94,24 +127,20 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
-
-	// ReturnType gets the return type of the field selected by the given
-	// selector.
-	//
-	// The returned value is the raw Typed value returned from the field; it must
-	// be instantiated with a class for further selection.
-	//
-	// Any Nullable values are automatically unwrapped.
-	ReturnType(context.Context, *Server, Selector) (Typed, *call.ID, error)
+	Select(context.Context, *Server, Selector) (AnyResult, error)
 }
 
-// A type that has a callback attached that needs to always run before returned to a caller
+// InterfaceValue is a value that wraps some underlying object with a interface to that object's API. This type exists to support unwrapping it and getting the underlying object.
+type InterfaceValue interface {
+	// UnderlyingObject returns the underlying object of the InterfaceValue
+	UnderlyingObject() (Typed, error)
+}
+
+// PostCallable is a type that has a callback attached that needs to always run before returned to a caller
 // whether or not the type is being returned from cache or not
 type PostCallable interface {
-	// Return the postcall func (or nil if not set) and the Typed value in case it was wrapped
-	// with a type used for attaching the postcall func
-	GetPostCall() (cache.PostCallFunc, Typed)
+	// Call the postcall func (or no-op if none is set)
+	PostCall(context.Context) error
 }
 
 // A type that has a callback attached that needs to always run when the result is removed
@@ -189,7 +218,7 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
-func (i Int) TypeDefinition(view View) *ast.Definition {
+func (i Int) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        i.TypeName(),
@@ -285,7 +314,7 @@ func (i Int) SetField(v reflect.Value) error {
 // Float is a GraphQL Float scalar.
 type Float float64
 
-func NewFloat(val float64) Float {
+func NewFloat[T constraints.Float](val T) Float {
 	return Float(val)
 }
 
@@ -295,7 +324,7 @@ func (Float) TypeName() string {
 	return "Float"
 }
 
-func (f Float) TypeDefinition(view View) *ast.Definition {
+func (f Float) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        f.TypeName(),
@@ -396,7 +425,7 @@ func (Boolean) TypeName() string {
 	return "Boolean"
 }
 
-func (b Boolean) TypeDefinition(view View) *ast.Definition {
+func (b Boolean) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        b.TypeName(),
@@ -481,7 +510,7 @@ func (String) TypeName() string {
 	return "String"
 }
 
-func (s String) TypeDefinition(view View) *ast.Definition {
+func (s String) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        s.TypeName(),
@@ -538,6 +567,84 @@ func (s String) SetField(v reflect.Value) error {
 	}
 }
 
+type SerializedString[T any] struct {
+	Self T
+}
+
+func NewSerializedString[T any](val T) SerializedString[T] {
+	return SerializedString[T]{
+		Self: val,
+	}
+}
+
+var _ Typed = SerializedString[any]{}
+
+func (SerializedString[T]) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+}
+
+var _ InputDecoder = SerializedString[any]{}
+
+func (SerializedString[T]) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case string:
+		var v T
+		err := json.Unmarshal([]byte(x), &v)
+		if err != nil {
+			return nil, err
+		}
+		return NewSerializedString(v), nil
+	default:
+		return nil, fmt.Errorf("cannot create SerializedString from %T", x)
+	}
+}
+
+var _ Input = SerializedString[any]{}
+
+func (s SerializedString[T]) Decoder() InputDecoder {
+	return s
+}
+
+func (s SerializedString[T]) ToLiteral() call.Literal {
+	return call.NewLiteralString(s.String())
+}
+
+func (s SerializedString[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Self)
+}
+
+func (s *SerializedString[T]) UnmarshalJSON(p []byte) error {
+	var v T
+	if err := json.Unmarshal(p, &v); err != nil {
+		return err
+	}
+	*s = SerializedString[T]{v}
+	return nil
+}
+
+func (s SerializedString[T]) String() string {
+	res, err := s.MarshalJSON()
+	if err != nil {
+		panic(err)
+	}
+	return string(res)
+}
+
+var _ Setter = SerializedString[any]{}
+
+func (s SerializedString[T]) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case SerializedString[T]:
+		v.Set(reflect.ValueOf(s))
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), s)
+	}
+}
+
 type ScalarValue interface {
 	ScalarType
 	Input
@@ -568,7 +675,7 @@ func (s Scalar[T]) TypeName() string {
 	return s.Name
 }
 
-func (s Scalar[T]) TypeDefinition(view View) *ast.Definition {
+func (s Scalar[T]) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: s.TypeName(),
@@ -611,6 +718,10 @@ func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
 type ID[T Typed] struct {
 	id    *call.ID
 	inner T
+
+	// The inner type sourceMap directive so additional type
+	// registered by the engine can store also store its origin.
+	sourceMap *ast.Directive
 }
 
 func NewID[T Typed](id *call.ID) ID[T] {
@@ -659,8 +770,8 @@ func (i ID[T]) ID() *call.ID {
 var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
-func (i ID[T]) TypeDefinition(view View) *ast.Definition {
-	return &ast.Definition{
+func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
+	typedef := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
 		Description: fmt.Sprintf(
@@ -670,6 +781,12 @@ func (i ID[T]) TypeDefinition(view View) *ast.Definition {
 		),
 		BuiltIn: true,
 	}
+
+	if i.sourceMap != nil {
+		typedef.Directives = append(typedef.Directives, i.sourceMap)
+	}
+
+	return typedef
 }
 
 // New creates a new ID with the given value.
@@ -770,14 +887,14 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 }
 
 // Load loads the instance with the given ID from the server.
-func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
+func (i ID[T]) Load(ctx context.Context, server *Server) (res ObjectResult[T], _ error) {
 	val, err := server.Load(ctx, i.id)
 	if err != nil {
-		return Instance[T]{}, fmt.Errorf("load %s: %w", i.id.Display(), err)
+		return res, fmt.Errorf("load %s: %w", i.id.DisplaySelf(), err)
 	}
-	obj, ok := val.(Instance[T])
+	obj, ok := val.(ObjectResult[T])
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
+		return res, fmt.Errorf("load %s: expected %T, got %T", i.id.DisplaySelf(), obj, val)
 	}
 	return obj, nil
 }
@@ -791,6 +908,8 @@ type Enumerable interface {
 	// Nth returns the Nth element of the Enumerable, with 1 representing the
 	// first entry.
 	Nth(int) (Typed, error)
+
+	NthValue(i int, enumID *call.ID) (AnyResult, error)
 }
 
 // Array is an array of GraphQL values.
@@ -902,12 +1021,16 @@ func NewBoolArray(elems ...bool) Array[Boolean] {
 	return ToArray(NewBoolean, elems...)
 }
 
-func NewIntArray(elems ...int) Array[Int] {
+func NewIntArray[T constraints.Integer](elems ...T) Array[Int] {
 	return ToArray(NewInt, elems...)
 }
 
-func NewFloatArray(elems ...float64) Array[Float] {
+func NewFloatArray[T constraints.Float](elems ...T) Array[Float] {
 	return ToArray(NewFloat, elems...)
+}
+
+func NewBooleanArray(elems ...bool) Array[Boolean] {
+	return ToArray(NewBoolean, elems...)
 }
 
 var _ Typed = Array[Typed]{}
@@ -931,11 +1054,117 @@ func (arr Array[T]) Len() int {
 	return len(arr)
 }
 
-func (arr Array[T]) Nth(i int) (Typed, error) {
+func (arr Array[T]) nth(i int) (T, error) {
 	if i < 1 || i > len(arr) {
-		return nil, fmt.Errorf("index %d out of bounds", i)
+		var zero T
+		return zero, fmt.Errorf("index %d out of bounds", i)
 	}
 	return arr[i-1], nil
+}
+
+func (arr Array[T]) Nth(i int) (Typed, error) {
+	return arr.nth(i)
+}
+
+func (arr Array[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	t, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return newDetachedResult(enumID.SelectNth(i), t), nil
+}
+
+type ResultArray[T Typed] []Result[T]
+
+var _ Typed = ResultArray[Typed]{}
+var _ Enumerable = ResultArray[Typed]{}
+
+func (i ResultArray[T]) Type() *ast.Type {
+	var t T
+	return &ast.Type{
+		Elem:    t.Type(),
+		NonNull: true,
+	}
+}
+
+func (arr ResultArray[T]) Element() Typed {
+	var t T
+	return t
+}
+
+func (arr ResultArray[T]) Len() int {
+	return len(arr)
+}
+
+func (arr ResultArray[T]) nth(i int) (res Result[T], _ error) {
+	if i < 1 || i > len(arr) {
+		return res, fmt.Errorf("index %d out of bounds", i)
+	}
+	return arr[i-1], nil
+}
+
+func (arr ResultArray[T]) Nth(i int) (Typed, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return inst.Self(), nil
+}
+
+func (arr ResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return inst, nil
+}
+
+type ObjectResultArray[T Typed] []ObjectResult[T]
+
+var _ Typed = ObjectResultArray[Typed]{}
+var _ Enumerable = ObjectResultArray[Typed]{}
+
+func (i ObjectResultArray[T]) Type() *ast.Type {
+	var t T
+	return &ast.Type{
+		Elem:    t.Type(),
+		NonNull: true,
+	}
+}
+
+func (arr ObjectResultArray[T]) Element() Typed {
+	var t T
+	return t
+}
+
+func (arr ObjectResultArray[T]) Len() int {
+	return len(arr)
+}
+
+func (arr ObjectResultArray[T]) nth(i int) (res ObjectResult[T], _ error) {
+	if i < 1 || i > len(arr) {
+		return res, fmt.Errorf("index %d out of bounds", i)
+	}
+	return arr[i-1], nil
+}
+
+func (arr ObjectResultArray[T]) Nth(i int) (Typed, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return inst.Self(), nil
+}
+
+func (arr ObjectResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return inst, nil
 }
 
 type enumValue interface {
@@ -973,7 +1202,7 @@ func (e *EnumValues[T]) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *EnumValues[T]) TypeDefinition(view View) *ast.Definition {
+func (e *EnumValues[T]) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
@@ -998,7 +1227,7 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	return e.Lookup(v.(*EnumValueName).Name)
 }
 
-func (e *EnumValues[T]) PossibleValues(view View) ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues(view call.View) ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range *e {
 		if val.View != nil && !val.View.Contains(view) {
@@ -1111,7 +1340,7 @@ func (e *EnumValueName) Type() *ast.Type {
 	}
 }
 
-func (e *EnumValueName) TypeDefinition(view View) *ast.Definition {
+func (e *EnumValueName) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Enum,
 		Name: e.TypeName(),
@@ -1181,7 +1410,7 @@ func (spec InputObjectSpec) TypeName() string {
 	return spec.Name
 }
 
-func (spec InputObjectSpec) TypeDefinition(view View) *ast.Definition {
+func (spec InputObjectSpec) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        spec.Name,

@@ -30,11 +30,19 @@ defmodule Dagger.Mod.Module do
 
     dag
     |> Dagger.Client.type_def()
-    |> Dagger.TypeDef.with_object(Helper.camelize(mod_name))
+    |> Dagger.TypeDef.with_object(Helper.camelize(mod_name), get_optional(module))
     |> then(&define_fields(&1, dag, module))
     |> then(&define_functions(&1, dag, module))
     |> then(&define_constructor(&1, dag, module))
   end
+
+  defp get_optional(module) do
+    []
+    |> maybe_put_optional(Dagger.Mod.Object.get_module_deprecated(module))
+  end
+
+  defp maybe_put_optional(opts, nil), do: opts
+  defp maybe_put_optional(opts, {key, val}), do: Keyword.put(opts, key, val)
 
   defp define_constructor(type_def, dag, module) do
     case Enum.find(module.__object__(:functions), &init?/1) do

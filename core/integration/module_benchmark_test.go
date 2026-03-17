@@ -49,7 +49,6 @@ func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 
 			var eg errgroup.Group
 			for i := range funcCount {
-				i := i
 				// just verify a subset work
 				if i%10 != 0 {
 					continue
@@ -91,7 +90,6 @@ class PotatoSack:
 
 		var eg errgroup.Group
 		for i := range funcCount {
-			i := i
 			// just verify a subset work
 			if i%10 != 0 {
 				continue
@@ -137,7 +135,6 @@ export class PotatoSack {
 
 		var eg errgroup.Group
 		for i := range funcCount {
-			i := i
 			// just verify a subset work
 			if i%10 != 0 {
 				continue
@@ -297,14 +294,14 @@ func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *tes
 			With(sdkSource("go", `package main
 
 import (
-	"github.com/moby/buildkit/identity"
 	"dagger/dep/internal/dagger"
+	"crypto/rand"
 )
 
 type Dep struct {}
 
 func (m *Dep) DepFn(s *dagger.Secret) string {
-	return identity.NewID()
+	return rand.Text()
 }
 `)).
 			WithWorkdir("/work").
@@ -322,7 +319,6 @@ func (m *Test) Fn(ctx context.Context) ([]string, error) {
 	var eg errgroup.Group
 	results := make([]string, 10)
 	for i := 0; i < 10; i++ {
-		i := i
 		eg.Go(func() error {
 			res, err := dag.Dep().DepFn(ctx, dag.SetSecret("foo", "bar"))
 			if err != nil {

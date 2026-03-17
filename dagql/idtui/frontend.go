@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
+	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
 	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/log"
@@ -22,11 +23,13 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/term"
 
-	"dagger.io/dagger/telemetry"
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type (
@@ -61,9 +64,11 @@ var SkipLoggedOutTraceMsgEnvs = []string{
 // NOTE: keep this to one line, and 80 characters max
 var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", SkipLoggedOutTraceMsgEnvs[0])
 
+//go:generate go run github.com/matryer/moq -out frontend_mock.go . Frontend
+
 type Frontend interface {
 	// Run starts a frontend, and runs the target function.
-	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error
+	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error
 
 	// Opts returns the opts of the currently running frontend.
 	Opts() *dagui.FrontendOpts
@@ -83,15 +88,57 @@ type Frontend interface {
 	LogExporter() sdklog.Exporter
 	MetricExporter() sdkmetric.Exporter
 
-	// ConnectedToEngine is called when the CLI connects to an engine.
-	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
 	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
+
+	// SetClient is called to notify the frontend of a created dagger client.
+	// This can be used to make requests to the engine for more information.
+	SetClient(*dagger.Client)
 
 	// Shell is called when the CLI enters interactive mode.
 	Shell(ctx context.Context, handler ShellHandler)
 
-	session.PromptHandler
+	// Populate the sidebar with content.
+	SetSidebarContent(SidebarSection)
+
+	prompt.PromptHandler
+}
+
+// normalizeFrontendExit ensures a frontend does not report success when the
+// primary command span itself ended in a failed state.
+func normalizeFrontendExit(err error, db *dagui.DB) error {
+	if err != nil || db == nil || !db.PrimarySpan.IsValid() {
+		return err
+	}
+
+	span, ok := db.Spans.Map[db.PrimarySpan]
+	if !ok || span == nil || !span.IsFailedOrCausedFailure() {
+		return err
+	}
+
+	return ExitError{OriginalCode: 1}
+}
+
+type SidebarSection struct {
+	// A heading to show for the content, if any. If empty, the content will be
+	// placed in the topmost portion of the sidebar.
+	Title string
+	// The content to display.
+	Content string
+	// The content to display, for a given width.
+	ContentFunc func(int) string
+	// Keymap associated with this section
+	KeyMap []key.Binding
+}
+
+func (sec SidebarSection) Body(width int) string {
+	if sec.Content != "" {
+		return sec.Content
+	}
+	if sec.ContentFunc != nil {
+		return sec.ContentFunc(width)
+	}
+	return ""
 }
 
 // ShellHandler defines the interface for handling shell interactions
@@ -109,10 +156,10 @@ type ShellHandler interface {
 	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, tea.Cmd)
 
 	// Keys returns the keys that will be displayed when the input is focused
-	KeyBindings() []key.Binding
+	KeyBindings(out TermOutput) []key.Binding
 
 	// ReactToInput allows reacting to live input before it's submitted
-	ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd
+	ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, edit *editline.Model) tea.Cmd
 
 	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
 	editline.HistoryEncoder
@@ -136,11 +183,11 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 
 	db := dagui.NewDB()
 	maps.Copy(db.Calls, dag.CallsByDigest)
-	r := newRenderer(db, -1, dagui.FrontendOpts{})
+	r := newRenderer(db, -1, dagui.FrontendOpts{}, true)
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
-	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil)
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, nil, false)
 	fmt.Fprint(out, r.newline)
 	return err
 }
@@ -153,9 +200,10 @@ type renderer struct {
 	db            *dagui.DB
 	maxLiteralLen int
 	rendering     map[string]bool
+	final         bool
 }
 
-func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *renderer {
+func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts, final bool) *renderer {
 	return &renderer{
 		FrontendOpts:  fe,
 		now:           time.Now(),
@@ -163,6 +211,7 @@ func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *render
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
 		newline:       "\n",
+		final:         final,
 	}
 }
 
@@ -170,6 +219,12 @@ const (
 	kwColor     = termenv.ANSICyan
 	faintColor  = termenv.ANSIBrightBlack
 	moduleColor = termenv.ANSIMagenta
+
+	// filesync upload colors
+	bytesColor = termenv.ANSIGreen
+	kbColor    = bytesColor
+	mbColor    = termenv.ANSIYellow
+	bigColor   = termenv.ANSIRed
 )
 
 func (r *renderer) indent(out TermOutput, depth int) {
@@ -204,18 +259,16 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		color := restrainedStatusColor(span)
 
 		var prefix string
-		if i == 0 && selfHoriz {
+		if i == 0 && selfHoriz && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
 			if row.Next != nil {
-				prefix = VertRightBar + HorizBar
+				prefix = VertRightBar + HorizHalfLeftBar
 			} else {
-				prefix = CornerBottomLeft + HorizBar
+				prefix = CornerBottomLeft + HorizHalfLeftBar
 			}
+		} else if nextChild.Next != nil && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
+			prefix = VertBar + " "
 		} else {
-			if nextChild.Next != nil {
-				prefix = VertBar + " "
-			} else {
-				prefix = "  "
-			}
+			prefix = "  "
 		}
 
 		fmt.Fprint(out, out.String(prefix).
@@ -228,7 +281,7 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		color := restrainedStatusColor(span)
 
 		var symbol string
-		if row.ShowingChildren {
+		if row.ShowingChildren && !row.Span.Reveal {
 			symbol = VertBar
 		} else {
 			symbol = " "
@@ -251,7 +304,7 @@ func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
 	}
 }
 
-func (r *renderer) renderCall(
+func (r *renderer) renderCall( //nolint: gocyclo
 	out TermOutput,
 	span *dagui.Span,
 	call *callpbv1.Call,
@@ -260,6 +313,7 @@ func (r *renderer) renderCall(
 	depth int,
 	internal bool,
 	row *dagui.TraceRow,
+	abridged bool,
 ) error {
 	if r.rendering[call.Digest] {
 		fmt.Fprintf(out, "<cycle detected: %s>", call.Digest)
@@ -268,19 +322,38 @@ func (r *renderer) renderCall(
 	r.rendering[call.Digest] = true
 	defer func() { delete(r.rendering, call.Digest) }()
 
-	if call.ReceiverDigest != "" {
-		if !chained {
-			r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+	var specialTitle bool
+	var elideArgs map[string]struct{}
+	if r.Verbosity < dagui.ShowDigestsVerbosity {
+		// Use the DSL to render field calls
+		if title, elidedArgs, isSpecial := r.renderFieldCall(call, out, prefix, depth); isSpecial {
+			fmt.Fprint(out, title)
+			specialTitle = isSpecial
+			elideArgs = elidedArgs
 		}
-		fmt.Fprint(out, out.String("."))
 	}
 
-	fmt.Fprint(out, out.String(call.Field).Bold())
+	if !specialTitle {
+		if call.ReceiverDigest != "" {
+			if !chained {
+				r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+			}
+			fmt.Fprint(out, out.String("."))
+		}
 
-	if len(call.Args) > 0 {
+		fmt.Fprint(out, out.String(call.Field).Bold())
+	}
+
+	if len(call.Args) > len(elideArgs) {
+		if specialTitle {
+			fmt.Fprint(out, " ")
+		}
 		fmt.Fprint(out, out.String("("))
 		var needIndent bool
 		for _, arg := range call.Args {
+			if _, elided := elideArgs[arg.Name]; elided {
+				continue
+			}
 			if arg.GetValue().GetCallDigest() != "" {
 				needIndent = true
 				break
@@ -295,6 +368,9 @@ func (r *renderer) renderCall(
 			depth++
 			depth++
 			for _, arg := range call.Args {
+				if _, elided := elideArgs[arg.Name]; elided {
+					continue
+				}
 				fmt.Fprint(out, prefix)
 				indentLevel := depth
 				if row != nil {
@@ -302,13 +378,16 @@ func (r *renderer) renderCall(
 					indentLevel -= row.Depth
 					indentLevel -= 1
 				}
+				if !r.final {
+					// extra space to account for togglers only visible while interactive
+					fmt.Fprint(out, "  ")
+				}
 				r.indent(out, indentLevel)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
 				val := arg.GetValue()
 				fmt.Fprint(out, out.String(" "))
 				if argDig := val.GetCallDigest(); argDig != "" {
 					forceSimplify := false
-					internal := internal
 					argSpan := r.db.MostInterestingSpan(argDig)
 					if argSpan != nil {
 						forceSimplify = argSpan.Internal && !internal // only for the first internal call (not it's children)
@@ -318,7 +397,7 @@ func (r *renderer) renderCall(
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row); err != nil {
+					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, internal, row, abridged); err != nil {
 						return err
 					}
 				} else {
@@ -334,13 +413,22 @@ func (r *renderer) renderCall(
 				indentLevel -= row.Depth
 				indentLevel -= 1
 			}
+			if !r.final {
+				// extra space to account for togglers only visible while interactive
+				fmt.Fprint(out, "  ")
+			}
 			r.indent(out, indentLevel)
 			depth-- //nolint:ineffassign
 		} else {
-			for i, arg := range call.Args {
-				if i > 0 {
+			printed := 0
+			for _, arg := range call.Args {
+				if _, elided := elideArgs[arg.Name]; elided {
+					continue
+				}
+				if printed > 0 {
 					fmt.Fprint(out, out.String(", "))
 				}
+				printed++
 				fmt.Fprintf(out, out.String("%s: ").Foreground(kwColor).String(), arg.GetName())
 				r.renderLiteral(out, arg.GetValue())
 			}
@@ -348,7 +436,7 @@ func (r *renderer) renderCall(
 		fmt.Fprint(out, out.String(")"))
 	}
 
-	if call.Type != nil {
+	if call.Type != nil && !specialTitle && !abridged {
 		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
 		fmt.Fprint(out, typeStr)
 	}
@@ -375,9 +463,27 @@ func (r *renderer) renderSpan(
 	span *dagui.Span,
 	name string,
 ) error {
+	if name == "" {
+		return nil
+	}
+
 	var contentType string
 	if span != nil {
 		contentType = span.ContentType
+		if span.LLMTool != "" {
+			if span.LLMToolServer != "" {
+				fmt.Fprint(out,
+					out.String(strcase.ToLowerCamel(span.LLMToolServer)).
+						Foreground(termenv.ANSIBrightMagenta))
+				fmt.Fprint(out, " ")
+			}
+			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
+			if len(span.LLMToolArgValues) > 0 {
+				// for now, only print the first arg, the rest are likely to be noisy.
+				fmt.Fprint(out, "(", span.LLMToolArgValues[0], ")")
+			}
+			return nil
+		}
 	}
 
 	switch contentType {
@@ -401,13 +507,6 @@ func (r *renderer) renderSpan(
 	}
 
 	return nil
-}
-
-func highlightStyle() string {
-	if HasDarkBackground() {
-		return "monokai"
-	}
-	return "monokailight"
 }
 
 func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
@@ -476,8 +575,10 @@ func restrainedStatusColor(span *dagui.Span) termenv.Color {
 	}
 }
 
-func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
-	fmt.Fprint(out, out.String(" "))
+func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) {
+	if space {
+		fmt.Fprint(out, out.String(" "))
+	}
 	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
 	if span.IsRunningOrEffectsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
@@ -503,6 +604,7 @@ var metricsVerbosity = map[string]int{
 	telemetry.NetstatTxPackets:         3,
 	telemetry.LLMInputTokens:           1,
 	telemetry.LLMOutputTokens:          1,
+	telemetry.FilesyncWrittenBytes:     3,
 }
 
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
@@ -533,6 +635,9 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "Token Cache Reads", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "Token Cache Writes", humanizeTokens)
+
+		// Filesync Stats
+		r.renderMetric(out, metricsByName, telemetry.FilesyncWrittenBytes, "Written Bytes", colorizeBytes)
 	}
 }
 
@@ -549,7 +654,7 @@ func (r renderer) renderMetric(
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
 		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		displayMetric = displayMetric.Foreground(termenv.ANSIBrightBlack)
 		fmt.Fprint(out, displayMetric)
 	}
 }
@@ -608,6 +713,22 @@ func durationString(microseconds int64) string {
 
 func humanizeBytes(v int64) string {
 	return humanize.Bytes(uint64(v))
+}
+
+func colorizeBytes(v int64) string {
+	vh := humanizeBytes(v)
+	vs := strings.Split(vh, " ")
+	if len(vs) != 2 {
+		return vh
+	}
+	switch vs[1] {
+	case "B", "kB":
+		return termenv.String(vh).Foreground(kbColor).String()
+	case "MB":
+		return termenv.String(vh).Foreground(mbColor).String()
+	default:
+		return termenv.String(vh).Foreground(bigColor).String()
+	}
 }
 
 func humanizeTokens(v int64) string {

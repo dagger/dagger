@@ -1,0 +1,55 @@
+---
+title: "Nerdctl"
+description: "Learn how to use Dagger with Nerdctl."
+slug: /reference/container-runtimes/nerdctl
+---
+
+# Nerdctl
+
+Dagger can be used with any OCI-compatible container runtime, including
+`nerdctl` and `finch` (which uses `nerdctl` under the hood).
+
+## Prerequisites
+
+Ensure that `nerdctl` (or `finch`) is installed and running on your system:
+
+```console
+$ nerdctl info
+Client:
+ Namespace: default
+ Debug Mode: false
+```
+
+:::warning
+To be able to use the `nerdctl` backend as unprivileged user, `nerdctl` must be
+installed and running on the host system in [rootless mode](https://github.com/containerd/nerdctl/blob/main/docs/rootless.md).
+:::
+
+### Using `lima`
+
+To use `nerdctl` with Dagger via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
+
+```console
+#!/bin/sh
+lima nerdctl "$@"
+```
+
+## Example
+
+```console
+$ nerdctl ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+$ nerdctl core version
+v0.18.19
+$ nerdctl ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+27d47c3d5a10   registry.dagger.io/engine:v0.18.19   "dagger-entrypoint.s…"   6 days ago    Up 4 hours                                                 dagger-engine-v0.18.19
+```
+
+## Resources
+
+If you have any questions about additional ways to use `nerdctl` with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).
+
+## About `nerdctl`
+
+[`nerdctl`](https://github.com/containerd/nerdctl) is a Docker-compatible tool to manage and run containers.

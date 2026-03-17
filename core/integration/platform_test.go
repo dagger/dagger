@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -82,7 +82,6 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 	for platform := range platformToUname {
 		i++
 		i := i - 1
-		platform := platform
 		eg.Go(func() error {
 			ctr := c.Container().
 				From("crazymax/goxx:latest").

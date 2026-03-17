@@ -8,11 +8,14 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"golang.org/x/sync/errgroup"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 )
 
 func ReexportMetricsFromPB(ctx context.Context, exps []sdkmetric.Exporter, req *colmetricspb.ExportMetricsServiceRequest) error {
 	for _, reqResourceMetrics := range req.GetResourceMetrics() {
+		if len(reqResourceMetrics.GetScopeMetrics()) == 0 {
+			continue
+		}
 		var eg errgroup.Group
 		for _, exp := range exps {
 			eg.Go(func() error {

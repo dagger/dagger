@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,9 @@ import (
 const (
 	defaultLicense = "Apache-2.0"
 )
+
+//go:embed licenses/Apache-2.0.txt
+var defaultLicenseText string
 
 // TODO: dedupe this from Daggerverse, originally hoisted from pkg.go.dev
 var licenseFiles = []string{
@@ -78,9 +82,16 @@ func findOrCreateLicense(ctx context.Context, dir string, searchExisting bool) e
 	slog.Warn("no LICENSE file found; generating one for you, feel free to change or remove",
 		"license", licenseID)
 
-	license, err := spdx.License(licenseID)
-	if err != nil {
-		return fmt.Errorf("failed to get license %q: %w", licenseID, err)
+	// the default license is embedded to avoid network deps
+	var licenseText string
+	if licenseID == defaultLicense && defaultLicenseText != "" {
+		licenseText = defaultLicenseText
+	} else {
+		license, err := spdx.License(licenseID)
+		if err != nil {
+			return fmt.Errorf("failed to get license %q: %w", licenseID, err)
+		}
+		licenseText = license.Text
 	}
 
 	newLicense := filepath.Join(dir, "LICENSE")
@@ -89,7 +100,7 @@ func findOrCreateLicense(ctx context.Context, dir string, searchExisting bool) e
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	if err := os.WriteFile(newLicense, []byte(license.Text), 0600); err != nil {
+	if err := os.WriteFile(newLicense, []byte(licenseText), 0600); err != nil {
 		return fmt.Errorf("failed to write license: %w", err)
 	}
 

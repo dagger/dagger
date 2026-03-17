@@ -10,10 +10,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"golang.org/x/mod/semver"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
+	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 )
 
 func fastModuleSourceKindCheck(
@@ -56,7 +57,7 @@ func ParseRefString(
 	refPin string,
 ) (_ *ParsedRefString, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	kind := fastModuleSourceKindCheck(refString, refPin)
 	switch kind {
@@ -79,7 +80,7 @@ func ParseRefString(
 	}
 
 	// First, we stat ref in case the mod path github.com/username is a local directory
-	if stat, err := statFS.Stat(ctx, refString); err != nil {
+	if _, stat, err := statFS.Stat(ctx, refString); err != nil {
 		slog.Debug("parseRefString stat error", "error", err)
 	} else if stat.IsDir() {
 		return &ParsedRefString{
@@ -136,7 +137,7 @@ type gitEndpointError struct{ error }
 
 func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefString, rerr error) {
 	_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
 
 	scheme, schemelessRef := parseScheme(refString)
 
@@ -214,8 +215,16 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 		cloneUser += "@"
 	}
 
-	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + gitParsed.RepoRoot.Root
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + gitParsed.RepoRoot.Root
+	// For SSH URLs, inject port after host if it is defined: ssh://user@host:port/path
+	repoRootWithPort := gitParsed.RepoRoot.Root
+	if gitParsed.scheme == SchemeSSH && endpoint.Port > 0 {
+		if host, rest, ok := strings.Cut(repoRootWithPort, "/"); ok {
+			repoRootWithPort = fmt.Sprintf("%s:%d/%s", host, endpoint.Port, rest)
+		}
+	}
+
+	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + repoRootWithPort
+	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + repoRootWithPort
 
 	return gitParsed, nil
 }
@@ -241,78 +250,89 @@ func parseScheme(refString string) (SchemeType, string) {
 	return NoScheme, refString
 }
 
-func (p *ParsedGitRefString) GetGitRefAndModVersion(
+func (p *ParsedGitRefString) GitRef(
 	ctx context.Context,
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
-) (inst dagql.Instance[*GitRef], _ string, rerr error) {
-	commitRef := pinCommitRef
-	var modVersion string
-	if p.hasVersion {
-		modVersion = p.ModVersion
-		if semver.IsValid(modVersion) {
-			var tags dagql.Array[dagql.String]
-			err := dag.Select(ctx, dag.Root(), &tags,
-				dagql.Selector{
-					Field: "git",
-					Args: []dagql.NamedInput{
-						{Name: "url", Value: dagql.String(p.cloneRef)},
-					},
-				},
-				dagql.Selector{
-					Field: "tags",
-				},
-			)
-			if err != nil {
-				return inst, "", fmt.Errorf("failed to resolve git tags: %w", err)
-			}
+) (inst dagql.ObjectResult[*GitRef], rerr error) {
+	pinIsSHA := gitutil.IsCommitSHA(pinCommitRef)
 
-			allTags := make([]string, len(tags))
-			for i, tag := range tags {
-				allTags[i] = tag.String()
-			}
-
-			matched, err := matchVersion(allTags, modVersion, p.RepoRootSubdir)
-			if err != nil {
-				return inst, "", fmt.Errorf("matching version to tags: %w", err)
-			}
-			modVersion = matched
+	withCommitArg := func(selector dagql.Selector) dagql.Selector {
+		if pinIsSHA {
+			selector.Args = append(selector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
 		}
-		if commitRef == "" {
-			commitRef = modVersion
-		}
+		return selector
 	}
 
-	var commitRefSelector dagql.Selector
-	if commitRef == "" {
-		commitRefSelector = dagql.Selector{
-			Field: "head",
-		}
-	} else {
-		commitRefSelector = dagql.Selector{
-			Field: "commit",
-			Args: []dagql.NamedInput{
-				// reassign modVersion to matched tag which could be subPath/tag
-				{Name: "id", Value: dagql.String(commitRef)},
+	var modTag string
+	if p.hasVersion && semver.IsValid(p.ModVersion) {
+		var tags dagql.Array[dagql.String]
+		err := dag.Select(ctx, dag.Root(), &tags,
+			dagql.Selector{
+				Field: "git",
+				Args: []dagql.NamedInput{
+					{Name: "url", Value: dagql.String(p.cloneRef)},
+				},
 			},
+			dagql.Selector{
+				Field: "tags",
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve git tags: %w", err)
 		}
+
+		allTags := make([]string, len(tags))
+		for i, tag := range tags {
+			allTags[i] = tag.String()
+		}
+
+		matched, err := matchVersion(allTags, p.ModVersion, p.RepoRootSubdir)
+		if err != nil {
+			return inst, fmt.Errorf("matching version to tags: %w", err)
+		}
+		modTag = matched
 	}
 
-	var gitRef dagql.Instance[*GitRef]
-	err := dag.Select(ctx, dag.Root(), &gitRef,
-		dagql.Selector{
-			Field: "git",
-			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(p.cloneRef)},
-			},
+	repoSelector := dagql.Selector{
+		Field: "git",
+		Args: []dagql.NamedInput{
+			{Name: "url", Value: dagql.String(p.cloneRef)},
 		},
-		commitRefSelector,
-	)
+	}
+	repoSelector = withCommitArg(repoSelector)
+
+	refSelector := dagql.Selector{Field: "head"}
+	switch {
+	case modTag != "":
+		refSelector = withCommitArg(dagql.Selector{
+			Field: "tag",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(modTag)},
+			},
+		})
+	case p.hasVersion:
+		refSelector = withCommitArg(dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(p.ModVersion)},
+			},
+		})
+	case pinCommitRef != "" && !pinIsSHA:
+		refSelector = dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(pinCommitRef)},
+			},
+		}
+	}
+	var gitRef dagql.ObjectResult[*GitRef]
+	err := dag.Select(ctx, dag.Root(), &gitRef, repoSelector, refSelector)
 	if err != nil {
-		return inst, "", fmt.Errorf("failed to resolve git src: %w", err)
+		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
 
-	return gitRef, modVersion, nil
+	return gitRef, nil
 }
 
 // Match a version string in a list of versions with optional subPath

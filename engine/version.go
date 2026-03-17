@@ -2,7 +2,6 @@ package engine
 
 import (
 	"os"
-	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -31,11 +30,11 @@ var (
 
 	// MinimumEngineVersion is used by the client to determine the minimum
 	// allowed engine version that can be used by that client.
-	MinimumEngineVersion = "v0.18.11"
+	MinimumEngineVersion = "v0.19.0"
 
 	// MinimumClientVersion is used by the engine to determine the minimum
 	// allowed client version that can connect to that engine.
-	MinimumClientVersion = "v0.17.0"
+	MinimumClientVersion = "v0.19.0"
 
 	// MinimumModuleVersion is used by the engine to determine the minimum
 	// allowed module engine version that can connect to this engine.
@@ -44,6 +43,10 @@ var (
 	// introduced - if it's present and not a dev version, it must be higher
 	// than v0.9.9.
 	MinimumModuleVersion = "v0.9.9"
+
+	// MinimumDefaultFunctionCachingModuleVersion is the minimum module version at which
+	// we will enable default function caching behavior.
+	MinimumDefaultFunctionCachingModuleVersion = "v0.19.4"
 )
 
 var (
@@ -73,6 +76,9 @@ func init() {
 	// why it's okay to skip the previous validation
 	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
 		Version = cleanVersion(v)
+	}
+	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
+		Tag = v
 	}
 	if v, ok := os.LookupEnv(DaggerMinimumVersionEnv); ok {
 		MinimumClientVersion = cleanVersion(v)
@@ -131,8 +137,16 @@ func BaseVersion(version string) string {
 }
 
 func IsDevVersion(version string) bool {
+	if _, ok := os.LookupEnv(DaggerDevEngine); ok {
+		return true
+	}
+
 	if version == "" {
 		return true
 	}
-	return slices.Contains(strings.Split(semver.Prerelease(version), "-"), "dev")
+	// dev versions have -dev- in their prerelease (e.g. v0.19.9-241210-dev-abc123)
+	if strings.Contains(semver.Prerelease(version), "-dev-") {
+		return true
+	}
+	return false
 }

@@ -62,15 +62,6 @@
             }
           }
         },
-        "self": {
-          "name": "self",
-          "description": "",
-          "arguments": {},
-          "returnType": {
-            "kind": "INTERFACE_KIND",
-            "name": "IFace"
-          }
-        },
         "withClass": {
           "name": "withClass",
           "description": "",
@@ -98,6 +89,15 @@
           "returnType": {
             "kind": "OBJECT_KIND",
             "name": "Container"
+          }
+        },
+        "self": {
+          "name": "self",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "INTERFACE_KIND",
+            "name": "IFace"
           }
         },
         "withSelf": {

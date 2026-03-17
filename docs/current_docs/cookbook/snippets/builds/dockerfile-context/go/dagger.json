@@ -1,12 +1,15 @@
 {
   "name": "my-module",
-  "sdk": "go",
+  "engineVersion": "v0.19.4",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "containerd",
-      "source": "github.com/levlaz/daggerverse/containerd@abcd1a95cef14ad336ca21a9ab836869582617bb"
+      "source": "github.com/levlaz/daggerverse/containerd@abcd1a95cef14ad336ca21a9ab836869582617bb",
+      "pin": "abcd1a95cef14ad336ca21a9ab836869582617bb"
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.12.0"
+  "disableDefaultFunctionCaching": true
 }

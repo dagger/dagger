@@ -1,0 +1,295 @@
+---
+title: "Using Dagger SDKs"
+sidebar_label: "Dagger SDKs"
+slug: /getting-started/api/sdk
+description: "Dagger SDKs make it easy to call the Dagger API from your programming language of choice."
+---
+
+Dagger SDKs make it easy to call the Dagger API from your favorite programming language, by developing Dagger Functions or custom applications.
+
+A Dagger SDK provides two components:
+
+- A client library to call the Dagger API from your code
+- Tooling to extend the Dagger API with your own Dagger Functions (bundled in a Dagger module)
+
+The Dagger API uses GraphQL as its low-level language-agnostic framework, and can also be accessed using any standard GraphQL client. However, you do not need to know GraphQL to call the Dagger API; the translation to underlying GraphQL API calls is handled internally by the Dagger SDKs.
+
+Official Dagger SDKs are currently available for Go, TypeScript and Python. There are also [experimental and community SDKs contributed by the Dagger community](https://github.com/dagger/dagger/tree/main/sdk).
+
+:::note Custom applications
+Dagger SDKs can also be used to build custom applications that use the Dagger API. These applications can be standalone or integrated into existing systems, allowing you to leverage Dagger's capabilities in your own software solutions.
+:::
+
+## Dagger Functions
+
+The recommended, and most common way, to interact with the Dagger API is through Dagger Functions. Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK.
+
+Dagger Functions are packaged, shared and reused using Dagger modules. A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+
+Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally using a Dagger SDK. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
+
+Here is an example of initializing a Dagger module:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=python
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=typescript
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=java
+```
+</TabItem>
+</Tabs>
+
+:::warning
+Running `dagger develop` regenerates the module's code based on dependencies, the current state of the module, and the current Dagger API version. This can result in unexpected results if there are significant changes between the previous and latest installed Dagger API versions. Always refer to the [changelog](https://github.com/dagger/dagger/blob/main/CHANGELOG.md) for a complete list of changes (including breaking changes) in each Dagger release before running `dagger develop`, or use the `--compat=skip` option to bypass updating the Dagger API version.
+:::
+
+The default template from `dagger develop` creates the following structure:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```
+.
+├── LICENSE
+├── dagger.gen.go
+├── dagger.json
+├── go.mod
+├── go.sum
+├── internal
+│   ├── dagger
+│   ├── querybuilder
+│   └── telemetry
+└── main.go
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `go.mod`/`go.sum` manage the Go module and its dependencies.
+- `main.go` is where your Dagger module code goes. It contains sample code to help you get started.
+- `internal` contains automatically-generated types and helpers needed to configure and run the module:
+    - `dagger` contains definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
+    - `telemetry` has utilities for sending Dagger Engine telemetry.
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```
+.
+├── LICENSE
+├── pyproject.toml
+├── uv.lock
+├── sdk
+├── src
+│   └── my_module
+│       ├── __init__.py
+│       └── main.py
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `pyproject.toml` manages the Python project configuration.
+- `uv.lock` manages the module's pinned dependencies.
+- `src/my_module/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the vendored Python SDK [client library](https://pypi.org/project/dagger-io/).
+
+This structure hosts a Python import package, with a name derived from the project name (in `pyproject.toml`), inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This convention prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```
+.
+├── LICENSE
+├── dagger.json
+├── package.json
+├── sdk
+├── src
+│   └── index.ts
+├── tsconfig.json
+└── yarn.lock
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `package.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the TypeScript SDK.
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```
+.
+├── LICENSE
+├── README.md
+├── composer.json
+├── composer.lock
+├── entrypoint.php
+├── sdk
+├── src
+│   └── MyModule.php
+└── vendor
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `composer.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the PHP SDK.
+
+</TabItem>
+<TabItem value="java" label="Java">
+```
+.
+├── LICENSE
+├── dagger.json
+├── pom.xml
+├── src
+│   └── main
+│       └── java
+│           └── io
+│               └── dagger
+│                   └── modules
+│                       └── mymodule
+│                           ├── MyModule.java
+│                           └── package-info.java
+└── target
+
+9 directories, 5 files
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `pom.xml` manages the module dependencies.
+- `src/main/java/io/dagger/modules/mymodule/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `target` contains the generated Java source classes.
+
+</TabItem>
+</Tabs>
+
+:::note
+While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
+:::
+
+You can now write Dagger Functions using the selected Dagger SDK. Here is an example, which calls a remote API method and returns the result:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=../../extending/modules/snippets/functions/functions-complex/go/main.go
+```
+
+This Dagger Function includes the context as input and error as return in its signature.
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=../../extending/modules/snippets/functions/functions-complex/python/main.py
+```
+
+Dagger Functions are implemented as [@dagger.function][@function] decorated
+methods, of a [@dagger.object_type][@object_type] decorated class.
+
+It's possible for a module to implement multiple classes (object types), but
+the first one needs to have a name that matches the module's name, in
+PascalCase. This object is sometimes referred to as the "main object".
+
+For example, for a module initialized with `dagger init --name=my-module`,
+the main object needs to be named `MyModule`.
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=../../extending/modules/snippets/functions/functions-complex/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=../../extending/modules/snippets/functions/functions-complex/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=../../extending/modules/snippets/functions/functions-complex/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+:::caution
+You can try this Dagger Function by copying it into the default template generated by `dagger init`, but remember that you must update the module name in the code samples above to match the name used when your module was first initialized.
+:::
+
+In simple terms, this Dagger Function:
+
+- initializes a new container from an `alpine` base image.
+- executes the `apk add ...` command in the container to add the `curl` and `jq` utilities.
+- uses the `curl` utility to send an HTTP request to the URL `https://randomuser.me/api/` and parses the response using `jq`.
+- retrieves and returns the output stream of the last executed command as a string.
+
+:::important
+Every Dagger Function has access to the `dag` client, which is a pre-initialized Dagger API client. This client contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your Dagger module has declared.
+:::
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'get-user'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+get-user
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call get-user
+```
+</TabItem>
+</Tabs>
+
+Here's what you should see:
+
+```shell
+{
+  "title": "Mrs",
+  "first": "Beatrice",
+  "last": "Lavigne"
+}
+```
+
+:::important
+Dagger Functions execute within containers spawned by the Dagger Engine. This "sandboxing" serves a few important purposes:
+1. **Reproducibility**: Executing in a well-defined and well-controlled container ensures that a Dagger Function runs the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+1. **Caching**: A reproducible containerized environment makes it possible to cache the result of Dagger Function execution, which in turn allows Dagger to automatically speed up operations.
+1. **Security**: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
+:::

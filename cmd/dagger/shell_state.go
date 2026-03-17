@@ -119,7 +119,9 @@ func (s *ShellStateStore) Load(key string) (*ShellState, error) {
 	if !exists {
 		return nil, fmt.Errorf("tried to access non-existent state %q", key)
 	}
-	return &st, st.Error
+	cp := st
+	cp.Calls = slices.Clone(st.Calls)
+	return &cp, cp.Error
 }
 
 // Extract is like [Load] but also deletes the state from memory.
@@ -327,7 +329,7 @@ func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
 	nkey := h.state.Store(st)
 	w := interp.HandlerCtx(ctx).Stdout
 
-	if debug && h.Debug() {
+	if debugFlag && h.Debug() {
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("saving state", spreadDebugArgs(&st, "newKey", nkey)...)
 	}

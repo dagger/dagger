@@ -1,3 +1,3 @@
 package dagger
 
-//go:generate go -C ../../ run ./cmd/codegen --output ./sdk/go --merge
+//go:generate go -C ../../ run ./cmd/codegen generate-library --output ./sdk/go

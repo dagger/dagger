@@ -5,6 +5,7 @@ import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -360,6 +361,20 @@ _reserved_builtins = frozenset(
 )
 
 
+def rewrite_notice(reason: str | None, prefix='"', suffix='"') -> str | None:
+    """Normalize deprecation/experimental messages and rewrite references."""
+    if reason is None:
+        return None
+
+    reason = reason.strip()
+
+    def _format_name(match: re.Match[str]) -> str:
+        name = format_name(match.group(1))
+        return f"{prefix}{name}{suffix}"
+
+    return DEPRECATION_RE.sub(_format_name, reason)
+
+
 def format_name(s: str) -> str:
     """Format a GraphQL field or argument name into Python."""
     # rewrite acronyms, initialisms and abbreviations
@@ -452,11 +467,11 @@ class _InputField:
         self.is_self = self.type == self.parent_object_name
         self.description = graphql.description
         self.has_default = graphql.default_value is not Undefined
+        reason = getattr(graphql, "deprecation_reason", None)
+        self.deprecated = rewrite_notice(reason, prefix="", suffix="")
 
         default_value = graphql.default_value
         self.default_is_mutable = isinstance(default_value, list)
-        if self.default_is_mutable:
-            default_value = ()
 
         if not is_required_type(graphql.type) and not self.has_default:
             default_value = None
@@ -465,17 +480,24 @@ class _InputField:
         if default_value and is_enum_type(self.named_type):
             self.default_value = f"{self.named_type.name}.{default_value}"
         else:
-            # repr uses single quotes for strings, contrary to black
-            self.default_value = repr(default_value).replace("'", '"')
+            self.default_value = repr(default_value)
 
     @joiner
     def __str__(self) -> Iterator[str]:
         """Output for an InputObject field."""
         yield ""
         yield self.ctx.render_types(self.as_param())
-
+        doc_parts: list[str] = []
         if self.description:
-            yield doc(self.description)
+            doc_parts.append(self.description)
+        if self.deprecated is not None:
+            directive = ".. deprecated::"
+            if self.deprecated:
+                directive = f"{directive} {self.deprecated}"
+            doc_parts.append(directive)
+
+        if doc_parts:
+            yield doc("\n\n".join(doc_parts))
 
     def as_param(self) -> str:
         """As a parameter in a function signature."""
@@ -496,6 +518,11 @@ class _InputField:
         if self.description:
             for line in self.description.split("\n"):
                 yield from wrap_indent(line)
+        if self.deprecated is not None:
+            directive = ".. deprecated::"
+            if self.deprecated:
+                directive = f"{directive} {self.deprecated}"
+            yield from wrap_indent(directive)
 
     def as_arg(self) -> str:
         """As a Arg object for the query builder."""
@@ -658,7 +685,7 @@ class _ObjectField:
                     "This is lazily evaluated, no operation is actually run.",
                 )
 
-            if any(arg.description for arg in self.args):
+            if any(arg.description or arg.deprecated is not None for arg in self.args):
                 yield chain(
                     (
                         "Parameters",
@@ -697,8 +724,8 @@ class _ObjectField:
 
         return "\n\n".join("\n".join(section) for section in _out())
 
-    def deprecated(self, prefix='"', suffix='"') -> str:
-        return self._rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
+    def deprecated(self, prefix='"', suffix='"') -> str | None:
+        return rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
 
     def experimental(self, prefix='"', suffix='"') -> str:
         reason = ""
@@ -708,14 +735,7 @@ class _ObjectField:
             args = graphql.get_directive_values(directive, self.graphql.ast_node)
             if args:
                 reason = args["reason"]
-        return self._rewrite_notice(reason, prefix, suffix)
-
-    def _rewrite_notice(self, reason, prefix='"', suffix='"') -> str:
-        def _format_name(m):
-            name = format_name(m.group().strip("`"))
-            return f"{prefix}{name}{suffix}"
-
-        return DEPRECATION_RE.sub(_format_name, reason) if reason else ""
+        return rewrite_notice(reason, prefix, suffix)
 
 
 @dataclass
@@ -735,25 +755,38 @@ class Enum(Handler[GraphQLEnumType]):
         if body := super().render_body(t):
             yield body
 
-        for name, value in sorted(t.values.items()):
+        by_value = defaultdict(list)
+        for name, value in t.values.items():
+            by_value[self._get_value(value)].append(name)
+
+        for val, names in sorted(by_value.items()):
             yield ""
 
-            val = None
-            if value.ast_node and (
-                directive := self.ctx.schema.get_directive("enumValue")
-            ):
-                args = graphql.get_directive_values(directive, value.ast_node)
-                if args:
-                    val = args["value"]
-            if not val:
-                val = value.value
+            for name in names:
+                yield f"{name} = {val!r}"
 
-            # repr uses single quotes for strings, contrary to black
-            val = repr(val).replace("'", '"')
-            yield f"{name} = {val}"
+                member = t.values[name]
+                desc = member.description
+                reason = rewrite_notice(member.deprecation_reason)
 
-            if value.description:
-                yield doc(value.description)
+                doc_parts: list[str] = []
+                if desc:
+                    doc_parts.append(desc)
+                if reason is not None:
+                    directive = ".. deprecated::"
+                    if reason:
+                        directive = f"{directive} {reason}"
+                    doc_parts.append(directive)
+
+                if doc_parts:
+                    yield doc("\n\n".join(doc_parts))
+
+    def _get_value(self, value) -> str:
+        if value.ast_node and (directive := self.ctx.schema.get_directive("enumValue")):
+            args = graphql.get_directive_values(directive, value.ast_node)
+            if args:
+                return args["value"]
+        return value.value
 
 
 class Field(Protocol):

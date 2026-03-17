@@ -34,8 +34,20 @@ func (arg *Argument) Value() Literal {
 	return arg.value
 }
 
+func (arg *Argument) IsSensitive() bool {
+	return arg.isSensitive
+}
+
 func (arg *Argument) WithValue(value Literal) *Argument {
 	return NewArgument(arg.Name(), value, arg.isSensitive)
+}
+
+// The pb representation of the arg.
+//
+// WARRANTY VOID IF MUTATIONS ARE MADE TO THE INNER PROTOBUF. Perform a
+// proto.Clone before mutating.
+func (arg *Argument) PB() *callpbv1.Argument {
+	return arg.pb
 }
 
 func (arg *Argument) gatherCalls(callsByDigest map[string]*callpbv1.Call) {

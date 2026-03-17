@@ -41,6 +41,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The blueprint referenced by the module source.
+  """
+  @spec blueprint(t()) :: Dagger.ModuleSource.t()
+  def blueprint(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("blueprint")
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
   @spec clone_ref(t()) :: {:ok, String.t()} | {:error, term()}
@@ -215,6 +229,24 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  @spec introspection_schema_json(t()) :: Dagger.File.t()
+  def introspection_schema_json(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("introspectionSchemaJSON")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The kind of module source (currently local, git or dir).
   """
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
@@ -351,6 +383,42 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The toolchains referenced by the module source.
+  """
+  @spec toolchains(t()) :: {:ok, [Dagger.ModuleSource.t()]} | {:error, term()}
+  def toolchains(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("toolchains") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(module_source.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ModuleSource{
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleSourceFromID")
+             |> QB.put_arg("id", id),
+           client: module_source.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  User-defined defaults read from local .env files
+  """
+  @spec user_defaults(t()) :: Dagger.EnvFile.t()
+  def user_defaults(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("userDefaults")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The specified version of the git repo this source points to.
   """
   @spec version(t()) :: {:ok, String.t()} | {:error, term()}
@@ -359,6 +427,22 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder |> QB.select("version")
 
     Client.execute(module_source.client, query_builder)
+  end
+
+  @doc """
+  Set a blueprint for the module source.
+  """
+  @spec with_blueprint(t(), Dagger.ModuleSource.t()) :: Dagger.ModuleSource.t()
+  def with_blueprint(%__MODULE__{} = module_source, blueprint) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withBlueprint")
+      |> QB.put_arg("blueprint", Dagger.ID.id!(blueprint))
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
   end
 
   @doc """
@@ -403,6 +487,23 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withEngineVersion")
       |> QB.put_arg("version", version)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Enable the experimental features for the module source.
+  """
+  @spec with_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def with_experimental_features(%__MODULE__{} = module_source, features) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withExperimentalFeatures")
+      |> QB.put_arg("features", features)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
@@ -467,6 +568,36 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Add toolchains to the module source.
+  """
+  @spec with_toolchains(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.ModuleSource.t()
+  def with_toolchains(%__MODULE__{} = module_source, toolchains) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withToolchains")
+      |> QB.put_arg("toolchains", toolchains)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Update the blueprint module to the latest version.
+  """
+  @spec with_update_blueprint(t()) :: Dagger.ModuleSource.t()
+  def with_update_blueprint(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("withUpdateBlueprint")
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Update one or more module dependencies.
   """
   @spec with_update_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
@@ -475,6 +606,52 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withUpdateDependencies")
       |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Update one or more toolchains.
+  """
+  @spec with_update_toolchains(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_update_toolchains(%__MODULE__{} = module_source, toolchains) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withUpdateToolchains")
+      |> QB.put_arg("toolchains", toolchains)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Update one or more clients.
+  """
+  @spec with_updated_clients(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_updated_clients(%__MODULE__{} = module_source, clients) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withUpdatedClients")
+      |> QB.put_arg("clients", clients)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Remove the current blueprint from the module source.
+  """
+  @spec without_blueprint(t()) :: Dagger.ModuleSource.t()
+  def without_blueprint(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("withoutBlueprint")
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
@@ -505,6 +682,39 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withoutDependencies")
       |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Disable experimental features for the module source.
+  """
+  @spec without_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def without_experimental_features(%__MODULE__{} = module_source, features) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutExperimentalFeatures")
+      |> QB.put_arg("features", features)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Remove the provided toolchains from the module source.
+  """
+  @spec without_toolchains(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def without_toolchains(%__MODULE__{} = module_source, toolchains) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutToolchains")
+      |> QB.put_arg("toolchains", toolchains)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

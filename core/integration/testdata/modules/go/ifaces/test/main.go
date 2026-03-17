@@ -10,6 +10,9 @@ import (
 type Test struct {
 	IfaceField CustomIface
 
+	// +private
+	Dep *dagger.Dep
+
 	IfaceFieldNeverSet CustomIface
 
 	// +private
@@ -171,6 +174,7 @@ func (m *Test) StaticOtherIfaceList(ctx context.Context, ifaceArg CustomIface) (
 	return ifaceArg.StaticOtherIfaceList(ctx)
 }
 
+//nolint:unparam
 func (m *Test) WithOtherIface(ctx context.Context, ifaceArg CustomIface, other OtherIface) CustomIface {
 	return ifaceArg.WithOtherIface(other)
 }
@@ -179,6 +183,7 @@ func (m *Test) DynamicOtherIfaceList(ctx context.Context, ifaceArg CustomIface) 
 	return ifaceArg.DynamicOtherIfaceList(ctx)
 }
 
+//nolint:unparam
 func (m *Test) WithOtherIfaceByIface(ctx context.Context, ifaceArg CustomIface, other OtherIface) CustomIface {
 	return ifaceArg.WithOtherIfaceByIface(other)
 }
@@ -209,6 +214,29 @@ func (m *Test) IfaceListArgs(ctx context.Context, ifaces []CustomIface, otherIfa
 func (m *Test) WithIface(iface CustomIface) *Test {
 	m.IfaceField = iface
 	return m
+}
+
+func (m *Test) DepWithIface(ctx context.Context, iface CustomIface) (*Test, error) {
+	if m.Dep == nil {
+		m.Dep = dag.Dep()
+	}
+
+	id, err := iface.(interface {
+		ID(context.Context) (CustomIfaceID, error)
+	}).ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	loadedIface := dag.LoadDepCustomIfaceFromID(dagger.DepCustomIfaceID(id))
+
+	m.Dep = m.Dep.WithIface(loadedIface)
+
+	return m, nil
+}
+
+func (m *Test) DepIfaceStr(ctx context.Context) (string, error) {
+	return m.Dep.IfaceFieldStr(ctx)
 }
 
 func (m *Test) WithOptionalPragmaIface(
@@ -283,6 +311,7 @@ type OtherCustomObj struct {
 	IfaceList []CustomIface
 }
 
+//nolint:unparam
 func (m *Test) ReturnCustomObj(ifaces []CustomIface, otherIfaces []OtherIface) *CustomObj {
 	return &CustomObj{
 		Iface:     ifaces[0],

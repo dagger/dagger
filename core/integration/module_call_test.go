@@ -14,8 +14,8 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -342,7 +342,6 @@ func (m *Test) Fn(
 					subpath: ".changes",
 				},
 			} {
-				tc := tc
 				t.Run(fmt.Sprintf("%s:%s", tc.baseURL, tc.subpath), func(ctx context.Context, t *testctx.T) {
 					url := tc.baseURL + "#v0.9.1"
 					if tc.subpath != "" {
@@ -769,6 +768,65 @@ func (m *Test) ToPlatforms(platforms []string) []dagger.Platform {
 		})
 	})
 
+	t.Run("build args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("Dockerfile", `
+FROM scratch
+
+ARG OS=linux
+ARG ARCH=amd64
+
+ENV PLATFORM=${OS}/${ARCH}
+`,
+			)
+
+		t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Sync(ctx)
+			requireErrOut(t, err, "must be formatted as name=value")
+		})
+
+		t.Run("missing name", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "=darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Sync(ctx)
+			requireErrOut(t, err, "cannot have an empty name")
+		})
+
+		t.Run("single value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "OS=darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "darwin/amd64", out)
+		})
+
+		t.Run("multiple values", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "OS=darwin,ARCH=arm64",
+				"env-variable", "--name", "PLATFORM",
+			)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "darwin/arm64", out)
+		})
+	})
+
 	t.Run("enum args", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -822,7 +880,7 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum member")
+			requireErrOut(t, err, "invalid enum")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -891,7 +949,7 @@ func (m *Test) ToStatus(status string) Status {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum member")
+			requireErrOut(t, err, "invalid enum")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -930,11 +988,33 @@ func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 
 		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "context-directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".git/\n.gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+		require.Equal(t, strings.Join([]string{
+			".git/",
+			".gitattributes",
+			".gitignore",
+			"LICENSE",
+			"dagger.json",
+			"foo.txt",
+			"go.mod",
+			"go.sum",
+			"internal/",
+			"main.go",
+		}, "\n"), strings.TrimSpace(out))
 
 		out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "context-directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".git/\n.gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+		require.Equal(t, strings.Join([]string{
+			".git/",
+			".gitattributes",
+			".gitignore",
+			"LICENSE",
+			"dagger.json",
+			"foo.txt",
+			"go.mod",
+			"go.sum",
+			"internal/",
+			"main.go",
+		}, "\n"), strings.TrimSpace(out))
 	})
 
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
@@ -2447,8 +2527,6 @@ func (m *Test) ToStatus(status string) Status {
 				enumValue: "foo bar",
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.enumValue, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -2573,15 +2651,14 @@ class Test:
 		},
 		{
 			sdk: "typescript",
-			source: `import { dag, enumType, func, object } from "@dagger.io/dagger"
+			source: `import { func, object } from "@dagger.io/dagger"
 
-@enumType()
-export class Language {
-  static readonly Go: string = "GO"
-  static readonly Python: string = "PYTHON"
-  static readonly Typescript: string = "TYPESCRIPT"
-  static readonly PHP: string = "PHP"
-  static readonly Elixir: string = "ELIXIR"
+export enum Language {
+  Go = "GO",
+  Python = "PYTHON",
+  Typescript = "TYPESCRIPT",
+  PHP = "PHP",
+  Elixir = "ELIXIR",
 }
 
 @object()
@@ -2599,8 +2676,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)
@@ -2620,7 +2695,7 @@ export class Test {
 			t.Run("sad input", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("faves", "--langs", "GO,FOO,BAR")).Sync(ctx)
 				requireErrOut(t, err, "invalid argument")
-				requireErrOut(t, err, "should be one of GO,PYTHON,TYPESCRIPT,PHP,ELIXIR")
+				requireErrOut(t, err, "should be one of ELIXIR,GO,PHP,PYTHON,TYPESCRIPT")
 			})
 
 			t.Run("output", func(ctx context.Context, t *testctx.T) {

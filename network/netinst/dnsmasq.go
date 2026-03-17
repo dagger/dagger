@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func InstallDnsmasq(ctx context.Context, name string) error {
@@ -46,8 +48,9 @@ func InstallDnsmasq(ctx context.Context, name string) error {
 	)
 
 	// forward dnsmasq logs to engine logs for debugging
-	dnsmasq.Stdout = os.Stdout
-	dnsmasq.Stderr = os.Stderr
+	logWriter := slog.NewLineWriter(slog.Default().With("component", "dnsmasq"), slog.LevelDebug)
+	dnsmasq.Stdout = logWriter
+	dnsmasq.Stderr = logWriter
 
 	if dnsmasq.SysProcAttr == nil {
 		dnsmasq.SysProcAttr = &syscall.SysProcAttr{}

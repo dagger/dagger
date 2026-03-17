@@ -11,7 +11,8 @@ import (
 )
 
 const insertLog = `-- name: InsertLog :one
-INSERT INTO logs (
+INSERT INTO
+  logs (
     trace_id,
     span_id,
     timestamp,
@@ -22,9 +23,9 @@ INSERT INTO logs (
     instrumentation_scope,
     resource,
     resource_schema_url
-) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-) RETURNING id
+  )
+VALUES
+  (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
 `
 
 type InsertLogParams struct {
@@ -41,7 +42,7 @@ type InsertLogParams struct {
 }
 
 func (q *Queries) InsertLog(ctx context.Context, arg InsertLogParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertLog,
+	row := q.queryRow(ctx, q.insertLogStmt, insertLog,
 		arg.TraceID,
 		arg.SpanID,
 		arg.Timestamp,
@@ -59,22 +60,22 @@ func (q *Queries) InsertLog(ctx context.Context, arg InsertLogParams) (int64, er
 }
 
 const insertMetric = `-- name: InsertMetric :one
-INSERT INTO metrics (
-    data
-) VALUES (
-    ?
-) RETURNING id
+INSERT INTO
+  metrics (data)
+VALUES
+  (?) RETURNING id
 `
 
 func (q *Queries) InsertMetric(ctx context.Context, data []byte) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertMetric, data)
+	row := q.queryRow(ctx, q.insertMetricStmt, insertMetric, data)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
 }
 
 const insertSpan = `-- name: InsertSpan :one
-INSERT INTO spans (
+INSERT INTO
+  spans (
     trace_id,
     span_id,
     trace_state,
@@ -95,9 +96,30 @@ INSERT INTO spans (
     instrumentation_scope,
     resource,
     resource_schema_url
-) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-) RETURNING id
+  )
+VALUES
+  (
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?
+  ) RETURNING id
 `
 
 type InsertSpanParams struct {
@@ -124,7 +146,7 @@ type InsertSpanParams struct {
 }
 
 func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertSpan,
+	row := q.queryRow(ctx, q.insertSpanStmt, insertSpan,
 		arg.TraceID,
 		arg.SpanID,
 		arg.TraceState,
@@ -151,8 +173,82 @@ func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, 
 	return id, err
 }
 
+const selectLogsBeneathSpan = `-- name: SelectLogsBeneathSpan :many
+WITH RECURSIVE descendant_spans AS (
+  SELECT s.span_id
+  FROM spans s
+  WHERE s.parent_span_id = ?
+  UNION ALL
+  SELECT DISTINCT s.span_id
+  FROM spans s
+  INNER JOIN descendant_spans ds ON s.parent_span_id = ds.span_id
+)
+SELECT
+  id, trace_id, span_id, timestamp, severity_number, severity_text, body, attributes, instrumentation_scope, resource, resource_schema_url
+FROM
+  logs l
+WHERE
+  l.span_id IN (SELECT span_id FROM descendant_spans)
+AND
+  l.id > ?
+ORDER BY
+  l.id ASC
+LIMIT
+  ?
+`
+
+type SelectLogsBeneathSpanParams struct {
+	SpanID sql.NullString
+	ID     int64
+	Limit  int64
+}
+
+func (q *Queries) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
+	rows, err := q.query(ctx, q.selectLogsBeneathSpanStmt, selectLogsBeneathSpan, arg.SpanID, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Log
+	for rows.Next() {
+		var i Log
+		if err := rows.Scan(
+			&i.ID,
+			&i.TraceID,
+			&i.SpanID,
+			&i.Timestamp,
+			&i.SeverityNumber,
+			&i.SeverityText,
+			&i.Body,
+			&i.Attributes,
+			&i.InstrumentationScope,
+			&i.Resource,
+			&i.ResourceSchemaUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectLogsSince = `-- name: SelectLogsSince :many
-SELECT id, trace_id, span_id, timestamp, severity_number, severity_text, body, attributes, instrumentation_scope, resource, resource_schema_url FROM logs WHERE id > ? ORDER BY id ASC LIMIT ?
+SELECT
+  id, trace_id, span_id, timestamp, severity_number, severity_text, body, attributes, instrumentation_scope, resource, resource_schema_url
+FROM
+  logs
+WHERE
+  id > ?
+ORDER BY
+  id ASC
+LIMIT
+  ?
 `
 
 type SelectLogsSinceParams struct {
@@ -161,7 +257,62 @@ type SelectLogsSinceParams struct {
 }
 
 func (q *Queries) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams) ([]Log, error) {
-	rows, err := q.db.QueryContext(ctx, selectLogsSince, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectLogsSinceStmt, selectLogsSince, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Log
+	for rows.Next() {
+		var i Log
+		if err := rows.Scan(
+			&i.ID,
+			&i.TraceID,
+			&i.SpanID,
+			&i.Timestamp,
+			&i.SeverityNumber,
+			&i.SeverityText,
+			&i.Body,
+			&i.Attributes,
+			&i.InstrumentationScope,
+			&i.Resource,
+			&i.ResourceSchemaUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectLogsTimespan = `-- name: SelectLogsTimespan :many
+SELECT
+  id, trace_id, span_id, timestamp, severity_number, severity_text, body, attributes, instrumentation_scope, resource, resource_schema_url
+FROM
+  logs
+WHERE
+  timestamp > ?
+  AND timestamp <= ?
+ORDER BY
+  timestamp ASC
+LIMIT
+  ?
+`
+
+type SelectLogsTimespanParams struct {
+	Start int64
+	End   int64
+	Limit int64
+}
+
+func (q *Queries) SelectLogsTimespan(ctx context.Context, arg SelectLogsTimespanParams) ([]Log, error) {
+	rows, err := q.query(ctx, q.selectLogsTimespanStmt, selectLogsTimespan, arg.Start, arg.End, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +347,16 @@ func (q *Queries) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams
 }
 
 const selectMetricsSince = `-- name: SelectMetricsSince :many
-SELECT id, data FROM metrics WHERE id > ? ORDER BY id ASC LIMIT ?
+SELECT
+  id, data
+FROM
+  metrics
+WHERE
+  id > ?
+ORDER BY
+  id ASC
+LIMIT
+  ?
 `
 
 type SelectMetricsSinceParams struct {
@@ -205,7 +365,7 @@ type SelectMetricsSinceParams struct {
 }
 
 func (q *Queries) SelectMetricsSince(ctx context.Context, arg SelectMetricsSinceParams) ([]Metric, error) {
-	rows, err := q.db.QueryContext(ctx, selectMetricsSince, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectMetricsSinceStmt, selectMetricsSince, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -227,8 +387,61 @@ func (q *Queries) SelectMetricsSince(ctx context.Context, arg SelectMetricsSince
 	return items, nil
 }
 
+const selectSpan = `-- name: SelectSpan :one
+SELECT
+  id, trace_id, span_id, trace_state, parent_span_id, flags, name, kind, start_time, end_time, attributes, dropped_attributes_count, events, dropped_events_count, links, dropped_links_count, status_code, status_message, instrumentation_scope, resource, resource_schema_url
+FROM
+  spans
+WHERE
+  trace_id = ?
+  AND span_id = ?
+`
+
+type SelectSpanParams struct {
+	TraceID string
+	SpanID  string
+}
+
+func (q *Queries) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error) {
+	row := q.queryRow(ctx, q.selectSpanStmt, selectSpan, arg.TraceID, arg.SpanID)
+	var i Span
+	err := row.Scan(
+		&i.ID,
+		&i.TraceID,
+		&i.SpanID,
+		&i.TraceState,
+		&i.ParentSpanID,
+		&i.Flags,
+		&i.Name,
+		&i.Kind,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Attributes,
+		&i.DroppedAttributesCount,
+		&i.Events,
+		&i.DroppedEventsCount,
+		&i.Links,
+		&i.DroppedLinksCount,
+		&i.StatusCode,
+		&i.StatusMessage,
+		&i.InstrumentationScope,
+		&i.Resource,
+		&i.ResourceSchemaUrl,
+	)
+	return i, err
+}
+
 const selectSpansSince = `-- name: SelectSpansSince :many
-SELECT id, trace_id, span_id, trace_state, parent_span_id, flags, name, kind, start_time, end_time, attributes, dropped_attributes_count, events, dropped_events_count, links, dropped_links_count, status_code, status_message, instrumentation_scope, resource, resource_schema_url FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?
+SELECT
+  id, trace_id, span_id, trace_state, parent_span_id, flags, name, kind, start_time, end_time, attributes, dropped_attributes_count, events, dropped_events_count, links, dropped_links_count, status_code, status_message, instrumentation_scope, resource, resource_schema_url
+FROM
+  spans
+WHERE
+  id > ?
+ORDER BY
+  id ASC
+LIMIT
+  ?
 `
 
 type SelectSpansSinceParams struct {
@@ -237,7 +450,7 @@ type SelectSpansSinceParams struct {
 }
 
 func (q *Queries) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
-	rows, err := q.db.QueryContext(ctx, selectSpansSince, arg.ID, arg.Limit)
+	rows, err := q.query(ctx, q.selectSpansSinceStmt, selectSpansSince, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

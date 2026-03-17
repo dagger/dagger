@@ -1,23 +1,28 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
-	"github.com/moby/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/fsutil"
+	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/moby/sys/user"
-	"github.com/tonistiigi/fsutil"
-	fstypes "github.com/tonistiigi/fsutil/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/util/fsxutil"
+	"github.com/dagger/dagger/util/grpcutil"
 )
 
 type Filesyncer struct {
@@ -104,7 +109,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		if err != nil {
 			return err
 		}
-		fs, err = fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
+		filteredFS, err := fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
 			IncludePatterns: opts.IncludePatterns,
 			ExcludePatterns: opts.ExcludePatterns,
 			FollowPaths:     opts.FollowPaths,
@@ -114,10 +119,16 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 				return fsutil.MapResultKeep
 			},
 		})
+		if opts.UseGitIgnore {
+			filteredFS, err = fsxutil.NewGitIgnoreMarkedFS(filteredFS, fsxutil.NewGitIgnoreMatcher(fs))
+			if err != nil {
+				return err
+			}
+		}
 		if err != nil {
 			return err
 		}
-		return fsutil.Send(stream.Context(), stream, fs, nil)
+		return fsutil.Send(stream.Context(), stream, filteredFS, nil)
 	}
 }
 
@@ -136,6 +147,22 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	absPath, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path, false)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
+	}
+
+	for _, removePath := range opts.RemovePaths {
+		isDir := strings.HasSuffix(removePath, "/")
+		if !filepath.IsAbs(removePath) {
+			removePath = filepath.Join(opts.Path, removePath)
+		}
+		if isDir {
+			if err := os.RemoveAll(removePath); err != nil {
+				return fmt.Errorf("remove path %s: %w", removePath, err)
+			}
+		} else {
+			if err := os.Remove(removePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove path %s: %w", removePath, err)
+			}
+		}
 	}
 
 	if !opts.IsFileStream {
@@ -257,4 +284,48 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 		}
 	}
 	return rootPath, nil
+}
+
+type FilesyncSourceProxy struct {
+	Client filesync.FileSyncClient
+}
+
+func (s FilesyncSourceProxy) Register(server *grpc.Server) {
+	filesync.RegisterFileSyncServer(server, s)
+}
+
+func (s FilesyncSourceProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
+	return fmt.Errorf("tarstream not supported")
+}
+
+func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy filesync source done"))
+
+	clientStream, err := s.Client.DiffCopy(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client filesync source diffcopy stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
+}
+
+type FilesyncTargetProxy struct {
+	Client filesync.FileSendClient
+}
+
+func (s FilesyncTargetProxy) Register(server *grpc.Server) {
+	filesync.RegisterFileSendServer(server, s)
+}
+
+func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy filesync target done"))
+
+	clientStream, err := s.Client.DiffCopy(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client filesync target diffcopy stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }

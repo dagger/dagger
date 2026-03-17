@@ -1,0 +1,126 @@
+
+### Modify a copied directory or remote repository in a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../../../extending/modules/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+
+:::warning
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container **do not automatically transfer back to the host**.
+
+Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
+:::
+
+:::note
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../../../extending/modules/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/copy-modify-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/copy-modify-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/copy-modify-dir/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/copy-modify-dir/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+Copy the `/myapp` host directory to `/src` in the container, add a file to it, and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory ./myapp/'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory ./myapp/
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-and-modify-directory --source=./myapp/
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the public `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory github.com/dagger/dagger#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-and-modify-directory --source=github.com/dagger/dagger#main
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the private `user/foo` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory ssh://git@github.com/user/foo#main'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-and-modify-directory --source=ssh://git@github.com/user/foo#main
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the public `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-and-modify-directory https://github.com/dagger/dagger#main | directory /src | entries'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-and-modify-directory https://github.com/dagger/dagger#main | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-and-modify-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>

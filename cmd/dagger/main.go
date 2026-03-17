@@ -30,7 +30,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
@@ -59,7 +59,9 @@ var (
 	silent                   bool
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
-	debug                    bool
+	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
+	expandCompleted          = os.Getenv("DAGGER_EXPAND_COMPLETED") != ""
+	debugFlag                bool
 	progress                 string
 	interactive              bool
 	interactiveCommand       string
@@ -67,6 +69,7 @@ var (
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	enableScaleOut           bool
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -135,14 +138,17 @@ func init() {
 		versionCmd(),
 		queryCmd,
 		runCmd,
-		watchCmd,
+		traceCmd,
 		configCmd,
+		checksCmd,
+		generateCmd,
 		moduleInitCmd,
 		moduleInstallCmd,
 		moduleUnInstallCmd,
 		moduleUpdateCmd,
 		moduleDevelopCmd,
 		modulePublishCmd,
+		toolchainCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
@@ -170,11 +176,6 @@ func init() {
 	// we'll add it in the last line of the usage template
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
-
-	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
-	// all those functions will run in a remote cloud engine which gets created at execution time
-	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
-	rootCmd.PersistentFlags().Lookup("cloud").Hidden = true
 
 	disableFlagsInUseLine(rootCmd)
 }
@@ -330,16 +331,26 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
-	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots)")
+	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
+	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
 	flags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+
+	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
+	// all those functions will run in a remote cloud engine which gets created at execution time
+	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
+	flags.Lookup("cloud").Hidden = true
+
+	// this flag enables scale-out for a few commands, e.g. checks, generate
+	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check or generate executed")
+	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
 		"workdir",
@@ -366,7 +377,7 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 func parseGlobalFlags() {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
 	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
@@ -383,7 +394,7 @@ func Resource(ctx context.Context) *resource.Resource {
 		semconv.ServiceName("dagger-cli"),
 		semconv.ServiceVersion(engine.Version),
 	}
-	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version) {
+	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version).AsMap() {
 		attrs = append(attrs, attribute.String(k, v))
 	}
 	res, err := resource.New(ctx,
@@ -400,23 +411,6 @@ func Resource(ctx context.Context) *resource.Resource {
 	return res
 }
 
-// ExitError is an error that indicates a command should exit with a specific
-// status code, without printing an error message, assuming a human readable
-// message has been printed already.
-//
-// It is basically a shortcut for `os.Exit` while giving the TUI a chance to
-// exit gracefully and flush output.
-type ExitError struct {
-	Code int
-}
-
-var Fail = ExitError{Code: 1}
-
-func (e ExitError) Error() string {
-	// Not actually printed anywhere.
-	return fmt.Sprintf("exit code %d", e.Code)
-}
-
 const InstrumentationLibrary = "dagger.io/cli"
 
 var opts dagui.FrontendOpts
@@ -427,15 +421,20 @@ func main() {
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
-	opts.Debug = debug                             // show everything
+	opts.Debug = debugFlag                         // show everything
+	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
+	opts.ExpandCompleted = expandCompleted         // leave things expanded as they complete
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
+	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, engine.CloudRunnerHostPrefix)
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
+		} else if os.Getenv("CLAUDECODE") == "1" {
+			progress = "report"
 		} else if hasTTY {
 			progress = "tty"
 		} else {
@@ -457,6 +456,8 @@ func main() {
 		Frontend = idtui.NewPretty(stderr)
 	case "dots":
 		Frontend = idtui.NewDots(stderr)
+	case "logs":
+		Frontend = idtui.NewLogs(stderr)
 	case "report":
 		Frontend = idtui.NewReporter(stderr)
 	default:
@@ -476,15 +477,15 @@ func main() {
 
 	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
-	ctx = slog.ContextWithDebugMode(ctx, debug)
+	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		stop()
-		var exit ExitError
+		var exit idtui.ExitError
 		switch {
 		case errors.As(err, &exit):
-			os.Exit(exit.Code)
+			os.Exit(exit.Code())
 		case errors.Is(err, idtui.ErrShellExited):
 			os.Exit(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine"
@@ -14,28 +15,28 @@ import (
 )
 
 func TestLoadClientLabels(t *testing.T) {
-	labels := telemetry.Labels{}.WithClientLabels(engine.Version)
+	labels := telemetry.NewLabels(nil, nil, nil).WithClientLabels(engine.Version)
 
-	expected := telemetry.Labels{
+	expected := map[string]string{
 		"dagger.io/client.os":      runtime.GOOS,
 		"dagger.io/client.arch":    runtime.GOARCH,
 		"dagger.io/client.version": engine.Version,
 	}
 
-	require.Subset(t, labels, expected)
+	require.Subset(t, labels.AsMap(), expected)
 }
 
 func TestLoadServerLabels(t *testing.T) {
-	labels := telemetry.Labels{}.WithServerLabels("0.8.4", "linux", "amd64", false)
+	labels := telemetry.NewLabels(nil, nil, nil).WithServerLabels("0.8.4", "linux", "amd64", false)
 
-	expected := telemetry.Labels{
+	expected := map[string]string{
 		"dagger.io/server.os":            "linux",
 		"dagger.io/server.arch":          "amd64",
 		"dagger.io/server.version":       "0.8.4",
 		"dagger.io/server.cache.enabled": "false",
 	}
 
-	require.Subset(t, labels, expected)
+	require.Subset(t, labels.AsMap(), expected)
 }
 
 func TestLoadGitLabels(t *testing.T) {
@@ -52,14 +53,14 @@ func TestLoadGitLabels(t *testing.T) {
 	type Example struct {
 		Name   string
 		Repo   string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
 		{
 			Name: "normal branch state",
 			Repo: normalRepo,
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/git.remote":          "example.com",
 				"dagger.io/git.branch":          "main",
 				"dagger.io/git.ref":             repoHead,
@@ -73,7 +74,7 @@ func TestLoadGitLabels(t *testing.T) {
 		{
 			Name: "detached HEAD state",
 			Repo: detachedRepo,
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/git.remote":          "example.com",
 				"dagger.io/git.branch":          "main",
 				"dagger.io/git.ref":             detachedHead,
@@ -85,10 +86,9 @@ func TestLoadGitLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
-			labels := telemetry.Labels{}.WithGitLabels(example.Repo)
-			require.Subset(t, labels, example.Labels)
+			labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(example.Repo)
+			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
 }
@@ -108,7 +108,7 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 		Name   string
 		Repo   string
 		Env    []string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
@@ -119,7 +119,7 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 				// GITHUB_REF overrides the git ref to point to this PR
 				"GITHUB_REF=refs/pull/1/head",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/git.ref": repoHead2,
 			},
 		},
@@ -130,29 +130,44 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 				// same as above, but still use the /head
 				"GITHUB_REF=refs/pull/1/merge",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/git.ref": repoHead2,
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
 				t.Setenv(k, v)
 			}
 
-			labels := telemetry.Labels{}.WithGitLabels(example.Repo)
-			require.Subset(t, labels, example.Labels)
+			labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(example.Repo)
+			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
+}
+
+type mapEnv map[string]string
+
+func (m mapEnv) Getenv(key string) string {
+	return m[key]
+}
+
+func TestLoadGithubPayloadLabels(t *testing.T) {
+	m := mapEnv{"GITHUB_EVENT_NAME": "push", "GITHUB_ACTIONS": "true"}
+
+	l := telemetry.NewLabels(nil, m, []byte(`{"repository": {"full_name": "dagger/dagger"}}`))
+	l = l.WithGitHubLabels()
+
+	assert.Equal(t, "push", l.AsMap()["dagger.io/vcs.event.type"])
+	assert.Equal(t, "dagger/dagger", l.AsMap()["dagger.io/vcs.repo.full_name"])
 }
 
 func TestLoadGitHubLabels(t *testing.T) {
 	type Example struct {
 		Name   string
 		Env    []string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
@@ -166,7 +181,7 @@ func TestLoadGitHubLabels(t *testing.T) {
 				"GITHUB_EVENT_NAME=workflow_dispatch",
 				"GITHUB_EVENT_PATH=testdata/workflow_dispatch.json",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/vcs.triggerer.login": "vito",
 				"dagger.io/vcs.event.type":      "workflow_dispatch",
 				"dagger.io/vcs.workflow.name":   "some-workflow",
@@ -185,7 +200,9 @@ func TestLoadGitHubLabels(t *testing.T) {
 				"GITHUB_EVENT_NAME=pull_request",
 				"GITHUB_EVENT_PATH=testdata/pull_request.synchronize.json",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
+				"dagger.io/git.ref":             "81be07d3103b512159628bfa3aae2fbb5d255964",
+				"dagger.io/git.branch":          "dump-env",
 				"dagger.io/vcs.triggerer.login": "vito",
 				"dagger.io/vcs.event.type":      "pull_request",
 				"dagger.io/vcs.workflow.name":   "some-workflow",
@@ -211,7 +228,13 @@ func TestLoadGitHubLabels(t *testing.T) {
 				"GITHUB_EVENT_NAME=push",
 				"GITHUB_EVENT_PATH=testdata/push.json",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
+				"dagger.io/git.ref":             "2baf7884d80a783bb936c1c9501e18682c32876f",
+				"dagger.io/git.branch":          "main",
+				"dagger.io/git.author.name":     "Alex Suraci",
+				"dagger.io/git.author.email":    "suraci.alex@gmail.com",
+				"dagger.io/git.committer.name":  "GitHub",
+				"dagger.io/git.committer.email": "noreply@github.com",
 				"dagger.io/vcs.triggerer.login": "vito",
 				"dagger.io/vcs.event.type":      "push",
 				"dagger.io/vcs.workflow.name":   "some-workflow",
@@ -221,15 +244,19 @@ func TestLoadGitHubLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
 				t.Setenv(k, v)
 			}
 
-			labels := telemetry.Labels{}.WithGitHubLabels()
-			require.Subset(t, labels, example.Labels)
+			labels := telemetry.NewLabels(nil, nil, nil).WithGitHubLabels()
+			labelsMap := labels.AsMap()
+
+			for k, v := range example.Labels {
+				assert.Contains(t, labelsMap, k)
+				assert.Equal(t, v, labelsMap[k], "label %s should match", k)
+			}
 		})
 	}
 }
@@ -238,7 +265,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 	type Example struct {
 		Name   string
 		Env    map[string]string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
@@ -261,7 +288,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 				"GITLAB_USER_NAME":                    "Gitlab User",
 				"GITLAB_USER_LOGIN":                   "gitlab-user",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/vcs.repo.url":        "https://gitlab.com/dagger/testdata",
 				"dagger.io/vcs.repo.full_name":  "dagger/testdata",
 				"dagger.io/vcs.change.branch":   "feature-branch",
@@ -296,7 +323,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 				"GITLAB_USER_NAME":   "Gitlab User",
 				"GITLAB_USER_LOGIN":  "gitlab-user",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/vcs.repo.url":        "https://gitlab.com/dagger/testdata",
 				"dagger.io/vcs.repo.full_name":  "dagger/testdata",
 				"dagger.io/vcs.change.branch":   "feature-branch",
@@ -314,7 +341,6 @@ func TestLoadGitLabLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -322,7 +348,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 			}
 
 			// Run the function and collect the result
-			labels := telemetry.Labels{}.WithGitLabLabels()
+			labels := telemetry.NewLabels(nil, nil, nil).WithGitLabLabels()
 
 			// Clean up environment variables
 			for k := range example.Env {
@@ -330,7 +356,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 			}
 
 			// Make assertions
-			require.Subset(t, labels, example.Labels)
+			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
 }
@@ -339,7 +365,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 	type Example struct {
 		Name   string
 		Env    map[string]string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
@@ -356,7 +382,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 				"CIRCLE_PROJECT_REPONAME":       "repo",
 				"CIRCLE_PULL_REQUEST":           "https://github.com/circle/repo/pull/1",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/vcs.change.branch":   "main",
 				"dagger.io/vcs.change.head_sha": "abc123",
 				"dagger.io/vcs.job.name":        "build",
@@ -368,7 +394,6 @@ func TestLoadCircleCILabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -376,7 +401,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 			}
 
 			// Run the function and collect the result
-			labels := telemetry.Labels{}.WithCircleCILabels()
+			labels := telemetry.NewLabels(nil, nil, nil).WithCircleCILabels()
 
 			// Clean up environment variables
 			for k := range example.Env {
@@ -384,7 +409,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 			}
 
 			// Make assertions
-			require.Subset(t, labels, example.Labels)
+			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
 }
@@ -393,7 +418,7 @@ func TestLoadJenkinsLabels(t *testing.T) {
 	type Example struct {
 		Name   string
 		Env    map[string]string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
@@ -404,13 +429,12 @@ func TestLoadJenkinsLabels(t *testing.T) {
 				"GIT_BRANCH":   "origin/test-feature",
 				"GIT_COMMIT":   "abc123",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/git.branch": "test-feature",
 				"dagger.io/git.ref":    "abc123",
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -418,7 +442,7 @@ func TestLoadJenkinsLabels(t *testing.T) {
 			}
 
 			// Run the function and collect the result
-			labels := telemetry.Labels{}.WithJenkinsLabels()
+			labels := telemetry.NewLabels(nil, nil, nil).WithJenkinsLabels()
 
 			// Clean up environment variables
 			for k := range example.Env {
@@ -426,7 +450,7 @@ func TestLoadJenkinsLabels(t *testing.T) {
 			}
 
 			// Make assertions
-			require.Subset(t, labels, example.Labels)
+			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
 }
@@ -435,7 +459,7 @@ func TestLoadHarnessLabels(t *testing.T) {
 	type Example struct {
 		Name   string
 		Env    map[string]string
-		Labels telemetry.Labels
+		Labels map[string]string
 	}
 
 	for _, example := range []Example{
@@ -446,13 +470,12 @@ func TestLoadHarnessLabels(t *testing.T) {
 				"GIT_BRANCH":         "origin/test-feature",
 				"GIT_COMMIT":         "abc123",
 			},
-			Labels: telemetry.Labels{
+			Labels: map[string]string{
 				"dagger.io/git.branch": "test-feature",
 				"dagger.io/git.ref":    "abc123",
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -460,7 +483,7 @@ func TestLoadHarnessLabels(t *testing.T) {
 			}
 
 			// Run the function and collect the result
-			labels := telemetry.Labels{}.WithHarnessLabels()
+			labels := telemetry.NewLabels(nil, nil, nil).WithHarnessLabels()
 
 			// Clean up environment variables
 			for k := range example.Env {
@@ -468,7 +491,7 @@ func TestLoadHarnessLabels(t *testing.T) {
 			}
 
 			// Make assertions
-			require.Subset(t, labels, example.Labels)
+			require.Subset(t, labels.AsMap(), example.Labels)
 		})
 	}
 }

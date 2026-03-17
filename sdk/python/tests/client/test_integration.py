@@ -1,4 +1,6 @@
 import pathlib
+import random
+import string
 from datetime import datetime
 from textwrap import dedent
 
@@ -34,8 +36,12 @@ async def test_git_repository():
 
 
 async def test_container_build():
-    repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
-    dagger_img = dag.container().build(repo)
+    dagger_img = (
+        await dag.git("https://github.com/dagger/dagger")
+        .tag("v0.3.0")
+        .tree()
+        .docker_build()
+    )
 
     out = await dagger_img.with_exec(["dagger", "version"]).stdout()
 
@@ -52,9 +58,9 @@ async def test_input_arg(alpine_image: str):
     CMD printenv
     """
     out = await (
-        dag.container()
-        .build(
-            dag.directory().with_new_file("Dockerfile", dockerfile),
+        dag.directory()
+        .with_new_file("Dockerfile", dockerfile)
+        .docker_build(
             build_args=[dagger.BuildArg("SPAM", "egg")],
         )
         .with_exec([])
@@ -101,7 +107,7 @@ async def test_container_with_mounted_directory(alpine_image: str):
 
 
 async def test_container_with_mounted_cache(alpine_image: str):
-    cache_key = "example-cache"
+    cache_key = "example-cache-" + "".join(random.choices(string.hexdigits, k=16))
     filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
     container = (
@@ -181,7 +187,7 @@ async def test_container_sync(alpine_image: str):
     base = dag.container().from_(alpine_image)
 
     # short cirtcut
-    with pytest.raises(dagger.QueryError, match="foobar"):
+    with pytest.raises(dagger.QueryError, match="exit code: 1"):
         await base.with_exec(["foobar"]).sync()
 
     # chaining
@@ -193,7 +199,7 @@ async def test_container_awaitable(alpine_image: str):
     base = dag.container().from_(alpine_image)
 
     # short cirtcut
-    with pytest.raises(dagger.QueryError, match="foobar"):
+    with pytest.raises(dagger.QueryError, match="exit code: 1"):
         await base.with_exec(["foobar"])
 
     # chaining
@@ -223,8 +229,8 @@ async def test_return_list_of_objects(alpine_image: str):
 async def test_service_start_stop(alpine_image: str):
     svc = (
         dag.host()
-        .directory("runtime", include=["Dockerfile"])
-        .docker_build(target="base")
+        .directory("runtime/images/base", include=["Dockerfile"])
+        .docker_build()
         .with_workdir("/work")
         .with_new_file("index.html", "foobar")
         .with_exposed_port(8080)

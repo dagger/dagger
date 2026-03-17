@@ -13,6 +13,46 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ModuleConfigArgument": {
+      "properties": {
+        "function": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "The function chain to apply this argument to. Empty or nil for constructor."
+        },
+        "argument": {
+          "type": "string",
+          "description": "The name of the argument to override."
+        },
+        "default": {
+          "type": "string",
+          "description": "The default value to use for this argument."
+        },
+        "defaultPath": {
+          "type": "string",
+          "description": "The default path to use for File or Directory arguments."
+        },
+        "defaultAddress": {
+          "type": "string",
+          "description": "The default address to use for Container arguments."
+        },
+        "ignore": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Ignore patterns for Directory arguments."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "argument"
+      ],
+      "description": "ModuleConfigArgument represents an argument override for a toolchain function"
+    },
     "ModuleConfigClient": {
       "properties": {
         "generator": {
@@ -44,6 +84,27 @@
         "pin": {
           "type": "string",
           "description": "The pinned version of the module dependency."
+        },
+        "customizations": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigArgument"
+          },
+          "type": "array",
+          "description": "Customizations configuration for toolchains that override function argument pragmas."
+        },
+        "ignoreChecks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "IgnoreChecks is a list of check patterns to exclude from this toolchain. Patterns can use glob syntax to match check names."
+        },
+        "ignoreGenerators": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "IgnoreGenerators is a list of generator patterns to exclude from this toolchain. Patterns can use glob syntax to match generator names."
         }
       },
       "additionalProperties": false,
@@ -70,6 +131,17 @@
         "sdk": {
           "$ref": "#/$defs/SDK",
           "description": "The SDK this module uses"
+        },
+        "blueprint": {
+          "$ref": "#/$defs/ModuleConfigDependency",
+          "description": "An optional blueprint module"
+        },
+        "toolchains": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigDependency"
+          },
+          "type": "array",
+          "description": "Toolchain modules"
         },
         "include": {
           "items": {
@@ -106,6 +178,10 @@
           },
           "type": "array",
           "description": "The clients generated for this module."
+        },
+        "disableDefaultFunctionCaching": {
+          "type": "boolean",
+          "description": "If true, disable the new default function caching behavior for this module. Functions will instead default to the old behavior of per-session caching."
         }
       },
       "additionalProperties": false,
@@ -123,6 +199,16 @@
         },
         "config": {
           "type": "object"
+        },
+        "debug": {
+          "type": "boolean"
+        },
+        "experimental": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object",
+          "description": "The experimental features enabled for this module."
         }
       },
       "additionalProperties": false,

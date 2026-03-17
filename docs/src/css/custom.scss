@@ -1,47 +1,137 @@
 @use "sass:meta";
+@use "sass:color";
 $mobile-width: 480px;
-$tablet-width: 996px;
-$desktop-width: 997px;
-$desktop-xl-width: 1160px;
+$tablet-width: 1180px;
+$desktop-width: 1200px;
+$desktop-xl-width: 1400px;
 
-@import url("https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap");
+// branding colors
+$oat-color: rgb(248, 244, 239);
+$tangerine-color: rgb(239, 123, 26);
+$lemon-color: rgb(252, 2192, 9);
+$crimson-color: rgb(190, 29, 67);
+$aqua-color: rgb(64, 185, 188);
+$cloud-color: rgb(208, 224, 249);
+$plum-color: rgb(62, 59, 107);
+$inkberry-color: rgb(26, 24, 51);
+$obsidian-color: rgb(25, 25, 34);
+
+@import url("https://fonts.cdnfonts.com/css/general-sans");
+
+// define a css variable for the dark mode background color
+$dagger-dark-mode-background-color: rgb(13, 12, 27);
+
+// Define General Sans Medium fallback
+@font-face {
+  font-family: "General Sans Medium Placeholder";
+  src: local("Arial");
+  size-adjust: 105%;
+  ascent-override: 93%;
+  descent-override: 22%;
+  line-gap-override: normal;
+}
 
 :root {
-  --ifm-font-family-base: "Open Sans", system-ui, -apple-system, Segoe UI,
-    Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont,
-    "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol";
+  --ifm-font-family-base: "General Sans Medium",
+    "General Sans Medium Placeholder", system-ui, -apple-system, Segoe UI,
+    Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
+  --ifm-font-size-base: 18px;
+  --ifm-font-weight-base: 400;
+  --ifm-background-color: #{$oat-color};
   --ifm-color-primary-light: #21798d;
   --ifm-color-primary: #21798d;
-  --ifm-heading-color: #0d0c1b;
+  --ifm-heading-color: #{$dagger-dark-mode-background-color};
   --ifm-hover-overlay: #e1f5fb;
   --ifm-menu-color-active: #21798d;
-  --ifm-menu-color-background-active: #e1f5fb;
-  --ifm-menu-color-background-hover: #e1f5fb;
+  --ifm-menu-color-background-active: rgba($inkberry-color, 0.1);
+  --ifm-menu-color-background-hover: rgba($inkberry-color, 0.1);
   --ifm-menu-color: #4b4b5a;
-  --ifm-navbar-background-color: #0d0c1b;
+  --ifm-navbar-background-color: #{$oat-color};
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
-  --ifm-navbar-link-color: rgba(255, 255, 255, 0.75);
+  --ifm-navbar-link-color: rgb(80, 80, 81);
   --ifm-toc-link-color: #4b4b5a;
 }
 
 html[data-theme="dark"] {
-  --ifm-background-color: #131226;
+  --ifm-background-color: #{$inkberry-color};
   --ifm-color-primary-light: #57c7e3;
   --ifm-color-primary: #57c7e3;
   --ifm-heading-color: white;
   --ifm-hover-overlay: #2b2f46;
   --ifm-menu-color-active: #57c7e3;
-  --ifm-menu-color-background-active: #2b2f46;
-  --ifm-menu-color-background-hover: #2b2f46;
+  --ifm-menu-color-background-active: rgba(26, 24, 51, 0.1);
+  --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
+  --ifm-navbar-background-color: #{$inkberry-color};
+  --ifm-navbar-link-color: white;
+
+  // Make sure dropdown menus also have the correct background
+  .dropdown__menu,
+  .dropdown__link {
+    background-color: #{$dagger-dark-mode-background-color} !important;
+  }
+
+  // Fix any potential navigation borders in dark mode
+  .navbar-sidebar {
+    border-color: #{$dagger-dark-mode-background-color} !important;
+    background-color: #{$dagger-dark-mode-background-color} !important;
+  }
+
+  // Make announcement bar use plum color in dark mode
+  .theme-announcement-bar {
+    background-color: #{$plum-color} !important; /* Using plum color for branding */
+    color: white !important; /* Using white text for contrast */
+  }
 }
 
 @mixin mobile {
   @media (max-width: #{$mobile-width}) {
     @content;
+  }
+}
+
+/* General announcement bar styling */
+.theme-announcement-bar {
+  padding-top: 1.75rem !important;
+  padding-bottom: 1.75rem !important;
+  font-weight: 500 !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+
+  /* Content container alignment - preserve normal text flow */
+  .announcementBarContent_xLdY {
+    flex: 1 !important;
+    text-align: center !important;
+    padding-right: 3rem !important; /* Add padding to account for button space */
+  }
+
+  /* Button styling for announcement bar */
+  button,
+  .closeButton_CVFx,
+  .announcementBarClose_gvF7 {
+    color: white !important;
+    font-size: 0.875rem !important; /* 14px relative */
+    background-color: transparent !important;
+    transition: all 0.2s ease-in-out !important;
+    position: absolute !important;
+    right: 1rem !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    margin: 0 !important; /* Reset margin */
+
+    svg {
+      width: 14px !important;
+      height: 14px !important;
+    }
   }
 }
 
@@ -63,130 +153,376 @@ html[data-theme="dark"] {
   }
 }
 
-.header-github-link {
-  height: 35px;
-  margin: 0;
-  padding: 0;
-  background-color: white;
-  mask-image: url("/img/github-icon.svg");
-  mask-size: 100%;
-  width: 30px;
+/* Docs Sidebar Styling - Remove all borders and improve scrolling */
+.theme-doc-sidebar-container,
+div[class*="docSidebarContainer"],
+.docs-sidebar,
+aside[class*="docSidebarContainer"] {
+  border: none !important;
+  border-right: none !important;
+  border-left: none !important;
+  box-shadow: none !important;
 
   @include desktop {
-    width: 35px;
-    text-indent: 40px;
-    white-space: nowrap;
-    overflow: hidden;
+    height: calc(
+      100vh - var(--ifm-navbar-height)
+    ) !important; /* Account for navbar height */
+    min-height: calc(100vh - var(--ifm-navbar-height)) !important;
+    // position: sticky !important;
+    top: var(--ifm-navbar-height) !important; /* Start below navbar */
+    // overflow: auto !important; /* Prevent container from scrolling */
   }
 
-  @include mobile {
-    margin: auto;
-    html[data-theme="light"] {
-      background-color: black;
+  @include tablet {
+    height: auto !important;
+    min-height: auto !important;
+    position: relative !important;
+  }
+}
+
+.menu {
+  border: none !important;
+  border-right: none !important;
+
+  @include desktop {
+    height: 100% !important;
+    overflow-y: auto !important;
+    padding-bottom: 2rem !important;
+
+    /* Custom scrollbar styling for better UX */
+    scrollbar-width: thin !important; /* Firefox - show thin scrollbar */
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important; /* Firefox scrollbar colors */
+
+    /* WebKit browsers (Chrome, Safari, Edge) - show minimal scrollbar */
+    &::-webkit-scrollbar {
+      width: 6px !important;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent !important;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.2) !important;
+      border-radius: 3px !important;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.4) !important;
     }
   }
 }
 
-.header-discord-link,
-.footer-discord-link,
-.footer-x-link {
-  background-color: white;
-  height: 30px;
-  margin: 0;
-  mask-image: url("/img/discord-icon.svg");
-  mask-position: center;
-  mask-size: 35px;
-  padding: 0;
-  width: 30px;
+/* Dark mode scrollbar styling */
+html[data-theme="dark"] {
+  .menu {
+    @include desktop {
+      scrollbar-color: rgba(255, 255, 255, 0.3) transparent !important; /* Firefox dark scrollbar */
 
-  @include desktop {
-    overflow: hidden;
-    text-indent: 40px;
-    white-space: nowrap;
-    width: 30px;
-  }
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3) !important;
+      }
 
-  @include mobile {
-    margin: auto;
+      &::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5) !important;
+      }
+    }
   }
 }
 
-.announcementBar_node_modules-\@docusaurus-theme-classic-lib-theme-AnnouncementBar-styles-module {
-  border-bottom: none !important;
+/* Ensure no borders on the navigation elements within the docs sidebar */
+.theme-doc-sidebar-menu,
+div[class*="docSidebarMenu"],
+.menu__link,
+.menu__list,
+.menu__list-item {
+  border: none !important;
+  box-shadow: none !important;
 }
 
-.footer-x-link {
-  mask-size: 20px;
-  mask-image: url("/img/x-icon.svg");
-  mask-repeat: no-repeat;
-  mask-position: center;
+/* Menu links styling handled globally */
+
+/* Sidebar link styles will be applied in theme-specific sections */
+
+/* Navbar Item Colors */
+.navbar__items .navbar__item .navbar__link,
+.navbar__items .navbar-blog-link {
+  color: var(--ifm-navbar-link-color) !important;
+  font-size: 00.8175rem;
+  font-weight: normal !important; /* Normal weight for inactive items */
+  padding: 0.5rem 0.5rem !important; /* Increased vertical padding for consistent height */
+  border-bottom: 3px solid transparent !important; /* Add transparent border to prevent layout shift */
+  height: 36px !important; /* Set consistent height */
+  display: flex !important;
+  align-items: center !important;
+  transition: border-bottom-color 0.2s;
+  // make sure the ipad width of 1180 has the same padding as mobile
+  @include tablet {
+    padding: 0.5rem 0.5rem !important;
+  }
 }
 
+/* Add margin to navbar items except the last one */
+.navbar__items .navbar__item:not(:last-child) {
+  margin-right: 3px;
+}
+
+/* Hide specific navbar navigation links on mobile - keep hamburger, logo, search, theme toggle */
+@include mobile {
+  .navbar__item.navbar__link {
+    display: none !important;
+  }
+}
+
+// Navbar hover underline effect (matches TOC opacity)
 html[data-theme="light"] {
-  .header-discord-link {
-    @include mobile {
-      background-color: black;
-    }
-  }
-
-  .header-github-link {
-    @include mobile {
-      background-color: black;
-    }
-  }
-
-  @include mobile {
-    .navbar-blog-link {
-      color: black;
-    }
-  }
-
-  .navbar-sidebar__item {
-    @include tablet {
-      background-color: white;
-    }
+  .navbar__items
+    .navbar__item
+    .navbar__link:not(.navbar__link--active):not(.dagger-cloud-button):hover,
+  .navbar__items
+    .navbar-blog-link:not(.navbar__link--active):not(
+      .dagger-cloud-button
+    ):hover {
+    border-bottom: 3px solid rgba(239, 123, 26, 0.5) !important; // tangerine, 50% opacity
   }
 }
 
-.navbar-blog-link {
-  @include mobile {
-    justify-content: center;
+html[data-theme="dark"] {
+  .navbar__items
+    .navbar__item
+    .navbar__link:not(.navbar__link--active):not(.dagger-cloud-button):hover,
+  .navbar__items
+    .navbar-blog-link:not(.navbar__link--active):not(
+      .dagger-cloud-button
+    ):hover {
+    border-bottom: 3px solid rgba(190, 29, 67, 0.5) !important; // crimson, 50% opacity
   }
 }
 
-.navbar__items--right {
-  gap: 1rem;
+nav .sidebar {
+  margin-bottom: 1.8rem;
 }
 
-.navbar__toggle {
+/* Ensure the active link has the right color in light mode */
+html[data-theme="light"] {
+  .navbar__items
+    .navbar__item
+    .navbar__link.navbar__link--active:not(.dagger-cloud-button),
+  .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
+    color: rgb(23, 23, 24) !important;
+    font-weight: 600 !important; /* Bold weight for active items */
+    border-bottom: 3px solid #{$tangerine-color} !important;
+  }
+
+  // Make announcement bar use inkberry color in light mode
+  .theme-announcement-bar {
+    background-color: #{$inkberry-color} !important; /* Using inkberry color for branding */
+    color: white !important; /* Using white text for contrast */
+  }
+
+  /* Style for active links in the sidebar - light mode only */
+  .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
+    background-color: rgba(26, 24, 51, 0.1) !important;
+    border-radius: 4px !important;
+  }
+
+  /* Hover effect for menu links - light mode only */
+  .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
+    background-color: rgba(26, 24, 51, 0.1) !important;
+    border-radius: 4px !important;
+  }
+}
+
+/* Ensure the active link has the right color in dark mode */
+html[data-theme="dark"] {
+  .navbar__items
+    .navbar__item
+    .navbar__link.navbar__link--active:not(.dagger-cloud-button),
+  .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
+    color: white !important;
+    font-weight: 600 !important; /* Bold weight for active items */
+    border-bottom: 3px solid #{$crimson-color} !important;
+  }
+
+  /* Style for active links in the sidebar - dark mode only */
+  .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
+    background-color: rgba(
+      208,
+      224,
+      249,
+      0.15
+    ) !important; /* Using cloud-color with transparency */
+    border-radius: 4px !important;
+  }
+
+  /* Hover effect for menu links - dark mode only */
+  .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
+    background-color: rgba(
+      208,
+      224,
+      249,
+      0.15
+    ) !important; /* Using cloud-color with transparency */
+    border-radius: 4px !important;
+  }
+}
+
+.navbar--fixed-top {
+  background-color: var(--ifm-navbar-background-color) !important;
+  box-shadow: none !important;
+  border-bottom: none !important;
+
+  @include desktop {
+    margin-bottom: 1.1rem;
+  }
+}
+
+.theme-doc-sidebar-item-category {
+  font-weight: 600;
+  color: var(--ifm-menu-color);
+  // no hover effect
+  &:hover {
+    color: var(--ifm-menu-color);
+    background: none !important;
+  }
+  margin-bottom: 1.25rem;
+}
+
+.menu__list-item-collapsible {
+  font-weight: bold;
+  color: var(--ifm-menu-color);
+  // no hover effect
+  &:hover {
+    color: var(--ifm-menu-color);
+    background: none !important;
+  }
+  // relative font size to 13px
+  font-size: 0.8125rem; // 13px
+}
+
+.theme-doc-sidebar-item-category .menu__list {
+  font-weight: normal;
+  font-size: 0.8125rem; // 13px
+  color: var(--ifm-menu-color);
+}
+
+.theme-doc-sidebar-item-category .menu__link--active {
+  color: var(--ifm-menu-color);
+  font-weight: 600;
+  &:hover {
+    color: var(--ifm-menu-color);
+  }
+}
+
+.theme-layout-footer {
+  background-color: #{$dagger-dark-mode-background-color};
   color: white;
-  margin-right: 1rem;
 }
 
-.navbar__logo {
-  height: 48px;
-  width: 147px;
+.theme-layout-footer a {
+  color: white;
+  text-decoration: none;
+  // font size relative to 13px
+  font-size: 0.8125rem; // 13px
+}
+.theme-layout-footer a:hover {
+  text-decoration: underline;
 }
 
-.dropdown .dropdown__link svg {
-  display: none;
+/* Global font styling */
+body {
+  font-family: "General Sans Medium", "General Sans Medium Placeholder",
+    sans-serif;
+  font-feature-settings: normal;
+  font-size: 17px;
+  font-style: normal;
+  font-variation-settings: normal;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
 }
 
-.dropdown > .navbar__link::after {
-  content: "\203A";
-  display: inline-block;
-  transform: rotate(90deg) !important;
-  border: none;
-  padding: 0em 0.5em;
+/* Dagger Cloud button styling */
+.dagger-cloud-button {
+  padding: 0.375rem 1rem !important; /* Reduced vertical padding for consistent height */
+  border-radius: 8px !important; /* More rounded edges */
+  font-weight: 600 !important;
+  transition: all 0.2s ease-in-out !important;
+  height: 36px !important; /* Match navbar links height */
+  display: flex !important;
+  align-items: center !important;
+  margin-bottom: 3px transparent;
+
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
+  }
+
+  @include mobile {
+    display: none !important;
+  }
 }
 
-pre {
-  background: #0d0c1b;
-  border: 1px solid rgba(75, 75, 90, 0.3);
+/* Light mode styling for Dagger Cloud button */
+html[data-theme="light"] {
+  .dagger-cloud-button {
+    background-color: #{$plum-color} !important; /* Dark blue/purple color */
+    color: white !important;
+    border: 1px solid #{$plum-color} !important; /* Use same color for consistent border */
+
+    &:hover {
+      background-color: rgb(
+        29,
+        26,
+        56
+      ) !important; /* Slightly lighter on hover */
+      border-color: rgb(29, 26, 56) !important;
+      transform: none !important; /* Prevent any transform effects */
+    }
+  }
+}
+
+/* Dark mode styling for Dagger Cloud button */
+html[data-theme="dark"] {
+  .dagger-cloud-button {
+    background-color: #{$plum-color} !important; /* Using plum color for branding */
+    color: white !important; /* White text for contrast */
+    border: 1px solid #{$plum-color} !important;
+
+    &:hover {
+      background-color: rgba(
+        62,
+        59,
+        107,
+        0.8
+      ) !important; /* Slightly lighter plum on hover */
+      border-color: rgba(62, 59, 107, 0.8) !important;
+      transform: none !important; /* Prevent any transform effects */
+    }
+  }
+}
+
+/* font size adjustments for specific elements */
+h1 {
+  font-size: 1.7rem !important;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.5rem !important;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.25rem !important;
+  font-weight: 600;
+}
+
+h4 {
+  font-size: 1.1rem !important;
+  font-weight: 600;
 }
 
 .footer {
-  background-color: #0d0c1b;
   color: white;
   padding: 4rem 0 1.5rem;
 
@@ -211,24 +547,426 @@ pre {
     font-size: 0.875rem;
   }
 
-  .footer__col {
-    text-align: center;
-  }
-
   .discord-icon {
     background-color: white;
     mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
+
+    // Hide on tablet resolutions
+    @include tablet {
+      display: none !important;
+    }
+  }
+  // Footer social icon links
+  .footer-discord-link,
+  .footer-x-link {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 24px 24px;
+    margin: 0 4px;
+    opacity: 0.85;
+    transition: opacity 0.2s, background-color 0.2s;
+    /* No global filter, set per icon below */
+  }
+  .footer-discord-link {
+    background-image: url("/img/discord-icon.svg");
+    /* Discord icon is often black, so force it to white */
+    filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+  }
+  .footer-x-link {
+    background-image: url("/img/x-icon.svg");
+    /* X icon should display as provided, no filter */
+    filter: none;
+  }
+  .footer-discord-link:hover,
+  .footer-x-link:hover {
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
   }
 }
 
-.DocCardList--no-description .card p {
-  display: none;
+// Ensure footer icons are visible in both themes
+html[data-theme="light"] .footer-discord-link {
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+}
+html[data-theme="dark"] .footer-discord-link {
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+}
+html[data-theme="light"] .footer-x-link {
+  filter: none;
+}
+html[data-theme="dark"] .footer-x-link {
+  filter: none;
+}
+
+.footer__copyright {
+  font-size: 0.875rem !important; // 14px
+  color: white;
+  align-content: left;
+}
+
+.header-github-link {
+  height: 35px;
+  margin: 0;
+  padding: 0;
+  background-color: white;
+  mask-image: url("/img/github-icon.svg");
+  mask-size: 100%;
+  width: 30px;
+
+  @include desktop {
+    width: 35px;
+    text-indent: 40px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  // hide on tablet and tablet large
+  @include tablet {
+    display: none;
+  }
+
+  @include mobile {
+    margin: auto;
+    html[data-theme="light"] {
+      background-color: black;
+    }
+  }
 }
 
 // adjust style for Dagger Shell tab title
 .language-shell > div:nth-child(1) {
   background-color: white;
-  color: black;
+  color: #{$plum-color};
   font-style: italic;
+}
+
+// Style for pre elements with different modes
+html[data-theme="light"] pre {
+  border: 1px solid rgb(223, 223, 224); // Obsidian color with transparency
+  color: #{$inkberry-color};
+}
+
+html[data-theme="dark"] pre {
+  background: #{$obsidian-color} !important;
+  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
+  color: #f8f8f2; // Light color for code text in dark mode
+}
+
+// Remove top and bottom padding from header-searchbar
+.header-searchbar {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+// DocSearch button styling to match background color in both themes
+html[data-theme="light"] .DocSearch.DocSearch-Button {
+  background-color: #fff !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 8px !important; /* Match Dagger Cloud button radius */
+  height: 36px !important; /* Match navbar links height */
+  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
+
+  &:hover {
+    background-color: #f7f7f7 !important;
+  }
+}
+
+html[data-theme="dark"] .DocSearch.DocSearch-Button {
+  background-color: #{$obsidian-color} !important;
+  border: none !important;
+  border-radius: 8px !important; /* Match Dagger Cloud button radius */
+  height: 36px !important; /* Match navbar links height */
+  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
+
+  &:hover {
+    background-color: color.adjust($inkberry-color, $lightness: 5%) !important;
+  }
+
+  @include mobile {
+    background-color: #{$plum-color} !important; /* Match announcement bar color in dark mode */
+  }
+}
+
+/* Dark mode toggle button consistent height */
+.navbar__item--right .react-toggle,
+.navbar__item--right .navbar__toggle {
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+// Use mobile-style search (magnifying glass only) on tablet screens
+@include tablet {
+  .DocSearch-Button {
+    width: 48px !important;
+    min-width: 48px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    .DocSearch-Button-Container {
+      justify-content: center !important;
+      align-items: center !important;
+      display: flex !important;
+    }
+
+    .DocSearch-Search-Icon {
+      width: 20px !important;
+      height: 20px !important;
+      margin: 0 !important;
+    }
+
+    .DocSearch-Button-Placeholder,
+    .DocSearch-Button-Keys {
+      display: none !important;
+    }
+  }
+
+  // Apply mobile hover effect for dark theme on tablet
+  html[data-theme="dark"] .DocSearch.DocSearch-Button {
+    background-color: #{$plum-color} !important;
+
+    &:hover {
+      background-color: rgba(62, 59, 107, 0.8) !important;
+    }
+  }
+}
+
+// Ensure images don't get skewed and maintain aspect ratio
+.markdown img {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 1.5rem 0;
+}
+
+// Add styling for image captions
+.markdown img + em {
+  display: block;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-top: -0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+// Style tabs to match sidebar hover effects
+// Add consistent bottom border to tab container
+ul.tabs {
+  border-bottom: 1px solid rgb(218, 221, 225) !important;
+  display: flex !important;
+  width: 100% !important;
+}
+
+// Make tab items 2px smaller than body font size with padding half of base font size (top and bottom only)
+.tabs__item {
+  font-size: calc(var(--ifm-font-size-base) - 2px) !important;
+  padding-top: calc(
+    var(--ifm-font-size-base) / 2
+  ) !important; // Half of 18px = 9px
+  padding-bottom: calc(
+    var(--ifm-font-size-base) / 2
+  ) !important; // Half of 18px = 9px
+}
+
+html[data-theme="light"] {
+  .tabs__item:hover {
+    background-color: rgba(26, 24, 51, 0.1) !important;
+    color: var(--ifm-menu-color-active);
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+
+  .tabs__item--active {
+    background-color: rgba(26, 24, 51, 0.1) !important;
+    border-bottom: 1px solid #{$plum-color} !important;
+    color: var(--ifm-menu-color-active);
+    font-weight: 600;
+  }
+}
+
+html[data-theme="dark"] {
+  .tabs__item:hover {
+    background-color: rgba(208, 224, 249, 0.1) !important;
+    color: var(--ifm-menu-color-active);
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+
+  .tabs__item--active {
+    background-color: rgba(208, 224, 249, 0.15) !important;
+    border-bottom: 1px solid #{$aqua-color} !important;
+    color: var(--ifm-menu-color-active);
+    font-weight: 600;
+  }
+}
+
+// Base flowchart styling shared between modes
+.flowchart {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  overflow-x: auto; // Allow horizontal scrolling if needed
+  max-width: 100%; // Ensure it doesn't exceed the container width
+}
+
+// Light mode flowchart styling
+html[data-theme="light"] .flowchart {
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+// Dark mode flowchart styling using brand variables
+html[data-theme="dark"] .flowchart {
+  background-color: #{$obsidian-color};
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.flowchart svg {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+
+// Make tables in articles take up full width
+.markdown table {
+  display: table;
+  width: 100%;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown table thead {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"] .markdown table thead {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.markdown table th,
+.markdown table td {
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme="dark"] .markdown table th,
+html[data-theme="dark"] .markdown table td {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+// Table of Contents styling to match sidebar
+.table-of-contents {
+  font-size: 0.8125rem; // 13px like sidebar
+
+  // Links in TOC
+  .table-of-contents__link {
+    display: block;
+    padding: 0.2rem 0.2rem 0.2rem 0.5rem;
+    margin: 0.1rem 0;
+    border-radius: 4px;
+    color: var(--ifm-menu-color);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    text-decoration: none;
+    border-left: 3px solid transparent;
+
+    &:hover {
+      text-decoration: none;
+    }
+  }
+}
+
+// Light mode TOC styling
+html[data-theme="light"] {
+  .table-of-contents__link {
+    &:hover {
+      // background-color: rgba(26, 24, 51, 0.05) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid rgba(239, 123, 26, 0.5); // Light version of tangerine color
+      padding-left: 0.5rem;
+    }
+
+    &.table-of-contents__link--active {
+      background-color: rgba(26, 24, 51, 0.1) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid #{$tangerine-color} !important; // Matching navbar border color
+      padding-left: 0.5rem;
+    }
+  }
+}
+
+// Dark mode TOC styling
+html[data-theme="dark"] {
+  .table-of-contents__link {
+    &:hover {
+      background-color: rgba(208, 224, 249, 0.1) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid rgba(190, 29, 67, 0.5); // Light version of crimson color
+      padding-left: 0.5rem;
+    }
+
+    &.table-of-contents__link--active {
+      background-color: rgba(208, 224, 249, 0.15) !important;
+      color: var(--ifm-menu-color-active);
+      border-left: 3px solid #{$crimson-color} !important; // Matching navbar border color
+      padding-left: 0.5rem;
+    }
+  }
+}
+
+.navbar-discord-link {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
+  }
+}
+
+// GitHub Stars Button Styling
+.navbar-github-stars {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+
+  .github-stars {
+    display: flex;
+    align-items: center;
+    height: 20px;
+    overflow: hidden;
+  }
+
+  iframe {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  // Add responsive margins for mobile displays
+  @include mobile {
+    margin-right: 1rem !important;
+  }
+
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
+  }
+}
+
+.menu__link {
+  font-size: 0.875rem !important; // 14px
 }

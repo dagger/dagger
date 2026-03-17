@@ -117,6 +117,10 @@ func (c *CommonFunctions) IsListOfObject(t *introspection.TypeRef) bool {
 	return t.OfType.OfType.IsObject()
 }
 
+func (c *CommonFunctions) IsListOfEnum(t *introspection.TypeRef) bool {
+	return t.OfType.OfType.IsEnum()
+}
+
 func (c *CommonFunctions) GetArrayField(f *introspection.Field) ([]*introspection.Field, error) {
 	schema := GetSchema()
 

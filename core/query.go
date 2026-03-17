@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
-	"github.com/containerd/containerd/content"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/executor/oci"
-	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/containerd/containerd/v2/core/content"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -18,6 +20,9 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	engineclient "github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
 )
 
@@ -25,17 +30,26 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	// An Env value propagated to a module function call, i.e. from LLM.
+	CurrentEnv *call.ID
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
+	// Handle an HTTP request from a nested Dagger client.
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *buildkit.ExecutionMetadata)
+
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error
 
 	// If the current client is coming from a function, return the module that function is from
 	CurrentModule(context.Context) (*Module, error)
+
+	// If the current client is a module client or a client created by a module function, returns that module.
+	ModuleParent(context.Context) (*Module, error)
 
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
@@ -47,10 +61,17 @@ type Server interface {
 	// the session, typically the CLI invoked by the user)
 	MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error)
 
-	// The nearest ancestor client that is not a module (either a caller from the host like the CLI
-	// or a nested exec). Useful for figuring out where local sources should be resolved from through
+	// Metadata about the main client, aka "non-module parent client", aka "NMPC".
+	//
+	// The NMPC is the nearest ancestor client that is not a module.
+	// It is either a caller from the host like the CLI or a nested exec.
+	// Useful for figuring out where local sources should be resolved from through
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
+	// The Client metadata of a specific client ID within the same session as the
+	// current client.
+	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
 
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*ModDeps, error)
@@ -99,9 +120,10 @@ type Server interface {
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
-	// otherwise prune the whole cache of any releasable entries.
-	PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error)
+	// Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
+	// use the engine-wide default pruning policy, otherwise prune the whole cache
+	// of any releasable entries.
+	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
@@ -109,12 +131,45 @@ type Server interface {
 	// Gets the buildkit cache manager
 	BuildkitCache() bkcache.Manager
 
+	// Gets the buildkit session manager
+	BuildkitSession() *bksession.Manager
+
+	// Gets the local source
+	FileSyncer() *filesync.FileSyncer
+
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.
 	Locker() *locker.Locker
 
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
+
+	// Open a client's telemetry database.
+	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error)
+
+	// The name of the engine
+	EngineName() string
+
+	// The list of connected client IDs
+	Clients() []string
+
+	// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
+	CloudEngineClient(
+		ctx context.Context,
+		module string,
+		function string,
+		execCmd []string,
+	) (
+		cloudClient *engineclient.Client,
+		useCloudClient bool,
+		err error,
+	)
+
+	// A mount namespace guaranteed to not have any mounts created by engine operations.
+	// Should be used when creating goroutines/processes that unshare a mount namespace,
+	// otherwise those unshared mnt namespaces may inherit mounts from engine operations
+	// and leak them.
+	CleanMountNS() *os.File
 }
 
 type queryKey struct{}
@@ -131,8 +186,32 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 	return q, nil
 }
 
-func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	srv, err := q.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query server: %w", err)
+	}
+	return srv, nil
+}
+
+func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	cache, err := q.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query cache: %w", err)
+	}
+	return cache, nil
+}
+
+func NewRoot(srv Server, envID *call.ID) *Query {
+	return &Query{Server: srv, CurrentEnv: envID}
 }
 
 func (*Query) Type() *ast.Type {
@@ -152,12 +231,6 @@ func (q Query) Clone() *Query {
 
 func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
-}
-
-func (q *Query) NewContainer(platform Platform) *Container {
-	return &Container{
-		Platform: platform,
-	}
 }
 
 func (q *Query) NewHost() *Host {
@@ -184,11 +257,11 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	}
 	deps := defaultDeps
 	for _, modID := range id.Modules() {
-		mod, err := dagql.NewID[*Module](modID.ID()).Load(ctx, bootstrap)
+		inst, err := GetModuleFromContentDigest(ctx, bootstrap, modID.Name(), string(modID.ID().Digest()))
 		if err != nil {
-			return nil, fmt.Errorf("load source mod: %w", err)
+			return nil, err
 		}
-		deps = deps.Append(mod.Self)
+		deps = deps.Append(inst.Self())
 	}
 	return deps, nil
 }

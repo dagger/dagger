@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/mackerelio/go-osstat/memory"
 	"github.com/mackerelio/go-osstat/uptime"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/prometheus/procfs"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
@@ -35,10 +35,16 @@ func setupDebugHandlers(addr string) error {
 	m.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 	m.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 	m.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	m.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	m.Handle("/debug/pprof/block", pprof.Handler("block"))
 	m.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
 	m.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
 	m.Handle("/debug/events", http.HandlerFunc(trace.Events))
 	// m.Handle("/debug/fgtrace", fgtrace.Config{})
+
+	// uncomment these to get data from /mutex and /block
+	// runtime.SetMutexProfileFraction(1)
+	// runtime.SetBlockProfileRate(1)
 
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()
@@ -56,7 +62,7 @@ func setupDebugHandlers(addr string) error {
 		return err
 	}
 	logrus.Debugf("debug handlers listening at %s", addr)
-	go http.Serve(l, m) //nolint:gosec
+	go http.Serve(l, m)
 	return nil
 }
 
@@ -190,7 +196,7 @@ func logMetrics(ctx context.Context, engineStateRootDir string, eng *server.Serv
 			}
 		}
 
-		l.Debug("engine metrics")
+		l.Info("engine metrics")
 	}
 }
 

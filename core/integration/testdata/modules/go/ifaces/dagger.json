@@ -1,6 +1,9 @@
 {
   "name": "caller",
-  "sdk": "go",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "impl",
@@ -11,6 +14,5 @@
       "source": "test"
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.12.0"
+  "disableDefaultFunctionCaching": true
 }

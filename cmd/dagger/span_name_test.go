@@ -27,6 +27,7 @@ func TestSpanName(t *testing.T) {
 		{args: []string{"dagger", "call", "--source", ".:default", "foo"}, want: "foo"},
 		{args: []string{"dagger", "call", "--source=.:default", "foo"}, want: "foo"},
 		{args: []string{"dagger", "call", "--source", ".:default", "foo", "--fizz"}, want: "foo --fizz"},
+		{args: []string{"dagger", "--cloud=true", "call", "--source", ".:default", "foo", "--fizz"}, want: "foo --fizz"},
 		{
 			name: "bool arg consumed call chain",
 			args: []string{"dagger", "call", "--bool", "foo", "--fizz"},
@@ -34,6 +35,7 @@ func TestSpanName(t *testing.T) {
 			// like `--bool foo`, so we want to fall back to the full command
 			want: "--bool foo --fizz",
 		},
+		{args: []string{"/path/to/dagger", "session", "--label", "dagger.io/sdk.name:go"}, want: "dagger session --label dagger.io/sdk.name:go"},
 	} {
 		t.Run(fmt.Sprintf("%v", test.args), func(t *testing.T) {
 			require.Equal(t, test.want, spanName(test.args))

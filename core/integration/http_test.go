@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -29,10 +29,10 @@ func (HTTPSuite) TestHTTP(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// do two in a row to ensure each gets downloaded correctly
-	url := "https://raw.githubusercontent.com/dagger/dagger/main/CONTRIBUTING.md"
+	url := "https://raw.githubusercontent.com/dagger/dagger/main/LICENSE"
 	contents, err := c.HTTP(url).Contents(ctx)
 	require.NoError(t, err)
-	require.Contains(t, contents, "tests")
+	require.Contains(t, contents, "copyright")
 
 	url = "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
 	contents, err = c.HTTP(url).Contents(ctx)

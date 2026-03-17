@@ -19,46 +19,107 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/pkg/seed" //nolint:staticcheck // SA1019 deprecated
-	"github.com/containerd/containerd/sys"
+	"github.com/containerd/containerd/v2/pkg/sys"
+	"github.com/containerd/platforms"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/ebpf"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
+	"github.com/dagger/dagger/internal/buildkit/util/appcontext"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
+	"github.com/dagger/dagger/internal/buildkit/util/profiler"
+	"github.com/dagger/dagger/internal/buildkit/util/stack"
+	"github.com/dagger/dagger/internal/buildkit/version"
 	"github.com/gofrs/flock"
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/util/apicaps"
-	"github.com/moby/buildkit/util/appcontext"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/disk"
-	"github.com/moby/buildkit/util/profiler"
-	"github.com/moby/buildkit/util/stack"
-	"github.com/moby/buildkit/version"
 	"github.com/moby/sys/reexec"
 	"github.com/moby/sys/userns"
-	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
+	"github.com/dagger/dagger/engine/ebpf/filetracer"
+	"github.com/dagger/dagger/engine/ebpf/ovltracer"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
+	telemetry "github.com/dagger/otel-go"
 )
+
+const gracefulStopTimeout = 5 * time.Minute // need to sync disks, which could be expensive
+const ebpfProgramEnvPrefix = "DAGGER_EBPF_PROG_"
+
+type ebpfProgram struct {
+	name string
+	new  func() (ebpf.Tracer, error)
+}
+
+// Program names map to env vars: _DAGGER_EBPF_PROG_<NAME> (uppercased, non-alnum -> _).
+var ebpfPrograms = []ebpfProgram{
+	{
+		name: "ovl_inuse",
+		new:  ovltracer.New,
+	},
+	{
+		name: "filetracer",
+		new:  filetracer.New,
+	},
+}
+
+// eBPF programs that run by default when extra-debug (or trace) logging is enabled.
+var defaultEbpfPrograms = map[string]struct{}{
+	// "ovl_inuse":  {},
+	// "filetracer": {},
+}
 
 func init() {
 	apicaps.ExportedProduct = "dagger-engine"
 	stack.SetVersionInfo(version.Version, version.Revision)
 
-	//nolint:staticcheck // SA1019 deprecated
-	seed.WithTimeAndRand()
 	if reexec.Init() {
 		os.Exit(0)
+	}
+}
+
+func enabledEbpfPrograms(loadDefaults bool) []ebpfProgram {
+	enabled := make([]ebpfProgram, 0, len(ebpfPrograms))
+	for _, prog := range ebpfPrograms {
+		envName := ebpfProgramEnvPrefix + strings.ToUpper(prog.name)
+		if _, ok := os.LookupEnv(envName); ok {
+			enabled = append(enabled, prog)
+			continue
+		}
+		if loadDefaults {
+			if _, ok := defaultEbpfPrograms[prog.name]; ok {
+				enabled = append(enabled, prog)
+			}
+		}
+	}
+	return enabled
+}
+
+func startEbpfProgram(ctx context.Context, prog ebpfProgram) func() {
+	tracer, err := prog.new()
+	if err != nil {
+		slog.Debug("eBPF program disabled", "program", prog.name, "reason", err.Error())
+		return nil
+	}
+	tracerCtx, cancelTracer := context.WithCancel(ctx)
+	go tracer.Run(tracerCtx)
+	return func() {
+		cancelTracer()
+		if err := tracer.Close(); err != nil {
+			slog.Warn("eBPF program close failed", "program", prog.name, "error", err)
+		}
 	}
 }
 
@@ -239,8 +300,9 @@ func addFlags(app *cli.App) {
 }
 
 func main() { //nolint:gocyclo
+	engineVersion := fmt.Sprintf("%s %s %s", engine.Version, engine.Tag, platforms.DefaultString())
 	cli.VersionPrinter = func(c *cli.Context) {
-		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
+		fmt.Println(engineVersion)
 	}
 	app := cli.NewApp()
 	app.Name = "dagger-engine"
@@ -251,20 +313,28 @@ func main() { //nolint:gocyclo
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 
 	app.Action = func(c *cli.Context) error {
+		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
 		defer cancel(errors.New("main done"))
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
 		if os.Geteuid() > 0 {
 			return errors.New("rootless mode requires to be executed as the mapped root in a user namespace; you may use RootlessKit for setting up the namespace")
 		}
+
 		// install CA certs in case the user has a custom engine w/ extra certs installed to
 		// /usr/local/share/ca-certificates
-		if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
-			bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
-		} else {
-			//nolint:gosec // it thinks we're using untrusted input even though we're only using consts here...?
-			if out, err := exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
-				bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+		// Ignore if there's only an OrbStack CA, which we don't care about
+		dirEnts, err := os.ReadDir(cacerts.EngineCustomCACertsDir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to read %s: %w", cacerts.EngineCustomCACertsDir, err)
+		}
+		if len(dirEnts) > 1 || (len(dirEnts) == 1 && dirEnts[0].Name() != cacerts.OrbstackCACertName) {
+			if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
+				bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
+			} else {
+				if out, err := exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
+					bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+				}
 			}
 		}
 
@@ -302,10 +372,6 @@ func main() { //nolint:gocyclo
 
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 
-		// Wire slog up to send to Logrus so engine logs using slog also get sent
-		// to Cloud
-		slogOpts := sloglogrus.Option{}
-
 		noiseReduceHook := &noiseReductionHook{
 			ignoreLogger: logrus.New(),
 		}
@@ -324,12 +390,12 @@ func main() { //nolint:gocyclo
 				logLevel = config.LevelDebug
 			}
 		}
+		var slogLevel slog.Level
 		if logLevel != "" {
-			slogLevel, err := logLevel.ToSlogLevel()
+			slogLevel, err = logLevel.ToSlogLevel()
 			if err != nil {
 				return err
 			}
-			slogOpts.Level = slogLevel
 
 			logrusLevel, err := logLevel.ToLogrusLevel()
 			if err != nil {
@@ -343,11 +409,36 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
-		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
-		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slogLevel,
+		})))
 
-		bklog.G(context.Background()).Debugf("engine name: %s", engineName)
+		extraDebugEnabled := slogLevel == slog.LevelExtraDebug || slogLevel == slog.LevelTrace
+		enabledEbpfPrgs := enabledEbpfPrograms(extraDebugEnabled)
+		loadEbpf := len(enabledEbpfPrgs) > 0
+		if loadEbpf {
+			_, err := os.Lstat("/sys/kernel/tracing/trace")
+			switch {
+			case err == nil:
+			case errors.Is(err, os.ErrNotExist):
+				if err := unix.Mount("", "/sys/kernel/tracing", "tracefs", unix.MS_NODEV, ""); err != nil {
+					loadEbpf = false
+					slog.Debug("could not mount tracefs, skipping ebpf", "err", err.Error())
+				}
+			default:
+				loadEbpf = false
+				slog.Debug("failed to stat /sys/kernel/tracing, skipping ebpf", "err", err.Error())
+			}
+		}
+		if loadEbpf {
+			for _, prog := range enabledEbpfPrgs {
+				if cleanup := startEbpfProgram(ctx, prog); cleanup != nil {
+					defer cleanup()
+				}
+			}
+		}
+
+		bklog.G(context.Background()).Infof("engine name: %s", engineName)
 
 		if bkcfg.GRPC.DebugAddress != "" {
 			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress); err != nil {
@@ -395,16 +486,16 @@ func main() { //nolint:gocyclo
 		}
 		defer srv.Close()
 
+		// start Prometheus metrics server if configured
+		if metricsAddr := os.Getenv("_EXPERIMENTAL_DAGGER_METRICS_ADDR"); metricsAddr != "" {
+			if err := setupMetricsServer(ctx, srv, metricsAddr); err != nil {
+				return fmt.Errorf("failed to start metrics server: %w", err)
+			}
+		}
+
 		go logMetrics(context.Background(), bkcfg.Root, srv)
 		if bkcfg.Trace {
 			go logTraceMetrics(context.Background())
-		}
-
-		bklog.G(ctx).Debug("starting optional cache mount synchronization")
-		err = srv.SolverCache.StartCacheMountSynchronization(ctx)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("failed to start cache mount synchronization")
-			// continue on, doesn't need to be fatal
 		}
 
 		// start serving on the listeners for actual clients
@@ -434,8 +525,10 @@ func main() { //nolint:gocyclo
 		select {
 		case serverErr := <-errCh:
 			err = serverErr
+			bklog.G(ctx).WithError(err).Error("server error")
 			cancel(fmt.Errorf("server error: %w", serverErr))
 		case <-ctx.Done():
+			bklog.G(context.WithoutCancel(ctx)).WithError(ctx.Err()).Error("server context canceled")
 			// context should only be cancelled when a signal is received, which
 			// isn't an error
 			if ctx.Err() != context.Canceled {
@@ -443,27 +536,27 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		// TODO:(sipsma) make timeouts configurable
-		bklog.G(ctx).Debug("stopping cache manager")
-		stopCacheCtx, cancelCacheCtx := context.WithTimeout(context.Background(), 600*time.Second)
-		defer cancelCacheCtx()
-		stopCacheErr := srv.SolverCache.Close(stopCacheCtx)
-		if stopCacheErr != nil {
-			bklog.G(ctx).WithError(stopCacheErr).Error("failed to stop cache")
-		}
-		err = errors.Join(err, stopCacheErr)
 		cancelNetworking(errors.New("shutdown"))
 
-		bklog.G(ctx).Infof("stopping server")
+		bklog.G(context.WithoutCancel(ctx)).Infof("stopping server")
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
 		grpcServer.GracefulStop()
+
+		srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
+		defer srvStopCancel()
+		if err := srv.GracefulStop(srvStopCtx); err != nil {
+			slog.Error("server graceful stop", "error", err)
+		}
+
 		return err
 	}
 
 	app.After = func(*cli.Context) error {
+		fmt.Println("shutting down telemetry...")
+		defer fmt.Println("telemetry shut down complete")
 		telemetry.Close()
 		return nil
 	}
@@ -808,6 +901,10 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		return nil, fmt.Errorf("bridge from cidr: %w", err)
 	}
 
+	if err := netinst.EnsureIptablesSymlinks(ctx); err != nil {
+		return nil, fmt.Errorf("ensure iptables symlinks: %w", err)
+	}
+
 	// NB: this is needed for the Dagger shim worker at the moment for host alias
 	// resolution
 	err = netinst.InstallResolvconf(netName, bridge.String())
@@ -820,7 +917,7 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := netinst.InstallCNIConfig(netName, netCIDR)
+	cniConfigPath, err := netinst.InstallCNIConfig(ctx, netName, netCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("install cni: %w", err)
 	}

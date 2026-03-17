@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"

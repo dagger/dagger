@@ -129,11 +129,22 @@ func vaultConfigureClient(ctx context.Context) error {
 	// Use AppRole if provided
 	roleID := os.Getenv("VAULT_APPROLE_ROLE_ID")
 	if roleID != "" {
+		var opts []auth.LoginOption
+
+		// Sets auth mount path. Default is "approle"
+		authMethod := os.Getenv("VAULT_APPROLE_MOUNT_PATH")
+		if authMethod != "" {
+			opts = append(opts, auth.WithMountPath(authMethod))
+		}
+
+		// Get SecretID
 		secretID := &auth.SecretID{FromEnv: "VAULT_APPROLE_SECRET_ID"}
+
 		// Authenticate
 		appRoleAuth, err := auth.NewAppRoleAuth(
 			roleID,
 			secretID,
+			opts...,
 		)
 		if err != nil {
 			return fmt.Errorf("unable to initialize Vault AppRole auth method: %w", err)

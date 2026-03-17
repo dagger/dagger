@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	bkclient "github.com/moby/buildkit/client"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"

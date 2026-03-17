@@ -25,11 +25,9 @@ func (m *MyModule) Build(
 		Directory("/src")
 
 	// build using Dockerfile and publish to registry
-	ref, err := dag.Container().
-		Build(workspace, dagger.ContainerBuildOpts{
-			Dockerfile: "custom.Dockerfile",
-		}).
-		Publish(ctx, "ttl.sh/hello-dagger")
+	ref, err := workspace.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		Dockerfile: "custom.Dockerfile",
+	}).Publish(ctx, "ttl.sh/hello-dagger")
 
 	if err != nil {
 		return "", err

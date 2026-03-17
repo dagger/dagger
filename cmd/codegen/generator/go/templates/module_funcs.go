@@ -9,15 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	"dagger.io/dagger"
 	"github.com/mitchellh/mapstructure"
 )
 
 const errorTypeName = "error"
-
-var voidDef = Qual("dag", "TypeDef").Call().
-	Dot("WithKind").Call(Id("dagger").Dot("TypeDefKindVoidKind")).
-	Dot("WithOptional").Call(Lit(true))
 
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
@@ -28,7 +24,48 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
-	spec.doc = funcDecl.Doc.Text()
+
+	docPragmas, docComment := parsePragmaComment(funcDecl.Doc.Text())
+	spec.doc = docComment
+
+	if v, ok := docPragmas["cache"]; ok {
+		spec.cachePolicy, ok = v.(string)
+		if !ok {
+			return nil, fmt.Errorf("cache pragma %q, must be a valid string", v)
+		}
+	}
+
+	if v, ok := docPragmas["check"]; ok {
+		if v == nil {
+			spec.isCheck = true
+		} else {
+			spec.isCheck, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("check pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
+	if v, ok := docPragmas["generate"]; ok {
+		if v == nil {
+			spec.isGenerator = true
+		} else {
+			spec.isGenerator, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("generate pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
+	if v, ok := docPragmas["deprecated"]; ok {
+		if v == nil {
+			spec.deprecated = nil
+		} else {
+			deprecationReason, _ := v.(string)
+			spec.deprecated = &deprecationReason
+		}
+	}
+
 	spec.sourceMap = ps.sourceMap(funcDecl)
 
 	sig, ok := fn.Type().(*types.Signature)
@@ -40,6 +77,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	spec.argSpecs, err = ps.parseParamSpecs(parentType, fn)
 	if err != nil {
 		return nil, err
+	}
+
+	for _, argSpec := range spec.argSpecs {
+		if argSpec.deprecated != nil && !argSpec.isOptional() {
+			argName := argSpec.name
+			if argName == "" && argSpec.parent != nil {
+				argName = argSpec.parent.name
+			}
+			owner := fn.Name()
+			if parentType != nil {
+				owner = fmt.Sprintf("%s.%s", parentType.Obj().Name(), fn.Name())
+			}
+			return nil, fmt.Errorf("argument %q on %s is required and cannot be deprecated", argName, owner)
+		}
 	}
 
 	if parentType != nil {
@@ -81,11 +132,16 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
+	name        string
+	doc         string
+	sourceMap   *sourceMap
+	cachePolicy string
+	isCheck     bool
+	isGenerator bool
 
 	argSpecs []paramSpec
+
+	deprecated *string
 
 	returnSpec   ParsedType // nil if void return
 	returnsError bool
@@ -94,26 +150,61 @@ type funcTypeSpec struct {
 }
 
 var _ ParsedType = &funcTypeSpec{}
+var _ FuncParsedType = &funcTypeSpec{}
 
-func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
-	var fnReturnTypeDefCode *Statement
+func (spec *funcTypeSpec) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
+	return nil, nil
+}
+
+func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, error) {
+	var fnReturnTypeDef *dagger.TypeDef
 	if spec.returnSpec == nil {
-		fnReturnTypeDefCode = voidDef
+		fnReturnTypeDef = dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)
 	} else {
 		var err error
-		fnReturnTypeDefCode, err = spec.returnSpec.TypeDefCode()
+		fnReturnTypeDef, err = spec.returnSpec.TypeDef(dag)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate return type code: %w", err)
+			return nil, fmt.Errorf("failed to generate return type object: %w", err)
 		}
 	}
 
-	fnTypeDefCode := Qual("dag", "Function").Call(Lit(spec.name), Add(Line(), fnReturnTypeDefCode))
+	fnTypeDef := dag.Function(spec.name, fnReturnTypeDef)
 
 	if spec.doc != "" {
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDescription").Call(Lit(strings.TrimSpace(spec.doc)))
+		fnTypeDef = fnTypeDef.WithDescription(strings.TrimSpace(spec.doc))
 	}
+
+	switch spec.cachePolicy {
+	case "never":
+		fnTypeDef = fnTypeDef.WithCachePolicy(dagger.FunctionCachePolicyNever)
+
+	case "session":
+		fnTypeDef = fnTypeDef.WithCachePolicy(dagger.FunctionCachePolicyPerSession)
+
+	case "":
+
+	default:
+		fnTypeDef = fnTypeDef.WithCachePolicy(
+			dagger.FunctionCachePolicyDefault,
+			dagger.FunctionWithCachePolicyOpts{
+				TimeToLive: strings.TrimSpace(spec.cachePolicy),
+			},
+		)
+	}
+
 	if spec.sourceMap != nil {
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
+		fnTypeDef = fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
+	}
+	if spec.deprecated != nil {
+		fnTypeDef = fnTypeDef.WithDeprecated(dagger.FunctionWithDeprecatedOpts{
+			Reason: strings.TrimSpace(*spec.deprecated),
+		})
+	}
+	if spec.isCheck {
+		fnTypeDef = fnTypeDef.WithCheck()
+	}
+	if spec.isGenerator {
+		fnTypeDef = fnTypeDef.WithGenerator()
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -122,20 +213,20 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 			continue
 		}
 
-		argTypeDefCode, err := argSpec.typeSpec.TypeDefCode()
+		argTypeDef, err := argSpec.typeSpec.TypeDef(dag)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate arg type code: %w", err)
+			return nil, fmt.Errorf("failed to generate arg type object: %w", err)
 		}
 		if argSpec.optional {
-			argTypeDefCode = argTypeDefCode.Dot("WithOptional").Call(Lit(true))
+			argTypeDef = argTypeDef.WithOptional(true)
 		}
 
-		argOptsCode := []Code{}
+		argOpts := dagger.FunctionWithArgOpts{}
 		if argSpec.description != "" {
-			argOptsCode = append(argOptsCode, Id("Description").Op(":").Lit(argSpec.description))
+			argOpts.Description = strings.TrimSpace(argSpec.description)
 		}
 		if argSpec.sourceMap != nil {
-			argOptsCode = append(argOptsCode, Id("SourceMap").Op(":").Add(argSpec.sourceMap.TypeDefCode()))
+			argOpts.SourceMap = argSpec.sourceMap.TypeDef(dag)
 		}
 		if argSpec.hasDefaultValue {
 			var defaultValue string
@@ -156,31 +247,29 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 				}
 				defaultValue = string(v)
 			}
-			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(defaultValue)))
+			argOpts.DefaultValue = dagger.JSON(defaultValue)
 		}
 
 		if argSpec.defaultPath != "" {
-			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
+			argOpts.DefaultPath = argSpec.defaultPath
+		}
+
+		if argSpec.defaultAddress != "" {
+			argOpts.DefaultAddress = argSpec.defaultAddress
+		}
+
+		if argSpec.deprecated != nil {
+			argOpts.Deprecated = *argSpec.deprecated
 		}
 
 		if len(argSpec.ignore) > 0 {
-			ignores := make([]Code, 0, len(argSpec.ignore))
-			for _, pattern := range argSpec.ignore {
-				ignores = append(ignores, Lit(pattern))
-			}
-
-			argOptsCode = append(argOptsCode, Id("Ignore").Op(":").Index().String().Values(ignores...))
+			argOpts.Ignore = argSpec.ignore
 		}
 
-		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
-		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
-		if len(argOptsCode) > 0 {
-			argTypeDefArgCode = append(argTypeDefArgCode, Id("dagger").Dot("FunctionWithArgOpts").Values(argOptsCode...))
-		}
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithArg").Call(argTypeDefArgCode...)
+		fnTypeDef = fnTypeDef.WithArg(argSpec.name, argTypeDef, argOpts)
 	}
 
-	return fnTypeDefCode, nil
+	return fnTypeDef, nil
 }
 
 func (spec *funcTypeSpec) GoType() types.Type {
@@ -318,11 +407,23 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		if !ok {
 			return paramSpec{}, fmt.Errorf("defaultPath pragma %q, must be a valid string", v)
 		}
-		if strings.HasPrefix(defaultPath, `"`) && strings.HasSuffix(defaultPath, `"`) {
-			defaultPath = defaultPath[1 : len(defaultPath)-1]
-		}
-
 		optional = true // If defaultPath is set, the argument becomes optional
+	}
+	defaultAddress := ""
+	if v, ok := pragmas["defaultAddress"]; ok {
+		defaultAddress, ok = v.(string)
+		if !ok {
+			return paramSpec{}, fmt.Errorf("defaultAddress pragma %q, must be a valid string", v)
+		}
+		optional = true // If defaultAddress is set, the argument becomes optional
+	}
+	var deprecated *string
+	if v, ok := pragmas["deprecated"]; ok {
+		reason := ""
+		if str, _ := v.(string); str != "" {
+			reason = str
+		}
+		deprecated = &reason
 	}
 
 	ignore := []string{}
@@ -366,6 +467,8 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		hasDefaultValue: hasDefaultValue,
 		description:     comment,
 		defaultPath:     defaultPath,
+		defaultAddress:  defaultAddress,
+		deprecated:      deprecated,
 		ignore:          ignore,
 	}, nil
 }
@@ -384,6 +487,8 @@ type paramSpec struct {
 	defaultValue    any
 	hasDefaultValue bool
 
+	deprecated *string
+
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc
 	paramType types.Type
@@ -399,8 +504,19 @@ type paramSpec struct {
 	// If the argument is not set, load it from the given path in the context directory
 	defaultPath string
 
+	// Only applies to arguments of type Container.
+	// If the argument is not set, load it from the given address (e.g. "alpine:latest")
+	defaultAddress string
+
 	// Only applies to arguments of type Directory.
 	// The ignore patterns are applied to the input directory, and
 	// matching entries are filtered out, in a cache-efficient manner.
 	ignore []string
+}
+
+func (spec paramSpec) isOptional() bool {
+	if spec.optional || spec.hasDefaultValue || spec.variadic {
+		return true
+	}
+	return isOptionalGoType(spec.paramType)
 }

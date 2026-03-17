@@ -1,11 +1,11 @@
+import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
-import { describe, it } from "mocha"
 import Module from "node:module"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
 import { connection } from "../../../connect.js"
-import { InvokeCtx } from "../../entrypoint/context.js"
+import { type InvokeCtx } from "../../entrypoint/context.js"
 import { invoke } from "../../entrypoint/invoke.js"
 import { load } from "../../entrypoint/load.js"
 import { Executor } from "../../executor.js"
@@ -567,6 +567,59 @@ describe("Invoke typescript function", function () {
 
     const inputAfterSet = {
       parentName: "Enums",
+      fnName: "getStatus",
+      parentArgs: JSON.parse(JSON.stringify(resultSet)),
+      fnArgs: {},
+    }
+
+    const resultAfterSet = await invoke(executor, module, inputAfterSet)
+
+    assert.equal(resultAfterSet, "INACTIVE")
+  })
+
+  it("Should correctly handle legacy enum decorator values", async function () {
+    this.timeout(60000)
+
+    const files = await listFiles(`${rootDirectory}/legacyEnumDecorator`)
+    let modules: Module[] = []
+
+    try {
+      modules = await load(files)
+    } catch {
+      assert.fail("failed to load files")
+    }
+
+    const module = await scan(files, "legacyEnumDecorator")
+    const executor = new Executor(modules, module)
+
+    const inputDefault = {
+      parentName: "LegacyEnums",
+      fnName: "getStatus",
+      parentArgs: {
+        status: "ACTIVE",
+      },
+      fnArgs: {},
+    }
+
+    const resultDefault = await invoke(executor, module, inputDefault)
+
+    assert.equal(resultDefault, "ACTIVE")
+
+    const inputSet = {
+      parentName: "LegacyEnums",
+      fnName: "setStatus",
+      parentArgs: {
+        status: "ACTIVE",
+      },
+      fnArgs: {
+        status: "INACTIVE",
+      },
+    }
+
+    const resultSet = await invoke(executor, module, inputSet)
+
+    const inputAfterSet = {
+      parentName: "LegacyEnums",
       fnName: "getStatus",
       parentArgs: JSON.parse(JSON.stringify(resultSet)),
       fnArgs: {},

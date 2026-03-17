@@ -1,0 +1,58 @@
+{
+  "name": "DeprecatedEnum",
+  "objects": {
+    "DeprecatedEnums": {
+      "name": "DeprecatedEnums",
+      "description": "",
+      "methods": {
+        "useMode": {
+          "name": "useMode",
+          "description": "",
+          "arguments": {
+            "mode": {
+              "name": "mode",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "LegacyMode"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "LegacyMode"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {
+    "LegacyMode": {
+      "name": "LegacyMode",
+      "description": "",
+      "values": {
+        "Alpha": {
+          "name": "Alpha",
+          "value": "alpha",
+          "description": ""
+        },
+        "Beta": {
+          "name": "Beta",
+          "value": "beta",
+          "description": "",
+          "deprecated": "Switch to Gamma."
+        },
+        "Gamma": {
+          "name": "Gamma",
+          "value": "gamma",
+          "description": ""
+        }
+      }
+    }
+  },
+  "interfaces": {}
+}

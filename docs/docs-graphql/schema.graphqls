@@ -1,3 +1,12 @@
+"""Indicates that this function is a check."""
+directive @check on FIELD_DEFINITION
+
+"""Indicates that the argument defaults to a container address."""
+directive @defaultAddress(address: String!) on ARGUMENT_DEFINITION
+
+"""Indicates that the argument defaults to a contextual path."""
+directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
+
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
 
@@ -9,12 +18,72 @@ directive @experimental(
   reason: String! = "Not stabilized"
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
+"""Indicates that this function is a generate function."""
+directive @generate on FIELD_DEFINITION
+
+"""Filter directory contents using .gitignore-style glob patterns."""
+directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
+
 """Indicates the source information for where a given field is defined."""
-directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+
+"""
+A standardized address to load containers, directories, secrets, and other
+object types. Address format depends on the type, and is validated at type
+selection.
+"""
+type Address {
+  """Load a container from the address."""
+  container: Container!
+
+  """Load a directory from the address."""
+  directory(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): Directory!
+
+  """Load a file from the address."""
+  file(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): File!
+
+  """Load a git ref (branch, tag or commit) from the address."""
+  gitRef: GitRef!
+
+  """Load a git repository from the address."""
+  gitRepository: GitRepository!
+
+  """A unique identifier for this Address."""
+  id: AddressID!
+
+  """Load a secret from the address."""
+  secret: Secret!
+
+  """Load a service from the address."""
+  service: Service!
+
+  """Load a local socket from the address."""
+  socket: Socket!
+
+  """The address value"""
+  value: String!
+}
+
+"""
+The `AddressID` scalar type represents an identifier for an object of type Address.
+"""
+scalar AddressID
 
 type Binding {
+  """Retrieve the binding value, as type Address"""
+  asAddress: Address!
+
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
+
+  """Retrieve the binding value, as type Changeset"""
+  asChangeset: Changeset!
+
+  """Retrieve the binding value, as type Check"""
+  asCheck: Check!
+
+  """Retrieve the binding value, as type CheckGroup"""
+  asCheckGroup: CheckGroup!
 
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
@@ -28,8 +97,17 @@ type Binding {
   """Retrieve the binding value, as type Env"""
   asEnv: Env!
 
+  """Retrieve the binding value, as type EnvFile"""
+  asEnvFile: EnvFile!
+
   """Retrieve the binding value, as type File"""
   asFile: File!
+
+  """Retrieve the binding value, as type Generator"""
+  asGenerator: Generator!
+
+  """Retrieve the binding value, as type GeneratorGroup"""
+  asGeneratorGroup: GeneratorGroup!
 
   """Retrieve the binding value, as type GitRef"""
   asGitRef: GitRef!
@@ -37,8 +115,8 @@ type Binding {
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
 
-  """Retrieve the binding value, as type LLM"""
-  asLLM: LLM!
+  """Retrieve the binding value, as type JSONValue"""
+  asJSONValue: JSONValue!
 
   """Retrieve the binding value, as type Module"""
   asModule: Module!
@@ -49,6 +127,12 @@ type Binding {
   """Retrieve the binding value, as type ModuleSource"""
   asModuleSource: ModuleSource!
 
+  """Retrieve the binding value, as type SearchResult"""
+  asSearchResult: SearchResult!
+
+  """Retrieve the binding value, as type SearchSubmatch"""
+  asSearchSubmatch: SearchSubmatch!
+
   """Retrieve the binding value, as type Secret"""
   asSecret: Secret!
 
@@ -58,10 +142,16 @@ type Binding {
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
 
-  """The binding's string value"""
+  """Retrieve the binding value, as type Stat"""
+  asStat: Stat
+
+  """Returns the binding's string value"""
   asString: String
 
-  """The digest of the binding value"""
+  """Retrieve the binding value, as type Workspace"""
+  asWorkspace: Workspace!
+
+  """Returns the digest of the binding value"""
   digest: String!
 
   """A unique identifier for this Binding."""
@@ -70,10 +160,10 @@ type Binding {
   """Returns true if the binding is null"""
   isNull: Boolean!
 
-  """The binding name"""
+  """Returns the binding name"""
   name: String!
 
-  """The binding type"""
+  """Returns the binding type"""
   typeName: String!
 }
 
@@ -116,6 +206,181 @@ The `CacheVolumeID` scalar type represents an identifier for an object of type C
 """
 scalar CacheVolumeID
 
+"""
+A comparison between two directories representing changes that can be applied.
+"""
+type Changeset {
+  """Files and directories that were added in the newer directory."""
+  addedPaths: [String!]!
+
+  """The newer/upper snapshot."""
+  after: Directory!
+
+  """Return a Git-compatible patch of the changes"""
+  asPatch: File!
+
+  """The older/lower snapshot to compare against."""
+  before: Directory!
+
+  """Applies the diff represented by this changeset to a path on the host."""
+  export(
+    """Location of the copied directory (e.g., "logs/")."""
+    path: String!
+  ): String!
+
+  """A unique identifier for this Changeset."""
+  id: ChangesetID!
+
+  """Returns true if the changeset is empty (i.e. there are no changes)."""
+  isEmpty: Boolean!
+
+  """Return a snapshot containing only the created and modified files"""
+  layer: Directory!
+
+  """
+  Files and directories that existed before and were updated in the newer directory.
+  """
+  modifiedPaths: [String!]!
+
+  """
+  Files and directories that were removed. Directories are indicated by a
+  trailing slash, and their child paths are not included.
+  """
+  removedPaths: [String!]!
+
+  """Force evaluation in the engine."""
+  sync: ChangesetID!
+
+  """
+  Add changes to an existing changeset
+
+  By default the operation will fail in case of conflicts, for instance a file
+  modified in both changesets. The behavior can be adjusted using onConflict
+  argument
+  """
+  withChangeset(
+    """Changes to merge into the actual changeset"""
+    changes: ChangesetID!
+
+    """What to do on a merge conflict"""
+    onConflict: ChangesetMergeConflict = FAIL
+  ): Changeset!
+
+  """
+  Add changes from multiple changesets using git octopus merge strategy
+
+  This is more efficient than chaining multiple withChangeset calls when merging many changesets.
+
+  Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
+  """
+  withChangesets(
+    """List of changesets to merge into the actual changeset"""
+    changes: [ChangesetID!]!
+
+    """What to do on a merge conflict"""
+    onConflict: ChangesetsMergeConflict = FAIL
+  ): Changeset!
+}
+
+"""
+The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+"""
+scalar ChangesetID
+
+"""Strategy to use when merging changesets with conflicting changes."""
+enum ChangesetMergeConflict {
+  """Fail before attempting merge if file-level conflicts are detected"""
+  FAIL_EARLY
+
+  """Attempt the merge and fail if git merge fails due to conflicts"""
+  FAIL
+
+  """
+  Let git create conflict markers in files. For modify/delete conflicts, keeps
+  the modified version. Fails on binary conflicts.
+  """
+  LEAVE_CONFLICT_MARKERS
+
+  """
+  The conflict is resolved by applying the version of the calling changeset
+  """
+  PREFER_OURS
+
+  """
+  The conflict is resolved by applying the version of the other changeset
+  """
+  PREFER_THEIRS
+}
+
+"""
+Strategy to use when merging multiple changesets with git octopus merge.
+"""
+enum ChangesetsMergeConflict {
+  """
+  Fail before attempting merge if file-level conflicts are detected between any changesets
+  """
+  FAIL_EARLY
+
+  """Attempt the octopus merge and fail if git merge fails due to conflicts"""
+  FAIL
+}
+
+type Check {
+  """Whether the check completed"""
+  completed: Boolean!
+
+  """The description of the check"""
+  description: String!
+
+  """If the check failed, this is the error"""
+  error: Error
+
+  """A unique identifier for this Check."""
+  id: CheckID!
+
+  """Return the fully qualified name of the check"""
+  name: String!
+
+  """The original module in which the check has been defined"""
+  originalModule: Module!
+
+  """Whether the check passed"""
+  passed: Boolean!
+
+  """The path of the check within its module"""
+  path: [String!]!
+
+  """An emoji representing the result of the check"""
+  resultEmoji: String!
+
+  """Execute the check"""
+  run: Check!
+}
+
+type CheckGroup {
+  """A unique identifier for this CheckGroup."""
+  id: CheckGroupID!
+
+  """Return a list of individual checks and their details"""
+  list: [Check!]!
+
+  """Generate a markdown report"""
+  report: File!
+
+  """Execute all selected checks"""
+  run: CheckGroup!
+}
+
+"""
+The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
+"""
+scalar CheckGroupID
+
+"""
+The `CheckID` scalar type represents an identifier for an object of type Check.
+"""
+scalar CheckID
+
 """Dagger Cloud configuration and state"""
 type Cloud {
   """A unique identifier for this Cloud."""
@@ -134,13 +399,13 @@ scalar CloudID
 type Container {
   """
   Turn the container into a Service.
-  
+
   Be sure to set any exposed ports before this conversion.
   """
   asService(
     """
     Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-    
+
     If empty, the container's default command is used.
     """
     args: [String!] = []
@@ -168,7 +433,7 @@ type Container {
 
     """
     If set, skip the automatic init process injected into containers by default.
-    
+
     This should only be used if the user requires that their exec process be the
     pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
@@ -182,14 +447,14 @@ type Container {
   asTarball(
     """
     Identifiers for other platform specific containers.
-    
+
     Used for multi-platform images.
     """
     platformVariants: [ContainerID!] = []
 
     """
     Force each layer of the image to use the specified compression algorithm.
-    
+
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
@@ -200,56 +465,26 @@ type Container {
 
     """
     Use the specified media types for the image's layers.
-    
+
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
   ): File!
 
-  """Initializes this container from a Dockerfile build."""
-  build(
-    """Directory context used by the Dockerfile."""
-    context: DirectoryID!
+  """
+  The combined buffered standard output and standard error stream of the last executed command
 
-    """Path to the Dockerfile to use."""
-    dockerfile: String = "Dockerfile"
-
-    """Target build stage to build."""
-    target: String = ""
-
-    """Additional build arguments."""
-    buildArgs: [BuildArg!] = []
-
-    """
-    Secrets to pass to the build.
-    
-    They will be mounted at /run/secrets/[secret-name] in the build container
-    
-    They can be accessed in the Dockerfile using the "secret" mount type and
-    mount path /run/secrets/[secret-name], e.g. RUN
-    --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
-    /run/secrets/my-secret)](http://example.com?token=$(cat
-    /run/secrets/my-secret))
-    """
-    secrets: [SecretID!] = []
-
-    """
-    If set, skip the automatic init process injected into containers created by RUN statements.
-    
-    This should only be used if the user requires that their exec processes be
-    the pid 1 process in the container. Otherwise it may result in unexpected
-    behavior.
-    """
-    noInit: Boolean = false
-  ): Container!
+  Returns an error if no command was executed
+  """
+  combinedOutput: String!
 
   """Return the container's default arguments."""
   defaultArgs: [String!]!
 
   """
   Retrieve a directory from the container's root filesystem
-  
+
   Mounts are included.
   """
   directory(
@@ -263,6 +498,9 @@ type Container {
     expand: Boolean = false
   ): Directory!
 
+  """Retrieves this container's configured docker healthcheck."""
+  dockerHealthcheck: HealthcheckConfig
+
   """Return the container's OCI entrypoint."""
   entrypoint: [String!]!
 
@@ -275,27 +513,41 @@ type Container {
   """Retrieves the list of environment variables passed to commands."""
   envVariables: [EnvVariable!]!
 
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
+
   """
   The exit code of the last executed command
-  
+
   Returns an error if no command was executed
   """
   exitCode: Int!
 
   """
   EXPERIMENTAL API! Subject to change/removal at any time.
-  
+
   Configures all available GPUs on the host to be accessible to this container.
-  
+
   This currently works for Nvidia devices only.
   """
   experimentalWithAllGPUs: Container!
 
   """
   EXPERIMENTAL API! Subject to change/removal at any time.
-  
+
   Configures the provided list of devices to be accessible to this container.
-  
+
   This currently works for Nvidia devices only.
   """
   experimentalWithGPU(
@@ -305,27 +557,27 @@ type Container {
 
   """
   Writes the container as an OCI tarball to the destination file path on the host.
-  
+
   It can also export platform variants.
   """
   export(
     """
     Host's destination path (e.g., "./tarball").
-    
+
     Path can be relative to the engine's workdir or absolute.
     """
     path: String!
 
     """
     Identifiers for other platform specific containers.
-    
+
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
 
     """
     Force each layer of the exported image to use the specified compression algorithm.
-    
+
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
@@ -336,7 +588,7 @@ type Container {
 
     """
     Use the specified media types for the exported image's layers.
-    
+
     Defaults to OCI, which is largely compatible with most recent container
     runtimes, but Docker may be needed for older runtimes without OCI support.
     """
@@ -349,16 +601,48 @@ type Container {
     expand: Boolean = false
   ): String!
 
+  """Exports the container as an image to the host's container image store."""
+  exportImage(
+    """Name of image to export to in the host's store"""
+    name: String!
+
+    """
+    Identifiers for other platform specific containers.
+
+    Used for multi-platform image.
+    """
+    platformVariants: [ContainerID!] = []
+
+    """
+    Force each layer of the exported image to use the specified compression algorithm.
+
+    If this is unset, then if a layer already has a compressed blob in the
+    engine's cache, that will be used (this can result in a mix of compression
+    algorithms for different layers). If this is unset and a layer has no
+    compressed blob in the engine's cache, then it will be compressed using
+    Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the exported image's layers.
+
+    Defaults to OCI, which is largely compatible with most recent container
+    runtimes, but Docker may be needed for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): Void!
+
   """
   Retrieves the list of exposed ports.
-  
+
   This includes ports already exposed by the image, even if not explicitly added with dagger.
   """
   exposedPorts: [Port!]!
 
   """
   Retrieves a file at the given path.
-  
+
   Mounts are included.
   """
   file(
@@ -418,27 +702,27 @@ type Container {
 
   """
   Package the container state as an OCI image, and publish it to a registry
-  
+
   Returns the fully qualified address of the published image, with digest
   """
   publish(
     """
     The OCI address to publish to
-    
+
     Same format as "docker push". Example: "registry.example.com/user/repo:tag"
     """
     address: String!
 
     """
     Identifiers for other platform specific containers.
-    
+
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
 
     """
     Force each layer of the published image to use the specified compression algorithm.
-    
+
     If this is unset, then if a layer already has a compressed blob in the
     engine's cache, that will be used (this can result in a mix of compression
     algorithms for different layers). If this is unset and a layer has no
@@ -449,7 +733,7 @@ type Container {
 
     """
     Use the specified media types for the published image's layers.
-    
+
     Defaults to "OCI", which is compatible with most recent registries, but
     "Docker" may be needed for older registries without OCI support.
     """
@@ -463,23 +747,32 @@ type Container {
   """
   rootfs: Directory!
 
+  """Return file status"""
+  stat(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Stat
+
   """
   The buffered standard error stream of the last executed command
-  
+
   Returns an error if no command was executed
   """
   stderr: String!
 
   """
   The buffered standard output stream of the last executed command
-  
+
   Returns an error if no command was executed
   """
   stdout: String!
 
   """
   Forces evaluation of the pipeline in the engine.
-  
+
   It doesn't run the default command if no exec has been set.
   """
   sync: ContainerID!
@@ -509,7 +802,7 @@ type Container {
 
   """
   Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
-  
+
   Be sure to set any exposed ports before calling this api.
   """
   up(
@@ -518,14 +811,14 @@ type Container {
 
     """
     List of frontend/backend port mappings to forward.
-    
+
     Frontend is the port accepting traffic on the host, backend is the service port.
     """
     ports: [PortForward!] = []
 
     """
     Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-    
+
     If empty, the container's default command is used.
     """
     args: [String!] = []
@@ -553,7 +846,7 @@ type Container {
 
     """
     If set, skip the automatic init process injected into containers by default.
-    
+
     This should only be used if the user requires that their exec process be the
     pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
@@ -564,7 +857,7 @@ type Container {
   """Retrieves the user to be set for all commands."""
   user: String!
 
-  """Retrieves this container plus the given OCI anotation."""
+  """Retrieves this container plus the given OCI annotation."""
   withAnnotation(
     """The name of the annotation."""
     name: String!
@@ -609,7 +902,7 @@ type Container {
     path: String!
 
     """Identifier of the directory to write"""
-    directory: DirectoryID!
+    source: DirectoryID!
 
     """
     Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -621,11 +914,14 @@ type Container {
     """
     include: [String!] = []
 
+    """Apply .gitignore rules when writing the directory."""
+    gitignore: Boolean = false
+
     """
     A user:group to set for the directory and its contents.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -635,6 +931,45 @@ type Container {
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container with the specificed docker healtcheck command set.
+  """
+  withDockerHealthcheck(
+    """Healthcheck command to execute. Example: ["go", "run", "main.go"]."""
+    args: [String!]!
+
+    """
+    When true, command must be a single element, which is run using the container's shell
+    """
+    shell: Boolean
+
+    """
+    Interval between running healthcheck. Example: "30s"
+    """
+    interval: String
+
+    """
+    Healthcheck timeout. Example: "3s"
+    """
+    timeout: String
+
+    """
+    StartPeriod allows for failures during this initial startup period which do
+    not count towards maximum number of retries. Example: "0s"
+    """
+    startPeriod: String
+
+    """
+    StartInterval configures the duration between checks during the startup phase. Example: "5s"
+    """
+    startInterval: String
+
+    """
+    The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"
+    """
+    retries: Int
   ): Container!
 
   """
@@ -652,6 +987,12 @@ type Container {
     keepDefaultArgs: Boolean = false
   ): Container!
 
+  """Export environment variables from an env-file to the container."""
+  withEnvFileVariables(
+    """Identifier of the envfile"""
+    source: EnvFileID!
+  ): Container!
+
   """Set a new environment variable in the container."""
   withEnvVariable(
     """Name of the environment variable (e.g., "HOST")."""
@@ -667,16 +1008,22 @@ type Container {
     expand: Boolean = false
   ): Container!
 
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
+  ): Container!
+
   """
   Execute a command in the container, and return a new snapshot of the container state after execution.
   """
   withExec(
     """
     Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
-    
+
     To run a shell command, execute the shell and pass the shell command as
     argument. Example: ["sh", "-c", "ls -l | grep foo"]
-    
+
     Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
     """
     args: [String!]!
@@ -692,11 +1039,18 @@ type Container {
     stdin: String = ""
 
     """
+    Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+    """
+    redirectStdin: String = ""
+
+    """
     Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
-    """Like redirectStdout, but for standard error"""
+    """
+    Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    """
     redirectStderr: String = ""
 
     """Exit codes this command is allowed to exit with without error"""
@@ -707,7 +1061,7 @@ type Container {
 
     """
     Execute the command with all root capabilities. Like --privileged in Docker
-    
+
     DANGER: this grants the command full access to the host system. Only use
     when 1) you trust the command being executed and 2) you specifically need
     this level of access.
@@ -722,7 +1076,7 @@ type Container {
 
     """
     Skip the automatic init process injected into containers by default.
-    
+
     Only use this if you specifically need the command to be pid 1 in the
     container. Otherwise it may result in unexpected behavior. If you're not
     sure, you don't need this.
@@ -732,11 +1086,11 @@ type Container {
 
   """
   Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)
-  
+
   Exposed ports serve two purposes:
-  
+
   - For health checks and introspection, when running services
-  
+
   - For setting the EXPOSE OCI field when publishing the container
   """
   withExposedPort(
@@ -772,9 +1126,9 @@ type Container {
 
     """
     A user:group to set for the file.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -801,9 +1155,9 @@ type Container {
 
     """
     A user:group to set for the files.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -842,13 +1196,13 @@ type Container {
 
     """
     A user:group to set for the mounted cache directory.
-    
+
     Note that this changes the ownership of the specified mount along with the
     initial filesystem provided by source (if any). It does not have any effect
     if/when the cache has already been created.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -870,9 +1224,9 @@ type Container {
 
     """
     A user:group to set for the mounted directory and its contents.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -894,9 +1248,9 @@ type Container {
 
     """
     A user or user:group to set for the mounted file.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -920,16 +1274,16 @@ type Container {
 
     """
     A user:group to set for the mounted secret.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
 
     """
     Permission given to the mounted secret (e.g., 0600).
-    
+
     This option requires an owner to be set to be active.
     """
     mode: Int = 256
@@ -979,9 +1333,9 @@ type Container {
 
     """
     A user:group to set for the file.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -1030,12 +1384,12 @@ type Container {
 
   """
   Establish a runtime dependency from a container to a network service.
-  
+
   The service will be started automatically when needed and detached when it is
   no longer needed, executing the default command if none is set.
-  
+
   The service will be reachable from the container via the provided hostname alias.
-  
+
   The service dependency will also convey to any files or directories produced by the container.
   """
   withServiceBinding(
@@ -1077,9 +1431,9 @@ type Container {
 
     """
     A user:group to set for the mounted socket.
-    
+
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
-    
+
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
@@ -1131,6 +1485,11 @@ type Container {
     """
     expand: Boolean = false
   ): Container!
+
+  """
+  Retrieves this container without a configured docker healtcheck command.
+  """
+  withoutDockerHealthcheck: Container!
 
   """Reset the container's OCI entrypoint."""
   withoutEntrypoint(
@@ -1207,7 +1566,7 @@ type Container {
   withoutRegistryAuth(
     """
     Registry's address to remove the authentication from.
-    
+
     Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
     address: String!
@@ -1235,14 +1594,14 @@ type Container {
 
   """
   Retrieves this container with an unset command user.
-  
+
   Should default to root.
   """
   withoutUser: Container!
 
   """
   Unset the container's working directory.
-  
+
   Should default to "/".
   """
   withoutWorkdir: Container!
@@ -1258,6 +1617,20 @@ scalar ContainerID
 
 """Reflective module API provided to functions at runtime."""
 type CurrentModule {
+  """The dependencies of the module."""
+  dependencies: [Module!]!
+
+  """
+  The generated files and directories made on top of the module source's context directory.
+  """
+  generatedContextDirectory: Directory!
+
+  """Return all generators defined by the module"""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 
@@ -1287,6 +1660,9 @@ type CurrentModule {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
   ): Directory!
 
   """
@@ -1315,7 +1691,7 @@ type Directory {
   asModule(
     """
     An optional subpath of the directory which contains the module's configuration file.
-    
+
     If not set, the module source code is loaded from the root of the directory.
     """
     sourceRootPath: String = "."
@@ -1325,11 +1701,36 @@ type Directory {
   asModuleSource(
     """
     An optional subpath of the directory which contains the module's configuration file.
-    
+
     If not set, the module source code is loaded from the root of the directory.
     """
     sourceRootPath: String = "."
   ): ModuleSource!
+
+  """
+  Return the difference between this directory and another directory, typically an older snapshot.
+
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  """
+  changes(
+    """The base directory snapshot to compare against"""
+    from: DirectoryID!
+  ): Changeset!
+
+  """Change the owner of the directory contents recursively."""
+  chown(
+    """Path of the directory to change ownership of (e.g., "/")."""
+    path: String!
+
+    """
+    A user:group to set for the mounted directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): Directory!
 
   """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
@@ -1375,19 +1776,28 @@ type Directory {
 
     """
     Secrets to pass to the build.
-    
+
     They will be mounted at /run/secrets/[secret-name].
     """
     secrets: [SecretID!] = []
 
     """
     If set, skip the automatic init process injected into containers created by RUN statements.
-    
+
     This should only be used if the user requires that their exec processes be
     the pid 1 process in the container. Otherwise it may result in unexpected
     behavior.
     """
     noInit: Boolean = false
+
+    """
+    A socket to use for SSH authentication during the build
+
+    (e.g., for Dockerfile RUN --mount=type=ssh instructions).
+
+    Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
+    """
+    ssh: SocketID
   ): Container!
 
   """Returns a list of files and directories at the given path."""
@@ -1395,6 +1805,20 @@ type Directory {
     """Location of the directory to look at (e.g., "/src")."""
     path: String
   ): [String!]!
+
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
 
   """Writes the contents of the directory to a path on the host."""
   export(
@@ -1431,7 +1855,21 @@ type Directory {
     new snapshot. Example: (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """If set, apply .gitignore rules when filtering the directory."""
+    gitignore: Boolean = false
   ): Directory!
+
+  """
+  Search up the directory tree for a file or directory, and return its path. If no match, return null
+  """
+  findUp(
+    """The name of the file or directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): String
 
   """Returns a list of files and directories that matche the given pattern."""
   glob(
@@ -1444,6 +1882,57 @@ type Directory {
 
   """Returns the name of the directory."""
   name: String!
+
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  search(
+    """Directory or file paths to search"""
+    paths: [String!] = []
+
+    """Glob patterns to match (e.g., "*.md")"""
+    globs: [String!] = []
+
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    insensitive: Boolean = false
+
+    """Honor .gitignore, .ignore, and .rgignore files."""
+    skipIgnored: Boolean = false
+
+    """Skip hidden files (files starting with .)."""
+    skipHidden: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+  ): [SearchResult!]!
+
+  """Return file status"""
+  stat(
+    """Path to stat (e.g., "/file.txt")."""
+    path: String!
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Stat
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
@@ -1473,13 +1962,19 @@ type Directory {
     insecureRootCapabilities: Boolean = false
   ): Directory!
 
+  """Return a directory with changes from another directory applied to it."""
+  withChanges(
+    """Changes to apply to the directory"""
+    changes: ChangesetID!
+  ): Directory!
+
   """Return a snapshot with a directory added"""
   withDirectory(
     """Location of the written directory (e.g., "/src/")."""
     path: String!
 
     """Identifier of the directory to copy."""
-    directory: DirectoryID!
+    source: DirectoryID!
 
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -1490,6 +1985,24 @@ type Directory {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+  ): Directory!
+
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
   ): Directory!
 
   """
@@ -1504,6 +2017,15 @@ type Directory {
 
     """Permission given to the copied file (e.g., 0600)."""
     permissions: Int
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
   ): Directory!
 
   """
@@ -1547,6 +2069,24 @@ type Directory {
     permissions: Int = 420
   ): Directory!
 
+  """Retrieves this directory with the given Git-compatible patch applied."""
+  withPatch(
+    """
+    Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex
+    1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1
+    @@\n-Hello\n+World\n").
+    """
+    patch: String!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """
+  Retrieves this directory with the given Git-compatible patch file applied.
+  """
+  withPatchFile(
+    """File containing the patch to apply"""
+    patch: FileID!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """Return a snapshot with a symlink"""
   withSymlink(
     """Location of the file or directory to link to (e.g., "/existing/file")."""
@@ -1564,7 +2104,7 @@ type Directory {
   withTimestamps(
     """
     Timestamp to set dir/files in.
-    
+
     Formatted in seconds following Unix epoch (e.g., 1672531199).
     """
     timestamp: Int!
@@ -1598,11 +2138,17 @@ scalar DirectoryID
 
 """The Dagger engine configuration and state"""
 type Engine {
+  """The list of connected client IDs"""
+  clients: [String!]!
+
   """A unique identifier for this Engine."""
   id: EngineID!
 
   """The local (on-disk) cache for the Dagger engine"""
   localCache: EngineCache!
+
+  """The name of the engine instance."""
+  name: String!
 }
 
 """A cache storage for the Dagger engine"""
@@ -1612,11 +2158,6 @@ type EngineCache {
 
   """A unique identifier for this EngineCache."""
   id: EngineCacheID!
-
-  """
-  The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-  """
-  keepBytes: Int! @deprecated(reason: "Use minFreeSpace instead.")
 
   """The maximum bytes to keep in the cache without pruning."""
   maxUsedSpace: Int!
@@ -1632,6 +2173,26 @@ type EngineCache {
     Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
     """
     useDefaultPolicy: Boolean = false
+
+    """
+    Override the maximum disk space to keep before pruning (e.g. "200GB" or "80%").
+    """
+    maxUsedSpace: String = ""
+
+    """
+    Override the minimum disk space to retain during pruning (e.g. "500GB" or "10%").
+    """
+    reservedSpace: String = ""
+
+    """
+    Override the minimum free disk space target during pruning (e.g. "20GB" or "20%").
+    """
+    minFreeSpace: String = ""
+
+    """
+    Override the target disk space to keep after pruning (e.g. "200GB" or "50%").
+    """
+    targetSpace: String = ""
   ): Void
 
   """The minimum amount of disk space this policy is guaranteed to retain."""
@@ -1660,6 +2221,11 @@ type EngineCacheEntry {
 
   """The most recent time the cache entry was used, in Unix nanoseconds."""
   mostRecentUseTimeUnixNano: Int!
+
+  """
+  The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
+  """
+  recordType: String!
 }
 
 """
@@ -1712,7 +2278,7 @@ type EnumTypeDef {
   name: String!
 
   """The location of this enum declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -1729,6 +2295,9 @@ scalar EnumTypeDefID
 
 """A definition of a value in a custom enum defined in a Module."""
 type EnumValueTypeDef {
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
+
   """A doc string for the enum member, if any."""
   description: String!
 
@@ -1739,7 +2308,7 @@ type EnumValueTypeDef {
   name: String!
 
   """The location of this enum member declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The value of the enum member"""
   value: String!
@@ -1751,20 +2320,55 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 scalar EnumValueTypeDefID
 
 type Env {
+  """
+  Return the check with the given name from the installed modules. Must match exactly one check.
+  """
+  check(
+    """The name of the check to retrieve"""
+    name: String!
+  ): Check! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
+
+  """Return all checks defined by the installed modules"""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
+
   """A unique identifier for this Env."""
   id: EnvID!
 
-  """retrieve an input value by name"""
+  """Retrieves an input binding by name"""
   input(name: String!): Binding!
 
-  """return all input values for the environment"""
+  """Returns all input bindings provided to the environment"""
   inputs: [Binding!]!
 
-  """retrieve an output value by name"""
+  """Retrieves an output binding by name"""
   output(name: String!): Binding!
 
-  """return all output values for the environment"""
+  """Returns all declared output bindings for the environment"""
   outputs: [Binding!]!
+
+  """Create or update a binding of type Address in the environment"""
+  withAddressInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Address value to assign to the binding"""
+    value: AddressID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Address output to be assigned in the environment"""
+  withAddressOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
 
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
@@ -1780,6 +2384,69 @@ type Env {
 
   """Declare a desired CacheVolume output to be assigned in the environment"""
   withCacheVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Changeset in the environment"""
+  withChangesetInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Changeset value to assign to the binding"""
+    value: ChangesetID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Changeset output to be assigned in the environment"""
+  withChangesetOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type CheckGroup in the environment"""
+  withCheckGroupInput(
+    """The name of the binding"""
+    name: String!
+
+    """The CheckGroup value to assign to the binding"""
+    value: CheckGroupID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired CheckGroup output to be assigned in the environment"""
+  withCheckGroupOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Check in the environment"""
+  withCheckInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Check value to assign to the binding"""
+    value: CheckID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Check output to be assigned in the environment"""
+  withCheckOutput(
     """The name of the binding"""
     name: String!
 
@@ -1829,6 +2496,13 @@ type Env {
     description: String!
   ): Env!
 
+  """
+  Installs the current module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withCurrentModule: Env!
+
   """Create or update a binding of type Directory in the environment"""
   withDirectoryInput(
     """The name of the binding"""
@@ -1843,6 +2517,27 @@ type Env {
 
   """Declare a desired Directory output to be assigned in the environment"""
   withDirectoryOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type EnvFile in the environment"""
+  withEnvFileInput(
+    """The name of the binding"""
+    name: String!
+
+    """The EnvFile value to assign to the binding"""
+    value: EnvFileID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired EnvFile output to be assigned in the environment"""
+  withEnvFileOutput(
     """The name of the binding"""
     name: String!
 
@@ -1885,6 +2580,50 @@ type Env {
 
   """Declare a desired File output to be assigned in the environment"""
   withFileOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type GeneratorGroup in the environment"""
+  withGeneratorGroupInput(
+    """The name of the binding"""
+    name: String!
+
+    """The GeneratorGroup value to assign to the binding"""
+    value: GeneratorGroupID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired GeneratorGroup output to be assigned in the environment
+  """
+  withGeneratorGroupOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Generator in the environment"""
+  withGeneratorInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Generator value to assign to the binding"""
+    value: GeneratorID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Generator output to be assigned in the environment"""
+  withGeneratorOutput(
     """The name of the binding"""
     name: String!
 
@@ -1936,26 +2675,40 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update a binding of type LLM in the environment"""
-  withLLMInput(
+  """Create or update a binding of type JSONValue in the environment"""
+  withJSONValueInput(
     """The name of the binding"""
     name: String!
 
-    """The LLM value to assign to the binding"""
-    value: LLMID!
+    """The JSONValue value to assign to the binding"""
+    value: JSONValueID!
 
     """The purpose of the input"""
     description: String!
   ): Env!
 
-  """Declare a desired LLM output to be assigned in the environment"""
-  withLLMOutput(
+  """Declare a desired JSONValue output to be assigned in the environment"""
+  withJSONValueOutput(
     """The name of the binding"""
     name: String!
 
     """A description of the desired value of the binding"""
     description: String!
   ): Env!
+
+  """
+  Sets the main module for this environment (the project being worked on)
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withMainModule(module: ModuleID!): Env!
+
+  """
+  Installs a module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withModule(module: ModuleID!): Env! @deprecated(reason: "Use withMainModule instead")
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
@@ -2026,6 +2779,52 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type SearchResult in the environment"""
+  withSearchResultInput(
+    """The name of the binding"""
+    name: String!
+
+    """The SearchResult value to assign to the binding"""
+    value: SearchResultID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired SearchResult output to be assigned in the environment
+  """
+  withSearchResultOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type SearchSubmatch in the environment"""
+  withSearchSubmatchInput(
+    """The name of the binding"""
+    name: String!
+
+    """The SearchSubmatch value to assign to the binding"""
+    value: SearchSubmatchID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired SearchSubmatch output to be assigned in the environment
+  """
+  withSearchSubmatchOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Secret in the environment"""
   withSecretInput(
     """The name of the binding"""
@@ -2089,7 +2888,28 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update an input value of type string"""
+  """Create or update a binding of type Stat in the environment"""
+  withStatInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Stat value to assign to the binding"""
+    value: StatID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Stat output to be assigned in the environment"""
+  withStatOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Provides a string input binding to the environment"""
   withStringInput(
     """The name of the binding"""
     name: String!
@@ -2101,7 +2921,7 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update an input value of type string"""
+  """Declares a desired string output binding"""
   withStringOutput(
     """The name of the binding"""
     name: String!
@@ -2109,7 +2929,106 @@ type Env {
     """The description of the output"""
     description: String!
   ): Env!
+
+  """Returns a new environment with the provided workspace"""
+  withWorkspace(
+    """The directory to set as the host filesystem"""
+    workspace: DirectoryID!
+  ): Env!
+
+  """Create or update a binding of type Workspace in the environment"""
+  withWorkspaceInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Workspace value to assign to the binding"""
+    value: WorkspaceID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Workspace output to be assigned in the environment"""
+  withWorkspaceOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Returns a new environment without any outputs"""
+  withoutOutputs: Env!
+
+  workspace: Directory!
 }
+
+"""A collection of environment variables."""
+type EnvFile {
+  """Return as a file"""
+  asFile: File!
+
+  """Check if a variable exists"""
+  exists(
+    """Variable name"""
+    name: String!
+  ): Boolean!
+
+  """
+  Lookup a variable (last occurrence wins) and return its value, or an empty string
+  """
+  get(
+    """Variable name"""
+    name: String!
+
+    """
+    Return the value exactly as written to the file. No quote removal or variable expansion
+    """
+    raw: Boolean
+  ): String!
+
+  """A unique identifier for this EnvFile."""
+  id: EnvFileID!
+
+  """
+  Filters variables by prefix and removes the pref from keys. Variables without
+  the prefix are excluded. For example, with the prefix "MY_APP_" and variables:
+  MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment
+  will contain: TOKEN=topsecret NAME=hello
+  """
+  namespace(
+    """The prefix to filter by"""
+    prefix: String!
+  ): EnvFile!
+
+  """Return all variables"""
+  variables(
+    """
+    Return values exactly as written to the file. No quote removal or variable expansion
+    """
+    raw: Boolean
+  ): [EnvVariable!]!
+
+  """Add a variable"""
+  withVariable(
+    """Variable name"""
+    name: String!
+
+    """Variable value"""
+    value: String!
+  ): EnvFile!
+
+  """Remove all occurrences of the named variable"""
+  withoutVariable(
+    """Variable name"""
+    name: String!
+  ): EnvFile!
+}
+
+"""
+The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+"""
+scalar EnvFileID
 
 """
 The `EnvID` scalar type represents an identifier for an object of type Env.
@@ -2174,6 +3093,18 @@ The `ErrorValueID` scalar type represents an identifier for an object of type Er
 """
 scalar ErrorValueID
 
+"""File type."""
+enum ExistsType {
+  """Tests path is a regular file"""
+  REGULAR_TYPE
+
+  """Tests path is a directory"""
+  DIRECTORY_TYPE
+
+  """Tests path is a symlink"""
+  SYMLINK_TYPE
+}
+
 """
 A definition of a field on a custom object defined in a Module.
 
@@ -2181,6 +3112,9 @@ A field on an object has a static value, as opposed to a function on an object
 whose value is computed by invoking code (and can accept arguments).
 """
 type FieldTypeDef {
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
+
   """A doc string for the field, if any."""
   description: String!
 
@@ -2191,7 +3125,7 @@ type FieldTypeDef {
   name: String!
 
   """The location of this field declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The type of the field."""
   typeDef: TypeDef!
@@ -2204,8 +3138,35 @@ scalar FieldTypeDefID
 
 """A file."""
 type File {
+  """Parse as an env file"""
+  asEnvFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean
+  ): EnvFile!
+
+  """Parse the file contents as JSON."""
+  asJSON: JSONValue!
+
+  """Change the owner of the file recursively."""
+  chown(
+    """
+    A user:group to set for the file.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): File!
+
   """Retrieves the contents of the file."""
-  contents: String!
+  contents(
+    """Start reading after this line"""
+    offsetLines: Int
+
+    """Maximum number of lines to read"""
+    limitLines: Int
+  ): String!
 
   """
   Return the file's digest. The format of the digest is not guaranteed to be
@@ -2235,8 +3196,51 @@ type File {
   """Retrieves the name of the file."""
   name: String!
 
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  search(
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    insensitive: Boolean = false
+
+    """Honor .gitignore, .ignore, and .rgignore files."""
+    skipIgnored: Boolean = false
+
+    """Skip hidden files (files starting with .)."""
+    skipHidden: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+
+    paths: [String!] = []
+
+    globs: [String!] = []
+  ): [SearchResult!]!
+
   """Retrieves the size of the file, in bytes."""
   size: Int!
+
+  """Return file status"""
+  stat: Stat
 
   """Force evaluation in the engine."""
   sync: FileID!
@@ -2248,12 +3252,37 @@ type File {
   ): File!
 
   """
+  Retrieves the file with content replaced with the given text.
+
+  If 'all' is true, all occurrences of the pattern will be replaced.
+
+  If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+
+  If neither are specified, and there are multiple matches for the pattern, this will error.
+
+  If there are no matches for the pattern, this will error.
+  """
+  withReplaced(
+    """The text to match."""
+    search: String!
+
+    """The text to match."""
+    replacement: String!
+
+    """Replace all occurrences of the pattern."""
+    all: Boolean = false
+
+    """Replace the first match starting from the specified line."""
+    firstFrom: Int
+  ): File!
+
+  """
   Retrieves this file with its created/modified timestamps set to the given time.
   """
   withTimestamps(
     """
     Timestamp to set dir/files in.
-    
+
     Formatted in seconds following Unix epoch (e.g., 1672531199).
     """
     timestamp: Int!
@@ -2265,6 +3294,30 @@ The `FileID` scalar type represents an identifier for an object of type File.
 """
 scalar FileID
 
+"""File type."""
+enum FileType {
+  """unknown file type"""
+  UNKNOWN
+
+  """regular file type"""
+  REGULAR
+
+  """directory file type"""
+  DIRECTORY
+
+  """symlink file type"""
+  SYMLINK
+
+  """regular file type"""
+  REGULAR_TYPE
+
+  """directory file type"""
+  DIRECTORY_TYPE
+
+  """symlink file type"""
+  SYMLINK_TYPE
+}
+
 """
 Function represents a resolver provided by a Module.
 
@@ -2273,6 +3326,9 @@ A function always evaluates against a parent object and is given a set of named 
 type Function {
   """Arguments accepted by the function, if any."""
   args: [FunctionArg!]!
+
+  """The reason this function is deprecated, if any."""
+  deprecated: String
 
   """A doc string for the function, if any."""
   description: String!
@@ -2287,7 +3343,7 @@ type Function {
   returnType: TypeDef!
 
   """The location of this function declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """Returns the function with the provided argument"""
   withArg(
@@ -2315,6 +3371,31 @@ type Function {
 
     """The source map for the argument definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
+
+    defaultAddress: String = ""
+  ): Function!
+
+  """Returns the function updated to use the provided cache policy."""
+  withCachePolicy(
+    """The cache policy to use."""
+    policy: FunctionCachePolicy!
+
+    """
+    The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    """
+    timeToLive: String
+  ): Function!
+
+  """Returns the function with a flag indicating it's a check."""
+  withCheck: Function!
+
+  """Returns the function with the provided deprecation reason."""
+  withDeprecated(
+    """Reason or migration path describing the deprecation."""
+    reason: String
   ): Function!
 
   """Returns the function with the given doc string."""
@@ -2322,6 +3403,9 @@ type Function {
     """The doc string to set."""
     description: String!
   ): Function!
+
+  """Returns the function with a flag indicating it's a generator."""
+  withGenerator: Function!
 
   """Returns the function with the given source map."""
   withSourceMap(
@@ -2337,6 +3421,12 @@ This is a specification for an argument at function definition time, not an argu
 """
 type FunctionArg {
   """
+  Only applies to arguments of type Container. If the argument is not set, load
+  it from the given address (e.g. alpine:latest)
+  """
+  defaultAddress: String!
+
+  """
   Only applies to arguments of type File or Directory. If the argument is not
   set, load it from the given path in the context directory
   """
@@ -2346,6 +3436,9 @@ type FunctionArg {
   A default value to use for this argument when not explicitly set by the caller, if any.
   """
   defaultValue: JSON!
+
+  """The reason this function is deprecated, if any."""
+  deprecated: String
 
   """A doc string for the argument, if any."""
   description: String!
@@ -2364,7 +3457,7 @@ type FunctionArg {
   name: String!
 
   """The location of this arg declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The type of the argument."""
   typeDef: TypeDef!
@@ -2374,6 +3467,13 @@ type FunctionArg {
 The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
 """
 scalar FunctionArgID
+
+"""The behavior configured for function result caching."""
+enum FunctionCachePolicy {
+  Default
+  PerSession
+  Never
+}
 
 """An active function call."""
 type FunctionCall {
@@ -2466,10 +3566,83 @@ The `GeneratedCodeID` scalar type represents an identifier for an object of type
 """
 scalar GeneratedCodeID
 
+type Generator {
+  """The generated changeset"""
+  changes: Changeset!
+
+  """Whether the generator complete"""
+  completed: Boolean!
+
+  """Return the description of the generator"""
+  description: String!
+
+  """A unique identifier for this Generator."""
+  id: GeneratorID!
+
+  """Wether changeset from the generator execution is empty or not"""
+  isEmpty: Boolean!
+
+  """Return the fully qualified name of the generator"""
+  name: String!
+
+  """The original module in which the generator has been defined"""
+  originalModule: Module!
+
+  """The path of the generator within its module"""
+  path: [String!]!
+
+  """Execute the generator"""
+  run: Generator!
+}
+
+type GeneratorGroup {
+  """
+  The combined changes from the generators execution
+
+  If any conflict occurs, for instance if the same file is modified by multiple
+  generators, or if a file is both modified and deleted, an error is raised and
+  the merge of the changesets will failed.
+
+  Set 'continueOnConflicts' flag to force to merge the changes in a 'last write wins' strategy.
+  """
+  changes(
+    """Strategy to apply on conflicts between generators"""
+    onConflict: ChangesetsMergeConflict = FAIL_EARLY
+  ): Changeset!
+
+  """A unique identifier for this GeneratorGroup."""
+  id: GeneratorGroupID!
+
+  """Whether the generated changeset is empty or not"""
+  isEmpty: Boolean!
+
+  """Return a list of individual generators and their details"""
+  list: [Generator!]!
+
+  """Execute all selected generators"""
+  run: GeneratorGroup!
+}
+
+"""
+The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+"""
+scalar GeneratorGroupID
+
+"""
+The `GeneratorID` scalar type represents an identifier for an object of type Generator.
+"""
+scalar GeneratorID
+
 """A git ref (tag, branch, or commit)."""
 type GitRef {
   """The resolved commit id at this ref."""
   commit: String!
+
+  """Find the best common ancestor between this ref and another ref."""
+  commonAncestor(
+    """The other ref to compare against."""
+    other: GitRefID!
+  ): GitRef!
 
   """A unique identifier for this GitRef."""
   id: GitRefID!
@@ -2484,6 +3657,9 @@ type GitRef {
 
     """The depth of the tree to fetch."""
     depth: Int = 1
+
+    """Set to true to populate tag refs in the local checkout .git."""
+    includeTags: Boolean = false
   ): Directory!
 }
 
@@ -2520,6 +3696,9 @@ type GitRepository {
   """A unique identifier for this GitRepository."""
   id: GitRepositoryID!
 
+  """Returns details for the latest semver tag."""
+  latestVersion: GitRef!
+
   """Returns details of a ref."""
   ref(
     """
@@ -2540,17 +3719,11 @@ type GitRepository {
     patterns: [String!]
   ): [String!]!
 
-  """Header to authenticate the remote with."""
-  withAuthHeader(
-    """Secret used to populate the Authorization HTTP header"""
-    header: SecretID!
-  ): GitRepository! @deprecated(reason: "Use \"httpAuthHeader\" in the constructor instead.")
+  """Returns the changeset of uncommitted changes in the git repository."""
+  uncommitted: Changeset!
 
-  """Token to authenticate the remote with."""
-  withAuthToken(
-    """Secret used to populate the password during basic HTTP Authorization"""
-    token: SecretID!
-  ): GitRepository! @deprecated(reason: "Use \"httpAuthToken\" in the constructor instead.")
+  """The URL of the git repository."""
+  url: String
 }
 
 """
@@ -2558,8 +3731,53 @@ The `GitRepositoryID` scalar type represents an identifier for an object of type
 """
 scalar GitRepositoryID
 
+"""Image healthcheck configuration."""
+type HealthcheckConfig {
+  """Healthcheck command arguments."""
+  args: [String!]!
+
+  """A unique identifier for this HealthcheckConfig."""
+  id: HealthcheckConfigID!
+
+  """Interval between running healthcheck. Example:30s"""
+  interval: String!
+
+  """
+  The maximum number of consecutive failures before the container is marked as unhealthy. Example:3
+  """
+  retries: Int!
+
+  """Healthcheck command is a shell command."""
+  shell: Boolean!
+
+  """
+  StartInterval configures the duration between checks during the startup phase. Example:5s
+  """
+  startInterval: String!
+
+  """
+  StartPeriod allows for failures during this initial startup period which do
+  not count towards maximum number of retries. Example:0s
+  """
+  startPeriod: String!
+
+  """Healthcheck timeout. Example:3s"""
+  timeout: String!
+}
+
+"""
+The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+"""
+scalar HealthcheckConfigID
+
 """Information about the host environment."""
 type Host {
+  """Accesses a container image on the host."""
+  containerImage(
+    """Name of the image to access."""
+    name: String!
+  ): Container!
+
   """Accesses a directory on the host."""
   directory(
     """Location of the directory to access (e.g., ".")."""
@@ -2577,6 +3795,9 @@ type Host {
 
     """If true, the directory will always be reloaded from the host."""
     noCache: Boolean = false
+
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""
@@ -2588,6 +3809,17 @@ type Host {
     noCache: Boolean = false
   ): File!
 
+  """
+  Search for a file or directory by walking up the tree from system workdir.
+  Return its relative path. If no match, return null
+  """
+  findUp(
+    """name of the file or directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): String
+
   """A unique identifier for this Host."""
   id: HostID!
 
@@ -2597,9 +3829,9 @@ type Host {
   service(
     """
     Ports to expose via the service, forwarding through the host network.
-    
+
     If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-    
+
     An empty set of ports is not valid; an error will be returned.
     """
     ports: [PortForward!]!
@@ -2608,19 +3840,6 @@ type Host {
     host: String = "localhost"
   ): Service!
 
-  """
-  Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-  
-  The file is limited to a size of 512000 bytes.
-  """
-  setSecretFile(
-    """The user defined name for this secret."""
-    name: String!
-
-    """Location of the file to set as a secret."""
-    path: String!
-  ): Secret! @deprecated(reason: "setSecretFile is superceded by use of the secret API with file:// URIs")
-
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(
     """Service to send traffic from the tunnel."""
@@ -2628,20 +3847,20 @@ type Host {
 
     """
     Map each service port to the same port on the host, as if the service were running natively.
-    
+
     Note: enabling may result in port conflicts.
     """
     native: Boolean = false
 
     """
     Configure explicit port forwarding rules for the tunnel.
-    
+
     If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-    
+
     If no ports are given, all of the service's ports are forwarded. If native
     is true, each port maps to the same port on the host. If native is false,
     each port maps to a random port chosen by the host.
-    
+
     If ports are given and native is true, the ports are additive.
     """
     ports: [PortForward!] = []
@@ -2716,7 +3935,7 @@ type InterfaceTypeDef {
   name: String!
 
   """The location of this interface declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -2732,6 +3951,79 @@ scalar InterfaceTypeDefID
 """An arbitrary JSON-encoded value."""
 scalar JSON
 
+type JSONValue {
+  """Decode an array from json"""
+  asArray: [JSONValue!]!
+
+  """Decode a boolean from json"""
+  asBoolean: Boolean!
+
+  """Decode an integer from json"""
+  asInteger: Int!
+
+  """Decode a string from json"""
+  asString: String!
+
+  """Return the value encoded as json"""
+  contents(
+    """Pretty-print"""
+    pretty: Boolean = false
+
+    """Optional line prefix"""
+    indent: String = "  "
+  ): JSON!
+
+  """Lookup the field at the given path, and return its value."""
+  field(
+    """Path of the field to lookup, encoded as an array of field names"""
+    path: [String!]!
+  ): JSONValue!
+
+  """List fields of the encoded object"""
+  fields: [String!]!
+
+  """A unique identifier for this JSONValue."""
+  id: JSONValueID!
+
+  """Encode a boolean to json"""
+  newBoolean(
+    """New boolean value"""
+    value: Boolean!
+  ): JSONValue!
+
+  """Encode an integer to json"""
+  newInteger(
+    """New integer value"""
+    value: Int!
+  ): JSONValue!
+
+  """Encode a string to json"""
+  newString(
+    """New string value"""
+    value: String!
+  ): JSONValue!
+
+  """Return a new json value, decoded from the given content"""
+  withContents(
+    """New JSON-encoded contents"""
+    contents: JSON!
+  ): JSONValue!
+
+  """Set a new field at the given path"""
+  withField(
+    """Path of the field to set, encoded as an array of field names"""
+    path: [String!]!
+
+    """The new value of the field"""
+    value: JSONValueID!
+  ): JSONValue!
+}
+
+"""
+The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+"""
+scalar JSONValueID
+
 type LLM {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
@@ -2741,6 +4033,11 @@ type LLM {
 
   """return the LLM's current environment"""
   env: Env!
+
+  """
+  Indicates whether there are any queued prompts or tool results to send to the model
+  """
+  hasPrompt: Boolean!
 
   """return the llm message history"""
   history: [String!]!
@@ -2754,7 +4051,9 @@ type LLM {
   """return the last llm reply from the history"""
   lastReply: String!
 
-  """synchronize LLM state"""
+  """
+  Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+  """
   loop: LLM!
 
   """return the model used by the llm"""
@@ -2762,6 +4061,11 @@ type LLM {
 
   """return the provider used by the llm"""
   provider: String!
+
+  """
+  Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+  """
+  step: LLMID!
 
   """synchronize LLM state"""
   sync: LLMID!
@@ -2772,8 +4076,32 @@ type LLM {
   """print documentation for available tools"""
   tools: String!
 
+  """
+  Return a new LLM with the specified function no longer exposed as a tool
+  """
+  withBlockedFunction(
+    """The type name whose function will be blocked"""
+    typeName: String!
+
+    """
+    The function to block
+
+    Will be converted to lowerCamelCase if necessary.
+    """
+    function: String!
+  ): LLM!
+
   """allow the LLM to interact with an environment via MCP"""
   withEnv(env: EnvID!): LLM!
+
+  """Add an external MCP server to the LLM"""
+  withMCPServer(
+    """The name of the MCP server"""
+    name: String!
+
+    """The MCP service to run and communicate with over stdio"""
+    service: ServiceID!
+  ): LLM!
 
   """swap out the llm model"""
   withModel(
@@ -2793,6 +4121,11 @@ type LLM {
     file: FileID!
   ): LLM!
 
+  """
+  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+  """
+  withStaticTools: LLM!
+
   """Add a system prompt to the LLM's environment"""
   withSystemPrompt(
     """The system prompt to send"""
@@ -2801,6 +4134,12 @@ type LLM {
 
   """Disable the default system prompt"""
   withoutDefaultSystemPrompt: LLM!
+
+  """Clear the message history, leaving only the system prompts"""
+  withoutMessageHistory: LLM!
+
+  """Clear the system prompts, leaving only the default system prompt"""
+  withoutSystemPrompts: LLM!
 }
 
 """
@@ -2861,6 +4200,20 @@ scalar ListTypeDefID
 
 """A Dagger module."""
 type Module {
+  """
+  Return the check defined by the module with the given name. Must match to exactly one check.
+  """
+  check(
+    """The name of the check to retrieve"""
+    name: String!
+  ): Check! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """Return all checks defined by the module"""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -2875,11 +4228,35 @@ type Module {
   """
   generatedContextDirectory: Directory!
 
+  """
+  Return the generator defined by the module with the given name. Must match to exactly one generator.
+  """
+  generator(
+    """The name of the generator to retrieve"""
+    name: String!
+  ): Generator! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """Return all generators defined by the module"""
+  generators(
+    """Only include generators matching the specified patterns"""
+    include: [String!]
+  ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """A unique identifier for this Module."""
   id: ModuleID!
 
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
+
+  """
+  The introspection schema JSON file for this module.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
 
   """The name of the module"""
   name: String!
@@ -2890,14 +4267,14 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container!
+  runtime: Container
 
   """The SDK config used by this module."""
   sdk: SDKConfig
 
   """
   Serve a module's API in the current session.
-  
+
   Note: this can only be called once per session. In the future, it could return
   a stream or service to remove the side effect.
   """
@@ -2907,12 +4284,15 @@ type Module {
   ): Void
 
   """The source for the module."""
-  source: ModuleSource!
+  source: ModuleSource
 
   """
   Forces evaluation of the module, including any loading into the engine and associated validation.
   """
   sync: ModuleID!
+
+  """User-defined default values, loaded from local .env files."""
+  userDefaults: EnvFile!
 
   """Retrieves the module with the given description"""
   withDescription(
@@ -2965,6 +4345,9 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
+  """The blueprint referenced by the module source."""
+  blueprint: ModuleSource!
+
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
@@ -3005,6 +4388,11 @@ type ModuleSource {
   engineVersion: String!
 
   """
+  The generated files and directories made on top of the module source's context directory, returned as a Changeset.
+  """
+  generatedContextChangeset: Changeset!
+
+  """
   The generated files and directories made on top of the module source's context directory.
   """
   generatedContextDirectory: Directory!
@@ -3021,6 +4409,16 @@ type ModuleSource {
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
+
+  """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
 
   """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
@@ -3071,8 +4469,20 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
+  """The toolchains referenced by the module source."""
+  toolchains: [ModuleSource!]!
+
+  """User-defined defaults read from local .env files"""
+  userDefaults: EnvFile!
+
   """The specified version of the git repo this source points to."""
   version: String!
+
+  """Set a blueprint for the module source."""
+  withBlueprint(
+    """The blueprint module to set."""
+    blueprint: ModuleSourceID!
+  ): ModuleSource!
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -3095,6 +4505,12 @@ type ModuleSource {
   withEngineVersion(
     """The engine version to upgrade to."""
     version: String!
+  ): ModuleSource!
+
+  """Enable the experimental features for the module source."""
+  withExperimentalFeatures(
+    """The experimental features to enable."""
+    features: [ModuleSourceExperimentalFeature!]!
   ): ModuleSource!
 
   """
@@ -3126,11 +4542,35 @@ type ModuleSource {
     path: String!
   ): ModuleSource!
 
+  """Add toolchains to the module source."""
+  withToolchains(
+    """The toolchain modules to add."""
+    toolchains: [ModuleSourceID!]!
+  ): ModuleSource!
+
+  """Update the blueprint module to the latest version."""
+  withUpdateBlueprint: ModuleSource!
+
   """Update one or more module dependencies."""
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
   ): ModuleSource!
+
+  """Update one or more toolchains."""
+  withUpdateToolchains(
+    """The toolchains to update."""
+    toolchains: [String!]!
+  ): ModuleSource!
+
+  """Update one or more clients."""
+  withUpdatedClients(
+    """The clients to update"""
+    clients: [String!]!
+  ): ModuleSource!
+
+  """Remove the current blueprint from the module source."""
+  withoutBlueprint: ModuleSource!
 
   """Remove a client from the module source."""
   withoutClient(
@@ -3145,6 +4585,24 @@ type ModuleSource {
     """The dependencies to remove."""
     dependencies: [String!]!
   ): ModuleSource!
+
+  """Disable experimental features for the module source."""
+  withoutExperimentalFeatures(
+    """The experimental features to disable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
+  """Remove the provided toolchains from the module source."""
+  withoutToolchains(
+    """The toolchains to remove."""
+    toolchains: [String!]!
+  ): ModuleSource!
+}
+
+"""Experimental features of a module"""
+enum ModuleSourceExperimentalFeature {
+  """Self calls"""
+  SELF_CALLS
 }
 
 """
@@ -3173,6 +4631,9 @@ type ObjectTypeDef {
   """The function used to construct new instances of this object, if any"""
   constructor: Function
 
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
+
   """The doc string for the object, if any."""
   description: String!
 
@@ -3189,7 +4650,7 @@ type ObjectTypeDef {
   name: String!
 
   """The location of this object declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -3255,6 +4716,11 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
+  """
+  initialize an address to load directories, containers, secrets or other object types.
+  """
+  address(value: String!): Address!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -3263,12 +4729,15 @@ type Query {
     key: String!
   ): CacheVolume!
 
+  """Creates an empty changeset"""
+  changeset: Changeset!
+
   """Dagger Cloud configuration and state"""
   cloud: Cloud!
 
   """
   Creates a scratch container, with no image or metadata.
-  
+
   To pull an image, follow up with the "from" function.
   """
   container(
@@ -3279,8 +4748,23 @@ type Query {
   ): Container!
 
   """
+  Returns the current environment
+
+  When called from a function invoked via an LLM tool call, this will be the
+  LLM's current environment, including any modifications made through calling
+  tools. Env values returned by functions become the new environment for
+  subsequent calls, and Changeset values returned by functions are applied to
+  the environment's workspace.
+
+  When called from a module function outside of an LLM, this returns an Env with
+  the current module installed, and with the current module's source directory
+  as its workspace.
+  """
+  currentEnv: Env! @experimental(reason: "Programmatic env access is speculative and might be replaced.")
+
+  """
   The FunctionCall context that the SDK caller is currently executing in.
-  
+
   If the caller is not currently executing in a function, this will return an error.
   """
   currentFunctionCall: FunctionCall!
@@ -3293,6 +4777,12 @@ type Query {
   """
   currentTypeDefs: [TypeDef!]!
 
+  """Detect and return the current workspace."""
+  currentWorkspace(
+    """If true, skip legacy dagger.json migration checks."""
+    skipMigrationCheck: Boolean = false
+  ): Workspace! @experimental(reason: "Highly experimental API extracted from a more ambitious workspace implementation.")
+
   """The default platform of the engine."""
   defaultPlatform: Platform!
 
@@ -3302,7 +4792,7 @@ type Query {
   """The Dagger engine container configuration and state"""
   engine: Engine!
 
-  """Initialize a new environment"""
+  """Initializes a new environment"""
   env(
     """
     Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
@@ -3312,6 +4802,12 @@ type Query {
     """Allow new outputs to be declared and saved in the environment"""
     writable: Boolean = false
   ): Env! @experimental(reason: "Environments are not yet stabilized")
+
+  """Initialize an environment file"""
+  envFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean
+  ): EnvFile!
 
   """Create a new error."""
   error(
@@ -3355,9 +4851,9 @@ type Query {
   git(
     """
     URL of the git repository.
-    
+
     Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
-    
+
     Suffix ".git" is optional.
     """
     url: String!
@@ -3405,6 +4901,9 @@ type Query {
     experimentalServiceHost: ServiceID
   ): File!
 
+  """Initialize a JSON value"""
+  json: JSONValue!
+
   """Initialize a Large Language Model (LLM)"""
   llm(
     """Model to use"""
@@ -3414,11 +4913,23 @@ type Query {
     maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
+  """Load a Address from its ID."""
+  loadAddressFromID(id: AddressID!): Address!
+
   """Load a Binding from its ID."""
   loadBindingFromID(id: BindingID!): Binding!
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
+
+  """Load a Changeset from its ID."""
+  loadChangesetFromID(id: ChangesetID!): Changeset!
+
+  """Load a Check from its ID."""
+  loadCheckFromID(id: CheckID!): Check!
+
+  """Load a CheckGroup from its ID."""
+  loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!
@@ -3449,6 +4960,9 @@ type Query {
 
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
+  """Load a EnvFile from its ID."""
+  loadEnvFileFromID(id: EnvFileID!): EnvFile!
 
   """Load a Env from its ID."""
   loadEnvFromID(id: EnvID!): Env!
@@ -3483,11 +4997,20 @@ type Query {
   """Load a GeneratedCode from its ID."""
   loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
 
+  """Load a Generator from its ID."""
+  loadGeneratorFromID(id: GeneratorID!): Generator!
+
+  """Load a GeneratorGroup from its ID."""
+  loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
+
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!
 
   """Load a GitRepository from its ID."""
   loadGitRepositoryFromID(id: GitRepositoryID!): GitRepository!
+
+  """Load a HealthcheckConfig from its ID."""
+  loadHealthcheckConfigFromID(id: HealthcheckConfigID!): HealthcheckConfig!
 
   """Load a Host from its ID."""
   loadHostFromID(id: HostID!): Host!
@@ -3497,6 +5020,9 @@ type Query {
 
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
+
+  """Load a JSONValue from its ID."""
+  loadJSONValueFromID(id: JSONValueID!): JSONValue!
 
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
@@ -3531,6 +5057,12 @@ type Query {
   """Load a ScalarTypeDef from its ID."""
   loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
 
+  """Load a SearchResult from its ID."""
+  loadSearchResultFromID(id: SearchResultID!): SearchResult!
+
+  """Load a SearchSubmatch from its ID."""
+  loadSearchSubmatchFromID(id: SearchSubmatchID!): SearchSubmatch!
+
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
@@ -3543,11 +5075,17 @@ type Query {
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
 
+  """Load a Stat from its ID."""
+  loadStatFromID(id: StatID!): Stat
+
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
+
+  """Load a Workspace from its ID."""
+  loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
   """Create a new module."""
   module: Module!
@@ -3589,11 +5127,11 @@ type Query {
     means that any secrets with the same cache key will be considered equivalent
     in terms of cache lookups, even if they have different URIs or plaintext
     values.
-    
+
     For example, two secrets with the same cache key provided as secret env vars
     to other wise equivalent containers will result in the container withExecs
     hitting the cache for each other.
-    
+
     If not set, the cache key for the secret will be derived from its plaintext
     value as looked up when the secret is constructed.
     """
@@ -3602,7 +5140,7 @@ type Query {
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.
-  
+
   The plaintext value is limited to a size of 128000 bytes.
   """
   setSecret(
@@ -3637,15 +5175,20 @@ enum ReturnType {
   """A successful execution (exit code 0)"""
   SUCCESS
 
-  """A failed execution (exit codes 1-127)"""
+  """A failed execution (exit codes 1-127 and 192-255)"""
   FAILURE
 
-  """Any execution (exit codes 0-127)"""
+  """Any execution (exit codes 0-127 and 192-255)"""
   ANY
 }
 
 """The SDK config of the module."""
 type SDKConfig {
+  """
+  Whether to start the SDK runtime in debug mode with an interactive terminal.
+  """
+  debug: Boolean!
+
   """A unique identifier for this SDKConfig."""
   id: SDKConfigID!
 
@@ -3682,6 +5225,50 @@ The `ScalarTypeDefID` scalar type represents an identifier for an object of type
 """
 scalar ScalarTypeDefID
 
+type SearchResult {
+  """The byte offset of this line within the file."""
+  absoluteOffset: Int!
+
+  """The path to the file that matched."""
+  filePath: String!
+
+  """A unique identifier for this SearchResult."""
+  id: SearchResultID!
+
+  """The first line that matched."""
+  lineNumber: Int!
+
+  """The line content that matched."""
+  matchedLines: String!
+
+  """Sub-match positions and content within the matched lines."""
+  submatches: [SearchSubmatch!]!
+}
+
+"""
+The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+"""
+scalar SearchResultID
+
+type SearchSubmatch {
+  """The match's end offset within the matched lines."""
+  end: Int!
+
+  """A unique identifier for this SearchSubmatch."""
+  id: SearchSubmatchID!
+
+  """The match's start offset within the matched lines."""
+  start: Int!
+
+  """The matched text."""
+  text: String!
+}
+
+"""
+The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
+"""
+scalar SearchSubmatchID
+
 """
 A reference to a secret value, which can be handled more safely than the value itself.
 """
@@ -3708,9 +5295,9 @@ scalar SecretID
 type Service {
   """
   Retrieves an endpoint that clients can use to reach this container.
-  
+
   If no port is specified, the first exposed port is used. If none exist an error is returned.
-  
+
   If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
   """
   endpoint(
@@ -3734,7 +5321,7 @@ type Service {
 
   """
   Start the service and wait for its health checks to succeed.
-  
+
   Services bound to a Container do not need to be manually started.
   """
   start: ServiceID!
@@ -3745,13 +5332,18 @@ type Service {
     kill: Boolean = false
   ): ServiceID!
 
+  """Forces evaluation of the pipeline in the engine."""
+  sync: ServiceID!
+
+  terminal(cmd: [String!] = []): Service!
+
   """
   Creates a tunnel that forwards traffic from the caller's network to this service.
   """
   up(
     """
     List of frontend/backend port mappings to forward.
-    
+
     Frontend is the port accepting traffic on the host, backend is the service port.
     """
     ports: [PortForward!] = []
@@ -3801,12 +5393,40 @@ type SourceMap {
 
   """The module dependency this was declared in."""
   module: String!
+
+  """
+  The URL to the file, if any. This can be used to link to the source map in the browser.
+  """
+  url: String!
 }
 
 """
 The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 """
 scalar SourceMapID
+
+"""A file or directory status object."""
+type Stat {
+  """file type"""
+  fileType: FileType
+
+  """A unique identifier for this Stat."""
+  id: StatID!
+
+  """file name"""
+  name: String!
+
+  """permission bits"""
+  permissions: Int!
+
+  """file size"""
+  size: Int!
+}
+
+"""
+The `StatID` scalar type represents an identifier for an object of type Stat.
+"""
+scalar StatID
 
 """An interactive terminal that clients can connect to."""
 type Terminal {
@@ -3815,7 +5435,7 @@ type Terminal {
 
   """
   Forces evaluation of the pipeline in the engine.
-  
+
   It doesn't run the default command if no exec has been set.
   """
   sync: TerminalID!
@@ -3874,7 +5494,7 @@ type TypeDef {
 
   """
   Returns a TypeDef of kind Enum with the provided name.
-  
+
   Note that an enum's values may be omitted if the intent is only to refer to an
   enum. This is how functions are able to return their own, or any other
   circular reference.
@@ -3905,6 +5525,9 @@ type TypeDef {
 
     """The source map for the enum member definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): TypeDef!
 
   """
@@ -3919,6 +5542,9 @@ type TypeDef {
 
     """The source map for the enum value definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): TypeDef! @deprecated(reason: "Use `withEnumMember` instead")
 
   """
@@ -3936,6 +5562,9 @@ type TypeDef {
 
     """The source map for the field definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): TypeDef!
 
   """
@@ -3956,12 +5585,12 @@ type TypeDef {
 
   """
   Returns a TypeDef of kind Object with the provided name.
-  
+
   Note that an object's fields and functions may be omitted if the intent is
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
   """
-  withObject(name: String!, description: String = "", sourceMap: SourceMapID): TypeDef!
+  withObject(name: String!, description: String = "", sourceMap: SourceMapID, deprecated: String): TypeDef!
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
@@ -3994,21 +5623,21 @@ enum TypeDefKind {
 
   """
   Always paired with a ListTypeDef.
-  
+
   A list of values all having the same type.
   """
   LIST_KIND
 
   """
   Always paired with an ObjectTypeDef.
-  
+
   A named type defined in the GraphQL schema, with fields and functions.
   """
   OBJECT_KIND
 
   """
   Always paired with an InterfaceTypeDef.
-  
+
   A named type of functions that can be matched+implemented by other objects+interfaces.
   """
   INTERFACE_KIND
@@ -4020,7 +5649,7 @@ enum TypeDefKind {
 
   """
   A special kind used to signify that no value is returned.
-  
+
   This is used for functions that have no return value. The outer TypeDef
   specifying this Kind is always Optional, as the Void is never actually
   represented.
@@ -4029,7 +5658,7 @@ enum TypeDefKind {
 
   """
   A GraphQL enum type and its values
-  
+
   Always paired with an EnumTypeDef.
   """
   ENUM_KIND
@@ -4051,21 +5680,21 @@ enum TypeDefKind {
 
   """
   Always paired with a ListTypeDef.
-  
+
   A list of values all having the same type.
   """
   LIST
 
   """
   Always paired with an ObjectTypeDef.
-  
+
   A named type defined in the GraphQL schema, with fields and functions.
   """
   OBJECT
 
   """
   Always paired with an InterfaceTypeDef.
-  
+
   A named type of functions that can be matched+implemented by other objects+interfaces.
   """
   INTERFACE
@@ -4077,7 +5706,7 @@ enum TypeDefKind {
 
   """
   A special kind used to signify that no value is returned.
-  
+
   This is used for functions that have no return value. The outer TypeDef
   specifying this Kind is always Optional, as the Void is never actually
   represented.
@@ -4086,7 +5715,7 @@ enum TypeDefKind {
 
   """
   A GraphQL enum type and its values
-  
+
   Always paired with an EnumTypeDef.
   """
   ENUM
@@ -4098,5 +5727,74 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
+
+"""A Dagger workspace detected from the current working directory."""
+type Workspace {
+  """The client ID that owns this workspace's host filesystem."""
+  clientId: String!
+
+  """
+  Returns a Directory from the workspace.
+
+  Path is relative to workspace root. Use "." for the root directory.
+  """
+  directory(
+    """
+    Location of the directory to retrieve, relative to the workspace root (e.g., "src", ".").
+    """
+    path: String!
+
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory."""
+    gitignore: Boolean = false
+  ): Directory!
+
+  """
+  Returns a File from the workspace.
+
+  Path is relative to workspace root.
+  """
+  file(
+    """
+    Location of the file to retrieve, relative to the workspace root (e.g., "go.mod").
+    """
+    path: String!
+  ): File!
+
+  """
+  Search for a file or directory by walking up from the start path within the workspace.
+
+  Returns the path relative to the workspace root if found, or null if not found.
+
+  The search stops at the workspace root and will not traverse above it.
+  """
+  findUp(
+    """The name of the file or directory to search for."""
+    name: String!
+
+    """Path to start the search from, relative to the workspace root."""
+    from: String = "."
+  ): String
+
+  """A unique identifier for this Workspace."""
+  id: WorkspaceID!
+
+  """Absolute path to the workspace root directory."""
+  root: String!
+}
+
+"""
+The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+"""
+scalar WorkspaceID
 
 

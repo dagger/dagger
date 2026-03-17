@@ -1,0 +1,13 @@
+{
+  "name": "test-split",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk@8eba69d6ac5bcf1e4050bb855783e01d8b557ea9"
+  },
+  "dependencies": [
+    {
+      "name": "engine-dev",
+      "source": "../engine-dev"
+    }
+  ]
+}

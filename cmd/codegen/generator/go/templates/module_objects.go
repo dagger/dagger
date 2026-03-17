@@ -6,13 +6,13 @@ import (
 	"go/types"
 	"maps"
 	"reflect"
-	"sort"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	"dagger.io/dagger"
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
-func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {
+func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) { //nolint:gocyclo // parsing struct metadata is inherently branchy
 	spec := &parsedObjectType{
 		goType:     t,
 		moduleName: ps.moduleName,
@@ -58,9 +58,6 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	if objectIsDaggerGenerated {
 		return nil, nil
 	}
-	sort.Slice(goFuncTypes, func(i, j int) bool {
-		return goFuncTypes[i].Pos() < goFuncTypes[j].Pos()
-	})
 
 	for _, goFuncType := range goFuncTypes {
 		funcTypeSpec, err := ps.parseGoFunc(named, goFuncType)
@@ -76,7 +73,16 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
 	if doc := docForAstSpec(astSpec); doc != nil {
-		spec.doc = doc.Text()
+		docPragmas, docComment := parsePragmaComment(doc.Text())
+		comment := strings.TrimSpace(docComment)
+		if raw, ok := docPragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
+			}
+			spec.deprecated = &reason
+		}
+		spec.doc = comment
 	}
 
 	spec.sourceMap = ps.sourceMap(astSpec)
@@ -111,11 +117,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		// end up asking for a name that we won't unmarshal correctly
 		tag := reflect.StructTag(t.Tag(i))
 		if dt := tag.Get("json"); dt != "" {
-			dt, _, _ = strings.Cut(dt, ",")
-			if dt == "-" {
+			namePart, _, _ := strings.Cut(dt, ",")
+			if namePart == "-" {
 				continue
 			}
-			fieldSpec.name = dt
+			if namePart != "" {
+				fieldSpec.name = namePart
+			}
 		}
 
 		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
@@ -133,6 +141,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 			} else {
 				fieldSpec.isPrivate, _ = v.(bool)
 			}
+		}
+		if raw, ok := pragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
+			}
+			fieldSpec.deprecated = &reason
 		}
 
 		fieldSpec.doc = comment
@@ -157,6 +172,7 @@ type parsedObjectType struct {
 	moduleName string
 	doc        string
 	sourceMap  *sourceMap
+	deprecated *string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -167,29 +183,28 @@ type parsedObjectType struct {
 
 var _ NamedParsedType = &parsedObjectType{}
 
-func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
-	withObjectArgsCode := []Code{
-		Lit(spec.name),
-	}
-	withObjectOptsCode := []Code{}
+func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
+	withObjectOpts := dagger.TypeDefWithObjectOpts{}
 	if spec.doc != "" {
-		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
+		withObjectOpts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.deprecated != nil {
+		withObjectOpts.Deprecated = strings.TrimSpace(*spec.deprecated)
 	}
 	if spec.sourceMap != nil {
-		withObjectOptsCode = append(withObjectOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
+		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
-	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
+	if spec.name == "" {
+		return nil, fmt.Errorf("object name is empty")
 	}
+	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
 
-	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgsCode...)
-
-	for _, method := range spec.methods {
-		fnTypeDefCode, err := method.TypeDefCode()
+	for _, m := range spec.methods {
+		fnTypeDef, err := m.TypeDefFunc(dag)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.name, err)
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
 		}
-		typeDefCode = dotLine(typeDefCode, "WithFunction").Call(Add(Line(), fnTypeDefCode))
+		typeDefObject = typeDefObject.WithFunction(fnTypeDef)
 	}
 
 	for _, field := range spec.fields {
@@ -197,38 +212,32 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 			continue
 		}
 
-		fieldTypeDefCode, err := field.typeSpec.TypeDefCode()
+		fieldTypeDef, err := field.typeSpec.TypeDef(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
-		withFieldArgsCode := []Code{
-			Lit(field.name),
-			fieldTypeDefCode,
-		}
-		var withFieldOpts []Code
+		withFieldOpts := dagger.TypeDefWithFieldOpts{}
 		if field.doc != "" {
-			withFieldOpts = append(withFieldOpts, Id("Description").Op(":").Lit(field.doc))
+			withFieldOpts.Description = field.doc
 		}
 		if field.sourceMap != nil {
-			withFieldOpts = append(withFieldOpts, Id("SourceMap").Op(":").Add(field.sourceMap.TypeDefCode()))
+			withFieldOpts.SourceMap = field.sourceMap.TypeDef(dag)
 		}
-		if len(withFieldOpts) > 0 {
-			withFieldArgsCode = append(withFieldArgsCode,
-				Id("dagger").Dot("TypeDefWithFieldOpts").Values(withFieldOpts...),
-			)
+		if field.deprecated != nil {
+			withFieldOpts.Deprecated = strings.TrimSpace(*field.deprecated)
 		}
-		typeDefCode = dotLine(typeDefCode, "WithField").Call(withFieldArgsCode...)
+		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDef, withFieldOpts)
 	}
 
 	if spec.constructor != nil {
-		fnTypeDefCode, err := spec.constructor.TypeDefCode()
+		fnTypeDef, err := spec.constructor.TypeDefFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
 		}
-		typeDefCode = dotLine(typeDefCode, "WithConstructor").Call(Add(Line(), fnTypeDefCode))
+		typeDefObject = typeDefObject.WithConstructor(fnTypeDef)
 	}
 
-	return typeDefCode, nil
+	return typeDefObject, nil
 }
 
 func (spec *parsedObjectType) GoType() types.Type {
@@ -518,10 +527,11 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 }
 
 type fieldSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
-	typeSpec  ParsedType
+	name       string
+	doc        string
+	deprecated *string
+	sourceMap  *sourceMap
+	typeSpec   ParsedType
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool

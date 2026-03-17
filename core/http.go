@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql"
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -33,7 +34,7 @@ func DoHTTPRequest(
 	// potentially reuse ETags even if filename/permissions change: then
 	// creating a new snapshot, copying only the data from the old one
 	url := req.URL.String()
-	urlDigest := dagql.HashFrom(url, filename, fmt.Sprint(permissions))
+	urlDigest := hashutil.HashStrings(url, filename, fmt.Sprint(permissions))
 
 	mds, err := searchHTTPByDigest(ctx, cache, urlDigest)
 	if err != nil {
@@ -45,7 +46,7 @@ func DoHTTPRequest(
 
 	// If we request a single ETag in 'If-None-Match', some servers omit the
 	// unambiguous ETag in their response.
-	// See: https://github.com/moby/buildkit/issues/905
+	// See: https://github.com/dagger/dagger/internal/buildkit/issues/905
 	var onlyETag string
 
 	if len(mds) > 0 {
@@ -127,7 +128,7 @@ func DoHTTPRequest(
 	}()
 
 	h := sha256.New()
-	err = MountRef(ctx, bkref, nil, func(out string) error {
+	err = MountRef(ctx, bkref, nil, func(out string, _ *mount.Mount) error {
 		// create the file
 		dest := filepath.Join(out, filename)
 		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(permissions))
@@ -162,7 +163,11 @@ func DoHTTPRequest(
 	if err != nil {
 		return nil, "", nil, err
 	}
-	defer snap.Release(context.WithoutCancel(ctx))
+	defer func() {
+		if rerr != nil && snap != nil {
+			snap.Release(context.WithoutCancel(ctx))
+		}
+	}()
 	bkref = nil
 
 	contentDgst := digest.NewDigest(digest.SHA256, h)

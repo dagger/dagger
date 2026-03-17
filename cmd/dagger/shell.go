@@ -10,19 +10,20 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -37,7 +38,7 @@ var (
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
-	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-sonnet-4-0', 'gpt-4.1')")
+	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')")
 }
 
 var shellCmd = &cobra.Command{
@@ -45,20 +46,17 @@ var shellCmd = &cobra.Command{
 	Short: "Run an interactive dagger shell",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			handler := &shellCallHandler{
-				dag:      dag,
-				llmModel: llmModel,
-				mode:     modeShell,
-			}
+			handler := newShellCallHandler(dag, Frontend)
 
 			err := handler.RunAll(ctx, args)
 
-			// Don't bother printing the error message if the TUI is enabled.
+			// Wrap exit status in ExitError so the TUI preserves the exit code
+			// and doesn't print a redundant error message.
 			var es interp.ExitStatus
 			if handler.tty && errors.As(err, &es) {
-				return ExitError{Code: int(es)}
+				return idtui.ExitError{OriginalCode: int(es), Original: err}
 			}
 
 			return err
@@ -70,6 +68,14 @@ var shellCmd = &cobra.Command{
 type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
+
+	// don't detect + load a module, just stick to dagger core
+	noModule bool
+	// a module ref to load
+	moduleURL string
+
+	// frontend to integrate with
+	frontend idtui.Frontend
 
 	// tty is set to true when running the TUI (pretty frontend)
 	tty bool
@@ -126,6 +132,21 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+}
+
+func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
+	ref, _ := getExplicitModuleSourceRef()
+	if ref == "" {
+		ref = moduleURLDefault
+	}
+	return &shellCallHandler{
+		dag:       dag,
+		llmModel:  llmModel,
+		mode:      modeShell,
+		noModule:  moduleNoURL,
+		moduleURL: ref,
+		frontend:  fe,
+	}
 }
 
 // Debug prints to stderr internal command handler state and workflow that
@@ -196,16 +217,11 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.state = NewStateStore(h.runner)
 
 	// TODO: use `--workdir` and `--no-workdir` flags
-	ref, _ := getExplicitModuleSourceRef()
-	if ref == "" {
-		ref = moduleURLDefault
-	}
-
 	var def *moduleDef
 	var cfg *configuredModule
 
-	if !moduleNoURL {
-		def, cfg, err = h.maybeLoadModule(ctx, ref)
+	if !h.noModule {
+		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL)
 		if err != nil {
 			return err
 		}
@@ -220,7 +236,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		h.modDefs.Store("", def)
 	}
 
-	subpath := ref
+	subpath := h.moduleURL
 	if cfg != nil {
 		subpath = cfg.Subpath
 	}
@@ -230,15 +246,11 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initial context: %w", err)
 	}
 
-	// silently attempt to initialize llm to populate $agent.
-	// swallow errors, discard logs.
-	_, _ = h.llm(context.Background())
-
 	h.initwd = *wd
 	h.wd = h.initwd
 
 	// not h.Debug() on purpose because it's only set from within an interpreter run
-	if debug {
+	if debugFlag {
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("initial workdir",
 			"context", h.initwd.Context,
@@ -323,8 +335,9 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 	// give ourselves a blank slate by zooming into a passthrough span
 	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
-	defer telemetry.End(shellSpan, func() error { return nil })
+	defer shellSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
+	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 	// Start the shell loop (either in LLM mode or normal shell mode)
 	Frontend.Shell(ctx, h)
@@ -344,26 +357,22 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
-	// Create a new span for this command
-	ctx, span := Tracer().Start(ctx, line,
-		trace.WithAttributes(
-			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
-			attribute.Bool(telemetry.CanceledAttr, line == ""),
-		),
-	)
-	defer telemetry.End(span, func() error { return rerr })
-
-	// redirect stdio to the current span
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
-
 	// Empty input
 	if line == "" {
+		// add an immediately-canceled blank span, to emulate submitting blank shell
+		// commands to space things apart
+		_, span := Tracer().Start(ctx, "",
+			telemetry.Reveal(),
+			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
+		span.End()
 		return nil
 	}
 
 	// Handle based on mode
 	if h.mode == modePrompt {
+		// NB: no span in this case, just let the LLM APIs create the user/assistant
+		// message spans
+
 		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
@@ -373,8 +382,36 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			return err
 		}
 		h.llmSession = newLLM
+		h.llmModel = newLLM.model
 		return nil
 	}
+
+	// Ensure we always see new telemetry for shell commands, rather than
+	// "resurrecting" the same telemetry from previous commands
+	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
+		ctx = baggage.ContextWithBaggage(ctx, bag)
+	}
+
+	// Create a new span for this command
+	var span trace.Span
+	ctx, span = Tracer().Start(ctx, line,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+		))
+	var telemetryErr error
+	defer telemetry.EndWithCause(span, &telemetryErr)
+	defer func() {
+		if errors.Is(rerr, context.Canceled) {
+			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+		} else {
+			telemetryErr = rerr
+		}
+	}()
+
+	// redirect stdio to the current span
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
 
 	stdoutW := newTerminalWriter(stdio.Stdout.Write)
 	// handle shell state
@@ -390,7 +427,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	// that should hardly cause memory issues.
 	defer h.state.Prune(ctx)
 
-	if debug {
+	if debugFlag {
 		// requires `--debug -vvvv` and .debug` for full dump
 		defer h.state.debug(ctx, h.Debug())
 	}
@@ -420,8 +457,9 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		// initialize LLM session if not already initialized
 		llm, err := h.llmMaybe()
 		if err != nil {
-			sb.WriteString(out.String(err.Error()).Bold().Foreground(termenv.ANSIRed).String())
+			sb.WriteString(out.String("error").Bold().Foreground(termenv.ANSIRed).String())
 			sb.WriteString(out.String(" ").String())
+			fg = termenv.ANSIRed
 		} else if llm != nil {
 			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
 			sb.WriteString(out.String(" ").String())
@@ -495,31 +533,98 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 
 	// initialize without the lock held
-	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
+	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend)
 
 	h.llmL.Lock()
 	defer h.llmL.Unlock()
 
 	if err != nil {
+		slog.Error("failed to initialize LLM", "error", err)
 		h.llmErr = err
 		return nil, err
 	}
 	h.llmSession = s
+	h.llmModel = s.model
 	return h.llmSession, h.llmErr
 }
 
-func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd {
+func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
+	autoCompactHelp := "auto-compact"
+	if h.llmSession != nil && h.llmSession.ShouldAutocompact() {
+		autoCompactHelp = out.String(autoCompactHelp).Foreground(termenv.ANSIGreen).String()
+	}
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "run shell"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "run prompt"),
+			idtui.KeyEnabled(h.mode == modeShell),
+		),
+		key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("ctrl+u", "upload changes"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys("ctrl+x"),
+			key.WithHelp("ctrl+x", autoCompactHelp),
+			idtui.KeyEnabled(h.llmSession != nil),
+		),
+	}
+}
+
+func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) tea.Cmd {
 	switch msg.String() {
 	case ">":
-		h.mode = modePrompt
-		return func() tea.Msg {
-			h.llm(ctx) // initialize LLM
-			return idtui.UpdatePromptMsg{}
+		if editline.AtStart() {
+			h.mode = modePrompt
+			return func() tea.Msg {
+				h.llm(ctx) // initialize LLM
+				return idtui.UpdatePromptMsg{}
+			}
 		}
 	case "!":
-		h.mode = modeShell
-		return func() tea.Msg {
-			return idtui.UpdatePromptMsg{}
+		if editline.AtStart() {
+			h.mode = modeShell
+			return func() tea.Msg {
+				return idtui.UpdatePromptMsg{}
+			}
+		}
+	case "ctrl+x":
+		if h.llmSession != nil {
+			h.llmSession.ToggleAutocompact()
+		}
+	case "ctrl+s":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncToLocal(ctx); err != nil {
+					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
+		}
+	case "ctrl+u":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
+					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
 		}
 	}
 	return nil
@@ -562,21 +667,6 @@ func (h *shellCallHandler) SaveBeforeHistory() {
 func (h *shellCallHandler) RestoreAfterHistory() {
 	h.mode = h.savedMode
 	h.savedMode = modeUnset
-}
-
-func (h *shellCallHandler) KeyBindings() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(
-			key.WithKeys("!"),
-			key.WithHelp("!", "run shell"),
-			idtui.KeyEnabled(h.mode == modePrompt),
-		),
-		key.NewBinding(
-			key.WithKeys(">"),
-			key.WithHelp(">", "run prompt"),
-			idtui.KeyEnabled(h.mode == modeShell),
-		),
-	}
 }
 
 func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {

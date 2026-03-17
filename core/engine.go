@@ -8,6 +8,7 @@ import (
 )
 
 type Engine struct {
+	Name string `field:"true" doc:"The name of the engine instance."`
 }
 
 func (*Engine) Type() *ast.Type {
@@ -22,12 +23,18 @@ func (*Engine) TypeDescription() string {
 }
 
 type EngineCache struct {
-	KeepBytes int `field:"true" doc:"The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in." deprecated:"Use minFreeSpace instead."`
-
 	MaxUsedSpace  int `field:"true" doc:"The maximum bytes to keep in the cache without pruning."`
 	TargetSpace   int `field:"true" doc:"The target number of bytes to keep when pruning."`
 	ReservedSpace int `field:"true" doc:"The minimum amount of disk space this policy is guaranteed to retain."`
 	MinFreeSpace  int `field:"true" doc:"The target amount of free disk space the garbage collector will attempt to leave."`
+}
+
+type EngineCachePruneOptions struct {
+	UseDefaultPolicy bool
+	MaxUsedSpace     string
+	ReservedSpace    string
+	MinFreeSpace     string
+	TargetSpace      string
 }
 
 func (*EngineCache) Type() *ast.Type {
@@ -69,6 +76,7 @@ type EngineCacheEntry struct {
 	CreatedTimeUnixNano       int    `field:"true" doc:"The time the cache entry was created, in Unix nanoseconds."`
 	MostRecentUseTimeUnixNano int    `field:"true" doc:"The most recent time the cache entry was used, in Unix nanoseconds."`
 	ActivelyUsed              bool   `field:"true" doc:"Whether the cache entry is actively being used."`
+	RecordType                string `field:"true" doc:"The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount)."`
 }
 
 func (*EngineCacheEntry) Type() *ast.Type {

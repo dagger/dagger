@@ -65,7 +65,18 @@ engine:
   ### Configure the port settings for the Dagger Engine
   #
   # port: 1234 # The container port that the Dagger Engine will listen on.
-  # hostPort: 1234    # Optional: Expose the engine port directly on the host node
+
+  ### Configure multiple ports for the Dagger Engine
+  # This allows defining all ports in a structured way
+  # Example configuration:
+  # containerPorts:
+  #   - name: dagger
+  #     containerPort: 1234 # Needs to be the same as engine.port if both are set
+  #     protocol: TCP
+  #     hostPort: 1234  # Optional: Expose the engine port directly on the host node
+  #   - name: metrics
+  #     containerPort: 8080
+  #     protocol: TCP
 
   ### Customize Dagger Engine start args
   args: []
@@ -85,7 +96,7 @@ engine:
 
   image:
     ### Set a ref if you want to use a custom Dagger image
-    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail
+    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness and liveness probes will fail
     #   In the example below, we are configuring the latest, unreleased bleeding edge version
     #
     # ref: registry.dagger.io/engine:main
@@ -119,12 +130,25 @@ engine:
   ### Set runtimeClassName to use a custom runtimeClass
   runtimeClassName: ""
 
+  ### Share process namespace with sidecars for monitoring and observability
+  # Enables sidecar containers to see processes in the main engine container
+  # Useful for monitoring tools like Datadog, security scanners, and log collectors
+  shareProcessNamespace: false
+
   readinessProbeSettings:
     initialDelaySeconds: 5
     timeoutSeconds: 14
     periodSeconds: 15
     successThreshold: 1
     failureThreshold: 10
+
+  livenessProbeSettings:
+    initialDelaySeconds: 5
+    timeoutSeconds: 29
+    periodSeconds: 30
+    successThreshold: 1
+    failureThreshold: 20
+    terminationGracePeriodSeconds: 30
 
   ### The Engine may need to finish operations in flight, or sync its state to a remote destination.
   #   We give it ample time by setting this value to 5 mins by default.
@@ -180,6 +204,15 @@ engine:
   # - name: shared-data
   #   persistentVolumeClaim:
   #     claimName: my-pvc
+
+  # Additional sidecars to run alongside the Dagger Engine
+  # sidecars:
+  #   - name: my-sidecar
+  #     image: busybox
+  #     args: ["sleep", "3600"]
+  #     volumeMounts:
+  #       - name: data
+  #         mountPath: /data
 
 magicache:
   enabled: false

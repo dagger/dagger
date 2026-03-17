@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -48,6 +48,10 @@ type ShellCommand struct {
 
 	// Hidden hides the command from `.help`
 	Hidden bool
+
+	// NoResolveStateArgs indicates that the command should not resolve state
+	// values in arguments, before passing them to Run.
+	NoResolveStateArgs bool
 }
 
 // Name is the command name.
@@ -149,15 +153,18 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 			return fmt.Errorf("command %q %w\n\nUsage: %s", c.Name(), err, c.Use)
 		}
 	}
-	// resolve state values in arguments
-	a, err := h.resolveResults(ctx, args)
-	if err != nil {
-		return err
+	if !c.NoResolveStateArgs {
+		// resolve state values in arguments
+		a, err := h.resolveResults(ctx, args)
+		if err != nil {
+			return err
+		}
+		args = a
 	}
 	if h.Debug() {
-		shellDebug(ctx, "Command: "+c.Name(), a, st)
+		shellDebug(ctx, "Command: "+c.Name(), args, st)
 	}
-	return c.Run(ctx, c, a, st)
+	return c.Run(ctx, c, args, st)
 }
 
 func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
@@ -254,12 +261,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				newLLM, err := h.llmSession.Compact(ctx)
+				compacted, err := h.llmSession.Compact(ctx)
 				if err != nil {
 					return err
 				}
-				h.llmSession = newLLM
-				return nil
+				return h.llmSession.updateLLMAndAgentVar(compacted)
 			},
 		},
 		{
@@ -287,7 +293,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				newLLM, err := llm.Model(ctx, args[0])
+				newLLM, err := llm.Model(args[0])
 				if err != nil {
 					return err
 				}
@@ -439,8 +445,8 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Use: ".echo [-n] [string ...]",
 			Description: `Write arguments to the standard output
 
-Writes any specified operands, separated by single blank (' ') characters and 
-followed by a newline ('\n') character, to the standard output. If the -n option 
+Writes any specified operands, separated by single blank (' ') characters and
+followed by a newline ('\n') character, to the standard output. If the -n option
 is specified, the trailing newline is suppressed.
 `,
 		},
@@ -480,11 +486,11 @@ If no name is provided, all environment variables are printed. If a name is prov
 			Description: `Wait for background processes to complete
 
 'id' is the process or job ID. If no ID is specified, .wait always returns 0 (zero).
-Otherwise, it returns the exit status of the first command that failed. When multiple 
+Otherwise, it returns the exit status of the first command that failed. When multiple
 processes are given, the command waits for all processes to complete.
 
 Example:
-	
+
   container | from alpine | with-exec false | stdout &
   job1=$!
   .echo "job id: $job1"
@@ -512,7 +518,7 @@ Example:
 			Use: ".exit [code]",
 			Description: `Exit the shell with an optional status code
 
-Without arguments, uses the exit status of the last command that executed. 
+Without arguments, uses the exit status of the last command that executed.
 `,
 		},
 		&ShellCommand{
@@ -688,18 +694,22 @@ Without arguments, the current working directory is replaced by the initial cont
 
 		// TODO: Don't hardcode this list.
 		promoted := []string{
-			"llm",
+			"address",
 			"cache-volume",
+			"checks",
 			"container",
 			"directory",
 			"engine",
+			"env",
+			"env-file",
 			"file",
 			"git",
 			"host",
-			"env",
 			"http",
-			"set-secret",
+			"json",
+			"llm",
 			"secret",
+			"set-secret",
 			"version",
 		}
 
@@ -715,6 +725,10 @@ Without arguments, the current working directory is replaced by the initial cont
 				HelpFunc: func(cmd *ShellCommand) string {
 					return h.FunctionDoc(def, fn)
 				},
+				// Don't resolve state args since this is calling functionCall
+				// which needs state args to be passed as-is for specialized
+				// flag handling.
+				NoResolveStateArgs: true,
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 					emptySt := h.NewState()
 					st, err := h.functionCall(ctx, &emptySt, fn.CmdName(), args)
@@ -732,6 +746,41 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		)
 	}
+
+	// Add current-env command that creates an env with the current module installed
+	stdlib = append(stdlib, &ShellCommand{
+		Use:         "current-env",
+		Description: "Initialize an environment with the current module installed",
+		State:       NoState,
+		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+			def := h.GetDef(nil)
+			if def.Source == nil {
+				return fmt.Errorf("no module loaded")
+			}
+			// Get the module ID from the module source
+			moduleID, err := def.Source.AsModule().ID(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module ID: %w", err)
+			}
+			// Create an env state
+			emptySt := h.NewState()
+			envSt, err := h.functionCall(ctx, &emptySt, "env", []string{})
+			if err != nil {
+				return fmt.Errorf("failed to create env: %w", err)
+			}
+			// Get the withModule function definition to bypass argument parsing
+			// which would try to resolve the module ID as a path
+			withModuleFn, err := envSt.Function().GetNextDef(def, "withModule")
+			if err != nil {
+				return fmt.Errorf("failed to get withModule function: %w", err)
+			}
+			// Directly construct the state with the module ID, bypassing parseArgumentValues
+			finalSt := envSt.WithCall(withModuleFn, map[string]any{
+				"module": string(moduleID),
+			})
+			return h.Save(ctx, finalSt)
+		},
+	})
 
 	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
 		return cmp.Compare(x.Use, y.Use)

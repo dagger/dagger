@@ -159,6 +159,22 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
 	})
 
+	t.Run("handles empty directory in src", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=emptyDir", "--sdk=typescript")).
+			WithDirectory("/work/src/empty-dir", c.Directory())
+
+		out, err := modGen.
+			With(daggerQuery(`{emptyDir{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"emptyDir":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
 	t.Run("with source", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -201,9 +217,9 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, parentPackageJSON, `"packageManager": "pnpm@`) // We don't check the exact version because it's a SHA
 
-		sourcePackageJSON, err := modGen.File("./dagger/package.json").Contents(ctx)
+		entries, err := modGen.Directory("./dagger").Entries(ctx)
 		require.NoError(t, err)
-		require.Contains(t, sourcePackageJSON, `"packageManager": "yarn@`) // We don't check the exact version because it's a SHA
+		require.Contains(t, entries, "yarn.lock") // Default init generate a yarn.lock
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -885,11 +901,6 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 		require.NoError(t, err)
 		require.Contains(t, files, "yarn.lock")
 
-		// Check that the package manager is set to yarn.
-		packageManager, err := modGen.File("package.json").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, packageManager, `"packageManager": "yarn@1.22.22`)
-
 		// Verify that it executes dagger example properly.
 		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -1227,7 +1238,7 @@ import { object, func } from "@dagger.io/dagger"
 
 @object()
 export class SubSub {
-  @func("zoo")
+	@func({ alias: "zoo" })
   subSubHello(): string {
     return "hello world"
   }
@@ -1235,7 +1246,7 @@ export class SubSub {
 
 @object()
 export class Sub {
-  @func("hello")
+	@func({ alias: "hello" })
   subHello(): SubSub {
     return new SubSub()
   }
@@ -1243,7 +1254,7 @@ export class Sub {
 
 @object()
 export class Alias {
-  @func("bar")
+	@func({ alias: "bar" })
   foo(): Sub {
   return new Sub()
   }
@@ -1485,20 +1496,20 @@ export class Test {
 		schema := inspectModule(ctx, t, modGen)
 
 		require.Equal(t, "Test Enum", schema.Get("enums.#.asEnum|#(name=TestEnum).description").String())
-		require.Equal(t, "A", schema.Get("enums.#.asEnum|#(name=TestEnum).members.#(name=a).description").String())
-		require.Equal(t, "B", schema.Get("enums.#.asEnum|#(name=TestEnum).members.#(name=b).description").String())
+		require.Equal(t, "A", schema.Get("enums.#.asEnum|#(name=TestEnum).members.#(name=A).description").String())
+		require.Equal(t, "B", schema.Get("enums.#.asEnum|#(name=TestEnum).members.#(name=B).description").String())
 	})
 
 	t.Run("native enum type - correct input / output", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("test-enum", "--test", "b")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, `b`, out)
+		require.Equal(t, `B`, out)
 	})
 
 	t.Run("native enum type - default value by reference", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("test-enum")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, `a`, out)
+		require.Equal(t, `A`, out)
 	})
 }
 
@@ -1510,7 +1521,7 @@ func (TypescriptSuite) TestReferencedDefaultValue(ctx context.Context, t *testct
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=test", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-import { func, object } from "@dagger.io/dagger"
+import { func, object, NetworkProtocol } from "@dagger.io/dagger"
 
 export const stringDefaultValue = "world"
 export const integerDefaultValue = 4
@@ -1532,6 +1543,11 @@ export class Test {
   bool(b: boolean = booleanDefaultValue): boolean {
     return b
   }
+
+  @func()
+  proto(p: NetworkProtocol = NetworkProtocol.Udp): NetworkProtocol {
+    return p
+  }
 }
   `))
 
@@ -1541,6 +1557,7 @@ export class Test {
 		require.Equal(t, "\"world\"", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=str).args.#(name=s).defaultValue").String())
 		require.Equal(t, "4", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=integer).args.#(name=n).defaultValue").String())
 		require.Equal(t, "true", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=bool).args.#(name=b).defaultValue").String())
+		require.Equal(t, "\"UDP\"", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=proto).args.#(name=p).defaultValue").String())
 	})
 
 	t.Run("string variable default value", func(ctx context.Context, t *testctx.T) {
@@ -1559,6 +1576,43 @@ export class Test {
 		out, err := modGen.With(daggerCall("bool")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, `true`, out)
+	})
+
+	t.Run("enum property access default value", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("proto")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `UDP`, out)
+	})
+}
+
+func (TypescriptSuite) TestTelemetryImport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+import { getTracer } from "@dagger.io/dagger/telemetry"
+
+@object()
+export class Telemetry {
+  @func()
+  traced(): string {
+    // Exercise @dagger.io/dagger/telemetry resolution during introspection.
+    getTracer("ts-introspection")
+    return "ok"
+  }
+}
+  `))
+
+	t.Run("introspects telemetry import", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+
+		telemetryObj := schema.Get(`objects.#.asObject|#(functions.#(name="traced")).name`).String()
+		require.NotEmpty(t, telemetryObj)
+		require.Equal(t, "traced", schema.Get("objects.#.asObject|#(name="+telemetryObj+").functions.#(name=traced).name").String())
 	})
 }
 
@@ -1983,7 +2037,7 @@ func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("migrate to bundle", func(ctx context.Context, t *testctx.T) {
+	t.Run("auto migrate to bundle", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -1998,9 +2052,17 @@ func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.
 }`).
 			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
 
-		files, err := modGen.Directory("/work/sdk").Entries(ctx)
-		require.NoError(t, err)
-		checkFileExistence(t, files, []string{"package.json", "src/", "tsconfig.json"})
+		t.Run("auto-switch to bundle", func(ctx context.Context, t *testctx.T) {
+			modGen := modGen.With(daggerExec("develop"))
+
+			packageJSON, err := modGen.File("/work/package.json").Contents(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, packageJSON, "@dagger.io/dagger")
+
+			out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello\n", out)
+		})
 
 		t.Run("with clean sdk directory", func(ctx context.Context, t *testctx.T) {
 			cleanModGen := modGen.
@@ -2021,86 +2083,35 @@ func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.
 			require.NoError(t, err)
 			require.Equal(t, "hello\n", out)
 		})
-
-		t.Run("with non-clean sdk directory", func(ctx context.Context, t *testctx.T) {
-			nonCleanModGen := modGen.
-				WithNewFile("/work/package.json", `{
-  "type": "module",
-  "dependencies": {
-    "typescript": "^5.3.2"
-  }
-}`).
-				With(daggerExec("develop"))
-
-			files, err := nonCleanModGen.Directory("/work/sdk").Entries(ctx)
-			require.NoError(t, err)
-			checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts", "package.json", "src/", "tsconfig.json"})
-
-			// It should still work even if the sdk directory isn't clean.
-			out, err := nonCleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hello\n", out)
-		})
 	})
+}
 
-	t.Run("migrate to local", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+func (TypescriptSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("/work/package.json", `{
-  "type": "module",
-  "dependencies": {
-    "typescript": "^5.3.2"
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `import { Container, object, func, argument } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  async version(
+    @argument({ defaultAddress: "alpine:3.19" }) ctr: Container,
+  ): Promise<string> {
+    return ctr.withExec(["cat", "/etc/alpine-release"]).stdout()
   }
-}`).
-			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
+}
+`))
 
-		files, err := modGen.Directory("/work/sdk").Entries(ctx)
-		require.NoError(t, err)
-		checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts"})
+	out, err := modGen.With(daggerCall("version")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains "3.19"
 
-		t.Run("with clean sdk directory", func(ctx context.Context, t *testctx.T) {
-			cleanModGen := modGen.
-				WithNewFile("/work/package.json", `{
-  "type": "module",
-  "dependencies": {
-    "typescript": "^5.3.2",
-    "@dagger.io/dagger": "./sdk"
-  }
-}`).
-				WithoutDirectory("/work/sdk").
-				With(daggerExec("develop"))
-
-			files, err := cleanModGen.Directory("/work/sdk").Entries(ctx)
-			require.NoError(t, err)
-			checkFileExistence(t, files, []string{"package.json", "src/", "tsconfig.json"})
-
-			out, err := cleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hello\n", out)
-		})
-
-		t.Run("with non-clean sdk directory", func(ctx context.Context, t *testctx.T) {
-			nonCleanModGen := modGen.
-				WithNewFile("/work/package.json", `{
-  "type": "module",
-  "dependencies": {
-    "typescript": "^5.3.2",
-    "@dagger.io/dagger": "./sdk"
-  }
-}`).
-				With(daggerExec("develop"))
-
-			files, err := nonCleanModGen.Directory("/work/sdk").Entries(ctx)
-			require.NoError(t, err)
-			checkFileExistence(t, files, []string{"index.ts", "core.js", "core.d.ts", "telemetry.ts", "client.gen.ts", "package.json", "src/", "tsconfig.json"})
-
-			// It should still work even if the sdk directory isn't clean.
-			out, err := nonCleanModGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hello\n", out)
-		})
-	})
+	// Test that we can override the default via constructor
+	out2, err := modGen.With(daggerCall("version", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
 }

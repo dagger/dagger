@@ -9,7 +9,7 @@ import typing_extensions
 import dagger
 from dagger import Doc, Name, dag
 from dagger.mod import Module
-from dagger.mod._exceptions import FatalError
+from dagger.mod._exceptions import RegistrationError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -382,7 +382,7 @@ async def test_constructor_with_init_var():
     assert await mod.get_result("Foo", {}, "", {"foo": "rab", "bar": "oof"}) == {
         "foo": "raboof",
     }
-    with pytest.raises(FatalError):
+    with pytest.raises(RegistrationError):
         await mod.get_result("Foo", {}, "bar", {})
 
 
@@ -411,10 +411,12 @@ async def test_enum_conversion():
         THREE = "3"
         FOUR = "4"
 
-    @mod.enum_type
-    class Compat(dagger.Enum):
-        FIVE = "5"
-        SIX = "6"
+    with pytest.warns(DeprecationWarning, match="enum.Enum"):
+
+        @mod.enum_type
+        class Compat(dagger.Enum):
+            FIVE = "5"
+            SIX = "6"
 
     @mod.object_type
     class Test:

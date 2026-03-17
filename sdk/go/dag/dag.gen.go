@@ -46,10 +46,22 @@ func Close() error {
 	return err
 }
 
+// initialize an address to load directories, containers, secrets or other object types.
+func Address(value string) *dagger.Address {
+	client := initClient()
+	return client.Address(value)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
 	return client.CacheVolume(key)
+}
+
+// Creates an empty changeset
+func Changeset() *dagger.Changeset {
+	client := initClient()
+	return client.Changeset()
 }
 
 // Dagger Cloud configuration and state
@@ -64,6 +76,18 @@ func Cloud() *dagger.Cloud {
 func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	client := initClient()
 	return client.Container(opts...)
+}
+
+// Returns the current environment
+//
+// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+//
+// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+//
+// Experimental: Programmatic env access is speculative and might be replaced.
+func CurrentEnv() *dagger.Env {
+	client := initClient()
+	return client.CurrentEnv()
 }
 
 // The FunctionCall context that the SDK caller is currently executing in.
@@ -86,6 +110,14 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	return client.CurrentTypeDefs(ctx)
 }
 
+// Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
+func CurrentWorkspace(opts ...dagger.CurrentWorkspaceOpts) *dagger.Workspace {
+	client := initClient()
+	return client.CurrentWorkspace(opts...)
+}
+
 // The default platform of the engine.
 func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 	client := initClient()
@@ -104,12 +136,18 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
-// Initialize a new environment
+// Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
 func Env(opts ...dagger.EnvOpts) *dagger.Env {
 	client := initClient()
 	return client.Env(opts...)
+}
+
+// Initialize an environment file
+func EnvFile(opts ...dagger.EnvFileOpts) *dagger.EnvFile {
+	client := initClient()
+	return client.EnvFile(opts...)
 }
 
 // Create a new error.
@@ -154,12 +192,24 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	return client.HTTP(url, opts...)
 }
 
+// Initialize a JSON value
+func JSON() *dagger.JSONValue {
+	client := initClient()
+	return client.JSON()
+}
+
 // Initialize a Large Language Model (LLM)
 //
 // Experimental: LLM support is not yet stabilized
 func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	client := initClient()
 	return client.LLM(opts...)
+}
+
+// Load a Address from its ID.
+func LoadAddressFromID(id dagger.AddressID) *dagger.Address {
+	client := initClient()
+	return client.LoadAddressFromID(id)
 }
 
 // Load a Binding from its ID.
@@ -172,6 +222,24 @@ func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
+}
+
+// Load a Changeset from its ID.
+func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
+	client := initClient()
+	return client.LoadChangesetFromID(id)
+}
+
+// Load a Check from its ID.
+func LoadCheckFromID(id dagger.CheckID) *dagger.Check {
+	client := initClient()
+	return client.LoadCheckFromID(id)
+}
+
+// Load a CheckGroup from its ID.
+func LoadCheckGroupFromID(id dagger.CheckGroupID) *dagger.CheckGroup {
+	client := initClient()
+	return client.LoadCheckGroupFromID(id)
 }
 
 // Load a Cloud from its ID.
@@ -232,6 +300,12 @@ func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
 func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
 	client := initClient()
 	return client.LoadEnumValueTypeDefFromID(id)
+}
+
+// Load a EnvFile from its ID.
+func LoadEnvFileFromID(id dagger.EnvFileID) *dagger.EnvFile {
+	client := initClient()
+	return client.LoadEnvFileFromID(id)
 }
 
 // Load a Env from its ID.
@@ -300,6 +374,18 @@ func LoadGeneratedCodeFromID(id dagger.GeneratedCodeID) *dagger.GeneratedCode {
 	return client.LoadGeneratedCodeFromID(id)
 }
 
+// Load a Generator from its ID.
+func LoadGeneratorFromID(id dagger.GeneratorID) *dagger.Generator {
+	client := initClient()
+	return client.LoadGeneratorFromID(id)
+}
+
+// Load a GeneratorGroup from its ID.
+func LoadGeneratorGroupFromID(id dagger.GeneratorGroupID) *dagger.GeneratorGroup {
+	client := initClient()
+	return client.LoadGeneratorGroupFromID(id)
+}
+
 // Load a GitRef from its ID.
 func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 	client := initClient()
@@ -310,6 +396,12 @@ func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 func LoadGitRepositoryFromID(id dagger.GitRepositoryID) *dagger.GitRepository {
 	client := initClient()
 	return client.LoadGitRepositoryFromID(id)
+}
+
+// Load a HealthcheckConfig from its ID.
+func LoadHealthcheckConfigFromID(id dagger.HealthcheckConfigID) *dagger.HealthcheckConfig {
+	client := initClient()
+	return client.LoadHealthcheckConfigFromID(id)
 }
 
 // Load a Host from its ID.
@@ -328,6 +420,12 @@ func LoadInputTypeDefFromID(id dagger.InputTypeDefID) *dagger.InputTypeDef {
 func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceTypeDef {
 	client := initClient()
 	return client.LoadInterfaceTypeDefFromID(id)
+}
+
+// Load a JSONValue from its ID.
+func LoadJSONValueFromID(id dagger.JSONValueID) *dagger.JSONValue {
+	client := initClient()
+	return client.LoadJSONValueFromID(id)
 }
 
 // Load a LLM from its ID.
@@ -396,6 +494,18 @@ func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 	return client.LoadScalarTypeDefFromID(id)
 }
 
+// Load a SearchResult from its ID.
+func LoadSearchResultFromID(id dagger.SearchResultID) *dagger.SearchResult {
+	client := initClient()
+	return client.LoadSearchResultFromID(id)
+}
+
+// Load a SearchSubmatch from its ID.
+func LoadSearchSubmatchFromID(id dagger.SearchSubmatchID) *dagger.SearchSubmatch {
+	client := initClient()
+	return client.LoadSearchSubmatchFromID(id)
+}
+
 // Load a Secret from its ID.
 func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
 	client := initClient()
@@ -420,6 +530,12 @@ func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
 	return client.LoadSourceMapFromID(id)
 }
 
+// Load a Stat from its ID.
+func LoadStatFromID(id dagger.StatID) *dagger.Stat {
+	client := initClient()
+	return client.LoadStatFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -430,6 +546,12 @@ func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	client := initClient()
 	return client.LoadTypeDefFromID(id)
+}
+
+// Load a Workspace from its ID.
+func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
+	client := initClient()
+	return client.LoadWorkspaceFromID(id)
 }
 
 // Create a new module.

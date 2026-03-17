@@ -18,13 +18,18 @@ type clientGeneratorModule struct {
 func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 	ctx context.Context,
 ) (res dagql.Array[dagql.String], err error) {
+	dag, err := sdk.mod.dag(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
 	// Return an empty array if the SDK doesn't implement the
 	// `requiredClientGenerationFiles` function.
 	if _, ok := sdk.funcs["requiredClientGenerationFiles"]; !ok {
 		return dagql.NewStringArray(), nil
 	}
 
-	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &res, dagql.Selector{
+	err = dag.Select(ctx, sdk.mod.sdk, &res, dagql.Selector{
 		Field: "requiredClientGenerationFiles",
 	})
 
@@ -37,11 +42,17 @@ func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 
 func (sdk *clientGeneratorModule) GenerateClient(
 	ctx context.Context,
-	modSource dagql.Instance[*core.ModuleSource],
+	modSource dagql.ObjectResult[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	dag, err := sdk.mod.dag(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
+	}
+
+	// For standalone clients, we want to include Engine and other types that are hidden from module SDKs
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForClient(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
@@ -66,7 +77,7 @@ func (sdk *clientGeneratorModule) GenerateClient(
 		},
 	}
 
-	err = sdk.mod.dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
+	err = dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
 		Field: "generateClient",
 		Args:  generateClientsArgs,
 	})

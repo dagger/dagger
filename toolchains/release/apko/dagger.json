@@ -1,0 +1,19 @@
+{
+  "name": "apko",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "!../.direnv",
+    "!../.devenv",
+    "!../go.work",
+    "!../go.work.sum"
+  ],
+  "dependencies": [
+    {
+      "name": "registry-config",
+      "source": "../registry-config"
+    }
+  ]
+}

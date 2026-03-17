@@ -16,6 +16,20 @@ defmodule Dagger.Binding do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Retrieve the binding value, as type Address
+  """
+  @spec as_address(t()) :: Dagger.Address.t()
+  def as_address(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type CacheVolume
   """
   @spec as_cache_volume(t()) :: Dagger.CacheVolume.t()
@@ -24,6 +38,48 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asCacheVolume")
 
     %Dagger.CacheVolume{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Changeset
+  """
+  @spec as_changeset(t()) :: Dagger.Changeset.t()
+  def as_changeset(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asChangeset")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Check
+  """
+  @spec as_check(t()) :: Dagger.Check.t()
+  def as_check(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCheck")
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type CheckGroup
+  """
+  @spec as_check_group(t()) :: Dagger.CheckGroup.t()
+  def as_check_group(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCheckGroup")
+
+    %Dagger.CheckGroup{
       query_builder: query_builder,
       client: binding.client
     }
@@ -86,6 +142,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type EnvFile
+  """
+  @spec as_env_file(t()) :: Dagger.EnvFile.t()
+  def as_env_file(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asEnvFile")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type File
   """
   @spec as_file(t()) :: Dagger.File.t()
@@ -128,14 +198,14 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  Retrieve the binding value, as type LLM
+  Retrieve the binding value, as type JSONValue
   """
-  @spec as_llm(t()) :: Dagger.LLM.t()
-  def as_llm(%__MODULE__{} = binding) do
+  @spec as_json_value(t()) :: Dagger.JSONValue.t()
+  def as_json_value(%__MODULE__{} = binding) do
     query_builder =
-      binding.query_builder |> QB.select("asLLM")
+      binding.query_builder |> QB.select("asJSONValue")
 
-    %Dagger.LLM{
+    %Dagger.JSONValue{
       query_builder: query_builder,
       client: binding.client
     }
@@ -184,6 +254,34 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type SearchResult
+  """
+  @spec as_search_result(t()) :: Dagger.SearchResult.t()
+  def as_search_result(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchResult")
+
+    %Dagger.SearchResult{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type SearchSubmatch
+  """
+  @spec as_search_submatch(t()) :: Dagger.SearchSubmatch.t()
+  def as_search_submatch(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchSubmatch")
+
+    %Dagger.SearchSubmatch{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Secret
   """
   @spec as_secret(t()) :: Dagger.Secret.t()
@@ -226,7 +324,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The binding's string value
+  Returns the binding's string value
   """
   @spec as_string(t()) :: {:ok, String.t() | nil} | {:error, term()}
   def as_string(%__MODULE__{} = binding) do
@@ -237,7 +335,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The digest of the binding value
+  Returns the digest of the binding value
   """
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
   def digest(%__MODULE__{} = binding) do
@@ -270,7 +368,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The binding name
+  Returns the binding name
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = binding) do
@@ -281,7 +379,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The binding type
+  Returns the binding type
   """
   @spec type_name(t()) :: {:ok, String.t()} | {:error, term()}
   def type_name(%__MODULE__{} = binding) do

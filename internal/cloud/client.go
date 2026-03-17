@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +13,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/shurcooL/graphql"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 
 	"github.com/dagger/dagger/engine"
@@ -24,27 +25,41 @@ import (
 var ErrNoOrg = errors.New("no org associated with this Engine")
 
 type Client struct {
-	u           *url.URL
-	g           *graphql.Client
-	h           *http.Client
-	engineToken string
+	u  *url.URL
+	g  *graphql.Client
+	h  *http.Client
+	ca *auth.Cloud
 }
 
-type basicAuthTransport struct {
-	token string
-}
-
-func (t *basicAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r2 := req.Clone(req.Context())
-	r2.SetBasicAuth(t.token, "")
-
-	return http.DefaultTransport.RoundTrip(r2)
-}
-
-func NewClient(ctx context.Context) (*Client, error) {
+func NewClient(
+	ctx context.Context,
+	cloudAuth *auth.Cloud,
+) (*Client, error) {
 	api := "https://api.dagger.cloud"
 	if cloudURL := os.Getenv("DAGGER_CLOUD_URL"); cloudURL != "" {
 		api = cloudURL
+	}
+
+	var ts oauth2.TokenSource
+	if cloudAuth != nil {
+		t := *cloudAuth.Token
+		if cloudAuth.Token.Type() == "Basic" {
+			t.AccessToken = base64.StdEncoding.EncodeToString([]byte(t.AccessToken + ":"))
+			ts = oauth2.StaticTokenSource(&t)
+		} else if cloudAuth.Token.Type() == "OIDC" {
+			// translate OIDC token to Bearer but using a static source since
+			// we don't have a refresh token to get new OIDC tokens
+			ts = oauth2.StaticTokenSource(&oauth2.Token{
+				AccessToken: t.AccessToken,
+				TokenType:   "Bearer",
+			})
+		} else {
+			ats, err := auth.TokenSource(ctx, &t)
+			if err != nil {
+				return nil, err
+			}
+			ts = ats
+		}
 	}
 
 	u, err := url.Parse(api)
@@ -52,27 +67,12 @@ func NewClient(ctx context.Context) (*Client, error) {
 		return nil, err
 	}
 
-	httpClient := &http.Client{}
-	// Always prefer oauth if available. If not and a DAGGER_CLOUD_TOKEN
-	// is set then use Basic auth
-	tokenSource, err := auth.TokenSource(ctx)
-	if err != nil {
-		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-			httpClient.Transport = &basicAuthTransport{token: cloudToken}
-			return &Client{
-				u:           u,
-				h:           httpClient,
-				engineToken: cloudToken,
-			}, nil
-		}
-		return nil, err
-	}
-	httpClient = oauth2.NewClient(ctx, tokenSource)
-
+	httpClient := oauth2.NewClient(ctx, ts)
 	return &Client{
-		u: u,
-		g: graphql.NewClient(u.JoinPath("/query").String(), httpClient),
-		h: httpClient,
+		u:  u,
+		g:  graphql.NewClient(u.JoinPath("/query").String(), httpClient),
+		h:  httpClient,
+		ca: cloudAuth,
 	}, nil
 }
 
@@ -96,6 +96,30 @@ func (c *Client) User(ctx context.Context) (*UserResponse, error) {
 	return &q.User, nil
 }
 
+type OrgResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c *Client) OrgByName(ctx context.Context, name string) (*OrgResponse, error) {
+	if c.g == nil {
+		return nil, errors.New("no user logged in")
+	}
+	var q struct {
+		Org *OrgResponse `graphql:"org(name: $name)"`
+	}
+	err := c.g.Query(ctx, &q, map[string]interface{}{
+		"name": graphql.String(name),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if q.Org == nil {
+		return nil, fmt.Errorf("org %q not found", name)
+	}
+	return q.Org, nil
+}
+
 type SerializableCertificate struct {
 	CertificateChain [][]byte `json:"certificate_chain"` // DER-encoded certs
 	PrivateKey       []byte   `json:"private_key"`       // PKCS#8 encoded private key
@@ -103,19 +127,25 @@ type SerializableCertificate struct {
 	SCTs             [][]byte `json:"scts,omitempty"`
 }
 
+type EngineRequest struct {
+	Module               string   `json:"module,omitempty"`
+	Function             string   ` json:"function,omitempty"`
+	ExecCmd              []string `json:"exec_cmd,omitempty"`
+	ClientID             string   `json:"client_id,omitempty"`
+	MinimumEngineVersion string   `json:"minimum_engine_version,omitempty"`
+	TraceID              string   `json:"trace_id,omitempty"`
+}
+
 type EngineSpec struct {
-	Architecture   string                   `json:"architecture,omitempty"`
-	CacheSizeGb    int                      `json:"cache_size_gb,omitempty"`
-	Continent      string                   `json:"continent,omitempty"`
+	EngineRequest
+
 	Image          string                   `json:"image,omitempty"`
 	Location       string                   `json:"location,omitempty"`
 	OrgID          string                   `json:"org_id,omitempty"`
 	UserID         string                   `json:"user_id,omitempty"`
-	Size           string                   `json:"size,omitempty"`
-	TTL            string                   `json:"ttl,omitempty"`
-	TTLDuration    time.Duration            `json:"ttl_duration,omitempty"`
 	URL            string                   `json:"url,omitempty"`
 	CertSerialized *SerializableCertificate `json:"cert,omitempty"`
+	InstanceID     string                   `json:"instance_id,omitempty"`
 }
 
 func (es *EngineSpec) TLSCertificate() (*tls.Certificate, error) {
@@ -154,7 +184,7 @@ type ErrResponse struct {
 	Message string `json:"message"`
 }
 
-func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
+func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, error) {
 	// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
 	tag := engine.Tag
 	// Default to `main` when the CLI is a development version
@@ -162,10 +192,15 @@ func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
 		tag = "main"
 	}
 
-	// The only property that we can set is the Image tag.
-	// The rest will be handled by engine configs (follow-up).
+	if req.ClientID == "" {
+		return nil, errors.New("EngineRequest.ClientID must be set to the value that identifies this client")
+	}
+
+	req.MinimumEngineVersion = engine.MinimumEngineVersion
+	req.TraceID = trace.SpanContextFromContext(ctx).TraceID().String()
 	engineSpec := &EngineSpec{
-		Image: "registry.dagger.io/engine:" + tag,
+		Image:         "registry.dagger.io/engine:" + tag,
+		EngineRequest: req,
 	}
 	b, err := json.Marshal(engineSpec)
 	if err != nil {
@@ -177,12 +212,8 @@ func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
 		return nil, fmt.Errorf("failed to generate a remote Engine request: %w", err)
 	}
 
-	if c.engineToken == "" {
-		org, err := auth.CurrentOrg()
-		if err != nil {
-			return nil, ErrNoOrg
-		}
-		r.Header.Set("X-Dagger-Org", org.ID)
+	if c.ca.Org != nil && c.ca.Org.ID != "" {
+		r.Header.Set("X-Dagger-Org", c.ca.Org.ID)
 	}
 
 	resp, err := c.h.Do(r)

@@ -2,37 +2,39 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"slices"
 	"sync"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/Khan/genqlient/graphql"
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	bkfrontend "github.com/dagger/dagger/internal/buildkit/frontend"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
+	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
+	"github.com/dagger/dagger/internal/buildkit/util/progress/progressui"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/koron-go/prefixw"
-	"github.com/moby/buildkit/cache/remotecache"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/executor/oci"
-	bkfrontend "github.com/moby/buildkit/frontend"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bksession "github.com/moby/buildkit/session"
-	bksolver "github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/leaseutil"
-	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -50,9 +52,12 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
+	engineclient "github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type daggerSession struct {
@@ -156,10 +161,20 @@ type daggerClient struct {
 	bkClient        *buildkit.Client
 
 	// SQLite database storing telemetry + anything else
-	db             *sql.DB
 	tracerProvider *sdktrace.TracerProvider
+	spanExporter   sdktrace.SpanExporter
+
 	loggerProvider *sdklog.LoggerProvider
+	logExporter    sdklog.Exporter
+
 	meterProvider  *sdkmetric.MeterProvider
+	metricExporter sdkmetric.Exporter
+
+	// NOTE: do not use this field directly as it may not be open
+	// after the client has shutdown; use TelemetryDB() instead
+	// This field exists to "keepalive" the db while the client
+	// is around to avoid perf overhead of closing/reopening a lot
+	keepAliveTelemetryDB *clientdb.DB
 }
 
 type daggerClientState string
@@ -173,18 +188,16 @@ func (client *daggerClient) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
+// NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
+func (client *daggerClient) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
+	return client.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, client.clientID)
+}
+
 func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 	slog := slog.With("client", client.clientID)
 	var errs error
 	if client.tracerProvider != nil {
 		slog.ExtraDebug("force flushing client traces")
-		// FIXME: mitigation for goroutine leak fixed upstream in
-		// https://github.com/open-telemetry/opentelemetry-go/pull/6363
-		// Just give this context a real generous timeout for now so if we
-		// are canceled we don't leak
-		// Can undo this once we've picked up the upstream fix.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
-		defer cancel()
 		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
 	}
 	if client.loggerProvider != nil {
@@ -236,10 +249,10 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
 	sess *daggerSession,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 ) error {
-	slog.ExtraDebug("initializing new session", "session", clientMetadata.SessionID)
-	defer slog.ExtraDebug("initialized new session", "session", clientMetadata.SessionID)
+	slog.Info("initializing new session", "session", clientMetadata.SessionID)
+	defer slog.Debug("initialized new session", "session", clientMetadata.SessionID)
 
 	sess.sessionID = clientMetadata.SessionID
 	sess.mainClientCallerID = clientMetadata.ClientID
@@ -258,7 +271,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
-		Labels: enginetel.Labels(clientMetadata.Labels).
+		Labels: enginetel.NewLabels(clientMetadata.Labels, nil, nil).
 			WithEngineLabel(srv.engineName).
 			WithServerLabels(
 				engine.Version,
@@ -307,7 +320,7 @@ func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Conte
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
 	slog := slog.With("session", sess.sessionID)
 
-	slog.Debug("removing session; stopping client services and flushing")
+	slog.Info("removing session; stopping client services and flushing")
 	defer slog.Debug("session removed")
 
 	// check if the local cache needs pruning after session is removed, prune if so
@@ -326,11 +339,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// in theory none of this should block very long, but add a safeguard just in case
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
-
-	if err := sess.dagqlCache.ReleaseAll(ctx); err != nil {
-		slog.Error("error releasing dagql cache", "error", err)
-		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
-	}
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
@@ -371,8 +379,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			// Flush all telemetry.
 			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
 
-			// Close client DB for writing; subscribers will have their own connection
-			errs = errors.Join(errs, client.db.Close())
+			// Close client DB; subscribers may re-open as needed with client.TelemetryDB()
+			errs = errors.Join(errs, client.keepAliveTelemetryDB.Close())
 
 			return errs
 		})
@@ -395,6 +403,18 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
+
+	beforeDagqlEntries := srv.baseDagqlCache.Size()
+	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
+		slog.Error("error releasing dagql cache", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
+	afterDagqlEntries := srv.baseDagqlCache.Size()
+	if afterDagqlEntries != beforeDagqlEntries {
+		slog.Debug("released dagql cache refs for session", "beforeEntries", beforeDagqlEntries, "afterEntries", afterDagqlEntries)
+	} else {
+		slog.Debug("session dagql cache release did not change base cache size", "entries", afterDagqlEntries)
+	}
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -433,9 +453,17 @@ type ClientInitOpts struct {
 func (srv *Server) initializeDaggerClient(
 	ctx context.Context,
 	client *daggerClient,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 	opts *ClientInitOpts,
 ) error {
+	slog := slog.With(
+		"isMainClient", client.clientID == client.daggerSession.mainClientCallerID,
+		"sessionID", client.daggerSession.sessionID,
+		"clientID", client.clientID,
+		"mainClientID", client.daggerSession.mainClientCallerID,
+	)
+	slog.Info("initializing new client")
+
 	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
@@ -499,7 +527,7 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create buildkit job: %w", err)
 	}
 	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", buildkit.Infallible(client.job.CloseProgress))
+	failureCleanups.Add("stop solver progress", cleanups.Infallible(client.job.CloseProgress))
 
 	client.job.SessionID = client.buildkitSession.ID()
 	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
@@ -547,6 +575,12 @@ func (srv *Server) initializeDaggerClient(
 		go pw.UpdateFrom(logCtx, statusCh)
 	}
 
+	var parentBuildkitClient *buildkit.Client
+	numParents := len(client.parents)
+	if numParents > 0 {
+		parentBuildkitClient = client.parents[numParents-1].bkClient
+	}
+
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
 		Worker:               srv.worker,
 		SessionManager:       srv.bkSessionManager,
@@ -559,20 +593,30 @@ func (srv *Server) initializeDaggerClient(
 		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,
 		Frontends:            srv.frontends,
 
-		Refs:         client.daggerSession.refs,
-		RefsMu:       &client.daggerSession.refsMu,
-		Containers:   client.daggerSession.containers,
-		ContainersMu: &client.daggerSession.containersMu,
+		Refs:   client.daggerSession.refs,
+		RefsMu: &client.daggerSession.refsMu,
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
+
+		ParentClient: parentBuildkitClient,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit client: %w", err)
 	}
 
+	var env *call.ID
+	if opts.EncodedFunctionCall != nil {
+		var fnCall core.FunctionCall
+		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
+			return fmt.Errorf("failed to decode function call: %w", err)
+		}
+		client.fnCall = &fnCall
+		env = fnCall.EnvID
+	}
+
 	// setup the graphql server + module/function state for the client
-	client.dagqlRoot = core.NewRoot(srv)
+	client.dagqlRoot = core.NewRoot(srv, env)
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
@@ -585,7 +629,7 @@ func (srv *Server) initializeDaggerClient(
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
+	coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(client.clientVersion)))
 
 	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
@@ -596,12 +640,12 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
-		client.mod = modInst.Self
+		client.mod = modInst.Self()
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion := client.mod.Source.Self.EngineVersion
-		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
+		engineVersion := client.mod.Source.Value.Self().EngineVersion
+		coreMod.Dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can
 		// use the new typedefs api - but at this point we likely would
@@ -620,15 +664,8 @@ func (srv *Server) initializeDaggerClient(
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
-	if opts.EncodedFunctionCall != nil {
-		var fnCall core.FunctionCall
-		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
-			return fmt.Errorf("failed to decode function call: %w", err)
-		}
-		client.fnCall = &fnCall
-	}
-
 	// configure OTel providers that export to SQLite
+	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format
@@ -637,20 +674,24 @@ func (srv *Server) initializeDaggerClient(
 		)),
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(client),
+			client.spanExporter,
 		)),
 	}
+
+	logs := srv.telemetryPubSub.Logs(client)
+	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		sdklog.WithProcessor(clientLogs{client: client}),
+		sdklog.WithProcessor(logs),
 	}
 
-	const metricReaderInterval = 1 * time.Second
+	const metricReaderInterval = 5 * time.Second
 
+	client.metricExporter = srv.telemetryPubSub.Metrics(client)
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			srv.telemetryPubSub.Metrics(client),
+			client.metricExporter,
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
 	}
@@ -685,29 +726,40 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata for session call: %w", err)
 	}
-	client, ok := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientMetadata.ClientID)
+	client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+	if err != nil {
+		return nil, err
 	}
 	return client, nil
 }
 
-func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) {
+func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error) {
+	if sessID == "" {
+		return nil, fmt.Errorf("missing session ID")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("missing client ID")
+	}
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	sess, ok := srv.daggerSessions[sessID]
 	if !ok {
-		return nil, false
+		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
+		// where for instance the first client cancels and closes its session while others
+		// are waiting on the result. In this case its safe to retry the operation again with
+		// the still connected client metadata.
+		err := flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
+		return nil, err
 	}
 
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
 	client, ok := sess.clients[clientID]
 	if !ok {
-		return nil, false
+		return nil, fmt.Errorf("client %q not found", clientID)
 	}
 
-	return client, true
+	return client, nil
 }
 
 // initialize session+client if needed, return:
@@ -731,7 +783,7 @@ func (srv *Server) getOrInitClient(
 	}
 
 	// cleanup to do if this method fails
-	failureCleanups := &buildkit.Cleanups{}
+	failureCleanups := &cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, failureCleanups.Run())
@@ -787,10 +839,17 @@ func (srv *Server) getOrInitClient(
 		sess.clients[clientID] = client
 
 		// initialize SQLite DB early so we can subscribe to it immediately
-		var err error
-		client.db, err = srv.clientDBs.Create(client.clientID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open client DB: %w", err)
+		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
+			slog.Warn("failed to open client DB; continuing without keepalive",
+				"sessionID", sessionID,
+				"clientID", client.clientID,
+				"error", err,
+			)
+		} else {
+			client.keepAliveTelemetryDB = db
+			failureCleanups.Add("close client telemetry DB", func() error {
+				return db.Close()
+			})
 		}
 
 		parent, parentExists := sess.clients[opts.CallerClientID]
@@ -820,6 +879,13 @@ func (srv *Server) getOrInitClient(
 		if token != client.secretToken {
 			return nil, nil, fmt.Errorf("client %q already exists with different secret token", clientID)
 		}
+
+		// for nested clients running the dagger cli, the session attachable
+		// connection may not have all of the client metadata yet, so we
+		// fill in some missing fields here that may be set later by the cli
+		if client.clientMetadata.AllowedLLMModules == nil {
+			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -834,6 +900,12 @@ func (srv *Server) getOrInitClient(
 			return nil
 		}
 
+		slog := slog.With(
+			"sessionID", sess.sessionID,
+			"clientID", client.clientID,
+		)
+		slog.Info("all client connections closed")
+
 		// if the main client caller has no more active calls, cleanup the whole session
 		if clientID != sess.mainClientCallerID {
 			return nil
@@ -847,34 +919,11 @@ func (srv *Server) getOrInitClient(
 		default:
 			// this should never happen unless there's a bug
 			slog.Error("session state being removed not in initialized state",
-				"session", sess.sessionID,
 				"state", sess.state,
 			)
 			return nil
 		}
 	}, nil
-}
-
-func (srv *Server) getClient(sessionID, clientID string) (*daggerClient, error) {
-	if sessionID == "" {
-		return nil, fmt.Errorf("missing session ID")
-	}
-	if clientID == "" {
-		return nil, fmt.Errorf("missing client ID")
-	}
-	srv.daggerSessionsMu.RLock()
-	sess, ok := srv.daggerSessions[sessionID]
-	srv.daggerSessionsMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("session %q not found", sessionID)
-	}
-	sess.clientMu.RLock()
-	client, ok := sess.clients[clientID]
-	sess.clientMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientID)
-	}
-	return client, nil
 }
 
 // ServeHTTP serves clients directly hitting the engine API (i.e. main client callers, not nested execs like module functions)
@@ -904,10 +953,13 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	if clientVersion == "" {
 		clientVersion = engine.Version
 	}
+
 	allowedLLMModules := execMD.AllowedLLMModules
+	eagerRuntime := false
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
+		eagerRuntime = md.EagerRuntime
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -921,6 +973,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
+			EagerRuntime:      eagerRuntime,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,
@@ -932,33 +985,37 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 const InstrumentationLibrary = "dagger.io/engine.server"
 
-func (srv *Server) DagqlServer(ctx context.Context) (*dagql.Server, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	schema, err := client.deps.Schema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return schema, nil
-}
-
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
-	// propagate span context from the client
+	// propagate span context and baggage from the client
 	ctx = telemetry.Propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))
 
+	// Check if repeated telemetry is requested via baggage
+	baggage := baggage.FromContext(ctx)
+	if member := baggage.Member("repeat-telemetry"); member.Value() != "" {
+		ctx = dagql.WithRepeatedTelemetry(ctx)
+	}
+
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
+		WithField("trace", trace.SpanContextFromContext(ctx).TraceID().String()).
+		WithField("span", trace.SpanContextFromContext(ctx).SpanID().String()).
 		WithField("client_id", clientMetadata.ClientID).
 		WithField("client_hostname", clientMetadata.ClientHostname).
 		WithField("session_id", clientMetadata.SessionID))
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
+		"client_id", clientMetadata.ClientID,
+		"client_hostname", clientMetadata.ClientHostname,
+		"session_id", clientMetadata.SessionID,
+		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
+		"span", trace.SpanContextFromContext(ctx).SpanID().String(),
+	))
 
 	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
 	// are checked by gqlgen's handler
@@ -975,7 +1032,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs", "/v1/metrics":
 		// Just get the client if it exists, don't init it.
-		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
+		client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
 			return fmt.Errorf("get client: %w", err)
 		}
@@ -1106,11 +1163,17 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
 		clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
 		var span trace.Span
+		attrs := []attribute.KeyValue{
+			attribute.Bool(telemetry.UIPassthroughAttr, true),
+		}
+		if engineID := client.clientMetadata.CloudScaleOutEngineID; engineID != "" {
+			attrs = append(attrs, attribute.String(telemetry.EngineIDAttr, engineID))
+		}
 		ctx, span = clientTracer.Start(ctx,
 			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-			trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
+			trace.WithAttributes(attrs...),
 		)
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.EndWithCause(span, &rerr)
 	}
 
 	// install a logger+meter provider that records to the client's DB
@@ -1182,11 +1245,11 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"clientID", client.clientID,
 		"mainClientID", sess.mainClientCallerID)
 
-	slog.Trace("shutting down server")
-	defer slog.Trace("done shutting down server")
+	slog.Info("client shutdown")
+	defer slog.Debug("client shutdown done")
 
 	if client.clientID == sess.mainClientCallerID {
-		slog.Debug("main client is shutting down")
+		slog.Info("main client is shutting down")
 
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
@@ -1201,7 +1264,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			// create an internal span so we hide exporter children spans which are quite noisy
 			ctx, cInternal := t.Start(ctx, "cache export internal", telemetry.Internal())
 			defer cInternal.End()
-			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
+			bklog.G(ctx).Infof("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
 			for i, cacheExportCfg := range sess.cacheExporterCfgs {
 				cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup bksession.Group) (remotecache.Exporter, error) {
@@ -1216,7 +1279,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			if err != nil {
 				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", client.clientID)
 			}
-			bklog.G(ctx).Debugf("done running cache export for client %s", client.clientID)
+			bklog.G(ctx).Infof("done running cache export for client %s", client.clientID)
 		}
 
 		defer func() {
@@ -1325,6 +1388,24 @@ func (srv *Server) CurrentModule(ctx context.Context) (*core.Module, error) {
 	return nil, core.ErrNoCurrentModule
 }
 
+// If the current client is a module client or a client created by a module function, returns that module.
+func (srv *Server) ModuleParent(ctx context.Context) (*core.Module, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.mod != nil {
+		return client.mod, nil
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if parent.mod != nil {
+			return parent.mod, nil
+		}
+	}
+	return nil, core.ErrNoCurrentModule
+}
+
 // If the current client is coming from a function, return the function call metadata
 func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
 	client, err := srv.clientFromContext(ctx)
@@ -1353,35 +1434,54 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	if err != nil {
 		return nil, err
 	}
-	mainClient, ok := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
-	if !ok {
-		return nil, fmt.Errorf("failed to retrieve session main client")
+	return srv.SpecificClientMetadata(ctx, client.daggerSession.mainClientCallerID)
+}
+
+// The Client metadata of a specific client ID within the same session as the
+// current client.
+func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return mainClient.clientMetadata, nil
+	clientMD, err := srv.clientFromIDs(client.daggerSession.sessionID, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve session main client: %w", err)
+	}
+	return clientMD.clientMetadata, nil
+}
+
+// The nearest ancestor client that is not a module (either a caller from the host like the CLI
+// or a nested exec). Useful for figuring out where local sources should be resolved from through
+// chains of dependency modules.
+func (srv *Server) nonModuleParentClient(ctx context.Context) (*daggerClient, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if client.mod == nil {
+		// not a module client, return the current client
+		return client, nil
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if parent.mod == nil {
+			// not a module client: match
+			return parent, nil
+		}
+	}
+	return nil, fmt.Errorf("no non-module parent found")
 }
 
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI
 // or a nested exec). Useful for figuring out where local sources should be resolved from through
 // chains of dependency modules.
 func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
-	client, err := srv.clientFromContext(ctx)
+	client, err := srv.nonModuleParentClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	if client.mod == nil {
-		// not a module client, return the metadata
-		return client.clientMetadata, nil
-	}
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
-		if parent.mod == nil {
-			// not a module client, return the metadata
-			return parent.clientMetadata, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no non-module parent found")
+	return client.clientMetadata, nil
 }
 
 // The default deps of every user module (currently just core)
@@ -1491,6 +1591,75 @@ func (srv *Server) LeaseManager() *leaseutil.Manager {
 // A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
+}
+
+// Provides access to the client's telemetry database.
+func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.DB, error) {
+	client, err := srv.clientFromIDs(sessID, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.FlushTelemetry(ctx); err != nil {
+		return nil, fmt.Errorf("flush telemetry: %w", err)
+	}
+	return client.TelemetryDB(ctx)
+}
+
+// Return a client connected to a cloud engine. If bool return is false, the local engine should be used. Session attachables for the returned client will be proxied back to the calling client.
+func (srv *Server) CloudEngineClient(
+	ctx context.Context,
+	module string,
+	function string,
+	execCmd []string,
+) (*engineclient.Client, bool, error) {
+	parentClient, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	parentCallerCtx := engine.ContextWithClientMetadata(ctx, parentClient.clientMetadata)
+	parentSession, err := parentClient.bkClient.GetSessionCaller(parentCallerCtx, false)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// TODO: cloud support for "run on yourself", return (nil, false, nil) in that case
+
+	engineClient, err := engineclient.ConnectEngineToEngine(ctx, engineclient.EngineToEngineParams{
+		Params: engineclient.Params{
+			RunnerHost: engine.DefaultCloudRunnerHost,
+
+			Module:   module,
+			Function: function,
+			ExecCmd:  execCmd,
+
+			CloudAuth: parentClient.clientMetadata.CloudAuth,
+
+			EngineTrace:   parentClient.spanExporter,
+			EngineLogs:    parentClient.logExporter,
+			EngineMetrics: []sdkmetric.Exporter{parentClient.metricExporter},
+
+			// FIXME: for now, disable recursive scale out to prevent any
+			// surprise "fork-bomb" scenarios. Eventually this should be
+			// permitted.
+			EnableCloudScaleOut: false,
+		},
+		CallerSessionConn: parentSession.Conn(),
+		Labels:            enginetel.NewLabels(parentClient.clientMetadata.Labels, nil, nil),
+		StableClientID:    parentClient.clientMetadata.ClientStableID,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return engineClient, true, nil
+}
+
+// A mount namespace guaranteed to not have any mounts created by engine operations.
+// Should be used when creating goroutines/processes that unshare a mount namespace,
+// otherwise those unshared mnt namespaces may inherit mounts from engine operations
+// and leak them.
+func (srv *Server) CleanMountNS() *os.File {
+	return srv.cleanMntNS
 }
 
 type httpError struct {

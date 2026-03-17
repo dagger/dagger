@@ -4,29 +4,27 @@ import (
 	"context"
 	"errors"
 	"sync"
-
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/opencontainers/go-digest"
 )
 
-type CacheKeyType = digest.Digest
-type CacheValueType = Typed
-
-type CacheResult = cache.Result[CacheKeyType, CacheValueType]
-
-type CacheValWithCallbacks = cache.ValueWithCallbacks[CacheValueType]
-
 type SessionCache struct {
-	cache cache.Cache[CacheKeyType, CacheValueType]
+	cache Cache
 
-	results []cache.Result[CacheKeyType, CacheValueType]
-	mu      sync.Mutex
+	results          []AnyResult
+	arbitraryResults []ArbitraryCachedResult
+	mu               sync.Mutex
+
+	// isClosed is set to true when ReleaseAndClose is called.
+	// Any in-progress results will be released and errors returned.
+	isClosed bool
 
 	seenKeys sync.Map
+
+	// noCacheNext keeps track of keys for which the next cache attempt should bypass the cache.
+	noCacheNext sync.Map
 }
 
 func NewSessionCache(
-	baseCache cache.Cache[CacheKeyType, CacheValueType],
+	baseCache Cache,
 ) *SessionCache {
 	return &SessionCache{
 		cache: baseCache,
@@ -41,7 +39,7 @@ type CacheCallOpts struct {
 	Telemetry TelemetryFunc
 }
 
-type TelemetryFunc func(context.Context) (context.Context, func(Typed, bool, error))
+type TelemetryFunc func(context.Context) (context.Context, func(AnyResult, bool, *error))
 
 func (o CacheCallOpts) SetCacheCallOpt(opts *CacheCallOpts) {
 	*opts = o
@@ -59,32 +57,6 @@ func WithTelemetry(telemetry TelemetryFunc) CacheCallOpt {
 	})
 }
 
-func (c *SessionCache) GetOrInitializeValue(
-	ctx context.Context,
-	key CacheKeyType,
-	val CacheValueType,
-	opts ...CacheCallOpt,
-) (CacheResult, error) {
-	return c.GetOrInitialize(ctx, key, func(_ context.Context) (CacheValueType, error) {
-		return val, nil
-	}, opts...)
-}
-
-func (c *SessionCache) GetOrInitialize(
-	ctx context.Context,
-	key CacheKeyType,
-	fn func(context.Context) (CacheValueType, error),
-	opts ...CacheCallOpt,
-) (CacheResult, error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, false, func(ctx context.Context) (*CacheValWithCallbacks, error) {
-		val, err := fn(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &CacheValWithCallbacks{Value: val}, nil
-	}, opts...)
-}
-
 type seenKeysCtxKey struct{}
 
 // WithRepeatedTelemetry resets the state of seen cache keys so that we emit
@@ -92,8 +64,19 @@ type seenKeysCtxKey struct{}
 //
 // This is useful in scenarios where we want to see actions performed, even if
 // they had been performed already (e.g. an LLM running tools).
+//
+// Additionally, it explicitly sets the internal flag to false, to prevent
+// Server.Select from marking its spans internal.
 func WithRepeatedTelemetry(ctx context.Context) context.Context {
-	return context.WithValue(ctx, seenKeysCtxKey{}, &sync.Map{})
+	return WithNonInternalTelemetry(
+		context.WithValue(ctx, seenKeysCtxKey{}, &sync.Map{}),
+	)
+}
+
+// WithNonInternalTelemetry marks telemetry within the context as non-internal,
+// so that Server.Select does not mark its spans internal.
+func WithNonInternalTelemetry(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalKey{}, false)
 }
 
 func telemetryKeys(ctx context.Context) *sync.Map {
@@ -103,66 +86,170 @@ func telemetryKeys(ctx context.Context) *sync.Map {
 	return nil
 }
 
-func (c *SessionCache) GetOrInitializeWithCallbacks(
+func (c *SessionCache) GetOrInitCall(
 	ctx context.Context,
-	key CacheKeyType,
-	skipDedupe bool,
-	fn func(context.Context) (*CacheValWithCallbacks, error),
+	key CacheKey,
+	fn func(context.Context) (AnyResult, error),
 	opts ...CacheCallOpt,
-) (res CacheResult, err error) {
+) (res AnyResult, err error) {
+	// do a quick check to see if the cache is closed; we do another check
+	// at the end in case the cache is closed while we're waiting for the call
+	c.mu.Lock()
+	if c.isClosed {
+		c.mu.Unlock()
+		return nil, errors.New("session cache is closed")
+	}
+	c.mu.Unlock()
+
 	var o CacheCallOpts
 	for _, opt := range opts {
 		opt.SetCacheCallOpt(&o)
 	}
-
-	var zeroKey CacheKeyType
-	isZero := key == zeroKey
+	if key.ID == nil {
+		return nil, errors.New("cache key ID is nil")
+	}
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
 		keys = &c.seenKeys
 	}
-	_, seen := keys.LoadOrStore(key, struct{}{})
-	if o.Telemetry != nil && (!seen || isZero) {
+	callKey := key.ID.Digest().String()
+	_, seen := keys.LoadOrStore(callKey, struct{}{})
+	if o.Telemetry != nil && (!seen || key.DoNotCache) {
 		// track keys globally in addition to any local key stores, otherwise we'll
 		// see dupes when e.g. IDs returned out of the "bubble" are loaded
-		c.seenKeys.Store(key, struct{}{})
+		c.seenKeys.Store(callKey, struct{}{})
 
 		telemetryCtx, done := o.Telemetry(ctx)
 		defer func() {
-			var val Typed
 			var cached bool
 			if res != nil {
-				val = res.Result()
 				cached = res.HitCache()
 			}
-			done(val, cached, err)
+			done(res, cached, &err)
 		}()
 		ctx = telemetryCtx
 	}
 
-	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, skipDedupe, fn)
+	// If this callKey previously failed, force the next attempt to be DoNotCache
+	// to bypass any potentially stale cached error.
+	forcedDoNotCache := false
+	if _, ok := c.noCacheNext.Load(callKey); ok && !key.DoNotCache {
+		key.DoNotCache = true
+		forcedDoNotCache = true
+	}
+
+	ctx = withTrackNilResult(ctx)
+
+	res, err = c.cache.GetOrInitCall(ctx, key, fn)
 	if err != nil {
+		// mark that the next attempt should run with DoNotCache
+		c.noCacheNext.Store(callKey, struct{}{})
 		return nil, err
 	}
-	if !isZero {
-		c.mu.Lock()
+
+	// success: we're in a good state now, allow normal caching again
+	c.noCacheNext.Delete(callKey)
+
+	// If we forced DoNotCache due to a prior failure, we need to re-insert the successful
+	// result into the underlying cache under the original key so subsequent calls find it.
+	// The call above used a random storage key (due to DoNotCache=true), so the result
+	// won't be found by future lookups using the original key.
+	// NOTE: this complication can be removed once we are off the buildkit solver as errors
+	// won't be cached for the duration of a session.
+	if forcedDoNotCache {
+		key.DoNotCache = false
+		cachedRes, cacheErr := c.cache.GetOrInitCall(ctx, key, ValueFunc(res))
+		if cacheErr == nil {
+			res = cachedRes
+		}
+		// If caching fails, we still return the successful result, just won't be cached
+	}
+
+	nilResult := false
+	if valueRes, ok := res.(cacheValueResult); ok && !valueRes.cacheHasValue() {
+		nilResult = true
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// if the session cache is closed, ensure we release the result so it doesn't leak
+	if c.isClosed {
+		err := errors.New("session cache was closed during execution")
+		if res != nil {
+			err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
+		}
+		return nil, err
+	}
+
+	if res != nil && (!key.DoNotCache || forcedDoNotCache) {
 		c.results = append(c.results, res)
-		c.mu.Unlock()
+	}
+
+	if nilResult {
+		return nil, nil
 	}
 
 	return res, nil
 }
 
-func (c *SessionCache) ReleaseAll(ctx context.Context) error {
+func (c *SessionCache) GetOrInitArbitrary(
+	ctx context.Context,
+	callKey string,
+	fn func(context.Context) (any, error),
+) (ArbitraryCachedResult, error) {
+	c.mu.Lock()
+	if c.isClosed {
+		c.mu.Unlock()
+		return nil, errors.New("session cache is closed")
+	}
+	c.mu.Unlock()
+
+	res, err := c.cache.GetOrInitArbitrary(ctx, callKey, fn)
+	if err != nil {
+		return nil, err
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.isClosed {
+		closeErr := errors.New("session cache was closed during execution")
+		if res != nil {
+			closeErr = errors.Join(closeErr, res.Release(context.WithoutCancel(ctx)))
+		}
+		return nil, closeErr
+	}
+
+	if res == nil {
+		return nil, nil
+	}
+	c.arbitraryResults = append(c.arbitraryResults, res)
+	return res, nil
+}
+
+func (c *SessionCache) ReleaseAndClose(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.isClosed = true
+
 	var rerr error
 	for _, res := range c.results {
-		rerr = errors.Join(rerr, res.Release(ctx))
+		if res == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, res.Release(context.WithoutCancel(ctx)))
 	}
 	c.results = nil
+	for _, res := range c.arbitraryResults {
+		if res == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, res.Release(context.WithoutCancel(ctx)))
+	}
+	c.arbitraryResults = nil
 
 	return rerr
 }

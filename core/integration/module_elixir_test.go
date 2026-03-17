@@ -126,6 +126,17 @@ func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "bar", out)
 	})
+
+	t.Run("default value in Elixir should be set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("call-echo-value")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+	})
 }
 
 func (ElixirSuite) TestDefaultPath(ctx context.Context, t *testctx.T) {

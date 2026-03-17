@@ -8,7 +8,7 @@ import (
 
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/moby/buildkit/session/sshforward"
+	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/sourcegraph/conc/pool"
 )
 

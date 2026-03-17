@@ -18,6 +18,12 @@ type Derefable interface {
 	Deref() (Typed, bool)
 }
 
+// DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
+type DerefableResult interface {
+	Derefable
+	DerefToResult(constructor *call.ID, postCall PostCallFunc, safeToPersistCache bool) (AnyResult, bool)
+}
+
 // Optional wraps a type and allows it to be null.
 //
 // This is used for optional arguments and return values.
@@ -57,6 +63,13 @@ func (n Optional[I]) GetOr(v I) I {
 		return v
 	}
 	return n.Value
+}
+
+func (n Optional[I]) AsPtr() *I {
+	if !n.Valid {
+		return nil
+	}
+	return &n.Value
 }
 
 // NoOpt returns an empty Optional value.
@@ -118,6 +131,29 @@ func (o Optional[I]) Deref() (Typed, bool) {
 func (o *Optional[I]) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &o.Value); err != nil {
 		return err
+	}
+	return nil
+}
+
+var _ Setter = Optional[Input]{}
+
+func (o Optional[I]) SetField(val reflect.Value) error {
+	switch val.Kind() {
+	case reflect.Ptr:
+		if o.Valid {
+			ptr := reflect.New(val.Type().Elem())
+			if err := assign(ptr.Elem(), o.Value); err != nil {
+				return fmt.Errorf("optional pointer: %w", err)
+			}
+			val.Set(ptr)
+		}
+	default:
+		if o.Valid {
+			if err := assign(val, o.Value); err != nil {
+				return fmt.Errorf("optional: %w", err)
+			}
+			return nil
+		}
 	}
 	return nil
 }
@@ -196,6 +232,10 @@ func (o DynamicOptional) Deref() (Typed, bool) {
 	return o.Value, o.Valid
 }
 
+func (o DynamicOptional) Unwrap() Typed {
+	return o.Value
+}
+
 func (o DynamicOptional) MarshalJSON() ([]byte, error) {
 	if !o.Valid {
 		return json.Marshal(nil)
@@ -234,10 +274,30 @@ func (n Nullable[T]) Type() *ast.Type {
 	return &nullable
 }
 
-var _ Derefable = Nullable[Typed]{}
+var _ DerefableResult = Nullable[Typed]{}
 
 func (n Nullable[T]) Deref() (Typed, bool) {
 	return n.Value, n.Valid
+}
+
+func (n Nullable[T]) DerefToResult(
+	constructor *call.ID,
+	postCall PostCallFunc,
+	safeToPersistCache bool,
+) (AnyResult, bool) {
+	if !n.Valid {
+		return nil, false
+	}
+	if anyRes, ok := any(n.Value).(AnyResult); ok {
+		// If the value is already an AnyResult, we can return it directly.
+		return anyRes.WithSafeToPersistCache(safeToPersistCache), true
+	}
+
+	res := newDetachedResult(constructor, n.Value)
+	if postCall != nil {
+		res = res.ResultWithPostCall(postCall)
+	}
+	return res.WithSafeToPersistCache(safeToPersistCache), true
 }
 
 func (n Nullable[T]) MarshalJSON() ([]byte, error) {
@@ -268,10 +328,30 @@ func (n DynamicNullable) Type() *ast.Type {
 	return &cp
 }
 
-var _ Derefable = DynamicNullable{}
+var _ DerefableResult = DynamicNullable{}
 
 func (n DynamicNullable) Deref() (Typed, bool) {
 	return n.Value, n.Valid
+}
+
+func (n DynamicNullable) DerefToResult(
+	constructor *call.ID,
+	postCall PostCallFunc,
+	safeToPersistCache bool,
+) (AnyResult, bool) {
+	if !n.Valid {
+		return nil, false
+	}
+	if anyRes, ok := n.Value.(AnyResult); ok {
+		// If the value is already an AnyResult, we can return it directly.
+		return anyRes.WithSafeToPersistCache(safeToPersistCache), true
+	}
+
+	res := newDetachedResult(constructor, n.Value)
+	if postCall != nil {
+		res = res.ResultWithPostCall(postCall)
+	}
+	return res.WithSafeToPersistCache(safeToPersistCache), true
 }
 
 func (n DynamicNullable) MarshalJSON() ([]byte, error) {

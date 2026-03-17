@@ -14,6 +14,15 @@ namespace Dagger;
 class SDKConfig extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Whether to start the SDK runtime in debug mode with an interactive terminal.
+     */
+    public function debug(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('debug');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'debug');
+    }
+
+    /**
      * A unique identifier for this SDKConfig.
      */
     public function id(): SDKConfigId

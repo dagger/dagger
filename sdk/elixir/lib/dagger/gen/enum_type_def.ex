@@ -73,7 +73,7 @@ defmodule Dagger.EnumTypeDef do
   @doc """
   The location of this enum declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = enum_type_def) do
     query_builder =
       enum_type_def.query_builder |> QB.select("sourceMap")

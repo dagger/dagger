@@ -25,6 +25,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The reason this function is deprecated, if any.
+     */
+    public function deprecated(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
+    }
+
+    /**
      * A doc string for the function, if any.
      */
     public function description(): string
@@ -80,6 +89,8 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?string $defaultPath = '',
         ?array $ignore = null,
         SourceMapId|SourceMap|null $sourceMap = null,
+        ?string $deprecated = null,
+        ?string $defaultAddress = '',
     ): Function_ {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
@@ -99,6 +110,46 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
+        if (null !== $deprecated) {
+        $innerQueryBuilder->setArgument('deprecated', $deprecated);
+        }
+        if (null !== $defaultAddress) {
+        $innerQueryBuilder->setArgument('defaultAddress', $defaultAddress);
+        }
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function updated to use the provided cache policy.
+     */
+    public function withCachePolicy(FunctionCachePolicy $policy, ?string $timeToLive = null): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCachePolicy');
+        $innerQueryBuilder->setArgument('policy', $policy);
+        if (null !== $timeToLive) {
+        $innerQueryBuilder->setArgument('timeToLive', $timeToLive);
+        }
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with a flag indicating it's a check.
+     */
+    public function withCheck(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCheck');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with the provided deprecation reason.
+     */
+    public function withDeprecated(?string $reason = null): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDeprecated');
+        if (null !== $reason) {
+        $innerQueryBuilder->setArgument('reason', $reason);
+        }
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -109,6 +160,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
         $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with a flag indicating it's a generator.
+     */
+    public function withGenerator(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withGenerator');
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

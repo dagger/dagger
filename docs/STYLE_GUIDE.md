@@ -33,7 +33,7 @@
   </Tabs>
   ```
 
-- Always capitalize Dagger core types such as `Container`, `Secret`, etc
+- Always capitalize and use code font for Dagger core types such as `Container`, `Secret`, etc
 - Omit the `()` for readability since a lot of the time it's either not necessary, or implies no args are needed, and sometimes you just want to refer to a method call and ignore its required args e.g. `Container.asService`
 - Dagger Functions and arguments in code listings should be documented inline "wherever possible", except for Cookbook recipes where this is "mandatory" since these are intended to be best-practice examples. This inline documentation includes at minimum
   - a one-line comment for the function
@@ -59,7 +59,13 @@
 
 - When writing lists, use a hyphen `-` for unordered lists and a number followed by a period `1.` for ordered lists
 - Lists should not end with a period
-- Keywords, features, concepts in the lists should be bolded followed by `:` (e.g. `**State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your workflow takes (including accounting for lazy effects installed by a Dagger Function).`)
+- List lead-ins or labels followed by a colon (`:`) should be in bold text e.g. `**State and duration**: Get visual cues for cached and pending states, and see exactly how long each step of your workflow takes.`
+
+## Formatting styles
+
+- Body text should not use bold, italic or other formatting styles except in the following cases:
+  - List lead-ins or labels should use bold text (see `Lists` section)
+  - User interface labels should use bold text e.g. `Click the **Start** button.`
 
 ## Cookbook
 

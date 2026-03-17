@@ -1,0 +1,58 @@
+### Build a Golang coding agent
+
+The following Dagger Function creates a Golang coding agent. The input is a programming assignment and the output is a Go executable satisfying the assignment. The environment consists of a base `golang` container, which is given to an LLM with a prompt describing how it should perform the work.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../getting-started/quickstarts/agent/snippets/part1/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../getting-started/quickstarts/agent/snippets/part1/python/src/coding_agent/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../getting-started/quickstarts/agent/snippets/part1/typescript/src/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../getting-started/quickstarts/agent/snippets/part1/php/src/CodingAgent.php
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=../../../getting-started/quickstarts/agent/snippets/part1/java/src/main/java/io/dagger/modules/codingagent/CodingAgent.java
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Have the agent update the container and open an interactive terminal to inspect the container filesystem:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'agent | terminal'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+agent | terminal
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call agent terminal
+```
+</TabItem>
+</Tabs>

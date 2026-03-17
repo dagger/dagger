@@ -73,7 +73,7 @@ defmodule Dagger.InterfaceTypeDef do
   @doc """
   The location of this interface declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = interface_type_def) do
     query_builder =
       interface_type_def.query_builder |> QB.select("sourceMap")

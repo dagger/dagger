@@ -4,9 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"context"
+
 	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 
 	"github.com/dagger/testctx"
 )
@@ -308,7 +309,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.Error(t, err)
-		requireErrOut(t, err, "value should be one of LOW,MEDIUM,HIGH")
+		requireErrOut(t, err, "value should be one of HIGH,LOW,MEDIUM")
 	})
 
 	t.Run("can return an enum value", func(ctx context.Context, t *testctx.T) {
@@ -365,6 +366,15 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "HIGH,LOW", out)
 	})
+}
+
+func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := goGitBase(t, c).
+		With(daggerExec("functions", "-m", "github.com/dagger/dagger-test-modules/java-module")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "container-echo")
 }
 
 func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {

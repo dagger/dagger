@@ -27,6 +27,22 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
+  Find the best common ancestor between this ref and another ref.
+  """
+  @spec common_ancestor(t(), Dagger.GitRef.t()) :: Dagger.GitRef.t()
+  def common_ancestor(%__MODULE__{} = git_ref, other) do
+    query_builder =
+      git_ref.query_builder
+      |> QB.select("commonAncestor")
+      |> QB.put_arg("other", Dagger.ID.id!(other))
+
+    %Dagger.GitRef{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
   A unique identifier for this GitRef.
   """
   @spec id(t()) :: {:ok, Dagger.GitRefID.t()} | {:error, term()}

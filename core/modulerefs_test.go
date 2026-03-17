@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/stretchr/testify/require"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
 )
 
 func TestMatchVersion(t *testing.T) {
@@ -359,8 +358,23 @@ func TestParseRefString(t *testing.T) {
 				},
 			},
 		},
+		// Gerrit codereview on custom port
+		{
+			urlStr: "ssh://someuser@golang.org:29418/x/review/git-codereview",
+			want: &ParsedRefString{
+				Kind: ModuleSourceKindGit,
+				Git: &ParsedGitRefString{
+					modPath:        "golang.org/x/review/git-codereview",
+					RepoRoot:       &vcs.RepoRoot{Root: "golang.org/x/review", Repo: "https://go.googlesource.com/review"},
+					scheme:         SchemeSSH,
+					RepoRootSubdir: "git-codereview",
+					sourceUser:     "someuser",
+					cloneRef:       "ssh://someuser@golang.org:29418/x/review",
+					SourceCloneRef: "ssh://someuser@golang.org:29418/x/review",
+				},
+			},
+		},
 	} {
-		tc := tc
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()
 			parsed, err := ParseRefString(
@@ -386,6 +400,14 @@ func TestParseRefString(t *testing.T) {
 			require.Equal(t, tc.want.Git.RepoRootSubdir, parsed.Git.RepoRootSubdir)
 			require.Equal(t, tc.want.Git.scheme, parsed.Git.scheme)
 			require.Equal(t, tc.want.Git.sourceUser, parsed.Git.sourceUser)
+
+			if tc.want.Git.SourceCloneRef != "" {
+				require.Equal(t, tc.want.Git.SourceCloneRef, parsed.Git.SourceCloneRef)
+			}
+
+			if tc.want.Git.cloneRef != "" {
+				require.Equal(t, tc.want.Git.cloneRef, parsed.Git.cloneRef)
+			}
 		})
 	}
 }
@@ -393,6 +415,6 @@ func TestParseRefString(t *testing.T) {
 type neverExistsFS struct {
 }
 
-func (fs neverExistsFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-	return nil, os.ErrNotExist
+func (fs neverExistsFS) Stat(ctx context.Context, path string) (string, *Stat, error) {
+	return "", nil, os.ErrNotExist
 }

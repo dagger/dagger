@@ -1,34 +1,35 @@
 Expected stderr:
 
-▼ connect X.Xs
-├─● starting engine X.Xs
-├─● connecting to engine X.Xs
-╰─● starting session X.Xs
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+✔ load module: ./viztest X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● viztest: Viztest! X.Xs
-▼ .useExecService: Void X.Xs
-├─● container: Container! X.Xs
-├─$ .from(address: "busybox"): Container! X.Xs CACHED
-├─● .withNewFile(path: "/srv/index.html", contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>"): Container! X.Xs
-├─● .withExposedPort(port: 80): Container! X.Xs
-├─▼ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs
+✔ viztest: Viztest! X.Xs
+✔ .useExecService: Void X.Xs
+├╴✔ container: Container! X.Xs
+├╴$ .from(address: "busybox"): Container! X.Xs CACHED
+├╴✔ withNewFile /srv/index.html (contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>") X.Xs
+├╴✔ .withExposedPort(port: 80): Container! X.Xs
+├╴✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs ✔ 1
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
 │
-├─$ Container.from(address: "alpine"): Container! X.Xs CACHED
-├─● .withServiceBinding(
+├╴$ Container.from(address: "alpine"): Container! X.Xs CACHED
+├╴$ .withServiceBinding(
 │   ┆ alias: "exec-service"
 │   ┆ service: Container.asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service!
-│   ): Container! X.Xs
-├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-╰─▼ .withExec(args: ["wget", "-q", "-O-", "http://exec-service"]): Container! X.Xs
+│   ): Container! X.Xs CACHED
+├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
+╰╴✔ withExec wget -q -O- http://exec-service X.Xs
   ┃ <h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

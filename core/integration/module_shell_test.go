@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -776,6 +778,21 @@ $dir | entries
 	require.Contains(t, out, "foo")
 }
 
+func (ShellSuite) TestStateVarImmutability(ctx context.Context, t *testctx.T) {
+	script := `
+dir=$(directory | with-new-file /src/foo/bar foobar | directory src)
+name=$($dir | name)
+.printenv name               # src/\n
+$dir | directory foo | name  # foo/
+.printenv name               # src/\n
+`
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).With(daggerShellNoMod(script)).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "src/\nfoo/src/\n", out)
+}
+
 func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
@@ -986,6 +1003,24 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, fmt.Sprintf("%q does not exist", cmd))
 }
 
+func (ShellSuite) TestStdlibStateArgs(ctx context.Context, t *testctx.T) {
+	// Test an object argument on a stdlib command
+	contents := rand.Text()
+	script := fmt.Sprintf(`
+svc=$(container | from %s | with-mounted-directory /srv . | with-workdir /srv | with-exposed-port 8000 | as-service --args="python,-m,http.server")
+http http://$($svc | endpoint)/index.html --experimental-service-host $svc | contents
+`, pythonImage)
+
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).
+		WithNewFile("index.html", contents).
+		With(daggerShell(script)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, contents, out)
+}
+
 func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 	cmd := rand.Text()
 	script := fmt.Sprintf("container | from %s | with-exec ls %s | stdout", alpineImage, cmd)
@@ -1008,6 +1043,27 @@ func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
 		require.Equal(t, 5, execErr.ExitCode)
 		require.Contains(t, execErr.Stdout, "foo")
 		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("specific code with tty", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+
+		console, err := newTUIConsole(t, 60*time.Second)
+
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "-M", "-c", ".exit 5")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		err = cmd.Run()
+
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		require.Equal(t, 5, exitErr.ExitCode())
 	})
 
 	t.Run("no args", func(ctx context.Context, t *testctx.T) {
@@ -1225,5 +1281,91 @@ ctr=$(container)
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "Container@xxh3:")
+	})
+}
+
+func (ShellSuite) TestNamedArguments(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("named arguments for required parameters", func(ctx context.Context, t *testctx.T) {
+		// Test with-exec using named arguments for args parameter
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec --args=echo --args=hello | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("named arguments for from function", func(ctx context.Context, t *testctx.T) {
+		// Test from function using named argument for address parameter
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from --address=alpine | with-exec echo test | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test\n", out)
+	})
+
+	t.Run("mixed positional and named arguments", func(ctx context.Context, t *testctx.T) {
+		// Test mixing positional and named arguments (positional first)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`directory | with-new-file /test --contents="hello world" | file /test | contents`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello world", out)
+	})
+
+	t.Run("backward compatibility - all positional", func(ctx context.Context, t *testctx.T) {
+		// Ensure original positional syntax still works
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec echo "backward compatible" | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "backward compatible\n", out)
+	})
+
+	t.Run("slice arguments with multiple values", func(ctx context.Context, t *testctx.T) {
+		// Test that slice arguments can accept multiple named values
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec --args=sh --args=-c --args="echo 'multiple args'" | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "multiple args\n", out)
+	})
+
+	t.Run("error on mixed args incorrectly", func(ctx context.Context, t *testctx.T) {
+		// Test error when mixing positional and named incorrectly
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec echo --args=hello | stdout`)).
+			Sync(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "requires 0 positional argument(s), received 1")
+	})
+
+	t.Run("all required args as named", func(ctx context.Context, t *testctx.T) {
+		// Test providing all required arguments as named arguments
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`directory | with-new-file --path=/greeting --contents="Hello Named Args!" | file --path=/greeting | contents`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello Named Args!", out)
+	})
+
+	t.Run("named args with optional flags", func(ctx context.Context, t *testctx.T) {
+		// Test named required args combined with optional flags
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec --args=echo --args=test --redirect-stdout=/output | file /output | contents`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test\n", out)
+	})
+
+	t.Run("order preservation with mixed args", func(ctx context.Context, t *testctx.T) {
+		// Test that positional order is preserved when mixing args
+		// This should be equivalent to: with-directory /src .
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`directory | with-new-file test.txt "content" | with-directory --path=/src $(directory) | entries`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "test.txt")
 	})
 }

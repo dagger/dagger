@@ -1,0 +1,45 @@
+---
+title: "AWS CodeBuild"
+slug: /getting-started/ci-integrations/aws-codebuild
+description: "Learn how to use Dagger with AWS CodeBuild."
+---
+
+# AWS CodeBuild
+
+Dagger provides a programmable container engine that allows you to migrate most of your AWS CodeBuild specification into Dagger Functions. This allows you to execute your pipeline the same locally and in AWS CodeBuild, with the additional benefits of intelligent caching and portability.
+
+## How it works
+
+When running a CI pipeline with Dagger using AWS CodeBuild, the general workflow looks like this:
+
+1. AWS CodeBuild receives a trigger based on a repository event.
+1. AWS CodeBuild begins processing the build instructions in the `buildspec.yml` file.
+1. AWS CodeBuild downloads the Dagger CLI.
+1. AWS CodeBuild executes one (or more) Dagger CLI commands, such as `dagger call ...`.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the GitLab runner.
+1. The Dagger CLI calls the specified Dagger Function and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The AWS CodePipeline completes with success or failure. Logs appear in the AWS CodeBuild interface as usual.
+
+## Prerequisites
+
+- An AWS CodeBuild project connected with a source code repository in GitLab, GitHub, BitBucket or any other supported provider
+
+## Example
+
+The following example demonstrates how to call a Dagger Function in an AWS CodeBuild project.
+
+```yaml title="buildspec.yml" file=./snippets/buildspec-hello.yml
+```
+
+The following is a more complex example demonstrating an AWS CodeBuild project that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in the repository connected to the AWS CodeBuild project.
+
+```yaml title="buildspec.yml" file=./snippets/buildspec-test-build.yml
+```
+
+## Resources
+
+If you have any questions about additional ways to use AWS CodeBuild with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [AWS channel](https://discord.com/channels/707636530424053791/1122940682714222752).
+
+## About AWS CodeBuild
+
+[AWS CodeBuild](https://aws.amazon.com/codebuild/) is a managed service to test, build and deploy applications in public or private repositories.

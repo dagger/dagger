@@ -8,29 +8,44 @@ import (
 	"net"
 	"sync"
 
-	bkcache "github.com/moby/buildkit/cache"
-	bkcacheconfig "github.com/moby/buildkit/cache/config"
-	"github.com/moby/buildkit/cache/remotecache"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/client/llb/sourceresolver"
-	bkfrontend "github.com/moby/buildkit/frontend"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
-	"github.com/moby/buildkit/identity"
-	bksession "github.com/moby/buildkit/session"
-	bksolver "github.com/moby/buildkit/solver"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
-	solverresult "github.com/moby/buildkit/solver/result"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/entitlements"
-	bkworker "github.com/moby/buildkit/worker"
+	contentapi "github.com/containerd/containerd/api/services/content/v1"
+	imagesapi "github.com/containerd/containerd/api/services/images/v1"
+	leasesapi "github.com/containerd/containerd/api/services/leases/v1"
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/content"
+	contentproxy "github.com/containerd/containerd/v2/core/content/proxy"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/leases"
+	leasesproxy "github.com/containerd/containerd/v2/core/leases/proxy"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkcacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
+	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
+	bkfrontend "github.com/dagger/dagger/internal/buildkit/frontend"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
+	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
+	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
+	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/session/pipe"
+	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/session/store"
+	"github.com/dagger/dagger/engine/session/terminal"
 )
 
 const (
@@ -60,13 +75,13 @@ type Opts struct {
 	UpstreamCacheImports []bkgw.CacheOptionsEntry
 	Frontends            map[string]bkfrontend.Frontend
 
-	Refs         map[Reference]struct{}
-	RefsMu       *sync.Mutex
-	Containers   map[bkgw.Container]struct{}
-	ContainersMu *sync.Mutex
+	Refs   map[Reference]struct{}
+	RefsMu *sync.Mutex
 
 	Interactive        bool
 	InteractiveCommand []string
+
+	ParentClient *Client
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -126,6 +141,13 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 	return ctx, cancel, nil
 }
 
+func (c *Client) getRootClient() *Client {
+	if c.ParentClient == nil {
+		return c
+	}
+	return c.ParentClient.getRootClient()
+}
+
 func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, rerr error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
@@ -140,15 +162,16 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return err
 		}
 		spanCtx := trace.SpanContextFromContext(ctx)
-		c.opsmu.Lock()
+		rootClient := c.getRootClient()
+		rootClient.opsmu.Lock()
 		_ = dag.Walk(func(od *OpDAG) error {
-			c.ops[*od.OpDigest] = opCtx{
+			rootClient.ops[*od.OpDigest] = opCtx{
 				od:  od,
 				ctx: spanCtx,
 			}
 			return nil
 		})
-		c.opsmu.Unlock()
+		rootClient.opsmu.Unlock()
 		return nil
 	}
 	if req.Definition != nil {
@@ -165,10 +188,13 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
 
-	// handle secret translation
+	// handle secret and SSH translation
 	gw := newFilterGateway(c, req)
-	if v := ctx.Value("secret-translator"); v != nil {
-		gw.secretTranslator = v.(func(string) (string, error))
+	if v := SecretTranslatorFromContext(ctx); v != nil {
+		gw.secretTranslator = v
+	}
+	if v := SSHTranslatorFromContext(ctx); v != nil {
+		gw.sshTranslator = v
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
@@ -197,6 +223,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 }
 
 func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, trace.SpanContext, bool) {
+	c = c.getRootClient()
 	c.opsmu.Lock()
 	opCtx, ok := c.ops[vertex]
 	c.opsmu.Unlock()
@@ -224,117 +251,6 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	ctx = withOutgoingContext(ctx)
 
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
-}
-
-type ContainerMount struct {
-	*bkgw.Mount
-	WorkerRef *bkworker.WorkerRef
-}
-
-type NewContainerRequest struct {
-	Mounts   []ContainerMount
-	Platform *bksolverpb.Platform
-	Hostname string
-	ExecutionMetadata
-}
-
-type Container struct {
-	bkgw.Container
-	id string
-}
-
-var _ Namespaced = (*Container)(nil)
-
-func (ctr *Container) NamespaceID() string {
-	return ctr.id
-}
-
-func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Container, error) {
-	containerID := identity.NewID()
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel(errors.New("new container done"))
-	ctx = withOutgoingContext(ctx)
-	ctrReq := bkcontainer.NewContainerRequest{
-		ContainerID: containerID,
-		Hostname:    req.Hostname,
-		Mounts:      make([]bkcontainer.Mount, len(req.Mounts)),
-	}
-
-	// get the input mounts in parallel in case they need to be evaluated, which can be expensive
-	eg, egctx := errgroup.WithContext(ctx)
-	for i, m := range req.Mounts {
-		eg.Go(func() error {
-			workerRef := m.WorkerRef
-			if workerRef == nil && m.Ref != nil {
-				ref, ok := m.Ref.(*ref)
-				if !ok {
-					return fmt.Errorf("dagger: unexpected ref type: %T", m.Ref)
-				}
-				if ref != nil { // TODO(vito): apparently this is possible. scratch?
-					res, err := ref.resultProxy.Result(egctx)
-					if err != nil {
-						return fmt.Errorf("result: %w", err)
-					}
-					workerRef, ok = res.Sys().(*bkworker.WorkerRef)
-					if !ok {
-						return fmt.Errorf("invalid res: %T", res.Sys())
-					}
-				}
-			}
-			ctrReq.Mounts[i] = bkcontainer.Mount{
-				WorkerRef: workerRef,
-				Mount: &bksolverpb.Mount{
-					Dest:      m.Dest,
-					Selector:  m.Selector,
-					Readonly:  m.Readonly,
-					MountType: m.MountType,
-					CacheOpt:  m.CacheOpt,
-					SecretOpt: m.SecretOpt,
-					SSHOpt:    m.SSHOpt,
-					ResultID:  m.ResultID,
-				},
-			}
-			return nil
-		})
-	}
-	err = eg.Wait()
-	if err != nil {
-		return nil, fmt.Errorf("wait: %w", err)
-	}
-
-	// using context.Background so it continues running until exit or when c.Close() is called
-	ctr, err := bkcontainer.NewContainer(
-		context.WithoutCancel(ctx),
-		c.Worker.CacheManager(),
-		c.Worker.execWorker(
-			trace.SpanContextFromContext(ctx),
-			req.ExecutionMetadata,
-		), // also implements Executor
-		c.SessionManager,
-		bksession.NewGroup(c.ID()),
-		ctrReq,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	c.ContainersMu.Lock()
-	defer c.ContainersMu.Unlock()
-	if c.Containers == nil {
-		if err := ctr.Release(context.WithoutCancel(ctx)); err != nil {
-			return nil, fmt.Errorf("release after close: %w", err)
-		}
-		return nil, errors.New("client closed")
-	}
-	c.Containers[ctr] = struct{}{}
-
-	return &Container{
-		Container: ctr,
-		id:        containerID,
-	}, nil
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
@@ -492,7 +408,12 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 		return nil, err
 	}
 	if caller == nil {
-		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
+		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
+		// where for instance the first client cancels and closes its session while others
+		// are waiting on the result. In this case its safe to retry the operation again with
+		// the still connected client metadata.
+		err := flightcontrol.RetryableError{Err: fmt.Errorf("session for %q not found", clientMetadata.ClientID)}
+		return nil, err
 	}
 	return caller, nil
 }
@@ -500,7 +421,7 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 func (c *Client) ListenHostToContainer(
 	ctx context.Context,
 	hostListenAddr, proto, upstream string,
-) (*session.ListenResponse, func() error, error) {
+) (*h2c.ListenResponse, func() error, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -515,7 +436,7 @@ func (c *Client) ListenHostToContainer(
 
 	conn := clientCaller.Conn()
 
-	tunnelClient := session.NewTunnelListenerClient(conn)
+	tunnelClient := h2c.NewTunnelListenerClient(conn)
 
 	listener, err := tunnelClient.Listen(ctx)
 	if err != nil {
@@ -524,7 +445,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	err = listener.Send(&session.ListenRequest{
+	err = listener.Send(&h2c.ListenRequest{
 		Addr:     hostListenAddr,
 		Protocol: proto,
 	})
@@ -566,10 +487,19 @@ func (c *Client) ListenHostToContainer(
 			connsL.Unlock()
 
 			if !found {
-				conn, err := c.Dialer.Dial(proto, upstream)
+				conn, err = c.Dialer.Dial(proto, upstream)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
-					return
+					sendL.Lock()
+					err = listener.Send(&h2c.ListenRequest{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
+					if err != nil {
+						return
+					}
+					continue
 				}
 
 				connsL.Lock()
@@ -584,19 +514,26 @@ func (c *Client) ListenHostToContainer(
 					for {
 						n, err := conn.Read(data)
 						if err != nil {
-							return
+							break
 						}
 
 						sendL.Lock()
-						err = listener.Send(&session.ListenRequest{
+						err = listener.Send(&h2c.ListenRequest{
 							ConnId: connID,
 							Data:   data[:n],
 						})
 						sendL.Unlock()
 						if err != nil {
-							return
+							break
 						}
 					}
+
+					sendL.Lock()
+					_ = listener.Send(&h2c.ListenRequest{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
 				}()
 			}
 
@@ -627,7 +564,7 @@ func (c *Client) ListenHostToContainer(
 	}, nil
 }
 
-func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*session.CredentialInfo, error) {
+func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*git.CredentialInfo, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -637,7 +574,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
-	response, err := session.NewGitClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
+	response, err := git.NewGitClient(caller.Conn()).GetCredential(ctx, &git.GitCredentialRequest{
 		Protocol: protocol,
 		Host:     host,
 		Path:     path,
@@ -647,9 +584,9 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 
 	switch result := response.Result.(type) {
-	case *session.GitCredentialResponse_Credential:
+	case *git.GitCredentialResponse_Credential:
 		return result.Credential, nil
-	case *session.GitCredentialResponse_Error:
+	case *git.GitCredentialResponse_Error:
 		return nil, fmt.Errorf("git credential error: %s", result.Error.Message)
 	default:
 		return nil, fmt.Errorf("unexpected response type")
@@ -663,13 +600,14 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
 	}
 
-	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{
+	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
+		Title:         "Allow LLM access?",
 		Prompt:        fmt.Sprintf("Remote module **%s** attempted to access the LLM API. Allow it?", moduleRepoURL),
 		PersistentKey: "allow_llm:" + moduleRepoURL,
 		Default:       false, // TODO: default to true?
 	})
 	if err != nil {
-		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
+		return fmt.Errorf("failed to prompt user for LLM API access from %s: %w", moduleRepoURL, err)
 	}
 	if response.Response {
 		return nil
@@ -678,13 +616,14 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 	return fmt.Errorf("module %s was denied LLM access; pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
 }
 
-func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, error) {
+func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
 		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
 
-	response, err := session.NewPromptClient(caller.Conn()).PromptString(ctx, &session.StringRequest{
+	response, err := prompt.NewPromptClient(caller.Conn()).PromptString(ctx, &prompt.StringRequest{
+		Title:   title,
 		Prompt:  question,
 		Default: "The user did not respond.",
 	})
@@ -694,7 +633,7 @@ func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, 
 	return response.Response, nil
 }
 
-func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, error) {
+func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -704,18 +643,21 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, e
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
-	response, err := session.NewGitClient(caller.Conn()).GetConfig(ctx, &session.GitConfigRequest{})
+	response, err := git.NewGitClient(caller.Conn()).GetConfig(ctx, &git.GitConfigRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to query git config: %w", err)
 	}
 
 	switch result := response.Result.(type) {
-	case *session.GitConfigResponse_Config:
+	case *git.GitConfigResponse_Config:
 		return result.Config.Entries, nil
-	case *session.GitConfigResponse_Error:
-		// if git is not found, ignore that error
-		if result.Error.Type == session.NO_GIT {
-			return []*session.GitConfigEntry{}, nil
+	case *git.GitConfigResponse_Error:
+		// Git config is best-effort: it provides url.*.insteadOf mappings
+		// but is not required for normal operation. Ignore errors from
+		// missing git or failed config retrieval (e.g. broken .git
+		// pointers inside containers with mounted worktrees).
+		if result.Error.Type == git.NOT_FOUND || result.Error.Type == git.CONFIG_RETRIEVAL_FAILED {
+			return []*git.GitConfigEntry{}, nil
 		}
 
 		return nil, fmt.Errorf("git config error: %s", result.Error.Message)
@@ -740,7 +682,7 @@ func (c *Client) OpenTerminal(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
-	terminalClient := session.NewTerminalClient(caller.Conn())
+	terminalClient := terminal.NewTerminalClient(caller.Conn())
 
 	term, err := terminalClient.Session(ctx)
 	if err != nil {
@@ -756,7 +698,7 @@ func (c *Client) OpenTerminal(
 		stdinR, stdinW   = io.Pipe()
 	)
 
-	forwardFD := func(r io.ReadCloser, fn func([]byte) *session.SessionRequest) error {
+	forwardFD := func(r io.ReadCloser, fn func([]byte) *terminal.SessionRequest) error {
 		defer r.Close()
 		b := make([]byte, 2048)
 		for {
@@ -774,15 +716,15 @@ func (c *Client) OpenTerminal(
 		}
 	}
 
-	go forwardFD(stdoutR, func(stdout []byte) *session.SessionRequest {
-		return &session.SessionRequest{
-			Msg: &session.SessionRequest_Stdout{Stdout: stdout},
+	go forwardFD(stdoutR, func(stdout []byte) *terminal.SessionRequest {
+		return &terminal.SessionRequest{
+			Msg: &terminal.SessionRequest_Stdout{Stdout: stdout},
 		}
 	})
 
-	go forwardFD(stderrR, func(stderr []byte) *session.SessionRequest {
-		return &session.SessionRequest{
-			Msg: &session.SessionRequest_Stderr{Stderr: stderr},
+	go forwardFD(stderrR, func(stderr []byte) *terminal.SessionRequest {
+		return &terminal.SessionRequest{
+			Msg: &terminal.SessionRequest_Stderr{Stderr: stderr},
 		}
 	})
 
@@ -796,8 +738,8 @@ func (c *Client) OpenTerminal(
 	}
 
 	switch msg := res.GetMsg().(type) {
-	case *session.SessionResponse_Ready:
-	case *session.SessionResponse_Resize:
+	case *terminal.SessionResponse_Ready:
+	case *terminal.SessionResponse_Resize:
 		// FIXME: only here to handle the first message from olde clients that
 		// don't sent a ready message
 		resizeCh <- bkgw.WinSize{
@@ -822,14 +764,14 @@ func (c *Client) OpenTerminal(
 				return
 			}
 			switch msg := res.GetMsg().(type) {
-			case *session.SessionResponse_Stdin:
+			case *terminal.SessionResponse_Stdin:
 				_, err := stdinW.Write(msg.Stdin)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
 					errCh <- err
 					return
 				}
-			case *session.SessionResponse_Resize:
+			case *terminal.SessionResponse_Resize:
 				resizeCh <- bkgw.WinSize{
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
@@ -851,8 +793,8 @@ func (c *Client) OpenTerminal(
 			defer stderrW.Close()
 			defer term.CloseSend()
 
-			err := term.Send(&session.SessionRequest{
-				Msg: &session.SessionRequest_Exit{Exit: int32(exitCode)},
+			err := term.Send(&terminal.SessionRequest{
+				Msg: &terminal.SessionRequest_Exit{Exit: int32(exitCode)},
 			})
 			if err != nil {
 				return fmt.Errorf("failed to close terminal: %w", err)
@@ -871,18 +813,123 @@ func (c *Client) OpenPipe(
 	}
 
 	// grpc service client
-	pipeClient := session.NewPipeClient(caller.Conn())
-	if err != nil {
-		return nil, fmt.Errorf("open terminal error: %w", err)
-	}
-
-	// grpc rpc client
-	pipeIOClient, err := pipeClient.IO(ctx)
+	pipeIOClient, err := pipe.NewPipeClient(caller.Conn()).IO(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open pipe: %w", err)
 	}
 	// io.ReadWriter wrapper
-	return &session.PipeIO{GRPC: pipeIOClient}, nil
+	return &pipe.PipeIO{GRPC: pipeIOClient}, nil
+}
+
+func (c *Client) WriteImage(
+	ctx context.Context,
+	name string,
+) (*ImageWriter, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
+		return &ImageWriter{
+			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
+			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
+			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
+		}, nil
+	}
+
+	if callerSupports(caller, &store.BasicStore_serviceDesc) {
+		loadClient := store.NewBasicStoreClient(caller.Conn())
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
+		tarballWriter, err := loadClient.WriteTarball(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
+		}
+		return &ImageWriter{
+			Tarball: &store.TarballWriter{
+				SendF: tarballWriter.Send,
+				CloseF: func() error {
+					_, err := tarballWriter.CloseAndRecv()
+					return err
+				},
+			},
+		}, nil
+	}
+
+	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func (c *Client) ReadImage(
+	ctx context.Context,
+	name string,
+) (*ImageReader, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
+		return &ImageReader{
+			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
+			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
+			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
+		}, nil
+	}
+
+	if callerSupports(caller, &store.BasicStore_serviceDesc) {
+		loadClient := store.NewBasicStoreClient(caller.Conn())
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
+		tarballReader, err := loadClient.ReadTarball(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
+		}
+		return &ImageReader{
+			Tarball: &store.TarballReader{
+				ReadF:  tarballReader.Recv,
+				CloseF: tarballReader.CloseSend,
+			},
+		}, nil
+	}
+
+	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
+	for _, method := range desc.Methods {
+		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, method.MethodName)) {
+			return false
+		}
+	}
+	for _, stream := range desc.Streams {
+		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, stream.StreamName)) {
+			return false
+		}
+	}
+	return true
+}
+
+type ImageWriter struct {
+	Tarball io.WriteCloser
+
+	ContentStore content.Store
+	ImagesStore  images.Store
+	LeaseManager leases.Manager
+}
+
+type ImageReader struct {
+	Tarball io.ReadCloser
+
+	ContentStore content.Store
+	ImagesStore  images.Store
+	LeaseManager leases.Manager
 }
 
 // like sync.OnceValue but accepts an arg
@@ -931,7 +978,12 @@ type filteringGateway struct {
 	// secretTranslator is a function to convert secret ids. Frontends may
 	// attempt to access secrets by raw IDs, but they may be keyed differently
 	// in the secret store.
-	secretTranslator func(string) (string, error)
+	secretTranslator SecretTranslator
+
+	// sshTranslator is a function to convert SSH mount ids. Frontends may
+	// reference SSH agents by name (e.g. "default"), but they need to be
+	// mapped to the actual socket IDs in the socket store.
+	sshTranslator SSHTranslator
 
 	// client is the top-most client that is owning the filtering process
 	client *Client
@@ -960,7 +1012,7 @@ func newFilterGateway(client *Client, req bkgw.SolveRequest) *filteringGateway {
 func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
 	switch {
 	case req.Definition != nil && req.Definition.Def != nil:
-		if gw.secretTranslator != nil {
+		if gw.secretTranslator != nil || gw.sshTranslator != nil {
 			dag, err := DefToDAG(req.Definition)
 			if err != nil {
 				return nil, err
@@ -976,20 +1028,28 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 					return nil
 				}
 
-				for _, secret := range execOp.ExecOp.GetSecretenv() {
-					secret.ID, err = gw.secretTranslator(secret.ID)
-					if err != nil {
-						return err
+				if gw.secretTranslator != nil {
+					for _, secret := range execOp.ExecOp.GetSecretenv() {
+						secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
+						if err != nil {
+							return err
+						}
 					}
 				}
 				for _, mount := range execOp.ExecOp.GetMounts() {
-					if mount.MountType != bksolverpb.MountType_SECRET {
-						continue
-					}
-					secret := mount.SecretOpt
-					secret.ID, err = gw.secretTranslator(secret.ID)
-					if err != nil {
-						return err
+					switch {
+					case mount.MountType == bksolverpb.MountType_SECRET && gw.secretTranslator != nil:
+						secret := mount.SecretOpt
+						secret.ID, err = gw.secretTranslator(secret.ID, secret.Optional)
+						if err != nil {
+							return err
+						}
+					case mount.MountType == bksolverpb.MountType_SSH && gw.sshTranslator != nil:
+						ssh := mount.SSHOpt
+						ssh.ID, err = gw.sshTranslator(ssh.ID, ssh.Optional)
+						if err != nil {
+							return err
+						}
 					}
 				}
 				return nil
@@ -1006,8 +1066,7 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 
 		res, err := gw.FrontendLLBBridge.Solve(ctx, req, sid)
 		if err != nil {
-			// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
-			bklog.G(ctx).Errorf("solve error: %+v", err)
+			bklog.G(ctx).Errorf("solve error: %v", err)
 			err = includeBuildkitContextCancelledLine(err)
 			return nil, err
 		}
@@ -1051,6 +1110,38 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 	default:
 		return &bkfrontend.Result{}, nil
 	}
+}
+
+type secretTranslatorKey struct{}
+
+type SecretTranslator func(name string, optional bool) (string, error)
+
+func WithSecretTranslator(ctx context.Context, s SecretTranslator) context.Context {
+	return context.WithValue(ctx, secretTranslatorKey{}, s)
+}
+
+func SecretTranslatorFromContext(ctx context.Context) SecretTranslator {
+	v := ctx.Value(secretTranslatorKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(SecretTranslator)
+}
+
+type sshTranslatorKey struct{}
+
+type SSHTranslator func(id string, optional bool) (string, error)
+
+func WithSSHTranslator(ctx context.Context, t SSHTranslator) context.Context {
+	return context.WithValue(ctx, sshTranslatorKey{}, t)
+}
+
+func SSHTranslatorFromContext(ctx context.Context) SSHTranslator {
+	v := ctx.Value(sshTranslatorKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(SSHTranslator)
 }
 
 func ToEntitlementStrings(ents entitlements.Set) []string {

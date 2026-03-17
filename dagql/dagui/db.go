@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -15,9 +16,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 )
 
 type DB struct {
@@ -369,6 +370,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
 		CanceledLinks:   NewSpanSet(),
+		ErrorOrigins:    NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,
@@ -444,26 +446,31 @@ type Activity struct {
 
 func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 	return func(yield func(Interval) bool) {
-		var lastIval *Interval
+		var latestEnd time.Time
+		yieldRunning := func() {
+			runningStart := activity.EarliestRunning
+			if latestEnd.After(runningStart) {
+				runningStart = latestEnd
+			}
+			if runningStart.Before(now) {
+				yield(Interval{Start: runningStart, End: now})
+			}
+		}
 		for _, ival := range activity.CompletedIntervals {
-			ival := ival
-			lastIval = &ival
 			if !activity.EarliestRunning.IsZero() &&
 				activity.EarliestRunning.Before(ival.Start) {
-				if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
-					return
-				}
-				break
+				yieldRunning()
+				return
 			}
 			if !yield(ival) {
 				return
 			}
-		}
-		if !activity.EarliestRunning.IsZero() &&
-			(lastIval == nil || activity.EarliestRunning.After(lastIval.End)) {
-			if !yield(Interval{Start: activity.EarliestRunning, End: now}) {
-				return
+			if ival.End.After(latestEnd) {
+				latestEnd = ival.End
 			}
+		}
+		if !activity.EarliestRunning.IsZero() {
+			yieldRunning()
 		}
 	}
 }
@@ -648,7 +655,15 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				continue
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
-			span.ErrorOrigin = linked
+			span.ErrorOrigins.Add(linked)
+		}
+	}
+
+	// Extract error origins from span error descriptions
+	if span.Status.Code == codes.Error {
+		for _, origin := range telemetry.ParseErrorOrigins(span.Status.Description) {
+			linked := db.initSpan(SpanID{SpanID: origin.SpanID()})
+			span.ErrorOrigins.Add(linked)
 		}
 	}
 
@@ -666,7 +681,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 
 	if !span.ParentID.IsValid() && span.Received {
 		// keep track of the trace's root span
-		db.RootSpan = span
+		if db.RootSpan == nil {
+			db.RootSpan = span
+		}
 
 		if !db.PrimarySpan.IsValid() {
 			// default primary to root span, though we might never see a "root
@@ -674,10 +691,13 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.PrimarySpan = span.ID
 		}
 
-		if !span.IsRunning() {
+		if span == db.RootSpan && !span.IsRunning() {
+			// If the root span is completed, we should mark any still-running spans
+			// as canceled.
 			for _, span := range db.Spans.Order {
 				if span.IsRunning() {
 					span.Canceled = true
+					span.LeftRunning = true
 					span.EndTime = db.RootSpan.EndTime
 					span.PropagateStatusToParentsAndLinks()
 					db.update(span)
@@ -685,7 +705,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			}
 		}
 	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
+		// Same as above (cancel running spans when root ends), but handled for
+		// incoming span updates too.
 		span.Canceled = true
+		span.LeftRunning = true
 		span.EndTime = db.RootSpan.EndTime
 		span.PropagateStatusToParentsAndLinks()
 	}
@@ -830,11 +853,14 @@ func (db *DB) Call(dig string) *callpbv1.Call {
 		var call callpbv1.Call
 		if err := call.Decode(callPayload); err != nil {
 			slog.Warn("failed to decode call", "err", err)
-		} else {
-			// Cache the decoded call for future use
-			db.Calls[dig] = &call
-			return &call
+			// Cache nil so we don't keep retrying and spamming warnings
+			// on every render cycle.
+			db.Calls[dig] = nil
+			return nil
 		}
+		// Cache the decoded call for future use
+		db.Calls[dig] = &call
+		return &call
 	}
 
 	// Finally, try to find the call through creator spans
@@ -894,19 +920,6 @@ func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
 	return call
 }
 
-// Function to check if a row is or contains a target row
-func isOrContains(row, target *TraceTree) bool {
-	if row == target {
-		return true
-	}
-	for _, child := range row.Children {
-		if isOrContains(child, target) {
-			return true
-		}
-	}
-	return false
-}
-
 type WalkDecision int
 
 const (
@@ -935,34 +948,6 @@ func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 	walk(tree, 0)
 }
 
-func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
-	reveal := make(map[*TraceTree]struct{})
-
-	var collect func(row *TraceTree, ancestorFailed bool)
-	collect = func(tree *TraceTree, ancestorFailed bool) {
-		failed := tree.Span.IsFailedOrCausedFailure()
-		unset := tree.Span.IsUnset()
-		if failed {
-			reveal[tree] = struct{}{}
-		}
-		if failed ||
-			// continue through UNSET spans beneath failed parents; these correspond
-			// to basic span.End() calls which intend to just add measurement without
-			// bubbling up or masking failure
-			(unset && ancestorFailed) {
-			for _, child := range tree.Children {
-				collect(child, true)
-			}
-		}
-	}
-
-	for _, row := range rows.Body {
-		collect(row, false)
-	}
-
-	return collectParents(rows.Body, reveal)
-}
-
 func (db *DB) FindResource(filter attribute.KeyValue) *resource.Resource {
 	for _, res := range db.Resources {
 		for _, kv := range res.Attributes() {
@@ -972,26 +957,4 @@ func (db *DB) FindResource(filter attribute.KeyValue) *resource.Resource {
 		}
 	}
 	return nil
-}
-
-func collectParents(rows []*TraceTree, targets map[*TraceTree]struct{}) []*TraceTree {
-	var result []*TraceTree
-
-	for _, row := range rows {
-		contains := false
-		for target := range targets {
-			if isOrContains(row, target) {
-				contains = true
-				break
-			}
-		}
-		if !contains {
-			continue
-		}
-		rowCopy := *row
-		rowCopy.Children = collectParents(row.Children, targets)
-		result = append(result, &rowCopy)
-	}
-
-	return result
 }

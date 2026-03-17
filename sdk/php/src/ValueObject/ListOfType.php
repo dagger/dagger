@@ -52,7 +52,7 @@ final readonly class ListOfType
     }
 
     private static function getSubtype(
-        Attribute\ListOfType $attribute,
+        Attribute\ListOfType|Attribute\ReturnsListOfType $attribute,
     ): ListOfType|Type {
         if (is_string($attribute->type)) {
             return new Type($attribute->type, $attribute->nullable);

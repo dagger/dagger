@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# keep the next section last because there's a test that appends "dependencies"
+# to this file
 [project]
 name = "main"
 version = "0.0.0"
+requires-python = ">=3.12"

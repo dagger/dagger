@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"strconv"
 
 	"dagger.io/dagger"
-	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -36,7 +36,6 @@ func main() {
 
 	eg := new(errgroup.Group)
 	for _, u := range svcURLs {
-		u := u
 		eg.Go(func() error {
 			out, err := fetch(ctx, c, mode, u)
 			if err != nil {
@@ -85,14 +84,14 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 	args = append(args, mirrorURL)
 
 	out, err := c.Container().
-		From("golang:1.24.4-alpine").
+		From("golang:1.25.3-alpine").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
-		WithEnvVariable("NOW", identity.NewID()).
+		WithEnvVariable("NOW", rand.Text()).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		WithServiceBinding("mirror", mirrorSvc).
 		WithExec(args, dagger.ContainerWithExecOpts{
@@ -131,7 +130,7 @@ func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, 
 	case "exec":
 		return c.Container().
 			From("alpine:3.16.2").
-			WithEnvVariable("NOW", identity.NewID()).
+			WithEnvVariable("NOW", rand.Text()).
 			WithExec([]string{"cat", "/etc/resolv.conf"}).
 			WithExec([]string{"wget", "-O-", svcURL}).
 			Stdout(ctx)

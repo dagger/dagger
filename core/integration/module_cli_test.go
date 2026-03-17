@@ -68,7 +68,6 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				sourceDirEnt: "src/",
 			},
 		} {
-			tc := tc
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				srcRootDir := ctr.
 					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
@@ -332,7 +331,6 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(fmt.Sprintf("module %s git", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -418,7 +416,6 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 
 		// test develop from source root and from subdir (in which case find-up should kick in)
 		for _, wd := range []string{"/work", "/work/from/some/otherdir"} {
-			wd := wd
 			t.Run(wd, func(ctx context.Context, t *testctx.T) {
 				sourceDir, err := filepath.Rel(wd, "/work/cool/subdir")
 				require.NoError(t, err)
@@ -573,7 +570,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"rm", "dagger.gen.go"}).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--sdk=go")).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("install", "--name=cooldep", "./dep")).
 			WithExec([]string{"rm", "dagger.gen.go"})
 		developed := base.With(daggerExec("develop", "--recursive"))
 
@@ -582,6 +579,115 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		_, err = developed.File("/work/dep/dagger.gen.go").Contents(ctx)
 		require.NoError(t, err)
+
+		// make sure that even though we named the dep cooldep during install,
+		// the updated dagger.json for the dep still has the original name
+		depDaggerJSON, err := developed.File("/work/dep/dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, gjson.Get(depDaggerJSON, "name").String(), "dep")
+	})
+}
+
+func (CLISuite) TestDevelopDeterministicCodegen(ctx context.Context, t *testctx.T) {
+	// Test that running codegen multiple times produces identical output.
+	// This is critical for version control - we want to be able to commit
+	// generated files and know they won't change unless the API changes.
+	t.Run("go split methods across files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("/work/main.go", `package main
+
+type GitRepo struct{}
+
+func (m *GitRepo) RemoteA() *RemoteA {
+	return &RemoteA{}
+}
+
+func (m *GitRepo) RemoteB() *RemoteB {
+	return &RemoteB{}
+}
+`,
+			).
+			WithNewFile("/work/remote_a.go", `package main
+
+type RemoteA struct{}
+`,
+			).
+			WithNewFile("/work/remote_b.go", `package main
+
+type RemoteB struct{}
+`,
+			)
+
+		modGen = modGen.With(daggerExec("develop"))
+		firstGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		modGen = modGen.With(daggerExec("develop"))
+		secondGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, firstGen, secondGen, "Generated code should be deterministic across multiple runs")
+	})
+
+	t.Run("go with dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Set up a module with dependencies to test case ordering
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", `package main
+
+import "context"
+
+type Dep struct {}
+
+func (m *Dep) Method1(ctx context.Context) string {
+	return "method1"
+}
+
+func (m *Dep) Method2(ctx context.Context) string {
+	return "method2"
+}
+
+func (m *Dep) Method3(ctx context.Context) string {
+	return "method3"
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("/work/main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) UsesDep(ctx context.Context) (string, error) {
+	return dag.Dep().Method2(ctx)
+}
+`,
+			).
+			With(daggerExec("install", "./dep"))
+
+		// Generate code the first time
+		modGen = modGen.With(daggerExec("develop"))
+		firstGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		// Generate code a second time - should be identical
+		modGen = modGen.With(daggerExec("develop"))
+		secondGen, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+
+		// The generated code should be byte-for-byte identical
+		require.Equal(t, firstGen, secondGen, "Generated code should be deterministic across multiple runs")
 	})
 }
 
@@ -746,6 +852,33 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			Sync(ctx)
 
 		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
+	})
+
+	t.Run("install with eager-runtime", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
+			WithNewFile("/work/dep/main.go", `package main
+
+import "context"
+
+type Dep struct{}
+
+func (m *Dep) Fn(ctx context.Context) string {
+	return definitelyUndefinedSymbol
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("install", "--eager-runtime", "./dep")).
+			Sync(ctx)
+
+		requireErrOut(t, err, "failed to install module")
+		requireErrOut(t, err, "definitelyUndefinedSymbol")
 	})
 
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
@@ -989,7 +1122,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				var modCfg modules.ModuleConfig
 				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
 				require.Len(t, modCfg.Dependencies, 1)
-				require.Equal(t, tc.gitTestRepoRef, modCfg.Dependencies[0].Source)
+				require.Equal(t, tc.gitTestRepoRef+"@main", modCfg.Dependencies[0].Source)
 				require.NotEmpty(t, modCfg.Dependencies[0].Pin)
 			})
 		})
@@ -1353,52 +1486,44 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
 				uninstallCmdMod: "hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was originally installed without a specific version. Try re-running the uninstall command without specifying the version number`,
+				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was installed with "main"`,
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello",
 				uninstallCmdMod: "hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.1.2",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   `version "v0.3.0" was requested to be uninstalled but the installed version is "v0.1.2"`,
+				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was installed with "v0.1.2"`,
 			},
 			{
 				installCmdMod:   "",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "",
 				uninstallCmdMod: "hello",
-				expectedError:   "",
 			},
 		}
 
@@ -1575,7 +1700,7 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			name:        "existing dep dont have version, update cmd use name without version",
 			daggerjson:  depHasNoVersion,
 			updateCmd:   []string{"update", "docker"},
-			contains:    []string{`"github.com/shykes/daggerverse/docker"`},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@main"`},
 			notContains: []string{randomMainPin},
 		},
 		{
@@ -1628,7 +1753,7 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			name:          "cannot update a local dependency",
 			daggerjson:    depIsLocal,
 			updateCmd:     []string{"update", "bar"},
-			expectedError: `updating local deps is not supported`,
+			expectedError: `updating local dependencies is not supported`,
 		},
 	}
 

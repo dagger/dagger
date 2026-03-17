@@ -16,6 +16,17 @@ defmodule Dagger.Engine do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The list of connected client IDs
+  """
+  @spec clients(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def clients(%__MODULE__{} = engine) do
+    query_builder =
+      engine.query_builder |> QB.select("clients")
+
+    Client.execute(engine.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Engine.
   """
   @spec id(t()) :: {:ok, Dagger.EngineID.t()} | {:error, term()}
@@ -38,6 +49,17 @@ defmodule Dagger.Engine do
       query_builder: query_builder,
       client: engine.client
     }
+  end
+
+  @doc """
+  The name of the engine instance.
+  """
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = engine) do
+    query_builder =
+      engine.query_builder |> QB.select("name")
+
+    Client.execute(engine.client, query_builder)
   end
 end
 

@@ -17,7 +17,7 @@ query IntrospectionQuery {
       name
       description
       locations
-      args {
+      args(includeDeprecated: true) {
         ...InputValue
       }
     }
@@ -31,7 +31,7 @@ fragment FullType on __Type {
   fields(includeDeprecated: true) {
     name
     description
-    args {
+    args(includeDeprecated: true) {
       ...InputValue
     }
     type {
@@ -43,7 +43,7 @@ fragment FullType on __Type {
       ...DirectiveApplication
     }
   }
-  inputFields {
+  inputFields(includeDeprecated: true) {
     ...InputValue
   }
   interfaces {

@@ -70,34 +70,14 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Initializes this container from a Dockerfile build.
+     * The combined buffered standard output and standard error stream of the last executed command
+     *
+     * Returns an error if no command was executed
      */
-    public function build(
-        DirectoryId|Directory $context,
-        ?string $dockerfile = 'Dockerfile',
-        ?string $target = '',
-        ?array $buildArgs = null,
-        ?array $secrets = null,
-        ?bool $noInit = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('build');
-        $innerQueryBuilder->setArgument('context', $context);
-        if (null !== $dockerfile) {
-        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
-        }
-        if (null !== $target) {
-        $innerQueryBuilder->setArgument('target', $target);
-        }
-        if (null !== $buildArgs) {
-        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
-        }
-        if (null !== $secrets) {
-        $innerQueryBuilder->setArgument('secrets', $secrets);
-        }
-        if (null !== $noInit) {
-        $innerQueryBuilder->setArgument('noInit', $noInit);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    public function combinedOutput(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('combinedOutput');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'combinedOutput');
     }
 
     /**
@@ -122,6 +102,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('expand', $expand);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container's configured docker healthcheck.
+     */
+    public function dockerHealthcheck(): HealthcheckConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerHealthcheck');
+        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -150,6 +139,22 @@ class Container extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envVariables');
         return (array)$this->queryLeaf($leafQueryBuilder, 'envVariables');
+    }
+
+    /**
+     * check if a file or directory exists
+     */
+    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $expectedType) {
+        $leafQueryBuilder->setArgument('expectedType', $expectedType);
+        }
+        if (null !== $doNotFollowSymlinks) {
+        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
 
     /**
@@ -217,6 +222,29 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+    }
+
+    /**
+     * Exports the container as an image to the host's container image store.
+     */
+    public function exportImage(
+        string $name,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): void {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exportImage');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'exportImage');
     }
 
     /**
@@ -358,6 +386,19 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return file status
+     */
+    public function stat(string $path, ?bool $doNotFollowSymlinks = false): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('stat');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $doNotFollowSymlinks) {
+        $innerQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The buffered standard error stream of the last executed command
      *
      * Returns an error if no command was executed
@@ -464,7 +505,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this container plus the given OCI anotation.
+     * Retrieves this container plus the given OCI annotation.
      */
     public function withAnnotation(string $name, string $value): Container
     {
@@ -508,26 +549,65 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $directory,
+        DirectoryId|Directory $source,
         ?array $exclude = null,
         ?array $include = null,
+        ?bool $gitignore = false,
         ?string $owner = '',
         ?bool $expand = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('directory', $directory);
+        $innerQueryBuilder->setArgument('source', $source);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
+        }
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with the specificed docker healtcheck command set.
+     */
+    public function withDockerHealthcheck(
+        array $args,
+        ?bool $shell = null,
+        ?string $interval = null,
+        ?string $timeout = null,
+        ?string $startPeriod = null,
+        ?string $startInterval = null,
+        ?int $retries = null,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDockerHealthcheck');
+        $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $shell) {
+        $innerQueryBuilder->setArgument('shell', $shell);
+        }
+        if (null !== $interval) {
+        $innerQueryBuilder->setArgument('interval', $interval);
+        }
+        if (null !== $timeout) {
+        $innerQueryBuilder->setArgument('timeout', $timeout);
+        }
+        if (null !== $startPeriod) {
+        $innerQueryBuilder->setArgument('startPeriod', $startPeriod);
+        }
+        if (null !== $startInterval) {
+        $innerQueryBuilder->setArgument('startInterval', $startInterval);
+        }
+        if (null !== $retries) {
+        $innerQueryBuilder->setArgument('retries', $retries);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -546,6 +626,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Export environment variables from an env-file to the container.
+     */
+    public function withEnvFileVariables(EnvFileId|EnvFile $source): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileVariables');
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Set a new environment variable in the container.
      */
     public function withEnvVariable(string $name, string $value, ?bool $expand = false): Container
@@ -560,12 +650,23 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Raise an error.
+     */
+    public function withError(string $err): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withError');
+        $innerQueryBuilder->setArgument('err', $err);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Execute a command in the container, and return a new snapshot of the container state after execution.
      */
     public function withExec(
         array $args,
         ?bool $useEntrypoint = false,
         ?string $stdin = '',
+        ?string $redirectStdin = '',
         ?string $redirectStdout = '',
         ?string $redirectStderr = '',
         ?ReturnType $expect = null,
@@ -581,6 +682,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $stdin) {
         $innerQueryBuilder->setArgument('stdin', $stdin);
+        }
+        if (null !== $redirectStdin) {
+        $innerQueryBuilder->setArgument('redirectStdin', $redirectStdin);
         }
         if (null !== $redirectStdout) {
         $innerQueryBuilder->setArgument('redirectStdout', $redirectStdout);
@@ -970,6 +1074,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container without a configured docker healtcheck command.
+     */
+    public function withoutDockerHealthcheck(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDockerHealthcheck');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

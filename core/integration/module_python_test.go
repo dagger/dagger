@@ -166,8 +166,8 @@ dagger-io = { path = "sdk", editable = true }
 main_object = "hello_world.main:HelloWorld"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 `,
 			).
 			WithNewFile("src/hello_world/__init__.py", "# No main object import").
@@ -223,8 +223,8 @@ dependencies = ["dagger-io"]
 dagger-io = { path = "sdk", editable = true }
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 `,
 			).
 			WithNewFile("src/hello_world/__init__.py", "from .main import Test as Test").
@@ -267,13 +267,12 @@ dependencies = ["dagger-io"]
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
 
-# See https://hatch.pypa.io/latest/config/build/#packages
-[tool.hatch.build.targets.wheel]
-packages = ["src/main"]
+[tool.uv.build-backend]
+module-name = "main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 `,
 			).
 			WithNewFile("src/main/__init__.py", `import dagger
@@ -304,6 +303,43 @@ func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 		path string
 		conf string
 	}{
+		{
+			name: "uv",
+			path: "src/test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+`,
+		},
+		{
+			name: "uv",
+			path: "test/__init__.py",
+			conf: `
+[project]
+name = "test"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+`,
+		},
 		{
 			name: "setuptools",
 			path: "src/test/__init__.py",
@@ -516,8 +552,6 @@ build-backend = "poetry.core.masonry.api"
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -628,14 +662,14 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(fileContents(".python-version", "3.12.1")).
+			With(fileContents(".python-version", "3.13.1")).
 			With(source).
 			With(daggerInitPython()).
 			With(daggerCall("pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12.1", out)
+		require.Equal(t, "3.13.1", out)
 	})
 
 	t.Run(".python-version takes precedence", func(ctx context.Context, t *testctx.T) {
@@ -685,7 +719,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12", out)
+		require.Equal(t, "3.13", out)
 	})
 }
 
@@ -745,7 +779,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12", out)
+		require.Equal(t, "3.14", out)
 	})
 }
 
@@ -825,7 +859,7 @@ class Test:
 			// newer feature.
 			With(pyprojectExtra(nil, `
                 [tool.dagger]
-                uv-version = "0.5.20"
+                uv-version = "0.7.13"
             `)).
 			With(source).
 			With(daggerInitPython()).
@@ -833,7 +867,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "0.5.20", out)
+		require.Equal(t, "0.7.13", out)
 	})
 
 	t.Run("index-url", func(ctx context.Context, t *testctx.T) {
@@ -903,9 +937,7 @@ class Test:
 				With(daggerInitPython()).
 				Sync(ctx)
 
-			// hatchling is a build requirement so it will fail to build if the index
-			// is unreachable
-			requireErrOut(t, err, "hatchling")
+			requireErrOut(t, err, "Failed to fetch: `https://pypi.example.com/simple")
 		})
 	})
 }
@@ -1119,7 +1151,6 @@ func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 			expected: `{"test":{"echoOpts":"hello!hello!hello!"}}`,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1180,7 +1211,6 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
 			expected: `{"test":{"readOptional":""}}`,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1298,7 +1328,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
             from typing_extensions import Doc
 
             import dagger
-            
+
 
             @dagger.object_type
             class Test:
@@ -1340,7 +1370,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
             from typing_extensions import Doc
 
             import dagger
-            
+
 
             @dagger.object_type
             class Test:
@@ -1487,7 +1517,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
                 @dagger.function
                 def quack(self, word: typing.Annotated[str, Doc("A word for the duck to speak")] = "") -> str:
                     """A quack sound"""
-                
+
             @dagger.object_type
             class Test:
                 @dagger.function
@@ -1615,7 +1645,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "fn", "dep",
@@ -1635,7 +1664,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "fn", "dep",
@@ -1656,7 +1684,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "fn", "obj", "dep",
@@ -1675,7 +1702,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "fn", "obj", "dep",
@@ -1701,7 +1727,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "foo", "dep",
@@ -1725,7 +1750,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "foo", "dep",
@@ -1744,7 +1768,7 @@ func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
         @dagger.object_type
         class Test:
             source: Annotated[
-                dagger.Directory, 
+                dagger.Directory,
                 dagger.DefaultPath("/"),
                 dagger.Ignore([".venv"]),
             ] = dagger.field()
@@ -1754,6 +1778,87 @@ func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, err)
 	require.Contains(t, gjson.Parse(out).Value(), "dagger.json")
+}
+
+func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work/dep").
+		With(daggerInitPython("--name=dep")).
+		With(fileContents("src/dep/__init__.py", fmt.Sprintf(`
+            import dagger
+            from dagger import dag
+
+            @dagger.object_type
+            class Dep:
+                @dagger.function
+                async def exec_(self) -> str:
+                    return await (
+                        dag.container()
+                        .from_("%s")
+                        .with_exec(["sh", "-c", ">&2 echo 'oh noes'; exit 5"])
+                        .stdout()
+                    )
+        `, alpineImage))).
+		WithWorkdir("/work/test").
+		With(daggerInitPython()).
+		With(daggerExec("install", "../dep")).
+		With(pythonSource(`
+			import dagger
+			from dagger import dag
+
+			@dagger.object_type
+			class Test:
+				@dagger.function
+				async def error_extensions(self) -> str:
+					try:
+						return await dag.dep().exec()
+					except dagger.ExecError as e:
+						# If the SDK didn't properly propagate the error
+						# extensions this would be a dagger.QueryError instead,
+						# so not caught.
+						assert e.exit_code == 5
+						return f"error: {e.stderr}"
+
+				@dagger.function
+				def coro(self) -> str:
+					# Should fail because dag.version() returns a coroutine
+					# and this isn't an async function
+					return dag.version()
+
+				@dagger.function
+				async def nowait(self) -> str:
+					# Should fail because of missing await
+					return dag.version()
+
+				@dagger.function
+				def unhandled(self) -> str:
+					raise ValueError("a foo bubbles up to bar")
+		`))
+
+	t.Run("error extensions", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("error-extensions")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "error: oh noes", out)
+	})
+
+	t.Run("sync calls async", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("coro")).Sync(ctx)
+		requireErrOut(t, err, "Did you forget to add 'async'")
+	})
+
+	t.Run("async without await", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("nowait")).Sync(ctx)
+		requireErrOut(t, err, "Did you forget to add an 'await'")
+	})
+
+	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("unhandled")).Sync(ctx)
+		var exerr *dagger.ExecError
+		require.ErrorAs(t, err, &exerr)
+		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
+		require.Contains(t, exerr.Stderr, "ValueError: a foo bubbles up to bar")
+	})
 }
 
 func pythonSource(contents string) dagger.WithContainerFunc {
@@ -1780,8 +1885,8 @@ func pyprojectExtra(dependencies []string, contents string) dagger.WithContainer
 	depLine := `dependencies = ["` + strings.Join(dependencies, `", "`) + `"]`
 	base := `
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
@@ -1815,4 +1920,33 @@ func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContain
 			Include: inc,
 		}))
 	}
+}
+
+func (PythonSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+from typing import Annotated
+import dataclasses
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    async def version(
+        self,
+        ctr: Annotated[dagger.Container, dagger.DefaultAddress("alpine:3.19")],
+    ) -> str:
+        return await ctr.with_exec(["cat", "/etc/alpine-release"]).stdout()
+`)
+
+	out, err := modGen.With(daggerCall("version")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains "3.19.0"
+
+	// Test that we can override the default via constructor
+	out2, err := modGen.With(daggerCall("version", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
 }

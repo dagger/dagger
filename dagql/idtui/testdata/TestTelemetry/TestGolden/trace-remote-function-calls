@@ -1,0 +1,23 @@
+Expected stderr:
+
+✔ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴✔ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+ 
+✔ load module: ./viztest X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
+ 
+✔ parsing command line arguments X.Xs
+
+✔ viztest: Viztest! X.Xs
+✔ .traceRemoteFunctionCalls: Void X.Xs
+├╴✔ versioned: Versioned! X.Xs
+╰╴✔ .hello: String! X.Xs
+  ┃ version 3
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

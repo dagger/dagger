@@ -15,10 +15,10 @@ defmodule Dagger.Mod.Object.Defn do
     args =
       case args do
         {self, args} ->
-          [var(self) | Enum.map(args, &var_or_default/1)]
+          [var(self) | Enum.map(args, &var/1)]
 
         args ->
-          Enum.map(args, &var_or_default/1)
+          Enum.map(args, &var/1)
       end
 
     quote do
@@ -29,12 +29,13 @@ defmodule Dagger.Mod.Object.Defn do
     end
   end
 
-  defp var_or_default({name, {_, [default_value: def_val]}}) do
-    {:\\, [], [Macro.var(name, nil), def_val]}
-  end
-
-  defp var_or_default(arg) do
-    var(arg)
+  # {var, {type, opts}}
+  defp var({name, {_, opts}}) do
+    if Keyword.has_key?(opts, :default) do
+      {:\\, [], [Macro.var(name, nil), opts[:default]]}
+    else
+      Macro.var(name, nil)
+    end
   end
 
   # {var, type}

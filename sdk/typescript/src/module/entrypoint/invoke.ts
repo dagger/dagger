@@ -56,7 +56,7 @@ export async function invoke(
 
   // Disabling linter because the result could be anything.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let result: any = {}
+  let result: any
 
   try {
     result = await executor.getResult(

@@ -1,0 +1,14 @@
+{
+  "name": "myblueprint-with-dep",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "hello",
+      "source": "../hello"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}

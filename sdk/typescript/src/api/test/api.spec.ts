@@ -1,3 +1,4 @@
+import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
 import { randomUUID } from "crypto"
 import fs from "fs"
@@ -9,10 +10,9 @@ import {
 import { buildQuery, queryFlatten } from "../../common/graphql/compute_query.js"
 import {
   Client,
-  ClientContainerOpts,
+  type ClientContainerOpts,
   connect,
   Container,
-  Directory,
   NetworkProtocol,
 } from "../../index.js"
 
@@ -172,9 +172,8 @@ describe("TypeScript SDK api", function () {
         `,
       )
 
-      const builder = client
-        .container()
-        .build(image)
+      const builder = image
+        .dockerBuild()
         .withWorkdir("/")
         .withExec(["echo", "htrshtrhrthrts"], { redirectStdout: "file.txt" })
 
@@ -245,7 +244,7 @@ describe("TypeScript SDK api", function () {
         await ctr.sync()
       } catch (e) {
         if (e instanceof ExecError) {
-          assert(e.message.includes("did not complete successfully"))
+          assert(e.message.includes("exit code: 127"))
           assert.strictEqual(e.exitCode, 127)
           assert.strictEqual(e.stdout, stdout)
           assert.strictEqual(e.stderr, stderr)
@@ -300,12 +299,12 @@ describe("TypeScript SDK api", function () {
 
   it("Compute nested arguments", async function () {
     const tree = new Client()
-      .container()
-      .build(new Directory(), { buildArgs: [{ value: "foo", name: "test" }] })
+      .directory()
+      .dockerBuild({ buildArgs: [{ value: "foo", name: "test" }] })
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
-      `{ container { build (context: {"_ctx":{"_queryTree":[],"_connection":{}}},buildArgs: [{value:"foo",name:"test"}]) } }`,
+      `{ directory { dockerBuild (buildArgs: [{value:"foo",name:"test"}]) } }`,
     )
   })
 

@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    Allow `--no-mod`/`-M` flag in more places to disable automatic module loading
-time: 2025-06-17T14:07:59.834791194+01:00
-custom:
-    Author: jedevc
-    PR: "10595"

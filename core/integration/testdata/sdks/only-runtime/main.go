@@ -19,12 +19,12 @@ func New(
 }
 
 func (m *OnlyRuntime) ModuleRuntime(
-	ctx context.Context,
-	modSource *dagger.ModuleSource,
-	introspectionJSON *dagger.File,
+	ctx context.Context, //nolint:unparam
+	modSource *dagger.ModuleSource, //nolint:unparam
+	introspectionJSON *dagger.File, //nolint:unparam
 ) (*dagger.Container, error) {
 	return dag.Container().
-		From("golang:1.24.3-alpine").
+		From("golang:1.25.3-alpine").
 		WithDirectory("/src", m.Src).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "/bin/sdk", "."}).

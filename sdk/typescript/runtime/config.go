@@ -32,7 +32,10 @@ const (
 const (
 	PnpmDefaultVersion = "8.15.4"
 	YarnDefaultVersion = "1.22.22"
-	NpmDefaultVersion  = "10.7.0"
+
+	// NOTE: when changing this version, check if the `DefaultNodeVersion` var in sdk/typescript/runtime/tsdistconsts/consts.go
+	// should be updated to an image that has the same version of npm pre-installed in the container
+	NpmDefaultVersion = "11.8.0"
 )
 
 type SDKLibOrigin string
@@ -82,7 +85,9 @@ type moduleConfig struct {
 	// Module config
 	name    string
 	subPath string
+	modPath string
 	sdk     string
+	debug   bool
 
 	// Location of the SDK library
 	sdkLibOrigin SDKLibOrigin
@@ -101,6 +106,7 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 		runtime:           Node,
 		packageJSONConfig: nil,
 		sdkLibOrigin:      Bundle,
+		source:            dag.Directory(),
 	}
 
 	cfg.name, err = modSource.ModuleOriginalName(ctx)
@@ -113,6 +119,11 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 		return nil, fmt.Errorf("could not load module config source subpath: %w", err)
 	}
 
+	cfg.modPath, err = modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
+	}
+
 	// We retrieve the SDK because if it's set, that means the module is implementing
 	// logic and is not just for a standalone client.
 	cfg.sdk, err = modSource.SDK().Source(ctx)
@@ -120,16 +131,29 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 		return nil, fmt.Errorf("could not load module config sdk: %w", err)
 	}
 
+	cfg.debug, err = modSource.SDK().Debug(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config sdk debug: %w", err)
+	}
+
 	// If a first init, there will be no directory, so we ignore the error here.
 	// We also only include package.json & lockfiles to benefit from caching.
-	cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
-	configEntries, err := dag.Directory().WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
-		Include: moduleConfigFiles("."),
-	}).Entries(ctx)
-	if err == nil {
-		for _, entry := range configEntries {
-			cfg.entries[entry] = true
-		}
+	// If there's no source yet, we keep it as an empty directory.
+	_, silentErr := modSource.ContextDirectory().Directory(cfg.subPath).Entries(ctx)
+	if silentErr == nil {
+		cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
+	}
+
+	configEntries, err := dag.Directory().
+		WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
+			Include: moduleConfigFiles("."),
+		}).Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list module source entries: %w", err)
+	}
+
+	for _, entry := range configEntries {
+		cfg.entries[entry] = true
 	}
 
 	if cfg.hasFile("package.json") {
@@ -183,6 +207,99 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 	}
 
 	return cfg, nil
+}
+
+// analyzeClientConfig is a simpler version of analyzeModuleConfig to fetch all the information
+// required to generate a client.
+// This include: the module root path, the runtime, the package manager, the sdk lib origin
+// and if the module also has a SDK.
+func analyzeClientConfig(ctx context.Context, modSource *dagger.ModuleSource) (cfg *moduleConfig, err error) {
+	cfg = &moduleConfig{
+		entries:           make(map[string]bool),
+		contextDirectory:  modSource.ContextDirectory(),
+		runtime:           Node,
+		packageJSONConfig: nil,
+		sdkLibOrigin:      Bundle,
+		source:            dag.Directory(),
+	}
+
+	cfg.subPath, err = modSource.SourceSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config source subpath: %w", err)
+	}
+
+	cfg.modPath, err = modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
+	}
+
+	// We retrieve the SDK because if it's set, that means the module is implementing
+	// logic and is not just for a standalone client.
+	cfg.sdk, err = modSource.SDK().Source(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config sdk: %w", err)
+	}
+
+	// We are using the module path as source here since the client configuration should
+	// be aside the dagger.json
+	_, silentErr := modSource.ContextDirectory().Directory(cfg.modPath).Entries(ctx)
+	if silentErr == nil {
+		cfg.source = modSource.ContextDirectory().Directory(cfg.modPath)
+	}
+
+	configEntries, err := dag.Directory().
+		WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
+			Include: moduleConfigFiles("."),
+		}).Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list module source entries: %w", err)
+	}
+
+	for _, entry := range configEntries {
+		cfg.entries[entry] = true
+	}
+
+	if cfg.hasFile("package.json") {
+		var packageJSONConfig packageJSONConfig
+
+		content, err := cfg.source.File("package.json").Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read package.json: %w", err)
+		}
+
+		if err := json.Unmarshal([]byte(content), &packageJSONConfig); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal package.json: %w", err)
+		}
+
+		cfg.packageJSONConfig = &packageJSONConfig
+	}
+
+	if cfg.hasFile("deno.json") {
+		var denoJSONConfig denoJSONConfig
+
+		content, err := cfg.source.File("deno.json").Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read deno.json: %w", err)
+		}
+
+		if err := json.Unmarshal([]byte(content), &denoJSONConfig); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal deno.json: %w", err)
+		}
+
+		cfg.denoJSONConfig = &denoJSONConfig
+	}
+
+	cfg.runtime, cfg.runtimeVersion, err = cfg.detectRuntime()
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect module runtime: %w", err)
+	}
+
+	cfg.sdkLibOrigin, err = cfg.detectSDKLibOrigin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect sdk lib origin: %w", err)
+	}
+
+	return cfg, err
 }
 
 // detectSDKLibOrigin return the SDK library config based on the user's module config.
@@ -411,19 +528,33 @@ func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)
 }
 
-// Return the path to the SDK directory inside the module source.
-func (c *moduleConfig) sdkPath() string {
-	return filepath.Join(c.modulePath(), GenDir)
-}
-
-// Return the path to the entrypoint file inside the module source.
-func (c *moduleConfig) entrypointPath() string {
-	return filepath.Join(ModSourceDirPath, c.subPath, SrcDir, EntrypointExecutableFile)
-}
-
 // Return the path to the tsconfig.json file inside the module source.
 func (c *moduleConfig) tsConfigPath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath, "tsconfig.json")
+}
+
+// Get the source code directory wrapped in a dagger.Directory
+// to be used in the runtime container.
+// This excludes config files, sdk and node_modules but keep any
+// extra files that may exist in the module source dir.
+func (c *moduleConfig) wrappedSourceCodeDirectory() *dagger.Directory {
+	return dag.Directory().WithDirectory("/",
+		c.source,
+		dagger.DirectoryWithDirectoryOpts{
+			Exclude: append(
+				moduleConfigFiles("."),
+				"sdk",
+				"node_modules",
+			),
+		},
+	)
+}
+
+func (c *moduleConfig) libGeneratorOpts() *LibGeneratorOpts {
+	return &LibGeneratorOpts{
+		moduleName: c.name,
+		modulePath: c.modulePath(),
+	}
 }
 
 // Returns a list of files to include for module configs.
@@ -440,8 +571,11 @@ func moduleConfigFiles(path string) []string {
 		"package-lock.json",
 		"yarn.lock",
 		"pnpm-lock.yaml",
+
+		// Bun
 		"bun.lockb",
 		"bun.lock",
+		"bunfig.toml",
 
 		// Deno
 		"deno.json",

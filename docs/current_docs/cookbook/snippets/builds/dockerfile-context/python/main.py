@@ -34,10 +34,8 @@ class MyModule:
         )
 
         # build using Dockerfile and publish to registry
-        ref = (
-            dag.container()
-            .build(context=workspace, dockerfile="custom.Dockerfile")
-            .publish("ttl.sh/hello-dagger")
+        ref = workspace.docker_build(dockerfile="custom.Dockerfile").publish(
+            "ttl.sh/hello-dagger"
         )
 
         return await ref

@@ -2,6 +2,7 @@ package call
 
 import (
 	"fmt"
+	"iter"
 	"strconv"
 
 	"github.com/opencontainers/go-digest"
@@ -103,7 +104,11 @@ func (lit *LiteralID) ToAST() *ast.Value {
 }
 
 func (lit *LiteralID) pb() *callpbv1.Literal {
-	return &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: lit.id.pb.Digest}}
+	return &callpbv1.Literal{
+		Value: &callpbv1.Literal_CallDigest{
+			CallDigest: lit.id.pb.Digest,
+		},
+	}
 }
 
 func (lit *LiteralID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
@@ -118,19 +123,14 @@ func NewLiteralList(values ...Literal) *LiteralList {
 	return &LiteralList{values: values}
 }
 
-func (lit *LiteralList) Range(fn func(int, Literal) error) error {
-	for i, v := range lit.values {
-		if v == nil {
-			if err := fn(i, nil); err != nil {
-				return err
+func (lit *LiteralList) Values() iter.Seq2[int, Literal] {
+	return func(yield func(int, Literal) bool) {
+		for i, v := range lit.values {
+			if !yield(i, v) {
+				return
 			}
-			continue
-		}
-		if err := fn(i, v); err != nil {
-			return err
 		}
 	}
-	return nil
 }
 
 func (lit *LiteralList) Len() int {
@@ -211,25 +211,14 @@ func NewLiteralObject(values ...*Argument) *LiteralObject {
 	return &LiteralObject{values: values}
 }
 
-func (lit *LiteralObject) Range(fn func(int, string, Literal) error) error {
-	for i, v := range lit.values {
-		if v == nil {
-			if err := fn(i, "", nil); err != nil {
-				return err
+func (lit *LiteralObject) Args() iter.Seq2[int, *Argument] {
+	return func(yield func(int, *Argument) bool) {
+		for i, v := range lit.values {
+			if !yield(i, v) {
+				return
 			}
-			continue
-		}
-		if v.value == nil {
-			if err := fn(i, v.pb.Name, nil); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := fn(i, v.pb.Name, v.value); err != nil {
-			return err
 		}
 	}
-	return nil
 }
 
 func (lit *LiteralObject) Len() int {

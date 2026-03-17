@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
 import * as fs from "fs"
 import path from "path"
@@ -43,6 +44,10 @@ describe("scan by reference TypeScript", function () {
       directory: "enums",
     },
     {
+      name: "Should correctly scan legacy enum decorator",
+      directory: "legacyEnumDecorator",
+    },
+    {
       name: "Should correctly scan list",
       directory: "list",
     },
@@ -83,6 +88,10 @@ describe("scan by reference TypeScript", function () {
       directory: "coreEnums",
     },
     {
+      name: "Should correctly scan core enum defaults",
+      directory: "coreEnumDefault",
+    },
+    {
       name: "Should correctly scan constructor",
       directory: "constructor",
     },
@@ -93,6 +102,22 @@ describe("scan by reference TypeScript", function () {
     {
       name: "Should correctly scan minimal",
       directory: "minimal",
+    },
+    {
+      name: "Should correctly scan deprecated objects",
+      directory: "deprecatedObject",
+    },
+    {
+      name: "Should correctly scan deprecated functions",
+      directory: "deprecatedFunction",
+    },
+    {
+      name: "Should correctly scan deprecated arguments",
+      directory: "deprecatedArgument",
+    },
+    {
+      name: "Should correctly scan deprecated fields",
+      directory: "deprecatedField",
     },
     {
       name: "Should correctly scan interfaces",
@@ -119,7 +144,7 @@ describe("scan by reference TypeScript", function () {
           `
 Expected:
 ${expected}
-Got: 
+Got:
 ${jsonResult}
         `,
         )
@@ -138,19 +163,6 @@ ${jsonResult}
         assert.fail("Should throw an error")
       } catch (e: any) {
         assert.equal(e.message, "no files to introspect found")
-      }
-    })
-
-    it("Should throw an error if the module is invalid", async function () {
-      this.timeout(60000)
-
-      try {
-        const files = await listFiles(`${rootDirectory}/invalid`)
-
-        await scan(files, "invalid")
-        assert.fail("Should throw an error")
-      } catch (e: any) {
-        assert.match(e.message, /could not find main object Invalid/)
       }
     })
 

@@ -3,7 +3,6 @@ package dagql
 import (
 	"context"
 	"fmt"
-	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -11,11 +10,10 @@ import (
 	"sync"
 
 	"github.com/iancoleman/strcase"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -30,6 +28,10 @@ type Class[T Typed] struct {
 	fieldsL *sync.Mutex
 
 	invalidateSchemaCache func()
+
+	// The inner type sourceMap directive so additional type
+	// registered by the engine can store also store its origin.
+	sourceMap *ast.Directive
 }
 
 var _ ObjectType = Class[Typed]{}
@@ -43,18 +45,35 @@ type ClassOpts[T Typed] struct {
 	// In the simple case, we can just use a zero-value, but it is also allowed
 	// to use a dynamic Typed value.
 	Typed T
+
+	// The inner type sourceMap directive so additional type
+	// registered by the engine can store also store its origin.
+	SourceMap *ast.Directive
 }
 
 // NewClass returns a new empty class for a given type.
 func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	var opts ClassOpts[T]
-	if len(opts_) > 0 {
-		opts = opts_[0]
+
+	for _, o := range opts_ {
+		if o.NoIDs {
+			opts.NoIDs = true
+		}
+
+		if any(o.Typed) != nil {
+			opts.Typed = o.Typed
+		}
+
+		if o.SourceMap != nil {
+			opts.SourceMap = o.SourceMap
+		}
 	}
+
 	class := Class[T]{
-		inner:   opts.Typed,
-		fields:  map[string][]*Field[T]{},
-		fieldsL: new(sync.Mutex),
+		inner:     opts.Typed,
+		fields:    map[string][]*Field[T]{},
+		fieldsL:   new(sync.Mutex),
+		sourceMap: opts.SourceMap,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -66,8 +85,9 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
 				},
-				Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
-					return NewDynamicID[T](self.ID(), opts.Typed), nil
+				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
+					id := NewDynamicID[T](self.ID(), opts.Typed)
+					return NewResultForCurrentID(ctx, id)
 				},
 			},
 		)
@@ -82,19 +102,19 @@ func (class Class[T]) Typed() Typed {
 
 func (class Class[T]) IDType() (IDType, bool) {
 	if class.idable {
-		return ID[T]{inner: class.inner}, true
+		return ID[T]{inner: class.inner, sourceMap: class.sourceMap}, true
 	} else {
 		return nil, false
 	}
 }
 
-func (class Class[T]) Field(name string, view View) (Field[T], bool) {
+func (class Class[T]) Field(name string, view call.View) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	return class.fieldLocked(name, view)
 }
 
-func (class Class[T]) FieldSpec(name string, view View) (FieldSpec, bool) {
+func (class Class[T]) FieldSpec(name string, view call.View) (FieldSpec, bool) {
 	field, ok := class.Field(name, view)
 	if !ok {
 		return FieldSpec{}, false
@@ -102,7 +122,7 @@ func (class Class[T]) FieldSpec(name string, view View) (FieldSpec, bool) {
 	return *field.Spec, true
 }
 
-func (class Class[T]) fieldLocked(name string, view View) (Field[T], bool) {
+func (class Class[T]) fieldLocked(name string, view call.View) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {
 		return Field[T]{}, false
@@ -161,17 +181,20 @@ func (class Class[T]) TypeName() string {
 	return class.inner.Type().Name()
 }
 
-func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
+func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	class.fieldsL.Lock()
-	defer class.fieldsL.Unlock()
 	f := &Field[T]{
 		Spec: &spec,
-		Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
+		Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
 			return fun(ctx, self, args)
 		},
 	}
-	f.CacheSpec = cacheSpec
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
+	class.fieldsL.Unlock()
+
+	// Invalidate cache after releasing the lock to avoid Class[...].fieldsL and
+	// *Server.schemaLock deadlock if the schema is concurrently introspected and
+	// updated (via Extend)
 	if class.invalidateSchemaCache != nil {
 		class.invalidateSchemaCache()
 	}
@@ -183,7 +206,7 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (class Class[T]) TypeDefinition(view View) *ast.Definition {
+func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	var val any = class.inner
@@ -212,7 +235,7 @@ func (class Class[T]) TypeDefinition(view View) *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+func (class Class[T]) ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field, ok := class.Field(astField.Name, view)
 	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", class.TypeName(), astField.Name)
@@ -254,152 +277,60 @@ func (class Class[T]) ParseField(ctx context.Context, view View, astField *ast.F
 }
 
 // New returns a new instance of the class.
-func (class Class[T]) New(id *call.ID, val Typed) (Object, error) {
-	self, ok := val.(T)
+func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
+	if objResult, ok := val.(ObjectResult[T]); ok {
+		return objResult, nil
+	}
+	if inst, ok := val.(Result[T]); ok {
+		return ObjectResult[T]{
+			Result: inst,
+			class:  class,
+		}, nil
+	}
+	if inst, ok := val.(Result[Typed]); ok {
+		if _, ok := UnwrapAs[T](inst.Self()); !ok {
+			return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
+		}
+		return ObjectResult[T]{
+			Result: Result[T](inst),
+			class:  class,
+		}, nil
+	}
+
+	self, ok := UnwrapAs[T](val)
 	if !ok {
-		// NB: Nullable values should already be unwrapped by now.
 		return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 	}
-	return Instance[T]{
-		Constructor: id,
-		Self:        self,
-		Class:       class,
+
+	return ObjectResult[T]{
+		Result: newDetachedResult(val.ID(), self),
+		class:  class,
 	}, nil
 }
 
-// Call calls a field on the class against an instance.
-func (class Class[T]) Call(
-	ctx context.Context,
-	node Instance[T],
-	fieldName string,
-	view View,
-	args map[string]Input,
-) (*CacheValWithCallbacks, error) {
-	field, ok := class.Field(fieldName, view)
-	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", class.inner.Type().Name(), fieldName)
-	}
+func NoopDone(res AnyResult, cached bool, rerr *error) {}
 
-	val, err := field.Func(ctx, node, args, view)
+// Select calls the field on the instance specified by the selector
+func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (AnyResult, error) {
+	preselectResult, err := r.preselect(ctx, s, sel)
 	if err != nil {
 		return nil, err
 	}
-
-	// field implementations can optionally return a wrapped Typed val that has
-	// a callback that should always run after the field is called
-	var postCall cache.PostCallFunc
-	if postCallable, ok := UnwrapAs[PostCallable](val); ok {
-		postCall, val = postCallable.GetPostCall()
-	}
-	// they can also return types that need to run a callback when they are
-	// removed from the cache (to clean up or release any state)
-	var onRelease cache.OnReleaseFunc
-	if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
-		onRelease = onReleaser.OnRelease
-	}
-
-	return &CacheValWithCallbacks{
-		Value:     val,
-		PostCall:  postCall,
-		OnRelease: onRelease,
-	}, nil
-}
-
-// Instance is an instance of an Object type.
-type Instance[T Typed] struct {
-	Constructor *call.ID
-	Self        T
-	Class       Class[T]
-	Module      *call.ID
-	postCall    cache.PostCallFunc
-}
-
-var _ Typed = Instance[Typed]{}
-
-// Type returns the type of the instance.
-func (o Instance[T]) Type() *ast.Type {
-	return o.Self.Type()
-}
-
-var _ Object = Instance[Typed]{}
-
-// ObjectType returns the ObjectType of the instance.
-func (r Instance[T]) ObjectType() ObjectType {
-	return r.Class
-}
-
-// ID returns the ID of the instance.
-func (r Instance[T]) ID() *call.ID {
-	return r.Constructor
-}
-
-var _ Wrapper = Instance[Typed]{}
-
-// Unwrap returns the inner value of the instance.
-func (r Instance[T]) Unwrap() Typed {
-	return r.Self
-}
-
-// String returns the instance in Class@sha256:... format.
-func (r Instance[T]) String() string {
-	return fmt.Sprintf("%s@%s", r.Type().Name(), r.Constructor.Digest())
-}
-
-// WithDigest returns an updated instance with the given metadata set.
-// customDigest overrides the default digest of the instance to the provided value.
-// NOTE: customDigest must be used with care as any instances with the same digest
-// will be considered equivalent and can thus replace each other in the cache.
-// Generally, customDigest should be used when there's a content-based digest available
-// that won't be caputured by the default, call-chain derived digest.
-func (r Instance[T]) WithDigest(customDigest digest.Digest) Instance[T] {
-	return Instance[T]{
-		Constructor: r.Constructor.WithDigest(customDigest),
-		Self:        r.Self,
-		Class:       r.Class,
-		Module:      r.Module,
-	}
-}
-
-func (r Instance[T]) WithPostCall(fn cache.PostCallFunc) Instance[T] {
-	r.postCall = fn
-	return r
-}
-
-func (r Instance[T]) GetPostCall() (cache.PostCallFunc, Typed) {
-	return r.postCall, r
-}
-
-func NoopDone(res Typed, cached bool, rerr error) {}
-
-// Select calls the field on the instance specified by the selector
-func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	preselectResult, err := r.preselect(ctx, s, sel)
-	if err != nil {
-		return nil, nil, err
-	}
-	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
-}
-
-func (r Instance[T]) ReturnType(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	preselectResult, err := r.preselect(ctx, s, sel)
-	if err != nil {
-		return nil, nil, err
-	}
-	returnType, err := r.returnType(preselectResult.newID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return returnType, preselectResult.newID, nil
+	return r.call(ctx, s,
+		preselectResult.newID,
+		preselectResult.inputArgs,
+		preselectResult.cacheKey,
+	)
 }
 
 type preselectResult struct {
-	inputArgs  map[string]Input
-	newID      *call.ID
-	doNotCache bool
+	inputArgs map[string]Input
+	newID     *call.ID
+	cacheKey  CacheKey
 }
 
 // sortArgsToSchema sorts the arguments to match the schema definition order.
-func (r Instance[T]) sortArgsToSchema(fieldSpec *FieldSpec, view View, idArgs []*call.Argument) {
+func (r ObjectResult[T]) sortArgsToSchema(fieldSpec *FieldSpec, view call.View, idArgs []*call.Argument) {
 	inputs := fieldSpec.Args.Inputs(view)
 	sort.Slice(idArgs, func(i, j int) bool {
 		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
@@ -412,11 +343,11 @@ func (r Instance[T]) sortArgsToSchema(fieldSpec *FieldSpec, view View, idArgs []
 	})
 }
 
-func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
+func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector) (*preselectResult, error) {
 	view := sel.View
-	field, ok := r.Class.Field(sel.Field, view)
+	field, ok := r.class.Field(sel.Field, view)
 	if !ok {
-		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+		return nil, fmt.Errorf("Select: %s has no such field: %q", r.class.TypeName(), sel.Field)
 	}
 	if field.Spec.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
@@ -462,84 +393,98 @@ func (r Instance[T]) preselect(ctx context.Context, s *Server, sel Selector) (*p
 		astType = astType.Elem
 	}
 
-	newID := r.Constructor.Append(
+	newID := r.ID().Append(
 		astType,
 		sel.Field,
-		string(view),
-		field.Spec.Module,
-		sel.Nth,
-		"",
-		idArgs...,
+		call.WithView(view),
+		call.WithModule(field.Spec.Module),
+		call.WithNth(sel.Nth),
+		call.WithArgs(idArgs...),
 	)
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
-	if field.CacheSpec.GetCacheConfig != nil {
-		origDgst := newID.Digest()
-
+	cacheKey := newCacheKey(ctx, newID, field.Spec)
+	if field.Spec.GetCacheConfig != nil {
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, CacheConfig{
-			Digest: origDgst,
+		cacheCfgResp, err := field.Spec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, GetCacheConfigRequest{
+			CacheKey: cacheKey,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
-		}
-
-		if len(cacheCfg.UpdatedArgs) > 0 {
-			maps.Copy(inputArgs, cacheCfg.UpdatedArgs)
-			for argName, argInput := range cacheCfg.UpdatedArgs {
-				var found bool
-				for i, idArg := range idArgs {
-					if idArg.Name() == argName {
-						idArgs[i] = idArg.WithValue(argInput.ToLiteral())
-						found = true
-						break
-					}
-				}
-				if !found {
-					idArgs = append(idArgs, call.NewArgument(
-						argName,
-						argInput.ToLiteral(),
-						false,
-					))
-				}
+			typ := r.Type()
+			if typ == nil {
+				return nil, fmt.Errorf("failed to compute cache key for <nil>.%s: %w", sel.Field, err)
 			}
-			r.sortArgsToSchema(field.Spec, view, idArgs)
-			newID = r.Constructor.Append(
-				astType,
-				sel.Field,
-				string(view),
-				field.Spec.Module,
-				sel.Nth,
-				"",
-				idArgs...,
-			)
+			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", typ.Name(), sel.Field, err)
 		}
 
-		if cacheCfg.Digest != origDgst {
-			newID = newID.WithDigest(cacheCfg.Digest)
+		cacheKey = cacheCfgResp.CacheKey
+		if cacheKey.ID == nil {
+			cacheKey.ID = newID
+		}
+		newID = cacheKey.ID
+
+		// Cache config may rewrite arguments in the returned ID (e.g. contextual
+		// defaults), so decode execution args from the final ID to keep resolver
+		// execution, cache keys, and telemetry in sync.
+		inputArgs, err = ExtractIDArgs(field.Spec.Args, newID)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return &preselectResult{
-		inputArgs:  inputArgs,
-		newID:      newID,
-		doNotCache: doNotCache,
+		inputArgs: inputArgs,
+		newID:     newID,
+		cacheKey:  cacheKey,
 	}, nil
 }
 
-// Call calls the field on the instance specified by the ID.
-func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed, *call.ID, error) {
-	fieldName := newID.Field()
-	view := View(newID.View())
-	field, ok := r.Class.Field(fieldName, view)
-	if !ok {
-		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
+func newCacheKey(ctx context.Context, id *call.ID, fieldSpec *FieldSpec) CacheKey {
+	cacheKey := CacheKey{
+		ID:         id,
+		TTL:        fieldSpec.TTL,
+		DoNotCache: fieldSpec.DoNotCache != "",
 	}
 
-	idArgs := newID.Args()
+	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
+	// we don't want to dedupe across clients since:
+	// 1. it creates problems when one clients closes and others were waiting on the result
+	// 2. it makes it easy to accidentally leak clients specific information that isn't yet precisely scoped in the ID
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		// not expected to happen, fallback behavior is just that there's no deduping of concurrent calls
+		slog.Warn("failed to get client metadata from context for call", "err", err)
+	} else {
+		cacheKey.ConcurrencyKey = clientMD.ClientID
+	}
+
+	return cacheKey
+}
+
+// Call calls the field on the instance specified by the ID.
+func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (AnyResult, error) {
+	fieldName := newID.Field()
+	view := newID.View()
+	field, ok := r.class.Field(fieldName, view)
+	if !ok {
+		return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.TypeName(), fieldName)
+	}
+
+	inputArgs, err := ExtractIDArgs(field.Spec.Args, newID)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey := newCacheKey(ctx, newID, field.Spec)
+	return r.call(ctx, s, newID, inputArgs, cacheKey)
+}
+
+func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
+	idArgs := id.Args()
+	view := id.View()
+
 	inputArgs := make(map[string]Input, len(idArgs))
-	for _, argSpec := range field.Spec.Args.Inputs(view) {
+	for _, argSpec := range specs.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
 		var inputLit call.Literal
@@ -554,7 +499,7 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 		case inputLit != nil:
 			input, err := argSpec.Type.Decoder().DecodeInput(inputLit.ToInput())
 			if err != nil {
-				return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+				return nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 			}
 			inputArgs[argSpec.Name] = input
 
@@ -563,168 +508,79 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	return inputArgs, nil
 }
 
-func (r Instance[T]) call(
+func (r ObjectResult[T]) call(
 	ctx context.Context,
 	s *Server,
 	newID *call.ID,
 	inputArgs map[string]Input,
-	doNotCache bool,
-) (Typed, *call.ID, error) {
+	cacheKey CacheKey,
+) (AnyResult, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
-	callCacheKey := newID.Digest()
-	if doNotCache {
-		callCacheKey = ""
-	}
-
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error)) {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, *error)) {
 			return s.telemetry(ctx, r, newID)
 		}))
 	}
-	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, true, func(ctx context.Context) (*CacheValWithCallbacks, error) {
-		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), View(newID.View()), inputArgs)
+
+	res, err := s.Cache.GetOrInitCall(ctx, cacheKey, func(ctx context.Context) (AnyResult, error) {
+		fieldName := newID.Field()
+		view := newID.View()
+		field, ok := r.class.Field(fieldName, view)
+		if !ok {
+			return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
+		}
+
+		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err
 		}
-		val := valWithCallbacks.Value
-
-		if n, ok := val.(Derefable); ok {
-			val, ok = n.Deref()
-			if !ok {
-				return nil, nil
-			}
-		}
-		nth := int(newID.Nth())
-		if nth != 0 {
-			enum, ok := val.(Enumerable)
-			if !ok {
-				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
-			}
-			val, err = enum.Nth(nth)
-			if err != nil {
-				return nil, err
-			}
-			if n, ok := val.(Derefable); ok {
-				val, ok = n.Deref()
-				if !ok {
-					return nil, nil
-				}
-			}
+		if val == nil {
+			return nil, nil
 		}
 
-		return &CacheValWithCallbacks{
-			Value:     val,
-			PostCall:  valWithCallbacks.PostCall,
-			OnRelease: valWithCallbacks.OnRelease,
-		}, nil
-	}, opts...)
-
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := res.PostCall(ctx); err != nil {
-		return nil, nil, fmt.Errorf("post-call error: %w", err)
-	}
-	val := res.Result()
-
-	// If the returned val is IDable and has a different digest than the original, then
-	// add that different digest as a cache key for this val.
-	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
-	// values that have a pure content-based cache key different from the call-chain ID digest.
-	if idable, ok := val.(IDable); ok && idable != nil && !doNotCache {
-		valID := idable.ID()
-
-		// only need to add a new cache key if the returned val has a different custom digest than the original
-		digestChanged := valID.Digest() != newID.Digest()
-
-		// Corner case: the `id` field on an object returns an IDable value (IDs are themselves both values and IDable).
-		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we
-		// want. Instead, we only want to cache <id digest> -> <actual object value>.
-		// To avoid this, we check that the returned IDable type is the actual object type.
-		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
-
-		if digestChanged && matchesType {
-			newID = valID
-			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
-	return val, newID, nil
-}
-
-func (r Instance[T]) returnType(newID *call.ID) (Typed, error) {
-	field, ok := r.Class.Field(newID.Field(), View(newID.View()))
-	if !ok {
-		return nil, fmt.Errorf("ReturnType: %s has no such field: %q", r.Class.inner.Type().Name(), newID.Field())
-	}
-	val := field.Spec.Type
-
-	if n, ok := val.(Derefable); ok {
-		val, ok = n.Deref()
+		val, ok = val.DerefValue()
 		if !ok {
 			return nil, nil
 		}
-	}
-	nth := int(newID.Nth())
-	if nth != 0 {
-		enum, ok := val.(Enumerable)
-		if !ok {
-			return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
-		}
-		val = enum.Element()
-		if n, ok := val.(Derefable); ok {
-			val, ok = n.Deref()
+		nth := int(newID.Nth())
+		if nth != 0 {
+			val, err = val.NthValue(nth)
+			if err != nil {
+				return nil, fmt.Errorf("cannot get %dth value from %T: %w", nth, val, err)
+			}
+			val, ok = val.DerefValue()
 			if !ok {
 				return nil, nil
 			}
 		}
+
+		return val, nil
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
 	}
 
-	return val, nil
-}
-
-// PostCallTyped wraps a Typed value with an additional callback that
-// needs to be called after any value is returned, whether the value was from
-// cache or not
-type PostCallTyped struct {
-	Typed
-	postCall func(context.Context) error
-}
-
-var _ PostCallable = PostCallTyped{}
-
-func NewPostCallTyped(t Typed, fn func(context.Context) error) PostCallTyped {
-	return PostCallTyped{
-		Typed:    t,
-		postCall: fn,
+	if err := res.PostCall(ctx); err != nil {
+		return nil, fmt.Errorf("post-call error: %w", err)
 	}
-}
 
-func (p PostCallTyped) GetPostCall() (func(context.Context) error, Typed) {
-	return p.postCall, p.Typed
+	return res, nil
 }
-
-func (p PostCallTyped) Unwrap() Typed {
-	return p.Typed
-}
-
-type View string
 
 type ViewFilter interface {
-	Contains(View) bool
+	Contains(call.View) bool
 }
 
 // GlobalView is the default global view. Everyone can see it, and it behaves
@@ -739,20 +595,20 @@ var GlobalView ViewFilter = nil
 // be overridden in different views.
 type AllView struct{}
 
-func (AllView) Contains(view View) bool {
+func (AllView) Contains(view call.View) bool {
 	return true
 }
 
 // ExactView contains exactly one view.
 type ExactView string
 
-func (exact ExactView) Contains(view View) bool {
+func (exact ExactView) Contains(view call.View) bool {
 	return string(exact) == string(view)
 }
 
 type (
 	FuncHandler[T Typed, A any, R any]     func(ctx context.Context, self T, args A) (R, error)
-	NodeFuncHandler[T Typed, A any, R any] func(ctx context.Context, self Instance[T], args A) (R, error)
+	NodeFuncHandler[T Typed, A any, R any] func(ctx context.Context, self ObjectResult[T], args A) (R, error)
 )
 
 // Func is a helper for defining a field resolver and schema.
@@ -774,9 +630,7 @@ type (
 // To configure a description for the field in the schema, call .Doc on the
 // result.
 func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] {
-	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
-		return fn(ctx, self.Self, args)
-	})
+	return FuncWithCacheKey(name, fn, nil)
 }
 
 // FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
@@ -785,12 +639,12 @@ func FuncWithCacheKey[T Typed, A any, R any](
 	fn FuncHandler[T, A, R],
 	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
-	return NodeFuncWithCacheKey(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
-		return fn(ctx, self.Self, args)
+	return NodeFuncWithCacheKey(name, func(ctx context.Context, self ObjectResult[T], args A) (R, error) {
+		return fn(ctx, self.Self(), args)
 	}, cacheFn)
 }
 
-// NodeFunc is the same as Func, except it passes the Instance instead of the
+// NodeFunc is the same as Func, except it passes the ObjectResult instead of the
 // receiver so that you can access its ID.
 func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) Field[T] {
 	return NodeFuncWithCacheKey(name, fn, nil)
@@ -809,40 +663,54 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
 	}
 
-	var zeroRet R
-	ret, err := builtinOrTyped(zeroRet)
-	if err != nil {
-		var zeroSelf T
-		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
-	}
-
 	spec := &FieldSpec{
 		Name: name,
 		Args: inputs,
-		Type: ret,
 	}
+
+	var zeroRet R
+	var returnTypeError error
+	if res, ok := any(zeroRet).(AnyResult); ok {
+		spec.Type = res.Unwrap()
+	} else {
+		spec.Type, returnTypeError = builtinOrTyped(zeroRet)
+	}
+
 	field := Field[T]{
 		Spec: spec,
-		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input, view View) (Typed, error) {
+		Func: func(ctx context.Context, self ObjectResult[T], argVals map[string]Input, view call.View) (AnyResult, error) {
+			// these errors are deferred until runtime, since it's better (at least
+			// more testable) than panicking
 			if argsErr != nil {
-				// this error is deferred until runtime, since it's better (at least
-				// more testable) than panicking
 				return nil, argsErr
 			}
+			if returnTypeError != nil {
+				return nil, returnTypeError
+			}
+
 			var args A
 			if err := spec.Args.Decode(argVals, &args, view); err != nil {
 				return nil, err
 			}
-			res, err := fn(ctx, self, args)
+			ret, err := fn(ctx, self, args)
 			if err != nil {
 				return nil, err
 			}
-			return builtinOrTyped(res)
+
+			if res, ok := any(ret).(AnyResult); ok {
+				return res, nil
+			}
+			res, err := builtinOrTyped(ret)
+			if err != nil {
+				return nil, fmt.Errorf("expected %T to be a Typed value, got %T: %w", ret, ret, err)
+			}
+
+			return NewResultForCurrentID(ctx, res)
 		},
 	}
 
 	if cacheFn != nil {
-		field.CacheSpec.GetCacheConfig = func(ctx context.Context, self Object, argVals map[string]Input, view View, baseCfg CacheConfig) (*CacheConfig, error) {
+		field.Spec.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -852,11 +720,11 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 			if err := spec.Args.Decode(argVals, &args, view); err != nil {
 				return nil, err
 			}
-			inst, ok := self.(Instance[T])
+			inst, ok := self.(ObjectResult[T])
 			if !ok {
 				return nil, fmt.Errorf("expected instance of %T, got %T", field, self)
 			}
-			return cacheFn(ctx, inst, args, baseCfg)
+			return cacheFn(ctx, inst, args, req)
 		}
 	}
 
@@ -877,7 +745,7 @@ type FieldSpec struct {
 	// should not be displayed in telemetry.
 	Sensitive bool
 	// DeprecatedReason deprecates the field and provides a reason.
-	DeprecatedReason string
+	DeprecatedReason *string
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
 	// Module is the module that provides the field's implementation.
@@ -889,12 +757,23 @@ type FieldSpec struct {
 	// accessible. If not view is present, the default is the "global" view.
 	ViewFilter ViewFilter
 
+	// If set, the result of this field will never be cached and not have concurrent equal
+	// calls deduped. The string value is a reason why the field should not be cached.
+	DoNotCache string
+
+	// If set, the result of this field will be cached for the given TTL (in seconds).
+	TTL int64
+
+	// If set, this GetCacheConfig will be called before ID evaluation to make
+	// any dynamic adjustments to the cache key or args
+	GetCacheConfig GenericGetCacheConfigFunc
+
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
 	extend bool
 }
 
-func (spec FieldSpec) FieldDefinition(view View) *ast.FieldDefinition {
+func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	def := &ast.FieldDefinition{
 		Name:        spec.Name,
 		Description: spec.Description,
@@ -904,7 +783,7 @@ func (spec FieldSpec) FieldDefinition(view View) *ast.FieldDefinition {
 	if len(spec.Directives) > 0 {
 		def.Directives = slices.Clone(spec.Directives)
 	}
-	if spec.DeprecatedReason != "" {
+	if spec.DeprecatedReason != nil {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
 	}
 	if spec.ExperimentalReason != "" {
@@ -924,7 +803,7 @@ type InputSpec struct {
 	// Default is the default value of the argument.
 	Default Input
 	// DeprecatedReason deprecates the input and provides a reason.
-	DeprecatedReason string
+	DeprecatedReason *string
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
 	// Sensitive indicates that the value of this arg is sensitive and should be
@@ -957,7 +836,7 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.Default != nil {
 		spec.Default = other.Default
 	}
-	if other.DeprecatedReason != "" {
+	if other.DeprecatedReason != nil {
 		spec.DeprecatedReason = other.DeprecatedReason
 	}
 	if other.Sensitive {
@@ -1014,11 +893,13 @@ func (arg Argument) View(view ViewFilter) Argument {
 
 func (arg Argument) Deprecated(paras ...string) Argument {
 	if len(paras) == 0 && arg.Spec.Description != "" {
-		arg.Spec.DeprecatedReason = arg.Spec.Description
+		reason := arg.Spec.Description
+		arg.Spec.DeprecatedReason = &reason
 		arg.Spec.Description = deprecationDescription(arg.Spec.Description)
 		return arg
 	}
-	arg.Spec.DeprecatedReason = FormatDescription(paras...)
+	reason := FormatDescription(paras...)
+	arg.Spec.DeprecatedReason = &reason
 	return arg
 }
 
@@ -1049,7 +930,16 @@ func (specs *InputSpecs) Add(target ...InputSpec) {
 	specs.raw = append(specs.raw, target...)
 }
 
-func (specs InputSpecs) Input(name string, view View) (InputSpec, bool) {
+func (specs InputSpecs) HasRequired(view call.View) bool {
+	for _, input := range specs.Inputs(view) {
+		if input.Default == nil && input.Type.Type().NonNull {
+			return true
+		}
+	}
+	return false
+}
+
+func (specs InputSpecs) Input(name string, view call.View) (InputSpec, bool) {
 	for i := len(specs.raw) - 1; i >= 0; i-- {
 		// iterate backwards to allow last-defined spec to have precedence
 		spec := specs.raw[i]
@@ -1064,26 +954,54 @@ func (specs InputSpecs) Input(name string, view View) (InputSpec, bool) {
 	return InputSpec{}, false
 }
 
-func (specs InputSpecs) Inputs(view View) (args []InputSpec) {
-	seen := make(map[string]bool, len(specs.raw))
+func (specs InputSpecs) Inputs(view call.View) (args []InputSpec) {
+	// This function is currently in the hot path, so we optimize duplicate checks by only using
+	// a map when the number of args is above a certain threshold, using slice iteration otherwise.
+	// The previous implementation that only used a map was a genuine bottleneck since most of the
+	// time the number of args is small.
+
+	const useMapThreshold = 15 // based on some benchmarks on an m4 laptop, fairly approximate though
+
+	var seen map[string]struct{}
+	if len(specs.raw) > useMapThreshold {
+		seen = make(map[string]struct{}, len(specs.raw))
+	}
+
+	args = make([]InputSpec, 0, len(specs.raw))
 	for i := len(specs.raw) - 1; i >= 0; i-- {
 		// iterate backwards to allow last-defined spec to have precedence
 		spec := specs.raw[i]
 
-		if seen[spec.Name] {
+		var alreadySeen bool
+		if seen != nil {
+			_, alreadySeen = seen[spec.Name]
+		} else {
+			// check for duplicates w/ O(n^2) iteration since n is small
+			for _, a := range args {
+				if a.Name == spec.Name {
+					alreadySeen = true
+					break
+				}
+			}
+		}
+		if alreadySeen {
 			continue
 		}
+
 		if spec.ViewFilter != nil && !spec.ViewFilter.Contains(view) {
 			continue
 		}
-		seen[spec.Name] = true
+
 		args = append(args, spec)
+		if seen != nil {
+			seen[spec.Name] = struct{}{}
+		}
 	}
 	slices.Reverse(args)
 	return args
 }
 
-func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition {
+func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefinition {
 	args := specs.Inputs(view)
 	defs := make([]*ast.ArgumentDefinition, 0, len(args))
 
@@ -1099,7 +1017,7 @@ func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition
 		if len(arg.Directives) > 0 {
 			schemaArg.Directives = slices.Clone(arg.Directives)
 		}
-		if arg.DeprecatedReason != "" {
+		if arg.DeprecatedReason != nil {
 			schemaArg.Directives = append(schemaArg.Directives, deprecated(arg.DeprecatedReason))
 		}
 		if arg.ExperimentalReason != "" {
@@ -1113,7 +1031,7 @@ func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition
 	return defs
 }
 
-func (specs InputSpecs) FieldDefinitions(view View) (defs []*ast.FieldDefinition) {
+func (specs InputSpecs) FieldDefinitions(view call.View) (defs []*ast.FieldDefinition) {
 	for _, argDef := range specs.ArgumentDefinitions(view) {
 		fieldDef := argDefToFieldDef(argDef)
 		defs = append(defs, fieldDef)
@@ -1141,7 +1059,7 @@ type Descriptive interface {
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
-	TypeDefinition(view View) *ast.Definition
+	TypeDefinition(view call.View) *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
@@ -1159,16 +1077,21 @@ func (fields Fields[T]) Install(server *Server) {
 	}
 	for _, field := range objectFields {
 		name := field.Name
+		spec := &FieldSpec{
+			Name:               name,
+			Type:               field.Value,
+			Description:        field.Field.Tag.Get("doc"),
+			ExperimentalReason: field.Field.Tag.Get("experimental"),
+		}
+		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
+			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
+			spec.DeprecatedReason = &reason
+		}
+
 		fields = append(fields, Field[T]{
-			Spec: &FieldSpec{
-				Name:               name,
-				Type:               field.Value,
-				Description:        field.Field.Tag.Get("doc"),
-				DeprecatedReason:   field.Field.Tag.Get("deprecated"),
-				ExperimentalReason: field.Field.Tag.Get("experimental"),
-			},
-			Func: func(ctx context.Context, self Instance[T], args map[string]Input, view View) (Typed, error) {
-				t, found, err := getField(self.Self, false, name)
+			Spec: spec,
+			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
+				t, found, err := getField(ctx, self.Self(), false, name)
 				if err != nil {
 					return nil, err
 				}
@@ -1182,32 +1105,33 @@ func (fields Fields[T]) Install(server *Server) {
 	class.Install(fields...)
 }
 
-type CacheSpec struct {
-	// If set, this GetCacheConfig will be called before ID evaluation to determine the
-	// ID's digest. Otherwise the ID defaults to the digest of the call chain.
-	GetCacheConfig GenericGetCacheConfigFunc
+type GenericGetCacheConfigFunc func(
+	context.Context,
+	AnyResult,
+	map[string]Input,
+	call.View,
+	GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error)
 
-	// If set, the result of this field will never be cached and not have concurrent equal
-	// calls deduped. The string value is a reason why the field should not be cached.
-	DoNotCache string
+type GetCacheConfigFunc[T Typed, A any] func(
+	context.Context,
+	ObjectResult[T],
+	A,
+	GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error)
+
+type GetCacheConfigRequest struct {
+	CacheKey CacheKey
 }
 
-type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, View, CacheConfig) (*CacheConfig, error)
-
-type GetCacheConfigFunc[T Typed, A any] func(context.Context, Instance[T], A, CacheConfig) (*CacheConfig, error)
-
-// CacheConfig is the configuration for caching a field. Currently just custom digest
-// but intended to support more in time (TTL, etc).
-type CacheConfig struct {
-	Digest      digest.Digest
-	UpdatedArgs map[string]Input
+type GetCacheConfigResponse struct {
+	CacheKey CacheKey
 }
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec      *FieldSpec
-	CacheSpec CacheSpec
-	Func      func(context.Context, Instance[T], map[string]Input, View) (Typed, error)
+	Spec *FieldSpec
+	Func func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
 }
 
 func (field Field[T]) Extend() Field[T] {
@@ -1231,7 +1155,7 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 	if field.Spec.extend {
 		panic("cannot call on extended field")
 	}
-	field.CacheSpec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 
@@ -1292,7 +1216,8 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 	if field.Spec.extend {
 		panic("cannot call on extended field")
 	}
-	field.Spec.DeprecatedReason = FormatDescription(paras...)
+	reason := FormatDescription(paras...)
+	field.Spec.DeprecatedReason = &reason
 	return field
 }
 
@@ -1306,14 +1231,14 @@ func (field Field[T]) Experimental(paras ...string) Field[T] {
 }
 
 // FieldDefinition returns the schema definition of the field.
-func (field Field[T]) FieldDefinition(view View) *ast.FieldDefinition {
+func (field Field[T]) FieldDefinition(view call.View) *ast.FieldDefinition {
 	if field.Spec.Type == nil {
 		panic(fmt.Errorf("field %q has no type", field.Spec.Name))
 	}
 	return field.Spec.FieldDefinition(view)
 }
 
-func definition(kind ast.DefinitionKind, val Type, view View) *ast.Definition {
+func definition(kind ast.DefinitionKind, val Type, view call.View) *ast.Definition {
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
 		def = isType.TypeDefinition(view)
@@ -1363,13 +1288,17 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Description:        field.Field.Tag.Get("doc"),
 			Type:               input,
 			Default:            inputDef,
-			DeprecatedReason:   field.Field.Tag.Get("deprecated"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
 			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
-		if spec.Description == "" && spec.DeprecatedReason != "" {
-			spec.Description = deprecationDescription(spec.DeprecatedReason)
+		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
+			reason := dep
+			spec.DeprecatedReason = &reason
+		}
+
+		if spec.Description == "" && spec.DeprecatedReason != nil {
+			spec.Description = deprecationDescription(*spec.DeprecatedReason)
 		}
 		if spec.Description == "" && spec.ExperimentalReason != "" {
 			spec.Description = experimentalDescription(spec.ExperimentalReason)
@@ -1422,6 +1351,10 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 			continue
 		}
 		fieldI := reflect.New(fieldT.Type).Elem().Interface()
+		if res, ok := fieldI.(AnyResult); ok {
+			fieldI = res.Unwrap()
+		}
+
 		val, err := init(fieldI)
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", name, err)
@@ -1435,7 +1368,12 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 	return fields, nil
 }
 
-func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rerr error) {
+func getField(
+	ctx context.Context,
+	obj any,
+	optIn bool,
+	fieldName string,
+) (res AnyResult, found bool, rerr error) {
 	defer func() {
 		if err := recover(); err != nil {
 			rerr = fmt.Errorf("get field %q: %s", fieldName, err)
@@ -1460,7 +1398,7 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 		fieldT := objT.Field(i)
 		if fieldT.Anonymous {
 			fieldI := objV.Field(i).Interface()
-			t, found, err := getField(fieldI, optIn, fieldName)
+			t, found, err := getField(ctx, fieldI, optIn, fieldName)
 			if err != nil {
 				return nil, false, fmt.Errorf("embedded struct %q: %w", fieldT.Name, err)
 			}
@@ -1482,6 +1420,11 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 		}
 		if name == fieldName {
 			val := objV.Field(i).Interface()
+
+			if val, ok := val.(AnyResult); ok {
+				return val, true, nil
+			}
+
 			t, err := builtinOrTyped(val)
 			if err != nil {
 				return nil, false, fmt.Errorf("get field %q: %w", name, err)
@@ -1489,13 +1432,19 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 			if !t.Type().NonNull && objV.Field(i).IsZero() {
 				return nil, true, nil
 			}
-			return t, true, nil
+
+			retVal, err := NewResultForCurrentID(ctx, t)
+			if err != nil {
+				return nil, false, fmt.Errorf("get field %q: %w", name, err)
+			}
+
+			return retVal, true, nil
 		}
 	}
 	return nil, false, nil
 }
 
-func (specs InputSpecs) Decode(inputs map[string]Input, dest any, view View) error {
+func (specs InputSpecs) Decode(inputs map[string]Input, dest any, view call.View) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
 	if destT == nil {
@@ -1555,7 +1504,11 @@ func assign(field reflect.Value, val any) error {
 		field.Set(reflect.ValueOf(val))
 		return nil
 	} else if setter, ok := val.(Setter); ok {
-		return setter.SetField(field)
+		err := setter.SetField(field)
+		if err != nil {
+			return fmt.Errorf("assign: Setter.SetField %T to %s: %w", val, field.Type(), err)
+		}
+		return nil
 	} else {
 		return fmt.Errorf("assign: cannot assign %T to %s", val, field.Type())
 	}

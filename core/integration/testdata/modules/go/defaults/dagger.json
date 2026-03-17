@@ -1,0 +1,14 @@
+{
+  "name": "defaults",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "foobar",
+      "source": "foobar"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}

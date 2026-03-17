@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"main/internal/telemetry"
+
+	"dagger/my-module/internal/telemetry"
 
 	"golang.org/x/sync/errgroup"
 )

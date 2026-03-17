@@ -2,16 +2,19 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -20,6 +23,7 @@ const (
 	goSDKRuntimePath            = "/runtime"
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
+	GoSDKModuleIDPath           = "typedefs.json"
 )
 
 /*
@@ -33,7 +37,6 @@ it with the resulting /runtime binary.
 */
 type goSDK struct {
 	root      *core.Query
-	dag       *dagql.Server
 	rawConfig map[string]any
 }
 
@@ -42,6 +45,10 @@ type goSDKConfig struct {
 }
 
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
+	return sdk, true
+}
+
+func (sdk *goSDK) AsModuleTypes() (core.ModuleTypes, bool) {
 	return sdk, true
 }
 
@@ -59,11 +66,17 @@ func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[
 
 func (sdk *goSDK) GenerateClient(
 	ctx context.Context,
-	modSource dagql.Instance[*core.ModuleSource],
+	modSource dagql.ObjectResult[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-) (inst dagql.Instance[*core.Directory], err error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
+	}
+
+	// For standalone clients, we want to include Engine and other types that are hidden from module SDKs
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForClient(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
@@ -73,8 +86,8 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get base container during module client generation: %w", err)
 	}
 
-	contextDir := modSource.Self.ContextDirectory
-	rootSourcePath := modSource.Self.SourceRootSubpath
+	contextDir := modSource.Self().ContextDirectory
+	rootSourcePath := modSource.Self().SourceRootSubpath
 
 	modSourceID, err := modSource.ID().Encode()
 	if err != nil {
@@ -82,13 +95,14 @@ func (sdk *goSDK) GenerateClient(
 	}
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
-		"--output", dagql.String(outputDir),
+		"generate-client",
+		"--output", dagql.String(filepath.Join(goSDKUserModContextDirPath, rootSourcePath)),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		"--client-only",
 		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
+		dagql.String(fmt.Sprintf("--client-dir=%s", outputDir)),
 	}
 
-	err = sdk.dag.Select(ctx, ctr, &ctr,
+	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
@@ -147,8 +161,8 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to run  module client generation: %w", err)
 	}
 
-	var modifiedSrcDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
+	var modifiedSrcDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{
@@ -166,17 +180,22 @@ func (sdk *goSDK) GenerateClient(
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
-	source dagql.Instance[*core.ModuleSource],
+	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.EndWithCause(span, &rerr)
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
 	}
 
-	var modifiedSrcDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
+	var modifiedSrcDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{
@@ -206,25 +225,180 @@ func (sdk *goSDK) Codegen(
 	}, nil
 }
 
+func (sdk *goSDK) ModuleTypes(
+	ctx context.Context,
+	deps *core.ModDeps,
+	src dagql.ObjectResult[*core.ModuleSource],
+	currentModuleID *call.ID,
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
+	}
+
+	var ctr dagql.ObjectResult[*core.Container]
+
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+
+	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	execMD := buildkit.ExecutionMetadata{
+		ClientID: identity.NewID(),
+		CallID:   dagql.CurrentID(ctx),
+		ExecID:   identity.NewID(),
+		Internal: true,
+	}
+	execMD.EncodedModuleID, err = currentModuleID.Encode()
+	if err != nil {
+		return inst, err
+	}
+
+	var modDefsID string
+	err = dag.Select(ctx, ctr, &modDefsID,
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKIntrospectionJSONPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKUserModContextDirPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDir.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "dagger.gen.go")),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "internal")),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"codegen",
+						"generate-typedefs",
+						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+						"--module-name", dagql.String(modName),
+						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--output", GoSDKModuleIDPath,
+					},
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.Boolean(true),
+				},
+				{
+					Name:  "execMD",
+					Value: dagql.NewSerializedString(&execMD),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(GoSDKModuleIDPath),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
+	}
+
+	var modID core.ModuleID
+	if err = json.Unmarshal([]byte(modDefsID), &modID); err != nil {
+		return inst, err
+	}
+
+	err = dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{
+			Field: "loadModuleFromID",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "id",
+					Value: dagql.NewID[*core.Module](modID.ID()),
+				},
+			},
+		})
+	if err != nil {
+		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+
+	return inst, nil
+}
+
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
-	source dagql.Instance[*core.ModuleSource],
-) (_ *core.Container, rerr error) {
+	source dagql.ObjectResult[*core.ModuleSource],
+) (_ core.ModuleRuntime, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.EndWithCause(span, &rerr)
+
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
+	}
+
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
 	}
-	if err := sdk.dag.Select(ctx, ctr, &ctr,
-		dagql.Selector{
-			Field: "withoutUnixSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString("/tmp/dagger-ssh-sock"),
-				},
-			},
-		},
+	if err := dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
@@ -282,24 +456,36 @@ func (sdk *goSDK) Runtime(
 	); err != nil {
 		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
-	return ctr.Self, nil
+
+	if cfg := source.Self().SDK; cfg != nil && cfg.Debug {
+		if err := dag.Select(ctx, ctr, &ctr, dagql.Selector{Field: "terminal"}); err != nil {
+			return nil, fmt.Errorf("failed to enable go sdk runtime terminal: %w", err)
+		}
+	}
+
+	return &core.ContainerRuntime{Container: ctr}, nil
 }
 
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,
-	src dagql.Instance[*core.ModuleSource],
-) (dagql.Instance[*core.Container], error) {
-	var ctr dagql.Instance[*core.Container]
+	src dagql.ObjectResult[*core.ModuleSource],
+) (dagql.ObjectResult[*core.Container], error) {
+	var ctr dagql.ObjectResult[*core.Container]
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
 
-	modName := src.Self.ModuleOriginalName
-	contextDir := src.Self.ContextDirectory
-	srcSubpath := src.Self.SourceSubpath
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
 
 	ctr, err = sdk.base(ctx)
 	if err != nil {
@@ -309,8 +495,8 @@ func (sdk *goSDK) baseWithCodegen(
 	// rm dagger.gen.go if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
-	var updatedContextDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, contextDir, &updatedContextDir,
+	var updatedContextDir dagql.Result[*core.Directory]
+	if err := dag.Select(ctx, contextDir, &updatedContextDir,
 		dagql.Selector{
 			Field: "withoutFile",
 			Args: []dagql.NamedInput{
@@ -325,14 +511,22 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
+		"generate-module",
 		"--output", dagql.String(goSDKUserModContextDirPath),
 		"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 	}
-	if !src.Self.ConfigExists {
+	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
+
+	/* FIXME: dev version handling is broken because it requires changing imports in code
+	if !engine.IsDevVersion(engine.Version) {
+		codegenArgs = append(codegenArgs, "--lib-version", dagql.String(engine.Version))
+	}
+	*/
+	codegenArgs = append(codegenArgs, "--lib-version", dagql.String("v0.19.11"))
 
 	selectors := []dagql.Selector{
 		{
@@ -392,9 +586,7 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	configSelectors := getSDKConfigSelectors(ctx, config)
-	if len(configSelectors) > 0 {
-		selectors = append(selectors, configSelectors...)
-	}
+	selectors = append(selectors, configSelectors...)
 
 	// fetch gitconfig selectors
 	bk, err := sdk.root.Buildkit(ctx)
@@ -406,22 +598,17 @@ func (sdk *goSDK) baseWithCodegen(
 	if err != nil {
 		return ctr, err
 	}
-
-	if len(gitConfigSelectors) > 0 {
-		selectors = append(selectors, gitConfigSelectors...)
-	}
+	selectors = append(selectors, gitConfigSelectors...)
 
 	// TODO(rajatjindal): verify with Erik as to why this
 	// cause failures if we also mount this in Runtime.
 	// Issue we run into is that when we try to run sdk checks
 	// using .dagger, it fails trying to find the socket
-	sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
+	setSSHAuthSelectors, unsetSSHAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
 	if err != nil {
 		return ctr, err
 	}
-	if len(sshAuthSelectors) > 0 {
-		selectors = append(selectors, sshAuthSelectors...)
-	}
+	selectors = append(selectors, setSSHAuthSelectors...)
 
 	// now that we are done with gitconfig and injecting env
 	// variables, we can run the codegen command.
@@ -442,18 +629,25 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	)
 
-	if err := sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
+	selectors = append(selectors, unsetSSHAuthSelectors...)
+
+	if err := dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 
 	return ctr, nil
 }
 
-func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], error) {
-	var inst dagql.Instance[*core.Container]
+func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container], error) {
+	var inst dagql.ObjectResult[*core.Container]
 
-	var baseCtr dagql.Instance[*core.Container]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &baseCtr,
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
+	}
+
+	var baseCtr dagql.ObjectResult[*core.Container]
+	if err := dag.Select(ctx, dag.Root(), &baseCtr,
 		dagql.Selector{
 			Field: "_builtinContainer",
 			Args: []dagql.NamedInput{
@@ -467,8 +661,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get base container from go module sdk tarball: %w", err)
 	}
 
-	var modCacheBaseDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, baseCtr, &modCacheBaseDir, dagql.Selector{
+	var modCacheBaseDir dagql.Result[*core.Directory]
+	if err := dag.Select(ctx, baseCtr, &modCacheBaseDir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{
@@ -480,8 +674,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get mod cache base dir from go module sdk tarball: %w", err)
 	}
 
-	var modCache dagql.Instance[*core.CacheVolume]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &modCache, dagql.Selector{
+	var modCache dagql.Result[*core.CacheVolume]
+	if err := dag.Select(ctx, dag.Root(), &modCache, dagql.Selector{
 		Field: "cacheVolume",
 		Args: []dagql.NamedInput{
 			{
@@ -497,8 +691,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get mod cache from go module sdk tarball: %w", err)
 	}
 
-	var buildCacheBaseDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, baseCtr, &buildCacheBaseDir, dagql.Selector{
+	var buildCacheBaseDir dagql.Result[*core.Directory]
+	if err := dag.Select(ctx, baseCtr, &buildCacheBaseDir, dagql.Selector{
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{
@@ -510,8 +704,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get build cache base dir from go module sdk tarball: %w", err)
 	}
 
-	var buildCache dagql.Instance[*core.CacheVolume]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &buildCache, dagql.Selector{
+	var buildCache dagql.Result[*core.CacheVolume]
+	if err := dag.Select(ctx, dag.Root(), &buildCache, dagql.Selector{
 		Field: "cacheVolume",
 		Args: []dagql.NamedInput{
 			{
@@ -527,8 +721,8 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
 	}
 
-	var ctr dagql.Instance[*core.Container]
-	if err := sdk.dag.Select(ctx, baseCtr, &ctr,
+	var ctr dagql.ObjectResult[*core.Container]
+	if err := dag.Select(ctx, baseCtr, &ctr,
 		dagql.Selector{
 			Field: "withMountedCache",
 			Args: []dagql.NamedInput{
@@ -640,45 +834,45 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 	return selectors, nil
 }
 
-func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, error) {
+func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, []dagql.Selector, error) {
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get dag for go module sdk: %w", err)
+	}
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+		return nil, nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
 	if clientMetadata.SSHAuthSocketPath == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	var sockInst dagql.Instance[*core.Socket]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &sockInst,
+	var sockInst dagql.Result[*core.Socket]
+	if err := dag.Select(ctx, dag.Root(), &sockInst,
 		dagql.Selector{
 			Field: "host",
 		},
 		dagql.Selector{
-			Field: "unixSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
-				},
-			},
+			Field: "_sshAuthSocket",
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to select internal socket: %w", err)
+		return nil, nil, fmt.Errorf("failed to select internal socket: %w", err)
 	}
 
-	if sockInst.Self == nil {
-		return nil, fmt.Errorf("sockInst.Self is NIL")
+	if sockInst.Self() == nil {
+		return nil, nil, fmt.Errorf("sockInst.Self is NIL")
 	}
 
-	return []dagql.Selector{
+	sshSockPath := "/tmp/dagger-ssh-sock"
+	set := []dagql.Selector{
 		{
 			Field: "withUnixSocket",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String("/tmp/dagger-ssh-sock"),
+					Value: dagql.String(sshSockPath),
 				},
 				{
 					Name:  "source",
@@ -686,7 +880,41 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 				},
 			},
 		},
-	}, nil
+		{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("SSH_AUTH_SOCK"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.String(sshSockPath),
+				},
+			},
+		},
+	}
+	unset := []dagql.Selector{
+		{
+			Field: "withoutUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(sshSockPath),
+				},
+			},
+		},
+		{
+			Field: "withoutEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("SSH_AUTH_SOCK"),
+				},
+			},
+		},
+	}
+	return set, unset, nil
 }
 
 func getSDKConfigSelectors(_ context.Context, config goSDKConfig) []dagql.Selector {

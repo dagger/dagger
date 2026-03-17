@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"maps"
 	"net/url"
@@ -35,11 +34,16 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			authHeader string
 			token      *oauth2.Token
 			org        *auth.Org
+			err        error
 		)
 
 		// Try token auth first
 		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-			authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(cloudToken+":"))
+			authHeader, err = auth.GetDaggerCloudAuth(ctx, cloudToken)
+			if err != nil {
+				slog.Warn("failed to parse DAGGER_CLOUD_TOKEN", "error", err)
+				return
+			}
 		}
 
 		// Try OAuth next

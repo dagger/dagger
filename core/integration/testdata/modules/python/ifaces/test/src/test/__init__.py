@@ -74,7 +74,7 @@ class CustomIface(typing.Protocol):
     def self_iface(self) -> typing.Self: ...
 
     @dagger.function
-    def self_iface_list(self) -> list[typing.Self]: ...
+    async def self_iface_list(self) -> list[typing.Self]: ...
 
     @dagger.function
     def other_iface(self) -> OtherIface: ...
@@ -204,8 +204,8 @@ class Test:
         return iface.self_iface()
 
     @dagger.function
-    def self_iface_list(self, iface: CustomIface) -> list[CustomIface]:
-        return iface.self_iface_list()
+    async def self_iface_list(self, iface: CustomIface) -> list[CustomIface]:
+        return await iface.self_iface_list()
 
     @dagger.function
     def other_iface(self, iface: CustomIface) -> OtherIface:

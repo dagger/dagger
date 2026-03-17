@@ -15,8 +15,21 @@ export const object = registry.object
  * class' method that must be exposed to the Dagger API.
  *
  * @param alias The alias to use for the field when exposed on the API.
+ * @param cache The cache setting to use for that function.
  */
 export const func = registry.func
+
+/**
+ * The definition of @check decorator that marks a function as a check.
+ * Checks are functions that return void/error to indicate pass/fail.
+ */
+export const check = registry.check
+
+/**
+ * The definition of @generate decorator that marks a function as a generator.
+ * Generators are functions that return a Changeset representing changes to be applied.
+ */
+export const generate = registry.generate
 
 /**
  * The definition of @field decorator that should be on top of any
@@ -30,6 +43,8 @@ export const field = registry.field
 /**
  * The definition of the `@enumType` decorator that should be on top of any
  * class module that must be exposed to the Dagger API as enumeration.
+ *
+ * @deprecated In favor of using TypeScript `enum` types.
  */
 export const enumType = registry.enumType
 

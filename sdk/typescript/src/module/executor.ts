@@ -72,6 +72,26 @@ export class Executor {
     return ifaceImpl
   }
 
+  /**
+   * Transfer a Dagger enum member name into its implemented value.
+   * An enum value A = "a" will be received as "A" by the entrypoint
+   * but should be transformed into "a" to be sent to the function.
+   * If the enum isn't found in the module, it may be a core enum so we keep the value
+   * as is.
+   */
+  buildEnum(enumName: string, value: string): any {
+    const enumObject = this.daggerModule.enums[enumName]
+    if (!enumObject) {
+      return value
+    }
+
+    if (!enumObject.values[value]) {
+      throw new Error(`Enum ${enumName} does not have member ${value}`)
+    }
+
+    return enumObject.values[value].value
+  }
+
   async getResult(
     object: string,
     method: string,

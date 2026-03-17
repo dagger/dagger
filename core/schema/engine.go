@@ -6,25 +6,29 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
-type engineSchema struct {
-	srv *dagql.Server
-}
+type engineSchema struct{}
 
 var _ SchemaResolvers = &engineSchema{}
 
-func (s *engineSchema) Install() {
+func (s *engineSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("engine", s.engine).
 			Doc("The Dagger engine container configuration and state"),
-	}.Install(s.srv)
+	}.Install(srv)
+
+	dagql.Fields[*core.Engine]{
+		dagql.Func("clients", s.clients).
+			DoNotCache("Clients can connect and disconnect at any time").
+			Doc("The list of connected client IDs"),
+	}.Install(srv)
 
 	dagql.Fields[*core.Engine]{
 		dagql.Func("localCache", s.localCache).
 			Doc("The local (on-disk) cache for the Dagger engine"),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.EngineCache]{
 		dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, dagql.CachePerCall).
@@ -34,19 +38,29 @@ func (s *engineSchema) Install() {
 			Doc("Prune the cache of releaseable entries").
 			Args(
 				dagql.Arg("useDefaultPolicy").Doc("Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries."),
+				dagql.Arg("maxUsedSpace").Doc("Override the maximum disk space to keep before pruning (e.g. \"200GB\" or \"80%\")."),
+				dagql.Arg("reservedSpace").Doc("Override the minimum disk space to retain during pruning (e.g. \"500GB\" or \"10%\")."),
+				dagql.Arg("minFreeSpace").Doc("Override the minimum free disk space target during pruning (e.g. \"20GB\" or \"20%\")."),
+				dagql.Arg("targetSpace").Doc("Override the target disk space to keep after pruning (e.g. \"200GB\" or \"50%\")."),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.EngineCacheEntrySet]{
 		dagql.Func("entries", s.cacheEntrySetEntries).
 			Doc("The list of individual cache entries in the set"),
-	}.Install(s.srv)
+	}.Install(srv)
 
-	dagql.Fields[*core.EngineCacheEntry]{}.Install(s.srv)
+	dagql.Fields[*core.EngineCacheEntry]{}.Install(srv)
 }
 
 func (s *engineSchema) engine(ctx context.Context, parent *core.Query, args struct{}) (*core.Engine, error) {
-	return &core.Engine{}, nil
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Engine{
+		Name: query.EngineName(),
+	}, nil
 }
 
 func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args struct{}) (*core.EngineCache, error) {
@@ -66,13 +80,20 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 		TargetSpace:   int(policy.TargetSpace),
 		MaxUsedSpace:  int(policy.MaxUsedSpace),
 		MinFreeSpace:  int(policy.MinFreeSpace),
-		KeepBytes:     int(policy.ReservedSpace),
 	}, nil
 }
 
-func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[*core.EngineCache], args struct {
+func (s *engineSchema) clients(ctx context.Context, parent *core.Engine, args struct{}) ([]string, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return query.Clients(), nil
+}
+
+func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectResult[*core.EngineCache], args struct {
 	Key string `default:""`
-}) (inst dagql.Instance[*core.EngineCacheEntrySet], _ error) {
+}) (inst dagql.Result[*core.EngineCacheEntrySet], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, err
@@ -80,9 +101,13 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[
 	if err := query.RequireMainClient(ctx); err != nil {
 		return inst, err
 	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
 
 	if args.Key == "" {
-		err := s.srv.Select(ctx, parent, &inst,
+		err := srv.Select(ctx, parent, &inst,
 			dagql.Selector{
 				Field: "entrySet",
 				Args: []dagql.NamedInput{
@@ -101,11 +126,15 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[
 		return inst, fmt.Errorf("failed to load cache entries: %w", err)
 	}
 
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, entrySet)
+	return dagql.NewResultForCurrentID(ctx, entrySet)
 }
 
 func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache, args struct {
-	UseDefaultPolicy bool `default:"false"`
+	UseDefaultPolicy bool   `default:"false"`
+	MaxUsedSpace     string `default:""`
+	ReservedSpace    string `default:""`
+	MinFreeSpace     string `default:""`
+	TargetSpace      string `default:""`
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 	query, err := core.CurrentQuery(ctx)
@@ -116,7 +145,13 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 		return void, err
 	}
 
-	_, err = query.PruneEngineLocalCacheEntries(ctx, args.UseDefaultPolicy)
+	_, err = query.PruneEngineLocalCacheEntries(ctx, core.EngineCachePruneOptions{
+		UseDefaultPolicy: args.UseDefaultPolicy,
+		MaxUsedSpace:     args.MaxUsedSpace,
+		ReservedSpace:    args.ReservedSpace,
+		MinFreeSpace:     args.MinFreeSpace,
+		TargetSpace:      args.TargetSpace,
+	})
 	if err != nil {
 		return void, fmt.Errorf("failed to prune cache entries: %w", err)
 	}
@@ -124,6 +159,6 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 	return void, nil
 }
 
-func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) ([]*core.EngineCacheEntry, error) {
+func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) (dagql.Array[*core.EngineCacheEntry], error) {
 	return parent.EntriesList, nil
 }

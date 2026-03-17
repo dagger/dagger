@@ -1,6 +1,0 @@
-kind: Deprecated
-body: Deprecated `dagger.Enum` in favor of using enum member docstrings for the descriptions
-time: 2025-06-17T17:30:38.107746Z
-custom:
-    Author: helderco
-    PR: "10600"

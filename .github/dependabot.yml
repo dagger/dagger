@@ -4,6 +4,8 @@ updates:
     directories:
       - "/"
       - "/sdk/go"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -18,7 +20,6 @@ updates:
         # these are fiddly, we want to do them manually
       - dependency-name: "go.opentelemetry.io/*"
       - dependency-name: "github.com/dagger/*"
-      - dependency-name: "github.com/moby/buildkit"
       - dependency-name: "github.com/tonistiigi/fsutil"
       - dependency-name: "github.com/vito/midterm"
       # stargz-snapshotter requires containerd/v2, we're not using that
@@ -31,6 +32,8 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -47,6 +50,8 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/docs"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -61,8 +66,10 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "uv"
+  - package-ecosystem: "pip"
     directory: "/sdk/python"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -81,6 +88,8 @@ updates:
     directories:
       - "/sdk/python/runtime"
       - "/modules/ruff/build"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -101,6 +110,8 @@ updates:
 
   - package-ecosystem: "maven"
     directory: "/sdk/java"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -120,6 +131,8 @@ updates:
 
   - package-ecosystem: "mix"
     directory: "/sdk/elixir"
+    exclude-paths:
+      - "**/examples/**"
     schedule:
       interval: "weekly"
       day: "monday"

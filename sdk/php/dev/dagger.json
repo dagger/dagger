@@ -1,7 +1,0 @@
-{
-  "name": "php-sdk-dev",
-  "engineVersion": "v0.18.10",
-  "sdk": {
-    "source": "php"
-  }
-}

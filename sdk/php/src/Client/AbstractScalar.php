@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Dagger\Client;
 
-use Stringable;
-
-abstract readonly class AbstractScalar implements Stringable
+abstract readonly class AbstractScalar implements \Stringable
 {
-    public function __construct(private string $value)
-    {
+    final public function __construct(
+        private string $value,
+    ) {
     }
 
     public function getValue(): string
@@ -22,7 +21,7 @@ abstract readonly class AbstractScalar implements Stringable
         return $this->value;
     }
 
-    public static function from(string $value): static
+    final public static function from(string $value): static
     {
         return new static($value);
     }

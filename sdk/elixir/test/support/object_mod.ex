@@ -23,6 +23,27 @@ defmodule PrimitiveTypeArgs do
   end
 end
 
+defmodule PrimitiveTypeDefaultArgs do
+  @moduledoc false
+  use Dagger.Mod.Object, name: "PrimitiveTypeDefaultArgs"
+
+  defn accept_default_string(name: {String.t(), default: "Foo"}) :: String.t() do
+    "Hello #{name}"
+  end
+
+  defn accept_default_integer(value: {integer(), default: 42}) :: integer() do
+    value
+  end
+
+  defn accept_default_float(value: {float(), default: 1.6180342}) :: float() do
+    value
+  end
+
+  defn accept_default_boolean(value: {boolean(), default: false}) :: boolean() do
+    value
+  end
+end
+
 defmodule EmptyArgs do
   @moduledoc false
   use Dagger.Mod.Object, name: "EmptyArgs"
@@ -75,6 +96,59 @@ defmodule ArgOptions do
             ignore: ["deps", "_build"]}
        ) :: String.t() do
     Dagger.Directory.id(dir)
+  end
+end
+
+defmodule DeprecatedDirective do
+  @moduledoc deprecated: "module deprecation reason"
+  use Dagger.Mod.Object, name: "DeprecatedDirective"
+
+  object do
+    field(:f1, String.t(), deprecated: "deprecated field")
+    field(:f2, String.t(), deprecated: nil)
+  end
+
+  @deprecated "deprecation reason"
+  defn deprecated_by_attr() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @doc deprecated: "docstring deprecation reason"
+  defn deprecated_by_docstr() :: Dagger.Void.t() do
+    :ok
+  end
+
+  defn deprecated_args(
+         foo: {
+           String.t(),
+           deprecated: "deprecated argument"
+         },
+         bar: {
+           String.t(),
+           deprecated: nil
+         }
+       ) :: String.t() do
+    foo <> bar
+  end
+end
+
+defmodule CacheAttribute do
+  @moduledoc false
+  use Dagger.Mod.Object, name: "CacheAttribute"
+
+  @cache :never
+  defn never_cached() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @cache :per_session
+  defn per_session_cached() :: Dagger.Void.t() do
+    :ok
+  end
+
+  @cache ttl: "42s"
+  defn ttl_cached() :: Dagger.Void.t() do
+    :ok
   end
 end
 

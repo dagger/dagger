@@ -20,11 +20,11 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	telemetry "github.com/dagger/otel-go"
 )
 
 var runCmd = &cobra.Command{
@@ -91,11 +91,11 @@ func Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, "run canceled")
-			return ExitError{Code: 2}
+			return idtui.ExitError{OriginalCode: 2}
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return ExitError{Code: exitErr.ExitCode()}
+			return idtui.ExitError{OriginalCode: exitErr.ExitCode()}
 		}
 		return err
 	}
@@ -148,7 +148,7 @@ func run(cmd *cobra.Command, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		srv := &http.Server{ //nolint:gosec
+		srv := &http.Server{
 			Handler: engineClient,
 			BaseContext: func(listener net.Listener) context.Context {
 				return ctx

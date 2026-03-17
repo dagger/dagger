@@ -18,12 +18,18 @@ from cattrs.preconf.json import JsonConverter, make_converter
 from typing_extensions import Self, TypeVar, override
 
 from dagger.mod._arguments import Parameter
-from dagger.mod._exceptions import FatalError, UserError
+from dagger.mod._exceptions import (
+    BadUsageError,
+    InvalidInputError,
+    RegistrationError,
+)
 from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
 from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
+    get_default_address,
     get_default_path,
+    get_deprecated,
     get_doc,
     get_ignore,
     is_nullable,
@@ -32,7 +38,10 @@ from dagger.mod._utils import (
     normalize_name,
 )
 
-logger = logging.getLogger(__name__)
+CHECK_DEF_KEY: str = "__dagger_check__"
+GENERATOR_DEF_KEY: str = "__dagger_generate__"
+
+logger = logging.getLogger(__package__)
 
 T = TypeVar("T")
 R = TypeVar("R", infer_variance=True)
@@ -64,6 +73,11 @@ class Function(Generic[P, R]):
         self.original_name = self.wrapped.__name__
 
     def __str__(self):
+        if self.origin is not None:
+            return f"{self.origin.__name__}.{self.original_name}"
+        return self.original_name
+
+    def __repr__(self):
         return repr(self.wrapped)
 
     @cached_property
@@ -79,9 +93,39 @@ class Function(Generic[P, R]):
         """Return the description for the callable to invoke."""
         return self.meta.doc if self.meta.doc is not None else get_doc(self.wrapped)
 
+    @property
+    def deprecated(self) -> str | None:
+        """Return the deprecation message for the callable, if any."""
+        return self.meta.deprecated
+
+    @property
+    def check(self) -> bool:
+        """Indicates whether the function is configured as a check."""
+        # Check both the metadata and the attribute to support either decorator order
+        return self.meta.check or getattr(self.wrapped, CHECK_DEF_KEY, False)
+
+    @property
+    def generate(self) -> bool:
+        """Indicates whether the function is configured as a generator."""
+        # Check both the metadata and the attribute to support either decorator order
+        return self.meta.generator or getattr(self.wrapped, GENERATOR_DEF_KEY, False)
+
+    @cached_property
+    def cache_policy(self):
+        return self.meta.cache
+
     @cached_property
     def type_hints(self):
         return get_type_hints(self.wrapped)
+
+    @cached_property
+    def type_hints_with_extras(self):
+        """Type hints with Annotated metadata preserved.
+
+        Used for extracting metadata like DefaultPath, Doc, Name, etc.
+        from parameters when `from __future__ import annotations` is used.
+        """
+        return get_type_hints(self.wrapped, include_extras=True)
 
     @cached_property
     def signature(self):
@@ -103,7 +147,7 @@ class Function(Generic[P, R]):
 
             if param.kind is inspect.Parameter.POSITIONAL_ONLY:
                 msg = "Positional-only parameters are not supported"
-                raise TypeError(msg)
+                raise BadUsageError(msg)
 
             mapping[param.name] = self._make_parameter(param)
 
@@ -116,23 +160,30 @@ class Function(Generic[P, R]):
             # resolved forward references and stripped Annotated.
             annotation = self.type_hints[param.name]
         except KeyError:
-            logger.warning(
-                "Missing type annotation for parameter '%s'",
-                param.name,
-            )
+            logger.warning("Missing type annotation for parameter '%s'", param.name)
             annotation = Any
 
         if isinstance(annotation, dataclasses.InitVar):
             annotation: Any = annotation.type
 
+        # Get the annotated type (with Annotated preserved) for metadata extraction.
+        # This is needed when `from __future__ import annotations` is used,
+        # which causes param.annotation to be a string instead of a type.
+        try:
+            annotated_type = self.type_hints_with_extras[param.name]
+        except KeyError:
+            annotated_type = param.annotation
+
         return Parameter(
-            name=get_alt_name(param.annotation) or normalize_name(param.name),
+            name=get_alt_name(annotated_type) or normalize_name(param.name),
             signature=param,
             resolved_type=annotation,
             is_nullable=is_nullable(TypeHint(annotation)),
-            doc=get_doc(param.annotation),
-            ignore=get_ignore(param.annotation),
-            default_path=get_default_path(param.annotation),
+            doc=get_doc(annotated_type),
+            ignore=get_ignore(annotated_type),
+            default_path=get_default_path(annotated_type),
+            default_address=get_default_address(annotated_type),
+            deprecated=get_deprecated(annotated_type),
             conv=self.converter,
         )
 
@@ -167,8 +218,8 @@ class Function(Generic[P, R]):
             bound = self.signature.bind(*args, **kwargs)
             bound.apply_defaults()
         except TypeError as e:
-            msg = f"Unable to bind arguments: {e}"
-            raise UserError(msg) from e
+            logger.exception("Unexpected type while binding input values to arguments")
+            raise InvalidInputError(str(e)) from e
         return bound
 
 
@@ -225,6 +276,7 @@ class Constructor(Function[P, R]):
 class ObjectType(Generic[T]):
     cls: type[T]
     interface: bool = False
+    deprecated: str | None = None
     fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
     functions: dict[APIName, Function] = dataclasses.field(default_factory=dict)
 
@@ -239,8 +291,12 @@ class ObjectType(Generic[T]):
         assert self.cls is parent.__class__
         try:
             fn = self.functions[name]
-        except KeyError as e:
-            msg = f"No function '{name}' in object '{self.cls.__name__}'"
-            raise FatalError(msg) from e
+        except KeyError:
+            msg = f"No function '{name}' in {self}"
+            raise RegistrationError(msg) from None
 
         return fn.bind_parent(parent)
+
+    def __str__(self):
+        s = "interface" if self.interface else "object"
+        return f"{s} '{self.cls.__module__}.{self.cls.__name__}'"

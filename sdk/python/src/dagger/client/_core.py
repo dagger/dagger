@@ -13,6 +13,8 @@ from typing import (
 
 import anyio
 import cattrs
+import exceptiongroup
+import gql
 import graphql
 import httpx
 from beartype.door import TypeHint
@@ -20,6 +22,7 @@ from cattrs.preconf.json import make_converter as make_json_converter
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 from gql.transport.exceptions import (
     TransportClosed,
+    TransportConnectionFailed,
     TransportProtocolError,
     TransportQueryError,
     TransportServerError,
@@ -27,7 +30,7 @@ from gql.transport.exceptions import (
 from typing_extensions import TypeForm
 
 from dagger import (
-    ExecuteTimeoutError,
+    DaggerError,
     InvalidQueryError,
     TransportError,
 )
@@ -97,7 +100,7 @@ class Context:
         args: typing.Sequence[Arg],
     ) -> "Context":
         args_ = self.converter.unstructure(
-            {arg.name: arg.value for arg in args if arg.value is not arg.default}
+            {arg.name: arg.value for arg in args if arg.value != arg.default}
         )
         field_ = Field(type_name, field_name, args_)
         selections = self.selections.copy()
@@ -146,9 +149,19 @@ class Context:
         root = functools.reduce(_collapse, reversed(self.selections))
 
         # `to_dsl` will cascade to all children, until the end.
-        return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
+        try:
+            return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
+        except (graphql.GraphQLError, AttributeError, TypeError) as e:
+            logger.exception("GraphQL query builder failed to build query")
+            msg = (
+                "Failed to build GraphQL query, probably due to a schema validation "
+                "issue. Please file a bug report because anything that could "
+                "fail to validate at this point should really happen sooner. "
+                "See Python logs for more details."
+            )
+            raise InvalidQueryError(msg) from e
 
-    async def query(self) -> graphql.DocumentNode:
+    async def request(self) -> gql.GraphQLRequest:
         return dsl_gql(DSLQuery(await self.build()))
 
     @overload
@@ -161,25 +174,15 @@ class Context:
         self, return_type: TypeForm[T] | type[T] | None = None
     ) -> T | None:
         await self.resolve_ids()
-        query = await self.query()
+        request = await self.request()
 
         try:
-            result = await self.conn.session.execute(query)
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher timeout value in "
-                "for this connection."
-            )
-            raise ExecuteTimeoutError(msg) from e
-
-        except httpx.RequestError as e:
-            msg = f"Failed to make request: {e}"
-            raise TransportError(msg) from e
+            result = await self.conn.session.execute(request)
 
         except TransportClosed as e:
             msg = (
                 "Connection to engine has been closed. Make sure you're "
-                "calling the API within a `dagger.Connection()` context."
+                "calling the API within a `dagger.connection()` context."
             )
             raise TransportError(msg) from e
 
@@ -187,8 +190,21 @@ class Context:
             msg = f"Unexpected response from engine: {e}"
             raise TransportError(msg) from e
 
+        except TransportConnectionFailed as e:
+            if not (msg := str(e)):
+                match e.__cause__:
+                    case httpx.TimeoutException():
+                        msg = (
+                            "Request timed out. Try setting a higher timeout value "
+                            "for this connection."
+                        )
+                    case _:
+                        msg = "Failed to execute request"
+
+            raise TransportError(msg) from e
+
         except TransportQueryError as e:
-            if error := _query_error_from_transport(e, query):
+            if error := _query_error_from_transport(e, request):
                 raise error from e
             raise
 
@@ -241,6 +257,12 @@ class Context:
 
         return self.converter.structure(value, return_type)
 
+    def handle_group_err(self, grp: exceptiongroup.BaseExceptionGroup):
+        """Handle exception group errors."""
+        # just re-raise the first one
+        for exc in grp.exceptions:
+            raise exc from None
+
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
 
@@ -254,18 +276,21 @@ class Context:
             sel.args[k][idx] = await v.id()
 
         # resolve all ids concurrently
-        async with anyio.create_task_group() as tg:
-            for i, sel in enumerate(self.selections):
-                for k, v in sel.args.items():
-                    # check if it's a sequence of Type objects
-                    if is_id_type_sequence(v):
-                        # make sure it's a list, to mutate by index
-                        sel.args[k] = list(v)
-                        for seq_i, seq_v in enumerate(sel.args[k]):
-                            if is_id_type(seq_v):
-                                tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
-                    elif is_id_type(v):
-                        tg.start_soon(_resolve_id, i, k, v)
+        with exceptiongroup.catch(
+            {(graphql.GraphQLError, DaggerError): self.handle_group_err}
+        ):
+            async with anyio.create_task_group() as tg:
+                for i, sel in enumerate(self.selections):
+                    for k, v in sel.args.items():
+                        # check if it's a sequence of Type objects
+                        if is_id_type_sequence(v):
+                            # make sure it's a list, to mutate by index
+                            sel.args[k] = list(v)
+                            for seq_i, seq_v in enumerate(sel.args[k]):
+                                if is_id_type(seq_v):
+                                    tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
+                        elif is_id_type(v):
+                            tg.start_soon(_resolve_id, i, k, v)
 
 
 def make_converter(ctx: Context):

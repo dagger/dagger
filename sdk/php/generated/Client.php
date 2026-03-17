@@ -14,6 +14,16 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
+     * initialize an address to load directories, containers, secrets or other object types.
+     */
+    public function address(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('address');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key): CacheVolume
@@ -21,6 +31,15 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates an empty changeset
+     */
+    public function changeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -44,6 +63,19 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('platform', $platform);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the current environment
+     *
+     * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+     *
+     * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+     */
+    public function currentEnv(): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentEnv');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -76,6 +108,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Detect and return the current workspace.
+     */
+    public function currentWorkspace(?bool $skipMigrationCheck = false): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentWorkspace');
+        if (null !== $skipMigrationCheck) {
+        $innerQueryBuilder->setArgument('skipMigrationCheck', $skipMigrationCheck);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The default platform of the engine.
      */
     public function defaultPlatform(): Platform
@@ -103,7 +147,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Initialize a new environment
+     * Initializes a new environment
      */
     public function env(?bool $privileged = false, ?bool $writable = false): Env
     {
@@ -115,6 +159,18 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('writable', $writable);
         }
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initialize an environment file
+     */
+    public function envFile(?bool $expand = null): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('envFile');
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -238,6 +294,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Initialize a JSON value
+     */
+    public function json(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('json');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Initialize a Large Language Model (LLM)
      */
     public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
@@ -250,6 +315,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Address from its ID.
+     */
+    public function loadAddressFromID(AddressId|Address $id): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadAddressFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -270,6 +345,36 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCacheVolumeFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Changeset from its ID.
+     */
+    public function loadChangesetFromID(ChangesetId|Changeset $id): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadChangesetFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Check from its ID.
+     */
+    public function loadCheckFromID(CheckId|Check $id): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a CheckGroup from its ID.
+     */
+    public function loadCheckGroupFromID(CheckGroupId|CheckGroup $id): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -370,6 +475,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumValueTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnumValueTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EnvFile from its ID.
+     */
+    public function loadEnvFileFromID(EnvFileId|EnvFile $id): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFileFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -484,6 +599,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Generator from its ID.
+     */
+    public function loadGeneratorFromID(GeneratorId|Generator $id): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a GeneratorGroup from its ID.
+     */
+    public function loadGeneratorGroupFromID(GeneratorGroupId|GeneratorGroup $id): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a GitRef from its ID.
      */
     public function loadGitRefFromID(GitRefId|GitRef $id): GitRef
@@ -501,6 +636,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGitRepositoryFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a HealthcheckConfig from its ID.
+     */
+    public function loadHealthcheckConfigFromID(HealthcheckConfigId|HealthcheckConfig $id): HealthcheckConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHealthcheckConfigFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\HealthcheckConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -531,6 +676,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadInterfaceTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a JSONValue from its ID.
+     */
+    public function loadJSONValueFromID(JsonValueId|JsonValue $id): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadJSONValueFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -644,6 +799,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a SearchResult from its ID.
+     */
+    public function loadSearchResultFromID(SearchResultId|SearchResult $id): SearchResult
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSearchResultFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SearchResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a SearchSubmatch from its ID.
+     */
+    public function loadSearchSubmatchFromID(SearchSubmatchId|SearchSubmatch $id): SearchSubmatch
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSearchSubmatchFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SearchSubmatch($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Secret from its ID.
      */
     public function loadSecretFromID(SecretId|Secret $id): Secret
@@ -684,6 +859,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Stat from its ID.
+     */
+    public function loadStatFromID(StatId|Stat $id): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadStatFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
     public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
@@ -701,6 +886,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Workspace from its ID.
+     */
+    public function loadWorkspaceFromID(WorkspaceId|Workspace $id): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

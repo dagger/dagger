@@ -11,12 +11,48 @@ namespace Dagger;
 class Binding extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Retrieve the binding value, as type Address
+     */
+    public function asAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type CacheVolume
      */
     public function asCacheVolume(): CacheVolume
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCacheVolume');
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type Changeset
+     */
+    public function asChangeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asChangeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type Check
+     */
+    public function asCheck(): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCheck');
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type CheckGroup
+     */
+    public function asCheckGroup(): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCheckGroup');
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -56,12 +92,39 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type EnvFile
+     */
+    public function asEnvFile(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type File
      */
     public function asFile(): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asFile');
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type Generator
+     */
+    public function asGenerator(): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGenerator');
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type GeneratorGroup
+     */
+    public function asGeneratorGroup(): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGeneratorGroup');
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -83,12 +146,12 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type LLM
+     * Retrieve the binding value, as type JSONValue
      */
-    public function asLLM(): LLM
+    public function asJSONValue(): JsonValue
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLM');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSONValue');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -119,6 +182,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type SearchResult
+     */
+    public function asSearchResult(): SearchResult
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSearchResult');
+        return new \Dagger\SearchResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type SearchSubmatch
+     */
+    public function asSearchSubmatch(): SearchSubmatch
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSearchSubmatch');
+        return new \Dagger\SearchSubmatch($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Secret
      */
     public function asSecret(): Secret
@@ -146,7 +227,16 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding's string value
+     * Retrieve the binding value, as type Stat
+     */
+    public function asStat(): Stat
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asStat');
+        return new \Dagger\Stat($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the binding's string value
      */
     public function asString(): string
     {
@@ -155,7 +245,16 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The digest of the binding value
+     * Retrieve the binding value, as type Workspace
+     */
+    public function asWorkspace(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the digest of the binding value
      */
     public function digest(): string
     {
@@ -182,7 +281,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding name
+     * Returns the binding name
      */
     public function name(): string
     {
@@ -191,7 +290,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding type
+     * Returns the binding type
      */
     public function typeName(): string
     {

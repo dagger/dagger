@@ -4,7 +4,6 @@ import ts from "typescript"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import {
-  findModuleByExportedName,
   AST,
   CLIENT_GEN_FILE,
   ResolvedNodeWithSymbol,
@@ -52,19 +51,8 @@ export class DaggerModule {
   public objects: DaggerObjectsBase = {}
 
   /**
-   * An enum is either a decorated class or a native enum.
-   * Native enum cannot be decorated so they are resolved if referenced in the module.
-   *
-   * @example
-   * ```ts
-   * @enumType()
-   * export class Example {
-   *   static A: string = "a"
-   *   static B: string = "b"
-   * }
-   * ```
-   *
-   * or
+   * An enum is typically a native TypeScript enum declared with the `enum` keyword.
+   * Decorated classes using `@enumType()` are still supported for backward compatibility.
    *
    * @example
    * ```ts
@@ -103,36 +91,25 @@ export class DaggerModule {
     private userModule: Module[],
     private ast: AST,
   ) {
-    const mainModule = findModuleByExportedName(this.name, this.userModule)
-    if (!mainModule) {
-      console.warn(
-        `could not find module entrypoint: class ${this.name} from import. Class should be exported to benefit from all features.`,
-      )
+    const classObjects = this.findClasses()
+    for (const classObject of classObjects) {
+      // This only applies to cloud. If this is the true main object, it is correct
+      // if this is a blueprint, the description will not matter in any situation
+      const mainFileContent = classObject.file.getFullText()
+      this.description = this.getDescription(mainFileContent)
+
+      const daggerObject = new DaggerObject(classObject.node, this.ast)
+      const objectName = classObject.node.name?.getText() || this.name
+
+      this.objects[objectName] = daggerObject
+      this.references[objectName] = {
+        kind: TypeDefKind.ObjectKind,
+        name: objectName,
+      }
+
+      this.resolveReferences(daggerObject.getReferences())
+      this.propagateReferences()
     }
-
-    const mainObjectNode = this.ast.findResolvedNodeByName(
-      this.name,
-      ts.SyntaxKind.ClassDeclaration,
-    )
-    if (!mainObjectNode) {
-      throw new IntrospectionError(
-        `could not find main object ${this.name} in module ${JSON.stringify(mainModule, null, 2) ?? ""} located at ${this.ast.files}`,
-      )
-    }
-
-    const mainFileContent = mainObjectNode.file.getFullText()
-    this.description = this.getDescription(mainFileContent)
-
-    const mainDaggerObject = new DaggerObject(mainObjectNode.node, this.ast)
-
-    this.objects[this.name] = mainDaggerObject
-    this.references[this.name] = {
-      kind: TypeDefKind.ObjectKind,
-      name: this.name,
-    }
-
-    this.resolveReferences(mainDaggerObject.getReferences())
-    this.propagateReferences()
   }
 
   /**
@@ -361,6 +338,36 @@ export class DaggerModule {
     throw new IntrospectionError(
       `could not resolve type reference for ${reference} at ${AST.getNodePosition(typeAlias.node)}`,
     )
+  }
+
+  /**
+   * Find the classes in the AST. Returns only our main class if it exists
+   */
+  private findClasses(): ResolvedNodeWithSymbol<ts.SyntaxKind.ClassDeclaration>[] {
+    const allClassDeclarations = this.ast.findAllDeclarations(
+      ts.SyntaxKind.ClassDeclaration,
+    )
+
+    const allClasses: ResolvedNodeWithSymbol<ts.SyntaxKind.ClassDeclaration>[] =
+      []
+    for (const classDecl of allClassDeclarations) {
+      const convertedDecl =
+        classDecl as ResolvedNodeWithSymbol<ts.SyntaxKind.ClassDeclaration>
+
+      // Check if the class matches this.name and return only that if so
+      if (
+        convertedDecl.node.name &&
+        convertedDecl.node.name.getText() === this.name
+      ) {
+        return [convertedDecl]
+      }
+
+      // or we return all classes decorated with @object
+      if (this.ast.isNodeDecoratedWith(classDecl.node, OBJECT_DECORATOR)) {
+        allClasses.push(convertedDecl)
+      }
+    }
+    return allClasses
   }
 
   /**

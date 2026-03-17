@@ -17,15 +17,23 @@ func (w *Wolfi) Container(
 	// Hardware architecture to target
 	// +optional
 	arch string,
+	// Extra repositories to add to the package resolver
+	// +optional
+	extraRepositories []string,
+	// Extra keys needed to authenticate the extra repositories
+	// +optional
+	extraKeyURLs []string,
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
 	// +optional
 	overlays []*dagger.Container,
 ) *dagger.Container {
 	config := dag.Alpine(dagger.AlpineOpts{
-		Distro:   dagger.AlpineDistroWolfi,
-		Packages: packages,
-		Arch:     arch,
+		Distro:            dagger.AlpineDistroWolfi,
+		Packages:          packages,
+		Arch:              arch,
+		ExtraRepositories: extraRepositories,
+		ExtraKeyUrls:      extraKeyURLs,
 	})
 	ctr := config.Container()
 	for _, overlay := range overlays {

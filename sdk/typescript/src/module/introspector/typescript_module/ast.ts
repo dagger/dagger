@@ -8,7 +8,6 @@ import { IntrospectionError } from "../../../common/errors/index.js"
 import { DaggerDecorators } from "../dagger_module/index.js"
 import { TypeDef } from "../typedef.js"
 import { DeclarationsMap, isDeclarationOf } from "./declarations.js"
-import { getValueByExportedName } from "./explorer.js"
 import { Location } from "./location.js"
 
 export const CLIENT_GEN_FILE = "client.gen.ts"
@@ -20,6 +19,11 @@ export type ResolvedNodeWithSymbol<T extends keyof DeclarationsMap> = {
   file: ts.SourceFile
 }
 
+export type SymbolDoc = {
+  description: string
+  deprecated?: string
+}
+
 export class AST {
   public checker: ts.TypeChecker
 
@@ -29,6 +33,7 @@ export class AST {
     public readonly files: string[],
     private readonly userModule: Module[],
   ) {
+    this.files = files.map((f) => path.resolve(f))
     const program = ts.createProgram(files, {
       experimentalDecorators: true,
       moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -58,7 +63,7 @@ export class AST {
         // Skip if it's not from the client gen nor the user module
         if (
           !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
-          !this.files.includes(sourceFile.fileName)
+          !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
         }
@@ -91,6 +96,51 @@ export class AST {
     }
 
     return result
+  }
+
+  public findAllDeclarations<T extends keyof DeclarationsMap>(
+    kind: T,
+  ): ResolvedNodeWithSymbol<T>[] {
+    const results: ResolvedNodeWithSymbol<T>[] = []
+
+    for (const sourceFile of this.sourceFiles) {
+      ts.forEachChild(sourceFile, (node) => {
+        // Skip if it's not from the client gen nor the user module
+        if (
+          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !this.files.includes(path.resolve(sourceFile.fileName))
+        ) {
+          return
+        }
+
+        if (kind !== undefined && node.kind === kind) {
+          const isDeclarationValid = isDeclarationOf[kind](node)
+          if (!isDeclarationValid) return
+
+          const convertedNode = node as DeclarationsMap[typeof kind]
+          if (!convertedNode.name) {
+            return
+          }
+
+          const symbol = this.checker.getSymbolAtLocation(convertedNode.name)
+          if (!symbol) {
+            console.debug(
+              `missing symbol for ${convertedNode.name.getText()} at ${sourceFile.fileName}:${node.pos}`,
+            )
+            return
+          }
+
+          results.push({
+            type: kind,
+            node: convertedNode,
+            symbol: symbol,
+            file: sourceFile,
+          })
+        }
+      })
+    }
+
+    return results
   }
 
   public getTypeFromTypeAlias(typeAlias: ts.TypeAliasDeclaration): ts.Type {
@@ -137,7 +187,7 @@ export class AST {
     // from the module path so we exclude the module path from the given path.
     // But since root will always start with `/src`, we want to catch the second `src`
     // inside the module.
-    const pathParts = sourceFile.fileName.split(path.sep)
+    const pathParts = path.resolve(sourceFile.fileName).split(path.sep)
     const srcIndex = pathParts.indexOf("src", 2)
 
     return {
@@ -148,7 +198,36 @@ export class AST {
   }
 
   public getDocFromSymbol(symbol: ts.Symbol): string {
-    return ts.displayPartsToString(symbol.getDocumentationComment(this.checker))
+    return this.getSymbolDoc(symbol).description
+  }
+
+  public getSymbolDoc(symbol: ts.Symbol): SymbolDoc {
+    const description = ts
+      .displayPartsToString(symbol.getDocumentationComment(this.checker))
+      .trim()
+
+    let deprecated: string | undefined
+    let hasDeprecatedTag = false
+
+    for (const tag of symbol.getJsDocTags()) {
+      if (tag.name !== "deprecated") continue
+
+      hasDeprecatedTag = true
+      const text =
+        tag.text?.map((part) => ("text" in part ? part.text : part)).join("") ??
+        ""
+      deprecated = text.trim()
+      break
+    }
+
+    if (!hasDeprecatedTag) {
+      return { description }
+    }
+
+    return {
+      description,
+      deprecated: deprecated ?? "",
+    }
   }
 
   public getSymbolOrThrow(node: ts.Node): ts.Symbol {
@@ -362,6 +441,83 @@ export class AST {
     }
   }
 
+  // Try to extract literal values (enum members, string/number/boolean/bigint
+  // literals) directly from the type checker. Returns undefined if the
+  // expression is not a literal.
+  private getLiteralValueFromExpression(
+    expression: ts.Expression,
+  ): string | number | boolean | bigint | undefined {
+    const type = this.checker.getTypeAtLocation(expression)
+    if (!type) {
+      return undefined
+    }
+
+    const resolveLiteral = (
+      t: ts.Type,
+    ): string | number | boolean | bigint | undefined => {
+      if (t.flags & ts.TypeFlags.BooleanLiteral) {
+        const intrinsic = t as unknown as { intrinsicName?: string }
+        // Handle boolean value
+        switch (intrinsic.intrinsicName) {
+          case "true":
+            return true
+          case "false":
+            return false
+        }
+      }
+
+      if (
+        t.flags &
+        (ts.TypeFlags.EnumLiteral |
+          ts.TypeFlags.StringLiteral |
+          ts.TypeFlags.NumberLiteral |
+          ts.TypeFlags.BigIntLiteral)
+      ) {
+        const literal = t as ts.LiteralType
+        if (literal.value !== undefined) {
+          return literal.value as string | number | bigint
+        }
+
+        // Some literals only expose `intrinsicName`. Example:
+        // const yes = true; function use(flag: boolean = yes) {}
+        // The checker reports `intrinsicName: "true"` without a `value`, so we fallback.
+        const intrinsic = literal as unknown as { intrinsicName?: string }
+        if (intrinsic.intrinsicName !== undefined) {
+          return intrinsic.intrinsicName as string
+        }
+      }
+
+      return undefined
+    }
+
+    if (type.isUnion()) {
+      // Walk union members to surface the literal. Example:
+      // ```ts
+      // const defaults = { proto: NetworkProtocol.Udp }
+      // function use(proto: NetworkProtocol = defaults.proto) {}
+      // ```
+      // The checker reports `defaults.proto` as `NetworkProtocol.Tcp | NetworkProtocol.Udp`,
+      // so we inspect each subtype to recover the actual default value.
+      for (const subtype of type.types) {
+        const literal = resolveLiteral(subtype)
+        if (literal !== undefined) {
+          return literal
+        }
+      }
+
+      return undefined
+    }
+
+    return resolveLiteral(type)
+  }
+
+  private warnUnresolvedDefaultValue(expression: ts.Expression): void {
+    console.warn(
+      `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value. 
+          The value will be ignored by the introspection and resolve at the runtime.`,
+    )
+  }
+
   public resolveParameterDefaultValue(expression: ts.Expression): any {
     const kind = expression.kind
 
@@ -379,36 +535,114 @@ export class AST {
       case ts.SyntaxKind.ArrayLiteralExpression:
         return eval(expression.getText())
       case ts.SyntaxKind.Identifier: {
-        // If the parameter is a reference to a variable, we try to resolve it using
-        // exported modules value.
-        const value = getValueByExportedName(
-          expression.getText(),
-          this.userModule,
-        )
-
-        if (value === undefined) {
+        const symbol = this.checker.getSymbolAtLocation(expression)
+        if (!symbol) {
           throw new IntrospectionError(
             `could not resolve default value reference to the variable: '${expression.getText()}' from ${AST.getNodePosition(expression)}. Is it exported by the module?`,
           )
         }
 
-        return this.resolveParameterDefaultValueTypeReference(expression, value)
-      }
-      case ts.SyntaxKind.PropertyAccessExpression: {
-        const accessors = expression.getText().split(".")
+        // Parse the default value from the variable declaration
+        // ```
+        // export const foo = "A"
+        //
+        // function bar(baz: string = foo) {}
+        // ```
+        const decl = symbol.valueDeclaration ?? symbol.declarations?.[0]
+        if (!decl) {
+          this.warnUnresolvedDefaultValue(expression)
 
-        let value = getValueByExportedName(accessors[0], this.userModule)
-        for (let i = 1; i < accessors.length; i++) {
-          value = value[accessors[i]]
+          return undefined
         }
 
-        return this.resolveParameterDefaultValueTypeReference(expression, value)
+        if (ts.isVariableDeclaration(decl) && decl.initializer) {
+          return this.resolveParameterDefaultValue(decl.initializer)
+        }
+
+        // Parse the default value from the enum member
+        // ```
+        // enum Foo {
+        //   A = "a"
+        // }
+        //
+        // function bar(baz: string = Foo.A) {}
+        // ```
+        if (ts.isEnumMember(decl)) {
+          const val = this.checker.getConstantValue(decl)
+          if (val !== undefined) return val
+          if (decl.initializer)
+            return this.resolveParameterDefaultValue(decl.initializer)
+        }
+
+        // Parse the default value from the import specifier
+        // ```
+        // import { foo } from "bar"
+        //
+        // function bar(baz: string = foo) {}
+        // ```
+        if (ts.isImportSpecifier(decl)) {
+          const aliased = this.checker.getAliasedSymbol(symbol)
+          const aliasedDecl =
+            aliased?.valueDeclaration ?? aliased?.declarations?.[0]
+          if (
+            aliasedDecl &&
+            ts.isVariableDeclaration(aliasedDecl) &&
+            aliasedDecl.initializer
+          ) {
+            return this.resolveParameterDefaultValue(aliasedDecl.initializer)
+          }
+        }
+
+        // Warn the user if the default value cannot be resolved
+        this.warnUnresolvedDefaultValue(expression)
+
+        return undefined
+      }
+      case ts.SyntaxKind.PropertyAccessExpression: {
+        const propertyAccess = expression as ts.PropertyAccessExpression
+
+        // Quick path: TypeScript already computed the literal value.
+        const directConstant = this.checker.getConstantValue(propertyAccess)
+        if (directConstant !== undefined) {
+          return directConstant
+        }
+
+        // Otherwise inspect the enum member backing the property accessor.
+        const nameSymbol = this.checker.getSymbolAtLocation(propertyAccess.name)
+        if (nameSymbol) {
+          const declarations = nameSymbol.declarations ?? []
+          const decls = nameSymbol.valueDeclaration
+            ? [nameSymbol.valueDeclaration, ...declarations]
+            : declarations
+
+          for (const decl of decls) {
+            if (ts.isEnumMember(decl)) {
+              const val = this.checker.getConstantValue(decl)
+              if (val !== undefined) {
+                return val
+              }
+
+              if (decl.initializer) {
+                return this.resolveParameterDefaultValue(decl.initializer)
+              }
+            }
+          }
+        }
+
+        // Fall back to literal type information if available.
+        const literal = this.getLiteralValueFromExpression(propertyAccess)
+        if (literal !== undefined) {
+          return literal
+        }
+
+        // Warn the user if the default value cannot be resolved.
+        this.warnUnresolvedDefaultValue(expression)
+
+        return undefined
       }
       default: {
-        console.warn(
-          `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value. 
-          The value will be ignored by the introspection and resolve at the runtime.`,
-        )
+        // Warn the user if the default value cannot be resolved
+        this.warnUnresolvedDefaultValue(expression)
       }
     }
   }

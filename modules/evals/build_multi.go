@@ -57,7 +57,7 @@ func buildMultiAssert(ctx context.Context, t testing.TB, llm *dagger.LLM) {
 
 	history, err := llm.History(ctx)
 	require.NoError(t, err)
-	if !strings.Contains(strings.Join(history, "\n"), "Container.withEnvVariable") {
+	if !strings.Contains(strings.Join(history, "\n"), "withEnvVariable") {
 		t.Error("should have used Container.withEnvVariable - use the right tool for the job!")
 	}
 

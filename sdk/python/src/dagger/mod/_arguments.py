@@ -5,6 +5,7 @@ import logging
 from cattrs.preconf.json import JsonConverter
 
 import dagger
+from dagger.mod._exceptions import BadUsageError
 from dagger.mod._types import APIName, ContextPath
 
 logger = logging.getLogger(__name__)
@@ -29,11 +30,36 @@ class Name:
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
+class DefaultAddress:
+    """If the argument is omitted, load it from the given container address.
+
+    Only applies to arguments of type :py:class:`dagger.Container`.
+
+    Mutually exclusive with setting a default value for the parameter. When
+    used within Python, the parameter should be required.
+
+    Example usage::
+
+        @function
+        def build(
+            self, ctr: Annotated[dagger.Container, DefaultAddress("alpine:latest")]
+        ): ...
+    """
+
+    address: str
+
+    def __str__(self) -> str:
+        return self.address
+
+
+@dataclasses.dataclass(slots=True, frozen=True)
 class DefaultPath:
     """If the argument is omitted, load it from the given path in the context directory.
 
-    Only applies to arguments of type :py:class:`dagger.Directory` or
-    :py:class:`dagger.File`.
+    Only applies to arguments of type
+    :py:class:`dagger.Directory`/:py:class:`dagger.File`
+    or :py:class:`dagger.GitRepository`/:py:class:`dagger.GitRef`.
+
 
     Mutually exclusive with setting a default value for the parameter. When
     used within Python, the parameter should be required.
@@ -42,6 +68,10 @@ class DefaultPath:
 
         @function
         def build(self, src: Annotated[dagger.Directory, DefaultPath("..")]): ...
+
+
+        @function
+        def build(self, src: Annotated[dagger.GitRef, DefaultPath("./.git")]): ...
     """
 
     from_context: ContextPath
@@ -76,6 +106,22 @@ class Ignore:
         return hash(tuple(self.patterns))
 
 
+@dataclasses.dataclass(slots=True, frozen=True)
+class Deprecated:
+    """Mark a function argument as deprecated.
+
+    Example usage::
+
+        @function
+        def old(self, value: Annotated[str, Deprecated("Use new instead")]): ...
+    """
+
+    reason: str = ""
+
+    def __str__(self) -> str:
+        return self.reason
+
+
 @dataclasses.dataclass(slots=True, kw_only=True)
 class Parameter:
     """Parameter from function signature in :py:class:`FunctionResolver`."""
@@ -91,7 +137,9 @@ class Parameter:
     doc: str | None = None
     ignore: list[str] | None = None
     default_path: ContextPath | None = None
+    default_address: str | None = None
     default_value: dagger.JSON | None = None
+    deprecated: str | None = None
 
     conv: dataclasses.InitVar[JsonConverter]
 
@@ -121,9 +169,18 @@ class Parameter:
 
     @property
     def is_optional(self) -> bool:
-        return self.has_default or self.default_path is not None or self.is_nullable
+        return any(
+            [
+                self.has_default,
+                self.default_path is not None,
+                self.default_address is not None,
+                self.is_nullable,
+            ]
+        )
 
     def _validate(self):
+        extra = {"parameter": self.signature}
+
         # These validations are already done by the engine, just repeating them
         # here for better error messages.
         if not self.is_nullable and self.has_default and self.signature.default is None:
@@ -131,17 +188,17 @@ class Parameter:
                 "Can't use a default value of None on a non-nullable type for "
                 f"parameter '{self.signature.name}'"
             )
-            raise ValueError(msg)
+            raise BadUsageError(msg, extra=extra)
 
         if self.default_path:
             if self.has_default and not (
                 self.is_nullable and self.signature.default is None
             ):
                 msg = (
-                    "Can't use DefaultPath with a default value for "
-                    f"parameter '{self.signature.name}'"
+                    f"DefaultPath can't be used in parameter '{self.signature.name}' "
+                    "since it already defines a default value."
                 )
-                raise AssertionError(msg)
+                raise BadUsageError(msg, extra=extra)
 
             if not self.default_path:
                 # NB: We could instead warn or just ignore, but it's better to fail
@@ -150,4 +207,11 @@ class Parameter:
                     "DefaultPath can't be used with an empty path in "
                     f"parameter '{self.signature.name}'"
                 )
-                raise ValueError(msg)
+                raise BadUsageError(msg, extra=extra)
+
+        if self.deprecated and not self.is_optional:
+            msg = (
+                f"Can't deprecate required parameter '{self.signature.name}'. "
+                "Mark it optional or provide a default value."
+            )
+            raise BadUsageError(msg, extra=extra)

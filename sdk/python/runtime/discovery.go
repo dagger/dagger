@@ -303,7 +303,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 
 	if d.EnableCustomConfig {
 		for _, name := range FileContents {
-			name := name
 			if d.HasFile(name) {
 				eg.Go(func() error {
 					contents, err := m.GetFile(name).Contents(gctx)
@@ -434,7 +433,7 @@ func (d *Discovery) findPythonVersion() string {
 // To completely override the base image in pyproject.toml:
 // ```toml
 // [tool.dagger]
-// base-image = "acme/my-python:3.11"
+// base-image = "acme/my-python:3.13"
 // ```
 // This can be useful to add customizations to the base image, such as
 // additional system dependencies, or just to use a different Python

@@ -28,7 +28,8 @@ final class DaggerObjectWithDaggerFunctions
         return true;
     }
 
-    #[DaggerFunction('this method returns 1')]
+    #[DaggerFunction]
+    #[Doc('this method returns 1')]
     public function returnInt(): int
     {
         return 1;

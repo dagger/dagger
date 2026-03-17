@@ -56,6 +56,9 @@ spec:
         runAsGroup: 1001
         fsGroup: 1001
         fsGroupChangePolicy: "OnRootMismatch"
+      {{- if .Values.engine.shareProcessNamespace }}
+      shareProcessNamespace: true
+      {{- end }}
       serviceAccountName: {{ include "dagger.serviceAccountName" . }}
       {{- if .Values.engine.priorityClassName }}
       priorityClassName: {{ .Values.engine.priorityClassName }}
@@ -99,14 +102,25 @@ spec:
               name: {{ include "dagger.fullname" . }}-magicache-token
               {{- end }}
           {{- end }}
-          {{- if .Values.engine.port }}
+          {{- if or .Values.engine.containerPorts .Values.engine.port }}
           ports:
+            {{- if .Values.engine.containerPorts }}
+            {{- range .Values.engine.containerPorts }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+              protocol: {{ .protocol | default "TCP" }}
+              {{- if .hostPort }}
+              hostPort: {{ .hostPort }}
+              {{- end }}
+            {{- end }}
+            {{- else if .Values.engine.port }}
             - name: dagger
               containerPort: {{ .Values.engine.port }}
               protocol: TCP
               {{- if .Values.engine.hostPort }}
               hostPort: {{ .Values.engine.hostPort }}
               {{- end }}
+            {{- end }}
           {{- end }}
           securityContext:
             privileged: true
@@ -131,6 +145,16 @@ spec:
             {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -exc
+                - |-
+                  dagger core version
+            {{- if .Values.engine.livenessProbeSettings }}
+            {{- toYaml .Values.engine.livenessProbeSettings | nindent 12 }}
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /var/lib/dagger
@@ -151,6 +175,9 @@ spec:
             {{- with .Values.engine.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+        {{- with .Values.engine.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
         {{- if .Values.engine.hostPath.dataVolume.enabled }}

@@ -62,7 +62,7 @@ class ListOfTypeTest extends TestCase
     public function itBuildsFromArrayReflections(
         ListOfType $expected,
         ReflectionNamedType $reflection,
-        Attribute\ListOfType $attribute,
+        Attribute\ListOfType|Attribute\ReturnsListOfType $attribute,
     ): void {
         $actual = ListOfType::fromReflection($reflection, $attribute);
 
@@ -184,6 +184,24 @@ class ListOfTypeTest extends TestCase
             ),
             $nullableArrayReflection,
             new Attribute\ListOfType(
+                new Attribute\ListOfType(
+                    new Attribute\ListOfType('string', true),
+                    true
+                ),
+                true,
+            ),
+        ];
+
+        yield 'ReturnsListOfType [[[String]]]' => [
+            new ListOfType(
+                new ListOfType(
+                    new ListOfType(new Type('string', true), true),
+                    true,
+                ),
+                true
+            ),
+            $nullableArrayReflection,
+            new Attribute\ReturnsListOfType(
                 new Attribute\ListOfType(
                     new Attribute\ListOfType('string', true),
                     true

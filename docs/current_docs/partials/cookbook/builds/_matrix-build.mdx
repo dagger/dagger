@@ -1,0 +1,73 @@
+### Perform a matrix build
+
+The following Dagger Function performs a matrix build.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/matrix-build/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/matrix-build/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/matrix-build/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/builds/matrix-build/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'build https://github.com/golang/example#master:hello | export /tmp/matrix-builds'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build https://github.com/golang/example#master:hello | export /tmp/matrix-builds
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call \
+    build --src="https://github.com/golang/example#master:hello" \
+    export --path=/tmp/matrix-builds
+```
+</TabItem>
+</Tabs>
+
+Inspect the contents of the exported directory with `tree /tmp/matrix-builds`. The output should look like this:
+
+```shell
+/tmp/matrix-builds
+└── build
+    ├── darwin
+    │   ├── amd64
+    │   │   └── hello
+    │   └── arm64
+    │       └── hello
+    └── linux
+        ├── amd64
+        │   └── hello
+        └── arm64
+            └── hello
+
+8 directories, 4 files
+```

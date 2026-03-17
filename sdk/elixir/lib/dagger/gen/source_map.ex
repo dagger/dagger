@@ -69,6 +69,17 @@ defmodule Dagger.SourceMap do
 
     Client.execute(source_map.client, query_builder)
   end
+
+  @doc """
+  The URL to the file, if any. This can be used to link to the source map in the browser.
+  """
+  @spec url(t()) :: {:ok, String.t()} | {:error, term()}
+  def url(%__MODULE__{} = source_map) do
+    query_builder =
+      source_map.query_builder |> QB.select("url")
+
+    Client.execute(source_map.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.SourceMap do

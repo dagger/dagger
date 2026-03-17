@@ -3,8 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
-	"regexp"
 
+	"github.com/dagger/dagger/util/scrub"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -21,7 +21,7 @@ func (*LLMReplayer) IsRetryable(err error) bool {
 }
 
 func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	if len(history) > 0 && history[0].Role == "system" && history[0].Content == defaultSystemPrompt {
+	if len(history) > 0 && history[0].Role == "system" {
 		// HACK: drop the default system prompt, since we don't return it in
 		// HistoryJSON
 		history = history[1:]
@@ -31,7 +31,7 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 	}
 	for i, message := range history {
 		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
-		if stabilizeContent(message.Content) != stabilizeContent(c.messages[i].Content) || message.Role != c.messages[i].Role {
+		if scrub.Stabilize(message.Content) != scrub.Stabilize(c.messages[i].Content) || message.Role != c.messages[i].Role {
 			return nil, fmt.Errorf(
 				"message history diverges at index %d:\n%s",
 				i,
@@ -46,10 +46,4 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, to
 		ToolCalls:  msg.ToolCalls,
 		TokenUsage: msg.TokenUsage,
 	}, nil
-}
-
-var xxh3Regexp = regexp.MustCompile("@xxh3:[a-f0-9]{16}")
-
-func stabilizeContent(content string) string {
-	return xxh3Regexp.ReplaceAllString(content, "@xxh3:0000000000000000")
 }

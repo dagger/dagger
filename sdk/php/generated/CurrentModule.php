@@ -14,6 +14,36 @@ namespace Dagger;
 class CurrentModule extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * The dependencies of the module.
+     */
+    public function dependencies(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
+    }
+
+    /**
+     * The generated files and directories made on top of the module source's context directory.
+     */
+    public function generatedContextDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all generators defined by the module
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this CurrentModule.
      */
     public function id(): CurrentModuleId
@@ -43,8 +73,12 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     /**
      * Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
      */
-    public function workdir(string $path, ?array $exclude = null, ?array $include = null): Directory
-    {
+    public function workdir(
+        string $path,
+        ?array $exclude = null,
+        ?array $include = null,
+        ?bool $gitignore = false,
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workdir');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $exclude) {
@@ -52,6 +86,9 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

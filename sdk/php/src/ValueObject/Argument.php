@@ -6,7 +6,10 @@ namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
 use Dagger\Client\IdAble;
+use Dagger\Exception\RegistrationError\MissingAttribute;
+use Dagger\Exception\UnsupportedType;
 use Dagger\Json;
+use ReflectionNamedType;
 use ReflectionParameter;
 use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 use RuntimeException;
@@ -38,22 +41,10 @@ final readonly class Argument
             $parameter->name,
         ));
 
-        /**
-         * @TODO remove once #[Argument] is removed
-         */
-        $argAttribute = (current($parameter
-            ->getAttributes(Attribute\Argument::class)) ?: null)
-            ?->newInstance()
-            ?->description;
-
         $description = (current($parameter
             ->getAttributes(Attribute\Doc::class)) ?: null)
             ?->newInstance()
             ?->description;
-
-        $listOfTypeAttribute = (current($parameter
-            ->getAttributes(Attribute\ListOfType::class)) ?: null)
-            ?->newInstance();
 
         $defaultPathAttribute = (current($parameter
             ->getAttributes(Attribute\DefaultPath::class)) ?: null)
@@ -65,26 +56,43 @@ final readonly class Argument
 
         return new self(
             name: $parameter->name,
-            description: $description ?? $argAttribute?->description ?? '',
-            type: $listOfTypeAttribute?->type === null ?
-                Type::fromReflection($type) :
-                ListOfType::fromReflection($type, $listOfTypeAttribute),
+            description: $description ?? '',
+            type: self::getType($parameter),
             default: self::getDefault($parameter),
             defaultPath: $defaultPathAttribute?->path,
             ignore: $ignoreAttribute?->ignore,
         );
     }
 
-    private static function getDefault(ReflectionParameter $parameter): ?Json
+    private static function getType(ReflectionParameter $parameter): ListOfType | Type
     {
-        if ($parameter->isDefaultValueAvailable()) {
-            $betterReflection = BetterReflectionParameter
-                ::createFromClassNameAndMethod(
-                    $parameter->getDeclaringClass()->getName(),
+        $type = $parameter->getType();
+
+        if (! $type instanceof ReflectionNamedType) {
+            throw new UnsupportedType(
+                'The PHP SDK only supports named types and nullable named types',
+            );
+        }
+
+        if ($type->getName() === 'array') {
+            $attribute = (current($parameter
+                ->getAttributes(Attribute\ListOfType::class)) ?: null)
+                ?->newInstance()
+                ?? throw MissingAttribute::listOfType(
                     $parameter->getDeclaringFunction()->getName(),
                     $parameter->getName(),
                 );
-            $default = $betterReflection->getDefaultValue();
+
+            return ListOfType::fromReflection($type, $attribute);
+        }
+
+        return Type::fromReflection($type);
+    }
+
+    private static function getDefault(ReflectionParameter $parameter): ?Json
+    {
+        if ($parameter->isDefaultValueAvailable()) {
+            $default = $parameter->getDefaultValue();
             return new Json(json_encode(
                 $default instanceof IdAble ? (string) $default->id() : $default
             ));

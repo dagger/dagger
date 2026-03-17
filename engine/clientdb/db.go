@@ -7,6 +7,7 @@ package clientdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 type DBTX interface {
@@ -20,12 +21,148 @@ func New(db DBTX) *Queries {
 	return &Queries{db: db}
 }
 
+func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
+	q := Queries{db: db}
+	var err error
+	if q.insertLogStmt, err = db.PrepareContext(ctx, insertLog); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLog: %w", err)
+	}
+	if q.insertMetricStmt, err = db.PrepareContext(ctx, insertMetric); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertMetric: %w", err)
+	}
+	if q.insertSpanStmt, err = db.PrepareContext(ctx, insertSpan); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSpan: %w", err)
+	}
+	if q.selectLogsBeneathSpanStmt, err = db.PrepareContext(ctx, selectLogsBeneathSpan); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectLogsBeneathSpan: %w", err)
+	}
+	if q.selectLogsSinceStmt, err = db.PrepareContext(ctx, selectLogsSince); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectLogsSince: %w", err)
+	}
+	if q.selectLogsTimespanStmt, err = db.PrepareContext(ctx, selectLogsTimespan); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectLogsTimespan: %w", err)
+	}
+	if q.selectMetricsSinceStmt, err = db.PrepareContext(ctx, selectMetricsSince); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectMetricsSince: %w", err)
+	}
+	if q.selectSpanStmt, err = db.PrepareContext(ctx, selectSpan); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectSpan: %w", err)
+	}
+	if q.selectSpansSinceStmt, err = db.PrepareContext(ctx, selectSpansSince); err != nil {
+		return nil, fmt.Errorf("error preparing query SelectSpansSince: %w", err)
+	}
+	return &q, nil
+}
+
+func (q *Queries) Close() error {
+	var err error
+	if q.insertLogStmt != nil {
+		if cerr := q.insertLogStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLogStmt: %w", cerr)
+		}
+	}
+	if q.insertMetricStmt != nil {
+		if cerr := q.insertMetricStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertMetricStmt: %w", cerr)
+		}
+	}
+	if q.insertSpanStmt != nil {
+		if cerr := q.insertSpanStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertSpanStmt: %w", cerr)
+		}
+	}
+	if q.selectLogsBeneathSpanStmt != nil {
+		if cerr := q.selectLogsBeneathSpanStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectLogsBeneathSpanStmt: %w", cerr)
+		}
+	}
+	if q.selectLogsSinceStmt != nil {
+		if cerr := q.selectLogsSinceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectLogsSinceStmt: %w", cerr)
+		}
+	}
+	if q.selectLogsTimespanStmt != nil {
+		if cerr := q.selectLogsTimespanStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectLogsTimespanStmt: %w", cerr)
+		}
+	}
+	if q.selectMetricsSinceStmt != nil {
+		if cerr := q.selectMetricsSinceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectMetricsSinceStmt: %w", cerr)
+		}
+	}
+	if q.selectSpanStmt != nil {
+		if cerr := q.selectSpanStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectSpanStmt: %w", cerr)
+		}
+	}
+	if q.selectSpansSinceStmt != nil {
+		if cerr := q.selectSpansSinceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing selectSpansSinceStmt: %w", cerr)
+		}
+	}
+	return err
+}
+
+func (q *Queries) exec(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (sql.Result, error) {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).ExecContext(ctx, args...)
+	case stmt != nil:
+		return stmt.ExecContext(ctx, args...)
+	default:
+		return q.db.ExecContext(ctx, query, args...)
+	}
+}
+
+func (q *Queries) query(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (*sql.Rows, error) {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
+	case stmt != nil:
+		return stmt.QueryContext(ctx, args...)
+	default:
+		return q.db.QueryContext(ctx, query, args...)
+	}
+}
+
+func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) *sql.Row {
+	switch {
+	case stmt != nil && q.tx != nil:
+		return q.tx.StmtContext(ctx, stmt).QueryRowContext(ctx, args...)
+	case stmt != nil:
+		return stmt.QueryRowContext(ctx, args...)
+	default:
+		return q.db.QueryRowContext(ctx, query, args...)
+	}
+}
+
 type Queries struct {
-	db DBTX
+	db                        DBTX
+	tx                        *sql.Tx
+	insertLogStmt             *sql.Stmt
+	insertMetricStmt          *sql.Stmt
+	insertSpanStmt            *sql.Stmt
+	selectLogsBeneathSpanStmt *sql.Stmt
+	selectLogsSinceStmt       *sql.Stmt
+	selectLogsTimespanStmt    *sql.Stmt
+	selectMetricsSinceStmt    *sql.Stmt
+	selectSpanStmt            *sql.Stmt
+	selectSpansSinceStmt      *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db: tx,
+		db:                        tx,
+		tx:                        tx,
+		insertLogStmt:             q.insertLogStmt,
+		insertMetricStmt:          q.insertMetricStmt,
+		insertSpanStmt:            q.insertSpanStmt,
+		selectLogsBeneathSpanStmt: q.selectLogsBeneathSpanStmt,
+		selectLogsSinceStmt:       q.selectLogsSinceStmt,
+		selectLogsTimespanStmt:    q.selectLogsTimespanStmt,
+		selectMetricsSinceStmt:    q.selectMetricsSinceStmt,
+		selectSpanStmt:            q.selectSpanStmt,
+		selectSpansSinceStmt:      q.selectSpansSinceStmt,
 	}
 }

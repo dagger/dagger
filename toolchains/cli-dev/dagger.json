@@ -1,0 +1,26 @@
+{
+  "name": "cli-dev",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
+  ],
+  "dependencies": [
+    {
+      "name": "alpine",
+      "source": "../../modules/alpine"
+    },
+    {
+      "name": "go",
+      "source": "../go"
+    },
+    {
+      "name": "version",
+      "source": "../../version"
+    }
+  ]
+}

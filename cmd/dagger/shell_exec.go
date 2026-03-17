@@ -11,8 +11,9 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/gitutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/attribute"
@@ -179,12 +180,17 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 
 		// Having a span for each handler makes it much easier to debug what
 		// the shell is doing.
-		ctx, span := Tracer().Start(ctx, args[0],
-			// Don't show span by default unless there's an error or we're debugging.
-			telemetry.Passthrough(),
-			trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)),
-		)
-		defer telemetry.End(span, func() error {
+		opts := make([]trace.SpanStartOption, 0, 2)
+		opts = append(opts, trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)))
+		// Don't show span by default unless there's an error or we're debugging
+		// (with `.debug`).
+		if !h.Debug() {
+			opts = append(opts, telemetry.Passthrough())
+		}
+		ctx, span := Tracer().Start(ctx, args[0], opts...)
+		defer telemetry.EndWithCause(span, &rerr)
+
+		defer func() {
 			if cascadingErr {
 				// Early exit if an error is passed through stdin.
 				span.SetAttributes(
@@ -197,7 +203,6 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				// part of the script triggered it.
 				attrs := []attribute.KeyValue{
 					attribute.Bool(telemetry.UIPassthroughAttr, false),
-					attribute.Bool(telemetry.UIRevealAttr, true),
 				}
 				var he *HandlerError
 				if errors.As(rerr, &he) {
@@ -205,8 +210,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				}
 				span.SetAttributes(attrs...)
 			}
-			return rerr
-		})
+		}()
 
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
@@ -516,10 +520,32 @@ func (h *shellCallHandler) shellPreprocessArgs(
 	))
 
 	opts := fn.OptionalArgs()
+	reqs := fn.RequiredArgs()
 
 	// All CLI arguments are strings at first, but booleans can be omitted.
 	// We don't wan't to process values yet, just validate and consume the flags
 	// so we get the remaining positional args.
+
+	// Add required arguments as flags so they can be specified as named arguments
+	for _, arg := range reqs {
+		name := arg.FlagName()
+
+		switch arg.TypeDef.Kind {
+		case dagger.TypeDefKindListKind:
+			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
+			case dagger.TypeDefKindBooleanKind:
+				flags.BoolSlice(name, nil, "")
+			default:
+				flags.StringSlice(name, nil, "")
+			}
+		case dagger.TypeDefKindBooleanKind:
+			flags.Bool(name, false, "")
+		default:
+			flags.String(name, "", "")
+		}
+	}
+
+	// Add optional arguments as flags
 	for _, arg := range opts {
 		name := arg.FlagName()
 
@@ -541,8 +567,6 @@ func (h *shellCallHandler) shellPreprocessArgs(
 	if err := flags.Parse(args); err != nil {
 		return values, args, checkErrHelp(err, args)
 	}
-
-	reqs := fn.RequiredArgs()
 
 	// A command for with-exec could include a `--`, but it's only if it's
 	// the first positional argument that means we've stopped processing our
@@ -569,19 +593,44 @@ func (h *shellCallHandler) shellPreprocessArgs(
 		}
 		values[name] = results
 	} else {
-		// Normal use case. Positional arguments should match number of required function arguments
-		if err := ExactArgs(len(reqs))(pos); err != nil {
-			return values, args, err
+		// Collect which required arguments were provided as named flags
+		providedAsFlags := make(map[string]bool)
+		for _, arg := range reqs {
+			flag := flags.Lookup(arg.FlagName())
+			if flag != nil && flag.Changed {
+				providedAsFlags[arg.FlagName()] = true
+			}
 		}
+
+		// Calculate how many required arguments still need to be filled by positional args
+		remainingRequiredCount := len(reqs) - len(providedAsFlags)
+
+		// Validate that we have the right number of positional arguments
+		// for the remaining required arguments
+		if len(pos) != remainingRequiredCount {
+			return values, args, fmt.Errorf("requires %d positional argument(s), received %d", remainingRequiredCount, len(pos))
+		}
+
 		a = make([]string, 0, len(fn.Args))
-		// Use the `=` syntax so that each element in the args list corresponds
-		// to a single argument instead of two.
-		for i, arg := range reqs {
-			a = append(a, fmt.Sprintf("--%s=%v", arg.FlagName(), pos[i]))
+
+		// Process required arguments in order, using positional args for those
+		// not provided as named flags
+		posIndex := 0
+		for _, arg := range reqs {
+			flagName := arg.FlagName()
+			if providedAsFlags[flagName] {
+				// This required argument was provided as a named flag
+				// It will be handled in the flags.Visit loop below
+				continue
+			} else if posIndex < len(pos) {
+				// This required argument needs to be filled from positional args
+				a = append(a, fmt.Sprintf("--%s=%v", flagName, pos[posIndex]))
+				posIndex++
+			}
 		}
 	}
 
-	// Add all the optional flags
+	// Add all the flags (both required and optional that were specified)
 	flags.Visit(func(f *pflag.Flag) {
 		if !f.Changed {
 			return
@@ -633,7 +682,7 @@ func (h *shellCallHandler) parseArgumentValues(
 
 	// Flag processing can be a source of bugs so it's very useful to be
 	// able to debug this step but excessive on default verbosity.
-	if debug && verbose > 3 && !slices.Equal(args, newArgs) {
+	if debugFlag && verbose > 3 && !slices.Equal(args, newArgs) {
 		dbgArgs := []any{
 			"function", fn.CmdName(),
 			"before", args,
@@ -782,7 +831,7 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 			case Directory, File:
 				// Ignore on git urls since the flag will parse it directly.
 				// We just need to resolve the ref for "local" (contextual) paths.
-				if _, err := parseGitURL(value); err != nil {
+				if _, err := gitutil.ParseURL(value); err != nil {
 					if newPath, err := h.contextArgRef(value); err == nil {
 						return newPath, false, nil
 					}

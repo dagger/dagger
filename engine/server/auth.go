@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	bksession "github.com/moby/buildkit/session"
-	bkauth "github.com/moby/buildkit/session/auth"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

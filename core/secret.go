@@ -6,9 +6,10 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/secrets"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/grpc/codes"
@@ -48,62 +49,95 @@ func (secret *Secret) Clone() *Secret {
 
 type SecretStore struct {
 	bkSessionManager *bksession.Manager
-	secrets          map[digest.Digest]dagql.Instance[*Secret]
-	mu               sync.RWMutex
+
+	// secrets are keyed by canonical digest (content digest when set,
+	// otherwise recipe digest).
+	secrets map[digest.Digest]dagql.ObjectResult[*Secret]
+	// aliases from any seen secret ID digest (recipe or canonical) to canonical.
+	canonicalDigestByIDDigest map[digest.Digest]digest.Digest
+
+	mu sync.RWMutex
 }
 
 func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 	return &SecretStore{
-		secrets:          map[digest.Digest]dagql.Instance[*Secret]{},
-		bkSessionManager: bkSessionManager,
+		secrets:                   map[digest.Digest]dagql.ObjectResult[*Secret]{},
+		canonicalDigestByIDDigest: map[digest.Digest]digest.Digest{},
+		bkSessionManager:          bkSessionManager,
 	}
 }
 
-func (store *SecretStore) AddSecret(secret dagql.Instance[*Secret]) error {
-	if secret.Self == nil {
+func SecretIDDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return ""
+	}
+	if contentDigest := id.ContentDigest(); contentDigest != "" {
+		return contentDigest
+	}
+	return id.Digest()
+}
+
+func SecretDigest(secret dagql.ObjectResult[*Secret]) digest.Digest {
+	return SecretIDDigest(secret.ID())
+}
+
+func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
+	if secret.Self() == nil {
 		return fmt.Errorf("secret must not be nil")
 	}
 
-	if secret.Self.URI != "" {
-		_, _, err := secretprovider.ResolverForID(secret.Self.URI)
+	if secret.Self().URI != "" {
+		_, _, err := secretprovider.ResolverForID(secret.Self().URI)
 		if err != nil {
 			return err
 		}
 	}
 
+	canonicalDigest := SecretDigest(secret)
+	if canonicalDigest == "" {
+		return fmt.Errorf("secret must have a digest")
+	}
+	idDigest := secret.ID().Digest()
+
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.secrets[secret.ID().Digest()] = secret
+	store.secrets[canonicalDigest] = secret
+	store.canonicalDigestByIDDigest[canonicalDigest] = canonicalDigest
+	if idDigest != "" {
+		store.canonicalDigestByIDDigest[idDigest] = canonicalDigest
+	}
 	return nil
 }
 
-func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret dagql.Instance[*Secret]) error {
-	secretIDDgst := secret.ID().Digest()
-
-	srcStore.mu.RLock()
-	srcSecret, ok := srcStore.secrets[secretIDDgst]
-	srcStore.mu.RUnlock()
+func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret dagql.ObjectResult[*Secret]) error {
+	secretDgst := SecretDigest(secret)
+	srcSecret, ok := srcStore.GetSecret(secretDgst)
 	if !ok {
-		return fmt.Errorf("secret %s not found in source store", secretIDDgst)
+		return fmt.Errorf("secret %s not found in source store", secretDgst)
 	}
+	return store.AddSecret(srcSecret)
+}
 
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.secrets[secretIDDgst] = srcSecret
-	return nil
+func (store *SecretStore) secretByDigest(idDgst digest.Digest) (dagql.ObjectResult[*Secret], bool) {
+	canonicalDigest, ok := store.canonicalDigestByIDDigest[idDgst]
+	if !ok {
+		canonicalDigest = idDgst
+	}
+	secret, ok := store.secrets[canonicalDigest]
+	return secret, ok
 }
 
 func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	_, ok := store.secrets[idDgst]
+	_, ok := store.secretByDigest(idDgst)
 	return ok
 }
 
-func (store *SecretStore) GetSecret(idDgst digest.Digest) (inst dagql.Instance[*Secret], ok bool) {
+func (store *SecretStore) GetSecret(idDgst digest.Digest) (inst dagql.ObjectResult[*Secret], ok bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	secret, ok := store.secrets[idDgst]
+	secret, ok := store.secretByDigest(idDgst)
 	if !ok {
 		return inst, false
 	}
@@ -113,35 +147,35 @@ func (store *SecretStore) GetSecret(idDgst digest.Digest) (inst dagql.Instance[*
 func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	secret, ok := store.secrets[idDgst]
+	secret, ok := store.secretByDigest(idDgst)
 	if !ok {
 		return "", false
 	}
-	return secret.Self.Name, true
+	return secret.Self().Name, true
 }
 
 func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	secret, ok := store.secrets[idDgst]
+	secret, ok := store.secretByDigest(idDgst)
 	if !ok {
 		return "", false
 	}
-	return secret.Self.URI, true
+	return secret.Self().URI, true
 }
 
 func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	secret, ok := store.secrets[idDgst]
+	secret, ok := store.secretByDigest(idDgst)
 	if !ok {
 		return "", false
 	}
-	if secret.Self.URI != "" {
-		return secret.Self.URI, true
+	if secret.Self().URI != "" {
+		return secret.Self().URI, true
 	}
-	if secret.Self.Name != "" {
-		return secret.Self.Name, true
+	if secret.Self().Name != "" {
+		return secret.Self().Name, true
 	}
 	return "", true
 }
@@ -149,12 +183,12 @@ func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool
 func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.Digest) ([]byte, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	secret, ok := store.secrets[idDgst]
+	secret, ok := store.secretByDigest(idDgst)
 	if !ok {
 		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
 	}
 
-	return store.GetSecretPlaintextDirect(ctx, secret.Self)
+	return store.GetSecretPlaintextDirect(ctx, secret.Self())
 }
 
 // GetSecretPlaintextDirect returns the plaintext of the given secret, even if it's not in the store yet.

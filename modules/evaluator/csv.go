@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"dagger/botsbuildingbots/internal/dagger"
-	"dagger/botsbuildingbots/internal/telemetry"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -12,13 +11,32 @@ import (
 	"strconv"
 	"strings"
 
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (result *EvalsAcrossModels) CSV(
-	// Don't include a header.
+// CSV exports evaluation results to CSV format for analysis and comparison.
+//
+// This function generates a CSV representation of all evaluation results across
+// models, including performance metrics, token usage, and trace information for
+// debugging. The CSV includes the following columns:
+//
+// - model: The name of the AI model tested
+// - eval: The name of the evaluation that was run
+// - input_tokens: Number of input tokens used
+// - output_tokens: Number of output tokens generated
+// - total_attempts: Total number of evaluation attempts made
+// - success_rate: Success rate as a decimal (0.0 to 1.0)
+// - trace_id: Unique identifier for the trace
+// - model_span_id: Span ID for the model execution
+// - eval_span_id: Span ID for the specific evaluation
+//
+// The CSV format makes it easy to import results into spreadsheet applications,
+// databases, or data analysis tools for further processing.
+func (evals *EvalsAcrossModels) CSV(
+	// Don't include a header row in the CSV output.
 	// +default=false
 	noHeader bool,
 ) string {
@@ -37,7 +55,7 @@ func (result *EvalsAcrossModels) CSV(
 			"eval_span_id",
 		})
 	}
-	for _, modelResult := range result.ModelResults {
+	for _, modelResult := range evals.ModelResults {
 		for _, evalResult := range modelResult.EvalReports {
 			csvW.Write([]string{
 				modelResult.ModelName,
@@ -46,7 +64,7 @@ func (result *EvalsAcrossModels) CSV(
 				fmt.Sprintf("%d", evalResult.OutputTokens),
 				fmt.Sprintf("%d", evalResult.TotalAttempts),
 				fmt.Sprintf("%0.2f", evalResult.SuccessRate),
-				result.TraceID,
+				evals.TraceID,
 				modelResult.SpanID,
 				evalResult.SpanID,
 			})
@@ -56,9 +74,20 @@ func (result *EvalsAcrossModels) CSV(
 	return buf.String()
 }
 
+// Compare two CSV evaluation reports and generate an analysis.
+//
+// This function takes two CSV files containing evaluation results (typically from
+// different runs or with different system prompts) and generates a detailed
+// comparison report. The comparison includes success rate changes, token usage
+// differences, and trace links for debugging.
+//
+// The generated report is analyzed by an LLM to provide insights into the differences
+// and their potential causes.
 func (m *Evaluator) Compare(
 	ctx context.Context,
+	// The CSV file containing the baseline evaluation results.
 	before *dagger.File,
+	// The CSV file containing the new evaluation results to compare against.
 	after *dagger.File,
 ) (string, error) {
 	// Parse the before and after CSV files to extract data
@@ -82,7 +111,7 @@ func (m *Evaluator) Compare(
 			attribute.String(telemetry.UIMessageAttr, "received"),
 			attribute.String(telemetry.UIActorEmojiAttr, "📝"),
 		))
-	defer telemetry.End(span, func() error { return nil })
+	defer telemetry.End(span, func() error { return nil }) //nolint:staticcheck
 
 	stdio := telemetry.SpanStdio(ctx, "", log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
@@ -108,7 +137,6 @@ func (m *Evaluator) Compare(
 		successRateComparison := formatComparison(
 			beforeStats.successRate*100,
 			afterStats.successRate*100,
-			true, // Higher is better for success rate
 			"%0.0f%%",
 		)
 
@@ -116,7 +144,6 @@ func (m *Evaluator) Compare(
 		attemptsComparison := formatComparison(
 			float64(beforeStats.totalAttempts),
 			float64(afterStats.totalAttempts),
-			false, // Lower is better for attempts
 			"%0.0f",
 		)
 
@@ -124,7 +151,6 @@ func (m *Evaluator) Compare(
 		inputTokensComparison := formatComparison(
 			beforeStats.inputTokensPerAttempt,
 			afterStats.inputTokensPerAttempt,
-			false, // Lower is better for tokens
 			"%.1f",
 		)
 
@@ -132,7 +158,6 @@ func (m *Evaluator) Compare(
 		outputTokensComparison := formatComparison(
 			beforeStats.outputTokensPerAttempt,
 			afterStats.outputTokensPerAttempt,
-			false, // Lower is better for tokens
 			"%.1f",
 		)
 
@@ -276,7 +301,7 @@ func aggregateData(records [][]string) map[string]aggregateStats {
 	return result
 }
 
-func formatComparison(before, after float64, higherIsBetter bool, format string) string {
+func formatComparison(before, after float64, format string) string {
 	if before == after {
 		return fmt.Sprintf(format, before)
 	}

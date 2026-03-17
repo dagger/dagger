@@ -1,9 +1,9 @@
-/vendor/
+.cache/
+vendor/
 
-/.php-cs-fixer.php
-/.php-cs-fixer.cache
+.php-cs-fixer.php
+.php-cs-fixer.cache
+phpstan.neon
+phpunit.xml
 
-.phpunit.result.cache
-/phpunit.xml
-
-/docker-compose.override.yml
+docker-compose.override.yml

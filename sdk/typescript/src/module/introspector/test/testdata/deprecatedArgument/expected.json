@@ -1,0 +1,63 @@
+{
+  "name": "DeprecatedArgument",
+  "objects": {
+    "DeprecationArgs": {
+      "name": "DeprecationArgs",
+      "description": "",
+      "methods": {
+        "legacy": {
+          "name": "legacy",
+          "description": "",
+          "arguments": {
+            "other": {
+              "name": "other",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "input": {
+              "name": "input",
+              "description": "",
+              "deprecated": "Use `other` instead.",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "current": {
+          "name": "current",
+          "description": "",
+          "arguments": {
+            "other": {
+              "name": "other",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

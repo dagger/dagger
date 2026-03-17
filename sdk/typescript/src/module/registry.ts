@@ -24,12 +24,21 @@ export type ArgumentOptions = {
   /**
    * The contextual value to use for the argument.
    *
-   * This should only be used for Directory or File types.
+   * This should only be used for Directory/File or GitRepository/GitRef types.
    *
-   * An abslute path would be related to the context source directory (the git repo root or the module source root).
+   * An absolute path would be related to the context source directory (the git repo root or the module source root).
    * A relative path would be relative to the module source root.
    */
   defaultPath?: string
+
+  /**
+   * The default container address to use for the argument.
+   *
+   * This should only be used for Container types.
+   *
+   * If the argument is not set, the container will be loaded from this address.
+   */
+  defaultAddress?: string
 
   /**
    * Patterns to ignore when loading the contextual argument value.
@@ -37,6 +46,22 @@ export type ArgumentOptions = {
    * This should only be used for Directory types.
    */
   ignore?: string[]
+}
+
+export type FunctionOptions = {
+  /**
+   * The caching behavior of this function.
+   * "never" means no caching.
+   * "session" means caching only for the duration of the current client's session.
+   * A duration string (e.g., "5m", "1h") means persistent caching for that duration.
+   * By default, caching is enabled with a long default set by the engine.
+   */
+  cache?: "never" | "session" | string
+
+  /**
+   * An optional alias to use for the function when exposed on the API.
+   */
+  alias?: string
 }
 
 /**
@@ -69,6 +94,8 @@ export class Registry {
   /**
    * The definition of the @enum decorator that should be on top of any
    * class module that must be exposed to the Dagger API as enumeration.
+   *
+   * @deprecated In favor of using TypeScript `enum` types.
    */
   enumType = (): (<T extends Class>(constructor: T) => T) => {
     return <T extends Class>(constructor: T): T => {
@@ -94,8 +121,38 @@ export class Registry {
    * class' method that must be exposed to the Dagger API.
    */
   func = (
-    alias?: string,
+    opts?: FunctionOptions | string,
   ): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
+  /**
+   * The definition of @check decorator that marks a function as a check.
+   */
+  check = (): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor?: PropertyDescriptor,
+    ) => {}
+  }
+
+  /**
+   * The definition of @generate decorator that marks a function as a generator.
+   */
+  generate = (): ((
     target: object,
     propertyKey: string | symbol,
     descriptor?: PropertyDescriptor,

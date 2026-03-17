@@ -82,6 +82,20 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  Returns details for the latest semver tag.
+  """
+  @spec latest_version(t()) :: Dagger.GitRef.t()
+  def latest_version(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("latestVersion")
+
+    %Dagger.GitRef{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
   Returns details of a ref.
   """
   @spec ref(t(), String.t()) :: Dagger.GitRef.t()
@@ -122,42 +136,29 @@ defmodule Dagger.GitRepository do
     Client.execute(git_repository.client, query_builder)
   end
 
-  @deprecated """
-  Use \\"httpAuthHeader\\" in the constructor instead.
-  """
   @doc """
-  Header to authenticate the remote with.
+  Returns the changeset of uncommitted changes in the git repository.
   """
-  @spec with_auth_header(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
-  def with_auth_header(%__MODULE__{} = git_repository, header) do
+  @spec uncommitted(t()) :: Dagger.Changeset.t()
+  def uncommitted(%__MODULE__{} = git_repository) do
     query_builder =
-      git_repository.query_builder
-      |> QB.select("withAuthHeader")
-      |> QB.put_arg("header", Dagger.ID.id!(header))
+      git_repository.query_builder |> QB.select("uncommitted")
 
-    %Dagger.GitRepository{
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: git_repository.client
     }
   end
 
-  @deprecated """
-  Use \\"httpAuthToken\\" in the constructor instead.
-  """
   @doc """
-  Token to authenticate the remote with.
+  The URL of the git repository.
   """
-  @spec with_auth_token(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
-  def with_auth_token(%__MODULE__{} = git_repository, token) do
+  @spec url(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def url(%__MODULE__{} = git_repository) do
     query_builder =
-      git_repository.query_builder
-      |> QB.select("withAuthToken")
-      |> QB.put_arg("token", Dagger.ID.id!(token))
+      git_repository.query_builder |> QB.select("url")
 
-    %Dagger.GitRepository{
-      query_builder: query_builder,
-      client: git_repository.client
-    }
+    Client.execute(git_repository.client, query_builder)
   end
 end
 

@@ -15,8 +15,8 @@ class ExtPythonSdk:
         gitattrs = await dag.current_module().source().file(".gitattributes").contents()
         return (
             dag.generated_code(sdk.container().directory(await sdk.context_dir_path()))
-            .with_vcs_generated_paths("\n".split(gitattrs))
-            .with_vcs_ignored_paths("\n".split(gitignore))
+            .with_vcs_generated_paths(gitattrs.split("\n"))
+            .with_vcs_ignored_paths(gitignore.split("\n"))
         )
 
     @dagger.function
@@ -26,6 +26,19 @@ class ExtPythonSdk:
         introspection_json: dagger.File,
     ) -> dagger.Container:
         return self.common(mod_source, introspection_json).with_install().container()
+
+    @dagger.function
+    def module_defs(
+        self,
+        mod_source: dagger.ModuleSource,
+        introspection_json: dagger.File,
+        output_file_path: str,
+    ) -> dagger.Container:
+        return (
+            self.module_runtime(mod_source, introspection_json)
+            .with_env_variable("DAGGER_MODULE_FILE", output_file_path)
+            .with_entrypoint(["/runtime", "--register"])
+        )
 
     def common(
         self,

@@ -1,10 +1,8 @@
 {
   "name": "git-dep",
-  "sdk": "../extended",
-  "exclude": [
-    ".venv",
-    "sdk"
-  ],
-  "source": ".",
-  "engineVersion": "v0.13.6"
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "../extended"
+  },
+  "disableDefaultFunctionCaching": true
 }

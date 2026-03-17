@@ -1,5 +1,7 @@
 package io.dagger.client.engineconn;
 
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.context.Context;
 import io.smallrye.graphql.client.dynamic.api.DynamicGraphQLClient;
 import io.smallrye.graphql.client.vertx.dynamic.VertxDynamicGraphQLClientBuilder;
 import io.vertx.core.Vertx;
@@ -76,14 +78,22 @@ public final class Connection {
 
   private static Connection getConnection(int port, String token, Optional<CLIRunner> runner) {
     Vertx vertx = Vertx.vertx();
+    // Inject Dagger Cloud token
     String encodedToken =
         Base64.getEncoder().encodeToString((token + ":").getBytes(StandardCharsets.UTF_8));
-    DynamicGraphQLClient dynamicGraphQLClient =
+
+    VertxDynamicGraphQLClientBuilder clientBuilder =
         new VertxDynamicGraphQLClientBuilder()
             .vertx(vertx)
             .url(String.format("http://127.0.0.1:%d/query", port))
-            .header("authorization", "Basic " + encodedToken)
-            .build();
-    return new Connection(dynamicGraphQLClient, vertx, runner);
+            .header("authorization", String.format("Basic %s", encodedToken));
+
+    // Inject OpenTelemetry context into headers
+    GlobalOpenTelemetry.getPropagators()
+        .getTextMapPropagator()
+        .inject(
+            Context.current(), clientBuilder, (carrier, key, value) -> carrier.header(key, value));
+
+    return new Connection(clientBuilder.build(), vertx, runner);
   }
 }

@@ -2,10 +2,13 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,17 +24,17 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 )
 
@@ -54,7 +57,7 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, `The "foo-bar" SDK does not exist.`)
+		requireErrOut(t, err, `invalid SDK: "foo-bar"`)
 	})
 
 	t.Run("specifying version with either of go/python/typescript sdk returns error", func(ctx context.Context, t *testctx.T) {
@@ -262,8 +265,6 @@ export class Test {
 			},
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s with %d files (#%d)", tc.sdk, len(tc.sources), i+1), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -272,7 +273,6 @@ export class Test {
 				WithWorkdir("/work")
 
 			for _, src := range tc.sources {
-				src := src
 				modGen = modGen.WithNewFile(src.file, heredoc.Doc(src.contents))
 			}
 
@@ -369,8 +369,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)
@@ -472,8 +470,6 @@ export class Test {
 			expected: "\"test\", , \"foo\", null, \"bar\"",
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -620,8 +616,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -689,8 +683,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -894,8 +886,8 @@ from dagger import dag
 @dagger.object_type
 class Test:
     @dagger.function
-    def use_hello(self) -> str:
-        return dag.dep().hello()
+    async def use_hello(self) -> str:
+        return await dag.dep().hello()
 `
 
 var useTSOuter = `
@@ -930,8 +922,6 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			source: useTSOuter,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -985,8 +975,6 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			changed:  strings.ReplaceAll(useTSOuter, `.hello()`, `.hellov2()`),
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1046,8 +1034,6 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 			source: useTSOuter,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1139,8 +1125,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1321,8 +1305,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				ctr := modInit(t, c, tc.sdk, tc.source)
@@ -1432,8 +1414,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1498,8 +1478,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				var logs safeBuffer
 				c := connect(ctx, t, dagger.WithLogOutput(&logs))
@@ -1686,8 +1664,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1798,8 +1774,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: goodIDArgTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1823,8 +1797,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: badIDFieldTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1856,8 +1828,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: badIDFnTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1913,6 +1883,79 @@ func (p *Playground) DoThing(ctx context.Context) error {
 }
 
 func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
+	t.Run("generatedContextDirectory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", `package main
+
+			import "context"
+			import "dagger/test/internal/dagger"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) *dagger.Directory {
+				return dag.CurrentModule().GeneratedContextDirectory()
+			}
+			`,
+			).
+			With(daggerCall("fn", "export", "--path=./out")).
+			Directory("out").
+			Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "dagger.gen.go")
+	})
+
+	t.Run("dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "depA")).
+			With(daggerExec("init", "--sdk=go", "depB")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("install", "./depA")).
+			With(daggerExec("install", "./depB")).
+			WithNewFile("/work/main.go", `package main
+
+			import "context"
+			import "sort"
+			import "strings"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) {
+				deps, err := dag.CurrentModule().Dependencies(ctx)
+				if err != nil {
+					return "", err
+				}
+
+				var depNames []string
+				for _, dep := range deps {
+					depName, err := dep.Name(ctx)
+					if err != nil {
+						return "", err
+					}
+
+					depNames = append(depNames, depName)
+				}
+
+				sort.Strings(depNames)
+
+				return strings.Join(depNames, ","), nil
+			}
+			`,
+			).
+			With(daggerCall("fn")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out, "depA,depB")
+	})
+
 	t.Run("name", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -2117,10 +2160,31 @@ func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
 			WithNewFile("main.go", `package main
 
 import (
+	"context"
+	"encoding/json"
+
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	mod := modSource.WithSDK("go").AsModule()
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
+}
 
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
@@ -2195,79 +2259,45 @@ func (m *Test) Fn() string {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/coolsdk").
 			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
-			// we override the go sdk's dagger.gen.go with this custom one that tests functionality
-			// during init
-			WithNewFile("fixedsrc/dagger.gen.go", `package main
+			WithNewFile("main.go", `package main
+
 import (
 	"context"
 	"encoding/json"
 
-	"dagger/test/internal/dagger"
-)
-
-var dag = dagger.Connect()
-
-func main() {
-	ctx := context.Background()
-
-	fnCall := dag.CurrentFunctionCall()
-
-	// verify execs work
-	_, err := dag.Container().From("`+alpineImage+`").
-		WithExec([]string{"true"}).
-		Sync(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// verify CurrentModule().Source() works
-	_, err = dag.CurrentModule().Source().File("main.go").Contents(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
-	result := dag.Module().WithObject(dag.TypeDef().
-		WithObject("Test").
-		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))),
-	)
-
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		panic(err)
-	}
-}
-`).
-			WithNewFile("main.go", `package main
-
-import (
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
 
+
+func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
+	mod := dag.Module().WithObject(dag.TypeDef().
+		WithObject("Test").
+		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))))
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
+}
+
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
-	ctxDir := m.generatedCtx(modSource)
-	return dag.Container().From("`+golangImage+`").
-		WithMountedDirectory("/work", ctxDir).
-		WithWorkdir("/work").
-		WithExec([]string{"go", "build", "-o", "/runtime", "."}).
-		WithEntrypoint([]string{"/runtime"})
+	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
 }
 
 func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
-	return dag.GeneratedCode(m.generatedCtx(modSource))
-}
-
-func (m *CoolSdk) generatedCtx(modSource *dagger.ModuleSource) *dagger.Directory {
-	ctxDir := modSource.WithSDK("go").AsModule().GeneratedContextDirectory()
-	ctxDir = modSource.ContextDirectory().WithDirectory("/", ctxDir)
-	ctxDir = ctxDir.WithFile("dagger.gen.go", dag.CurrentModule().Source().File("fixedsrc/dagger.gen.go"))
-	return ctxDir
+	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 `,
 			).
@@ -2283,7 +2313,7 @@ type Test struct {}
 			With(daggerFunctions()).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `cool-fn`) // hardcoded typedef in fixedsrc/dagger.gen.go
+		require.Contains(t, out, `cool-fn`) // hardcoded typedef
 	})
 }
 
@@ -2886,26 +2916,26 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 			// Set up the base generator module
 			ctr = ctr.
 				WithWorkdir("/work/keychain/generator").
-				With(daggerExec("init", "--name=generator", "--sdk=go", "--source=.")).
+				With(daggerExec("init", "--name=generator-module", "--sdk=go", "--source=.")).
 				WithNewFile("main.go", `package main
 
 import (
     "context"
-    "dagger/generator/internal/dagger"
+    "dagger/generator-module/internal/dagger"
 )
 
-type Generator struct {
+type GeneratorModule struct {
     // +private
     Password *dagger.Secret
 }
 
-func New() *Generator {
-    return &Generator{
+func New() *GeneratorModule {
+    return &GeneratorModule{
         Password: dag.SetSecret("pass", "admin"),
     }
 }
 
-func (m *Generator) Gen(ctx context.Context, name string) error {
+func (m *GeneratorModule) Gen(ctx context.Context, name string) error {
     _, err := m.Password.Plaintext(ctx)
     return err
 }
@@ -2925,7 +2955,7 @@ import (
 type Keychain struct{}
 
 func (m *Keychain) Get(ctx context.Context, name string) error {
-    return dag.Generator().Gen(ctx, name)
+    return dag.GeneratorModule().Gen(ctx, name)
 }
 `)
 
@@ -3416,6 +3446,43 @@ func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
 			require.NoError(t, err)
 		})
 	})
+
+	t.Run("optional secret field on module object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(pythonSource(`
+import base64
+import dagger
+from dagger import dag, field, function, object_type
+
+
+@object_type
+class Test:
+    @function
+    def getobj(self, *, top_secret: dagger.Secret | None = None) -> "Obj":
+        return Obj(top_secret=top_secret)
+
+
+@object_type
+class Obj:
+    top_secret: dagger.Secret | None = field(default=None)
+
+    @function
+    async def getSecret(self) -> str:
+        plaintext = await self.top_secret.plaintext()
+        return base64.b64encode(plaintext.encode()).decode()
+`)).
+			With(daggerInitPython()).
+			WithEnvVariable("TOP_SECRET", "omg").
+			With(daggerCall("getobj", "--top-secret", "env://TOP_SECRET", "get-secret")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		decodeOut, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
+		require.NoError(t, err)
+		require.Equal(t, "omg", string(decodeOut))
+	})
 }
 
 func (ModuleSuite) TestUnicodePath(ctx context.Context, t *testctx.T) {
@@ -3884,8 +3951,6 @@ class Test:
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4192,8 +4257,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4457,8 +4520,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4627,8 +4688,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4908,6 +4967,483 @@ func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ModuleSuite) TestContextGit(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	tcs := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestRepoLocal(
+	ctx context.Context,
+	// +defaultPath="./.git"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Head())
+}
+
+func (m *Test) TestRepoLocalAbs(
+	ctx context.Context,
+	// +defaultPath="/"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Head())
+}
+
+func (m *Test) TestRepoRemote(
+	ctx context.Context,
+	// +defaultPath="https://github.com/dagger/dagger.git"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Tag("v0.18.2"))
+}
+
+func (m *Test) TestRefLocal(
+	ctx context.Context,
+	// +defaultPath="./.git"
+	git *dagger.GitRef,
+) (string, error) {
+	return m.commitAndRef(ctx, git)
+}
+
+func (m *Test) TestRefRemote(
+	ctx context.Context,
+	// +defaultPath="https://github.com/dagger/dagger.git#v0.18.3"
+	git *dagger.GitRef,
+) (string, error) {
+	return m.commitAndRef(ctx, git)
+}
+
+func (m *Test) commitAndRef(ctx context.Context, ref *dagger.GitRef) (string, error) {
+	commit, err := ref.Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	reference, err := ref.Ref(ctx)
+	if err != nil {
+		return "", err
+	}
+	return reference + "@" + commit, nil
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `from typing import Annotated
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+	@function
+	async def test_repo_local(self, git: Annotated[dagger.GitRepository, DefaultPath("./.git")]) -> str:
+		return await self.commit_and_ref(git.head())
+
+	@function
+	async def test_repo_local_abs(self, git: Annotated[dagger.GitRepository, DefaultPath("/")]) -> str:
+		return await self.commit_and_ref(git.head())
+
+	@function
+	async def test_repo_remote(self, git: Annotated[dagger.GitRepository, DefaultPath("https://github.com/dagger/dagger.git")]) -> str:
+		return await self.commit_and_ref(git.tag("v0.18.2"))
+
+	@function
+	async def test_ref_local(self, git: Annotated[dagger.GitRef, DefaultPath("./.git")]) -> str:
+		return await self.commit_and_ref(git)
+
+	@function
+	async def test_ref_remote(self, git: Annotated[dagger.GitRef, DefaultPath("https://github.com/dagger/dagger.git#v0.18.3")]) -> str:
+		return await self.commit_and_ref(git)
+
+	async def commit_and_ref(self, ref: dagger.GitRef) -> str:
+		commit = await ref.commit()
+		reference = await ref.ref()
+		return f"{reference}@{commit}"
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { GitRepository, GitRef, object, func, argument } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+	@func()
+	async testRepoLocal(
+		@argument({ defaultPath: "./.git" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.head())
+	}
+
+	@func()
+	async testRepoLocalAbs(
+		@argument({ defaultPath: "/" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.head())
+	}
+
+	@func()
+	async testRepoRemote(
+		@argument({ defaultPath: "https://github.com/dagger/dagger.git" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.tag("v0.18.2"))
+	}
+
+	@func()
+	async testRefLocal(
+		@argument({ defaultPath: "./.git" }) git: GitRef,
+	): Promise<string> {
+		return await this.commitAndRef(git)
+	}
+
+	@func()
+	async testRefRemote(
+		@argument({ defaultPath: "https://github.com/dagger/dagger.git#v0.18.3" }) git: GitRef,
+	): Promise<string> {
+		return await this.commitAndRef(git)
+	}
+
+	async commitAndRef(git: GitRef): Promise<string> {
+		const commit = await git.commit()
+		const reference = await git.ref()
+		return reference + "@" + commit
+	}
+}`,
+		},
+		{
+			sdk: "java",
+			source: `package io.dagger.modules.test;
+
+
+import io.dagger.client.GitRef;
+import io.dagger.client.GitRepository;
+import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.DefaultPath;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.concurrent.ExecutionException;
+
+@Object
+public class Test {
+    @Function
+    public String testRepoLocal(@DefaultPath("./.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.head());
+    }
+
+    @Function
+    public String testRepoLocalAbs(@DefaultPath("/") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.head());
+    }
+
+    @Function
+    public String testRepoRemote(@DefaultPath("https://github.com/dagger/dagger.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.tag("v0.18.2"));
+    }
+
+    @Function
+    public String testRefLocal(@DefaultPath("./.git") GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git);
+    }
+
+    @Function
+    public String testRefRemote(@DefaultPath("https://github.com/dagger/dagger.git#v0.18.3") GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git);
+    }
+
+    private String commitAndRef(GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        var commit = git.commit();
+        var reference = git.ref();
+        return "%s@%s".formatted(reference, commit);
+    }
+}
+`,
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := modInit(t, c, tc.sdk, tc.source).
+				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`}).
+				WithExec([]string{"git", "clean", "-fdx"})
+			headCommit, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+			require.NoError(t, err)
+			headCommit = strings.TrimSpace(headCommit)
+
+			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("repo local absolute", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local-abs")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+			})
+
+			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+			})
+		})
+	}
+}
+
+func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
+	// pretty much exactly the same test as above, but calling a remote git repo instead
+
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c)
+
+	remoteModule := "github.com/dagger/dagger-test-modules"
+	remoteRef := "context-git"
+	g := c.Git(remoteModule).Ref(remoteRef)
+	commit, err := g.Commit(ctx)
+	require.NoError(t, err)
+	fullref, err := g.Ref(ctx)
+	require.NoError(t, err)
+
+	modPath := "github.com/dagger/dagger-test-modules/context-git@" + remoteRef
+
+	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-repo-local")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fullref+"@"+commit, out)
+	})
+
+	t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-repo-remote")).Stdout(ctx)
+		require.NoError(t, err)
+		// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+		require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+	})
+
+	t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-ref-local")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fullref+"@"+commit, out)
+	})
+
+	t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-ref-remote")).Stdout(ctx)
+		require.NoError(t, err)
+		// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+		require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+	})
+}
+
+func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
+	// pretty much exactly the same test as above, but calling a remote git repo via a pinned dependency
+
+	c := connect(ctx, t)
+
+	remoteRepo := "github.com/dagger/dagger-test-modules"
+	remoteModule := remoteRepo + "/context-git"
+
+	// this commit is *not* the target of any version
+	// so, this ends up repinning
+	commit := "ed6bf431366bac652f807864e22ae49be9433bd5"
+
+	for _, version := range []string{"", "main", "context-git", "v1.2.3"} {
+		t.Run("version="+version, func(ctx context.Context, t *testctx.T) {
+			g := c.Git(remoteRepo).Ref(cmp.Or(version, "HEAD"))
+			fullref, err := g.Ref(ctx)
+			require.NoError(t, err)
+			require.Contains(t, fullref, version)
+
+			if version != "" {
+				version = "@" + version
+			}
+
+			// create a module that depends on the remote module
+			modGen := goGitBase(t, c).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithNewFile("dagger.json", `{
+			"name": "test",
+	"source": ".",
+	"sdk": "go",
+	"dependencies": [
+		{
+			"name": "context-git",
+			"source": "`+remoteModule+version+`",
+			"pin": "`+commit+`"
+		}
+	]
+	}`).
+				With(sdkSource("go", `package main
+
+	import (
+		"context"
+	)
+
+	type Test struct{}
+
+	func (m *Test) TestRepoLocal(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRepoLocal(ctx)
+	}
+
+	func (m *Test) TestRepoRemote(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRepoRemote(ctx)
+	}
+
+	func (m *Test) TestRefLocal(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRefLocal(ctx)
+	}
+
+	func (m *Test) TestRefRemote(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRefRemote(ctx)
+	}
+	`)).
+				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, fullref+"@"+commit, out)
+			})
+
+			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, fullref+"@"+commit, out)
+			})
+
+			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+			})
+
+			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+			})
+		})
+	}
+}
+
+// Regression test for #11996. An unversioned dependency with a named pin must
+// resolve that tag or branch rather than silently falling back to the default branch.
+func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	remoteRepo := "github.com/dagger/dagger-test-modules"
+	remoteModule := remoteRepo + "/context-git"
+
+	// Use a tag pin — tags are immutable and exercise the same ref(name: ...)
+	// code path as branches, without the risk of a branch being pruned.
+	pin := "v1.2.3"
+
+	g := c.Git(remoteRepo).Ref(pin)
+	fullref, err := g.Ref(ctx)
+	require.NoError(t, err)
+
+	commit, err := g.Commit(ctx)
+	require.NoError(t, err)
+
+	modGen := goGitBase(t, c).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{
+			"name": "test",
+			"source": ".",
+			"sdk": "go",
+			"dependencies": [
+				{
+					"name": "context-git",
+					"source": "`+remoteModule+`",
+					"pin": "`+pin+`"
+				}
+			]
+		}`).
+		With(sdkSource("go", `package main
+
+		import (
+			"context"
+		)
+
+		type Test struct{}
+
+		func (m *Test) TestRefLocal(ctx context.Context) (string, error) {
+			return dag.ContextGit().TestRefLocal(ctx)
+		}
+		`)).
+		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+	out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fullref+"@"+commit, out)
+}
+
+func (ModuleSuite) TestContextGitDetectDirty(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "go", `
+package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) IsDirty(
+	ctx context.Context,
+	// +defaultPath="./.git"
+	git *dagger.GitRepository,
+) (bool, error) {
+	clean, err := git.Uncommitted().IsEmpty(ctx)
+	return !clean, err
+}
+`).
+		WithNewFile("somefile.txt", "some content").
+		With(gitUserConfig).
+		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+	out, err := modGen.With(daggerCall("is-dirty")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "false", out)
+
+	out, err = modGen.WithNewFile("newfile.txt", "some new content").With(daggerCall("is-dirty")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "true", out)
+
+	out, err = modGen.WithoutFile("somefile.txt").With(daggerCall("is-dirty")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "true", out)
+}
+
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -4992,76 +5528,123 @@ func (t *Test) IgnoreEveryGoFileExceptMainGo(
 }
 
 func (t *Test) IgnoreDirButKeepFileInSubdir(
-  // +ignore=["internal/telemetry", "!internal/telemetry/proxy.go"]
+  // +ignore=["internal/foo", "!internal/foo/bar.go"]
   // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
 }`)).
+		WithDirectory("./internal/foo", c.Directory().
+			WithNewFile("bar.go", "package foo").
+			WithNewFile("baz.go", "package foo"),
+		).
 		WithWorkdir("/work")
 
 	t.Run("ignore with context directory", func(ctx context.Context, t *testctx.T) {
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-all", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, "", strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-everything-but-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "main.go\n", out)
+			require.Equal(t, "main.go", strings.TrimSpace(out))
 		})
 
 		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 
-			// Verify the directories exist but files are correctlyignored
+			// Verify the directories exist but files are correctly ignored (including the .gitiginore exclusion)
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger/\nquerybuilder/\ntelemetry/\n", out)
-
-			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, strings.Join([]string{
+				"dagger/",
+				"foo/",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore dir but keep file in subdir", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/foo", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "proxy.go\n", out)
+			require.Equal(t, "bar.go", strings.TrimSpace(out))
 		})
 	})
 
@@ -5071,15 +5654,271 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-all", "--dir", ".", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, "", strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore all with different dir than the one set in context", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "--dir", "/work", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
+			require.Equal(t, strings.Join([]string{
+				".git/",
+				"LICENSE",
+				"backend/",
+				"dagger/",
+				"dagger.json",
+				"frontend/",
+			}, "\n"), strings.TrimSpace(out))
 		})
 	})
+}
+
+func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dagger").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithDirectory("./backend", c.Directory().WithNewFile("foo.txt", "foo")).
+		WithDirectory("./frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+		WithNewFile("./.gitignore", "frontend/*.txt\n").
+		With(sdkSource("go", `
+package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (t *Test) GetFile(ctx context.Context, filename string) (string, error) {
+	return dag.CurrentModule().Source().File(filename).Contents(ctx)
+}
+
+func (t *Test) GetFileAt(ctx context.Context, filename string, dir *dagger.Directory) (string, error) {
+	return dir.File(filename).Contents(ctx)
+}
+
+func (t *Test) GetFileContext(
+	ctx context.Context,
+	filename string,
+	// +defaultPath="."
+	dir *dagger.Directory,
+) (string, error) {
+	return dir.File(filename).Contents(ctx)
+}
+		`))
+
+	t.Run("gitignore applies to loaded module", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("get-file", "--filename", "backend/foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+
+		_, err = modGen.With(daggerCall("get-file", "--filename", "frontend/bar.txt")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "no such file or directory")
+	})
+
+	t.Run("gitignore doesn't apply to manual args", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("get-file-at", "--dir", "./backend", "--filename", "foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+
+		// NOTE: we disabled this in dagger/dagger#11017
+		// args passed via function arguments do not automatically have gitignore applied
+		out, err = modGen.With(daggerCall("get-file-at", "--dir", "./frontend", "--filename", "bar.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", out)
+	})
+
+	t.Run("gitignore doesn't apply to context directory", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("get-file-context", "--filename", "backend/foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+
+		// NOTE: we disabled this in dagger/dagger#11017
+		// context arguments do not automatically have gitignore applied
+		out, err = modGen.With(daggerCall("get-file-context", "--filename", "frontend/bar.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", out)
+	})
+}
+
+func (ModuleSuite) TestContextParallel(ctx context.Context, t *testctx.T) {
+	src := `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (z *Test) Fn(
+	ctx context.Context,
+	rand string,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!analytics"
+	// ]
+	a *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!auth"
+	// ]
+	b *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!bin"
+	// ]
+	c *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!cmd"
+	// ]
+	d *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!core"
+	// ]
+	e *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!dagql"
+	// ]
+	f *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!docs"
+	// ]
+	g *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!engine"
+	// ]
+	h *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!evals"
+	// ]
+	i *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!hack"
+	// ]
+	j *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!helm"
+	// ]
+	k *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!internal"
+	// ]
+	l *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!modules"
+	// ]
+	m *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!network"
+	// ]
+	n *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!sdk"
+	// ]
+	o *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!toolchains"
+	// ]
+	p *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!util"
+	// ]
+	q *dagger.Directory,
+
+	// +defaultPath="/"
+  // +ignore=[
+	// "**",
+	// "!version"
+	// ]
+	r *dagger.Directory,
+) (string, error) {
+	for _, dir := range [](*dagger.Directory){a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r} {
+		if _, err := dir.Entries(ctx); err != nil {
+			return "", err
+		}
+	}
+	return "woo", nil
+}
+`
+
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+
+	getCtr := func(c *dagger.Client, r string) *dagger.Container {
+		workdir := "/" + r
+		return goGitBase(t, c).
+			WithMountedDirectory(workdir, c.Host().Directory("../..")).
+			WithWorkdir(workdir).
+			WithoutDirectory(filepath.Join(workdir, ".dagger")).
+			WithoutFile(filepath.Join(workdir, "dagger.json")).
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
+			WithNewFile(filepath.Join(workdir, ".dagger/main.go"), src)
+	}
+
+	rand1 := rand.Text()
+	ctr1 := getCtr(c1, rand1)
+	out, err := ctr1.With(daggerCall("fn", "--rand", rand1)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "woo", out)
+
+	rand2 := rand.Text()
+	ctr2 := getCtr(c2, rand2)
+	out, err = ctr2.With(daggerCall("fn", "--rand", rand2)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "woo", out)
 }
 
 func (ModuleSuite) TestFloat(ctx context.Context, t *testctx.T) {
@@ -5163,8 +6002,6 @@ class Test:
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -5452,7 +6289,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/main.go:16:6\)`,
 					// enum value
-					`\s*A = "A", // dep \(../../../dep/main.go:18:5\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
 				},
 			},
 		},
@@ -5461,8 +6298,8 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 			src: `import { object, func } from "@dagger.io/dagger"
 
 export enum MyEnum {
-  MyEnumA = "MyEnumA",
-	MyEnumB = "MyEnumB",
+  A = "MyEnumA",
+	B = "MyEnumB",
 }
 
 @object()
@@ -5492,7 +6329,7 @@ export class Dep {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/src/index.ts:3:13\)\n`,
 					// enum value
-					`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
 				},
 				typescript: []string{
 					// struct
@@ -5507,7 +6344,7 @@ export class Dep {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/src/index.ts:3:13\)`,
 					// enum value
-					`\s*Myenuma = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
 				},
 			},
 		},
@@ -5546,6 +6383,824 @@ export class Dep {
 				require.NoError(t, err)
 				require.Truef(t, matched, "%s did not match contents:\n%s", match, codegenContents)
 			}
+		})
+	}
+}
+
+func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
+	tcs := []struct {
+		sdk    string
+		source string
+	}{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) ContainerEcho(
+	// +optional
+	// +default="Hello Self Calls"
+	stringArg string,
+) *dagger.Container {
+	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
+}
+
+func (m *Test) Print(ctx context.Context, stringArg string) (string, error) {
+	return dag.Test().ContainerEcho(dagger.TestContainerEchoOpts{
+		StringArg: stringArg,
+	}).Stdout(ctx)
+}
+
+func (m *Test) PrintDefault(ctx context.Context) (string, error) {
+	return dag.Test().ContainerEcho().Stdout(ctx)
+}
+`,
+		},
+		//		{
+		//			sdk: "typescript",
+		//			source: `import { dag, Container, object, func } from "@dagger.io/dagger"
+		//
+		// @object()
+		// export class Test {
+		//   /**
+		//    * Returns a container that echoes whatever string argument is provided
+		//    */
+		//   @func()
+		//   containerEcho(stringArg: string = "Hello Self Calls"): Container {
+		//     return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+		//   }
+		//
+		//   @func()
+		//   async print(stringArg: string): Promise<string> {
+		//     return dag.test().containerEcho({stringArg}).stdout()
+		//   }
+		//
+		//   @func()
+		//   async printDefault(): Promise<string> {
+		//     return dag.test().containerEcho().stdout()
+		//   }
+		// }
+		// `,
+		//		},
+		//		{
+		//			sdk: "python",
+		//			source: `import dagger
+		// from dagger import dag, function, object_type
+		//
+		// @object_type
+		// class Test:
+		//     @function
+		//     def container_echo(self, string_arg: str = "Hello Self Calls") -> dagger.Container:
+		//         return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
+		//
+		//     @function
+		//     async def print(self, string_arg: str) -> str:
+		//         return await dag.test().container_echo(string_arg=string_arg).stdout()
+		//
+		//     @function
+		//     async def print_default(self) -> str:
+		//         return await dag.test().container_echo().stdout()
+		// `,
+		//		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := modInit(t, c, tc.sdk, tc.source, "--with-self-calls")
+
+			t.Run("can call with arguments", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerQuery(`{test{print(stringArg:"hello")}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"test":{"print":"hello\n"}}`, out)
+			})
+
+			t.Run("can call with optional arguments", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerQuery(`{test{printDefault}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"test":{"printDefault":"Hello Self Calls\n"}}`, out)
+			})
+		})
+	}
+}
+
+func (ModuleSuite) TestModuleDeprecationIntrospection(ctx context.Context, t *testctx.T) {
+	type sdkCase struct {
+		sdk        string
+		writeFiles func(dir string) error
+	}
+
+	goSrc := `package main
+
+import (
+	"context"
+)
+
+// +deprecated="This module is deprecated and will be removed in future versions."
+type Test struct {
+	LegacyField string // +deprecated="This field is deprecated and will be removed in future versions."
+}
+
+// +deprecated="This type is deprecated and kept only for retro-compatibility."
+type LegacyRecord struct {
+	// +deprecated="This field is deprecated and will be removed in future versions."
+	Note string
+}
+
+func (m *Test) EchoString(
+	ctx context.Context,
+	input *string, // +deprecated="Use 'other' instead of 'input'."
+	other string,
+) (string, error) {
+	if input != nil {
+		return *input, nil
+	}
+	return other, nil
+}
+
+// +deprecated="Prefer EchoString instead."
+func (m *Test) LegacySummarize(note string) (LegacyRecord, error) {
+	return LegacyRecord{Note: note}, nil
+}
+
+type Mode string
+
+const (
+	ModeAlpha Mode = "alpha" // +deprecated="alpha is deprecated; use zeta instead"
+	// +deprecated="beta is deprecated; use zeta instead"
+	ModeBeta Mode = "beta"
+	ModeZeta Mode = "zeta"
+)
+
+// Reference the enum so it appears in the schema.
+func (m *Test) UseMode(mode Mode) Mode {
+	return mode
+}
+
+type Fooer interface {
+	DaggerObject
+
+	// +deprecated="Use Bar instead"
+	Foo(ctx context.Context, value int) (string, error)
+
+	Bar(ctx context.Context, value int) (string, error)
+}
+
+func (m *Test) CallFoo(ctx context.Context, foo Fooer, value int) (string, error) {
+	return foo.Foo(ctx, value)
+}`
+	const tsSrc = `import { field, func, object } from "@dagger.io/dagger"
+
+  /** @deprecated This module is deprecated and will be removed in future versions. */
+  @object()
+  export class Test {
+    /** @deprecated This field is deprecated and will be removed in future versions. */
+    @field()
+    legacyField = "legacy"
+
+    @func()
+    async echoString(
+	  other: string,
+      /** @deprecated Use 'other' instead of 'input'. */
+      input?: string,
+    ): Promise<string> {
+      return input ?? other
+    }
+
+    /** @deprecated Prefer EchoString instead. */
+    @func()
+    async legacySummarize(note: string): Promise<LegacyRecord> {
+      return { note }
+    }
+
+    @func()
+    useMode(mode: Mode): Mode {
+      return mode
+    }
+
+	@func()
+	async callFoo(foo: Fooer, value: number): Promise<string> {
+		return foo.foo(value)
+	}
+  }
+
+  /** @deprecated This type is deprecated and kept only for retro-compatibility. */
+  export type LegacyRecord = {
+    /** @deprecated This field is deprecated and will be removed in future versions. */
+    note: string
+  }
+
+  export enum Mode {
+    /** @deprecated alpha is deprecated; use zeta instead */
+    Alpha = "alpha",
+    /** @deprecated beta is deprecated; use zeta instead */
+    Beta = "beta",
+    Zeta = "zeta",
+  }
+
+  export interface Fooer {
+    /** @deprecated Use Bar instead */
+    foo(value: number): Promise<string>
+
+    bar(value: number): Promise<string>
+  }`
+
+	const pySrc = `import enum
+import typing
+from typing import Annotated, Optional
+
+import dagger
+
+@dagger.object_type(
+    deprecated="This module is deprecated and will be removed in future versions."
+)
+class Test:
+    legacy_field: str = dagger.field(
+        name="legacyField",
+        deprecated="This field is deprecated and will be removed in future versions.",
+    )
+
+    @dagger.function(name="echoString")
+    def echo_string(
+        self,
+        input: Annotated[
+            Optional[str], dagger.Deprecated("Use 'other' instead of 'input'.")
+        ],
+        other: str,
+    ) -> str:
+        return input if input is not None else other
+
+    @dagger.function(name="legacySummarize", deprecated="Prefer EchoString instead.")
+    def legacy_summarize(self, note: str) -> "LegacyRecord":
+        return LegacyRecord(note=note)
+
+    @dagger.function(name="useMode")
+    def use_mode(self, mode: "Mode") -> "Mode":
+        return mode
+
+    @dagger.function(name="callFoo")
+    async def call_foo(self, foo: "Fooer", value: int) -> str:
+        return await foo.foo(value)
+
+
+
+@dagger.object_type(
+    deprecated="This type is deprecated and kept only for retro-compatibility."
+)
+class LegacyRecord:
+    note: str = dagger.field(
+        deprecated="This field is deprecated and will be removed in future versions."
+    )
+
+
+@dagger.enum_type
+class Mode(enum.Enum):
+    """Mode is deprecated; use zeta instead."""
+
+    ALPHA = "alpha"
+    """Alpha mode.
+
+    .. deprecated:: alpha is deprecated; use zeta instead
+    """
+
+    BETA = "beta"
+    """Beta mode.
+
+    .. deprecated:: beta is deprecated; use zeta instead
+    """
+
+    ZETA = "zeta"
+    """ infos """
+
+@dagger.interface
+class Fooer(typing.Protocol):
+    @dagger.function(deprecated="Use Bar instead")
+    async def foo(self, value: int) -> str: ...
+
+    @dagger.function()
+    async def bar(self, value: int) -> str: ...
+`
+
+	cases := []sdkCase{
+		{
+			sdk: "go",
+			writeFiles: func(dir string) error {
+				return os.WriteFile(filepath.Join(dir, "main.go"), []byte(goSrc), 0o644)
+			},
+		},
+		{
+			sdk: "typescript",
+			writeFiles: func(dir string) error {
+				srcDir := filepath.Join(dir, "src")
+				if err := os.MkdirAll(srcDir, 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(srcDir, "index.ts"), []byte(tsSrc), 0o644)
+			},
+		},
+		{
+			sdk: "python",
+			writeFiles: func(dir string) error {
+				pyDir := filepath.Join(dir, "src", "test")
+				if err := os.MkdirAll(pyDir, 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(pyDir, "__init__.py"), []byte(pySrc), 0o644)
+			},
+		},
+	}
+
+	type Arg struct {
+		Name       string
+		Deprecated string
+	}
+	type Fn struct {
+		Name       string
+		Deprecated string
+		Args       []Arg
+	}
+	type Field struct {
+		Name       string
+		Deprecated string
+	}
+	type Obj struct {
+		Name       string
+		Deprecated string
+		Functions  []Fn
+		Fields     []Field
+	}
+	type EnumMember struct {
+		Value      string
+		Deprecated string
+	}
+	type Enum struct {
+		Name    string
+		Members []EnumMember
+	}
+	type Iface struct {
+		Name      string
+		Functions []Fn
+	}
+	type Resp struct {
+		Host struct {
+			Directory struct {
+				AsModule struct {
+					Objects    []struct{ AsObject Obj }
+					Enums      []struct{ AsEnum Enum }
+					Interfaces []struct{ AsInterface Iface }
+				}
+			}
+		}
+	}
+
+	const introspect = `
+query ModuleIntrospection($path: String!) {
+  host {
+    directory(path: $path) {
+      asModule {
+        objects {
+          asObject {
+            name
+            deprecated
+            functions { name deprecated args { name deprecated } }
+            fields { name deprecated }
+          }
+        }
+        enums { asEnum { name members { value deprecated } } }
+        interfaces {
+          asInterface {
+            name
+            functions { name deprecated args { name } }
+          }
+        }
+      }
+    }
+  }
+}`
+
+	for _, tc := range cases {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			modDir := t.TempDir()
+
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			require.NoError(t, err)
+			require.NoError(t, tc.writeFiles(modDir))
+
+			c := connect(ctx, t)
+
+			res, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+				Variables: map[string]any{"path": modDir},
+			})
+			require.NoError(t, err)
+
+			var testObj, legacyObj *Obj
+			for i := range res.Host.Directory.AsModule.Objects {
+				o := &res.Host.Directory.AsModule.Objects[i].AsObject
+				switch o.Name {
+				case "Test":
+					testObj = o
+				case "TestLegacyRecord":
+					legacyObj = o
+				}
+			}
+			require.NotNil(t, testObj, "Test object must be present")
+			require.Equal(t, "This module is deprecated and will be removed in future versions.", testObj.Deprecated, "Test object must be marked deprecated")
+
+			legacyField := &testObj.Fields[0]
+			require.NotNil(t, legacyField, "Test.LegacyField must be present")
+			require.Equal(t, "This field is deprecated and will be removed in future versions.", legacyField.Deprecated, "Test.LegacyField must be marked deprecated")
+
+			fnByName := map[string]Fn{}
+			for _, f := range testObj.Functions {
+				fnByName[f.Name] = f
+			}
+
+			ls, ok := fnByName["legacySummarize"]
+			require.True(t, ok, "legacySummarize function must be present")
+			require.Equal(t, "Prefer EchoString instead.", ls.Deprecated, "legacySummarize function must be marked deprecated")
+
+			ech, ok := fnByName["echoString"]
+			require.True(t, ok, "echoString function must be present")
+			require.Empty(t, ech.Deprecated, "echoString function must not be deprecated")
+
+			var inputArg, otherArg *Arg
+			for i := range ech.Args {
+				switch ech.Args[i].Name {
+				case "input":
+					inputArg = &ech.Args[i]
+				case "other":
+					otherArg = &ech.Args[i]
+				}
+			}
+			require.NotNil(t, inputArg, "echoString should have arg 'input'")
+			require.Equal(t, "Use 'other' instead of 'input'.", inputArg.Deprecated, "echoString.input should be marked deprecated")
+			require.NotNil(t, otherArg, "echoString should have arg 'other'")
+			require.Empty(t, otherArg.Deprecated, "echoString.other should NOT be deprecated")
+
+			// Secondary object type + field deprecation: LegacyRecord.note
+			require.NotNil(t, legacyObj, "LegacyRecord object must be present")
+			require.Equal(t, "This type is deprecated and kept only for retro-compatibility.", legacyObj.Deprecated, "LegacyRecord must be marked deprecated")
+
+			var noteField *Field
+			for i := range legacyObj.Fields {
+				if legacyObj.Fields[i].Name == "note" {
+					noteField = &legacyObj.Fields[i]
+					break
+				}
+			}
+			require.NotNil(t, noteField, "LegacyRecord should have field 'note'")
+			require.Equal(t, "This field is deprecated and will be removed in future versions.", noteField.Deprecated, "LegacyRecord.note must be marked deprecated")
+
+			mode := &res.Host.Directory.AsModule.Enums[0]
+			require.NotNil(t, mode)
+
+			m := mode.AsEnum
+			var alpha, beta, zeta *EnumMember
+			for i := range m.Members {
+				switch m.Members[i].Value {
+				case "alpha":
+					alpha = &m.Members[i]
+				case "beta":
+					beta = &m.Members[i]
+				case "zeta":
+					zeta = &m.Members[i]
+				}
+			}
+			require.NotNil(t, alpha, "Mode should have member 'alpha'")
+			require.Equal(t, "alpha is deprecated; use zeta instead", alpha.Deprecated, "Mode.alpha must be marked deprecated")
+			require.NotNil(t, beta, "Mode should have member 'beta'")
+			require.Equal(t, "beta is deprecated; use zeta instead", beta.Deprecated, "Mode.beta must be marked deprecated")
+			require.NotNil(t, zeta, "Mode should have member 'zeta'")
+			require.Empty(t, zeta.Deprecated, "Mode.zeta should NOT be deprecated")
+
+			// Interface presence + deprecation on its method
+			var fooer *Iface
+			for i := range res.Host.Directory.AsModule.Interfaces {
+				iFace := &res.Host.Directory.AsModule.Interfaces[i].AsInterface
+				if iFace.Name == "TestFooer" {
+					fooer = iFace
+					break
+				}
+			}
+			require.NotNil(t, fooer, "test interface must be present")
+
+			fnByNameIface := map[string]Fn{}
+			for _, f := range fooer.Functions {
+				fnByNameIface[f.Name] = f
+			}
+
+			fooFn, ok := fnByNameIface["foo"]
+			require.True(t, ok, "TestFooer.foo must be present")
+			require.Equal(t, "Use Bar instead", fooFn.Deprecated, "TestFooer.foo must be marked deprecated")
+
+			var valueArg *Arg
+			for i := range fooFn.Args {
+				if fooFn.Args[i].Name == "value" {
+					valueArg = &fooFn.Args[i]
+					break
+				}
+			}
+			require.NotNil(t, valueArg, "TestFooer.foo must have arg 'value'")
+		})
+	}
+}
+
+func (ModuleSuite) TestModuleDeprecationValidationErrors(ctx context.Context, t *testctx.T) {
+	const introspect = `
+query ModuleIntrospection($path: String!) {
+  host {
+    directory(path: $path) {
+      asModule {
+        objects {
+          asObject {
+            name
+            deprecated
+            functions { name deprecated args { name deprecated } }
+            fields { name deprecated }
+          }
+        }
+        enums { asEnum { name members { value deprecated } } }
+        interfaces {
+          asInterface {
+            name
+            functions { name deprecated args { name } }
+          }
+        }
+      }
+    }
+  }
+}`
+
+	invalidCases := []struct {
+		sdk        string
+		contents   string
+		errorMatch string
+	}{
+		{
+			sdk: "go",
+			contents: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Legacy(
+	ctx context.Context,
+	input string, // +deprecated="Use other instead"
+	other string,
+) (string, error) {
+	return input, nil
+}
+`,
+			errorMatch: "argument \"input\" on Test.Legacy is required and cannot be deprecated",
+		},
+		{
+			sdk: "typescript",
+			contents: `import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async legacy(
+    /** @deprecated Use 'other' instead. */
+    input: string,
+    other: string,
+  ): Promise<string> {
+    return input
+  }
+}
+`,
+			errorMatch: "argument input is required and cannot be deprecated",
+		},
+		{
+			sdk: "python",
+			contents: `import dagger
+from typing import Annotated
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def legacy(
+        self,
+        input: Annotated[str, dagger.Deprecated("Use other instead")],
+        other: str,
+    ) -> str:
+        return input
+`,
+			errorMatch: "Can't deprecate required parameter 'input'",
+		},
+	}
+
+	type Arg struct {
+		Name       string
+		Deprecated string
+	}
+	type Fn struct {
+		Name       string
+		Deprecated string
+		Args       []Arg
+	}
+	type Field struct {
+		Name       string
+		Deprecated string
+	}
+	type Obj struct {
+		Name       string
+		Deprecated string
+		Functions  []Fn
+		Fields     []Field
+	}
+	type EnumMember struct {
+		Value      string
+		Deprecated string
+	}
+	type Enum struct {
+		Name    string
+		Members []EnumMember
+	}
+	type Iface struct {
+		Name      string
+		Functions []Fn
+	}
+	type Resp struct {
+		Host struct {
+			Directory struct {
+				AsModule struct {
+					Objects    []struct{ AsObject Obj }
+					Enums      []struct{ AsEnum Enum }
+					Interfaces []struct{ AsInterface Iface }
+				}
+			}
+		}
+	}
+
+	for _, tc := range invalidCases {
+		t.Run(fmt.Sprintf("%s rejects deprecated required arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
+			modDir := t.TempDir()
+
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			require.NoError(t, err)
+
+			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
+			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+			require.NoError(t, os.WriteFile(target, []byte(tc.contents), 0o644))
+
+			c := connect(ctx, t)
+
+			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+				Variables: map[string]any{"path": modDir},
+			})
+			require.Error(t, err)
+
+			errMsg := err.Error()
+			var execErr *dagger.ExecError
+			if errors.As(err, &execErr) {
+				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr)
+			}
+
+			if strings.Contains(errMsg, "failed to run command [docker info]") ||
+				strings.Contains(errMsg, "socket: operation not permitted") ||
+				strings.Contains(errMsg, "permission denied while trying to connect to the Docker daemon") {
+				t.Skipf("engine unavailable: %s", errMsg)
+				return
+			}
+
+			require.Containsf(t, errMsg, tc.errorMatch, "unexpected error message: %s", errMsg)
+		})
+	}
+
+	validCases := []struct {
+		sdk      string
+		contents string
+	}{
+		{
+			sdk: "go",
+			contents: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Legacy(
+	ctx context.Context,
+	input string, // +default="\"legacy\"" +deprecated="Use other instead"
+	other string,
+) (string, error) {
+	return input, nil
+}
+`,
+		},
+		{
+			sdk: "go",
+			contents: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Legacy(
+	ctx context.Context,
+	input ...string, // +deprecated="Use other instead"
+) (string, error) {
+	if len(input) > 0 {
+		return input[0], nil
+	}
+	return "", nil
+}
+`,
+		},
+		// todo(guillaume): re-enable once we have a way to resolve external libs default values in TS
+		// https://github.com/dagger/dagger/pull/11319
+		// 		{
+		// 			sdk: "typescript",
+		// 			contents: `import { func, object } from "@dagger.io/dagger"
+
+		// @object()
+		// export class Test {
+		//   @func()
+		//   async legacy(
+		//     /** @deprecated Use 'other' instead. */
+		//     input: string = "legacy",
+		//     other: string,
+		//   ): Promise<string> {
+		//     return input
+		//   }
+		// }
+		// `,
+		// 		},
+		{
+			sdk: "typescript",
+			contents: `import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async legacy(
+    /** @deprecated Prefer providing inputs via 'other'. */
+    ...input: string[]
+  ): Promise<string> {
+    return input[0] ?? ""
+  }
+}
+`,
+		},
+		{
+			sdk: "python",
+			contents: `import dagger
+from typing import Annotated
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def legacy(
+        self,
+        input: Annotated[str, dagger.Deprecated("Use other instead")] = "legacy",
+        other: str = "other",
+    ) -> str:
+        return input
+`,
+		},
+	}
+
+	for _, tc := range validCases {
+		t.Run(fmt.Sprintf("%s allows deprecated optional arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
+			modDir := t.TempDir()
+
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			require.NoError(t, err)
+
+			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
+			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+			require.NoError(t, os.WriteFile(target, []byte(tc.contents), 0o644))
+
+			c := connect(ctx, t)
+
+			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+				Variables: map[string]any{"path": modDir},
+			})
+			if err != nil {
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "failed to run command [docker info]") ||
+					strings.Contains(errMsg, "socket: operation not permitted") ||
+					strings.Contains(errMsg, "permission denied while trying to connect to the Docker daemon") {
+					t.Skipf("engine unavailable: %s", errMsg)
+					return
+				}
+			}
+			require.NoError(t, err)
 		})
 	}
 }
@@ -5688,7 +7343,7 @@ func (m *Foo) HowCoolIsDagger() string {
 		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithExec([]string{"apk", "add", "git", "openssh"}).
+			WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
 			WithUnixSocket("/sock/unix-socket", socket).
 			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
 			WithWorkdir("/work").
@@ -5768,10 +7423,644 @@ func (m *Test) ReadFile(
 	})
 }
 
+func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	require.NoError(t, err)
+
+	moduleSrc := `package main
+
+import (
+  "context"
+)
+
+type Test struct{}
+
+func (m *Test) RunNoisy(ctx context.Context) error {
+	_, err := dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"sh", "-c", ` + "`" + `
+			for i in $(seq 100); do
+				for j in $(seq 1024); do
+					echo -n x
+					echo -n y >/dev/stderr
+				done
+				echo
+			done
+			exit 42
+		` + "`" + `}).
+		Sync(ctx)
+	return err
+}
+`
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(moduleSrc), 0o644)
+	require.NoError(t, err)
+
+	c := connect(ctx, t)
+
+	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	_, err = testutil.QueryWithClient[struct {
+		Test struct {
+			RunNoisy any
+		}
+	}](c, t, `{test{runNoisy}}`, nil)
+	var execError *dagger.ExecError
+	require.ErrorAs(t, err, &execError)
+
+	// if we get `2` here, that means we're getting the less helpful error:
+	// process "/runtime" did not complete successfully: exit code: 2
+	require.Equal(t, 42, execError.ExitCode)
+	require.Contains(t, execError.Stdout, "xxxxx")
+	require.Contains(t, execError.Stderr, "yyyyy")
+}
+
+func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Dirs []*dagger.Directory
+}
+
+func (m *Test) Nothing() (*dagger.Directory, error) {
+	return nil, nil
+}
+
+func (m *Test) ListWithNothing() ([]*dagger.Directory, error) {
+	return []*dagger.Directory{nil}, nil
+}
+
+func (m *Test) ObjsWithNothing() ([]*Test, error) {
+	return []*Test{
+		nil,
+		{
+			Dirs: []*dagger.Directory{nil},
+		},
+	}, nil
+}
+`,
+		)
+
+	out, err := modGen.With(daggerQuery(`{test{nothing{entries}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"nothing":null}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{test{listWithNothing{entries}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"listWithNothing":[null]}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{test{objsWithNothing{dirs{entries}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"objsWithNothing":[null,{"dirs":[null]}]}}`, out)
+}
+
+func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		sdk    string
+		source string
+	}{
+		{
+			// TODO: add test that function doc strings still get parsed correctly, don't include //+ etc.
+			sdk: "go",
+			source: `package main
+
+import (
+	"crypto/rand"
+)
+
+type Test struct{}
+
+// My cool doc on TestTtl
+// +cache="40s"
+func (m *Test) TestTtl() string {
+	return rand.Text()
+}
+
+// My dope doc on TestCachePerSession
+// +cache="session"
+func (m *Test) TestCachePerSession() string {
+	return rand.Text()
+}
+
+// My darling doc on TestNeverCache
+// +cache="never"
+func (m *Test) TestNeverCache() string {
+	return rand.Text()
+}
+
+// My rad doc on TestAlwaysCache
+func (m *Test) TestAlwaysCache() string {
+	return rand.Text()
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+import random
+import string
+
+@dagger.object_type
+class Test:
+		@dagger.function(cache="40s")
+		def test_ttl(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="session")
+		def test_cache_per_session(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="never")
+		def test_never_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function
+		def test_always_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+`,
+		},
+
+		{
+			sdk: "typescript",
+			source: `
+import crypto from "crypto"
+
+import {  object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+	@func({ cache: "40s"})
+	testTtl(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "session" })
+	testCachePerSession(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "never" })
+	testNeverCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func()
+	testAlwaysCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+}
+
+`,
+		},
+	} {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				// TODO: this is gonna be flaky to cache prunes, might need an isolated engine
+
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()). // don't cache the nested execs themselves
+					With(daggerCall("test-always-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-always-cache")).Stdout(ctx)
+				require.NoError(t, err)
+
+				require.Equal(t, out1, out2, "outputs should be equal since the result is always cached")
+			})
+
+			t.Run("cache per session", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, out1a, out1b, "outputs should be equal since they are from the same session")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, out2a, out2b, "outputs should be equal since they are from the same session")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are from different sessions")
+			})
+
+			t.Run("never cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1a, out1b, "outputs should not be equal since they are never cached")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out2a, out2b, "outputs should not be equal since they are never cached")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are never cached")
+			})
+
+			// TODO: this is gonna be hella flaky probably, need isolated engine to combat pruning and probably more generous times...
+			t.Run("cache ttl", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c2.Close())
+
+				require.Equal(t, out1, out2, "outputs should be equal since the cache ttl has not expired")
+				time.Sleep(41 * time.Second)
+
+				c3 := connect(ctx, t)
+				modGen3 := modInit(t, c3, tc.sdk, tc.source)
+
+				out3, err := modGen3.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1, out3, "outputs should not be equal since the cache ttl has expired")
+			})
+		})
+	}
+
+	// rest of tests are SDK agnostic so just test w/ go
+	t.Run("setSecret invalidates cache", func(ctx context.Context, t *testctx.T) {
+		const modSDK = "go"
+		const modSrc = `package main
+
+import (
+	"crypto/rand"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestSetSecret() *dagger.Container {
+	r := rand.Text()
+	s := dag.SetSecret(r, r)
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithSecretVariable("TOP_SECRET", s)
+}
+`
+
+		// in memory cache should be hit within a session, but
+		// no cache hits across sessions should happen
+
+		c1 := connect(ctx, t)
+		modGen1 := modInit(t, c1, modSDK, modSrc)
+
+		out1a, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		out1b, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out1a, out1b)
+		require.NoError(t, c1.Close())
+
+		c2 := connect(ctx, t)
+		modGen2 := modInit(t, c2, modSDK, modSrc)
+
+		out2a, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		out2b, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out2a, out2b)
+
+		require.NotEqual(t, out1a, out2a)
+	})
+
+	t.Run("dependency contextual arg", func(ctx context.Context, t *testctx.T) {
+		const modSDK = "go"
+		const modSrc = `package main
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+type Test struct{}
+func (m *Test) CallDep(ctx context.Context, cacheBust string) (*dagger.Directory, error) {
+	return dag.Dep().Test().Sync(ctx)
+}
+func (m *Test) CallDepFile(ctx context.Context, cacheBust string) (*dagger.Directory, error) {
+	return dag.Dep().TestFile().Sync(ctx)
+}
+`
+
+		const depSrc = `package main
+import (
+	"dagger/dep/internal/dagger"
+)
+type Dep struct{}
+func (m *Dep) Test() *dagger.Directory {
+	return dag.Depdep().Test()
+}
+func (m *Dep) TestFile() *dagger.Directory {
+	return dag.Depdep().TestFile()
+}
+`
+
+		const depDepSrc = `package main
+import (
+	"crypto/rand"
+	"dagger/depdep/internal/dagger"
+)
+type Depdep struct{}
+func (m *Depdep) Test(
+	// +defaultPath="."
+	dir *dagger.Directory,
+) *dagger.Directory {
+	return dir.WithNewFile("rand.txt", rand.Text())
+}
+func (m *Depdep) TestFile(
+	// +defaultPath="dagger.json"
+	f *dagger.File,
+) *dagger.Directory {
+	return dag.Directory().
+		WithFile("dagger.json", f).
+		WithNewFile("rand.txt", rand.Text())
+}
+`
+
+		getModGen := func(c *dagger.Client) *dagger.Container {
+			return goGitBase(t, c).
+				WithWorkdir("/work/depdep").
+				With(daggerExec("init", "--name=depdep", "--sdk="+modSDK, "--source=.")).
+				WithNewFile("/work/depdep/main.go", depDepSrc).
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk="+modSDK, "--source=.")).
+				With(daggerExec("install", "../depdep")).
+				WithNewFile("/work/dep/main.go", depSrc).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk="+modSDK, "--source=.")).
+				With(sdkSource(modSDK, modSrc)).
+				With(daggerExec("install", "./dep"))
+		}
+
+		t.Run("dir", func(ctx context.Context, t *testctx.T) {
+			c1 := connect(ctx, t)
+			out1, err := getModGen(c1).
+				With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.NoError(t, c1.Close())
+
+			c2 := connect(ctx, t)
+			out2, err := getModGen(c2).
+				With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+
+			require.Equal(t, out1, out2)
+		})
+
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
+			c1 := connect(ctx, t)
+			out1, err := getModGen(c1).
+				With(daggerCall("call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.NoError(t, c1.Close())
+
+			c2 := connect(ctx, t)
+			out2, err := getModGen(c2).
+				With(daggerCall("call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+
+			require.Equal(t, out1, out2)
+		})
+	})
+
+	t.Run("git contextual arg", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+
+		// Initialize git repo
+		gitCmd := exec.Command("git", "init")
+		gitCmd.Dir = modDir
+		gitOutput, err := gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		gitCmd = exec.Command("git", "config", "user.email", "dagger@example.com")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		gitCmd = exec.Command("git", "config", "user.name", "Dagger Tests")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		// Initialize dagger module
+		initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
+		initOutput, err := initCmd.CombinedOutput()
+		require.NoError(t, err, string(initOutput))
+
+		installCmd := hostDaggerCommand(ctx, t, modDir, "install",
+			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
+		installOutput, err := installCmd.CombinedOutput()
+		require.NoError(t, err, string(installOutput))
+
+		// Write module source
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+    "context"
+    "dagger/test/internal/dagger"
+)
+
+type Test struct {
+    //+private
+    Ref *dagger.GitRef
+    //+private
+    Dep *dagger.Dep
+}
+
+func New(
+    // +defaultPath="."
+    ref *dagger.GitRef,
+    //+defaultPath="crap"
+    source *dagger.Directory,
+) *Test {
+    return &Test{
+        Ref: ref,
+        Dep: dag.Dep(source),
+    }
+}
+
+func (m *Test) Fn(
+    ctx context.Context,
+    //+defaultPath="config/config.local.js"
+    configFile *dagger.File,
+) (*dagger.Directory, error) {
+    return m.Dep.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
+}
+`), 0644)
+		require.NoError(t, err)
+
+		// Create git commit
+		gitCmd = exec.Command("git", "add", ".")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		gitCmd = exec.Command("git", "commit", "-m", "make HEAD exist")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		// Create directories and config file
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0755))
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "config"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("1"), 0644))
+
+		// Run first dagger call
+		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "fn")
+		callOutput, err := callCmd.CombinedOutput()
+		require.NoError(t, err, string(callOutput))
+
+		// Update config file
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("2"), 0644))
+
+		// Run second dagger call
+		callCmd = hostDaggerCommand(ctx, t, modDir, "call", "fn")
+		callOutput, err = callCmd.CombinedOutput()
+		require.NoError(t, err, string(callOutput))
+	})
+}
+
+func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, cli *dagger.File, modDir *dagger.Directory) (string, error) {
+	return dag.Container().From("`+alpineImage+`").
+		WithMountedFile("/bin/dagger", cli).
+		WithMountedDirectory("/dir", modDir).
+		WithWorkdir("/dir").
+		WithExec([]string{"dagger", "develop", "--recursive"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		WithExec([]string{"dagger", "call", "str"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+}
+
+func (m *Test) Str() string {
+	return "yoyoyo"
+}
+`,
+		).
+		WithWorkdir("/work/some/sub/dir").
+		With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+		WithWorkdir("/work").
+		With(daggerExec("install", "./some/sub/dir"))
+
+	out, err := modGen.
+		With(daggerCall("fn",
+			"--cli", testCLIBinPath,
+			"--modDir", ".",
+		)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "yoyoyo", out)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func daggerExecFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
 		})
 	}
 }
@@ -5983,6 +8272,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/test/__init__.py"
 	case "typescript":
 		return "src/index.ts"
+	case "java", "./sdk/java":
+		return "src/main/java/io/dagger/modules/test/Test.java"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
@@ -6004,22 +8295,35 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 	}
 }
 
-func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
+func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...string) *dagger.Container {
 	t.Helper()
-	return goGitBase(t, c).With(withModInit(sdk, contents))
+	return goGitBase(t, c).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			if sdk == "java" {
+				// use the local SDK so that we can test non-released changes
+				sdkSrc, err := filepath.Abs("../../sdk/java")
+				require.NoError(t, err)
+				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
+				sdk = "./sdk/java"
+			}
+			return ctr
+		}).
+		With(withModInit(sdk, contents, extra...))
 }
 
-func withModInit(sdk, contents string) dagger.WithContainerFunc {
-	return withModInitAt(".", sdk, contents)
+func withModInit(sdk, contents string, extra ...string) dagger.WithContainerFunc {
+	return withModInitAt(".", sdk, contents, extra...)
 }
 
-func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
+func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		name := filepath.Base(dir)
 		if name == "." {
 			name = "test"
 		}
-		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir, dir}
+		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir}
+		args = append(args, extra...)
+		args = append(args, dir)
 		ctr = ctr.With(daggerExec(args...))
 		if contents != "" {
 			return ctr.With(sdkSourceAt(dir, sdk, contents))
@@ -6061,7 +8365,7 @@ query { host { directory(path: ".") { asModule {
                     description
                     defaultValue
                 }
-			}
+            }
             fields {
                 name
                 description

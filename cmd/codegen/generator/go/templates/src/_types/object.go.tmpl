@@ -47,6 +47,9 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	// Default: {{ $arg.DefaultValue }}
 	{{- end }}
+	{{- if $arg.IsDeprecated }}
+{{ $arg.DeprecationReason | FormatDeprecation }}
+	{{- end }}
 	{{- $formattedTypeRef := "" }}
 	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
 	{{- $formattedTypeRef = $arg.TypeRef | FormatOutputType }}

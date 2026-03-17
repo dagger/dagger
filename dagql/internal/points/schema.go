@@ -131,7 +131,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 			if err != nil {
 				return nil, err
 			}
-			return &Line{self, to.Self}, nil
+			return &Line{self, to.Self()}, nil
 		}),
 	}.Install(srv)
 

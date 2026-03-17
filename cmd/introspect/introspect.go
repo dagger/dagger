@@ -10,8 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/opencontainers/go-digest"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/spf13/cobra"
 )
 
@@ -33,8 +32,12 @@ func Introspect(cmd *cobra.Command, args []string) error {
 
 func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 	root := &core.Query{}
-	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
-	dag.View = dagql.View(version)
+	baseCache, err := dagql.NewCache(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	dag := dagql.NewServer(root, dagql.NewSessionCache(baseCache))
+	dag.View = call.View(version)
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {
 		return nil, err

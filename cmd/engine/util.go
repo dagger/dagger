@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/util/disk"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/pkg/errors"
 )
 

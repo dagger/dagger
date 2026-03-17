@@ -239,7 +239,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 		},
 
 		// Azure DevOps
-		// short HTTPS ref, with format: user, org and where repo name == org name
+		// Cloud (Azure DevOps Services): short HTTPS ref, with format: user, org and where repo name == org name
 		{
 			"dev.azure.com/dagger-e2e/_git/dagger-modules-test-public/depth1/depth2",
 			&RepoRoot{
@@ -256,8 +256,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "dev.azure.com/dagger-e2e/_git/dagger-modules-test-public.git",
 			},
 		},
-
-		// HTTPS ref, with format: user, org and repo name != org name
+		// Cloud (Azure DevOps Services): HTTPS ref, with format: user, org and repo name != org name
 		{
 			"dev.azure.com/daggere2e/public/_git/dagger-test-modules/depth1/depth2",
 			&RepoRoot{
@@ -275,8 +274,23 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "dev.azure.com/daggere2e/public/_git/dagger-test-modules.git",
 			},
 		},
-
-		// SSH ref - new ref style
+		{
+			"dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules",
+				Root: "dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules.git",
+			},
+		},
+		{
+			"dev.azure.com/dagger e2e/public/_git/dagger test modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger e2e/public/_git/dagger test modules",
+				Root: "dev.azure.com/dagger e2e/public/_git/dagger test modules.git",
+			},
+		},
+		// Cloud (Azure DevOps Services): SSH ref - new ref style
 		// https://learn.microsoft.com/en-us/azure/devops/repos/git/use-ssh-keys-to-authenticate?view=azure-devops
 		{
 			"ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules/depth1/depth2",
@@ -292,6 +306,41 @@ func TestRepoRootForImportPath(t *testing.T) {
 				VCS:  vcsGit,
 				Repo: "https://dev.azure.com/daggere2e/private/_git/dagger-test-modules",
 				Root: "ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules.git",
+			},
+		},
+		{
+			"ssh.dev.azure.com/v3/dagger%20e2e/private/dagger%20test%20modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger%20e2e/private/_git/dagger%20test%20modules",
+				Root: "ssh.dev.azure.com/v3/dagger%20e2e/private/dagger%20test%20modules.git",
+			},
+		},
+		{
+			"ssh.dev.azure.com/v3/dagger e2e/private/dagger test modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger e2e/private/_git/dagger test modules",
+				Root: "ssh.dev.azure.com/v3/dagger e2e/private/dagger test modules.git",
+			},
+		},
+		// On-prem (Azure DevOps Server)
+		{
+			"azure.example.com/tfs/collection/project/_git/repository/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://azure.example.com/tfs/collection/project/_git/repository",
+				Root: "azure.example.com/tfs/collection/project/_git/repository",
+			},
+		},
+
+		// General syntax for any server
+		{
+			"extranet.example.com/bitbucket/scm/~user/daggerverse.git/pvc_migrate",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://extranet.example.com/bitbucket/scm/~user/daggerverse",
+				Root: "extranet.example.com/bitbucket/scm/~user/daggerverse.git",
 			},
 		},
 	}

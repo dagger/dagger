@@ -1,0 +1,8 @@
+query GeneratorGroupListDetails($id: GeneratorGroupID!) {
+  group: loadGeneratorGroupFromID(id: $id) {
+    list {
+      name
+      description
+    }
+  }
+}

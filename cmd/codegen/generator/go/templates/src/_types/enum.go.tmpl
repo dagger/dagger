@@ -24,7 +24,14 @@ func (v {{ $enumName }}) Value() string {
 }
 
 func (v *{{ $enumName }}) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.Name())
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
 }
 
 func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
@@ -33,6 +40,8 @@ func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
+	case "":
+		*v = ""
 	{{- range $field := .EnumValues | SortEnumFields }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
@@ -40,7 +49,7 @@ func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
 		*v = {{ $fullFieldName }}
 	{{- end }}
 	default:
-		return fmt.Errorf("unknown enum value %q", s)
+		return fmt.Errorf("invalid enum value %q", s)
 	}
 	return nil
 }
@@ -63,16 +72,23 @@ const (
 		{{- else }}
 			{{- $fieldValue = $mainFieldName }}
 		{{- end }}
+		{{- if $field.IsDeprecated }}
+		{{ $field.DeprecationReason | FormatDeprecation }}
+       	{{- end }}
 		{{- with $field.Description }}
 		{{ . | Comment }}
 		{{- end }}
 		{{ $fullFieldName }} {{ $enumName }} = {{ $fieldValue }}
 		{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- if $needsUnscopedEnums }}
-		{{ $field.Description | Comment }}
-		{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
-		{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
-		{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+			{{ $field.Description | Comment }}
+			{{- if $field.IsDeprecated }}
+			{{ $field.DeprecationReason | FormatDeprecation }}
+			{{- else }}
+			{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
+			{{- end }}
+			{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
+			{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 	{{- end }}
 

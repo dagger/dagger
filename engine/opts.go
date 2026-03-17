@@ -12,7 +12,8 @@ import (
 	"strconv"
 	"unicode"
 
-	controlapi "github.com/moby/buildkit/api/services/control"
+	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
+	"github.com/dagger/dagger/internal/cloud/auth"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -28,6 +29,8 @@ const (
 	localDirImportIncludePatternsMetaKey = "include-patterns"
 	localDirImportExcludePatternsMetaKey = "exclude-patterns"
 	localDirImportFollowPathsMetaKey     = "followpaths"
+
+	localDirImportGitIgnoreMetaKey = "dagger.gitignore"
 
 	// socket session attachable keys
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
@@ -85,6 +88,21 @@ type ClientMetadata struct {
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
+
+	// Disable lazy loading on module runtime.
+	EagerRuntime bool `json:"eager_runtime"`
+
+	// If set, the auth for cloud requests; used for PARC and scale-out
+	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
+
+	// If true, this client enables scaling checks out to cloud engines
+	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
+
+	// if set, this client is another engine scaling out to the current one, and the current
+	// one has this ID. Should be included in OTEL span sttrs so we can correlate spans to engine.
+	// TODO: This is a bit convoluted; it would be nicer if an engine could figure out its own ID
+	// rather than being told what it is by the client connecting to it.
+	CloudScaleOutEngineID string `json:"cloud_scale_out_engine_id,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}
@@ -135,6 +153,7 @@ func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 
 type LocalImportOpts struct {
 	Path               string   `json:"path"`
+	UseGitIgnore       bool     `json:"use_gitignore"`
 	IncludePatterns    []string `json:"include_patterns"`
 	ExcludePatterns    []string `json:"exclude_patterns"`
 	FollowPaths        []string `json:"follow_paths"`
@@ -150,6 +169,7 @@ func (o LocalImportOpts) ToGRPCMD() metadata.MD {
 	o.Path = filepath.ToSlash(o.Path)
 	md := encodeMeta(localImportOptsMetaKey, o)
 	md[localDirImportDirNameMetaKey] = []string{o.Path}
+	md[localDirImportGitIgnoreMetaKey] = []string{strconv.FormatBool(o.UseGitIgnore)}
 	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
 	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
 	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
@@ -172,6 +192,9 @@ func (o *LocalImportOpts) FromGRPCMD(md metadata.MD) error {
 		o.IncludePatterns = md[localDirImportIncludePatternsMetaKey]
 		o.ExcludePatterns = md[localDirImportExcludePatternsMetaKey]
 		o.FollowPaths = md[localDirImportFollowPathsMetaKey]
+		if v, ok := md[localDirImportGitIgnoreMetaKey]; ok && len(v) > 0 {
+			o.UseGitIgnore, _ = strconv.ParseBool(v[0])
+		}
 	}
 	o.Path = filepath.FromSlash(o.Path)
 	return nil
@@ -212,7 +235,8 @@ type LocalExportOpts struct {
 	// whether to just merge in contents of a directory to the target on the host
 	// or to replace the target entirely such that it matches the source directory,
 	// which includes deleting any files that are not in the source directory
-	Merge bool
+	Merge       bool
+	RemovePaths []string `json:"remove_paths"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

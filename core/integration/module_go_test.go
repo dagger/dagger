@@ -596,6 +596,62 @@ func main() {
 		require.NoError(t, err)
 		require.Contains(t, daggerjson, "bar")
 	})
+
+	t.Run("from scratch with self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--with-self-calls"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+	})
+
+	t.Run("enable self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, "SELF_CALLS")
+
+		modGen = modGen.With(daggerExec("develop", "--with-self-calls"))
+
+		daggerjson, err = modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+	})
+
+	t.Run("disable self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--with-self-calls"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+
+		modGen = modGen.With(daggerExec("develop", "--without-self-calls"))
+
+		daggerjson, err = modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": false")
+	})
 }
 
 //go:embed testdata/modules/go/minimal/main.go
@@ -1182,6 +1238,35 @@ func (m *Minimal) HelloFinal(
 	require.Equal(t, "", prop.Get("description").String())
 }
 
+func (GoSuite) TestPragmaParsing(ctx context.Context, t *testctx.T) {
+	// corner cases of pragma parsing
+
+	c := connect(ctx, t)
+
+	// corner cases where a +default pragma has a value that itself has a + in it
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Test struct {}
+
+func (t *Test) Hello(
+	// +optional
+	// +default="blah+dagger-ci@dagger.io"
+	argWhereDefaultHasAPlusSign string,
+) string {
+	return argWhereDefaultHasAPlusSign
+}
+`,
+		)
+
+	out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `blah+dagger-ci@dagger.io`, out)
+}
+
 func (GoSuite) TestWeirdFields(ctx context.Context, t *testctx.T) {
 	// these are all cases that used to panic due to the disparity in the type spec and the ast
 
@@ -1313,6 +1398,60 @@ func (m *Minimal) IsEmpty() bool {
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
 
+func (GoSuite) TestPrivateEnumField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--sdk=go", "dep")).
+		WithNewFile("dep/main.go", `package main
+
+import (
+	"context"
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {
+	Opts []dagger.ContainerPublishOpts // +private
+}
+
+func New() *Dep {
+	return &Dep{
+		Opts: []dagger.ContainerPublishOpts{
+			{PlatformVariants: []*dagger.Container{dag.Container().From("alpine")}},
+		},
+	}
+}
+
+func (m *Dep) Publish(ctx context.Context) (string, error) {
+	// dry run a publish
+	return "registry/repo:latest", nil
+}
+`,
+		).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("install", "./dep")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m Test) Publish(ctx context.Context) (string, error) {
+	return dag.Dep().Publish(ctx)
+}
+`,
+		)
+
+	out, err := ctr.With(daggerQuery(`{test{publish}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"publish": "registry/repo:latest"}}`, out)
+}
+
 func (GoSuite) TestJSONField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1343,7 +1482,7 @@ func New() *Minimal {
 	require.JSONEq(t, `{"minimal":{"config":"{\"a\":1}"}}`, out)
 }
 
-// this is no longer allowed, but verify the SDK errors out
+// this is no longer allowed, but verify the Engine errors out
 func (GoSuite) TestExtendCore(ctx context.Context, t *testctx.T) {
 	moreContents := `package dagger
 
@@ -1363,13 +1502,17 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
 			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
+
+		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
+		// when evaluating the query against the engine GQL schema.
+		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -1379,13 +1522,16 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
+			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
 			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
+		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
+		// when evaluating the query against the engine GQL schema.
+		require.Contains(t, logs.String(), `type "Container" is already defined by module "daggercore"`)
 	})
 }
 
@@ -1663,6 +1809,42 @@ func Foo() *dagger.Directory {
 	require.JSONEq(t, `{"minimal":{"hello":"hello world"}}`, out)
 }
 
+// Verify that we can use the released library in module.
+//
+// WARNING: this test can fail if we make a breaking change on the `telemetry` or
+// `querybuilder` package and use that changes in the go generated files.
+// If so, please disable that test until the release is done then re enable it.
+func (GoSuite) TestReleaseLibraryInModule(ctx context.Context, t *testctx.T) {
+	t.Skip("broken, see line 523 of core/sdk/go_sdk.go")
+	versions := []string{"v0.19.10", "v0.19.5"}
+
+	for _, version := range versions {
+		version := version
+
+		t.Run(fmt.Sprintf("use version %s", version), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				return c.
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version)
+			}))
+
+			modCtr := engineClientContainer(ctx, t, c, devEngineSvc).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", version).
+				WithWorkdir("/work").
+				With(daggerNonNestedExec("init", "--sdk=go", "--name=test", "--source=."))
+
+			goMod, err := modCtr.File("go.mod").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, goMod, fmt.Sprintf("dagger.io/dagger %s", version))
+
+			out, err := modCtr.With(daggerNonNestedExec("call", "container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, out, "hello\n")
+		})
+	}
+}
+
 func (GoSuite) TestNameCase(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1739,4 +1921,42 @@ func (p *Playground) SayHello() string {
 	out, err := ctr.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
+}
+
+func (GoSuite) TestContainerDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+// TestWithDefaultContainer uses alpine:latest when no container is provided
+func (t *Test) TestWithDefaultContainer(
+	ctx context.Context,
+	// +defaultAddress="alpine:3.19"
+	ctr *dagger.Container,
+) (string, error) {
+	// Should receive alpine:latest container by default
+	return ctr.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
+}
+`,
+		)
+
+	out, err := modGen.With(daggerCall("test-with-default-container")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "3.19") // Alpine version contains a dot like "3.19.0"
+
+	// Test that we can override the default
+	out2, err := modGen.With(daggerCall("test-with-default-container", "--ctr=alpine:3.18")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out2, "3.18")
 }

@@ -16,6 +16,15 @@ namespace Dagger;
 class FunctionArg extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
+     */
+    public function defaultAddress(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultAddress');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultAddress');
+    }
+
+    /**
      * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
      */
     public function defaultPath(): string
@@ -31,6 +40,15 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
         return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
+    }
+
+    /**
+     * The reason this function is deprecated, if any.
+     */
+    public function deprecated(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
     }
 
     /**

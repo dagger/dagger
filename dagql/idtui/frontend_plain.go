@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -9,13 +10,18 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -119,15 +125,10 @@ func NewPlain(w io.Writer) Frontend {
 	}
 }
 
+func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
+
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
-}
-
-func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
-	if fe.Silent {
-		return
-	}
-	fe.addVirtualLog(trace.SpanFromContext(ctx), "engine", "name", name, "version", version, "client", clientID)
 }
 
 func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
@@ -148,6 +149,9 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 			fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
 		}
 	}
+}
+
+func (fe *frontendPlain) SetClient(client *dagger.Client) {
 }
 
 // addVirtualLog attaches a fake log row to a given span
@@ -173,7 +177,7 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
 }
 
-func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) error) error {
+func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -197,25 +201,24 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 		}()
 	}
 
-	runErr := run(ctx)
+	cleanup, runErr := run(ctx)
+	if cleanup != nil {
+		runErr = errors.Join(runErr, cleanup())
+	}
+
 	fe.finalRender()
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
-	return runErr
+	return normalizeFrontendExit(runErr, fe.db)
 }
 
-func (fe *frontendPlain) HandlePrompt(ctx context.Context, prompt string, dest any) error {
-	switch x := dest.(type) {
-	case *bool:
-		return fe.handlePromptBool(ctx, prompt, x)
-	default:
-		return fmt.Errorf("unsupported prompt destination type: %T", dest)
-	}
-}
-
-func (fe *frontendPlain) handlePromptBool(_ context.Context, prompt string, dest *bool) error {
+func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
 	return interact.NewInteraction(prompt).Resolve(dest)
+}
+
+func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {
+	return form.RunWithContext(ctx)
 }
 
 func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
@@ -230,7 +233,9 @@ func (fe *frontendPlain) SetVerbosity(n int) {
 
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
-	fe.db.PrimarySpan = spanID
+	fe.db.SetPrimarySpan(spanID)
+	fe.ZoomedSpan = spanID
+	fe.FocusedSpan = spanID
 	fe.mu.Unlock()
 }
 
@@ -241,7 +246,7 @@ func (fe *frontendPlain) RevealAllSpans() {
 }
 
 func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
-	return fmt.Errorf("not implemented")
+	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
 func (fe *frontendPlain) Shutdown(ctx context.Context) error {
@@ -273,7 +278,6 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 		for i, span := range spans {
 			spanIDs[i] = span.SpanContext().SpanID().String()
 		}
-		slog.Debug("frontend exporting spans", "spans", len(spanIDs))
 	}
 
 	for _, span := range spans {
@@ -310,15 +314,30 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	if err != nil {
 		return err
 	}
-	for _, log := range logs {
-		spanID := dagui.SpanID{SpanID: log.SpanID()}
+	for _, record := range logs {
+		// Check if this log is marked as verbose
+		isVerbose := false
+		record.WalkAttributes(func(kv log.KeyValue) bool {
+			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
+				isVerbose = true
+				return false // stop walking
+			}
+			return true // continue walking
+		})
+
+		// Skip verbose logs in the plain frontend
+		if isVerbose {
+			continue
+		}
+
+		spanID := dagui.SpanID{SpanID: record.SpanID()}
 		spanDt, ok := fe.data[spanID]
 		if !ok {
 			spanDt = &spanData{}
 			fe.data[spanID] = spanDt
 		}
 
-		body := log.Body().AsString()
+		body := record.Body().AsString()
 		if body == "" {
 			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
 			// want to avoid giving it its own line.
@@ -338,11 +357,11 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 			if spanDt.logsPending && len(spanDt.logs) > 0 {
 				spanDt.logs[len(spanDt.logs)-1].line.Write([]byte(line))
-				spanDt.logs[len(spanDt.logs)-1].time = log.Timestamp()
+				spanDt.logs[len(spanDt.logs)-1].time = record.Timestamp()
 			} else {
 				spanDt.logs = append(spanDt.logs, logLine{
 					line: newCursorBuffer([]byte(line)),
-					time: log.Timestamp(),
+					time: record.Timestamp(),
 				})
 			}
 
@@ -511,7 +530,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
+	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts, true)
 
 	prefix := fe.stepPrefix(span, spanDt)
 	fmt.Fprint(fe.output, prefix)
@@ -527,7 +546,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 			call.Args = nil
 			call.Type = nil
 		}
-		r.renderCall(fe.output, nil, call, prefix, false, depth-1, span.Internal, nil)
+		r.renderCall(fe.output, nil, call, prefix, false, depth-1, span.Internal, nil, false)
 	} else {
 		r.renderSpan(fe.output, nil, span.Name)
 	}
@@ -563,7 +582,7 @@ func (fe *frontendPlain) renderLogs(row *dagui.TraceTree, depth int) {
 	span := row.Span
 	spanDt := fe.data[span.ID]
 
-	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
+	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts, true)
 
 	prefix := fe.stepPrefix(span, spanDt)
 

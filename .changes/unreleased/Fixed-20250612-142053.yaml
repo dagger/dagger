@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed high engine memory usage exacerbated by high log volume and composing multiple modules. In one scenario this reduced heap usage from 14GB to 7GB.
-time: 2025-06-12T14:20:53.284900233-04:00
-custom:
-    Author: vito
-    PR: "10578"

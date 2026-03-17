@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/moby/buildkit/session/secrets"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
+	"github.com/dagger/dagger/util/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,6 +23,8 @@ var resolvers = map[string]SecretResolver{
 	"vault":     vaultProvider,
 	"libsecret": libsecretProvider,
 	"gcp":       gcpProvider,
+	"aws+sm":    awsSecretManagerProvider,
+	"aws+ps":    awsParameterStoreProvider,
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {
@@ -37,8 +40,7 @@ func ResolverForID(id string) (SecretResolver, string, error) {
 	return resolver, pathWithQuery, nil
 }
 
-type SecretProvider struct {
-}
+type SecretProvider struct{}
 
 func NewSecretProvider() SecretProvider {
 	return SecretProvider{}
@@ -65,4 +67,22 @@ func (sp SecretProvider) GetSecret(ctx context.Context, req *secrets.GetSecretRe
 	return &secrets.GetSecretResponse{
 		Data: plaintext,
 	}, nil
+}
+
+type SecretProviderProxy struct {
+	client secrets.SecretsClient
+}
+
+func NewSecretProviderProxy(client secrets.SecretsClient) SecretProviderProxy {
+	return SecretProviderProxy{
+		client: client,
+	}
+}
+
+func (sp SecretProviderProxy) Register(server *grpc.Server) {
+	secrets.RegisterSecretsServer(server, sp)
+}
+
+func (sp SecretProviderProxy) GetSecret(ctx context.Context, req *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
+	return sp.client.GetSecret(grpcutil.IncomingToOutgoingContext(ctx), req)
 }

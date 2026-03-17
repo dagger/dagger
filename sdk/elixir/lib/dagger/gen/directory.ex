@@ -62,6 +62,39 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Return the difference between this directory and another directory, typically an older snapshot.
+
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  """
+  @spec changes(t(), Dagger.Directory.t()) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = directory, from) do
+    query_builder =
+      directory.query_builder |> QB.select("changes") |> QB.put_arg("from", Dagger.ID.id!(from))
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Change the owner of the directory contents recursively.
+  """
+  @spec chown(t(), String.t(), String.t()) :: Dagger.Directory.t()
+  def chown(%__MODULE__{} = directory, path, owner) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("chown")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("owner", owner)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
   @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
@@ -148,6 +181,24 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  check if a file or directory exists
+  """
+  @spec exists(t(), String.t(), [
+          {:expected_type, Dagger.ExistsType.t() | nil},
+          {:do_not_follow_symlinks, boolean() | nil}
+        ]) :: {:ok, boolean()} | {:error, term()}
+  def exists(%__MODULE__{} = directory, path, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("exists")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
   Writes the contents of the directory to a path on the host.
   """
   @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) ::
@@ -179,18 +230,37 @@ defmodule Dagger.Directory do
   @doc """
   Return a snapshot with some paths included or excluded
   """
-  @spec filter(t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) :: Dagger.Directory.t()
+  @spec filter(t(), [
+          {:exclude, [String.t()]},
+          {:include, [String.t()]},
+          {:gitignore, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def filter(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("filter")
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
 
     %Dagger.Directory{
       query_builder: query_builder,
       client: directory.client
     }
+  end
+
+  @doc """
+  Search up the directory tree for a file or directory, and return its path. If no match, return null
+  """
+  @spec find_up(t(), String.t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def find_up(%__MODULE__{} = directory, name, start) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("findUp")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("start", start)
+
+    Client.execute(directory.client, query_builder)
   end
 
   @doc """
@@ -224,6 +294,54 @@ defmodule Dagger.Directory do
       directory.query_builder |> QB.select("name")
 
     Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  @spec search(t(), String.t(), [
+          {:paths, [String.t()]},
+          {:globs, [String.t()]},
+          {:literal, boolean() | nil},
+          {:multiline, boolean() | nil},
+          {:dotall, boolean() | nil},
+          {:insensitive, boolean() | nil},
+          {:skip_ignored, boolean() | nil},
+          {:skip_hidden, boolean() | nil},
+          {:files_only, boolean() | nil},
+          {:limit, integer() | nil}
+        ]) :: {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = directory, pattern, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("globs", optional_args[:globs])
+      |> QB.maybe_put_arg("literal", optional_args[:literal])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
+      |> QB.maybe_put_arg("dotall", optional_args[:dotall])
+      |> QB.maybe_put_arg("insensitive", optional_args[:insensitive])
+      |> QB.maybe_put_arg("skipIgnored", optional_args[:skip_ignored])
+      |> QB.maybe_put_arg("skipHidden", optional_args[:skip_hidden])
+      |> QB.maybe_put_arg("filesOnly", optional_args[:files_only])
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(directory.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("loadSearchResultFromID")
+             |> QB.put_arg("id", id),
+           client: directory.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -274,32 +392,68 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Return a directory with changes from another directory applied to it.
+  """
+  @spec with_changes(t(), Dagger.Changeset.t()) :: Dagger.Directory.t()
+  def with_changes(%__MODULE__{} = directory, changes) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withChanges")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return a snapshot with a directory added
   """
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
-          {:include, [String.t()]}
+          {:include, [String.t()]},
+          {:gitignore, boolean() | nil},
+          {:owner, String.t() | nil}
         ]) :: Dagger.Directory.t()
-  def with_directory(%__MODULE__{} = directory_, path, directory, optional_args \\ []) do
+  def with_directory(%__MODULE__{} = directory, path, source, optional_args \\ []) do
     query_builder =
-      directory_.query_builder
+      directory.query_builder
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
-      |> QB.put_arg("directory", Dagger.ID.id!(directory))
+      |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
+      |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.Directory{
       query_builder: query_builder,
-      client: directory_.client
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Raise an error.
+  """
+  @spec with_error(t(), String.t()) :: Dagger.Directory.t()
+  def with_error(%__MODULE__{} = directory, err) do
+    query_builder =
+      directory.query_builder |> QB.select("withError") |> QB.put_arg("err", err)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
     }
   end
 
   @doc """
   Retrieves this directory plus the contents of the given file copied to the given path.
   """
-  @spec with_file(t(), String.t(), Dagger.File.t(), [{:permissions, integer() | nil}]) ::
-          Dagger.Directory.t()
+  @spec with_file(t(), String.t(), Dagger.File.t(), [
+          {:permissions, integer() | nil},
+          {:owner, String.t() | nil}
+        ]) :: Dagger.Directory.t()
   def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
     query_builder =
       directory.query_builder
@@ -307,6 +461,7 @@ defmodule Dagger.Directory do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+      |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -363,6 +518,44 @@ defmodule Dagger.Directory do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Retrieves this directory with the given Git-compatible patch applied.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec with_patch(t(), String.t()) :: Dagger.Directory.t()
+  def with_patch(%__MODULE__{} = directory, patch) do
+    query_builder =
+      directory.query_builder |> QB.select("withPatch") |> QB.put_arg("patch", patch)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Retrieves this directory with the given Git-compatible patch file applied.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec with_patch_file(t(), Dagger.File.t()) :: Dagger.Directory.t()
+  def with_patch_file(%__MODULE__{} = directory, patch) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withPatchFile")
+      |> QB.put_arg("patch", Dagger.ID.id!(patch))
 
     %Dagger.Directory{
       query_builder: query_builder,

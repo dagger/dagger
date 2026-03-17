@@ -106,8 +106,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("custom %s types", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -183,8 +181,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -278,8 +274,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -373,8 +367,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -479,8 +471,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -615,8 +605,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -698,8 +686,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -829,8 +815,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -985,8 +969,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)
@@ -1021,14 +1003,15 @@ export class Test {
 }
 
 func (TypeSuite) TestEnumType(ctx context.Context, t *testctx.T) {
-	type testCase struct {
-		sdk    string
-		source string
-	}
-	for _, tc := range []testCase{
-		{
-			sdk: "go",
-			source: `package main
+	t.Run("simple enum", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			sdk    string
+			source string
+		}
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
 
 import "dagger/test/internal/dagger"
 
@@ -1049,10 +1032,10 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 	return dagger.NetworkProtocol(proto)
 }
 `,
-		},
-		{
-			sdk: "python",
-			source: `import dagger
+			},
+			{
+				sdk: "python",
+				source: `import dagger
 from dagger import function, object_type
 
 @object_type
@@ -1077,10 +1060,10 @@ class Test:
 
         return MockEnum(proto)
 `,
-		},
-		{
-			sdk: "typescript",
-			source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
+			},
+			{
+				sdk: "typescript",
+				source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
 
 @object()
 export class Test {
@@ -1100,33 +1083,115 @@ export class Test {
   }
 }
 `,
-		},
-	} {
-		tc := tc
+			},
+		} {
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				modGen := modInit(t, c, tc.sdk, tc.source)
 
-		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-			modGen := modInit(t, c, tc.sdk, tc.source)
+				out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
-			out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
+				_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
+				requireErrOut(t, err, "invalid enum")
 
-			_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum member")
+				out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
-			out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
+				_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
+				requireErrOut(t, err, "invalid enum")
 
-			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
-			requireErrOut(t, err, "invalid enum member")
+				out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
+			})
+		}
+	})
 
-			out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
-		})
-	}
+	t.Run("multi-name for a value", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			sdk    string
+			source string
+		}
+
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+  "dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) FromImageLayerCompression(imageLayerCompression dagger.ImageLayerCompression) string {
+  return string(imageLayerCompression)
+}
+
+func (m *Test) ToImageLayerCompression(imageLayerCompression string) dagger.ImageLayerCompression {
+  return dagger.ImageLayerCompression(imageLayerCompression)
+}
+			`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { ImageLayerCompression, object, func } from "@dagger.io/dagger";
+
+@object()
+export class Test {
+  @func()
+  fromImageLayerCompression(imageLayerCompression: ImageLayerCompression): string {
+    return imageLayerCompression
+  }
+
+  @func()
+  toImageLayerCompression(imageLayerCompression: string): ImageLayerCompression {
+    return imageLayerCompression as ImageLayerCompression
+  }
+}`,
+			},
+			{
+				sdk: "python",
+				source: `import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def from_image_layer_compression(self, image_layer_compression: dagger.ImageLayerCompression) -> str:
+        return str(image_layer_compression)
+
+    @function
+    def to_image_layer_compression(self, image_layer_compression: str) -> dagger.ImageLayerCompression:
+        return dagger.ImageLayerCompression[image_layer_compression]
+`,
+			},
+		} {
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				modGen := modInit(t, c, tc.sdk, tc.source)
+
+				out, err := modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+
+				_, err = modGen.With(daggerQuery(`{test{fromImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.fromImageLayerCompression").String())
+
+				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "EStarGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+
+				out, err = modGen.With(daggerQuery(`{test{toImageLayerCompression(imageLayerCompression: "ESTARGZ")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "EStarGZ", gjson.Get(out, "test.toImageLayerCompression").String())
+			})
+		}
+	})
 }
 
 func (TypeSuite) TestCustomEnumType(ctx context.Context, t *testctx.T) {
@@ -1151,6 +1216,9 @@ const (
 
 	// Inactive status
 	Inactive Status = "INACTIVE value"
+
+	// Weird status
+	WEIRD Status = "WEIRD"
 )
 
 func New(
@@ -1197,6 +1265,9 @@ class Status(enum.Enum):
     INACTIVE = "INACTIVE value"
     """Inactive status"""
 
+    WEIRD = "WEIRD"
+    """Weird status"""
+
 
 @dagger.object_type
 class Test:
@@ -1224,23 +1295,27 @@ class Test:
 			},
 			{
 				sdk:             "typescript",
-				supportsMembers: false,
-				source: `import { func, object, enumType } from "@dagger.io/dagger"
+				supportsMembers: true,
+				source: `import { func, object } from "@dagger.io/dagger"
 
 /**
  * Enum for Status
  */
-@enumType()
-export class Status {
+export enum Status {
   /**
    * Active status
    */
-  static readonly Active: string = "ACTIVE"
+  Active = "ACTIVE value",
 
   /**
    * Inactive status
    */
-  static readonly Inactive: string = "INACTIVE"
+  Inactive = "INACTIVE value",
+
+  /**
+   * Weird status
+   */
+  WEIRD = "WEIRD",
 }
 
 @object()
@@ -1273,8 +1348,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				modGen := modInit(t, c, tc.sdk, tc.source)
@@ -1302,7 +1375,7 @@ export class Test {
 				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				// fromStatusOpt
 				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
@@ -1318,7 +1391,7 @@ export class Test {
 				}
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				// toStatus
 				if tc.supportsMembers {
@@ -1330,24 +1403,33 @@ export class Test {
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
 
 				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
-				requireErrOut(t, err, "invalid enum member")
+				requireErrOut(t, err, "invalid enum")
 
 				// introspection
 				mod := inspectModule(ctx, t, modGen)
 				statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
 				require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
-				require.Len(t, statusEnum.Get("members").Array(), 2)
+				require.Len(t, statusEnum.Get("members").Array(), 3)
 				require.Equal(t, "ACTIVE", statusEnum.Get("members.0.name").String())
 				require.Equal(t, "INACTIVE", statusEnum.Get("members.1.name").String())
+				require.Equal(t, "WEIRD", statusEnum.Get("members.2.name").String())
 				if tc.supportsMembers {
 					require.Equal(t, "ACTIVE value", statusEnum.Get("members.0.value").String())
 					require.Equal(t, "INACTIVE value", statusEnum.Get("members.1.value").String())
+					require.Equal(t, "WEIRD", statusEnum.Get("members.2.value").String())
 				} else {
 					require.Equal(t, "ACTIVE", statusEnum.Get("members.0.value").String())
 					require.Equal(t, "INACTIVE", statusEnum.Get("members.1.value").String())
+					require.Equal(t, "WEIRD", statusEnum.Get("members.2.value").String())
 				}
 				require.Equal(t, "Active status", statusEnum.Get("members.0.description").String())
 				require.Equal(t, "Inactive status", statusEnum.Get("members.1.description").String())
+				require.Equal(t, "Weird status", statusEnum.Get("members.2.description").String())
+
+				constructor := mod.Get("objects.#.asObject|#(name=Test).constructor")
+				require.Len(t, constructor.Get("args").Array(), 1)
+				require.Equal(t, "status", constructor.Get("args.0.name").String())
+				require.Equal(t, `"INACTIVE"`, constructor.Get("args.0.defaultValue").String())
 			})
 		}
 	})
@@ -1454,7 +1536,7 @@ class Test:
 			},
 			{
 				sdk:             "typescript",
-				supportsMembers: false,
+				supportsMembers: true,
 				source: `import { dag, func, object, DepStatus } from "@dagger.io/dagger"
 
 @object()
@@ -1480,8 +1562,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 

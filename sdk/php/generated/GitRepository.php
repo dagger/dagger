@@ -64,6 +64,15 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns details for the latest semver tag.
+     */
+    public function latestVersion(): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latestVersion');
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details of a ref.
      */
     public function ref(string $name): GitRef
@@ -96,22 +105,20 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Header to authenticate the remote with.
+     * Returns the changeset of uncommitted changes in the git repository.
      */
-    public function withAuthHeader(SecretId|Secret $header): GitRepository
+    public function uncommitted(): Changeset
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAuthHeader');
-        $innerQueryBuilder->setArgument('header', $header);
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('uncommitted');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Token to authenticate the remote with.
+     * The URL of the git repository.
      */
-    public function withAuthToken(SecretId|Secret $token): GitRepository
+    public function url(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAuthToken');
-        $innerQueryBuilder->setArgument('token', $token);
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'url');
     }
 }

@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package dagger.prompt;
+
+option go_package = "prompt";
+
+service Prompt {
+  rpc PromptBool(BoolRequest) returns (BoolResponse);
+  rpc PromptString(StringRequest) returns (StringResponse);
+}
+
+message BoolRequest {
+    // the prompt to display to the user
+    string prompt = 1;
+    // if provided, the prompt will be persisted and not reprompted
+    string persistentKey = 2;
+    // the default value to return if the user doesn't respond
+    bool default = 3;
+    // a (very) brief title for the prompt
+    string title = 4;
+}
+
+message BoolResponse {
+    // the response from the user
+    bool response = 1;
+}
+
+message StringRequest {
+    // the prompt to display to the user
+    string prompt = 1;
+    // the default value to return if the user doesn't respond
+    string default = 2;
+    // a (very) brief title for the prompt
+    string title = 3;
+}
+
+message StringResponse {
+    // the response from the user
+    string response = 1;
+}

@@ -170,11 +170,13 @@
       "description": "Test Enum",
       "values": {
         "A": {
-          "name": "a",
+          "name": "A",
+          "value": "a",
           "description": "Field A"
         },
         "B": {
-          "name": "b",
+          "name": "B",
+          "value": "b",
           "description": "Field B"
         }
       }

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"dagger/viztest/internal/dagger"
-	"dagger/viztest/internal/telemetry"
 
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -22,11 +22,13 @@ type Viztest struct {
 }
 
 // HelloWorld returns the string "Hello, world!"
+// +cache="session"
 func (*Viztest) HelloWorld() string {
 	return "Hello, world!"
 }
 
 // LogThroughput logs the current time in a tight loop.
+// +cache="session"
 func (*Viztest) Spam() *dagger.Container {
 	for {
 		fmt.Println(time.Now())
@@ -34,6 +36,7 @@ func (*Viztest) Spam() *dagger.Container {
 }
 
 // Encapsulate calls a failing function, but ultimately succeeds.
+// +cache="session"
 func (v *Viztest) Encapsulate(ctx context.Context) error {
 	_ = v.FailLog(ctx)
 	return nil // no error, that's the point
@@ -41,17 +44,18 @@ func (v *Viztest) Encapsulate(ctx context.Context) error {
 
 // Demonstrate that error logs are not hoisted as long as their enclosing span
 // did not fail, and how UNSET spans interact with the hoisting logic.
+// +cache="session"
 func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 1: UNSET span under ERROR span - should hoist
 	(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "failing outer span")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 		(func() {
 			ctx, span := Tracer().Start(ctx, "unset middle span")
 			defer span.End() // UNSET
 			(func() (rerr error) {
 				ctx, span := Tracer().Start(ctx, "failing inner span")
-				defer telemetry.End(span, func() error { return rerr })
+				defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should be hoisted - ancestor failed")
 				return errors.New("inner failure")
@@ -63,13 +67,13 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 	// Scenario 2: UNSET span under OK span - should NOT hoist
 	(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "succeeding outer span")
-		defer telemetry.End(span, func() error { return rerr })
+		defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 		(func() {
 			ctx, span := Tracer().Start(ctx, "unset middle span")
 			defer span.End() // UNSET
 			(func() (rerr error) {
 				ctx, span := Tracer().Start(ctx, "failing inner span")
-				defer telemetry.End(span, func() error { return rerr })
+				defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 				stdio := telemetry.SpanStdio(ctx, "")
 				fmt.Fprintln(stdio.Stdout, "this should NOT be hoisted - ancestor succeeded")
 				return errors.New("inner failure")
@@ -82,16 +86,51 @@ func (*Viztest) FailEncapsulated(ctx context.Context) error {
 }
 
 // FailEffect returns a function whose effects will fail when it runs.
+// +cache="session"
 func (*Viztest) FailEffect() *dagger.Container {
 	return dag.Container().
 		From("alpine").
 		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"})
 }
 
+// FailMulti bubbles up two error origins.
+// +cache="session"
+func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
+	ctx, span := Tracer().Start(ctx, "roll-up pseudo-check span",
+		trace.WithAttributes(
+			attribute.Bool("dagger.io/ui.rollup.spans", true),
+		))
+	defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
+	// NB: theoretically this would be from a concurrency pool or something but
+	// we'll simulate it instead to reduce randomness
+	return errors.Join(
+		func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, "sub-thing 1")
+			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
+			_, err := dag.Container().
+				From("alpine").
+				WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+				Sync(ctx)
+			return err
+		}(),
+		(func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, "sub-thing 2")
+			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
+			_, err := dag.Container().
+				From("alpine").
+				WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
+				Sync(ctx)
+			return err
+		})(),
+	)
+}
+
+// +cache="session"
 func (*Viztest) LogStdout() {
 	fmt.Println("Hello, world!")
 }
 
+// +cache="session"
 func (*Viztest) Terminal() *dagger.Container {
 	return dag.Container().
 		From("alpine").
@@ -99,6 +138,7 @@ func (*Viztest) Terminal() *dagger.Container {
 		Terminal()
 }
 
+// +cache="session"
 func (*Viztest) PrimaryLines(n int) string {
 	buf := new(strings.Builder)
 	for i := 1; i <= n; i++ {
@@ -107,18 +147,21 @@ func (*Viztest) PrimaryLines(n int) string {
 	return buf.String()
 }
 
+// +cache="session"
 func (*Viztest) ManyLines(n int) {
 	for i := 1; i <= n; i++ {
 		fmt.Println("This is line", i, "of", n)
 	}
 }
 
+// +cache="session"
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
 	ctx, span := Tracer().Start(ctx, "custom span")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
+// +cache="session"
 func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 	func() {
 		_, span := Tracer().Start(ctx, "custom span")
@@ -147,6 +190,7 @@ func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
+// +cache="session"
 func (v *Viztest) RevealAndLog(ctx context.Context) (res string, rerr error) {
 	ctx, span := Tracer().Start(ctx, "revealed span",
 		trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
@@ -159,6 +203,7 @@ func (v *Viztest) RevealAndLog(ctx context.Context) (res string, rerr error) {
 	return res, nil
 }
 
+// +cache="session"
 func (*Viztest) ManySpans(
 	ctx context.Context,
 	n int,
@@ -173,6 +218,7 @@ func (*Viztest) ManySpans(
 }
 
 // Continuously prints batches of logs on an interval (default 1 per second).
+// +cache="session"
 func (*Viztest) StreamingLogs(
 	ctx context.Context,
 	// +optional
@@ -198,6 +244,7 @@ func (*Viztest) StreamingLogs(
 }
 
 // Continuously prints batches of logs on an interval (default 1 per second).
+// +cache="session"
 func (*Viztest) StreamingChunks(
 	ctx context.Context,
 	// +optional
@@ -222,6 +269,7 @@ func (*Viztest) StreamingChunks(
 	}
 }
 
+// +cache="session"
 func (*Viztest) Echo(ctx context.Context, message string) (string, error) {
 	return dag.Container().
 		From("alpine").
@@ -229,6 +277,7 @@ func (*Viztest) Echo(ctx context.Context, message string) (string, error) {
 		Stdout(ctx)
 }
 
+// +cache="session"
 func (*Viztest) Uppercase(ctx context.Context, message string) (string, error) {
 	out, err := dag.Container().
 		From("alpine").
@@ -237,6 +286,7 @@ func (*Viztest) Uppercase(ctx context.Context, message string) (string, error) {
 	return strings.ToUpper(out), err
 }
 
+// +cache="session"
 func (*Viztest) SameDiffClients(ctx context.Context, message string) (string, error) {
 	return dag.Container().
 		From("alpine").
@@ -250,6 +300,7 @@ func (*Viztest) SameDiffClients(ctx context.Context, message string) (string, er
 // It can be used to test UI cues for tracking down the place where a slow
 // operation is configured, which is more interesting than the place where it
 // is un-lazied when you're trying to figure out where to optimize.
+// +cache="session"
 func (*Viztest) Accounting() *dagger.Container {
 	return dag.Container().
 		From("alpine").
@@ -259,12 +310,14 @@ func (*Viztest) Accounting() *dagger.Container {
 }
 
 // DeepSleep sleeps forever.
+// +cache="session"
 func (*Viztest) DeepSleep() *dagger.Container {
 	return dag.Container().
 		From("alpine").
 		WithExec([]string{"sleep", "infinity"})
 }
 
+// +cache="session"
 func (v Viztest) Add(
 	// +optional
 	// +default=1
@@ -274,6 +327,7 @@ func (v Viztest) Add(
 	return &v
 }
 
+// +cache="session"
 func (v Viztest) CountFiles(ctx context.Context, dir *dagger.Directory) (*Viztest, error) {
 	ents, err := dir.Entries(ctx)
 	if err != nil {
@@ -283,11 +337,13 @@ func (v Viztest) CountFiles(ctx context.Context, dir *dagger.Directory) (*Viztes
 	return &v, nil
 }
 
+// +cache="session"
 func (*Viztest) LogStderr() {
 	fmt.Fprintln(os.Stderr, "Hello, world!")
 }
 
 // FailLog runs a container that logs a message and then fails.
+// +cache="session"
 func (*Viztest) FailLog(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
@@ -298,6 +354,7 @@ func (*Viztest) FailLog(ctx context.Context) error {
 }
 
 // FailLogNative prints a message and then returns an error.
+// +cache="session"
 func (*Viztest) FailLogNative(ctx context.Context) error {
 	fmt.Println("im doing a lot of work")
 	fmt.Println("and then failing")
@@ -305,10 +362,12 @@ func (*Viztest) FailLogNative(ctx context.Context) error {
 }
 
 // FailSlow fails after waiting for a certain amount of time.
+// +cache="session"
 func (*Viztest) FailSlow(ctx context.Context,
 	// +optional
 	// +default="10"
-	after string) error {
+	after string,
+) error {
 	_, err := dag.Container().
 		From("alpine").
 		WithEnvVariable("NOW", time.Now().String()).
@@ -318,6 +377,7 @@ func (*Viztest) FailSlow(ctx context.Context,
 	return err
 }
 
+// +cache="session"
 func (*Viztest) CachedExecService() *dagger.Service {
 	return dag.Container().
 		From("busybox").
@@ -331,6 +391,7 @@ func (*Viztest) CachedExecService() *dagger.Service {
 		AsService(dagger.ContainerAsServiceOpts{Args: []string{"httpd", "-v", "-h", "/srv", "-f"}})
 }
 
+// +cache="session"
 func (*Viztest) CachedExecs(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
@@ -343,6 +404,7 @@ func (*Viztest) CachedExecs(ctx context.Context) error {
 	return err
 }
 
+// +cache="session"
 func (v *Viztest) UseCachedExecService(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
@@ -353,6 +415,7 @@ func (v *Viztest) UseCachedExecService(ctx context.Context) error {
 	return err
 }
 
+// +cache="session"
 func (*Viztest) ExecService() *dagger.Service {
 	return dag.Container().
 		From("busybox").
@@ -362,6 +425,7 @@ func (*Viztest) ExecService() *dagger.Service {
 		AsService(dagger.ContainerAsServiceOpts{Args: []string{"httpd", "-v", "-h", "/srv", "-f"}})
 }
 
+// +cache="session"
 func (v *Viztest) UseExecService(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
@@ -372,6 +436,7 @@ func (v *Viztest) UseExecService(ctx context.Context) error {
 	return err
 }
 
+// +cache="session"
 func (*Viztest) NoExecService() *dagger.Service {
 	return dag.Container().
 		From("redis:7.4.3").
@@ -379,6 +444,7 @@ func (*Viztest) NoExecService() *dagger.Service {
 		AsService()
 }
 
+// +cache="session"
 func (v *Viztest) UseNoExecService(ctx context.Context) (string, error) {
 	return dag.Container().
 		From("redis:7.4.3").
@@ -388,6 +454,7 @@ func (v *Viztest) UseNoExecService(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
+// +cache="session"
 func (*Viztest) Pending(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
@@ -399,6 +466,7 @@ func (*Viztest) Pending(ctx context.Context) error {
 	return err
 }
 
+// +cache="session"
 func (*Viztest) Colors16(ctx context.Context) (string, error) {
 	src := dag.Git("https://gitlab.com/dwt1/shell-color-scripts").
 		Branch("master").
@@ -414,6 +482,7 @@ func (*Viztest) Colors16(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
+// +cache="session"
 func (*Viztest) Colors256(ctx context.Context) (string, error) {
 	src := dag.Git("https://gitlab.com/phoneybadger/pokemon-colorscripts.git").
 		Branch("main").
@@ -430,6 +499,7 @@ func (*Viztest) Colors256(ctx context.Context) (string, error) {
 // NOTE: All Dockerfile examples must use different images to ensure they don't
 // steal spans from each other when run in parallel.
 
+// +cache="session"
 func (*Viztest) DockerBuildCached() *dagger.Container {
 	return dag.Directory().
 		WithNewFile("Dockerfile", `FROM busybox:1.36
@@ -439,6 +509,7 @@ RUN echo we are both cached
 		DockerBuild()
 }
 
+// +cache="session"
 func (*Viztest) DockerBuild() *dagger.Container {
 	return dag.Directory().
 		WithNewFile("Dockerfile", `FROM busybox:1.35
@@ -450,6 +521,7 @@ RUN echo im another layer
 		DockerBuild()
 }
 
+// +cache="session"
 func (*Viztest) DockerBuildFail() *dagger.Container {
 	return dag.Directory().
 		WithNewFile("Dockerfile", `FROM busybox:1.34
@@ -460,6 +532,7 @@ RUN echo im failing && false
 		DockerBuild()
 }
 
+// +cache="session"
 func (*Viztest) DiskMetrics(ctx context.Context) (string, error) {
 	return dag.Container().From("alpine").
 		WithEnvVariable("cache_bust", time.Now().String()).
@@ -467,6 +540,7 @@ func (*Viztest) DiskMetrics(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
+// +cache="session"
 func (*Viztest) List(ctx context.Context, dir *dagger.Directory) (string, error) {
 	ents, err := dir.Entries(ctx)
 	if err != nil {
@@ -475,12 +549,14 @@ func (*Viztest) List(ctx context.Context, dir *dagger.Directory) (string, error)
 	return strings.Join(ents, "\n"), nil
 }
 
+// +cache="session"
 func (*Viztest) GitReadme(ctx context.Context, remote string, version string) (string, error) {
 	result, err := dag.Git(remote).Tag(version).Tree().File("README.md").Contents(ctx)
 	result, _, _ = strings.Cut(result, "\n")
 	return result, err
 }
 
+// +cache="session"
 func (*Viztest) HTTPReadme(ctx context.Context, remote string, version string) (string, error) {
 	p, err := url.Parse(remote)
 	if err != nil {
@@ -498,6 +574,7 @@ func (*Viztest) HTTPReadme(ctx context.Context, remote string, version string) (
 	return result, err
 }
 
+// +cache="session"
 func (*Viztest) ObjectLists(ctx context.Context) (string, error) {
 	filePtrs, err := dag.Dep().GetFiles(ctx)
 	if err != nil {
@@ -510,6 +587,7 @@ func (*Viztest) ObjectLists(ctx context.Context) (string, error) {
 	return dag.Dep().FileContents(ctx, files)
 }
 
+// +cache="session"
 func (*Viztest) NestedCalls(ctx context.Context) ([]string, error) {
 	return dag.Container().
 		WithDirectory("/level-1",
@@ -528,6 +606,7 @@ func (*Viztest) NestedCalls(ctx context.Context) ([]string, error) {
 		Entries(ctx)
 }
 
+// +cache="session"
 func (*Viztest) PathArgs(
 	ctx context.Context,
 	file *dagger.File,
@@ -540,10 +619,51 @@ func (*Viztest) PathArgs(
 	return nil
 }
 
+// +cache="session"
 func (*Viztest) CallFailingDep(ctx context.Context) error {
 	return dag.Dep().FailingFunction(ctx)
 }
 
+// +cache="session"
 func (*Viztest) CallBubblingDep(ctx context.Context) error {
 	return dag.Dep().BubblingFunction(ctx)
+}
+
+// +cache="session"
+func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
+	files, err := dag.Dep().GetFiles(ctx)
+	if err != nil {
+		return err
+	}
+	// unlazy one of them to verify it shows up as cached
+	f := files[0]
+	_, err = f.Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// +cache="session"
+func (*Viztest) TraceRemoteFunctionCalls(ctx context.Context) error {
+	dag.Versioned().Hello(ctx)
+	return nil
+}
+
+// +cache="session"
+func (v *Viztest) LogWithChildren(ctx context.Context) string {
+	fmt.Println("Hey I'm a message.")
+	defer fmt.Println("Hey I'm another message.")
+	_, _ = dag.Container().
+		From("alpine").
+		WithEnvVariable("BUST", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+		Sync(ctx)
+	_, _ = dag.Container().
+		From("alpine").
+		WithEnvVariable("BUST", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo whatup im another echo"}).
+		Sync(ctx)
+	return "This is the result of the call."
 }

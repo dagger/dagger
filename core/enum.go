@@ -7,9 +7,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -17,6 +15,8 @@ type ModuleEnumType struct {
 	typeDef *EnumTypeDef
 	mod     *Module
 }
+
+var _ ModType = &ModuleEnumType{}
 
 func (m *ModuleEnumType) SourceMod() Mod {
 	if m.mod == nil {
@@ -32,7 +32,7 @@ func (m *ModuleEnumType) TypeDef() *TypeDef {
 	}
 }
 
-func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	if value == nil {
 		slog.Warn("%T.ConvertFromSDKResult: got nil value", m)
 		return nil, nil
@@ -47,7 +47,12 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 		if err != nil {
 			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
 		}
-		return enum.DecodeInput(value)
+		val, err := enum.DecodeInput(value)
+		if err != nil {
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
+		}
+
+		return dagql.NewResultForCurrentID(ctx, val)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}
@@ -80,8 +85,11 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return enum.memberTypedef().Name, nil
 }
 
-func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
-	return nil
+func (m *ModuleEnumType) CollectContent(_ context.Context, value dagql.AnyResult, content *CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
@@ -136,15 +144,15 @@ func (e *ModuleEnum) TypeDescription() string {
 	return formatGqlDescription(e.TypeDef.Description)
 }
 
-func (e *ModuleEnum) TypeDefinition(view dagql.View) *ast.Definition {
+func (e *ModuleEnum) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind:        ast.Enum,
 		Name:        e.TypeName(),
 		EnumValues:  e.PossibleValues(),
 		Description: e.TypeDescription(),
 	}
-	if e.TypeDef.SourceMap != nil {
-		def.Directives = append(def.Directives, e.TypeDef.SourceMap.TypeDirective())
+	if e.TypeDef.SourceMap.Valid {
+		def.Directives = append(def.Directives, e.TypeDef.SourceMap.Value.TypeDirective())
 	}
 	return def
 }
@@ -161,8 +169,8 @@ func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 			Description: val.Description,
 			Directives:  val.EnumValueDirectives(),
 		}
-		if val.SourceMap != nil {
-			def.Directives = append(def.Directives, val.SourceMap.TypeDirective())
+		if val.SourceMap.Valid {
+			def.Directives = append(def.Directives, val.SourceMap.Value.TypeDirective())
 		}
 		values = append(values, def)
 	}

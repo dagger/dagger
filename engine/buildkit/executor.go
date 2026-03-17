@@ -2,7 +2,7 @@ package buildkit
 
 /*
 The original implementation of this is derived from:
-https://github.com/moby/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/executor/runcexecutor/executor.go
+https://github.com/dagger/dagger/internal/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/executor/runcexecutor/executor.go
 */
 
 import (
@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,17 +24,18 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/executor"
-	"github.com/moby/buildkit/executor/oci"
-	bkresourcestypes "github.com/moby/buildkit/executor/resources/types"
-	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
-	randid "github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/stack"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/executor"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	bkresourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
+	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
+	randid "github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/solver"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/stack"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/moby/sys/signal"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -73,20 +75,15 @@ type ExecutionMetadata struct {
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
 
-	// If true, scope the exec cache key to the current session ID. It will be cached in the context
-	// of the session but invalidated across different sessions.
-	CachePerSession bool
-
-	// If true, scope the exec cache key to the current dagql call digest. This is needed currently
-	// for module function calls specifically so that their cache key is based on their arguments and
-	// receiver object.
-	CacheByCall bool
+	// Arbitrary to mixin to the cache key for this operation.
+	CacheMixin digest.Digest
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
 	// search domains to install prior to the session's domain
 	ExtraSearchDomains []string
 
+	RedirectStdinPath  string
 	RedirectStdoutPath string
 	RedirectStderrPath string
 
@@ -240,9 +237,17 @@ type Namespaced interface {
 	Release(context.Context) error
 }
 
+// NewDirectNS creates a namespace, that's externally managed.
+func NewDirectNS(id string) Namespaced {
+	return &networkNamespace{
+		id:      id,
+		cleanup: &cleanups.Cleanups{},
+	}
+}
+
 type networkNamespace struct {
 	id      string
-	cleanup *Cleanups
+	cleanup *cleanups.Cleanups
 }
 
 var _ Namespaced = (*networkNamespace)(nil)
@@ -261,7 +266,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		return nil, fmt.Errorf("no default network provider found")
 	}
 
-	cleanup := &Cleanups{}
+	cleanup := &cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, cleanup.Run())
@@ -277,22 +282,17 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	state := &execState{
 		done:             make(chan struct{}),
 		networkNamespace: netNS,
-		netNSJobs:        make(chan func()),
 		cleanups:         cleanup,
 	}
-	cleanup.Add("mark run state done", Infallible(func() {
+	cleanup.Add("mark run state done", cleanups.Infallible(func() {
 		close(state.done)
 	}))
-
-	if err := w.runNetNSWorkers(ctx, state); err != nil {
-		return nil, fmt.Errorf("failed to handle namespace jobs: %w", err)
-	}
 
 	id := randid.NewID()
 	w.mu.Lock()
 	w.running[id] = state
 	w.mu.Unlock()
-	cleanup.Add("delete run state", Infallible(func() {
+	cleanup.Add("delete run state", cleanups.Infallible(func() {
 		w.mu.Lock()
 		delete(w.running, id)
 		w.mu.Unlock()
@@ -514,7 +514,7 @@ func (k procKiller) Cleanup() {
 // otherwise for `runc exec` we will read the pid from a pidfile and then
 // send the signal directly that process.
 func (k procKiller) Kill(ctx context.Context) (err error) {
-	bklog.G(ctx).Debugf("sending sigkill to process in container %s", k.id)
+	bklog.G(ctx).Tracef("sending sigkill to process in container %s", k.id)
 	defer func() {
 		if err != nil {
 			bklog.G(ctx).Errorf("failed to kill process in container id %s: %+v", k.id, err)
@@ -610,9 +610,18 @@ func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, con
 				killCtx, timeout := context.WithCancelCause(context.Background())
 				killCtx, _ = context.WithTimeoutCause(killCtx, 7*time.Second, context.DeadlineExceeded)
 				if err := p.killer.Kill(killCtx); err != nil {
+					// If kill fails with "container not running", the container is already dead
+					// Short-circuit to prevent infinite loop
+					if strings.Contains(err.Error(), "container not running") {
+						bklog.G(ctx).Debug("container already dead, stopping kill loop")
+						cancel(context.Cause(ctx))
+						timeout(context.Canceled)
+						return
+					}
 					select {
 					case <-killCtx.Done():
 						cancel(context.Cause(ctx))
+						timeout(context.Canceled)
 						return
 					default:
 					}

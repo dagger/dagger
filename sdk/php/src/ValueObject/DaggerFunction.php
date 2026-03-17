@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
+use Dagger\Exception\RegistrationError\MissingAttribute;
+use Dagger\Exception\UnsupportedType;
 use ReflectionMethod;
+use ReflectionNamedType;
 use RuntimeException;
 
+/** @internal Value Object used for methods to expose to Dagger. */
 final readonly class DaggerFunction
 {
     /** @param Argument[] $arguments */
@@ -32,10 +36,13 @@ final readonly class DaggerFunction
      */
     public static function fromReflection(ReflectionMethod $method): self
     {
-        $daggerFunction = (current($method
-            ->getAttributes(Attribute\DaggerFunction::class)) ?: null)
-            ?->newInstance()
-            ?? throw new RuntimeException('method is not a DaggerFunction');
+        if ($method->getAttributes(Attribute\DaggerFunction::class) === []) {
+            throw new RuntimeException(sprintf(
+                'Method "%s" is not considered a dagger function without the %s attribute',
+                $method->getName(),
+                Attribute\DaggerFunction::class
+            ));
+        }
 
         $description = (current($method
             ->getAttributes(Attribute\Doc::class)) ?: null)
@@ -47,7 +54,6 @@ final readonly class DaggerFunction
             $method->getParameters(),
         );
 
-
         return $method->isConstructor() ?
             new self(
                 name: '',
@@ -57,7 +63,7 @@ final readonly class DaggerFunction
             ) :
             new self(
                 name: $method->name,
-                description: $description ?? $daggerFunction?->description,
+                description: $description,
                 arguments: $parameters,
                 returnType: self::getReturnType($method),
             );
@@ -65,18 +71,27 @@ final readonly class DaggerFunction
 
     private static function getReturnType(
         ReflectionMethod $method
-    ): null|ListOfType|Type {
+    ): ListOfType|Type {
         $type = $method->getReturnType() ?? throw new RuntimeException(sprintf(
             'DaggerFunction "%s" cannot be supported without a return type',
             $method->name,
         ));
 
-        $attribute = (current($method
-            ->getAttributes(Attribute\ReturnsListOfType::class)) ?: null)
-            ?->newInstance();
+        if (!($type instanceof ReflectionNamedType)) {
+            throw new UnsupportedType(
+                'The PHP SDK only supports named types and nullable named types',
+            );
+        }
 
-        return isset($attribute) ?
-            ListOfType::fromReflection($type, $attribute) :
-            Type::fromReflection($type);
+        if ($type->getName() === 'array') {
+            $attribute = (current($method
+                ->getAttributes(Attribute\ReturnsListOfType::class)) ?: null)
+                ?->newInstance()
+            ?? throw MissingAttribute::returnsListOfType($method->getName());
+
+            return ListOfType::fromReflection($type, $attribute);
+        }
+
+        return Type::fromReflection($type);
     }
 }

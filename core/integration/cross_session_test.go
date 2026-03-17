@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -12,10 +13,11 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -57,10 +59,10 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	})
 
 	t.Run("args", func(ctx context.Context, t *testctx.T) {
-		callMod := func(c *dagger.Client, b bool, i *int, s *string) (string, error) {
+		callMod := func(c *dagger.Client, parentArg *string, i *int, s *string) (string, error) {
 			args := []string{"fn"}
-			if b {
-				args = append([]string{"--b"}, args...)
+			if parentArg != nil {
+				args = append([]string{"--parentArg", *parentArg}, args...)
 			}
 			if i != nil {
 				args = append(args, "--i", strconv.Itoa(*i))
@@ -78,14 +80,14 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	)
 
 	type Test struct {
-		ArbitraryBool bool
+		ArbitraryString string
 	}
 
 	func New(
 		// +optional
-		b bool,
+		parentArg string,
 	) Test {
-		return Test{ArbitraryBool: b}
+		return Test{ArbitraryString: parentArg}
 	}
 
 	func (*Test) Fn(
@@ -105,64 +107,67 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 		for _, tc := range []struct {
 			name           string
-			b1             bool
-			b2             bool
+			parentArg1     *string
+			parentArg2     *string
 			i1             *int
 			i2             *int
 			s1             *string
 			s2             *string
 			expectCacheHit bool
 		}{
+			// NOTE: be careful to not make the same function call in different test cases,
+			// it can result in timing of cache hits that interferes with the isolated test
 			{
 				name:           "unset",
 				expectCacheHit: true,
 			},
 			{
 				name:           "unset but diff parent",
-				b2:             true,
+				parentArg1:     ptr("p2"),
+				parentArg2:     ptr("p3"),
 				expectCacheHit: false,
 			},
 			{
 				name:           "same",
 				i1:             ptr(1),
 				i2:             ptr(1),
-				s1:             ptr("foo"),
-				s2:             ptr("foo"),
+				s1:             ptr("1"),
+				s2:             ptr("1"),
 				expectCacheHit: true,
 			},
 			{
 				name:           "same but diff parent",
-				b1:             true,
-				i1:             ptr(1),
-				i2:             ptr(1),
-				s1:             ptr("foo"),
-				s2:             ptr("foo"),
+				parentArg1:     ptr("p4"),
+				i1:             ptr(2),
+				i2:             ptr(2),
+				s1:             ptr("2"),
+				s2:             ptr("2"),
 				expectCacheHit: false,
 			},
 			{
 				name:           "all different",
-				i1:             ptr(1),
-				i2:             ptr(2),
-				s1:             ptr("foo"),
-				s2:             ptr("bar"),
+				i1:             ptr(3),
+				i2:             ptr(4),
+				s1:             ptr("3"),
+				s2:             ptr("4"),
 				expectCacheHit: false,
 			},
 			{
 				name:           "some different",
-				i1:             ptr(1),
-				i2:             ptr(1),
-				s1:             ptr("foo"),
-				s2:             ptr("bar"),
+				i1:             ptr(5),
+				i2:             ptr(5),
+				s1:             ptr("5"),
+				s2:             ptr("6"),
 				expectCacheHit: false,
 			},
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				out1, err := callMod(c1, tc.b1, tc.i1, tc.s1)
+				out1, err := callMod(c1, tc.parentArg1, tc.i1, tc.s1)
 				require.NoError(t, err)
 
 				c2 := connect(ctx, t)
-				out2, err := callMod(c2, tc.b2, tc.i2, tc.s2)
+				out2, err := callMod(c2, tc.parentArg2, tc.i2, tc.s2)
 				require.NoError(t, err)
 
 				if tc.expectCacheHit {
@@ -176,7 +181,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 	t.Run("same schema but different implementations", func(ctx context.Context, t *testctx.T) {
 		// right now calls are cached by module source digest via the `asModule` custom cache key plus
-		// the fact that IDs include the module InstanceID, verify that behavior works as expected
+		// the fact that IDs include the module ResultID, verify that behavior works as expected
 		callMod := func(c *dagger.Client, t *testctx.T, x string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work").
@@ -872,8 +877,7 @@ type Secreter struct {}
 
 func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
 	authSecret := dag.SetSecret("GIT_AUTH", tokenPlaintext)
-	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private").
-		WithAuthToken(authSecret).
+	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private", dagger.GitOpts{HTTPAuthToken: authSecret}).
 		Branch("main").
 		Tree()
 
@@ -1601,5 +1605,359 @@ func (Test) Fn(ctx context.Context) error {
 	})
 
 	err := eg.Wait()
+	require.NoError(t, err)
+}
+
+func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.T) {
+	// Call a function with a directory arg sourced from a private git repo that uses
+	// an auth token. Do this from two different clients with different tokens for the
+	// same repo. Ensure that even though the git repo is cached between the two, we
+	// don't hit errors about missing auth tokens.
+
+	modDir := t.TempDir()
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, dir *dagger.Directory, rand string) ([]string, error) {
+	return dir.Entries(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+
+	gitConfigDir1 := t.TempDir()
+	gitConfigFile1 := filepath.Join(gitConfigDir1, "config")
+	err = os.WriteFile(
+		gitConfigFile1,
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken))),
+		0644,
+	)
+	require.NoError(t, err)
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile1))
+
+	err = c1.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	gitRepoID1, err := c1.Address(tc.gitTestRepoRef).Directory().ID(ctx)
+	require.NoError(t, err)
+
+	rand1 := rand.Text()
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn []string
+		}
+	}](c1, t, `{test{fn(dir: "`+string(gitRepoID1)+`", rand: "`+rand1+`")}}`, nil)
+	require.NoError(t, err)
+
+	gitConfigDir2 := t.TempDir()
+	gitConfigFile2 := filepath.Join(gitConfigDir2, "config")
+	err = os.WriteFile(
+		gitConfigFile2,
+		[]byte(makeGitCredentials("https://"+tc.expectedHost, "git", decodedGitToken(tc.encodedToken2))),
+		0644,
+	)
+	require.NoError(t, err)
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigFile2))
+
+	err = c2.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	gitRepoID2, err := c2.Address(tc.gitTestRepoRef).Directory().ID(ctx)
+	require.NoError(t, err)
+
+	rand2 := rand.Text()
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn []string
+		}
+	}](c2, t, `{test{fn(dir: "`+string(gitRepoID2)+`", rand: "`+rand2+`")}}`, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, res1.Test.Fn, res2.Test.Fn)
+}
+
+func (InterfaceSuite) TestCrossSessionInterfaceCaching(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	driveDir := filepath.Join(modDir, "drive")
+	err := os.MkdirAll(driveDir, 0755)
+	require.NoError(t, err)
+
+	rollsDir := filepath.Join(modDir, "rolls-royce")
+	err = os.MkdirAll(rollsDir, 0755)
+	require.NoError(t, err)
+
+	// Use unique suffix to avoid hitting stale cache from previous test runs
+	uniqueSuffix := identity.NewID()
+
+	initDriveCmd := hostDaggerCommand(ctx, t, driveDir, "init", "--source=.", "--name=drive", "--sdk=go")
+	initDriveOutput, err := initDriveCmd.CombinedOutput()
+	require.NoError(t, err, string(initDriveOutput))
+	err = os.WriteFile(filepath.Join(driveDir, "main.go"), []byte(`package main
+
+import "context"
+
+// unique: `+uniqueSuffix+`
+
+type Drive struct {
+	Car Car
+}
+
+func New(car Car) *Drive {
+	return &Drive{Car: car}
+}
+
+func (d *Drive) DriveIt(ctx context.Context) error {
+	return d.Car.Drive(ctx)
+}
+
+type Car interface {
+	DaggerObject
+	Drive(ctx context.Context) error
+}
+`), 0644)
+	require.NoError(t, err)
+
+	initRollsCmd := hostDaggerCommand(ctx, t, rollsDir, "init", "--source=.", "--name=rolls-royce", "--sdk=go")
+	initRollsOutput, err := initRollsCmd.CombinedOutput()
+	require.NoError(t, err, string(initRollsOutput))
+
+	err = os.WriteFile(filepath.Join(rollsDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+)
+
+// unique: `+uniqueSuffix+`
+
+type RollsRoyce struct{}
+
+func (r *RollsRoyce) Drive(ctx context.Context) error {
+	fmt.Println("I'm a rolls royce")
+	return nil
+}
+`), 0644)
+	require.NoError(t, err)
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	installDriveMainCmd := hostDaggerCommand(ctx, t, modDir, "install", driveDir)
+	installDriveMainOutput, err := installDriveMainCmd.CombinedOutput()
+	require.NoError(t, err, string(installDriveMainOutput))
+
+	installRollsCmd := hostDaggerCommand(ctx, t, modDir, "install", rollsDir)
+	installRollsOutput, err := installRollsCmd.CombinedOutput()
+	require.NoError(t, err, string(installRollsOutput))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+)
+
+// unique: `+uniqueSuffix+`
+
+type Test struct{}
+
+func (m *Test) DriveRollsRoyce(ctx context.Context) error {
+	return dag.Drive(dag.RollsRoyce().AsDriveCar()).DriveIt(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	callCmd1 := hostDaggerCommand(ctx, t, modDir, "call", "drive-rolls-royce")
+	callOutput1, err := callCmd1.CombinedOutput()
+	require.NoError(t, err, string(callOutput1))
+
+	callCmd2 := hostDaggerCommand(ctx, t, modDir, "call", "drive-rolls-royce")
+	callOutput2, err := callCmd2.CombinedOutput()
+	require.NoError(t, err, string(callOutput2))
+}
+
+func (DirectorySuite) TestContentHashedDirectoryFile(ctx context.Context, t *testctx.T) {
+	// create two dirs with identical contents, but at different subpaths
+
+	rando := rand.Text()
+
+	rootA := t.TempDir()
+	fileA := filepath.Join(rootA, "subdirA", rando)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fileA), 0755))
+	require.NoError(t, os.WriteFile(fileA, []byte(rando), 0644))
+
+	rootB := t.TempDir()
+	fileB := filepath.Join(rootB, "subdirB", rando)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fileB), 0755))
+	require.NoError(t, os.WriteFile(fileB, []byte(rando), 0644))
+
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+
+	// populate engine with cache entry from dir A
+	_, err := c1.Host().Directory(rootA).Directory("subdirA").Entries(ctx)
+	require.NoError(t, err)
+
+	// Try to load the subdir from B and read the file, it should succeed.
+	// The error case the engine needs to avoid is:
+	// 1. cache hit between rootB/subdirB + rootA/subdirA, using rootA/subdirA because it came first
+	// 2. try to read "subdirB/rando" from rootA, which doesn't exist
+	contents, err := c2.Host().Directory(rootB).Directory("subdirB").File(rando).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, rando, contents)
+}
+
+func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t *testctx.T) {
+	tmp := t.TempDir()
+	sock := filepath.Join(tmp, "test.sock")
+
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+
+	defer l.Close()
+
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
+				return
+			}
+
+			n, err := io.Copy(c, c)
+			if err != nil {
+				t.Logf("copy: %s", err)
+				panic(err)
+			}
+
+			t.Logf("copied %d bytes", n)
+
+			err = c.Close()
+			if err != nil {
+				t.Logf("close: %s", err)
+				panic(err)
+			}
+		}
+	}()
+
+	modTmpdir := filepath.Join(tmp, "mod")
+	err = os.MkdirAll(modTmpdir, 0755)
+	require.NoError(t, err)
+
+	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+	initModOutput, err := initModCmd.CombinedOutput()
+	require.NoError(t, err, string(initModOutput))
+
+	err = os.WriteFile(filepath.Join(modTmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+	"strconv"
+	"time"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, error) {
+	dockerfile := "FROM alpine:3.20\n" +
+		"RUN apk add netcat-openbsd\n" +
+		"ARG MSG\n" +
+		"ARG CACHEBUST\n" +
+		"RUN --mount=type=ssh sh -c 'echo -n $MSG | nc -w1 -N -U $SSH_AUTH_SOCK > /result'\n"
+
+	return dag.Directory().
+		WithNewFile("Dockerfile", dockerfile).
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			SSH: sock,
+			BuildArgs: []dagger.BuildArg{
+				{Name: "MSG", Value: msg},
+				{Name: "CACHEBUST", Value: strconv.Itoa(int(time.Now().UnixNano()))},
+			},
+		}).
+		File("/result").
+		Contents(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t)
+	err = c1.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c1, t, `{test{fn(sock: "`+string(sockID1)+`", msg: "blah")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "blah", res1.Test.Fn)
+
+	c2 := connect(ctx, t)
+	err = c2.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "blah")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "blah", res2.Test.Fn)
+
+	require.NoError(t, c1.Close())
+
+	res2b, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "omg")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "omg", res2b.Test.Fn)
+}
+
+func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T) {
+	tc := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
+	url := tc.gitTestRepoRef
+	ref := tc.gitTestRepoCommit
+
+	agentSockPath1, cleanup1 := setupPrivateRepoSSHAgent(t)
+	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath1))
+	ref1ID, err := c1.Git(url).Commit(ref).ID(ctx)
+	require.NoError(t, err)
+	var id1 call.ID
+	err = id1.Decode(string(ref1ID))
+	require.NoError(t, err)
+
+	agentSockPath2, _ := setupPrivateRepoSSHAgent(t)
+	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath2))
+	ref2ID, err := c2.Git(url).Commit(ref).ID(ctx)
+	require.NoError(t, err)
+	var id2 call.ID
+	err = id2.Decode(string(ref2ID))
+	require.NoError(t, err)
+
+	cleanup1()
+	require.NoError(t, c1.Close())
+
+	_, err = c2.LoadGitRefFromID(ref2ID).Tree().Sync(ctx)
 	require.NoError(t, err)
 }

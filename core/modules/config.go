@@ -56,6 +56,12 @@ type ModuleConfig struct {
 	// The SDK this module uses
 	SDK *SDK `json:"sdk,omitempty"`
 
+	// An optional blueprint module
+	Blueprint *ModuleConfigDependency `json:"blueprint,omitempty"`
+
+	// Toolchain modules
+	Toolchains []*ModuleConfigDependency `json:"toolchains,omitempty"`
+
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 
@@ -74,6 +80,10 @@ type ModuleConfig struct {
 
 	// The clients generated for this module.
 	Clients []*ModuleConfigClient `json:"clients,omitempty"`
+
+	// If true, disable the new default function caching behavior for this module. Functions will
+	// instead default to the old behavior of per-session caching.
+	DisableDefaultFunctionCaching *bool `json:"disableDefaultFunctionCaching,omitempty"`
 }
 
 type ModuleConfigUserFields struct {
@@ -87,6 +97,9 @@ type ModuleConfigUserFields struct {
 type SDK struct {
 	Source string         `json:"source"`
 	Config map[string]any `json:"config,omitempty"`
+	Debug  bool           `json:"debug,omitempty"`
+	// The experimental features enabled for this module.
+	Experimental map[string]bool `json:"experimental,omitempty"`
 }
 
 func (sdk *SDK) UnmarshalJSON(data []byte) error {
@@ -190,6 +203,38 @@ type ModuleConfigDependency struct {
 
 	// The pinned version of the module dependency.
 	Pin string `json:"pin,omitempty"`
+
+	// Customizations configuration for toolchains that override function argument pragmas.
+	Customizations []*ModuleConfigArgument `json:"customizations,omitempty"`
+
+	// IgnoreChecks is a list of check patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match check names.
+	IgnoreChecks []string `json:"ignoreChecks,omitempty"`
+
+	// IgnoreGenerators is a list of generator patterns to exclude from this toolchain.
+	// Patterns can use glob syntax to match generator names.
+	IgnoreGenerators []string `json:"ignoreGenerators,omitempty"`
+}
+
+// ModuleConfigArgument represents an argument override for a toolchain function
+type ModuleConfigArgument struct {
+	// The function chain to apply this argument to. Empty or nil for constructor.
+	Function []string `json:"function,omitempty"`
+
+	// The name of the argument to override.
+	Argument string `json:"argument"`
+
+	// The default value to use for this argument.
+	Default string `json:"default,omitempty"`
+
+	// The default path to use for File or Directory arguments.
+	DefaultPath string `json:"defaultPath,omitempty"`
+
+	// The default address to use for Container arguments.
+	DefaultAddress string `json:"defaultAddress,omitempty"`
+
+	// Ignore patterns for Directory arguments.
+	Ignore []string `json:"ignore,omitempty"`
 }
 
 func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {

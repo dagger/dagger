@@ -14,6 +14,28 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Return the check defined by the module with the given name. Must match to exactly one check.
+     */
+    public function check(string $name): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('check');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all checks defined by the module
+     */
+    public function checks(?array $include = null): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The dependencies of the module.
      */
     public function dependencies(): array
@@ -50,6 +72,28 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the generator defined by the module with the given name. Must match to exactly one generator.
+     */
+    public function generator(string $name): Generator
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generator');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Generator($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return all generators defined by the module
+     */
+    public function generators(?array $include = null): GeneratorGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generators');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\GeneratorGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Module.
      */
     public function id(): ModuleId
@@ -65,6 +109,19 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interfaces');
         return (array)$this->queryLeaf($leafQueryBuilder, 'interfaces');
+    }
+
+    /**
+     * The introspection schema JSON file for this module.
+     *
+     * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+     *
+     * Note: this is in the context of a module, so some core types may be hidden.
+     */
+    public function introspectionSchemaJSON(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('introspectionSchemaJSON');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -133,6 +190,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
+     * User-defined default values, loaded from local .env files.
+     */
+    public function userDefaults(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('userDefaults');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

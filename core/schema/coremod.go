@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,9 +10,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/server/resource"
+	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -37,7 +35,7 @@ func (m *CoreMod) GetSource() *core.ModuleSource {
 	return &core.ModuleSource{}
 }
 
-func (m *CoreMod) View() (dagql.View, bool) {
+func (m *CoreMod) View() (call.View, bool) {
 	return m.Dag.View, true
 }
 
@@ -45,30 +43,36 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
 		&environmentSchema{dag}, // install environment middleware first
-		&directorySchema{dag},
-		&fileSchema{dag},
-		&gitSchema{dag},
-		&containerSchema{dag},
-		&cacheSchema{dag},
-		&secretSchema{dag},
-		&serviceSchema{dag},
-		&hostSchema{dag},
-		&httpSchema{dag},
-		&platformSchema{dag},
-		&socketSchema{dag},
-		&moduleSourceSchema{dag},
-		&moduleSchema{dag},
-		&errorSchema{dag},
-		&engineSchema{dag},
-		&cloudSchema{dag},
+		&directorySchema{},
+		&fileSchema{},
+		&gitSchema{},
+		&containerSchema{},
+		&cacheSchema{},
+		&secretSchema{},
+		&serviceSchema{},
+		&hostSchema{},
+		&httpSchema{},
+		&platformSchema{},
+		&socketSchema{},
+		&moduleSourceSchema{},
+		&moduleSchema{},
+		&errorSchema{},
+		&engineSchema{},
+		&cloudSchema{},
 		&llmSchema{dag},
+		&jsonvalueSchema{},
+		&envfileSchema{},
+		&addressSchema{},
+		&checksSchema{},
+		&generatorsSchema{},
+		&workspaceSchema{},
 	} {
-		schema.Install()
+		schema.Install(dag)
 	}
 	return nil
 }
 
-func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, bool, error) {
+func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {
 	var modType core.ModType
 
 	switch typeDef.Kind {
@@ -76,12 +80,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		modType = &core.PrimitiveType{Def: typeDef}
 
 	case core.TypeDefKindList:
-		underlyingType, ok, _, err := m.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
+		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
 		if err != nil {
-			return nil, false, false, fmt.Errorf("failed to get underlying type: %w", err)
+			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
 		}
 		if !ok {
-			return nil, false, false, nil
+			return nil, false, nil
 		}
 		modType = &core.ListType{
 			Elem:       typeDef.AsList.Value.ElementTypeDef,
@@ -91,13 +95,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	case core.TypeDefKindScalar:
 		_, ok := m.Dag.ScalarType(typeDef.AsScalar.Value.Name)
 		if !ok {
-			return nil, false, false, nil
+			return nil, false, nil
 		}
 
 		var resolvedDef *core.TypeDef
 		defs, err := m.typedefs(ctx)
 		if err != nil {
-			return nil, false, false, err
+			return nil, false, err
 		}
 		for _, def := range defs {
 			if def.Kind == core.TypeDefKindScalar && def.AsScalar.Value.Name == typeDef.AsScalar.Value.Name {
@@ -106,7 +110,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Name)
+			return nil, false, fmt.Errorf("could not resolve scalar def %s", typeDef.AsScalar.Value.Name)
 		}
 
 		modType = &CoreModScalar{coreMod: m, name: resolvedDef.AsScalar.Value.Name}
@@ -114,13 +118,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	case core.TypeDefKindObject:
 		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
-			return nil, false, false, nil
+			return nil, false, nil
 		}
 
 		var resolvedDef *core.TypeDef
 		defs, err := m.typedefs(ctx)
 		if err != nil {
-			return nil, false, false, err
+			return nil, false, err
 		}
 		for _, def := range defs {
 			if def.Kind == core.TypeDefKindObject && def.AsObject.Value.Name == typeDef.AsObject.Value.Name {
@@ -129,7 +133,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Name)
+			return nil, false, fmt.Errorf("could not resolve object def %s", typeDef.AsObject.Value.Name)
 		}
 
 		modType = &CoreModObject{coreMod: m, name: resolvedDef.AsObject.Value.Name}
@@ -137,13 +141,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	case core.TypeDefKindEnum:
 		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
 		if !ok {
-			return nil, false, false, nil
+			return nil, false, nil
 		}
 
 		var resolvedDef *core.TypeDef
 		defs, err := m.typedefs(ctx)
 		if err != nil {
-			return nil, false, false, err
+			return nil, false, err
 		}
 		for _, def := range defs {
 			if def.Kind == core.TypeDefKindEnum && def.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
@@ -152,17 +156,17 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			}
 		}
 		if resolvedDef == nil {
-			return nil, false, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Name)
+			return nil, false, fmt.Errorf("could not resolve enum def %s", typeDef.AsEnum.Value.Name)
 		}
 
 		modType = &CoreModEnum{coreMod: m, typeDef: resolvedDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
 		// core does not yet define any interfaces
-		return nil, false, false, nil
+		return nil, false, nil
 
 	default:
-		return nil, false, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
 
 	if typeDef.Optional {
@@ -172,7 +176,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 	}
 
-	return modType, true, true, nil
+	return modType, true, nil
 }
 
 func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
@@ -192,15 +196,29 @@ func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
 func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.TypeDef, error) {
 	initialSchema := m.Dag.Schema()
 
-	introspectionJSON, err := SchemaIntrospectionJSON(ctx, dag)
+	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
+	schema := &introspection.Schema{}
+	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
+		schema.QueryType.Name = *queryName
+	}
+	for _, dagqlType := range dagqlSchema.Types() {
+		codeGenType, err := dagqlToCodegenType(dagqlType)
+		if err != nil {
+			return nil, err
+		}
+		schema.Types = append(schema.Types, codeGenType)
+	}
+	directives, err := dagqlSchema.Directives()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection JSON for core: %w", err)
+		return nil, err
 	}
-	var schemaResp introspection.Response
-	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
+	for _, dagqlDirective := range directives {
+		dd, err := dagqlToCodegenDirectiveDef(dagqlDirective)
+		if err != nil {
+			return nil, err
+		}
+		schema.Directives = append(schema.Directives, dd)
 	}
-	schema := schemaResp.Schema
 
 	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {
@@ -226,6 +244,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 				fn := &core.Function{
 					Name:        introspectionField.Name,
 					Description: introspectionField.Description,
+					Deprecated:  introspectionField.DeprecationReason,
 				}
 
 				rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
@@ -241,6 +260,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 					fnArg := &core.FunctionArg{
 						Name:        introspectionArg.Name,
 						Description: introspectionArg.Description,
+						Deprecated:  introspectionArg.DeprecationReason,
 					}
 
 					if introspectionArg.DefaultValue != nil {
@@ -280,6 +300,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 				field := &core.FieldTypeDef{
 					Name:        introspectionField.Name,
 					Description: introspectionField.Description,
+					Deprecated:  introspectionField.DeprecationReason,
 				}
 				fieldType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
 				if err != nil {
@@ -319,6 +340,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 					Name:        value.Name,
 					Value:       value.Directives.EnumValue(),
 					Description: value.Description,
+					Deprecated:  value.DeprecationReason,
 				})
 			}
 
@@ -342,12 +364,17 @@ type CoreModScalar struct {
 
 var _ core.ModType = (*CoreModScalar)(nil)
 
-func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	s, ok := obj.coreMod.Dag.ScalarType(obj.name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: found no scalar type")
 	}
-	return s.DecodeInput(value)
+
+	input, err := s.DecodeInput(value)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: failed to decode input: %w", err)
+	}
+	return dagql.NewResultForCurrentID(ctx, input)
 }
 
 func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -363,8 +390,11 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
-func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
-	return nil
+func (obj *CoreModScalar) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (obj *CoreModScalar) SourceMod() core.Mod {
@@ -388,10 +418,10 @@ type CoreModObject struct {
 
 var _ core.ModType = (*CoreModObject)(nil)
 
-func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	if value == nil {
 		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
-		slog.Warn("CoreModObject.ConvertFromSDKResult: got nil value")
+		slog.ExtraDebug("CoreModObject.ConvertFromSDKResult: got nil value")
 		return nil, nil
 	}
 	id, ok := value.(string)
@@ -403,9 +433,19 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		return nil, err
 	}
 
-	val, err := obj.coreMod.Dag.Load(ctx, &idp)
+	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
+		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get current query: %w", err)
+	}
+	c, err := query.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: failed to get query cache: %w", err)
+	}
+	dag := obj.coreMod.Dag.WithCache(c)
+
+	val, err := dag.Load(ctx, &idp)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
 	}
 	return val, nil
 }
@@ -417,25 +457,25 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	switch x := value.(type) {
 	case dagql.Input:
 		return x, nil
-	case dagql.Object:
+	case dagql.AnyResult:
 		return x.ID().Encode()
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: unknown type %T", obj, value)
 	}
 }
 
-func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
+func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
 	if value == nil {
-		return nil
+		return content.CollectJSONable(nil)
 	}
 	switch x := value.(type) {
 	case dagql.Input:
-		return nil
-	case dagql.Object:
-		ids[x.ID().Digest()] = &resource.ID{ID: *x.ID()}
+		return content.CollectJSONable(x)
+	case dagql.AnyResult:
+		content.CollectID(*x.ID(), false)
 		return nil
 	default:
-		return fmt.Errorf("%T.CollectCoreIDs: unknown type %T", obj, value)
+		return content.CollectJSONable(value.Unwrap())
 	}
 }
 
@@ -461,7 +501,7 @@ type CoreModEnum struct {
 
 var _ core.ModType = (*CoreModEnum)(nil)
 
-func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
 	if enum, ok := value.(*core.ModuleEnum); ok {
 		value = enum.Name
 	}
@@ -469,7 +509,12 @@ func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (d
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
 	}
-	return s.DecodeInput(value)
+
+	input, err := s.DecodeInput(value)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: failed to decode input: %w", err)
+	}
+	return dagql.NewResultForCurrentID(ctx, input)
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -484,8 +529,11 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(input)
 }
 
-func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
-	return nil
+func (enum *CoreModEnum) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+	if value == nil {
+		return content.CollectJSONable(nil)
+	}
+	return content.CollectJSONable(value.Unwrap())
 }
 
 func (enum *CoreModEnum) SourceMod() core.Mod {

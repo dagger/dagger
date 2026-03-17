@@ -380,7 +380,7 @@ func (d ShellDoc) String() string {
 	return sb.String()
 }
 
-// shellFunctionUseLine returns the usage line fine for a function
+// FunctionUseLine returns the usage line fine for a function
 func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) string {
 	sb := new(strings.Builder)
 

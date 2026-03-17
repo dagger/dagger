@@ -77,36 +77,16 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Initializes this container from a Dockerfile build.
-  """
-  @spec build(t(), Dagger.Directory.t(), [
-          {:dockerfile, String.t() | nil},
-          {:target, String.t() | nil},
-          {:build_args, [Dagger.BuildArg.t()]},
-          {:secrets, [Dagger.SecretID.t()]},
-          {:no_init, boolean() | nil}
-        ]) :: Dagger.Container.t()
-  def build(%__MODULE__{} = container, context, optional_args \\ []) do
-    query_builder =
-      container.query_builder
-      |> QB.select("build")
-      |> QB.put_arg("context", Dagger.ID.id!(context))
-      |> QB.maybe_put_arg("dockerfile", optional_args[:dockerfile])
-      |> QB.maybe_put_arg("target", optional_args[:target])
-      |> QB.maybe_put_arg("buildArgs", optional_args[:build_args])
-      |> QB.maybe_put_arg(
-        "secrets",
-        if(optional_args[:secrets],
-          do: Enum.map(optional_args[:secrets], &Dagger.ID.id!/1),
-          else: nil
-        )
-      )
-      |> QB.maybe_put_arg("noInit", optional_args[:no_init])
+  The combined buffered standard output and standard error stream of the last executed command
 
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
+  Returns an error if no command was executed
+  """
+  @spec combined_output(t()) :: {:ok, String.t()} | {:error, term()}
+  def combined_output(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("combinedOutput")
+
+    Client.execute(container.client, query_builder)
   end
 
   @doc """
@@ -181,6 +161,24 @@ defmodule Dagger.Container do
          }
        end}
     end
+  end
+
+  @doc """
+  check if a file or directory exists
+  """
+  @spec exists(t(), String.t(), [
+          {:expected_type, Dagger.ExistsType.t() | nil},
+          {:do_not_follow_symlinks, boolean() | nil}
+        ]) :: {:ok, boolean()} | {:error, term()}
+  def exists(%__MODULE__{} = container, path, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("exists")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    Client.execute(container.client, query_builder)
   end
 
   @doc """
@@ -262,6 +260,35 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     Client.execute(container.client, query_builder)
+  end
+
+  @doc """
+  Exports the container as an image to the host's container image store.
+  """
+  @spec export_image(t(), String.t(), [
+          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: :ok | {:error, term()}
+  def export_image(%__MODULE__{} = container, name, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("exportImage")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg(
+        "platformVariants",
+        if(optional_args[:platform_variants],
+          do: Enum.map(optional_args[:platform_variants], &Dagger.ID.id!/1),
+          else: nil
+        )
+      )
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    case Client.execute(container.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 
   @doc """
@@ -639,17 +666,19 @@ defmodule Dagger.Container do
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
+          {:gitignore, boolean() | nil},
           {:owner, String.t() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
-  def with_directory(%__MODULE__{} = container, path, directory, optional_args \\ []) do
+  def with_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
-      |> QB.put_arg("directory", Dagger.ID.id!(directory))
+      |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
@@ -678,6 +707,22 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Export environment variables from an env-file to the container.
+  """
+  @spec with_env_file_variables(t(), Dagger.EnvFile.t()) :: Dagger.Container.t()
+  def with_env_file_variables(%__MODULE__{} = container, source) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withEnvFileVariables")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Set a new environment variable in the container.
   """
   @spec with_env_variable(t(), String.t(), String.t(), [{:expand, boolean() | nil}]) ::
@@ -697,11 +742,26 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Raise an error.
+  """
+  @spec with_error(t(), String.t()) :: Dagger.Container.t()
+  def with_error(%__MODULE__{} = container, err) do
+    query_builder =
+      container.query_builder |> QB.select("withError") |> QB.put_arg("err", err)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Execute a command in the container, and return a new snapshot of the container state after execution.
   """
   @spec with_exec(t(), [String.t()], [
           {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
+          {:redirect_stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
@@ -717,6 +777,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("args", args)
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
+      |> QB.maybe_put_arg("redirectStdin", optional_args[:redirect_stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
       |> QB.maybe_put_arg("expect", optional_args[:expect])

@@ -16,6 +16,44 @@ defmodule Dagger.Module do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Return the check defined by the module with the given name. Must match to exactly one check.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec check(t(), String.t()) :: Dagger.Check.t()
+  def check(%__MODULE__{} = module, name) do
+    query_builder =
+      module.query_builder |> QB.select("check") |> QB.put_arg("name", name)
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
+  Return all checks defined by the module
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  def checks(%__MODULE__{} = module, optional_args \\ []) do
+    query_builder =
+      module.query_builder
+      |> QB.select("checks")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   The dependencies of the module.
   """
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
@@ -118,6 +156,24 @@ defmodule Dagger.Module do
   end
 
   @doc """
+  The introspection schema JSON file for this module.
+
+  This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  @spec introspection_schema_json(t()) :: Dagger.File.t()
+  def introspection_schema_json(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("introspectionSchemaJSON")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   The name of the module
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
@@ -199,7 +255,7 @@ defmodule Dagger.Module do
   @doc """
   The source for the module.
   """
-  @spec source(t()) :: Dagger.ModuleSource.t()
+  @spec source(t()) :: Dagger.ModuleSource.t() | nil
   def source(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("source")
@@ -228,6 +284,20 @@ defmodule Dagger.Module do
          client: module.client
        }}
     end
+  end
+
+  @doc """
+  User-defined default values, loaded from local .env files.
+  """
+  @spec user_defaults(t()) :: Dagger.EnvFile.t()
+  def user_defaults(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("userDefaults")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: module.client
+    }
   end
 
   @doc """

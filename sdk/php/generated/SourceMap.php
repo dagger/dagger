@@ -57,4 +57,13 @@ class SourceMap extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('module');
         return (string)$this->queryLeaf($leafQueryBuilder, 'module');
     }
+
+    /**
+     * The URL to the file, if any. This can be used to link to the source map in the browser.
+     */
+    public function url(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'url');
+    }
 }

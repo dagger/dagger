@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/dagger/dagger/util/cleanups"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -19,8 +22,10 @@ import (
 )
 
 const (
-	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-	RunnerHostEnv = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	GPUSupportEnv        = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	RunnerHostEnv        = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	RunnerImageLoaderEnv = "_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE"
+	TraceNameEnv         = "DAGGER_TRACE_NAME"
 )
 
 var (
@@ -28,6 +33,9 @@ var (
 	//
 	// Note: this is filled at link-time.
 	RunnerHost string
+
+	// RunnerImageLoader holds the image store for the client.
+	RunnerImageLoader string
 )
 
 func init() {
@@ -37,6 +45,8 @@ func init() {
 	if RunnerHost == "" {
 		RunnerHost = defaultRunnerHost()
 	}
+
+	RunnerImageLoader = os.Getenv(RunnerImageLoaderEnv)
 }
 
 func defaultRunnerHost() string {
@@ -44,12 +54,12 @@ func defaultRunnerHost() string {
 	if tag == "" {
 		// can happen during naive dev builds (so just fallback to something
 		// semi-reasonable)
-		return "docker-container://" + distconsts.EngineContainerName
+		return "container://" + distconsts.EngineContainerName
 	}
 	if os.Getenv(GPUSupportEnv) != "" {
 		tag += "-gpu"
 	}
-	return fmt.Sprintf("docker-image://%s:%s", engine.EngineImageRepo, tag)
+	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, tag)
 }
 
 type runClientCallback func(context.Context, *client.Client) error
@@ -58,8 +68,10 @@ func withEngine(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
-) error {
-	return Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
+) (rerr error) {
+	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
+		var cleanup cleanups.Cleanups
+
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
@@ -70,23 +82,32 @@ func withEngine(
 			}
 			Frontend.Opts().TelemetryError = err
 		}))
+		cleanup.Add("close telemetry", func() error {
+			cleanupTelemetry(rerr)
+			return nil
+		})
 
-		defer func() { cleanupTelemetry(rerr) }()
-
-		if debug {
+		if debugFlag {
 			params.LogLevel = slog.LevelDebug
 		}
 
 		if useCloudEngine {
-			params.RunnerHost = "dagger-cloud://default-engine-config.dagger.cloud"
+			params.RunnerHost = engine.DefaultCloudRunnerHost
 		} else if params.RunnerHost == "" {
 			params.RunnerHost = RunnerHost
+		}
+
+		if RunnerImageLoader != "" {
+			backend, err := imageload.GetBackend(RunnerImageLoader)
+			if err != nil {
+				return cleanup.Run, err
+			}
+			params.ImageLoaderBackend = backend
 		}
 
 		params.DisableHostRW = disableHostRW
 		params.AllowedLLMModules = allowedLLMModules
 
-		params.EngineCallback = Frontend.ConnectedToEngine
 		params.CloudURLCallback = Frontend.SetCloudURL
 
 		params.EngineTrace = telemetry.SpanForwarder{
@@ -106,14 +127,22 @@ func withEngine(
 			params.PromptHandler = Frontend
 		}
 
-		// Connect to and run with the engine
-		sess, ctx, err := client.Connect(ctx, params)
+		ca, err := auth.GetCloudAuth(ctx)
 		if err != nil {
-			return err
+			return cleanup.Run, err
 		}
-		defer sess.Close()
+		params.CloudAuth = ca
 
-		return fn(ctx, sess)
+		// Connect to and run with the engine
+		sess, err := client.Connect(ctx, params)
+		if err != nil {
+			return cleanup.Run, err
+		}
+		cleanup.Add("close dagger session", sess.Close)
+
+		Frontend.SetClient(sess.Dagger())
+
+		return cleanup.Run, fn(ctx, sess)
 	})
 }
 
@@ -139,10 +168,17 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// If you pass credentials in plaintext, yes, they will be leaked; don't do
 	// that, since they will also be leaked in various other places (like the
 	// process tree). Use Secret arguments instead.
-	ctx, span := Tracer().Start(ctx, spanName(os.Args))
+	name := spanName(os.Args)
+	if os.Getenv(TraceNameEnv) != "" {
+		name = os.Getenv(TraceNameEnv)
+	}
+	ctx, span := Tracer().Start(ctx, name)
 
 	// Set up global slog to log to the primary span output.
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+
+	// Set the root span as the target for "global logs"
+	ctx = telemetry.ContextWithGlobalLogsSpan(ctx)
 
 	// Set the span as the primary span for the frontend.
 	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
@@ -154,7 +190,7 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	return ctx, func(rerr error) {
 		stdio.Close()
-		telemetry.End(span, func() error { return rerr })
+		telemetry.EndWithCause(span, &rerr)
 		telemetry.Close()
 	}
 }
