@@ -299,7 +299,7 @@ func TestGCPCacheEviction(t *testing.T) {
 	require.Equal(t, 3, len(gcpSecretCache))
 	_, exists := gcpSecretCache["secret1"]
 	require.False(t, exists, "secret1 should have been evicted")
-	
+
 	// Verify remaining secrets
 	for _, key := range []string{"secret2", "secret3", "secret4"} {
 		_, exists := gcpSecretCache[key]

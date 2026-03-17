@@ -20,11 +20,11 @@ type gcpSecretWithTTL struct {
 }
 
 var (
-	gcpMutex       sync.RWMutex
-	gcpClient      *secretmanager.Client
-	gcpSecretCache = make(map[string]gcpSecretWithTTL)
-	gcpCacheOrder  []string // Track access order for LRU eviction
-	gcpMaxCacheSize = 100   // Maximum number of cached secrets
+	gcpMutex        sync.RWMutex
+	gcpClient       *secretmanager.Client
+	gcpSecretCache  = make(map[string]gcpSecretWithTTL)
+	gcpCacheOrder   []string // Track access order for LRU eviction
+	gcpMaxCacheSize = 100    // Maximum number of cached secrets
 )
 
 // GCP Secrets Manager provider for SecretProvider
