@@ -2770,19 +2770,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 	}
 
 	var initialized *core.Module
-	sdkContentDigest := ""
-	contextDirIDDigest := ""
-	contextDirContentDigest := ""
-	contextDirID, err := src.Self().ContextDirectory.ID()
-	if err == nil && contextDirID != nil {
-		contextDirIDDigest = contextDirID.Digest().String()
-		contextDirContentDigest = contextDirID.ContentDigest().String()
-	}
-	if dgst, err := src.Self().SourceImplementationDigest(ctx); err == nil {
-		sdkContentDigest = dgst.String()
-	} else {
-		sdkContentDigest = "error:" + err.Error()
-	}
 
 	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
 	if typeDefsEnabled {
@@ -2847,29 +2834,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		}
 	}
 
-	initializedObjects := make([]string, 0, len(initialized.ObjectDefs))
-	for _, def := range initialized.ObjectDefs {
-		if !def.AsObject.Valid {
-			continue
-		}
-		obj := def.AsObject.Value
-		fnNames := make([]string, 0, len(obj.Functions))
-		for _, fn := range obj.Functions {
-			fnNames = append(fnNames, fn.Name)
-		}
-		initializedObjects = append(initializedObjects, fmt.Sprintf("%s:%v", obj.Name, fnNames))
-	}
-	slog.Info(
-		"cache-debug runModuleDefInSDK initialized",
-		"module", mod.Name(),
-		"type_defs_enabled", typeDefsEnabled,
-		"sdk_content_digest", sdkContentDigest,
-		"context_dir_id_digest", contextDirIDDigest,
-		"context_dir_content_digest", contextDirContentDigest,
-		"object_defs", len(initialized.ObjectDefs),
-		"objects", initializedObjects,
-	)
-
 	// update the module's types with what was returned from the call above
 	mod.Description = initialized.Description
 	for _, obj := range initialized.ObjectDefs {
@@ -2933,28 +2897,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			return nil, err
 		}
 	}
-
-	finalObjects := make([]string, 0, len(mod.ObjectDefs))
-	for _, def := range mod.ObjectDefs {
-		if !def.AsObject.Valid {
-			continue
-		}
-		obj := def.AsObject.Value
-		fnNames := make([]string, 0, len(obj.Functions))
-		for _, fn := range obj.Functions {
-			fnNames = append(fnNames, fn.Name)
-		}
-		finalObjects = append(finalObjects, fmt.Sprintf("%s:%v", obj.Name, fnNames))
-	}
-	slog.Info(
-		"cache-debug runModuleDefInSDK final",
-		"module", mod.Name(),
-		"sdk_content_digest", sdkContentDigest,
-		"context_dir_id_digest", contextDirIDDigest,
-		"context_dir_content_digest", contextDirContentDigest,
-		"object_defs", len(mod.ObjectDefs),
-		"objects", finalObjects,
-	)
 
 	return mod, nil
 }

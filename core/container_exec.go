@@ -30,6 +30,7 @@ import (
 	utilsystem "github.com/dagger/dagger/internal/buildkit/util/system"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/sys/userns"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/grpc/codes"
 
@@ -132,31 +133,55 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		execMD.NoInit = true
 	}
 
-	var callerModID *call.ID
+	var callerModDigest digest.Digest
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
 	if execMD.EncodedContentModuleID != "" {
-		callerModID = new(call.ID)
+		callerModID := new(call.ID)
 		if err := callerModID.Decode(execMD.EncodedContentModuleID); err != nil {
 			return nil, fmt.Errorf("failed to decode content-scoped module ID: %w", err)
 		}
+		callerMod, err := dagql.NewID[*Module](callerModID).Load(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load content-scoped module from encoded module ID: %w", err)
+		}
+		callerModDigest, err = callerMod.ContentPreferredDigest()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get content-scoped module digest: %w", err)
+		}
 	} else if execMD.EncodedModuleID != "" {
-		callerModID = new(call.ID)
+		callerModID := new(call.ID)
 		if err := callerModID.Decode(execMD.EncodedModuleID); err != nil {
 			return nil, fmt.Errorf("failed to decode module ID: %w", err)
+		}
+		callerMod, err := dagql.NewID[*Module](callerModID).Load(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load module from encoded module ID: %w", err)
+		}
+		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get implementation-scoped module from encoded module ID: %w", err)
+		}
+		callerModDigest, err = implementationScopedMod.ContentPreferredDigest()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get implementation-scoped module digest from encoded module ID: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod.Self() != nil {
 		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get caller implementation-scoped module: %w", err)
 		}
-		callerModID, err = implementationScopedMod.ID()
+		callerModDigest, err = implementationScopedMod.ContentPreferredDigest()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get caller implementation-scoped module ID: %w", err)
+			return nil, fmt.Errorf("failed to get caller implementation-scoped module digest: %w", err)
 		}
 	}
 
-	if callerModID != nil {
+	if callerModDigest != "" {
 		// allow the exec to reach services scoped to the module that installed it
-		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains, network.ModuleDomain(callerModID, clientMetadata.SessionID))
+		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains, network.ModuleDomain(callerModDigest, clientMetadata.SessionID))
 	}
 
 	// if GPU parameters are set for this container pass them over:

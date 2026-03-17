@@ -380,11 +380,11 @@ func (svc *Service) startContainer(
 		if err != nil {
 			return nil, fmt.Errorf("failed to get implementation-scoped module: %w", err)
 		}
-		modID, err := implementationScopedMod.ID()
+		modDigest, err := implementationScopedMod.ContentPreferredDigest()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module ID: %w", err)
+			return nil, fmt.Errorf("failed to get implementation-scoped module digest: %w", err)
 		}
-		domain = network.ModuleDomain(modID, clientMetadata.SessionID)
+		domain = network.ModuleDomain(modDigest, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with

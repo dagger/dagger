@@ -538,7 +538,7 @@ func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyRes
 		if err != nil {
 			return err
 		}
-		return content.CollectID(id, false)
+		return content.CollectID(ctx, id, false)
 	default:
 		return content.CollectJSONable(value.Unwrap())
 	}

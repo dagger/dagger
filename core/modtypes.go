@@ -21,7 +21,8 @@ import (
 // content-addressed cache keys for Workspace-aware functions.
 type CollectedContent struct {
 	// IDs maps recipe digest → resource ID for every core object (Directory,
-	// File, Container, …) found in the value tree.
+	// File, Container, …) found in the value tree. Recipe IDs use their recipe
+	// digest; handle IDs use a digest of their encoded runtime identity.
 	IDs map[digest.Digest]*resource.ID
 
 	// hasher accumulates a rolling hash of all content found in the value
@@ -50,7 +51,7 @@ func (content *CollectedContent) Digest() digest.Digest {
 }
 
 // CollectID collects an ID, indicating whether it came from an unknown field.
-func (content *CollectedContent) CollectID(idp *call.ID, unknown bool) error {
+func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, unknown bool) error {
 	if idp == nil {
 		return nil
 	}
@@ -58,12 +59,39 @@ func (content *CollectedContent) CollectID(idp *call.ID, unknown bool) error {
 		ID:       idp,
 		Optional: unknown, // mark this id as optional, since it's a best-guess attempt
 	}
-	content.IDs[idp.Digest()] = rid
+	var key digest.Digest
+	if idp.IsHandle() {
+		encoded, err := idp.Encode()
+		if err != nil {
+			return err
+		}
+		key = digest.FromString(encoded)
+	} else {
+		key = idp.Digest()
+	}
+	content.IDs[key] = rid
 	// TODO: deeper integration with dagql/cache would be preferable but ContentPreferredDigest works
 	// for current workspace requirements.
 	// Deeper integration would allow full equivalence set cache hits on any IDs, whereas this approach
 	// is specific to just "content hash" extra digests.
-	dgst := rid.ID.ContentPreferredDigest()
+	var dgst digest.Digest
+	if idp.IsHandle() {
+		dag := dagql.CurrentDagqlServer(ctx)
+		res, err := dag.LoadType(ctx, idp)
+		if err != nil {
+			return err
+		}
+		call, err := res.ResultCall()
+		if err != nil {
+			return err
+		}
+		dgst, err = call.ContentPreferredDigest()
+		if err != nil {
+			return err
+		}
+	} else {
+		dgst = rid.ID.ContentPreferredDigest()
+	}
 	content.hasher.WithString(string(dgst))
 	return nil
 }
@@ -80,17 +108,17 @@ func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) 
 		if err != nil {
 			return err
 		}
-		return content.CollectID(id, true)
+		return content.CollectID(ctx, id, true)
 	case dagql.IDable:
 		id, err := value.ID()
 		if err != nil {
 			return err
 		}
-		return content.CollectID(id, true)
+		return content.CollectID(ctx, id, true)
 	case *call.ID:
-		return content.CollectID(value, true)
+		return content.CollectID(ctx, value, true)
 	case call.ID:
-		return content.CollectID(&value, true)
+		return content.CollectID(ctx, &value, true)
 	case []any:
 		for i, value := range value {
 			if err := content.CollectIndexed(i, func() error {
@@ -112,7 +140,7 @@ func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) 
 	case string:
 		var idp call.ID
 		if err := idp.Decode(value); err == nil {
-			return content.CollectID(&idp, true)
+			return content.CollectID(ctx, &idp, true)
 		} else {
 			return content.CollectJSONable(value)
 		}
