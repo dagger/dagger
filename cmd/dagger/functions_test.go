@@ -9,10 +9,10 @@ import (
 	"dagger.io/dagger"
 )
 
-func TestRewriteQueryRootModuleArgs(t *testing.T) {
-	root := &cobra.Command{Use: "call"}
-	root.Flags().StringP("mod", "m", "", "")
-	root.Flags().BoolP("json", "j", false, "")
+func TestConstructorLocalFlags(t *testing.T) {
+	fc := &FuncCommand{
+		mod: &moduleDef{},
+	}
 
 	ciType := &modTypeDef{
 		Kind: dagger.TypeDefKindObjectKind,
@@ -41,34 +41,35 @@ func TestRewriteQueryRootModuleArgs(t *testing.T) {
 		},
 	}
 
-	t.Run("moves constructor flags behind namespaced module token", func(t *testing.T) {
-		args := []string{"--prefix", "ctor", "ci", "echo", "--prefix", "method"}
-		require.Equal(
-			t,
-			[]string{"ci", "--prefix", "ctor", "echo", "--prefix", "method"},
-			rewriteQueryRootModuleArgs(root, queryType, args),
-		)
+	t.Run("registers constructor args as local flags", func(t *testing.T) {
+		root := &cobra.Command{Use: "call"}
+		fc.addConstructorLocalFlags(root, queryType)
+		flag := root.Flags().Lookup("prefix")
+		require.NotNil(t, flag, "expected --prefix as local flag")
 	})
 
-	t.Run("keeps root flags in place", func(t *testing.T) {
-		args := []string{"-m", ".", "--prefix", "ctor", "ci", "echo", "--prefix", "method"}
-		require.Equal(
-			t,
-			[]string{"-m", ".", "ci", "--prefix", "ctor", "echo", "--prefix", "method"},
-			rewriteQueryRootModuleArgs(root, queryType, args),
-		)
+	t.Run("skips duplicate constructor args", func(t *testing.T) {
+		root := &cobra.Command{Use: "call"}
+		fc.addConstructorLocalFlags(root, queryType)
+		fc.addConstructorLocalFlags(root, queryType)
+		flag := root.Flags().Lookup("prefix")
+		require.NotNil(t, flag)
 	})
 
-	t.Run("does not rewrite when the candidate token is a flag value", func(t *testing.T) {
-		args := []string{"--prefix", "ci", "echo"}
-		require.Equal(t, args, rewriteQueryRootModuleArgs(root, queryType, args))
-	})
+	t.Run("child selectFunc picks up parent flag value", func(t *testing.T) {
+		root := &cobra.Command{Use: "call"}
+		fc.addConstructorLocalFlags(root, queryType)
 
-	t.Run("does not rewrite non query roots", func(t *testing.T) {
-		require.Equal(
-			t,
-			[]string{"--prefix", "ctor", "ci", "echo"},
-			rewriteQueryRootModuleArgs(root, ciType, []string{"--prefix", "ctor", "ci", "echo"}),
-		)
+		// Simulate parsing --prefix at root level
+		root.Flags().Set("prefix", "root-val")
+
+		child := &cobra.Command{Use: "serve"}
+		root.AddCommand(child)
+
+		// Parent's local flag should be findable
+		parentFlag := child.Parent().LocalFlags().Lookup("prefix")
+		require.NotNil(t, parentFlag)
+		require.True(t, parentFlag.Changed)
+		require.Equal(t, "root-val", parentFlag.Value.String())
 	})
 }

@@ -363,8 +363,6 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	defer telemetry.EndWithCause(span, &rerr)
 	fc.ctx = spanCtx
 
-	a = rewriteQueryRootModuleArgs(c, fc.mod.MainObject, a)
-
 	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
 
 	cmd, args, err := fc.traverse(c, a, builder)
@@ -378,177 +376,6 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	}
 
 	return cmd, args, nil
-}
-
-// rewriteQueryRootModuleArgs detects flags placed before a module-provided
-// subcommand on the Query root and moves them after the subcommand name.
-// This preserves the UX where constructor/module args can be written before
-// the subcommand: `dagger call --port 8080 serve up` → `dagger call serve --port 8080 up`.
-func rewriteQueryRootModuleArgs(root *cobra.Command, rootType *modTypeDef, args []string) []string {
-	if len(args) < 2 || !strings.HasPrefix(args[0], "-") {
-		return args
-	}
-	if rootType == nil || rootType.AsObject == nil || rootType.AsObject.Name != "Query" {
-		return args
-	}
-
-	moduleFns := queryRootModuleFunctions(rootType)
-	if len(moduleFns) == 0 {
-		return args
-	}
-
-	fnsByName := make(map[string]*modFunction, len(moduleFns))
-	for _, fn := range moduleFns {
-		fnsByName[fn.CmdName()] = fn
-	}
-
-	for i := 1; i < len(args); i++ {
-		token := args[i]
-		if strings.HasPrefix(token, "-") {
-			continue
-		}
-
-		fn, ok := fnsByName[token]
-		if !ok {
-			continue
-		}
-
-		prefixStart, ok := queryRootConstructorPrefixStart(root.Flags(), fn, args[:i])
-		if !ok {
-			continue
-		}
-
-		rewritten := make([]string, 0, len(args))
-		rewritten = append(rewritten, args[:prefixStart]...)
-		rewritten = append(rewritten, token)
-		rewritten = append(rewritten, args[prefixStart:i]...)
-		rewritten = append(rewritten, args[i+1:]...)
-		return rewritten
-	}
-
-	return args
-}
-
-// queryRootModuleFunctions returns all module-provided functions on the Query
-// root type: constructors, entrypoint-proxied methods, and proxied fields.
-func queryRootModuleFunctions(rootType *modTypeDef) []*modFunction {
-	fp := rootType.AsFunctionProvider()
-	if fp == nil {
-		return nil
-	}
-
-	fns, _ := GetSupportedFunctions(fp)
-	moduleFns := make([]*modFunction, 0, len(fns))
-	for _, fn := range fns {
-		if fn.SourceModuleName != "" {
-			moduleFns = append(moduleFns, fn)
-		}
-	}
-	return moduleFns
-}
-
-func queryRootConstructorPrefixStart(rootFlags *pflag.FlagSet, constructor *modFunction, prefix []string) (int, bool) {
-	if len(prefix) == 0 {
-		return 0, false
-	}
-
-	rootOwned := make([]bool, len(prefix))
-	for i := 0; i < len(prefix); {
-		consumed := consumeKnownFlagTokens(rootFlags, prefix, i)
-		if consumed == 0 {
-			i++
-			continue
-		}
-		for j := 0; j < consumed && i+j < len(prefix); j++ {
-			rootOwned[i+j] = true
-		}
-		i += consumed
-	}
-
-	constructorArgs := make([]string, 0, len(prefix))
-	firstConstructorToken := -1
-	for i, arg := range prefix {
-		if rootOwned[i] {
-			continue
-		}
-		if firstConstructorToken == -1 {
-			firstConstructorToken = i
-		}
-		constructorArgs = append(constructorArgs, arg)
-	}
-	if firstConstructorToken == -1 {
-		return 0, false
-	}
-
-	if !parseFunctionFlags(constructor, constructorArgs) {
-		return 0, false
-	}
-
-	return firstConstructorToken, true
-}
-
-func parseFunctionFlags(fn *modFunction, args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-
-	cmd := &cobra.Command{
-		Use:           fn.CmdName(),
-		SilenceErrors: true,
-		SilenceUsage:  true,
-	}
-	cmd.Flags().SetInterspersed(false)
-	cmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
-		return pflag.NormalizedName(cliName(name))
-	})
-
-	for _, arg := range fn.SupportedArgs() {
-		if err := arg.AddFlag(cmd.Flags()); err != nil {
-			return false
-		}
-	}
-
-	if err := cmd.ParseFlags(args); err != nil {
-		return false
-	}
-
-	return len(cmd.Flags().Args()) == 0
-}
-
-func consumeKnownFlagTokens(flags *pflag.FlagSet, args []string, idx int) int {
-	if idx >= len(args) {
-		return 0
-	}
-
-	arg := args[idx]
-	if arg == "-" || arg == "--" || !strings.HasPrefix(arg, "-") {
-		return 0
-	}
-
-	if strings.HasPrefix(arg, "--") {
-		name := strings.TrimPrefix(arg, "--")
-		if eq := strings.IndexByte(name, '='); eq >= 0 {
-			name = name[:eq]
-		}
-		flag := flags.Lookup(name)
-		if flag == nil {
-			return 0
-		}
-		if strings.Contains(arg, "=") || flag.NoOptDefVal != "" || idx+1 >= len(args) {
-			return 1
-		}
-		return 2
-	}
-
-	name := arg[1:2]
-	flag := flags.ShorthandLookup(name)
-	if flag == nil {
-		return 0
-	}
-	if len(arg) > 2 || flag.NoOptDefVal != "" || idx+1 >= len(args) {
-		return 1
-	}
-	return 2
 }
 
 // traverse recursively builds the command tree, until the leaf command is found.
@@ -578,6 +405,16 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 	return func(c *cobra.Command, a []string) error {
 		if err := fc.addFlagsForFunction(c, fn); err != nil {
 			return err
+		}
+
+		// When the root type is Query, collect constructor args from all
+		// modules and register them as local flags so they can be
+		// placed before the subcommand name. Proxy subcommands inherit
+		// the values via parentConstructorFlags.
+		if fn.Name == "" && fn.ReturnType != nil &&
+			fn.ReturnType.AsObject != nil &&
+			fn.ReturnType.AsObject.Name == "Query" {
+			fc.addConstructorLocalFlags(c, fn.ReturnType)
 		}
 
 		// Even if just for --help, parsing flags is needed to clean up the
@@ -618,6 +455,41 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 	}
 }
 
+// addConstructorLocalFlags collects constructor args from all modules on the
+// Query root and registers them as local flags on the root command. This lets
+// users write `dagger call --port 8080 serve up` — the root command consumes
+// the flag, and proxy subcommands pick up the value via parentConstructorFlags.
+func (fc *FuncCommand) addConstructorLocalFlags(cmd *cobra.Command, rootType *modTypeDef) {
+	fp := rootType.AsFunctionProvider()
+	if fp == nil {
+		return
+	}
+	for _, fn := range fp.GetFunctions() {
+		obj := fn.ReturnType.AsObject
+		if obj == nil || obj.SourceModuleName == "" {
+			continue
+		}
+		if fn.Name != gqlFieldName(obj.SourceModuleName) {
+			continue
+		}
+		// This is a module constructor — register its args as local flags.
+		for _, arg := range fn.SupportedArgs() {
+			if cmd.Flags().Lookup(arg.FlagName()) != nil {
+				continue // already registered from another constructor
+			}
+			fc.mod.LoadTypeDef(arg.TypeDef)
+			if err := arg.AddFlag(cmd.Flags()); err != nil {
+				continue // skip unsupported flags
+			}
+			cmd.Flags().SetAnnotation(
+				arg.FlagName(),
+				"help:group",
+				[]string{"Arguments"},
+			)
+		}
+	}
+}
+
 // addFlagsForFunction creates the flags for a function's arguments.
 func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
 	var skipped []string
@@ -636,7 +508,13 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 			return err
 		}
 		if arg.IsRequired() {
-			cmd.MarkFlagRequired(arg.FlagName())
+			// Don't mark as required if the parent has a matching
+			// local flag (constructor args registered on the root).
+			// The parent's value will be picked up by selectFunc.
+			parentHas := cmd.Parent() != nil && cmd.Parent().LocalFlags().Lookup(arg.FlagName()) != nil
+			if !parentHas {
+				cmd.MarkFlagRequired(arg.FlagName())
+			}
 		}
 		cmd.Flags().SetAnnotation(
 			arg.FlagName(),
@@ -739,6 +617,17 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 		flag, err := a.GetFlag(cmd.Flags())
 		if err != nil {
 			return err
+		}
+
+		if !flag.Changed {
+			// For entrypoint proxy commands, check if the parent root
+			// command had this flag set (constructor args can be placed
+			// before the subcommand name).
+			if cmd.Parent() != nil {
+				if parentFlag := cmd.Parent().LocalFlags().Lookup(a.FlagName()); parentFlag != nil && parentFlag.Changed {
+					flag = parentFlag
+				}
+			}
 		}
 
 		if !flag.Changed {
