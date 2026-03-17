@@ -2,10 +2,13 @@ package core
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -192,4 +195,171 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func (ChecksSuite) TestCheckCacheBuster(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modDir := newFlakyChecksModule(ctx, t)
+
+	mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+	require.NoError(t, err)
+
+	check := mod.Check("flaky")
+
+	run1 := check.Run()
+	msg1, err := run1.Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, msg1)
+
+	run2 := check.Run()
+	msg2, err := run2.Error().Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, msg1, msg2)
+
+	run3 := check.Run(dagger.CheckRunOpts{CacheBuster: "buster-a"})
+	msg3, err := run3.Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, msg1, msg3)
+
+	run4 := check.Run(dagger.CheckRunOpts{CacheBuster: "buster-a"})
+	msg4, err := run4.Error().Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, msg3, msg4)
+
+	run5 := check.Run(dagger.CheckRunOpts{CacheBuster: "buster-b"})
+	msg5, err := run5.Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, msg4, msg5)
+
+	boomPattern := regexp.MustCompile(`boom-\d+`)
+
+	_, err = mod.Checks().Run(dagger.CheckGroupRunOpts{CacheBuster: "group-buster"}).List(ctx)
+	require.Error(t, err)
+	groupMsg1 := boomPattern.FindString(err.Error())
+	require.NotEmpty(t, groupMsg1)
+}
+
+func (ChecksSuite) TestCheckCacheBusterAcrossClientsOnLongRunningEngine(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngineContainer(c))).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	modDir := newFlakyChecksModule(ctx, t)
+
+	connectToRunner := func() *dagger.Client {
+		client, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return client
+	}
+
+	loadCheck := func(client *dagger.Client) *dagger.Check {
+		mod, err := client.ModuleSource(modDir).AsModule().Sync(ctx)
+		require.NoError(t, err)
+		return mod.Check("flaky")
+	}
+
+	client1 := connectToRunner()
+	check1 := loadCheck(client1)
+	msg1, err := check1.Run().Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, msg1)
+	require.NoError(t, client1.Close())
+
+	client2 := connectToRunner()
+	check2 := loadCheck(client2)
+	msg2, err := check2.Run().Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, msg2)
+
+	msg3, err := check2.Run(dagger.CheckRunOpts{CacheBuster: "buster-a"}).Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, msg2, msg3)
+
+	msg3Again, err := check2.Run(dagger.CheckRunOpts{CacheBuster: "buster-a"}).Error().Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, msg3, msg3Again)
+	require.NoError(t, client2.Close())
+
+	client3 := connectToRunner()
+	check3 := loadCheck(client3)
+	msg4, err := check3.Run().Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, msg4)
+
+	msg5, err := check3.Run(dagger.CheckRunOpts{CacheBuster: "buster-a"}).Error().Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, msg3, msg5)
+
+	msg6, err := check3.Run(dagger.CheckRunOpts{CacheBuster: "buster-b"}).Error().Message(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, msg5, msg6)
+
+	msg6Again, err := check3.Run(dagger.CheckRunOpts{CacheBuster: "buster-b"}).Error().Message(ctx)
+	require.NoError(t, err)
+	require.Equal(t, msg6, msg6Again)
+	require.NoError(t, client3.Close())
+}
+
+func newFlakyChecksModule(ctx context.Context, t *testctx.T) string {
+	t.Helper()
+
+	modDir := t.TempDir()
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+
+	depDir := filepath.Join(modDir, "dep")
+	require.NoError(t, os.Mkdir(depDir, 0o755))
+	initDepCmd := hostDaggerCommand(ctx, t, depDir, "init", "--source=.", "--name=dep", "--sdk=go")
+	initDepOutput, err := initDepCmd.CombinedOutput()
+	require.NoError(t, err, string(initDepOutput))
+
+	require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
+
+import (
+	"strconv"
+	"time"
+)
+
+type Dep struct{}
+
+func (m *Dep) Fn(rand string) string {
+	return strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+`), 0o644))
+
+	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
+	installOutput, err := installCmd.CombinedOutput()
+	require.NoError(t, err, string(installOutput))
+
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Test struct{}
+
+// +check
+func (m *Test) Flaky(ctx context.Context) error {
+	value, err := dag.Dep().Fn(ctx, "ignored")
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("boom-%s", value)
+}
+`), 0o644))
+
+	return modDir
 }
