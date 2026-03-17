@@ -395,11 +395,15 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return err
 		}
 
-		// Deliberately keep Query-root entrypoint proxy args on the selected
-		// command. The engine already projects constructor+method args onto the
-		// proxy field's real DAGQL signature; hoisting constructor args to the
-		// parent root would force the CLI to recover provenance the schema has
-		// intentionally collapsed and would reintroduce ownership heuristics.
+		// When the root type is Query, collect constructor args from all
+		// modules and register them as local flags so they can be
+		// placed before the subcommand name. Proxy subcommands inherit
+		// the values via parentConstructorFlags.
+		if fn.Name == "" && fn.ReturnType != nil &&
+			fn.ReturnType.AsObject != nil &&
+			fn.ReturnType.AsObject.Name == "Query" {
+			fc.addConstructorLocalFlags(c, fn.ReturnType)
+		}
 
 		// Even if just for --help, parsing flags is needed to clean up the
 		// args while traversing sub-commands.
@@ -439,6 +443,41 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 	}
 }
 
+// addConstructorLocalFlags collects constructor args from all modules on the
+// Query root and registers them as local flags on the root command. This lets
+// users write `dagger call --port 8080 serve up` — the root command consumes
+// the flag, and proxy subcommands pick up the value via parentConstructorFlags.
+func (fc *FuncCommand) addConstructorLocalFlags(cmd *cobra.Command, rootType *modTypeDef) {
+	fp := rootType.AsFunctionProvider()
+	if fp == nil {
+		return
+	}
+	for _, fn := range fp.GetFunctions() {
+		obj := fn.ReturnType.AsObject
+		if obj == nil || obj.SourceModuleName == "" {
+			continue
+		}
+		if fn.Name != gqlFieldName(obj.SourceModuleName) {
+			continue
+		}
+		// This is a module constructor — register its args as local flags.
+		for _, arg := range fn.SupportedArgs() {
+			if cmd.Flags().Lookup(arg.FlagName()) != nil {
+				continue // already registered from another constructor
+			}
+			fc.mod.LoadTypeDef(arg.TypeDef)
+			if err := arg.AddFlag(cmd.Flags()); err != nil {
+				continue // skip unsupported flags
+			}
+			cmd.Flags().SetAnnotation(
+				arg.FlagName(),
+				"help:group",
+				[]string{"Arguments"},
+			)
+		}
+	}
+}
+
 // addFlagsForFunction creates the flags for a function's arguments.
 func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
 	var skipped []string
@@ -457,7 +496,13 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 			return err
 		}
 		if arg.IsRequired() {
-			cmd.MarkFlagRequired(arg.FlagName())
+			// Don't mark as required if the parent has a matching
+			// local flag (constructor args registered on the root).
+			// The parent's value will be picked up by selectFunc.
+			parentHas := cmd.Parent() != nil && cmd.Parent().LocalFlags().Lookup(arg.FlagName()) != nil
+			if !parentHas {
+				cmd.MarkFlagRequired(arg.FlagName())
+			}
 		}
 		cmd.Flags().SetAnnotation(
 			arg.FlagName(),
@@ -560,6 +605,17 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 		flag, err := a.GetFlag(cmd.Flags())
 		if err != nil {
 			return err
+		}
+
+		if !flag.Changed {
+			// For entrypoint proxy commands, check if the parent root
+			// command had this flag set (constructor args can be placed
+			// before the subcommand name).
+			if cmd.Parent() != nil {
+				if parentFlag := cmd.Parent().LocalFlags().Lookup(a.FlagName()); parentFlag != nil && parentFlag.Changed {
+					flag = parentFlag
+				}
+			}
 		}
 
 		if !flag.Changed {
