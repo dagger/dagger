@@ -116,7 +116,6 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
 	pressedKey   string
@@ -1449,8 +1448,8 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.topTrees = nil
 		return
 	}
-	if len(fe.rows.Order) < fe.focusedIdx {
-		// durability: everything disappeared?
+	if fe.focusedIndex() < 0 {
+		// durability: focused span disappeared from view
 		fe.autoFocus = true
 	}
 	if fe.autoFocus {
@@ -1853,19 +1852,29 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 	return nil
 }
 
+// focusedIndex returns the current index of the focused span in rows.Order,
+// or -1 if nothing is focused or the span is not in the current row list.
+func (fe *frontendPretty) focusedIndex() int {
+	if !fe.FocusedSpan.IsValid() || fe.rows == nil {
+		return -1
+	}
+	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
+		return row.Index
+	}
+	return -1
+}
+
 func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	oldSpan := fe.FocusedSpan
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		fe.focusedIdx = -1
 		if !fe.editlineFocused && !fe.searchActive {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		fe.focusedIdx = row.Index
 		if !fe.editlineFocused && !fe.searchActive {
 			if sr, ok := fe.spanTrees[newSpan]; ok {
 				fe.tui.SetFocus(sr)
@@ -2505,7 +2514,7 @@ func (fe *frontendPretty) goEnd() {
 
 func (fe *frontendPretty) goUp() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx - 1
+	newIdx := fe.focusedIndex() - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
 	}
@@ -2514,7 +2523,7 @@ func (fe *frontendPretty) goUp() {
 
 func (fe *frontendPretty) goDown() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx + 1
+	newIdx := fe.focusedIndex() + 1
 	if newIdx >= len(fe.rows.Order) {
 		// at bottom
 		return
@@ -2533,12 +2542,13 @@ func (fe *frontendPretty) goOut() {
 
 func (fe *frontendPretty) goIn() {
 	fe.autoFocus = false
-	newIdx := fe.focusedIdx + 1
-	if newIdx >= len(fe.rows.Order) {
+	curIdx := fe.focusedIndex()
+	newIdx := curIdx + 1
+	if curIdx < 0 || newIdx >= len(fe.rows.Order) {
 		// at bottom
 		return
 	}
-	cur := fe.rows.Order[fe.focusedIdx]
+	cur := fe.rows.Order[curIdx]
 	next := fe.rows.Order[newIdx]
 	if next.Depth <= cur.Depth {
 		// has no children
@@ -2625,9 +2635,6 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 	// Rebuild flat rows from existing tree. This is O(visible nodes)
 	// and skips the expensive RowsView rebuild (WalkSpans + ShouldShow).
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
-	if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
-		fe.focusedIdx = row.Index
-	}
 	// Sync just the affected subtree's SpanTreeView children.
 	if st, ok := fe.spanTrees[id]; ok {
 		fe.syncTreeNode(st, st.prefix)

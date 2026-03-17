@@ -147,9 +147,10 @@ func (fe *frontendPretty) searchFirstForward() {
 	if len(fe.searchMatches) == 0 {
 		return
 	}
+	curIdx := fe.focusedIndex()
 	for i, m := range fe.searchMatches {
 		row := fe.rows.BySpan[m.spanID]
-		if row != nil && row.Index >= fe.focusedIdx {
+		if row != nil && row.Index >= curIdx {
 			fe.searchIdx = i
 			fe.goToSearchMatch(i)
 			return
@@ -170,10 +171,11 @@ func (fe *frontendPretty) searchFirstBackward() {
 	if len(fe.searchMatches) == 0 {
 		return
 	}
+	curIdx := fe.focusedIndex()
 	for i := len(fe.searchMatches) - 1; i >= 0; i-- {
 		m := fe.searchMatches[i]
 		row := fe.rows.BySpan[m.spanID]
-		if row != nil && row.Index <= fe.focusedIdx {
+		if row != nil && row.Index <= curIdx {
 			fe.searchIdx = i
 			fe.goToSearchMatch(i)
 			return
