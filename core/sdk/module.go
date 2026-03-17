@@ -37,7 +37,7 @@ func newModuleSDK(
 	dag := dagql.NewServer(root, dagqlCache)
 	dag.Around(core.AroundFunc)
 
-	if err := sdkModMeta.Self().Install(ctx, dag); err != nil {
+	if err := core.NewUserMod(sdkModMeta).Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
 
@@ -45,7 +45,7 @@ func newModuleSDK(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
-	for _, defaultDep := range defaultDeps.Mods {
+	for _, defaultDep := range defaultDeps.Mods() {
 		if err := defaultDep.Install(ctx, dag); err != nil {
 			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self().Name(), err)
 		}

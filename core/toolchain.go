@@ -22,7 +22,7 @@ type ToolchainRegistry struct {
 
 // ToolchainEntry represents a single toolchain module with its configuration.
 type ToolchainEntry struct {
-	Module           *Module
+	Module           dagql.ObjectResult[*Module]
 	FieldName        string
 	ArgumentConfigs  []*modules.ModuleConfigArgument
 	IgnoreChecks     []string
@@ -47,9 +47,9 @@ func (r *ToolchainRegistry) Clone(clonedParent *Module) *ToolchainRegistry {
 // Register adds a toolchain to the registry.
 // originalName is the toolchain's original name (with hyphens)
 // fieldName is the camelCase GraphQL field name
-func (r *ToolchainRegistry) Register(originalName, fieldName string, mod *Module) {
+func (r *ToolchainRegistry) Register(originalName, fieldName string, modInst dagql.ObjectResult[*Module]) {
 	r.entries[originalName] = &ToolchainEntry{
-		Module:    mod,
+		Module:    modInst,
 		FieldName: fieldName,
 	}
 }
@@ -81,8 +81,9 @@ func (r *ToolchainRegistry) Entries() []*ToolchainEntry {
 
 // CreateProxyField creates a dagql.Field that proxies calls to a toolchain module.
 // This consolidates the toolchainProxyFunction logic from object.go.
-func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Module, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
-	tcMod := entry.Module
+func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod dagql.ObjectResult[*Module], fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
+	tcMod := entry.Module.Self()
+	parent := parentMod.Self()
 
 	// Find the toolchain's main object type
 	if len(tcMod.ObjectDefs) == 0 {
@@ -99,7 +100,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	if mainObjDef == nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", tcMod.Name())
 	}
-	parentModuleID, err := parentMod.IDModule(ctx)
+	parentModuleID, err := parent.IDModule(ctx)
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve parent module identity for toolchain %q: %w", tcMod.Name(), err)
 	}
@@ -109,7 +110,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 
 	if !hasConstructor {
 		// No constructor - treat as a zero-argument function that returns an uninitialized object
-		spec, err := fun.FieldSpec(ctx, parentMod)
+		spec, err := fun.FieldSpec(ctx, NewUserMod(parentMod))
 		if err != nil {
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
@@ -120,10 +121,10 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 			Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				// Return an instance of the toolchain's main object with empty fields
 				// The toolchain module's own resolvers will handle function calls on this object
-				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-					Module:  tcMod,
-					TypeDef: mainObjDef,
-					Fields:  map[string]any{}, // empty fields, functions will be called on the toolchain's runtime
+				return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
+					Module: entry.Module,
+					TypeDef:      mainObjDef,
+					Fields:       map[string]any{}, // empty fields, functions will be called on the toolchain's runtime
 				})
 			},
 		}, nil
@@ -131,10 +132,13 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 
 	// Has constructor - create a ModFunction for it and use its spec
 	constructor := mainObjDef.Constructor.Value
+	if entry.Module.Self() == nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q is missing module result wrapper", tcMod.Name())
+	}
 
 	modFun, err := NewModFunction(
 		ctx,
-		tcMod,
+		entry.Module,
 		mainObjDef,
 		constructor,
 	)
@@ -148,7 +152,7 @@ func (entry *ToolchainEntry) CreateProxyField(ctx context.Context, parentMod *Mo
 	}
 
 	// Get the constructor's spec, which includes its arguments
-	spec, err := constructor.FieldSpec(ctx, tcMod)
+	spec, err := constructor.FieldSpec(ctx, NewUserMod(entry.Module))
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain constructor: %w", err)
 	}

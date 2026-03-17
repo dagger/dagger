@@ -467,9 +467,10 @@ func toAny(v any) (res map[string]any, rerr error) {
 func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
 	for _, mod := range m.env.Self().installedModules {
-		modTypeName := strcase.ToCamel(mod.Name())
+		modSelf := mod.Self()
+		modTypeName := strcase.ToCamel(modSelf.Name())
 		modTypeDef := schema.Types[modTypeName]
-		for _, obj := range mod.ObjectDefs {
+		for _, obj := range modSelf.ObjectDefs {
 			def := obj.AsObject.Value
 			if strcase.ToCamel(def.Name) != modTypeName {
 				// we're only concerned with the entrypoint object
@@ -486,7 +487,7 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 			}
 			if hasRequiredArgs {
 				// FIXME: better error
-				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", mod.Name())
+				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", modSelf.Name())
 			}
 			if err := m.typeTools(allTools, srv, schema, modTypeDef, def); err != nil {
 				return err

@@ -13,16 +13,16 @@ import (
 
 type ModuleEnumType struct {
 	typeDef *EnumTypeDef
-	mod     *Module
+	mod     dagql.ObjectResult[*Module]
 }
 
 var _ ModType = &ModuleEnumType{}
 
 func (m *ModuleEnumType) SourceMod() Mod {
-	if m.mod == nil {
+	if m.mod.Self() == nil {
 		return nil
 	}
-	return m.mod
+	return NewUserMod(m.mod)
 }
 
 func (m *ModuleEnumType) TypeDef() *TypeDef {
@@ -94,7 +94,7 @@ func (m *ModuleEnumType) CollectContent(_ context.Context, value dagql.AnyResult
 
 func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 	// Check the dependencies
-	srv, err := m.mod.Deps.Schema(ctx)
+	srv, err := m.mod.Self().Deps.Schema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%T.getDecoder: failed to get schema: %w", m, err)
 	}
@@ -109,7 +109,7 @@ func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, error) {
 	}
 
 	// If not check if the enum is part of its own module
-	for _, enumTypeDef := range m.mod.EnumDefs {
+	for _, enumTypeDef := range m.mod.Self().EnumDefs {
 		if enumTypeDef.AsEnum.Value.Name == m.typeDef.Name {
 			return &ModuleEnum{TypeDef: enumTypeDef.AsEnum.Value, Local: true}, nil
 		}

@@ -23,11 +23,11 @@ type Env struct {
 	deps *ModDeps
 
 	// The main module for this environment (the project being worked on)
-	MainModule *Module
+	MainModule dagql.ObjectResult[*Module]
 
 	// The modules explicitly installed into the environment, to be exposed as
 	// tools that implicitly call the constructor with the environment's workspace
-	installedModules []*Module
+	installedModules []dagql.ObjectResult[*Module]
 
 	// Input values
 	inputsByName map[string]*Binding
@@ -92,16 +92,16 @@ func (env *Env) WithWorkspace(dir dagql.ObjectResult[*Directory]) *Env {
 	return &cp
 }
 
-func (env *Env) WithMainModule(mod *Module) *Env {
+func (env *Env) WithMainModule(mod dagql.ObjectResult[*Module]) *Env {
 	cp := env.Clone()
 	cp.MainModule = mod
-	cp.deps = cp.deps.Append(mod)
+	cp.deps = cp.deps.Append(NewUserMod(mod))
 	return cp
 }
 
-func (env *Env) WithModule(mod *Module) *Env {
+func (env *Env) WithModule(mod dagql.ObjectResult[*Module]) *Env {
 	cp := env.Clone()
-	cp.deps = cp.deps.Append(mod)
+	cp.deps = cp.deps.Append(NewUserMod(mod))
 	cp.installedModules = append(cp.installedModules, mod)
 	return cp
 }
@@ -196,10 +196,10 @@ func (env *Env) WithoutInput(key string) *Env {
 
 // Checks returns a CheckGroup from the main module
 func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	if env.MainModule == nil {
+	if env.MainModule.Self() == nil {
 		return nil, fmt.Errorf("no main module set on environment")
 	}
-	return env.MainModule.Checks(ctx, include)
+	return NewCheckGroup(ctx, env.MainModule, include)
 }
 
 // Check returns a single check by name from the main module

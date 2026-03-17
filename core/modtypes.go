@@ -76,9 +76,17 @@ func (content *CollectedContent) CollectID(idp *call.ID, unknown bool) error {
 func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) error {
 	switch value := value.(type) {
 	case dagql.AnyResult:
-		return content.CollectID(value.ID(), true)
+		id, err := value.ID()
+		if err != nil {
+			return err
+		}
+		return content.CollectID(id, true)
 	case dagql.IDable:
-		return content.CollectID(value.ID(), true)
+		id, err := value.ID()
+		if err != nil {
+			return err
+		}
+		return content.CollectID(id, true)
 	case *call.ID:
 		return content.CollectID(value, true)
 	case call.ID:
@@ -181,14 +189,14 @@ func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (da
 	// NB: we lean on the fact that all primitive types are also dagql.Inputs
 	input := t.Def.ToInput()
 	if value == nil {
-		return dagql.NewResultForCurrentID(ctx, input)
+		return dagql.NewResultForCurrentCall(ctx, input)
 	}
 
 	retVal, err := input.Decoder().DecodeInput(value)
 	if err != nil {
 		return nil, err
 	}
-	return dagql.NewResultForCurrentID(ctx, retVal)
+	return dagql.NewResultForCurrentCall(ctx, retVal)
 }
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -224,7 +232,7 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.A
 	if value == nil {
 		slog.Debug("ListType.ConvertFromSDKResult: got nil value")
 		// return an empty array, _not_ nil
-		return dagql.NewResultForCurrentID(ctx, arr)
+		return dagql.NewResultForCurrentCall(ctx, arr)
 	}
 	list, ok := value.([]any)
 	if !ok {
@@ -244,7 +252,7 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.A
 		}
 		arr.Values = append(arr.Values, t)
 	}
-	return dagql.NewResultForCurrentID(ctx, arr)
+	return dagql.NewResultForCurrentCall(ctx, arr)
 }
 
 func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -288,7 +296,10 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 			continue
 		}
 
-		itemID := item.ID()
+		itemID, err := item.ID()
+		if err != nil {
+			return err
+		}
 		if itemID == nil {
 			continue
 		}
@@ -335,7 +346,7 @@ func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dag
 		nullable.Value = val
 		nullable.Valid = true
 	}
-	return dagql.NewResultForCurrentID(ctx, nullable)
+	return dagql.NewResultForCurrentCall(ctx, nullable)
 }
 
 func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {

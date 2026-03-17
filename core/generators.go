@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -57,15 +58,15 @@ type GeneratorGroup struct {
 	Generators []*Generator `json:"generators"`
 }
 
-func NewGeneratorGroup(ctx context.Context, mod *Module, include []string) (*GeneratorGroup, error) {
+func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
 
 	var exclude []string
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
+	if mod.Self().Toolchains != nil {
+		for _, entry := range mod.Self().Toolchains.Entries() {
 			for _, ignorePattern := range entry.IgnoreGenerators {
 				exclude = append(exclude, entry.FieldName+":"+ignorePattern)
 			}

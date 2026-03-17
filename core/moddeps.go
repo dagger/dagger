@@ -28,7 +28,7 @@ particular set of modules to be served.
 */
 type ModDeps struct {
 	root *Query
-	Mods []Mod // TODO hide
+	mods []Mod
 
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
 	lazilyLoadedSchema *dagql.Server
@@ -39,28 +39,39 @@ type ModDeps struct {
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
 	return &ModDeps{
 		root: root,
-		Mods: slices.Clone(mods),
+		mods: slices.Clone(mods),
 	}
 }
 
 func (d *ModDeps) Clone() *ModDeps {
-	return NewModDeps(d.root, slices.Clone(d.Mods))
+	cp := &ModDeps{
+		root: d.root,
+		mods: slices.Clone(d.mods),
+	}
+	return cp
 }
 
-func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
-	deps := slices.Clone(mods)
-	deps = append(deps, d.Mods...)
-	return NewModDeps(d.root, deps)
+func (d *ModDeps) WithRoot(root *Query) *ModDeps {
+	cp := d.Clone()
+	cp.root = root
+	return cp
 }
 
 func (d *ModDeps) Append(mods ...Mod) *ModDeps {
-	deps := slices.Clone(d.Mods)
-	deps = append(deps, mods...)
-	return NewModDeps(d.root, deps)
+	cp := d.Clone()
+	cp.mods = append(cp.mods, mods...)
+	return cp
+}
+
+func (d *ModDeps) Mods() []Mod {
+	if d == nil {
+		return nil
+	}
+	return slices.Clone(d.mods)
 }
 
 func (d *ModDeps) LookupDep(name string) (Mod, bool) {
-	for _, mod := range d.Mods {
+	for _, mod := range d.mods {
 		if mod.Name() == name {
 			return mod, true
 		}
@@ -130,7 +141,7 @@ func (d *ModDeps) SchemaIntrospectionJSONFileForClient(ctx context.Context) (ins
 // All the TypeDefs exposed by this set of dependencies
 func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
 	var typeDefs []*TypeDef
-	for _, mod := range d.Mods {
+	for _, mod := range d.mods {
 		modTypeDefs, err := mod.TypeDefs(ctx, dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
@@ -162,7 +173,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		return nil, fmt.Errorf("failed to get cache: %w", err)
 	}
 	dag := dagql.NewServer(d.root, dagqlCache)
-	for _, mod := range d.Mods {
+	for _, mod := range d.mods {
 		if version, ok := mod.View(); ok {
 			dag.View = version
 			break
@@ -175,14 +186,13 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
-	for _, mod := range d.Mods {
-		err := mod.Install(ctx, dag)
-		if err != nil {
+	for _, mod := range d.mods {
+		if err := mod.Install(ctx, dag); err != nil {
 			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
-		if userMod, ok := mod.(*Module); ok {
+		if userMod, ok := mod.(*userMod); ok {
 			defs, err := mod.TypeDefs(ctx, dag)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
@@ -192,12 +202,12 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 				case TypeDefKindObject:
 					objects = append(objects, &ModuleObjectType{
 						typeDef: def.AsObject.Value,
-						mod:     userMod,
+						mod:     userMod.res,
 					})
 				case TypeDefKindInterface:
 					ifaces = append(ifaces, &InterfaceType{
 						typeDef: def.AsInterface.Value,
-						mod:     userMod,
+						mod:     userMod.res,
 					})
 				}
 			}
@@ -218,7 +228,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
-			ifaceModule, err := ifaceType.mod.IDModule(ctx)
+			ifaceModule, err := ifaceType.mod.Self().IDModule(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve module identity for interface %q: %w", iface.Name, err)
 			}
@@ -235,7 +245,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 					if !ok {
 						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
 					}
-					return dagql.NewObjectResultForCurrentID(ctx, dag, &InterfaceAnnotatedValue{
+					return dagql.NewObjectResultForCurrentCall(ctx, dag, &InterfaceAnnotatedValue{
 						TypeDef:        iface,
 						Fields:         inst.Fields,
 						UnderlyingType: objType,
@@ -253,7 +263,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 // to transitive dependencies; it only returns types directly exposed by the schema of the top-level
 // deps.
 func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bool, error) {
-	for _, mod := range d.Mods {
+	for _, mod := range d.mods {
 		modType, ok, err := mod.ModTypeFor(ctx, typeDef, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", mod.Name(), err)

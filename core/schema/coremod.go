@@ -30,6 +30,11 @@ func (m *CoreMod) Name() string {
 	return core.ModuleName
 }
 
+func (m *CoreMod) Same(other core.Mod) (bool, error) {
+	_, ok := other.(*CoreMod)
+	return ok, nil
+}
+
 // GetSource returns an empty module source
 func (m *CoreMod) GetSource() *core.ModuleSource {
 	return &core.ModuleSource{}
@@ -37,6 +42,10 @@ func (m *CoreMod) GetSource() *core.ModuleSource {
 
 func (m *CoreMod) View() (call.View, bool) {
 	return m.Dag.View, true
+}
+
+func (m *CoreMod) ModuleResult() dagql.ObjectResult[*core.Module] {
+	return dagql.ObjectResult[*core.Module]{}
 }
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {

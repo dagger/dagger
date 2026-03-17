@@ -762,7 +762,7 @@ func (s *moduleSchema) currentModule(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load source content scoped module: %w", err)
 	}
-	return &core.CurrentModule{Module: mod.Self()}, nil
+	return &core.CurrentModule{Module: mod}, nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
@@ -851,7 +851,7 @@ func (s *moduleSchema) moduleIntrospectionSchemaJSON(
 
 func (s *moduleSchema) moduleChecks(
 	ctx context.Context,
-	mod *core.Module,
+	mod dagql.ObjectResult[*core.Module],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
@@ -862,17 +862,17 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Checks(ctx, include)
+	return core.NewCheckGroup(ctx, mod, include)
 }
 
 func (s *moduleSchema) moduleCheck(
 	ctx context.Context,
-	mod *core.Module,
+	mod dagql.ObjectResult[*core.Module],
 	args struct {
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := mod.Checks(ctx, []string{args.Name})
+	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -881,15 +881,15 @@ func (s *moduleSchema) moduleCheck(
 	case 1:
 		return checkGroup.Checks[0].Clone(), nil
 	case 0:
-		return nil, fmt.Errorf("check %q not found in module %q", args.Name, mod.Name())
+		return nil, fmt.Errorf("check %q not found in module %q", args.Name, mod.Self().Name())
 	default:
-		return nil, fmt.Errorf("multiple checks found with name %q in module %q", args.Name, mod.Name())
+		return nil, fmt.Errorf("multiple checks found with name %q in module %q", args.Name, mod.Self().Name())
 	}
 }
 
 func (s *moduleSchema) moduleGenerators(
 	ctx context.Context,
-	mod *core.Module,
+	mod dagql.ObjectResult[*core.Module],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
@@ -900,7 +900,7 @@ func (s *moduleSchema) moduleGenerators(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Generators(ctx, include)
+	return core.NewGeneratorGroup(ctx, mod, include)
 }
 
 func (s *moduleSchema) currentModuleGenerators(
@@ -916,17 +916,17 @@ func (s *moduleSchema) currentModuleGenerators(
 			include = append(include, pattern.String())
 		}
 	}
-	return mod.Module.Generators(ctx, include)
+	return core.NewGeneratorGroup(ctx, mod.Module, include)
 }
 
 func (s *moduleSchema) moduleGenerator(
 	ctx context.Context,
-	mod *core.Module,
+	mod dagql.ObjectResult[*core.Module],
 	args struct {
 		Name string
 	},
 ) (*core.Generator, error) {
-	generatorGroup, err := mod.Generators(ctx, []string{args.Name})
+	generatorGroup, err := core.NewGeneratorGroup(ctx, mod, []string{args.Name})
 	if err != nil {
 		return nil, err
 	}
@@ -935,9 +935,9 @@ func (s *moduleSchema) moduleGenerator(
 	case 1:
 		return generatorGroup.Generators[0].Clone(), nil
 	case 0:
-		return nil, fmt.Errorf("generator %q not found in module %q", args.Name, mod.Name())
+		return nil, fmt.Errorf("generator %q not found in module %q", args.Name, mod.Self().Name())
 	default:
-		return nil, fmt.Errorf("multiple generators found with name %q in module %q", args.Name, mod.Name())
+		return nil, fmt.Errorf("multiple generators found with name %q in module %q", args.Name, mod.Self().Name())
 	}
 }
 
@@ -946,8 +946,8 @@ func (s *moduleSchema) moduleDependencies(
 	mod *core.Module,
 	args struct{},
 ) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Deps.Mods))
-	for _, dep := range mod.Deps.Mods {
+	depMods := make([]*core.Module, 0, len(mod.Deps.Mods()))
+	for _, dep := range mod.Deps.Mods() {
 		switch dep := dep.(type) {
 		case *core.Module:
 			depMods = append(depMods, dep)
@@ -1017,7 +1017,7 @@ func (s *moduleSchema) currentModuleName(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (string, error) {
-	return curMod.Module.NameField, nil
+	return curMod.Module.Self().NameField, nil
 }
 
 func (s *moduleSchema) currentModuleGeneratedContextDirectory(
@@ -1030,7 +1030,7 @@ func (s *moduleSchema) currentModuleGeneratedContextDirectory(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	err = dag.Select(ctx, mod.Self().Module.Source.Value, &inst,
+	err = dag.Select(ctx, mod.Self().Module.Self().Source.Value, &inst,
 		dagql.Selector{
 			Field: "generatedContextDirectory",
 		},
@@ -1043,15 +1043,10 @@ func (s *moduleSchema) currentModuleDependencies(
 	mod *core.CurrentModule,
 	args struct{},
 ) (dagql.Array[*core.Module], error) {
-	depMods := make([]*core.Module, 0, len(mod.Module.Deps.Mods))
-	for _, dep := range mod.Module.Deps.Mods {
-		switch dep := dep.(type) {
-		case *core.Module:
-			depMods = append(depMods, dep)
-		case *CoreMod:
-			// skip
-		default:
-			return nil, fmt.Errorf("unexpected mod dependency type %T", dep)
+	depMods := make([]*core.Module, 0, len(mod.Module.Self().Deps.Mods()))
+	for _, dep := range mod.Module.Self().Deps.Mods() {
+		if depInst := dep.ModuleResult(); depInst.Self() != nil {
+			depMods = append(depMods, depInst.Self())
 		}
 	}
 	return depMods, nil
@@ -1067,7 +1062,7 @@ func (s *moduleSchema) currentModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	curSrc := curMod.Self().Module.Source.Value
+	curSrc := curMod.Self().Module.Self().Source.Value
 	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}

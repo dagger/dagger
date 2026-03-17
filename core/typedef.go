@@ -128,7 +128,7 @@ func (fn *Function) Directives() []*ast.Directive {
 //
 // This is typically called during module loading/registration when the Dagger engine builds
 // the complete GraphQL schema that clients will query against.
-func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
+func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:             fn.Name,
 		Description:      formatGqlDescription(fn.Description),
@@ -182,7 +182,13 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		spec.Args.Add(argSpec)
 	}
 
-	cachePolicy := fn.derivedCachePolicy(mod)
+	cachePolicy := fn.CachePolicy
+	if cachePolicy == "" {
+		cachePolicy = FunctionCachePolicyDefault
+	}
+	if modInst := mod.ModuleResult(); modInst.Self() != nil {
+		cachePolicy = fn.derivedCachePolicy(modInst.Self())
+	}
 	// TODO: optimize this later by skipping persistable marking for cache policies
 	// that can never be reused across sessions (e.g. per-session, never-cache).
 	spec.IsPersistable = true

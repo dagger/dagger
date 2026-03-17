@@ -2358,7 +2358,7 @@ func (s *moduleSourceSchema) runCodegen(
 				return res, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			deps = mod.Self().Deps.Append(mod.Self())
+			deps = mod.Self().Deps.Append(core.NewUserMod(mod.ObjectResult))
 		}
 	}
 
@@ -2546,7 +2546,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			deps = mod.Self().Deps.Append(mod.Self())
+			deps = mod.Self().Deps.Append(core.NewUserMod(mod.ObjectResult))
 		}
 	}
 
@@ -2944,12 +2944,13 @@ func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) 
 	return mod, nil
 }
 
-// extractToolchainModules finds all blueprint modules from dependencies
-func extractToolchainModules(mod *core.Module) []*core.Module {
-	var toolchainMods []*core.Module
-	for _, depMod := range mod.Deps.Mods {
-		if userMod, ok := depMod.(*core.Module); ok && userMod.IsToolchain {
-			toolchainMods = append(toolchainMods, userMod)
+// extractToolchainModules finds all blueprint modules from dependencies.
+func extractToolchainModules(mod *core.Module) []dagql.ObjectResult[*core.Module] {
+	var toolchainMods []dagql.ObjectResult[*core.Module]
+	for _, dep := range mod.Deps.Mods() {
+		modInst := dep.ModuleResult()
+		if modInst.Self() != nil && modInst.Self().IsToolchain {
+			toolchainMods = append(toolchainMods, modInst)
 		}
 	}
 	return toolchainMods
@@ -3343,9 +3344,8 @@ func (s *moduleSourceSchema) integrateToolchains(
 
 	// Register all toolchains in the registry
 	for _, tcMod := range toolchainMods {
-		originalName := tcMod.NameField
-		fieldName := strcase.ToLowerCamel(tcMod.NameField)
-
+		originalName := tcMod.Self().NameField
+		fieldName := strcase.ToLowerCamel(tcMod.Self().NameField)
 		mod.Toolchains.Register(originalName, fieldName, tcMod)
 
 		// Apply configurations from config
@@ -3550,7 +3550,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	inst, err = dagql.NewObjectResultForID(mod, dag, mod.ResultID)
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
@@ -3589,7 +3589,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 
 	var eg errgroup.Group
-	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
+	depMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Dependencies))
 	for i, depSrc := range src.Self().Dependencies {
 		eg.Go(func() error {
 			return dag.Select(ctx, depSrc, &depMods[i],
@@ -3599,7 +3599,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 
 	// Load all toolchains as dependencies
-	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
+	tcMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Toolchains))
 	if len(src.Self().Toolchains) > 0 {
 		contextSourceID := dagql.NewID[*core.ModuleSource](src.ID())
 		for i, tcSrc := range src.Self().Toolchains {
@@ -3633,22 +3633,20 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
 	}
-	deps := core.NewModDeps(query, defaultDeps.Mods)
+	baseMods := defaultDeps.Mods()
+	for i, depMod := range baseMods {
+		if coreMod, ok := depMod.(*CoreMod); ok {
+			dag := *coreMod.Dag
+			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
+			baseMods[i] = &CoreMod{Dag: &dag}
+		}
+	}
+	deps := core.NewModDeps(query, baseMods)
 	for _, depMod := range depMods {
-		deps = deps.Append(depMod.Self())
+		deps = deps.Append(core.NewUserMod(depMod.ObjectResult))
 	}
 	for _, tcMod := range tcMods {
-		deps = deps.Append(tcMod.Self())
-	}
-	for i, depMod := range deps.Mods {
-		if coreMod, ok := depMod.(*CoreMod); ok {
-			// this is needed so that a module's dependency on the core
-			// uses the correct schema version
-			dag := *coreMod.Dag
-
-			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
-			deps.Mods[i] = &CoreMod{Dag: &dag}
-		}
+		deps = deps.Append(core.NewUserMod(tcMod.ObjectResult))
 	}
 
 	return deps, nil

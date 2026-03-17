@@ -268,10 +268,13 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 		if err != nil {
 			return nil, fmt.Errorf("loading module from ID: %w", err)
 		}
-		deps = deps.Append(inst.Self())
+		deps = deps.Append(NewUserMod(inst))
 		if inst.Self().Toolchains != nil {
 			for _, entry := range inst.Self().Toolchains.Entries() {
-				deps = deps.Append(entry.Module)
+				if entry.Module.Self() == nil {
+					continue
+				}
+				deps = deps.Append(NewUserMod(entry.Module))
 			}
 		}
 	}

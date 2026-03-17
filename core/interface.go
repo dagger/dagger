@@ -162,8 +162,8 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 	}
 
 	if interfaceValue, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		mod, ok := interfaceValue.UnderlyingType.SourceMod().(*Module)
-		if !ok {
+		modInst := interfaceValue.UnderlyingType.SourceMod().ModuleResult()
+		if modInst.Self() == nil {
 			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
 		}
 		id, err := value.ID()
@@ -180,7 +180,7 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		}
 
 		obj, err := dagql.NewResultForCall(&ModuleObject{
-			Module:  mod,
+			Module:  modInst,
 			TypeDef: interfaceValue.UnderlyingType.TypeDef().AsObject.Value,
 			Fields:  interfaceValue.Fields,
 		}, call)
@@ -236,7 +236,10 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.T
 }
 
 func (iface *InterfaceType) SourceMod() Mod {
-	return iface.mod.Self()
+	if iface.mod.Self() == nil {
+		return nil
+	}
+	return NewUserMod(iface.mod)
 }
 
 func (iface *InterfaceType) TypeDef() *TypeDef {
@@ -276,6 +279,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
 	}
+	ifaceMod := iface.SourceMod()
 
 	fields := make([]dagql.Field[*InterfaceAnnotatedValue], 0, len(iface.typeDef.Functions))
 	for _, fnTypeDef := range iface.typeDef.Functions {
@@ -287,11 +291,18 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
+			sameSourceMod := false
+			if sourceMod := returnModType.SourceMod(); sourceMod != nil && ifaceMod != nil {
+				sameSourceMod, err = sourceMod.Same(ifaceMod)
+				if err != nil {
+					return fmt.Errorf("compare return type source module for interface %q function %q: %w", ifaceName, fnName, err)
+				}
+			}
 			// can either be a core type or a type from *this* module
 			switch {
 			case returnModType.SourceMod() == nil:
 			case returnModType.SourceMod().Name() == ModuleName:
-			case returnModType.SourceMod() == iface.mod.Self():
+			case sameSourceMod:
 			default:
 				return fmt.Errorf("interface %q function %q cannot return external type from dependency module %q",
 					ifaceName,
@@ -319,11 +330,18 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				return fmt.Errorf("failed to get mod type for type def: %w", err)
 			}
 			if ok {
+				sameSourceMod := false
+				if sourceMod := argModType.SourceMod(); sourceMod != nil && ifaceMod != nil {
+					sameSourceMod, err = sourceMod.Same(ifaceMod)
+					if err != nil {
+						return fmt.Errorf("compare arg type source module for interface %q function %q arg %q: %w", ifaceName, fnName, argMetadata.Name, err)
+					}
+				}
 				// can either be a core type or a type from *this* module
 				switch {
 				case argModType.SourceMod() == nil:
 				case argModType.SourceMod().Name() == ModuleName:
-				case argModType.SourceMod() == iface.mod.Self():
+				case sameSourceMod:
 				default:
 					return fmt.Errorf("interface %q function %q cannot accept arg %q of external type from dependency module %q",
 						ifaceName,
@@ -418,7 +436,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				// if the return type of this function is an interface or list of interface, we may need to wrap the
 				// return value of the underlying object's function (due to support for covariant matching on return types)
 
-				underlyingReturnType, ok, err := iface.mod.Self().ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
+				underlyingReturnType, ok, err := ifaceMod.ModTypeFor(ctx, fnTypeDef.ReturnType.Underlying(), true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get return mod type: %w", err)
 				}
@@ -433,7 +451,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				if err != nil {
 					return nil, fmt.Errorf("failed to get object return type for %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
-				return wrapIface(dagql.CurrentID(ctx), ifaceReturnType, objReturnType, res, dag)
+				return wrapIface(dagql.CurrentCall(ctx), ifaceReturnType, objReturnType, res, dag)
 			},
 		})
 	}
@@ -479,24 +497,34 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			if ok := loadedImpl.valType.TypeDef().IsSubtypeOf(iface.TypeDef()); !ok {
 				return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
 			}
-			return wrapIface(id, iface, loadedImpl.valType, loadedImpl.val, dag)
+			return wrapIface(nil, iface, loadedImpl.valType, loadedImpl.val, dag)
 		},
 	)
 
 	return nil
 }
 
-func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType, res dagql.AnyResult, srv *dagql.Server) (dagql.AnyResult, error) {
+func wrapIface(
+	callFrame *dagql.ResultCall,
+	ifaceType *InterfaceType,
+	underlyingType ModType,
+	res dagql.AnyResult,
+	srv *dagql.Server,
+) (dagql.AnyResult, error) {
 	switch underlyingType := underlyingType.(type) {
 	case *InterfaceType, *ModuleObjectType:
 		switch wrappedRes := res.Unwrap().(type) {
 		case *ModuleObject:
-			return dagql.NewObjectResultForID(&InterfaceAnnotatedValue{
+			call, err := wrappedIfaceCall(callFrame, res)
+			if err != nil {
+				return nil, fmt.Errorf("resolve interface wrapper call: %w", err)
+			}
+			return dagql.NewObjectResultForCall(&InterfaceAnnotatedValue{
 				TypeDef:        ifaceType.typeDef,
 				IfaceType:      ifaceType,
 				Fields:         wrappedRes.Fields,
 				UnderlyingType: underlyingType,
-			}, srv, curID)
+			}, srv, call)
 
 		case *InterfaceAnnotatedValue:
 			return res, nil
@@ -526,17 +554,71 @@ func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType,
 			if ret.Elem == nil { // set the return type
 				ret.Elem = item.Unwrap()
 			}
-			nthID := curID.SelectNth(i)
-			val, err := wrapIface(nthID, ifaceType, underlyingType.Underlying, item, srv)
+			val, err := wrapIface(wrappedIfaceNthCall(callFrame, i), ifaceType, underlyingType.Underlying, item, srv)
 			if err != nil {
 				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
 			}
 			ret.Values = append(ret.Values, val)
 		}
-		return dagql.NewResultForID(&ret, curID)
+		call, err := wrappedIfaceCall(callFrame, res)
+		if err != nil {
+			return nil, fmt.Errorf("resolve interface list wrapper call: %w", err)
+		}
+		return dagql.NewResultForCall(&ret, call)
 
 	default:
 		return res, nil
+	}
+}
+
+func wrappedIfaceCall(callFrame *dagql.ResultCall, res dagql.AnyResult) (*dagql.ResultCall, error) {
+	if callFrame != nil {
+		return cloneResultCall(callFrame), nil
+	}
+	return res.ResultCall()
+}
+
+func wrappedIfaceNthCall(callFrame *dagql.ResultCall, nth int) *dagql.ResultCall {
+	if callFrame == nil {
+		return nil
+	}
+	cp := cloneResultCall(callFrame)
+	cp.Nth = int64(nth)
+	if cp.Type != nil {
+		cp.Type = cloneResultCallType(cp.Type.Elem)
+	}
+	return cp
+}
+
+func cloneResultCall(call *dagql.ResultCall) *dagql.ResultCall {
+	if call == nil {
+		return nil
+	}
+	cp := *call
+	cp.Type = cloneResultCallType(call.Type)
+	if call.EffectIDs != nil {
+		cp.EffectIDs = slices.Clone(call.EffectIDs)
+	}
+	if call.ExtraDigests != nil {
+		cp.ExtraDigests = slices.Clone(call.ExtraDigests)
+	}
+	if call.Args != nil {
+		cp.Args = slices.Clone(call.Args)
+	}
+	if call.ImplicitInputs != nil {
+		cp.ImplicitInputs = slices.Clone(call.ImplicitInputs)
+	}
+	return &cp
+}
+
+func cloneResultCallType(typ *dagql.ResultCallType) *dagql.ResultCallType {
+	if typ == nil {
+		return nil
+	}
+	return &dagql.ResultCallType{
+		NamedType: typ.NamedType,
+		NonNull:   typ.NonNull,
+		Elem:      cloneResultCallType(typ.Elem),
 	}
 }
 

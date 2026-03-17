@@ -585,10 +585,10 @@ func (srv *Server) initializeDaggerClient(
 		// }
 		// client.mod = modInst.Self
 
-		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Self().Deps.Mods)
+		client.deps = client.mod.Self().Deps.WithRoot(client.dagqlRoot)
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.Self().ObjectDefs) > 0 {
-			client.deps = client.deps.Append(client.mod.Self())
+			client.deps = client.deps.Append(core.NewUserMod(client.mod))
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
@@ -1242,7 +1242,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		return err
 	}
 	if includeDependencies {
-		for _, depMod := range mod.Deps.Mods {
+		for _, depMod := range mod.Deps.Mods() {
 			err = srv.serveModule(client, depMod)
 			if err != nil {
 				return fmt.Errorf("error serving dependency %s: %w", depMod.Name(), err)

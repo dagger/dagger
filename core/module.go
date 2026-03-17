@@ -64,6 +64,7 @@ type Module struct {
 	Toolchains *ToolchainRegistry
 
 	persistedResultID uint64
+	includeSelfInDeps bool
 
 	// If true, disable the new default function caching behavior for this module. Functions will
 	// instead default to the old behavior of per-session caching.
@@ -81,7 +82,6 @@ func (*Module) TypeDescription() string {
 	return "A Dagger module."
 }
 
-var _ Mod = (*Module)(nil)
 var _ dagql.PersistedObject = (*Module)(nil)
 var _ dagql.PersistedObjectDecoder = (*Module)(nil)
 var _ dagql.HasOwnedResults = (*Module)(nil)
@@ -106,16 +106,8 @@ func (mod *Module) SetPersistedResultID(resultID uint64) {
 // isToolchainModule checks if a Mod is a toolchain Module.
 // This centralizes the validation logic that was scattered across the codebase.
 func isToolchainModule(m Mod) bool {
-	tcMod, ok := m.(*Module)
-	return ok && tcMod.IsToolchain
-}
-
-func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	return NewCheckGroup(ctx, mod, include)
-}
-
-func (mod *Module) Generators(ctx context.Context, include []string) (*GeneratorGroup, error) {
-	return NewGeneratorGroup(ctx, mod, include)
+	tcMod, ok := m.(*userMod)
+	return ok && tcMod.self() != nil && tcMod.self().IsToolchain
 }
 
 func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
@@ -297,7 +289,7 @@ func (mod *Module) AttachOwnedResults(
 
 	owned := make([]dagql.AnyResult, 0, 3)
 
-	if mod.Source.Valid && mod.Source.Value.ID() != nil {
+	if mod.Source.Valid && mod.Source.Value.Self() != nil {
 		attached, err := attach(mod.Source.Value)
 		if err != nil {
 			return nil, fmt.Errorf("attach module source: %w", err)
@@ -309,7 +301,7 @@ func (mod *Module) AttachOwnedResults(
 		mod.Source = dagql.NonNull(typed)
 		owned = append(owned, typed)
 	}
-	if mod.ContextSource.Valid && mod.ContextSource.Value.ID() != nil {
+	if mod.ContextSource.Valid && mod.ContextSource.Value.Self() != nil {
 		attached, err := attach(mod.ContextSource.Value)
 		if err != nil {
 			return nil, fmt.Errorf("attach module context source: %w", err)
@@ -321,7 +313,7 @@ func (mod *Module) AttachOwnedResults(
 		mod.ContextSource = dagql.NonNull(typed)
 		owned = append(owned, typed)
 	}
-	if mod.Runtime.Valid && mod.Runtime.Value.ID() != nil {
+	if mod.Runtime.Valid && mod.Runtime.Value.Self() != nil {
 		attached, err := attach(mod.Runtime.Value)
 		if err != nil {
 			return nil, fmt.Errorf("attach module runtime: %w", err)
@@ -334,66 +326,51 @@ func (mod *Module) AttachOwnedResults(
 		owned = append(owned, typed)
 	}
 
-	var srv *dagql.Server
-	attachModuleRef := func(child *Module) (*Module, dagql.AnyResult, error) {
-		if child == nil || child.ResultID == nil {
+	attachModuleRef := func(child dagql.ObjectResult[*Module]) (dagql.ObjectResult[*Module], dagql.AnyResult, error) {
+		if child.Self() == nil {
 			return child, nil, nil
 		}
-		if mod.ResultID != nil && child.ResultID.Digest() == mod.ResultID.Digest() {
-			return child, nil, nil
-		}
-		if srv == nil {
-			var err error
-			srv, err = CurrentDagqlServer(ctx)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		ref, err := dagql.NewObjectResultForID(child, srv, child.ResultID)
+		attached, err := attach(child)
 		if err != nil {
-			return nil, nil, err
-		}
-		attached, err := attach(ref)
-		if err != nil {
-			return nil, nil, err
+			return dagql.ObjectResult[*Module]{}, nil, err
 		}
 		typed, ok := attached.(dagql.ObjectResult[*Module])
 		if !ok {
-			return nil, nil, fmt.Errorf("unexpected result %T", attached)
+			return dagql.ObjectResult[*Module]{}, nil, fmt.Errorf("unexpected result %T", attached)
 		}
-		return typed.Self(), typed, nil
+		return typed, typed, nil
 	}
 
 	if mod.Deps != nil {
-		for i, dep := range mod.Deps.Mods {
-			depMod, ok := dep.(*Module)
-			if !ok || depMod == nil {
+		for i, dep := range mod.Deps.mods {
+			depInst := dep.ModuleResult()
+			if depInst.Self() == nil {
 				continue
 			}
-			attachedMod, attachedRes, err := attachModuleRef(depMod)
+			attachedInst, attachedRes, err := attachModuleRef(depInst)
 			if err != nil {
-				return nil, fmt.Errorf("attach module dependency %q: %w", depMod.Name(), err)
+				return nil, fmt.Errorf("attach module dependency %q: %w", dep.Name(), err)
 			}
 			if attachedRes == nil {
 				continue
 			}
-			mod.Deps.Mods[i] = attachedMod
+			mod.Deps.mods[i] = NewUserMod(attachedInst)
 			owned = append(owned, attachedRes)
 		}
 	}
 	if mod.Toolchains != nil {
 		for name, entry := range mod.Toolchains.entries {
-			if entry == nil || entry.Module == nil {
+			if entry == nil || entry.Module.Self() == nil {
 				continue
 			}
-			attachedMod, attachedRes, err := attachModuleRef(entry.Module)
+			_, attachedRes, err := attachModuleRef(entry.Module)
 			if err != nil {
 				return nil, fmt.Errorf("attach module toolchain %q: %w", name, err)
 			}
 			if attachedRes == nil {
 				continue
 			}
-			entry.Module = attachedMod
+			entry.Module = attachedRes.(dagql.ObjectResult[*Module])
 			owned = append(owned, attachedRes)
 		}
 	}
@@ -453,24 +430,18 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		persisted.RuntimeResultID = runtimeID
 	}
 
+	persisted.IncludeSelfInDeps = mod.includeSelfInDeps
 	if mod.Deps != nil {
-		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods))
-		for _, dep := range mod.Deps.Mods {
-			depMod, ok := dep.(*Module)
-			if !ok || depMod == nil {
+		persisted.DepModuleResultIDs = make([]uint64, 0, len(mod.Deps.Mods()))
+		for _, dep := range mod.Deps.Mods() {
+			depInst := dep.ModuleResult()
+			if depInst.Self() == nil {
 				continue
 			}
-			if mod.ResultID != nil && depMod.ResultID.Digest() == mod.ResultID.Digest() {
-				persisted.IncludeSelfInDeps = true
-				continue
+			if depInst.Self().PersistedResultID() == 0 {
+				return nil, fmt.Errorf("encode persisted module dependency %q: missing persisted result ID", dep.Name())
 			}
-			if depMod.ResultID == nil {
-				return nil, fmt.Errorf("encode persisted module dependency %q: missing result ID", depMod.Name())
-			}
-			if depMod.PersistedResultID() == 0 {
-				return nil, fmt.Errorf("encode persisted module dependency %q: missing persisted result ID", depMod.Name())
-			}
-			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depMod.PersistedResultID())
+			persisted.DepModuleResultIDs = append(persisted.DepModuleResultIDs, depInst.Self().PersistedResultID())
 		}
 	}
 
@@ -484,15 +455,15 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		persisted.ToolchainEntries = make([]persistedModuleToolchainEntry, 0, len(toolchainNames))
 		for _, name := range toolchainNames {
 			entry := mod.Toolchains.entries[name]
-			if entry == nil || entry.Module == nil || entry.Module.ResultID == nil {
+			if entry == nil || entry.Module.Self() == nil {
 				return nil, fmt.Errorf("encode persisted module toolchain %q: missing module result ID", name)
 			}
-			if entry.Module.PersistedResultID() == 0 {
+			if entry.Module.Self().PersistedResultID() == 0 {
 				return nil, fmt.Errorf("encode persisted module toolchain %q: missing persisted module result ID", name)
 			}
 			persisted.ToolchainEntries = append(persisted.ToolchainEntries, persistedModuleToolchainEntry{
 				Name:             name,
-				ModuleResultID:   entry.Module.PersistedResultID(),
+				ModuleResultID:   entry.Module.Self().PersistedResultID(),
 				FieldName:        entry.FieldName,
 				ArgumentConfigs:  entry.ArgumentConfigs,
 				IgnoreChecks:     entry.IgnoreChecks,
@@ -526,7 +497,6 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	slog.Info(
 		"cache-debug module persist encode",
 		"module", mod.Name(),
-		"result_id", mod.ResultID,
 		"object_defs", len(mod.ObjectDefs),
 		"objects", objectSummaries,
 	)
@@ -566,15 +536,14 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		return nil, fmt.Errorf("decode persisted module default deps: %w", err)
 	}
 
-	loadedDepMods := make(map[uint64]*Module, len(persisted.DepModuleResultIDs))
+	loadedDepMods := make(map[uint64]dagql.ObjectResult[*Module], len(persisted.DepModuleResultIDs))
 	for _, depID := range persisted.DepModuleResultIDs {
 		depRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, depID, "module dependency")
 		if err != nil {
 			return nil, err
 		}
-		depMod := depRes.Self()
-		deps = deps.Append(depMod)
-		loadedDepMods[depID] = depMod
+		deps = deps.Append(NewUserMod(depRes))
+		loadedDepMods[depID] = depRes
 	}
 
 	mod := &Module{
@@ -587,38 +556,36 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		InterfaceDefs:                 persisted.InterfaceDefs,
 		EnumDefs:                      persisted.EnumDefs,
 		IsToolchain:                   persisted.IsToolchain,
+		includeSelfInDeps:             persisted.IncludeSelfInDeps,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
 	}
 	if mod.SDKConfig == nil {
 		mod.SDKConfig = &SDKConfig{}
 	}
-	if sourceRes.ID() != nil {
+	if sourceRes.Self() != nil {
 		mod.Source = dagql.NonNull(sourceRes)
 	}
-	if contextSourceRes.ID() != nil {
+	if contextSourceRes.Self() != nil {
 		mod.ContextSource = dagql.NonNull(contextSourceRes)
 	}
-	if runtimeRes.ID() != nil {
+	if runtimeRes.Self() != nil {
 		mod.Runtime = dagql.NonNull(runtimeRes)
-	}
-	if persisted.IncludeSelfInDeps {
-		mod.Deps = mod.Deps.Append(mod)
 	}
 	if persisted.ToolchainsInitialized {
 		mod.Toolchains = NewToolchainRegistry(mod)
 		for _, persistedEntry := range persisted.ToolchainEntries {
-			tcMod := loadedDepMods[persistedEntry.ModuleResultID]
-			if tcMod == nil {
-				tcRes, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persistedEntry.ModuleResultID, "module toolchain")
+			tcRes := loadedDepMods[persistedEntry.ModuleResultID]
+			if tcRes.Self() == nil {
+				var err error
+				tcRes, err = loadPersistedObjectResultByResultID[*Module](ctx, dag, persistedEntry.ModuleResultID, "module toolchain")
 				if err != nil {
 					return nil, err
 				}
-				tcMod = tcRes.Self()
-				mod.Deps = mod.Deps.Append(tcMod)
-				loadedDepMods[persistedEntry.ModuleResultID] = tcMod
+				mod.Deps = mod.Deps.Append(NewUserMod(tcRes))
+				loadedDepMods[persistedEntry.ModuleResultID] = tcRes
 			}
 			mod.Toolchains.entries[persistedEntry.Name] = &ToolchainEntry{
-				Module:           tcMod,
+				Module:           tcRes,
 				FieldName:        persistedEntry.FieldName,
 				ArgumentConfigs:  persistedEntry.ArgumentConfigs,
 				IgnoreChecks:     persistedEntry.IgnoreChecks,
@@ -642,81 +609,11 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	slog.Info(
 		"cache-debug module persist decode",
 		"module", mod.Name(),
-		"result_id", mod.ResultID,
 		"object_defs", len(mod.ObjectDefs),
 		"objects", objectSummaries,
 	)
 
 	return mod, nil
-}
-
-func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
-	slog.ExtraDebug("installing module", "name", mod.Name())
-	start := time.Now()
-	defer func() { slog.ExtraDebug("done installing module", "name", mod.Name(), "took", time.Since(start)) }()
-
-	for _, def := range mod.ObjectDefs {
-		objDef := def.AsObject.Value
-
-		slog.ExtraDebug("installing object", "name", mod.Name(), "object", objDef.Name)
-
-		// check whether this is a pre-existing object from a dependency module
-		modType, ok, err := mod.Deps.ModTypeFor(ctx, def)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for type def: %w", err)
-		}
-
-		if ok {
-			// NB: this is defense-in-depth to prevent SDKs or some other future
-			// component from allowing modules to extend external objects.
-			if src := mod.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
-				// TODO: temporarily authorize modules to be loaded two times when self calls are enabled
-				// This breaks enum support but it allows a module to be loaded as its own dependency, enabling self calls
-				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
-			} else {
-				return fmt.Errorf("type %q is already defined by module %q",
-					objDef.Name,
-					modType.SourceMod().Name())
-			}
-		}
-
-		obj := &ModuleObject{
-			Module:  mod,
-			TypeDef: objDef,
-		}
-
-		if err := obj.Install(ctx, dag); err != nil {
-			return err
-		}
-	}
-
-	for _, def := range mod.InterfaceDefs {
-		ifaceDef := def.AsInterface.Value
-
-		slog.ExtraDebug("installing interface", "name", mod.Name(), "interface", ifaceDef.Name)
-
-		iface := &InterfaceType{
-			typeDef: ifaceDef,
-			mod:     mod,
-		}
-
-		if err := iface.Install(ctx, dag); err != nil {
-			return err
-		}
-	}
-
-	for _, def := range mod.EnumDefs {
-		enumDef := def.AsEnum.Value
-
-		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "members", len(enumDef.Members))
-
-		enum := &ModuleEnum{
-			TypeDef: enumDef,
-		}
-		enum.Install(dag)
-	}
-
-	return nil
 }
 
 func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
@@ -755,57 +652,6 @@ func (mod *Module) View() (call.View, bool) {
 	return "", false
 }
 
-func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
-	switch typeDef.Kind {
-	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
-		modType, ok = mod.modTypeForPrimitive(typeDef)
-	case TypeDefKindList:
-		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
-	case TypeDefKindObject:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
-		}
-		modType, ok = mod.modTypeForObject(typeDef)
-	case TypeDefKindInterface:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
-		}
-		modType, ok = mod.modTypeForInterface(typeDef)
-	case TypeDefKindScalar:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
-		}
-		modType, ok = nil, false
-		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
-	case TypeDefKindEnum:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
-		}
-		modType, ok = mod.modTypeForEnum(typeDef)
-	default:
-		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get mod type: %w", err)
-	}
-	if !ok {
-		return nil, false, nil
-	}
-
-	if typeDef.Optional {
-		modType = &NullableType{
-			InnerDef: modType.TypeDef().WithOptional(false),
-			Inner:    modType,
-		}
-	}
-
-	return modType, true, nil
-}
-
 func (mod *Module) modTypeFromDeps(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	if !checkDirectDeps {
 		return nil, false, nil
@@ -821,63 +667,6 @@ func (mod *Module) modTypeFromDeps(ctx context.Context, typedef *TypeDef, checkD
 
 func (mod *Module) modTypeForPrimitive(typedef *TypeDef) (ModType, bool) {
 	return &PrimitiveType{typedef}, true
-}
-
-func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	underlyingType, ok, err := mod.ModTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
-	}
-	if !ok {
-		return nil, false, nil
-	}
-
-	return &ListType{
-		Elem:       typedef.AsList.Value.ElementTypeDef,
-		Underlying: underlyingType,
-	}, true, nil
-}
-
-func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
-	for _, obj := range mod.ObjectDefs {
-		if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
-			return &ModuleObjectType{
-				typeDef: obj.AsObject.Value,
-				mod:     mod,
-			}, true
-		}
-	}
-
-	slog.Trace("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
-	return nil, false
-}
-
-func (mod *Module) modTypeForInterface(typeDef *TypeDef) (ModType, bool) {
-	for _, iface := range mod.InterfaceDefs {
-		if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
-			return &InterfaceType{
-				typeDef: iface.AsInterface.Value,
-				mod:     mod,
-			}, true
-		}
-	}
-
-	slog.Trace("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
-	return nil, false
-}
-
-func (mod *Module) modTypeForEnum(typeDef *TypeDef) (ModType, bool) {
-	for _, enum := range mod.EnumDefs {
-		if enum.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
-			return &ModuleEnumType{
-				typeDef: enum.AsEnum.Value,
-				mod:     mod,
-			}, true
-		}
-	}
-
-	slog.Trace("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
-	return nil, false
 }
 
 // verify the typedef is has no reserved names
@@ -901,7 +690,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		return fmt.Errorf("failed to get mod type for type def: %w", err)
 	}
 	if ok {
-		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod != mod {
+		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.Name() != mod.Name() {
 			// already validated, skip
 			return nil
 		}
@@ -928,7 +717,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			sourceMod := fieldType.SourceMod()
 			// fields can reference core types and local types, but not types from
 			// other modules (unless the source module is a toolchain)
-			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
+			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
 				// Allow types from toolchain modules
 				if !isToolchainModule(sourceMod) {
 					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
@@ -954,7 +743,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
+			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
 				// Allow types from toolchain modules
 				if !isToolchainModule(sourceMod) {
 					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
@@ -975,7 +764,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 				return fmt.Errorf("failed to get mod type for type def: %w", err)
 			}
 			if ok {
-				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
+				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
 					// Allow types from toolchain modules
 					if !isToolchainModule(sourceMod) {
 						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
@@ -1004,7 +793,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDe
 		return fmt.Errorf("failed to get mod type for type def: %w", err)
 	}
 	if ok {
-		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod != mod {
+		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.Name() != mod.Name() {
 			// already validated, skip
 			return nil
 		}
@@ -1156,8 +945,14 @@ func (mod *Module) Patch() error {
 			if arg.TypeDef.Kind != TypeDefKindEnum {
 				continue
 			}
-			enum, ok := mod.modTypeForEnum(arg.TypeDef)
-			if !ok {
+			var enumTypeDef *EnumTypeDef
+			for _, enum := range mod.EnumDefs {
+				if enum.AsEnum.Value.Name == arg.TypeDef.AsEnum.Value.Name {
+					enumTypeDef = enum.AsEnum.Value
+					break
+				}
+			}
+			if enumTypeDef == nil {
 				continue
 			}
 
@@ -1169,7 +964,7 @@ func (mod *Module) Patch() error {
 			}
 
 			found := false
-			for _, member := range enum.TypeDef().AsEnum.Value.Members {
+			for _, member := range enumTypeDef.Members {
 				if val == member.OriginalName {
 					val = member.Name
 					found = true
@@ -1227,6 +1022,10 @@ type Mod interface {
 	// Name gets the name of the module
 	Name() string
 
+	// Same reports whether this module is the same installed module instance as
+	// the other module.
+	Same(Mod) (bool, error)
+
 	// View gets the name of the module's view of its underlying schema
 	View() (call.View, bool)
 
@@ -1248,6 +1047,265 @@ type Mod interface {
 
 	// Source returns the ModuleSource for this module
 	GetSource() *ModuleSource
+
+	// ModuleResult returns the wrapped module result for user modules, or the
+	// zero value for non-module implementations like core.
+	ModuleResult() dagql.ObjectResult[*Module]
+}
+
+type userMod struct {
+	res dagql.ObjectResult[*Module]
+}
+
+var _ Mod = (*userMod)(nil)
+
+func NewUserMod(modInst dagql.ObjectResult[*Module]) Mod {
+	return &userMod{res: modInst}
+}
+
+func (mod *userMod) self() *Module {
+	if mod == nil {
+		return nil
+	}
+	return mod.res.Self()
+}
+
+func (mod *userMod) Name() string {
+	if self := mod.self(); self != nil {
+		return self.Name()
+	}
+	return ""
+}
+
+func (mod *userMod) Same(other Mod) (bool, error) {
+	otherUser, ok := other.(*userMod)
+	if !ok {
+		return false, nil
+	}
+	id, err := mod.res.ID()
+	if err != nil {
+		return false, fmt.Errorf("user module %q identity: %w", mod.Name(), err)
+	}
+	otherID, err := otherUser.res.ID()
+	if err != nil {
+		return false, fmt.Errorf("user module %q identity: %w", otherUser.Name(), err)
+	}
+	if id == nil || otherID == nil {
+		return false, nil
+	}
+	return id.Digest() == otherID.Digest(), nil
+}
+
+func (mod *userMod) View() (call.View, bool) {
+	if self := mod.self(); self != nil {
+		return self.View()
+	}
+	return "", false
+}
+
+func (mod *userMod) Install(ctx context.Context, dag *dagql.Server) error {
+	return mod.install(ctx, dag)
+}
+
+func (mod *userMod) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	return mod.modTypeFor(ctx, typeDef, checkDirectDeps)
+}
+
+func (mod *userMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
+	self := mod.self()
+	if self == nil {
+		return nil, fmt.Errorf("module typedefs: missing module result wrapper")
+	}
+	return self.TypeDefs(ctx, dag)
+}
+
+func (mod *userMod) GetSource() *ModuleSource {
+	self := mod.self()
+	if self == nil {
+		return nil
+	}
+	return self.GetSource()
+}
+
+func (mod *userMod) ModuleResult() dagql.ObjectResult[*Module] {
+	if mod == nil {
+		return dagql.ObjectResult[*Module]{}
+	}
+	return mod.res
+}
+
+func (mod *userMod) install(ctx context.Context, dag *dagql.Server) error {
+	self := mod.self()
+	if self == nil {
+		return fmt.Errorf("install user module: missing module result wrapper")
+	}
+
+	slog.ExtraDebug("installing module", "name", self.Name())
+	start := time.Now()
+	defer func() { slog.ExtraDebug("done installing module", "name", self.Name(), "took", time.Since(start)) }()
+
+	for _, def := range self.ObjectDefs {
+		objDef := def.AsObject.Value
+
+		slog.ExtraDebug("installing object", "name", self.Name(), "object", objDef.Name)
+
+		modType, ok, err := self.Deps.ModTypeFor(ctx, def)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+		if ok {
+			if src := self.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
+			} else {
+				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, modType.SourceMod().Name())
+			}
+		}
+
+		obj := &ModuleObject{
+			Module:  mod.res,
+			TypeDef: objDef,
+		}
+		if err := obj.Install(ctx, dag); err != nil {
+			return err
+		}
+	}
+
+	for _, def := range self.InterfaceDefs {
+		ifaceDef := def.AsInterface.Value
+		slog.ExtraDebug("installing interface", "name", self.Name(), "interface", ifaceDef.Name)
+		iface := &InterfaceType{
+			typeDef: ifaceDef,
+			mod:     mod.res,
+		}
+		if err := iface.Install(ctx, dag); err != nil {
+			return err
+		}
+	}
+
+	for _, def := range self.EnumDefs {
+		enumDef := def.AsEnum.Value
+		slog.ExtraDebug("installing enum", "name", self.Name(), "enum", enumDef.Name, "members", len(enumDef.Members))
+		enum := &ModuleEnum{TypeDef: enumDef}
+		enum.Install(dag)
+	}
+
+	return nil
+}
+
+func (mod *userMod) modTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
+	self := mod.self()
+	if self == nil {
+		return nil, false, fmt.Errorf("module type lookup: missing module result wrapper")
+	}
+
+	switch typeDef.Kind {
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
+		modType, ok = self.modTypeForPrimitive(typeDef)
+	case TypeDefKindList:
+		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
+	case TypeDefKindObject:
+		modType, ok, err = self.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
+		}
+		modType, ok = mod.modTypeForObject(typeDef)
+	case TypeDefKindInterface:
+		modType, ok, err = self.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
+		}
+		modType, ok = mod.modTypeForInterface(typeDef)
+	case TypeDefKindScalar:
+		modType, ok, err = self.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
+		}
+		modType, ok = nil, false
+		slog.ExtraDebug("module did not find scalar", "mod", self.Name(), "scalar", typeDef.AsScalar.Value.Name)
+	case TypeDefKindEnum:
+		modType, ok, err = self.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
+		}
+		modType, ok = mod.modTypeForEnum(typeDef)
+	default:
+		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get mod type: %w", err)
+	}
+	if !ok {
+		return nil, false, nil
+	}
+
+	if typeDef.Optional {
+		modType = &NullableType{
+			InnerDef: modType.TypeDef().WithOptional(false),
+			Inner:    modType,
+		}
+	}
+
+	return modType, true, nil
+}
+
+func (mod *userMod) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	underlyingType, ok, err := mod.modTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
+	}
+	if !ok {
+		return nil, false, nil
+	}
+
+	return &ListType{
+		Elem:       typedef.AsList.Value.ElementTypeDef,
+		Underlying: underlyingType,
+	}, true, nil
+}
+
+func (mod *userMod) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
+	self := mod.self()
+	for _, obj := range self.ObjectDefs {
+		if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
+			return &ModuleObjectType{
+				typeDef: obj.AsObject.Value,
+				mod:     mod.res,
+			}, true
+		}
+	}
+
+	slog.Trace("module did not find object", "mod", self.Name(), "object", typeDef.AsObject.Value.Name)
+	return nil, false
+}
+
+func (mod *userMod) modTypeForInterface(typeDef *TypeDef) (ModType, bool) {
+	self := mod.self()
+	for _, iface := range self.InterfaceDefs {
+		if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
+			return &InterfaceType{
+				typeDef: iface.AsInterface.Value,
+				mod:     mod.res,
+			}, true
+		}
+	}
+
+	slog.Trace("module did not find interface", "mod", self.Name(), "interface", typeDef.AsInterface.Value.Name)
+	return nil, false
+}
+
+func (mod *userMod) modTypeForEnum(typeDef *TypeDef) (ModType, bool) {
+	self := mod.self()
+	for _, enum := range self.EnumDefs {
+		if enum.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
+			return &ModuleEnumType{
+				typeDef: enum.AsEnum.Value,
+				mod:     mod.res,
+			}, true
+		}
+	}
+
+	slog.Trace("module did not find enum", "mod", self.Name(), "enum", typeDef.AsEnum.Value.Name)
+	return nil, false
 }
 
 func (mod Module) Clone() *Module {
@@ -1384,7 +1442,7 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 }
 
 type CurrentModule struct {
-	Module *Module
+	Module dagql.ObjectResult[*Module]
 }
 
 func (*CurrentModule) Type() *ast.Type {
@@ -1400,6 +1458,8 @@ func (*CurrentModule) TypeDescription() string {
 
 func (mod CurrentModule) Clone() *CurrentModule {
 	cp := mod
-	cp.Module = mod.Module.Clone()
+	if mod.Module.Self() != nil {
+		cp.Module = mod.Module
+	}
 	return &cp
 }

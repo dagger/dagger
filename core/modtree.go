@@ -45,10 +45,11 @@ func (node *ModTreeNode) Path() ModTreePath {
 	return path
 }
 
-func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
-	mainObj, ok := mod.MainObject()
+func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeNode, error) {
+	main := mod.Self()
+	mainObj, ok := main.MainObject()
 	if !ok {
-		return nil, fmt.Errorf("%q: no main object", mod.Name())
+		return nil, fmt.Errorf("%q: no main object", main.Name())
 	}
 	srv, err := dagqlServerForModule(ctx, mod)
 	if err != nil {
@@ -56,13 +57,13 @@ func NewModTree(ctx context.Context, mod *Module) (*ModTreeNode, error) {
 	}
 	return &ModTreeNode{
 		DagqlServer:    srv,
-		Module:         mod,
-		OriginalModule: mod,
+		Module:         main,
+		OriginalModule: main,
 		Type: &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(mainObj),
 		},
-		Description: mod.Description,
+		Description: main.Description,
 	}, nil
 }
 
@@ -315,7 +316,11 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 			Arg("refPin", modSrc.Git.Commit).
 			Arg("requireKind", modSrc.Kind)
 	case ModuleSourceKindDir:
-		dirIDEnc, err := modSrc.DirSrc.OriginalContextDir.ID().Encode()
+		dirID, err := modSrc.DirSrc.OriginalContextDir.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get dir ID: %w", err)
+		}
+		dirIDEnc, err := dirID.Encode()
 		if err != nil {
 			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
@@ -327,39 +332,40 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 }
 
 // Initialize a standalone dagql server for querying the given module
-func dagqlServerForModule(ctx context.Context, mod *Module) (*dagql.Server, error) {
+func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) (*dagql.Server, error) {
+	main := mod.Self()
 	q, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cache, err := q.Cache(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%q: get dagql cache: %w", mod.Name(), err)
+		return nil, fmt.Errorf("%q: get dagql cache: %w", main.Name(), err)
 	}
 	srv := dagql.NewServer(q, cache)
 	srv.Around(AroundFunc)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%q: load core schema: %w", mod.Name(), err)
+		return nil, fmt.Errorf("%q: load core schema: %w", main.Name(), err)
 	}
 	// Install dependencies
-	for _, defaultDep := range defaultDeps.Mods {
+	for _, defaultDep := range defaultDeps.Mods() {
 		if err := defaultDep.Install(ctx, srv); err != nil {
-			return nil, fmt.Errorf("%q: serve core schema: %w", mod.Name(), err)
+			return nil, fmt.Errorf("%q: serve core schema: %w", main.Name(), err)
 		}
 	}
 	// Install toolchains
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
-			if err := entry.Module.Install(ctx, srv); err != nil {
-				return nil, fmt.Errorf("%q: serve toolchain module %q: %w", mod.Name(), entry.Module.Name(), err)
+	if main.Toolchains != nil {
+		for _, entry := range main.Toolchains.Entries() {
+			if err := NewUserMod(entry.Module).Install(ctx, srv); err != nil {
+				return nil, fmt.Errorf("%q: serve toolchain module %q: %w", main.Name(), entry.Module.Self().Name(), err)
 			}
 		}
 	}
 	// Install the main module
-	if err := mod.Install(ctx, srv); err != nil {
-		return nil, fmt.Errorf("%q: serve module: %w", mod.Name(), err)
+	if err := NewUserMod(mod).Install(ctx, srv); err != nil {
+		return nil, fmt.Errorf("%q: serve module: %w", main.Name(), err)
 	}
 	return srv, nil
 }
@@ -586,7 +592,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			// so the original module is always the parent one in other cases
 			originalModule := node.OriginalModule
 			if tc, ok := node.Module.Toolchains.GetByFieldName(fn.Name); ok {
-				originalModule = tc.Module
+				originalModule = tc.Module.Self()
 			}
 			objectAdded := false
 			// if the type returned by the function is an object, check the children of the return type

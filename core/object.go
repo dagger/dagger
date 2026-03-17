@@ -26,16 +26,16 @@ const deprecatedDirectiveName = "deprecated"
 
 type ModuleObjectType struct {
 	typeDef *ObjectTypeDef
-	mod     *Module
+	mod     dagql.ObjectResult[*Module]
 }
 
 var _ ModType = &ModuleObjectType{}
 
 func (t *ModuleObjectType) SourceMod() Mod {
-	if t.mod == nil {
+	if t.mod.Self() == nil {
 		return nil
 	}
-	return t.mod
+	return NewUserMod(t.mod)
 }
 
 func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
@@ -53,6 +53,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		return value, nil
 	case map[string]any:
 		fields := make(map[string]any, len(value))
+		mod := NewUserMod(t.mod)
 		for _, k := range slices.Sorted(maps.Keys(value)) {
 			v := value[k]
 			fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
@@ -60,7 +61,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 				fields[k] = v
 				continue
 			}
-			modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+			modType, ok, err := mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", k, err)
 			}
@@ -73,7 +74,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 			}
 			fields[k] = normalized
 		}
-		return dagql.NewResultForCurrentID(ctx, &ModuleObject{
+		return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  fields,
@@ -83,13 +84,13 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 	}
 }
 
-func newModuleObjectResultForCurrentID(
+func newModuleObjectResultForCurrentCall(
 	ctx context.Context,
-	mod *Module,
+	mod dagql.ObjectResult[*Module],
 	typeDef *ObjectTypeDef,
 	fields map[string]any,
 ) (dagql.AnyResult, error) {
-	return dagql.NewResultForCurrentID(ctx, &ModuleObject{
+	return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
 		Module:  mod,
 		TypeDef: typeDef,
 		Fields:  fields,
@@ -244,7 +245,7 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, curI
 			converted[name] = updated
 			continue
 		}
-		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, err := NewUserMod(t.mod).ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
@@ -419,7 +420,7 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 			continue
 		}
 
-		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		modType, ok, err := NewUserMod(t.mod).ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
 		}
@@ -486,7 +487,7 @@ type Callable interface {
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
-	mod := t.mod
+	mod := NewUserMod(t.mod)
 
 	if field, ok := t.typeDef.FieldByName(name); ok {
 		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
@@ -497,16 +498,19 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 			return nil, fmt.Errorf("could not find type for field type: %s", field.TypeDef.ToType())
 		}
 		return &CallableField{
-			Module: t.mod,
+			Module: t.mod.Self(),
 			Field:  field,
 			Return: fieldType,
 		}, nil
 	}
 
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
+		if t.mod.Self() == nil {
+			return nil, fmt.Errorf("module object type %q is missing module result wrapper", t.typeDef.Name)
+		}
 		return NewModFunction(
 			ctx,
-			mod,
+			t.mod,
 			t.typeDef,
 			fun,
 		)
@@ -515,7 +519,7 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 }
 
 type ModuleObject struct {
-	Module *Module
+	Module dagql.ObjectResult[*Module]
 
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
@@ -670,7 +674,7 @@ func (obj *ModuleObject) DecodePersistedObject(
 	_ *dagql.ResultCall,
 	jsonBytes json.RawMessage,
 ) (dagql.Typed, error) {
-	if obj == nil || obj.Module == nil || obj.TypeDef == nil {
+	if obj == nil || obj.Module.Self() == nil || obj.TypeDef == nil {
 		return nil, fmt.Errorf("decode persisted module object: missing module/type definition")
 	}
 	var payload persistedModuleObjectPayload
@@ -954,7 +958,7 @@ func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 }
 
 func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
-	if obj.Module.ResultID == nil {
+	if obj.Module.Self() == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 
@@ -970,7 +974,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 
 	class := dagql.NewClass(dag, classOpts)
 	objDef := obj.TypeDef
-	mod := obj.Module
+	mod := obj.Module.Self()
 	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
@@ -995,8 +999,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 
 func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Server) error {
 	objDef := obj.TypeDef
-	mod := obj.Module
-	moduleID, err := obj.Module.IDModule(ctx)
+	mod := obj.Module.Self()
+	moduleID, err := mod.IDModule(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for object %q constructor: %w", objDef.Name, err)
 	}
@@ -1017,7 +1021,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		dag.Root().ObjectType().Extend(
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
-				return newModuleObjectResultForCurrentID(ctx, mod, objDef, map[string]any{})
+				return newModuleObjectResultForCurrentCall(ctx, obj.Module, objDef, map[string]any{})
 			},
 		)
 		return nil
@@ -1031,15 +1035,18 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if fnTypeDef.ReturnType.AsObject.Value.OriginalName != objDef.OriginalName {
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
+	if obj.Module.Self() == nil {
+		return fmt.Errorf("install constructor for object %q without module result wrapper", objDef.Name)
+	}
 
-	fn, err := NewModFunction(ctx, mod, objDef, fnTypeDef)
+	fn, err := NewModFunction(ctx, obj.Module, objDef, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
 	if err := fn.mergeUserDefaultsTypeDefs(ctx); err != nil {
 		return fmt.Errorf("failed to merge user defaults: %w", err)
 	}
-	spec, err := fn.metadata.FieldSpec(ctx, mod)
+	spec, err := fn.metadata.FieldSpec(ctx, NewUserMod(obj.Module))
 	if err != nil {
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
@@ -1085,8 +1092,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
 		// Check if this is a toolchain proxy function using the registry
-		if obj.Module.Toolchains != nil {
-			if entry, ok := obj.Module.Toolchains.Get(fun.OriginalName); ok {
+		if obj.Module.Self().Toolchains != nil {
+			if entry, ok := obj.Module.Self().Toolchains.Get(fun.OriginalName); ok {
 				proxyField, err := entry.CreateProxyField(ctx, obj.Module, fun, dag)
 				if err != nil {
 					return nil, err
@@ -1105,8 +1112,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	return
 }
 
-func objField(ctx context.Context, mod *Module, field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
-	moduleID, err := mod.IDModule(ctx)
+func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *FieldTypeDef) (dagql.Field[*ModuleObject], error) {
+	moduleID, err := mod.Self().IDModule(ctx)
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to resolve module identity for field %q: %w", field.Name, err)
 	}
@@ -1126,7 +1133,7 @@ func objField(ctx context.Context, mod *Module, field *FieldTypeDef) (dagql.Fiel
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
+			modType, ok, err := NewUserMod(mod).ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
 			}
@@ -1159,8 +1166,11 @@ func objField(ctx context.Context, mod *Module, field *FieldTypeDef) (dagql.Fiel
 //
 // The resulting field enables users to call their custom functions as GraphQL
 // fields on their object types, with proper argument handling and caching.
-func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
+func objFun(ctx context.Context, mod dagql.ObjectResult[*Module], objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
+	if mod.Self() == nil {
+		return f, fmt.Errorf("install function %q without module result wrapper", fun.Name)
+	}
 	modFun, err := NewModFunction(
 		ctx,
 		mod,
@@ -1175,11 +1185,11 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
 		return f, fmt.Errorf("failed to merge user defaults for %q: %w", fun.Name, err)
 	}
-	spec, err := fun.FieldSpec(ctx, mod)
+	spec, err := fun.FieldSpec(ctx, NewUserMod(mod))
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
-	moduleID, err := mod.IDModule(ctx)
+	moduleID, err := mod.Self().IDModule(ctx)
 	if err != nil {
 		return f, fmt.Errorf("failed to resolve module identity for function %q: %w", fun.Name, err)
 	}

@@ -50,8 +50,8 @@ func NewModFunction(
 	objDef *ObjectTypeDef,
 	metadata *Function,
 ) (*ModuleFunction, error) {
-	modSelf := mod.Self()
-	returnType, ok, err := modSelf.ModTypeFor(ctx, metadata.ReturnType, true)
+	modInst := NewUserMod(mod)
+	returnType, ok, err := modInst.ModTypeFor(ctx, metadata.ReturnType, true)
 	if err != nil {
 		return nil, fmt.Errorf("get mod type for function %q return type: %w", metadata.Name, err)
 	}
@@ -61,7 +61,7 @@ func NewModFunction(
 
 	argTypes := make(map[string]*UserModFunctionArg, len(metadata.Args))
 	for _, argMetadata := range metadata.Args {
-		argModType, ok, err := modSelf.ModTypeFor(ctx, argMetadata.TypeDef, true)
+		argModType, ok, err := modInst.ModTypeFor(ctx, argMetadata.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
 		}
@@ -696,7 +696,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if opts.ParentTyped != nil {
 		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
 		// this function client access
-		parentModType, ok, err := mod.ModTypeFor(ctx, &TypeDef{
+		parentModType, ok, err := NewUserMod(fn.mod).ModTypeFor(ctx, &TypeDef{
 			Kind:     TypeDefKindObject,
 			AsObject: dagql.NonNull(fn.objDef),
 		}, true)

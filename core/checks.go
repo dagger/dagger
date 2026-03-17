@@ -24,15 +24,15 @@ type CheckGroup struct {
 	Checks []*Check     `json:"checks"`
 }
 
-func NewCheckGroup(ctx context.Context, mod *Module, include []string) (*CheckGroup, error) {
+func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
 
 	var exclude []string
-	if mod.Toolchains != nil {
-		for _, entry := range mod.Toolchains.Entries() {
+	if mod.Self().Toolchains != nil {
+		for _, entry := range mod.Self().Toolchains.Entries() {
 			for _, ignorePattern := range entry.IgnoreChecks {
 				exclude = append(exclude, entry.FieldName+":"+ignorePattern)
 			}

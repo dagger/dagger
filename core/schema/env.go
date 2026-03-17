@@ -241,7 +241,7 @@ func (s environmentSchema) withMainModule(ctx context.Context, env *core.Env, ar
 	if err != nil {
 		return nil, err
 	}
-	return env.WithMainModule(mod.Self()), nil
+	return env.WithMainModule(mod), nil
 }
 
 func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args struct {
@@ -251,7 +251,7 @@ func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args s
 	if err != nil {
 		return nil, err
 	}
-	return env.WithModule(mod.Self()), nil
+	return env.WithModule(mod), nil
 }
 
 func (s environmentSchema) withCurrentModule(ctx context.Context, env dagql.ObjectResult[*core.Env], _ struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
