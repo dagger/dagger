@@ -2717,6 +2717,23 @@ What changed:
 - in particular, the existing default-module / auto-alias fallback logic stays
   in place for now and should be evaluated separately
 
+### 2026-03-17: Delete Unused `ImportCallerHostDir`
+
+Addressed the review note on `engine/buildkit/filesync.go` by deleting the
+unused `ImportCallerHostDir` helper.
+
+Why remove it:
+
+- it had no callers anywhere in the tree
+- it added no workspace-specific behavior or compat value
+- leaving dead helper code in the branch only increases the diff from `main`
+  and makes future review/rebase work noisier
+
+What changed:
+
+- removed `ImportCallerHostDir` from `engine/buildkit/filesync.go`
+- no behavioral replacement was needed because nothing used it
+
 ## User-Visible Breakage In The Foundation PR
 
 These are the expected user-visible breakages even without the follow-up porcelain.
