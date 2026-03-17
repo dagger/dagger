@@ -38,46 +38,82 @@ type AbovePrinter interface {
 	PrintAbove(text string)
 }
 
-// InteractiveSetup guides user through LLM configuration
-// Returns (configured bool, error) - configured is true if setup completed
+// providerSummary returns a short description of an already-configured provider.
+func providerSummary(p Provider) string {
+	if p.IsOAuth() {
+		label := SubscriptionLabel(p.SubscriptionType)
+		if label == "" {
+			label = "OAuth"
+		}
+		return label
+	}
+	return redactKey(p.APIKey)
+}
+
+// redactKey returns a redacted version of an API key for display.
+// Secret references (e.g. op://, env://) are shown in full; only
+// literal tokens are truncated.
+func redactKey(key string) string {
+	if strings.Contains(key, "://") {
+		return key
+	}
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "…" + key[len(key)-4:]
+}
+
+// InteractiveSetup guides user through LLM configuration.
+// It is additive: already-configured providers are shown with a summary
+// and can be reconfigured, while new providers can be added alongside them.
+// Returns (configured bool, error) - configured is true if setup completed.
 func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, error) {
-	// 1. Check if LLM is already configured
-	if LLMConfigured() {
-		// Ask if they want to reconfigure
-		var reconfigure bool
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("LLM configuration already exists").
-					Description("Do you want to reconfigure?").
-					Value(&reconfigure),
-			),
-		)
-		if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
-			return false, err
-		}
-		if !reconfigure {
-			return false, nil // User chose not to reconfigure
-		}
+	// Load existing config so we can show what's already set up.
+	cfg, err := Load()
+	if err != nil || cfg == nil {
+		cfg = &Config{}
+	}
+	if cfg.LLM.Providers == nil {
+		cfg.LLM.Providers = make(map[string]Provider)
 	}
 
-	// 2. Present provider choices
+	// Build provider menu with status indicators.
+	type providerEntry struct {
+		label    string
+		value    string
+		configKey string   // key in cfg.LLM.Providers
+		wantOAuth bool     // true if this entry expects OAuth auth
+	}
+	entries := []providerEntry{
+		{"OpenRouter (recommended)", "openrouter", "openrouter", false},
+		{"Anthropic (Claude Code OAuth - use your Pro/Max subscription)", "anthropic-oauth", "anthropic", true},
+		{"OpenAI Codex (ChatGPT Plus/Pro subscription)", "openai-codex", "openai-codex", true},
+		{"Anthropic (API key)", "anthropic", "anthropic", false},
+		{"OpenAI (API key)", "openai", "openai", false},
+		{"Google (Gemini models)", "google", "google", false},
+	}
+
+	opts := make([]huh.Option[string], 0, len(entries))
+	for _, e := range entries {
+		label := e.label
+		if p, ok := cfg.LLM.Providers[e.configKey]; ok && p.Enabled {
+			// Only show checkmark if the auth type matches this entry.
+			if e.wantOAuth == p.IsOAuth() {
+				label += " \033[1;32m✓ " + providerSummary(p) + "\033[0m"
+			}
+		}
+		opts = append(opts, huh.NewOption(label, e.value))
+	}
+
 	var providerChoice string
 	providerForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Height(8).
 				Filtering(true).
-				Title("Choose an LLM provider").
-				Description("OpenRouter provides unified access to 100+ models with a single API key").
-				Options(
-					huh.NewOption("OpenRouter (recommended)", "openrouter"),
-					huh.NewOption("Anthropic (Claude Code OAuth - use your Pro/Max subscription)", "anthropic-oauth"),
-					huh.NewOption("OpenAI Codex (ChatGPT Plus/Pro subscription)", "openai-codex"),
-					huh.NewOption("Anthropic (API key)", "anthropic"),
-					huh.NewOption("OpenAI (API key)", "openai"),
-					huh.NewOption("Google (Gemini models)", "google"),
-				).
+				Title("Configure an LLM provider").
+				Description("Select a provider to add or reconfigure. You can run setup again to add more.").
+				Options(opts...).
 				Value(&providerChoice),
 		),
 	)
@@ -86,7 +122,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		return false, err
 	}
 
-	// Handle OAuth flows
+	// Handle OAuth flows (they manage saving internally but we need to
+	// ensure they merge into the existing config).
 	switch providerChoice {
 	case "anthropic-oauth":
 		return setupClaudeCodeOAuth(ctx, promptHandler)
@@ -94,14 +131,57 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		return setupOpenAICodexOAuth(ctx, promptHandler)
 	}
 
-	// 3. Choose how to provide the API key
+	// API-key flow for the selected provider.
+	providerCfg, selectedModel, err := setupAPIKeyProvider(ctx, promptHandler, providerChoice)
+	if err != nil {
+		return false, err
+	}
+
+	// Merge into existing config.
+	cfg.LLM.Providers[providerChoice] = *providerCfg
+
+	// Set as default if it's the first provider or update the default.
+	if cfg.LLM.DefaultProvider == "" || cfg.LLM.DefaultProvider == providerChoice {
+		cfg.LLM.DefaultProvider = providerChoice
+		cfg.LLM.DefaultModel = selectedModel
+	} else {
+		// Ask whether to make this the new default.
+		var setDefault bool
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Set as default provider?").
+					Description(fmt.Sprintf("Current default is %q. Use %q instead?",
+						cfg.LLM.DefaultProvider, providerChoice)).
+					Value(&setDefault),
+			),
+		)
+		if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
+			return false, err
+		}
+		if setDefault {
+			cfg.LLM.DefaultProvider = providerChoice
+			cfg.LLM.DefaultModel = selectedModel
+		}
+	}
+
+	if err := cfg.Save(); err != nil {
+		return false, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return true, nil
+}
+
+// setupAPIKeyProvider runs the API-key setup flow for a provider and returns
+// the configured Provider and selected model without saving to disk.
+func setupAPIKeyProvider(ctx context.Context, ph PromptHandler, provider string) (*Provider, string, error) {
 	var keyMethod string
 	methodForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Height(8).
 				Filtering(true).
-				Title(fmt.Sprintf("How would you like to provide your %s API key?", providerChoice)).
+				Title(fmt.Sprintf("How would you like to provide your %s API key?", provider)).
 				Description("A secret provider reference is preferred over pasting a literal token.").
 				Options(
 					huh.NewOption("1Password (op://)", "op"),
@@ -117,79 +197,57 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		),
 	)
 
-	if err := checkAbort(promptHandler.HandleForm(ctx, methodForm)); err != nil {
-		return false, err
+	if err := checkAbort(ph.HandleForm(ctx, methodForm)); err != nil {
+		return nil, "", err
 	}
 
 	var apiKey string
 	switch keyMethod {
 	case "op":
-		key, err := promptOp(ctx, promptHandler)
+		key, err := promptOp(ctx, ph)
 		if err != nil {
-			return false, err
+			return nil, "", err
 		}
 		apiKey = key
 	case "literal":
-		key, err := promptLiteralKey(ctx, promptHandler, providerChoice)
+		key, err := promptLiteralKey(ctx, ph, provider)
 		if err != nil {
-			return false, err
+			return nil, "", err
 		}
 		apiKey = key
 	default:
-		// For all other providers, prompt for the path portion after scheme://
-		key, err := promptSecretRef(ctx, promptHandler, keyMethod)
+		key, err := promptSecretRef(ctx, ph, keyMethod)
 		if err != nil {
-			return false, err
+			return nil, "", err
 		}
 		apiKey = key
 	}
 
 	if apiKey == "" {
-		return false, nil
+		return nil, "", ErrAborted
 	}
 
-	// 4. Build provider config
-	providerCfg := Provider{
+	providerCfg := &Provider{
 		APIKey:  apiKey,
 		Enabled: true,
 	}
 
-	if providerChoice == "openrouter" {
+	if provider == "openrouter" {
 		providerCfg.BaseURL = "https://openrouter.ai/api/v1"
 	}
 
-	defaultModel := DefaultModelForProvider(providerChoice)
+	defaultModel := DefaultModelForProvider(provider)
 
-	// 5. Let user pick a model
-	selectedModel, err := promptModelSelection(ctx, promptHandler, providerChoice, defaultModel)
+	selectedModel, err := promptModelSelection(ctx, ph, provider, defaultModel)
 	if err != nil {
-		return false, err
+		return nil, "", err
 	}
 
-	// 6. Optionally configure thinking/reasoning
-	if err := promptThinkingConfig(ctx, promptHandler, providerChoice, selectedModel, &providerCfg); err != nil {
-		return false, err
+	if err := promptThinkingConfig(ctx, ph, provider, selectedModel, providerCfg); err != nil {
+		return nil, "", err
 	}
 
-	// Load existing config or create new one (preserves non-LLM sections)
-	cfg, err := Load()
-	if err != nil || cfg == nil {
-		cfg = &Config{}
-	}
-
-	cfg.LLM = LLMConfig{
-		DefaultProvider: providerChoice,
-		DefaultModel:    selectedModel,
-		Providers: map[string]Provider{
-			providerChoice: providerCfg,
-		},
-	}
-
-	if err := cfg.Save(); err != nil {
-		return false, fmt.Errorf("failed to save config: %w", err)
-	}
-
-	return true, nil
+	return providerCfg, selectedModel, nil
 }
 
 // AutoSetupIfNeeded checks if config exists and prompts user to set up if not
@@ -525,9 +583,12 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
 		return false, err
 	}
 
-	cfg.LLM.DefaultProvider = "anthropic"
-	cfg.LLM.DefaultModel = selectedModel
 	cfg.LLM.Providers["anthropic"] = *providerCfg
+
+	// Set as default, or ask if another default already exists.
+	if err := promptSetDefault(ctx, ph, cfg, "anthropic", selectedModel); err != nil {
+		return false, err
+	}
 
 	if err := cfg.Save(); err != nil {
 		return false, fmt.Errorf("failed to save config: %w", err)
@@ -672,15 +733,47 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 		return false, err
 	}
 
-	cfg.LLM.DefaultProvider = "openai-codex"
-	cfg.LLM.DefaultModel = selectedModel
 	cfg.LLM.Providers["openai-codex"] = *providerCfg
+
+	// Set as default, or ask if another default already exists.
+	if err := promptSetDefault(ctx, ph, cfg, "openai-codex", selectedModel); err != nil {
+		return false, err
+	}
 
 	if err := cfg.Save(); err != nil {
 		return false, fmt.Errorf("failed to save config: %w", err)
 	}
 
 	return true, nil
+}
+
+// promptSetDefault sets the given provider as default, or asks the user
+// if a different default is already configured.
+func promptSetDefault(ctx context.Context, ph PromptHandler, cfg *Config, provider, model string) error {
+	if cfg.LLM.DefaultProvider == "" || cfg.LLM.DefaultProvider == provider {
+		cfg.LLM.DefaultProvider = provider
+		cfg.LLM.DefaultModel = model
+		return nil
+	}
+
+	var setDefault bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Set as default provider?").
+				Description(fmt.Sprintf("Current default is %q. Use %q instead?",
+					cfg.LLM.DefaultProvider, provider)).
+				Value(&setDefault),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return err
+	}
+	if setDefault {
+		cfg.LLM.DefaultProvider = provider
+		cfg.LLM.DefaultModel = model
+	}
+	return nil
 }
 
 // promptModelSelection presents a model picker for the given provider.
