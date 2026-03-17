@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/.dagger
 
-go 1.25.0
+go 1.25.3
 
 replace (
 	github.com/dagger/dagger => ..
@@ -23,7 +23,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

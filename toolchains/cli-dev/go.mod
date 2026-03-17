@@ -1,6 +1,6 @@
 module dagger/cli-dev
 
-go 1.25.0
+go 1.25.3
 
 replace (
 	github.com/dagger/dagger => ../..

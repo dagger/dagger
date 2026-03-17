@@ -55,6 +55,12 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
+	// Run from a temp directory to avoid reading local repo config.
+	// We only need system/global config (e.g. url.*.insteadOf), and running
+	// inside a git repo can fail fatally if the .git pointer is invalid
+	// (e.g. a mounted git worktree whose gitdir target doesn't exist).
+	cmd.Dir = os.TempDir()
+
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
 		"SSH_ASKPASS=echo",

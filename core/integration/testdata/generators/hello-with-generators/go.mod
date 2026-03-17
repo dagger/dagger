@@ -1,6 +1,6 @@
 module dagger/hello-with-generators
 
-go 1.25.6
+go 1.25.3
 
 require (
 	dagger.io/dagger v0.19.11
