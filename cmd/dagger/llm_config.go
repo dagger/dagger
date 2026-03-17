@@ -105,17 +105,7 @@ var llmSetupCmd = &cobra.Command{
 		if aborted {
 			fmt.Fprintln(os.Stderr, "Setup cancelled.")
 		} else if configured {
-			msg := idtui.IconSuccess + " LLM configuration saved successfully!"
-			// Show subscription type if OAuth was configured
-			if cfg, err := llmconfig.Load(); err == nil && cfg != nil {
-				for _, p := range cfg.LLM.Providers {
-					if label := llmconfig.SubscriptionLabel(p.SubscriptionType); label != "" {
-						msg += fmt.Sprintf(" (%s)", label)
-						break
-					}
-				}
-			}
-			fmt.Fprintln(os.Stderr, msg)
+			fmt.Fprintln(os.Stderr, idtui.IconSuccess+" LLM configuration saved!")
 		}
 		return nil
 	},
