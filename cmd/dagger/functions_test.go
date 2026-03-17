@@ -9,7 +9,7 @@ import (
 	"dagger.io/dagger"
 )
 
-func TestRewriteQueryRootConstructorArgs(t *testing.T) {
+func TestRewriteQueryRootModuleArgs(t *testing.T) {
 	root := &cobra.Command{Use: "call"}
 	root.Flags().StringP("mod", "m", "", "")
 	root.Flags().BoolP("json", "j", false, "")
@@ -27,8 +27,9 @@ func TestRewriteQueryRootConstructorArgs(t *testing.T) {
 			Name: "Query",
 			Functions: []*modFunction{
 				{
-					Name:       "ci",
-					ReturnType: ciType,
+					Name:             "ci",
+					SourceModuleName: "ci",
+					ReturnType:       ciType,
 					Args: []*modFunctionArg{
 						{
 							Name:    "prefix",
@@ -45,7 +46,7 @@ func TestRewriteQueryRootConstructorArgs(t *testing.T) {
 		require.Equal(
 			t,
 			[]string{"ci", "--prefix", "ctor", "echo", "--prefix", "method"},
-			rewriteQueryRootConstructorArgs(root, queryType, args),
+			rewriteQueryRootModuleArgs(root, queryType, args),
 		)
 	})
 
@@ -54,20 +55,20 @@ func TestRewriteQueryRootConstructorArgs(t *testing.T) {
 		require.Equal(
 			t,
 			[]string{"-m", ".", "ci", "--prefix", "ctor", "echo", "--prefix", "method"},
-			rewriteQueryRootConstructorArgs(root, queryType, args),
+			rewriteQueryRootModuleArgs(root, queryType, args),
 		)
 	})
 
 	t.Run("does not rewrite when the candidate token is a flag value", func(t *testing.T) {
 		args := []string{"--prefix", "ci", "echo"}
-		require.Equal(t, args, rewriteQueryRootConstructorArgs(root, queryType, args))
+		require.Equal(t, args, rewriteQueryRootModuleArgs(root, queryType, args))
 	})
 
 	t.Run("does not rewrite non query roots", func(t *testing.T) {
 		require.Equal(
 			t,
 			[]string{"--prefix", "ctor", "ci", "echo"},
-			rewriteQueryRootConstructorArgs(root, ciType, []string{"--prefix", "ctor", "ci", "echo"}),
+			rewriteQueryRootModuleArgs(root, ciType, []string{"--prefix", "ctor", "ci", "echo"}),
 		)
 	})
 }

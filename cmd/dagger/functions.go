@@ -363,7 +363,7 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	defer telemetry.EndWithCause(span, &rerr)
 	fc.ctx = spanCtx
 
-	a = rewriteQueryRootConstructorArgs(c, fc.mod.MainObject, a)
+	a = rewriteQueryRootModuleArgs(c, fc.mod.MainObject, a)
 
 	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
 
@@ -380,7 +380,11 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 	return cmd, args, nil
 }
 
-func rewriteQueryRootConstructorArgs(root *cobra.Command, rootType *modTypeDef, args []string) []string {
+// rewriteQueryRootModuleArgs detects flags placed before a module-provided
+// subcommand on the Query root and moves them after the subcommand name.
+// This preserves the UX where constructor/module args can be written before
+// the subcommand: `dagger call --port 8080 serve up` → `dagger call serve --port 8080 up`.
+func rewriteQueryRootModuleArgs(root *cobra.Command, rootType *modTypeDef, args []string) []string {
 	if len(args) < 2 || !strings.HasPrefix(args[0], "-") {
 		return args
 	}
@@ -388,14 +392,14 @@ func rewriteQueryRootConstructorArgs(root *cobra.Command, rootType *modTypeDef, 
 		return args
 	}
 
-	constructors := queryRootModuleConstructors(rootType)
-	if len(constructors) == 0 {
+	moduleFns := queryRootModuleFunctions(rootType)
+	if len(moduleFns) == 0 {
 		return args
 	}
 
-	constructorsByName := make(map[string]*modFunction, len(constructors))
-	for _, constructor := range constructors {
-		constructorsByName[constructor.CmdName()] = constructor
+	fnsByName := make(map[string]*modFunction, len(moduleFns))
+	for _, fn := range moduleFns {
+		fnsByName[fn.CmdName()] = fn
 	}
 
 	for i := 1; i < len(args); i++ {
@@ -404,12 +408,12 @@ func rewriteQueryRootConstructorArgs(root *cobra.Command, rootType *modTypeDef, 
 			continue
 		}
 
-		constructor, ok := constructorsByName[token]
+		fn, ok := fnsByName[token]
 		if !ok {
 			continue
 		}
 
-		prefixStart, ok := queryRootConstructorPrefixStart(root.Flags(), constructor, args[:i])
+		prefixStart, ok := queryRootConstructorPrefixStart(root.Flags(), fn, args[:i])
 		if !ok {
 			continue
 		}
@@ -425,29 +429,22 @@ func rewriteQueryRootConstructorArgs(root *cobra.Command, rootType *modTypeDef, 
 	return args
 }
 
-func queryRootModuleConstructors(rootType *modTypeDef) []*modFunction {
+// queryRootModuleFunctions returns all module-provided functions on the Query
+// root type: constructors, entrypoint-proxied methods, and proxied fields.
+func queryRootModuleFunctions(rootType *modTypeDef) []*modFunction {
 	fp := rootType.AsFunctionProvider()
 	if fp == nil {
 		return nil
 	}
 
 	fns, _ := GetSupportedFunctions(fp)
-	constructors := make([]*modFunction, 0, len(fns))
+	moduleFns := make([]*modFunction, 0, len(fns))
 	for _, fn := range fns {
-		// Include module constructors (fn.Name matches module name).
-		if obj := fn.ReturnType.AsObject; obj != nil && obj.SourceModuleName != "" &&
-			fn.Name == gqlFieldName(obj.SourceModuleName) {
-			constructors = append(constructors, fn)
-			continue
-		}
-		// Include entrypoint proxy commands (module-sourced functions
-		// that aren't constructors). Their args include the merged
-		// constructor args, so prefix flags may belong to them.
 		if fn.SourceModuleName != "" {
-			constructors = append(constructors, fn)
+			moduleFns = append(moduleFns, fn)
 		}
 	}
-	return constructors
+	return moduleFns
 }
 
 func queryRootConstructorPrefixStart(rootFlags *pflag.FlagSet, constructor *modFunction, prefix []string) (int, bool) {
