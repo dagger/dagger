@@ -8,14 +8,15 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
+
+	"charm.land/lipgloss/v2"
 )
 
 // KeymapStyle is the default style for keymap text.
 var KeymapStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
+	Foreground(lipgloss.BrightBlack)
 
 const keypressDuration = 500 * time.Millisecond
 
@@ -49,7 +50,7 @@ func (kb *KeymapBar) Render(ctx tuist.Context) tuist.RenderResult {
 
 	if kb.UsingCloudEngine {
 		fmt.Fprint(out, lipgloss.NewStyle().
-			Foreground(lipgloss.ANSIColor(termenv.ANSIBrightMagenta)).
+			Foreground(lipgloss.BrightMagenta).
 			Render(CloudIcon+" cloud"))
 		fmt.Fprint(out, KeymapStyle.Render(" "+VertBoldDash3+" "))
 	}
