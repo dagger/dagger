@@ -240,6 +240,10 @@ func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResu
 	return c.cache.AttachResult(ctx, res)
 }
 
+func (c *SessionCache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	return c.cache.AddExplicitDependency(ctx, parent, dep, reason)
+}
+
 func (c *SessionCache) GetOrInitArbitrary(
 	ctx context.Context,
 	callKey string,

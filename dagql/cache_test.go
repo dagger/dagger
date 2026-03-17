@@ -4059,6 +4059,57 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	assert.Assert(t, childRetained)
 }
 
+func TestCacheAddExplicitDependency(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	parentCall := cacheTestIntCall("parent-explicit-dependency")
+	childCall := cacheTestIntCall("child-explicit-dependency")
+
+	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentCall}, ValueFunc(cacheTestIntResult(parentCall, 1)))
+	assert.NilError(t, err)
+	childRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
+	assert.NilError(t, err)
+
+	parentShared := parentRes.cacheSharedResult()
+	childShared := childRes.cacheSharedResult()
+	assert.Assert(t, parentShared != nil)
+	assert.Assert(t, childShared != nil)
+
+	assert.NilError(t, c.AddExplicitDependency(ctx, parentRes, childRes, "test_explicit_dependency"))
+
+	c.egraphMu.RLock()
+	cachedParent := c.resultsByID[parentShared.id]
+	parentDependsOnChild := false
+	heldDeps := 0
+	if cachedParent != nil {
+		_, parentDependsOnChild = cachedParent.deps[childShared.id]
+		heldDeps = len(cachedParent.heldDependencyResults)
+	}
+	c.egraphMu.RUnlock()
+
+	assert.Assert(t, cachedParent != nil)
+	assert.Assert(t, parentDependsOnChild)
+	assert.Equal(t, 1, heldDeps)
+
+	assert.NilError(t, childRes.Release(ctx))
+
+	c.egraphMu.RLock()
+	_, childStillPresent := c.resultsByID[childShared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, childStillPresent)
+
+	assert.NilError(t, parentRes.Release(ctx))
+
+	c.egraphMu.RLock()
+	_, childStillPresent = c.resultsByID[childShared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, !childStillPresent)
+}
+
 func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

@@ -305,8 +305,7 @@ func (sdk *goSDK) ModuleTypes(
 		execMD.CallDigest = callDigest
 	}
 
-	var modDefsID string
-	err = dag.Select(ctx, ctr, &modDefsID,
+	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
@@ -384,6 +383,25 @@ func (sdk *goSDK) ModuleTypes(
 				},
 			},
 		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to run go module type defs generation: %w", err)
+	}
+
+	var syncedCtrID dagql.ID[*core.Container]
+	if err = dag.Select(ctx, ctr, &syncedCtrID, dagql.Selector{
+		Field: "sync",
+	}); err != nil {
+		return inst, fmt.Errorf("failed to sync go module type defs generation container: %w", err)
+	}
+
+	ctr, err = syncedCtrID.Load(ctx, dag)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load synced go module type defs generation container: %w", err)
+	}
+
+	var modDefsID string
+	err = dag.Select(ctx, ctr, &modDefsID,
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
@@ -401,9 +419,6 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
 	}
 
-	// Temporary exception: Go generate-typedefs currently emits a recipe-form Module ID
-	// rather than a handle-form ModuleID scalar, so decode the raw call.ID and load it
-	// directly instead of routing through ModuleID input coercion.
 	modCallID := new(call.ID)
 	if err = json.Unmarshal([]byte(modDefsID), modCallID); err != nil {
 		return inst, fmt.Errorf("failed to decode module call ID from type defs json: %w", err)
@@ -412,6 +427,12 @@ func (sdk *goSDK) ModuleTypes(
 	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+	// generate-typedefs emits a handle-form module ID out of the withExec result.
+	// Retain that loaded module under the producing exec container so it cannot be
+	// pruned while the exec result that created it is still live.
+	if err := dag.Cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
+		return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
 	}
 
 	return inst, nil

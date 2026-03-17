@@ -10,7 +10,6 @@ import (
 	"os"
 	"runtime/debug"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"golang.org/x/tools/go/packages"
@@ -98,9 +97,7 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 		}
 	}()
 
-	id, err := module.ID(funcs.ctx, dagger.ModuleIDOpts{
-		Recipe: true,
-	})
+	id, err := module.ID(funcs.ctx)
 	if err != nil {
 		return "", err
 	}

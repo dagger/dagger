@@ -76,6 +76,10 @@ type Cache interface {
 	// selections can refer to it by stable result handle.
 	AttachResult(context.Context, AnyResult) (AnyResult, error)
 
+	// AddExplicitDependency records that parent must retain dep until parent is
+	// released, without changing either result's structural call identity.
+	AddExplicitDependency(context.Context, AnyResult, AnyResult, string) error
+
 	// RecipeIDForCall derives the semantic recipe ID for a result call using
 	// the cache to resolve any cached result refs it depends on.
 	RecipeIDForCall(*ResultCall) (*call.ID, error)
@@ -655,6 +659,56 @@ func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, err
 		return nil, fmt.Errorf("attach owned result: attached result missing shared result ID")
 	}
 	return attached, nil
+}
+
+func (c *cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+	if parent == nil || dep == nil {
+		return nil
+	}
+
+	parentShared := parent.cacheSharedResult()
+	if parentShared == nil || parentShared.id == 0 || parentShared.cache != c {
+		return fmt.Errorf("add explicit dependency: parent %T is not an attached result in this cache", parent)
+	}
+	depShared := dep.cacheSharedResult()
+	if depShared == nil || depShared.id == 0 || depShared.cache != c {
+		return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
+	}
+	if parentShared.id == depShared.id {
+		return nil
+	}
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+
+	parentRes := c.resultsByID[parentShared.id]
+	if parentRes == nil {
+		return fmt.Errorf("add explicit dependency: parent result %d missing from cache", parentShared.id)
+	}
+	depRes := c.resultsByID[depShared.id]
+	if depRes == nil {
+		return fmt.Errorf("add explicit dependency: dep result %d missing from cache", depShared.id)
+	}
+	if parentRes.deps == nil {
+		parentRes.deps = make(map[sharedResultID]struct{})
+	}
+	if _, ok := parentRes.deps[depShared.id]; ok {
+		return nil
+	}
+
+	atomic.AddInt64(&depRes.refCount, 1)
+	c.traceRefAcquired(ctx, depRes, atomic.LoadInt64(&depRes.refCount))
+
+	parentRes.deps[depShared.id] = struct{}{}
+	parentRes.heldDependencyResults = append(parentRes.heldDependencyResults, dep)
+	c.traceExplicitDepAdded(ctx, parentRes.id, depShared.id, reason)
+	if parentRes.depOfPersistedResult {
+		if _, err := c.markResultAsDepOfPersistedLocked(ctx, depRes); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (res *sharedResult) release(ctx context.Context) error {
