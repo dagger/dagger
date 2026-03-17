@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/dagql/idtui"
 )
 
 var terminalMu sync.Mutex
@@ -31,7 +31,7 @@ type terminalSession struct {
 	stderr io.Writer
 }
 
-var _ tea.ExecCommand = (*terminalSession)(nil)
+var _ idtui.ExecCommand = (*terminalSession)(nil)
 
 func (ts *terminalSession) SetStdin(r io.Reader) {
 	ts.stdin = r
