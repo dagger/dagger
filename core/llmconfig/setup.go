@@ -48,13 +48,13 @@ func providerSummary(p Provider) string {
 		}
 		return label
 	}
-	return redactKey(p.APIKey)
+	return RedactKey(p.APIKey)
 }
 
-// redactKey returns a redacted version of an API key for display.
+// RedactKey returns a redacted version of an API key for display.
 // Secret references (e.g. op://, env://) are shown in full; only
 // literal tokens are truncated.
-func redactKey(key string) string {
+func RedactKey(key string) string {
 	if strings.Contains(key, "://") {
 		return key
 	}

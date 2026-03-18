@@ -64,7 +64,7 @@ var llmConfigCmd = &cobra.Command{
 					}
 					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s\n", idtui.IconSuccess, name, label)
 				} else {
-					redacted := redactAPIKey(provider.APIKey)
+					redacted := llmconfig.RedactKey(provider.APIKey)
 					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s\n", idtui.IconSuccess, name, redacted)
 				}
 				if provider.BaseURL != "" {
@@ -326,13 +326,6 @@ var llmShowConfigCmd = &cobra.Command{
 }
 
 // Helper functions
-
-func redactAPIKey(key string) string {
-	if len(key) <= 8 {
-		return "***"
-	}
-	return key[:8] + "..." + "***"
-}
 
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
