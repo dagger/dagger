@@ -1,6 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.25.6
+go 1.25.8
 
 require (
 	dagger.io/dagger v0.20.1
@@ -204,7 +204,11 @@ require (
 
 require github.com/openai/openai-go/v3 v3.26.0
 
-require github.com/mattn/go-pointer v0.0.1 // indirect
+require (
+	charm.land/catwalk v0.30.4 // indirect
+	github.com/charmbracelet/x/etag v0.2.0 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
+)
 
 require (
 	cloud.google.com/go v0.120.0 // indirect
@@ -247,7 +251,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
-	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
+	github.com/charmbracelet/x/exp/strings v0.1.0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect

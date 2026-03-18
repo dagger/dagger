@@ -234,7 +234,9 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		maxTokens = int64(opts.MaxTokens)
 	}
 
-	// Configure thinking/reasoning if requested
+	// Configure thinking/reasoning if requested.
+	// Supports "adaptive", "enabled" (with explicit budget), or named levels
+	// from catwalk ("low", "medium", "high", "max") which map to budgets.
 	var thinkingConfig anthropic.ThinkingConfigParamUnion
 	switch c.endpoint.ThinkingMode {
 	case "adaptive":
@@ -253,6 +255,26 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(budget)
 		if maxTokens < budget+1024 {
 			maxTokens = budget + 1024
+		}
+	case "low":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(2048)
+		if maxTokens < 2048+1024 {
+			maxTokens = 2048 + 1024
+		}
+	case "medium":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(10000)
+		if maxTokens < 10000+1024 {
+			maxTokens = 10000 + 1024
+		}
+	case "high":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(32000)
+		if maxTokens < 32000+1024 {
+			maxTokens = 32000 + 1024
+		}
+	case "max":
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(128000)
+		if maxTokens < 128000+1024 {
+			maxTokens = 128000 + 1024
 		}
 	}
 

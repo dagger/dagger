@@ -842,47 +842,33 @@ func promptModelSelection(ctx context.Context, ph PromptHandler, provider, defau
 }
 
 // promptThinkingConfig asks the user whether to enable extended thinking / reasoning.
-// Only shown for providers/models that support it.
+// The available options are driven by the model's ReasoningLevels from catwalk.
 func promptThinkingConfig(ctx context.Context, ph PromptHandler, provider, model string, cfg *Provider) error {
-	// Check if the selected model supports thinking
-	supportsThinking := false
-	for _, m := range ModelsForProvider(provider) {
-		if m.ID == model && m.SupportsThinking {
-			supportsThinking = true
-			break
-		}
-	}
-
-	// For providers where all models support reasoning, always offer the prompt
-	// regardless of whether the specific model is in our curated list.
-	switch provider {
-	case "openai-codex":
-		return promptOpenAIReasoning(ctx, ph, cfg)
-	case "google":
-		return promptGoogleThinking(ctx, ph, cfg)
-	}
-
-	if !supportsThinking {
+	m, found := ModelByID(provider, model)
+	if !found || !m.CanReason {
 		return nil
 	}
 
-	// Anthropic-style thinking config
-	return promptAnthropicThinking(ctx, ph, cfg)
-}
+	// Build options from the model's reasoning levels.
+	opts := []huh.Option[string]{
+		huh.NewOption("Off (default)", ""),
+	}
+	for _, level := range m.ReasoningLevels {
+		label := strings.ToUpper(level[:1]) + level[1:]
+		if level == m.DefaultReasoningEffort {
+			label += " (model default)"
+		}
+		opts = append(opts, huh.NewOption(label, level))
+	}
 
-func promptAnthropicThinking(ctx context.Context, ph PromptHandler, cfg *Provider) error {
 	var mode string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Height(6).
-				Title("Extended thinking").
-				Description("Extended thinking lets Claude reason through complex problems step-by-step before responding.").
-				Options(
-					huh.NewOption("Off (default)", ""),
-					huh.NewOption("Adaptive (model decides)", "adaptive"),
-					huh.NewOption("Enabled (with token budget)", "enabled"),
-				).
+				Height(max(len(opts)+2, 6)).
+				Title("Reasoning / thinking").
+				Description("Controls how much the model reasons before responding.").
+				Options(opts...).
 				Value(&mode),
 		),
 	)
@@ -891,115 +877,6 @@ func promptAnthropicThinking(ctx context.Context, ph PromptHandler, cfg *Provide
 	}
 
 	cfg.ThinkingMode = mode
-
-	if mode == "enabled" {
-		budget := "10000"
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Thinking budget (tokens)").
-					Description("How many tokens Claude can use for reasoning. Min: 1024.").
-					Value(&budget).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("budget cannot be empty")
-						}
-						return nil
-					}),
-			),
-		)
-		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
-			return err
-		}
-		var n int64
-		if _, err := fmt.Sscanf(budget, "%d", &n); err == nil && n >= 1024 {
-			cfg.ThinkingBudget = n
-		} else {
-			cfg.ThinkingBudget = 10000
-		}
-	}
-
-	return nil
-}
-
-func promptOpenAIReasoning(ctx context.Context, ph PromptHandler, cfg *Provider) error {
-	var effort string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Height(8).
-				Title("Reasoning effort").
-				Description("Controls how much the model reasons before responding. Higher = slower but better.").
-				Options(
-					huh.NewOption("Medium (default)", ""),
-					huh.NewOption("None (fastest)", "none"),
-					huh.NewOption("Low", "low"),
-					huh.NewOption("High", "high"),
-					huh.NewOption("Extra High (xhigh)", "xhigh"),
-				).
-				Value(&effort),
-		),
-	)
-	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
-		return err
-	}
-
-	cfg.ThinkingMode = effort
-	return nil
-}
-
-func promptGoogleThinking(ctx context.Context, ph PromptHandler, cfg *Provider) error {
-	var mode string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Height(8).
-				Title("Thinking").
-				Description("Gemini 2.5 models can think through problems step-by-step before responding.").
-				Options(
-					huh.NewOption("Off (default)", ""),
-					huh.NewOption("Adaptive (model decides)", "adaptive"),
-					huh.NewOption("Enabled (with token budget)", "enabled"),
-					huh.NewOption("Low", "low"),
-					huh.NewOption("Medium", "medium"),
-					huh.NewOption("High", "high"),
-				).
-				Value(&mode),
-		),
-	)
-	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
-		return err
-	}
-
-	cfg.ThinkingMode = mode
-
-	if mode == "enabled" {
-		budget := "10000"
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Thinking budget (tokens)").
-					Description("How many tokens the model can use for reasoning.").
-					Value(&budget).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("budget cannot be empty")
-						}
-						return nil
-					}),
-			),
-		)
-		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
-			return err
-		}
-		var n int64
-		if _, err := fmt.Sscanf(budget, "%d", &n); err == nil && n >= 1 {
-			cfg.ThinkingBudget = n
-		} else {
-			cfg.ThinkingBudget = 10000
-		}
-	}
-
 	return nil
 }
 
