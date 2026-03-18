@@ -182,6 +182,9 @@ type ResultCall struct {
 
 	// cache is a runtime-only backpointer used for recursive digest resolution
 	// through ResultCallRef.ResultID. It is not persisted.
+	//
+	// Cache-owned frames are treated as immutable once attached. Read-only
+	// identity paths borrow them directly; mutation paths must fork first.
 	cache *cache
 
 	// recipeDigest is memoized once the frame has reached its finalized
@@ -235,6 +238,27 @@ func (frame *ResultCall) clone() *ResultCall {
 		}
 	}
 	return cp
+}
+
+func (frame *ResultCall) fork() *ResultCall {
+	if frame == nil {
+		return nil
+	}
+	return &ResultCall{
+		Kind:           frame.Kind,
+		Type:           frame.Type,
+		Field:          frame.Field,
+		SyntheticOp:    frame.SyntheticOp,
+		View:           frame.View,
+		Nth:            frame.Nth,
+		EffectIDs:      slices.Clone(frame.EffectIDs),
+		ExtraDigests:   slices.Clone(frame.ExtraDigests),
+		Receiver:       frame.Receiver,
+		Module:         frame.Module,
+		Args:           slices.Clone(frame.Args),
+		ImplicitInputs: slices.Clone(frame.ImplicitInputs),
+		cache:          frame.cache,
+	}
 }
 
 func (frame *ResultCall) RecipeDigest() (digest.Digest, error) {
@@ -750,7 +774,7 @@ func recipeDigestForCachedResult(c *cache, resultID sharedResultID, visiting map
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing recipe digest for shared result %d", resultID)
 	}
-	frame := c.resultCallSnapshot(resultID)
+	frame := c.resultCallByResultID(resultID)
 	if frame == nil {
 		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
 	}
@@ -782,7 +806,7 @@ func contentPreferredDigestForCachedResult(c *cache, resultID sharedResultID, vi
 	if _, seen := visiting[resultID]; seen {
 		return "", fmt.Errorf("cycle while reconstructing content-preferred digest for shared result %d", resultID)
 	}
-	frame := c.resultCallSnapshot(resultID)
+	frame := c.resultCallByResultID(resultID)
 	if frame == nil {
 		return "", fmt.Errorf("missing result call frame for shared result %d", resultID)
 	}
@@ -1165,30 +1189,24 @@ func (c *cache) resultCallRefForInputIDLocked(ctx context.Context, inputID *call
 	return &ResultCallRef{ResultID: uint64(shared.id)}, nil
 }
 
-func (c *cache) resultCallSnapshot(resultID sharedResultID) *ResultCall {
-	if resultID == 0 {
-		return nil
-	}
-	c.egraphMu.RLock()
-	defer c.egraphMu.RUnlock()
-	res := c.resultsByID[resultID]
-	if res == nil || res.resultCall == nil {
-		return nil
-	}
-	frame := res.resultCall.clone()
-	frame.bindCache(c)
-	return frame
-}
-
 func (c *cache) RecipeIDForCall(frame *ResultCall) (*call.ID, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil call")
 	}
-	frame = frame.clone()
 	frame.bindCache(c)
 	return frame.RecipeID()
 }
 
+func (c *cache) RecipeDigestForCall(frame *ResultCall) (digest.Digest, error) {
+	if frame == nil {
+		return "", fmt.Errorf("derive recipe digest: nil call")
+	}
+	frame.bindCache(c)
+	return frame.RecipeDigest()
+}
+
+// resultCallByResultID returns the cache-owned immutable result-call frame for
+// the given shared result. Callers must treat the returned frame as read-only.
 func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	if resultID == 0 {
 		return nil
@@ -1199,7 +1217,6 @@ func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	if res == nil || res.resultCall == nil {
 		return nil
 	}
-	res.resultCall.bindCache(c)
 	return res.resultCall
 }
 
@@ -1281,7 +1298,7 @@ func (frame *ResultCall) resolveRefRecipeID(ref *ResultCallRef, visiting map[sha
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
 	}
 	refID := sharedResultID(ref.ResultID)
-	refFrame := frame.cache.resultCallSnapshot(refID)
+	refFrame := frame.cache.resultCallByResultID(refID)
 	if refFrame == nil {
 		return nil, fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
 	}

@@ -221,7 +221,7 @@ func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID ui
 		}
 		items := make([]AnyResult, 0, len(env.Items))
 		for i, itemEnv := range env.Items {
-			itemCall := call.clone()
+			itemCall := call.fork()
 			itemCall.Nth = int64(i + 1)
 			if itemCall.Type != nil {
 				itemCall.Type = itemCall.Type.Elem

@@ -3,7 +3,6 @@ package dagql
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -1010,7 +1009,6 @@ func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCa
 		return fmt.Errorf("teach call equivalence: target result missing shared result ID")
 	}
 
-	frame = frame.clone()
 	frame.bindCache(c)
 
 	requestDigest, err := frame.RecipeDigest()
@@ -1052,11 +1050,11 @@ func (c *cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return err
 		}
 
-		baseFrame := c.resultCallSnapshot(shared.id)
+		baseFrame := c.resultCallByResultID(shared.id)
 		if baseFrame == nil {
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
-		frame := baseFrame.clone()
+		frame := baseFrame.fork()
 		frame.bindCache(c)
 
 		replaced := false
@@ -1102,9 +1100,7 @@ func (c *cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
-		latestFrame := shared.resultCall.clone()
-		latestFrame.bindCache(c)
-		if !reflect.DeepEqual(latestFrame, baseFrame) {
+		if shared.resultCall != baseFrame {
 			c.egraphMu.Unlock()
 			continue
 		}
@@ -1123,7 +1119,6 @@ func (c *cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 		return 0, fmt.Errorf("resolve result ID for call: nil call")
 	}
 
-	frame = frame.clone()
 	frame.bindCache(c)
 
 	requestDigest, err := frame.RecipeDigest()

@@ -92,6 +92,10 @@ type Cache interface {
 	// the cache to resolve any cached result refs it depends on.
 	RecipeIDForCall(*ResultCall) (*call.ID, error)
 
+	// RecipeDigestForCall derives the semantic recipe digest for a result call
+	// using the cache to resolve any cached result refs it depends on.
+	RecipeDigestForCall(*ResultCall) (digest.Digest, error)
+
 	// TeachCallEquivalentToResult records that the given call is equivalent to
 	// the provided existing result, updating e-graph/cache identity state
 	// without re-executing or synthetic loading.
@@ -658,7 +662,7 @@ func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, err
 	if err := c.normalizePendingResultCallRefs(ctx, req.ResultCall); err != nil {
 		return nil, fmt.Errorf("attach owned result: normalize pending result call refs: %w", err)
 	}
-	shared.resultCall = req.ResultCall.clone()
+	shared.resultCall = req.ResultCall
 	shared.resultCall.bindCache(c)
 	attached, err := c.GetOrInitCall(ctx, req, ValueFunc(res))
 	if err != nil {
@@ -824,7 +828,7 @@ func (r Result[T]) RecipeID() (*call.ID, error) {
 	if r.shared == nil || r.shared.resultCall == nil {
 		return nil, fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	call := r.shared.resultCall.clone()
+	call := r.shared.resultCall
 	if r.shared.cache != nil {
 		call.bindCache(r.shared.cache)
 	}
@@ -835,7 +839,7 @@ func (r Result[T]) ContentPreferredDigest() (digest.Digest, error) {
 	if r.shared == nil || r.shared.resultCall == nil {
 		return "", fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	call := r.shared.resultCall.clone()
+	call := r.shared.resultCall
 	if r.shared.cache != nil {
 		call.bindCache(r.shared.cache)
 	}
@@ -910,13 +914,15 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 	return enumerableSelf.NthValue(nth, r.shared.resultCall)
 }
 
-// withDetachedPayload clones shared payload so per-call mutations do not affect other Results.
+// withDetachedPayload clones shared payload so per-result metadata changes do
+// not affect other Results. It intentionally reuses the authoritative call
+// frame; call-frame mutations must fork explicitly.
 func (r Result[T]) withDetachedPayload() Result[T] {
 	if r.shared != nil {
 		r.shared = &sharedResult{
 			self:                   r.shared.self,
 			objType:                r.shared.objType,
-			resultCall:             r.shared.resultCall.clone(),
+			resultCall:             r.shared.resultCall,
 			hasValue:               r.shared.hasValue,
 			postCall:               r.shared.postCall,
 			safeToPersistCache:     r.shared.safeToPersistCache,
@@ -932,6 +938,14 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 		}
 	} else {
 		r.shared = &sharedResult{}
+	}
+	return r
+}
+
+func (r Result[T]) withDetachedCallPayload() Result[T] {
+	r = r.withDetachedPayload()
+	if r.shared != nil && r.shared.resultCall != nil {
+		r.shared.resultCall = r.shared.resultCall.fork()
 	}
 	return r
 }
@@ -963,7 +977,7 @@ func (r Result[T]) IsSafeToPersistCache() bool {
 }
 
 func (r Result[T]) WithContentDigest(contentDigest digest.Digest) Result[T] {
-	r = r.withDetachedPayload()
+	r = r.withDetachedCallPayload()
 	if r.shared == nil || r.shared.resultCall == nil {
 		panic(fmt.Sprintf("set content digest on %T: missing call frame", r.Self()))
 	}
@@ -1500,7 +1514,6 @@ func (c *cache) GetOrInitCall(
 	if req == nil || req.ResultCall == nil {
 		return nil, fmt.Errorf("call request is nil")
 	}
-	req = req.Clone()
 	req.ResultCall.bindCache(c)
 	ctx = ContextWithCall(ctx, req.ResultCall)
 
@@ -1643,7 +1656,6 @@ func (c *cache) lookupCallRequest(
 	if req == nil || req.ResultCall == nil {
 		return nil, false, fmt.Errorf("call request is nil")
 	}
-	req = req.Clone()
 	req.ResultCall.bindCache(c)
 
 	callDigest, err := req.RecipeDigest()
@@ -1819,7 +1831,6 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	if req == nil || req.ResultCall == nil {
 		return fmt.Errorf("call request is nil")
 	}
-	req = req.Clone()
 	req.ResultCall.bindCache(c)
 
 	// Materialize shared result for this completed call.
@@ -1860,7 +1871,13 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	requestForIndex := req
 	// TTL-bounded unsafe values must be session-scoped to avoid cross-session reuse.
 	if oc.ttlSeconds > 0 && !oc.res.safeToPersistCache {
-		requestForIndex = req.Clone()
+		requestForIndex = &CallRequest{
+			ResultCall:     req.ResultCall.fork(),
+			ConcurrencyKey: req.ConcurrencyKey,
+			TTL:            req.TTL,
+			DoNotCache:     req.DoNotCache,
+			IsPersistable:  req.IsPersistable,
+		}
 		requestForIndex.ImplicitInputs = append(requestForIndex.ImplicitInputs, &ResultCallArg{
 			Name: "sessionID",
 			Value: &ResultCallLiteral{

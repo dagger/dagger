@@ -153,7 +153,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			res := &sharedResult{
 				cache:                c,
 				id:                   resultID,
-				resultCall:           frame.clone(),
+				resultCall:           &frame,
 				safeToPersistCache:   row.SafeToPersistCache,
 				depOfPersistedResult: row.DepOfPersistedResult,
 				outputEffectIDs:      outputEffects,
@@ -365,7 +365,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 		if res == nil || res.hasValue || res.persistedEnvelope == nil {
 			continue
 		}
-		call := c.resultCallSnapshot(resultID)
+		call := c.resultCallByResultID(resultID)
 		if call == nil {
 			continue
 		}
@@ -412,12 +412,15 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 	c.egraphMu.RLock()
 	hasValue := res.hasValue
 	env := res.persistedEnvelope
-	call := res.resultCall.clone()
 	c.egraphMu.RUnlock()
 	if hasValue || env == nil {
 		return hit, nil
 	}
 
+	call := c.resultCallByResultID(res.id)
+	if call == nil {
+		return hit, nil
+	}
 	decodeCtx := ContextWithCall(ctx, call)
 	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *env)
 	if err != nil {

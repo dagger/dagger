@@ -143,11 +143,10 @@ func (c *SessionCache) GetOrInitCall(
 	if req == nil {
 		return nil, errors.New("call request is nil")
 	}
-	recipeID, err := c.cache.RecipeIDForCall(req.ResultCall)
+	callDigest, err := c.cache.RecipeDigestForCall(req.ResultCall)
 	if err != nil {
 		return nil, err
 	}
-	callDigest := recipeID.Digest()
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
@@ -253,6 +252,10 @@ func (c *SessionCache) GetOrInitCall(
 
 func (c *SessionCache) RecipeIDForCall(call *ResultCall) (*call.ID, error) {
 	return c.cache.RecipeIDForCall(call)
+}
+
+func (c *SessionCache) RecipeDigestForCall(call *ResultCall) (digest.Digest, error) {
+	return c.cache.RecipeDigestForCall(call)
 }
 
 func (c *SessionCache) LookupCacheForDigests(

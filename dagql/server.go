@@ -713,7 +713,7 @@ func (s *Server) loadNthValue(
 	}
 
 	req := &CallRequest{
-		ResultCall: shared.resultCall.clone(),
+		ResultCall: shared.resultCall.fork(),
 	}
 	req.Type = req.Type.Elem.clone()
 	req.Receiver = &ResultCallRef{ResultID: uint64(shared.id)}

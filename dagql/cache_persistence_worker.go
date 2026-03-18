@@ -342,7 +342,7 @@ func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	shared := &sharedResult{
 		self:       snapshot.self,
 		objType:    snapshot.objType,
-		resultCall: snapshot.frame.clone(),
+		resultCall: snapshot.frame,
 		hasValue:   snapshot.hasValue,
 		id:         snapshot.resultID,
 	}
