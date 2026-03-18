@@ -5,7 +5,7 @@ Expected stderr:
 ├╴✔ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
- 
+
 ✘ load module: ./viztest/broken-dep-sdk X.Xs ERROR
 ╰╴✘ finding module configuration X.Xs ERROR
   ╰╴✘ moduleSource(refString: "./viztest/broken-dep-sdk"): ModuleSource! X.Xs ERROR
@@ -30,7 +30,7 @@ Expected stderr:
     │   ! invalid SDK: "unknown"
     │   ╰╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown", disableFindUp: true): ModuleSource! X.Xs ERROR
     │     ! local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist
-    │    
+    │
     ╰╴✔ load SDK: go X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
