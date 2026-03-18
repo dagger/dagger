@@ -611,35 +611,35 @@ const (
 	Other       LLMProvider = "other"
 )
 
-// A LLM routing configuration
+// LLMRouter holds the merged LLM configuration from config file, .env,
+// and environment variables, and routes model names to endpoints.
+//
+// Internally it stores the same llmconfig.Provider map that the config
+// file uses, so the config flows through unsullied. Environment variables
+// and .env entries are merged into the map as synthetic provider entries.
 type LLMRouter struct {
-	AnthropicAPIKey           string
-	AnthropicBaseURL          string
-	AnthropicModel            string
-	AnthropicAuthToken        string // OAuth bearer token for Claude Code subscription
-	AnthropicIsOAuth          bool   // Whether Anthropic auth uses OAuth
-	AnthropicSubscriptionType string // "pro", "max", etc. (OAuth only)
-	AnthropicRefreshToken     string // OAuth refresh token for token renewal
-	AnthropicTokenExpiry      int64  // Unix timestamp (ms) when access token expires
-	AnthropicThinkingMode string
+	providers       map[string]*llmconfig.Provider
+	defaultProvider string
+	defaultModel    string
+}
 
-	OpenAIAPIKey           string
-	OpenAIAzureVersion     string
-	OpenAIBaseURL          string
-	OpenAIModel            string
-	OpenAIDisableStreaming bool
+// provider returns the provider config for the given name, or an empty
+// provider if not configured.  Never returns nil.
+func (r *LLMRouter) provider(name string) *llmconfig.Provider {
+	if p := r.providers[name]; p != nil {
+		return p
+	}
+	return &llmconfig.Provider{}
+}
 
-	// OpenAI Codex (ChatGPT subscription) fields
-	OpenAICodexAuthToken    string // OAuth bearer token
-	OpenAICodexRefreshToken string // OAuth refresh token for token renewal
-	OpenAICodexTokenExpiry  int64  // Unix timestamp (ms) when access token expires
-	OpenAICodexModel        string
-	OpenAICodexThinkingMode string // Reasoning effort: "none", "low", "medium", "high", "xhigh"
-
-	GeminiAPIKey         string
-	GeminiBaseURL        string
-	GeminiModel          string
-	GeminiThinkingMode string
+// ensureProvider returns (and creates if needed) the provider entry for name.
+func (r *LLMRouter) ensureProvider(name string) *llmconfig.Provider {
+	if p := r.providers[name]; p != nil {
+		return p
+	}
+	p := &llmconfig.Provider{}
+	r.providers[name] = p
+	return p
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -685,36 +685,35 @@ func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 	return messages, nil
 }
 
-func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
-	endpoint := &LLMEndpoint{
-		BaseURL:          r.AnthropicBaseURL,
-		Key:              r.AnthropicAPIKey,
-		Provider:         Anthropic,
-		AuthToken:        r.AnthropicAuthToken,
-		IsOAuth:          r.AnthropicIsOAuth,
-		SubscriptionType: r.AnthropicSubscriptionType,
-		RefreshToken:     r.AnthropicRefreshToken,
-		TokenExpiry:      r.AnthropicTokenExpiry,
-		ThinkingMode: r.AnthropicThinkingMode,
+// endpointFromProvider builds an LLMEndpoint from a provider config entry.
+func endpointFromProvider(p *llmconfig.Provider, prov LLMProvider) *LLMEndpoint {
+	return &LLMEndpoint{
+		BaseURL:          p.BaseURL,
+		Key:              p.APIKey,
+		Provider:         prov,
+		AuthToken:        p.AuthToken,
+		IsOAuth:          p.IsOAuth(),
+		SubscriptionType: p.SubscriptionType,
+		RefreshToken:     p.RefreshToken,
+		TokenExpiry:      p.TokenExpiry,
+		ThinkingMode:     p.ThinkingMode,
 	}
+}
+
+func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
+	endpoint := endpointFromProvider(r.provider("anthropic"), Anthropic)
 	endpoint.Client = newAnthropicClient(endpoint)
 	endpoint.rebuildClient = func() {
 		endpoint.Client = newAnthropicClient(endpoint)
 	}
-
 	return endpoint
 }
 
 func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
-	endpoint := &LLMEndpoint{
-		BaseURL:      "https://chatgpt.com/backend-api",
-		AuthToken:    r.OpenAICodexAuthToken,
-		IsOAuth:      true,
-		Provider:     OpenAICodex,
-		RefreshToken: r.OpenAICodexRefreshToken,
-		TokenExpiry:  r.OpenAICodexTokenExpiry,
-		ThinkingMode: r.OpenAICodexThinkingMode,
-	}
+	p := r.provider("openai-codex")
+	endpoint := endpointFromProvider(p, OpenAICodex)
+	endpoint.BaseURL = "https://chatgpt.com/backend-api"
+	endpoint.IsOAuth = true
 	endpoint.Client = newOpenAICodexClient(endpoint)
 	endpoint.rebuildClient = func() {
 		endpoint.Client = newOpenAICodexClient(endpoint)
@@ -723,41 +722,26 @@ func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
 }
 
 func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
-	endpoint := &LLMEndpoint{
-		BaseURL:  r.OpenAIBaseURL,
-		Key:      r.OpenAIAPIKey,
-		Provider: OpenAI,
-	}
-	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion, r.OpenAIDisableStreaming)
-
+	p := r.provider("openai")
+	endpoint := endpointFromProvider(p, OpenAI)
+	endpoint.Client = newOpenAIClient(endpoint, p.AzureVersion, p.DisableStreaming)
 	return endpoint
 }
 
 func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
-	endpoint := &LLMEndpoint{
-		BaseURL:        r.GeminiBaseURL,
-		Key:            r.GeminiAPIKey,
-		Provider:       Google,
-		ThinkingMode: r.GeminiThinkingMode,
-	}
+	endpoint := endpointFromProvider(r.provider("google"), Google)
 	client, err := newGenaiClient(endpoint)
 	if err != nil {
 		return nil, err
 	}
 	endpoint.Client = client
-
 	return endpoint, nil
 }
 
 func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
-	// default to openAI compat from other providers
-	endpoint := &LLMEndpoint{
-		BaseURL:  r.OpenAIBaseURL,
-		Key:      r.OpenAIAPIKey,
-		Provider: Other,
-	}
-	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion, r.OpenAIDisableStreaming)
-
+	p := r.provider("openai")
+	endpoint := endpointFromProvider(p, Other)
+	endpoint.Client = newOpenAIClient(endpoint, p.AzureVersion, p.DisableStreaming)
 	return endpoint
 }
 
@@ -771,29 +755,33 @@ func (r *LLMRouter) routeReplayModel(model string) (*LLMEndpoint, error) {
 	return endpoint, nil
 }
 
-// Return a default model, if configured
+// DefaultModel returns the configured default model, or infers one from
+// available credentials.
 func (r *LLMRouter) DefaultModel() string {
-	for _, model := range []string{r.OpenAICodexModel, r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
-		if model != "" {
-			return model
+	if r.defaultModel != "" {
+		return r.defaultModel
+	}
+	// Check for any provider with an explicit model set.
+	for _, name := range []string{"openai-codex", "openai", "anthropic", "google"} {
+		if m := r.provider(name).Model; m != "" {
+			return m
 		}
 	}
-	if r.OpenAICodexAuthToken != "" {
+	// Infer from credentials.
+	switch {
+	case r.provider("openai-codex").AuthToken != "":
 		return modelDefaultCodex
-	}
-	if r.OpenAIAPIKey != "" {
+	case r.provider("openai").APIKey != "":
 		return modelDefaultOpenAI
-	}
-	if r.AnthropicAPIKey != "" || r.AnthropicAuthToken != "" {
+	case r.provider("anthropic").APIKey != "" || r.provider("anthropic").AuthToken != "":
 		return modelDefaultAnthropic
-	}
-	if r.OpenAIBaseURL != "" {
+	case r.provider("openai").BaseURL != "":
 		return modelDefaultMeta
-	}
-	if r.GeminiAPIKey != "" {
+	case r.provider("google").APIKey != "":
 		return modelDefaultGoogle
+	default:
+		return ""
 	}
-	return ""
 }
 
 // Return an endpoint for the requested model
@@ -832,7 +820,9 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	return endpoint, nil
 }
 
-func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
+// LoadEnv populates the router from environment variables (highest priority).
+// Only non-empty values are set, so config-file values are preserved.
+func (r *LLMRouter) LoadEnv(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
 	if getenv == nil {
 		getenv = func(_ context.Context, key string) (string, error) { //nolint:unparam
 			return os.Getenv(key), nil
@@ -850,43 +840,23 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return nil
 	}
 
+	anthropic := r.ensureProvider("anthropic")
+	openai := r.ensureProvider("openai")
+	google := r.ensureProvider("google")
+
 	var eg errgroup.Group
-	eg.Go(func() error {
-		return save("ANTHROPIC_API_KEY", &r.AnthropicAPIKey)
-	})
-	eg.Go(func() error {
-		return save("ANTHROPIC_BASE_URL", &r.AnthropicBaseURL)
-	})
-	eg.Go(func() error {
-		return save("ANTHROPIC_MODEL", &r.AnthropicModel)
-	})
+	eg.Go(func() error { return save("ANTHROPIC_API_KEY", &anthropic.APIKey) })
+	eg.Go(func() error { return save("ANTHROPIC_BASE_URL", &anthropic.BaseURL) })
+	eg.Go(func() error { return save("ANTHROPIC_MODEL", &anthropic.Model) })
+	eg.Go(func() error { return save("OPENAI_API_KEY", &openai.APIKey) })
+	eg.Go(func() error { return save("OPENAI_AZURE_VERSION", &openai.AzureVersion) })
+	eg.Go(func() error { return save("OPENAI_BASE_URL", &openai.BaseURL) })
+	eg.Go(func() error { return save("OPENAI_MODEL", &openai.Model) })
+	eg.Go(func() error { return save("GEMINI_API_KEY", &google.APIKey) })
+	eg.Go(func() error { return save("GEMINI_BASE_URL", &google.BaseURL) })
+	eg.Go(func() error { return save("GEMINI_MODEL", &google.Model) })
 
-	eg.Go(func() error {
-		return save("OPENAI_API_KEY", &r.OpenAIAPIKey)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_AZURE_VERSION", &r.OpenAIAzureVersion)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_BASE_URL", &r.OpenAIBaseURL)
-	})
-	eg.Go(func() error {
-		return save("OPENAI_MODEL", &r.OpenAIModel)
-	})
-
-	eg.Go(func() error {
-		return save("GEMINI_API_KEY", &r.GeminiAPIKey)
-	})
-	eg.Go(func() error {
-		return save("GEMINI_BASE_URL", &r.GeminiBaseURL)
-	})
-	eg.Go(func() error {
-		return save("GEMINI_MODEL", &r.GeminiModel)
-	})
-
-	var (
-		openAIDisableStreaming string
-	)
+	var openAIDisableStreaming string
 	eg.Go(func() error {
 		var err error
 		openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
@@ -902,113 +872,58 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		if err != nil {
 			return err
 		}
-		r.OpenAIDisableStreaming = v
+		openai.DisableStreaming = v
 	}
 
 	return nil
 }
 
-// LoadFromConfig populates router from config file (base layer).
-// Only sets fields that are currently empty, allowing env vars to take priority.
+// LoadFromConfig merges a config file into the router (base layer).
+// Providers are stored directly; env vars applied later take priority
+// because they write into the same provider entries.
 func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 	if cfg == nil {
 		return
 	}
-
-	for name, provider := range cfg.LLM.Providers {
-		if !provider.Enabled {
+	for name, p := range cfg.LLM.Providers {
+		if !p.Enabled {
 			continue
 		}
-
-		switch name {
-		case "openrouter":
-			// OpenRouter uses OpenAI-compatible API
-			if r.OpenAIAPIKey == "" {
-				r.OpenAIAPIKey = provider.APIKey
+		cp := p // copy so we don't alias the map value
+		// OpenRouter is OpenAI-compatible; store under "openai" for routing,
+		// applying the openrouter base URL.
+		if name == "openrouter" {
+			oai := r.ensureProvider("openai")
+			if oai.APIKey == "" {
+				oai.APIKey = cp.APIKey
 			}
-			if r.OpenAIBaseURL == "" {
-				r.OpenAIBaseURL = "https://openrouter.ai/api/v1"
-				if provider.BaseURL != "" {
-					r.OpenAIBaseURL = provider.BaseURL
+			if oai.BaseURL == "" {
+				oai.BaseURL = "https://openrouter.ai/api/v1"
+				if cp.BaseURL != "" {
+					oai.BaseURL = cp.BaseURL
 				}
 			}
-		case "anthropic":
-			if provider.IsOAuth() {
-				// OAuth takes precedence over API key
-				if r.AnthropicAuthToken == "" {
-					r.AnthropicAuthToken = provider.AuthToken
-					r.AnthropicIsOAuth = true
-					r.AnthropicSubscriptionType = provider.SubscriptionType
-					r.AnthropicRefreshToken = provider.RefreshToken
-					r.AnthropicTokenExpiry = provider.TokenExpiry
-				}
-			} else if r.AnthropicAPIKey == "" {
-				r.AnthropicAPIKey = provider.APIKey
-			}
-			if r.AnthropicBaseURL == "" && provider.BaseURL != "" {
-				r.AnthropicBaseURL = provider.BaseURL
-			}
-			if provider.ThinkingMode != "" {
-				r.AnthropicThinkingMode = provider.ThinkingMode
-			}
-		case "openai":
-			if r.OpenAIAPIKey == "" {
-				r.OpenAIAPIKey = provider.APIKey
-			}
-			if r.OpenAIBaseURL == "" && provider.BaseURL != "" {
-				r.OpenAIBaseURL = provider.BaseURL
-			}
-		case "openai-codex":
-			if provider.IsOAuth() && r.OpenAICodexAuthToken == "" {
-				r.OpenAICodexAuthToken = provider.AuthToken
-				r.OpenAICodexRefreshToken = provider.RefreshToken
-				r.OpenAICodexTokenExpiry = provider.TokenExpiry
-			}
-			if provider.ThinkingMode != "" {
-				r.OpenAICodexThinkingMode = provider.ThinkingMode
-			}
-		case "google":
-			if r.GeminiAPIKey == "" {
-				r.GeminiAPIKey = provider.APIKey
-			}
-			if r.GeminiBaseURL == "" && provider.BaseURL != "" {
-				r.GeminiBaseURL = provider.BaseURL
-			}
-			if provider.ThinkingMode != "" {
-				r.GeminiThinkingMode = provider.ThinkingMode
-			}
+			continue
 		}
-	}
-
-	// Set default model for the default provider if not already set
-	if cfg.LLM.DefaultModel != "" {
-		switch cfg.LLM.DefaultProvider {
-		case "openrouter", "openai":
-			if r.OpenAIModel == "" {
-				r.OpenAIModel = cfg.LLM.DefaultModel
-			}
-		case "anthropic":
-			if r.AnthropicModel == "" {
-				r.AnthropicModel = cfg.LLM.DefaultModel
-			}
-		case "openai-codex":
-			if r.OpenAICodexModel == "" {
-				r.OpenAICodexModel = cfg.LLM.DefaultModel
-			}
-		case "google":
-			if r.GeminiModel == "" {
-				r.GeminiModel = cfg.LLM.DefaultModel
-			}
+		if r.providers[name] == nil {
+			r.providers[name] = &cp
 		}
+		// Don't overwrite fields that were already set (e.g. by a
+		// higher-priority layer like env vars applied before config,
+		// though in practice config is loaded first).
 	}
+	r.defaultProvider = cfg.LLM.DefaultProvider
+	r.defaultModel = cfg.LLM.DefaultModel
 }
 
 // IsEmpty returns true if no LLM configuration is available.
 func (r *LLMRouter) IsEmpty() bool {
-	return r.OpenAIAPIKey == "" &&
-		r.AnthropicAPIKey == "" &&
-		r.AnthropicAuthToken == "" &&
-		r.GeminiAPIKey == ""
+	for _, p := range r.providers {
+		if p.APIKey != "" || p.AuthToken != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // ErrNoLLMConfig is returned when no LLM configuration is found.
@@ -1031,7 +946,7 @@ For unified access to all models with a single key:
 }
 
 func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
-	router := new(LLMRouter)
+	router := &LLMRouter{providers: make(map[string]*llmconfig.Provider)}
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
@@ -1098,7 +1013,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	}
 
 	// Third: Load environment variables (highest priority, overrides everything)
-	err := router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+	err := router.LoadEnv(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
 			return loadSecret(ctx, v)

@@ -72,17 +72,23 @@ func TestLlmConfig(t *testing.T) {
 	ctx := context.Background()
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
-	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
-	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
-	assert.Equal(t, "anthropic-model", r.AnthropicModel)
-	assert.Equal(t, "openai-api-key", r.OpenAIAPIKey)
-	assert.Equal(t, "openai-azure-version", r.OpenAIAzureVersion)
-	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
-	assert.Equal(t, "openai-model", r.OpenAIModel)
-	assert.True(t, r.OpenAIDisableStreaming)
-	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
-	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
-	assert.Equal(t, "gemini-model", r.GeminiModel)
+
+	anthropic := r.provider("anthropic")
+	assert.Equal(t, "anthropic-api-key", anthropic.APIKey)
+	assert.Equal(t, "anthropic-base-url", anthropic.BaseURL)
+	assert.Equal(t, "anthropic-model", anthropic.Model)
+
+	openai := r.provider("openai")
+	assert.Equal(t, "openai-api-key", openai.APIKey)
+	assert.Equal(t, "openai-azure-version", openai.AzureVersion)
+	assert.Equal(t, "openai-base-url", openai.BaseURL)
+	assert.Equal(t, "openai-model", openai.Model)
+	assert.True(t, openai.DisableStreaming)
+
+	google := r.provider("google")
+	assert.Equal(t, "gemini-api-key", google.APIKey)
+	assert.Equal(t, "gemini-base-url", google.BaseURL)
+	assert.Equal(t, "gemini-model", google.Model)
 }
 
 func TestLlmConfigDisableStreaming(t *testing.T) {
@@ -148,7 +154,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 			ctx := context.Background()
 			r, err := NewLLMRouter(ctx, srv)
 			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, r.OpenAIDisableStreaming)
+			assert.Equal(t, tc.expected, r.provider("openai").DisableStreaming)
 		})
 	}
 }
@@ -190,15 +196,21 @@ GEMINI_MODEL=gemini-model`, nil
 	ctx := context.Background()
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
-	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
-	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
-	assert.Equal(t, "anthropic-model", r.AnthropicModel)
-	assert.Equal(t, "openai-api-key", r.OpenAIAPIKey)
-	assert.Equal(t, "openai-azure-version", r.OpenAIAzureVersion)
-	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
-	assert.Equal(t, "openai-model", r.OpenAIModel)
-	assert.True(t, r.OpenAIDisableStreaming)
-	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
-	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
-	assert.Equal(t, "gemini-model", r.GeminiModel)
+
+	anthropic := r.provider("anthropic")
+	assert.Equal(t, "anthropic-api-key", anthropic.APIKey)
+	assert.Equal(t, "anthropic-base-url", anthropic.BaseURL)
+	assert.Equal(t, "anthropic-model", anthropic.Model)
+
+	openai := r.provider("openai")
+	assert.Equal(t, "openai-api-key", openai.APIKey)
+	assert.Equal(t, "openai-azure-version", openai.AzureVersion)
+	assert.Equal(t, "openai-base-url", openai.BaseURL)
+	assert.Equal(t, "openai-model", openai.Model)
+	assert.True(t, openai.DisableStreaming)
+
+	google := r.provider("google")
+	assert.Equal(t, "gemini-api-key", google.APIKey)
+	assert.Equal(t, "gemini-base-url", google.BaseURL)
+	assert.Equal(t, "gemini-model", google.Model)
 }
