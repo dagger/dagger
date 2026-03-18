@@ -11,7 +11,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,13 +19,12 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
-	"github.com/joho/godotenv"
 	toml "github.com/pelletier/go-toml"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
+
 
 	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql"
@@ -820,65 +818,7 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	return endpoint, nil
 }
 
-// LoadEnv populates the router from environment variables (highest priority).
-// Only non-empty values are set, so config-file values are preserved.
-func (r *LLMRouter) LoadEnv(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
-	if getenv == nil {
-		getenv = func(_ context.Context, key string) (string, error) { //nolint:unparam
-			return os.Getenv(key), nil
-		}
-	}
-
-	save := func(key string, dest *string) error {
-		value, err := getenv(ctx, key)
-		if err != nil {
-			return fmt.Errorf("get %q: %w", key, err)
-		}
-		if value != "" {
-			*dest = value
-		}
-		return nil
-	}
-
-	anthropic := r.ensureProvider("anthropic")
-	openai := r.ensureProvider("openai")
-	google := r.ensureProvider("google")
-
-	var eg errgroup.Group
-	eg.Go(func() error { return save("ANTHROPIC_API_KEY", &anthropic.APIKey) })
-	eg.Go(func() error { return save("ANTHROPIC_BASE_URL", &anthropic.BaseURL) })
-	eg.Go(func() error { return save("ANTHROPIC_MODEL", &anthropic.Model) })
-	eg.Go(func() error { return save("OPENAI_API_KEY", &openai.APIKey) })
-	eg.Go(func() error { return save("OPENAI_AZURE_VERSION", &openai.AzureVersion) })
-	eg.Go(func() error { return save("OPENAI_BASE_URL", &openai.BaseURL) })
-	eg.Go(func() error { return save("OPENAI_MODEL", &openai.Model) })
-	eg.Go(func() error { return save("GEMINI_API_KEY", &google.APIKey) })
-	eg.Go(func() error { return save("GEMINI_BASE_URL", &google.BaseURL) })
-	eg.Go(func() error { return save("GEMINI_MODEL", &google.Model) })
-
-	var openAIDisableStreaming string
-	eg.Go(func() error {
-		var err error
-		openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
-		return err
-	})
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	if openAIDisableStreaming != "" {
-		v, err := strconv.ParseBool(openAIDisableStreaming)
-		if err != nil {
-			return err
-		}
-		openai.DisableStreaming = v
-	}
-
-	return nil
-}
-
-// LoadFromConfig merges a config file into the router (base layer).
+// LoadFromConfig merges a config file into the router.
 // Providers are stored directly; env vars applied later take priority
 // because they write into the same provider entries.
 func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
@@ -947,89 +887,92 @@ For unified access to all models with a single key:
 
 func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
 	router := &LLMRouter{providers: make(map[string]*llmconfig.Provider)}
-	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
-	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
-		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
-			var result string
-			// If it's a valid secret reference:
-			if err := srv.Select(ctx, srv.Root(), &result,
-				dagql.Selector{
-					Field: "secret",
-					Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(uriOrPlaintext)}},
-				},
-				dagql.Selector{
-					Field: "plaintext",
-				},
-			); err != nil {
-				return "", err
-			}
-			return result, nil
-		}
-		// If it's a regular plaintext:
-		return uriOrPlaintext, nil
-	}
+
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	// Priority order:
-	// 1. Config file (~/.config/dagger/config.toml) - base layer
-	// 2. .env file - middle layer (legacy support)
-	// 3. Environment variables - top layer (overrides everything)
-
-	// First: Try loading from config file via the client's filesystem.
-	// The config path is resolved client-side (via xdg.ConfigHome) and passed
-	// in ClientMetadata so it works cross-platform (Unix, macOS, Windows).
-	configPath := ""
-	if clientMD, err := engine.ClientMetadataFromContext(ctx); err == nil && clientMD.ConfigPath != "" {
-		configPath = clientMD.ConfigPath
-	}
-	if configPath != "" {
-		if configData, err := loadSecret(ctx, "file://"+configPath); err == nil && configData != "" {
-			var cfg llmconfig.Config
-			if err := toml.Unmarshal([]byte(configData), &cfg); err == nil {
-				if cfg.LLM.Providers == nil {
-					cfg.LLM.Providers = make(map[string]llmconfig.Provider)
-				}
-				// Resolve API keys that may be secret references (e.g. op://vault/item/field)
-				for name, provider := range cfg.LLM.Providers {
-					if provider.APIKey != "" {
-						if resolved, err := loadSecret(ctx, provider.APIKey); err == nil {
-							provider.APIKey = resolved
-							cfg.LLM.Providers[name] = provider
-						}
-					}
-				}
-				router.LoadFromConfig(&cfg)
-			}
-		}
+	// The client merges the config file + env vars and passes the result
+	// in ClientMetadata.LLMConfig.  If that's available, use it directly.
+	// Fall back to reading the config file from the client's filesystem
+	// for backward compat with older clients.
+	var llmCfg *llmconfig.LLMConfig
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		llmCfg = md.LLMConfig
 	}
 
-	// Second: Load .env from current directory, if it exists
-	env := make(map[string]string)
-	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
-		if e, err := godotenv.Unmarshal(envFile); err == nil {
-			env = e
-		}
+	if llmCfg == nil {
+		// Backward compat: older clients only send ConfigPath.
+		llmCfg = loadLLMConfigFromPath(ctx, srv)
 	}
 
-	// Third: Load environment variables (highest priority, overrides everything)
-	err := router.LoadEnv(ctx, func(ctx context.Context, k string) (string, error) {
-		// First lookup in the .env file
-		if v, ok := env[k]; ok {
-			return loadSecret(ctx, v)
-		}
-		// Second: lookup in client env directly
-		if v, err := loadSecret(ctx, "env://"+k); err == nil {
-			// Allow the env var itself to be a secret reference
-			return loadSecret(ctx, v)
-		}
-		return "", nil
-	})
-	if err != nil {
-		return nil, err
+	if llmCfg != nil {
+		// Resolve API keys that may be secret references (op://, vault://, etc.).
+		resolveSecretRefs(ctx, srv, llmCfg)
+		router.LoadFromConfig(&llmconfig.Config{LLM: *llmCfg})
 	}
 
 	return router, nil
+}
+
+// loadLLMConfigFromPath reads the config file from the client's filesystem
+// via the secret provider.  Used as a fallback when the client doesn't send
+// the pre-merged LLMConfig.
+func loadLLMConfigFromPath(ctx context.Context, srv *dagql.Server) *llmconfig.LLMConfig {
+	configPath := ""
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md.ConfigPath != "" {
+		configPath = md.ConfigPath
+	}
+	if configPath == "" {
+		return nil
+	}
+	configData, err := resolveSecret(ctx, srv, "file://"+configPath)
+	if err != nil || configData == "" {
+		return nil
+	}
+	var cfg llmconfig.Config
+	if err := toml.Unmarshal([]byte(configData), &cfg); err != nil {
+		return nil
+	}
+	if cfg.LLM.Providers == nil {
+		cfg.LLM.Providers = make(map[string]llmconfig.Provider)
+	}
+	return &cfg.LLM
+}
+
+// resolveSecretRefs resolves any secret-provider references (op://, vault://,
+// env://, etc.) in the config's API keys.
+func resolveSecretRefs(ctx context.Context, srv *dagql.Server, cfg *llmconfig.LLMConfig) {
+	for name, p := range cfg.Providers {
+		if p.APIKey == "" {
+			continue
+		}
+		if resolved, err := resolveSecret(ctx, srv, p.APIKey); err == nil {
+			p.APIKey = resolved
+			cfg.Providers[name] = p
+		}
+	}
+}
+
+// resolveSecret resolves a URI-or-plaintext value through the secret provider
+// system.  Returns the plaintext value or the original string if it's not a
+// secret reference.
+func resolveSecret(ctx context.Context, srv *dagql.Server, uriOrPlaintext string) (string, error) {
+	if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err != nil {
+		return uriOrPlaintext, nil
+	}
+	var result string
+	if err := srv.Select(ctx, srv.Root(), &result,
+		dagql.Selector{
+			Field: "secret",
+			Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(uriOrPlaintext)}},
+		},
+		dagql.Selector{
+			Field: "plaintext",
+		},
+	); err != nil {
+		return "", err
+	}
+	return result, nil
 }
 
 func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {

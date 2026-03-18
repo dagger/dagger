@@ -46,6 +46,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -892,6 +893,9 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.ConfigPath == "" && opts.ClientMetadata.ConfigPath != "" {
 			client.clientMetadata.ConfigPath = opts.ClientMetadata.ConfigPath
 		}
+		if client.clientMetadata.LLMConfig == nil && opts.ClientMetadata.LLMConfig != nil {
+			client.clientMetadata.LLMConfig = opts.ClientMetadata.LLMConfig
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -963,11 +967,13 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	allowedLLMModules := execMD.AllowedLLMModules
 	eagerRuntime := false
 	configPath := ""
+	var llmConfig *llmconfig.LLMConfig
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
 		eagerRuntime = md.EagerRuntime
 		configPath = md.ConfigPath
+		llmConfig = md.LLMConfig
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -983,6 +989,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			AllowedLLMModules: allowedLLMModules,
 			EagerRuntime:      eagerRuntime,
 			ConfigPath:        configPath,
+			LLMConfig:         llmConfig,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,

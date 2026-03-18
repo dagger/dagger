@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"unicode"
 
+	"github.com/dagger/dagger/core/llmconfig"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"google.golang.org/grpc/metadata"
@@ -87,8 +88,14 @@ type ClientMetadata struct {
 	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
 
 	// Path to the dagger config file on the client's filesystem.
-	// Resolved client-side via xdg.ConfigHome so it works cross-platform.
+	// Used for writing back OAuth token refreshes.
 	ConfigPath string `json:"config_path,omitempty"`
+
+	// LLMConfig is the fully-merged LLM configuration, resolved client-side
+	// from the config file and environment variables.  API keys that are
+	// secret references (op://, vault://, etc.) are left unresolved for the
+	// engine to handle via the secret provider system.
+	LLMConfig *llmconfig.LLMConfig `json:"llm_config,omitempty"`
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`

@@ -7,7 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type LLMTestQuery struct{}
@@ -30,141 +32,14 @@ func (mockSecret) Type() *ast.Type {
 	}
 }
 
-func TestLlmConfig(t *testing.T) {
+// newTestServer creates a dagql server with secret resolution stubs.
+func newTestServer(t *testing.T, secrets map[string]string) *dagql.Server {
+	t.Helper()
 	q := LLMTestQuery{}
-
 	baseCache, err := dagql.NewCache(context.Background(), "")
 	assert.NoError(t, err)
 	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
 
-	vars := map[string]string{
-		"file://.env":                    "",
-		"env://ANTHROPIC_API_KEY":        "anthropic-api-key",
-		"env://ANTHROPIC_BASE_URL":       "anthropic-base-url",
-		"env://ANTHROPIC_MODEL":          "anthropic-model",
-		"env://OPENAI_API_KEY":           "openai-api-key",
-		"env://OPENAI_AZURE_VERSION":     "openai-azure-version",
-		"env://OPENAI_BASE_URL":          "openai-base-url",
-		"env://OPENAI_MODEL":             "openai-model",
-		"env://OPENAI_DISABLE_STREAMING": "t",
-		"env://GEMINI_API_KEY":           "gemini-api-key",
-		"env://GEMINI_BASE_URL":          "gemini-base-url",
-		"env://GEMINI_MODEL":             "gemini-model",
-	}
-
-	dagql.Fields[LLMTestQuery]{
-		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
-			URI string
-		}) (mockSecret, error) {
-			if _, ok := vars[args.URI]; !ok {
-				t.Fatalf("uri not found: %s", args.URI)
-			}
-			return mockSecret{uri: args.URI}, nil
-		}),
-	}.Install(srv)
-
-	dagql.Fields[mockSecret]{
-		dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-			return vars[self.uri], nil
-		}),
-	}.Install(srv)
-
-	ctx := context.Background()
-	r, err := NewLLMRouter(ctx, srv)
-	assert.NoError(t, err)
-
-	anthropic := r.provider("anthropic")
-	assert.Equal(t, "anthropic-api-key", anthropic.APIKey)
-	assert.Equal(t, "anthropic-base-url", anthropic.BaseURL)
-	assert.Equal(t, "anthropic-model", anthropic.Model)
-
-	openai := r.provider("openai")
-	assert.Equal(t, "openai-api-key", openai.APIKey)
-	assert.Equal(t, "openai-azure-version", openai.AzureVersion)
-	assert.Equal(t, "openai-base-url", openai.BaseURL)
-	assert.Equal(t, "openai-model", openai.Model)
-	assert.True(t, openai.DisableStreaming)
-
-	google := r.provider("google")
-	assert.Equal(t, "gemini-api-key", google.APIKey)
-	assert.Equal(t, "gemini-base-url", google.BaseURL)
-	assert.Equal(t, "gemini-model", google.Model)
-}
-
-func TestLlmConfigDisableStreaming(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		envFile  string
-		expected bool
-	}{
-		{
-			"not disabled by default",
-			"",
-			false,
-		},
-		{
-			"explicitly not disabled, FALSE",
-			"OPENAI_DISABLE_STREAMING=FALSE",
-			false,
-		},
-		{
-			"explicitly not disabled, 0",
-			"OPENAI_DISABLE_STREAMING=0",
-			false,
-		},
-		{
-			"disabled, true",
-			"OPENAI_DISABLE_STREAMING=true",
-			true,
-		},
-		{
-			"disabled, 1",
-			"OPENAI_DISABLE_STREAMING=1",
-			true,
-		},
-		{
-			"empty value",
-			"OPENAI_DISABLE_STREAMING=",
-			false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			q := LLMTestQuery{}
-
-			baseCache, err := dagql.NewCache(context.Background(), "")
-			assert.NoError(t, err)
-			srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
-			dagql.Fields[LLMTestQuery]{
-				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
-					URI string
-				}) (mockSecret, error) {
-					return mockSecret{uri: args.URI}, nil
-				}),
-			}.Install(srv)
-
-			dagql.Fields[mockSecret]{
-				dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-					if self.uri == "file://.env" {
-						return tc.envFile, nil
-					}
-					return "", nil
-				}),
-			}.Install(srv)
-
-			ctx := context.Background()
-			r, err := NewLLMRouter(ctx, srv)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, r.provider("openai").DisableStreaming)
-		})
-	}
-}
-
-func TestLlmConfigEnvFile(t *testing.T) {
-	q := LLMTestQuery{}
-
-	baseCache, err := dagql.NewCache(context.Background(), "")
-	assert.NoError(t, err)
-	srv := dagql.NewServer(q, dagql.NewSessionCache(baseCache))
 	dagql.Fields[LLMTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string
@@ -175,25 +50,51 @@ func TestLlmConfigEnvFile(t *testing.T) {
 
 	dagql.Fields[mockSecret]{
 		dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
-			if self.uri == "file://.env" {
-				return `ANTHRIOPIC_API_KEY=anthropic-api-key
-ANTHROPIC_BASE_URL=anthropic-base-url
-ANTHROPIC_MODEL=anthropic-model
-ANTHROPIC_API_KEY=anthropic-api-key
-OPENAI_API_KEY=openai-api-key
-OPENAI_AZURE_VERSION=openai-azure-version
-OPENAI_BASE_URL=openai-base-url
-OPENAI_MODEL=openai-model
-OPENAI_DISABLE_STREAMING=TRUE
-GEMINI_API_KEY=gemini-api-key
-GEMINI_BASE_URL=gemini-base-url
-GEMINI_MODEL=gemini-model`, nil
+			if v, ok := secrets[self.uri]; ok {
+				return v, nil
 			}
 			return "", nil
 		}),
 	}.Install(srv)
 
-	ctx := context.Background()
+	return srv
+}
+
+func TestLlmConfigFromMetadata(t *testing.T) {
+	srv := newTestServer(t, nil)
+
+	// Simulate a client passing a fully-merged LLMConfig via metadata.
+	llmCfg := &llmconfig.LLMConfig{
+		DefaultProvider: "anthropic",
+		DefaultModel:    "claude-sonnet-4-6",
+		Providers: map[string]llmconfig.Provider{
+			"anthropic": {
+				APIKey:  "anthropic-api-key",
+				BaseURL: "anthropic-base-url",
+				Model:   "anthropic-model",
+				Enabled: true,
+			},
+			"openai": {
+				APIKey:          "openai-api-key",
+				AzureVersion:    "openai-azure-version",
+				BaseURL:         "openai-base-url",
+				Model:           "openai-model",
+				DisableStreaming: true,
+				Enabled:         true,
+			},
+			"google": {
+				APIKey:  "gemini-api-key",
+				BaseURL: "gemini-base-url",
+				Model:   "gemini-model",
+				Enabled: true,
+			},
+		},
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		LLMConfig: llmCfg,
+	})
+
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 
@@ -213,4 +114,63 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-api-key", google.APIKey)
 	assert.Equal(t, "gemini-base-url", google.BaseURL)
 	assert.Equal(t, "gemini-model", google.Model)
+}
+
+func TestLlmConfigSecretRefResolution(t *testing.T) {
+	// Secret references in API keys should be resolved by the engine.
+	srv := newTestServer(t, map[string]string{
+		"op://vault/item/key": "resolved-secret-key",
+	})
+
+	llmCfg := &llmconfig.LLMConfig{
+		DefaultProvider: "anthropic",
+		DefaultModel:    "claude-sonnet-4-6",
+		Providers: map[string]llmconfig.Provider{
+			"anthropic": {
+				APIKey:  "op://vault/item/key",
+				Enabled: true,
+			},
+		},
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		LLMConfig: llmCfg,
+	})
+
+	r, err := NewLLMRouter(ctx, srv)
+	assert.NoError(t, err)
+	assert.Equal(t, "resolved-secret-key", r.provider("anthropic").APIKey)
+}
+
+func TestLlmConfigDisableStreaming(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		disable  bool
+		expected bool
+	}{
+		{"not disabled by default", false, false},
+		{"disabled", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newTestServer(t, nil)
+
+			llmCfg := &llmconfig.LLMConfig{
+				Providers: map[string]llmconfig.Provider{
+					"openai": {
+						APIKey:          "key",
+						DisableStreaming: tc.disable,
+						Enabled:         true,
+					},
+				},
+			}
+
+			ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+				LLMConfig: llmCfg,
+			})
+
+			r, err := NewLLMRouter(ctx, srv)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, r.provider("openai").DisableStreaming)
+		})
+	}
 }

@@ -1402,12 +1402,30 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		ConfigPath:                llmconfig.ConfigFile,
+		LLMConfig:                 loadLLMConfig(),
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
 		CloudAuth:                 c.CloudAuth,
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,
 	}
+}
+
+// loadLLMConfig loads the LLM config file and merges environment variable
+// overrides.  Returns nil if no configuration is available.
+func loadLLMConfig() *llmconfig.LLMConfig {
+	cfg, err := llmconfig.Load()
+	if err != nil {
+		cfg = &llmconfig.Config{}
+	}
+	if cfg == nil {
+		cfg = &llmconfig.Config{}
+	}
+	cfg = llmconfig.MergeEnvVars(cfg)
+	if len(cfg.LLM.Providers) == 0 && cfg.LLM.DefaultProvider == "" {
+		return nil
+	}
+	return &cfg.LLM
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {
