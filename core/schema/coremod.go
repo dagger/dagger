@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -324,6 +325,17 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 			Deprecated:  introspectionField.DeprecationReason,
 		}
 
+		// Restore source map from the field's @sourceMap directive.
+		if sm := introspectionField.Directives.SourceMap(); sm != nil {
+			fn.SourceMap = dagql.NonNull(&core.SourceMap{
+				Module:   sm.Module,
+				Filename: sm.Filename,
+				Line:     sm.Line,
+				Column:   sm.Column,
+				URL:      sm.URL,
+			})
+		}
+
 		rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to convert return type: %w", err)
@@ -353,6 +365,40 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 
 			if introspectionArg.DefaultValue != nil {
 				fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
+			}
+
+			// Restore metadata from directives that the module SDK
+			// attached to this argument (defaultPath, defaultAddress,
+			// ignorePatterns, sourceMap). These are needed so the CLI
+			// can apply ignore patterns and contextual defaults when
+			// a user provides an explicit value for an arg that also
+			// has a +defaultPath or +ignore annotation.
+			if dir := introspectionArg.Directives.Directive("defaultPath"); dir != nil {
+				if v := dir.Arg("path"); v != nil {
+					fnArg.DefaultPath = *v
+				}
+			}
+			if dir := introspectionArg.Directives.Directive("defaultAddress"); dir != nil {
+				if v := dir.Arg("address"); v != nil {
+					fnArg.DefaultAddress = *v
+				}
+			}
+			if dir := introspectionArg.Directives.Directive("ignorePatterns"); dir != nil {
+				if v := dir.Arg("patterns"); v != nil {
+					var patterns []string
+					if err := json.Unmarshal([]byte(*v), &patterns); err == nil {
+						fnArg.Ignore = patterns
+					}
+				}
+			}
+			if sm := introspectionArg.Directives.SourceMap(); sm != nil {
+				fnArg.SourceMap = dagql.NonNull(&core.SourceMap{
+					Module:   sm.Module,
+					Filename: sm.Filename,
+					Line:     sm.Line,
+					Column:   sm.Column,
+					URL:      sm.URL,
+				})
 			}
 
 			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
