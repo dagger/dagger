@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix Dockerfile RUN heredoc failing with "command not found" (exit 127) by preserving /dev/pipes/ mounts in the OCI spec.
+time: 2026-03-18T05:00:00.000000000+08:00
+custom:
+  Author: majiayu000
+  PR: "12020"
