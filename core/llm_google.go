@@ -290,12 +290,6 @@ func (c *GenaiClient) buildThinkingConfig() *genai.ThinkingConfig {
 		IncludeThoughts: true,
 	}
 	switch mode {
-	case "enabled":
-		budget := int32(c.endpoint.ThinkingBudget)
-		if budget < 1 {
-			budget = 10000 // reasonable default
-		}
-		tc.ThinkingBudget = &budget
 	case "disabled":
 		return nil
 	case "low":

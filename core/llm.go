@@ -112,9 +112,9 @@ type LLMEndpoint struct {
 	RefreshToken     string // OAuth refresh token for token renewal
 	TokenExpiry      int64  // Unix timestamp (ms) when access token expires
 
-	// Thinking / reasoning configuration
-	ThinkingMode   string // "adaptive", "enabled", "disabled" (Anthropic) or reasoning effort (OpenAI)
-	ThinkingBudget int64  // Max thinking tokens (Anthropic, when mode == "enabled")
+	// ThinkingMode is the reasoning effort level (e.g. "low", "medium",
+	// "high", "adaptive"). Provider-specific values from catwalk.
+	ThinkingMode string
 
 	// rebuildClient recreates the Client after a token refresh.
 	// Set by the route* methods that produce OAuth endpoints.
@@ -621,8 +621,7 @@ type LLMRouter struct {
 	AnthropicSubscriptionType string // "pro", "max", etc. (OAuth only)
 	AnthropicRefreshToken     string // OAuth refresh token for token renewal
 	AnthropicTokenExpiry      int64  // Unix timestamp (ms) when access token expires
-	AnthropicThinkingMode     string // "adaptive", "enabled", "disabled"
-	AnthropicThinkingBudget   int64  // Max thinking tokens (when mode == "enabled")
+	AnthropicThinkingMode string
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
@@ -640,8 +639,7 @@ type LLMRouter struct {
 	GeminiAPIKey         string
 	GeminiBaseURL        string
 	GeminiModel          string
-	GeminiThinkingMode   string // "adaptive", "enabled", "disabled", or a ThinkingLevel ("low", "medium", "high")
-	GeminiThinkingBudget int64  // Max thinking tokens (when mode == "enabled")
+	GeminiThinkingMode string
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -697,8 +695,7 @@ func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 		SubscriptionType: r.AnthropicSubscriptionType,
 		RefreshToken:     r.AnthropicRefreshToken,
 		TokenExpiry:      r.AnthropicTokenExpiry,
-		ThinkingMode:     r.AnthropicThinkingMode,
-		ThinkingBudget:   r.AnthropicThinkingBudget,
+		ThinkingMode: r.AnthropicThinkingMode,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 	endpoint.rebuildClient = func() {
@@ -741,8 +738,7 @@ func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 		BaseURL:        r.GeminiBaseURL,
 		Key:            r.GeminiAPIKey,
 		Provider:       Google,
-		ThinkingMode:   r.GeminiThinkingMode,
-		ThinkingBudget: r.GeminiThinkingBudget,
+		ThinkingMode: r.GeminiThinkingMode,
 	}
 	client, err := newGenaiClient(endpoint)
 	if err != nil {
@@ -954,7 +950,6 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 			}
 			if provider.ThinkingMode != "" {
 				r.AnthropicThinkingMode = provider.ThinkingMode
-				r.AnthropicThinkingBudget = provider.ThinkingBudget
 			}
 		case "openai":
 			if r.OpenAIAPIKey == "" {
@@ -981,7 +976,6 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 			}
 			if provider.ThinkingMode != "" {
 				r.GeminiThinkingMode = provider.ThinkingMode
-				r.GeminiThinkingBudget = provider.ThinkingBudget
 			}
 		}
 	}

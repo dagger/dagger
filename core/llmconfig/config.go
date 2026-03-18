@@ -54,12 +54,10 @@ type Provider struct {
 	TokenExpiry      int64  `toml:"token_expiry,omitempty"`      // Unix timestamp (ms) when access token expires
 	SubscriptionType string `toml:"subscription_type,omitempty"` // "pro", "max", "team", "enterprise"
 
-	// Thinking / reasoning configuration
-	// ThinkingMode controls extended thinking. Values: "", "disabled", "adaptive", "enabled".
-	// For OpenAI, "effort" levels apply: "none", "low", "medium", "high", "xhigh".
+	// ThinkingMode controls extended thinking / reasoning effort.
+	// Values are provider-specific reasoning levels from catwalk
+	// (e.g. "low", "medium", "high", "adaptive").
 	ThinkingMode string `toml:"thinking_mode,omitempty"`
-	// ThinkingBudget is the max tokens for Anthropic's extended thinking (used when ThinkingMode == "enabled").
-	ThinkingBudget int64 `toml:"thinking_budget,omitempty"`
 }
 
 // IsOAuth returns true if this provider uses OAuth authentication.
