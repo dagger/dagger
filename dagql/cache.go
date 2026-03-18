@@ -702,19 +702,35 @@ func (c *cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 	if depRes == nil {
 		return fmt.Errorf("add explicit dependency: dep result %d missing from cache", depShared.id)
 	}
+	return c.addExplicitDependencyLocked(ctx, parentRes, depRes, dep, reason)
+}
+
+func (c *cache) addExplicitDependencyLocked(
+	ctx context.Context,
+	parentRes *sharedResult,
+	depRes *sharedResult,
+	dep AnyResult,
+	reason string,
+) error {
+	if parentRes == nil || depRes == nil {
+		return nil
+	}
+	if parentRes.id == depRes.id {
+		return nil
+	}
 	if parentRes.deps == nil {
 		parentRes.deps = make(map[sharedResultID]struct{})
 	}
-	if _, ok := parentRes.deps[depShared.id]; ok {
+	if _, ok := parentRes.deps[depRes.id]; ok {
 		return nil
 	}
 
 	atomic.AddInt64(&depRes.refCount, 1)
 	c.traceRefAcquired(ctx, depRes, atomic.LoadInt64(&depRes.refCount))
 
-	parentRes.deps[depShared.id] = struct{}{}
+	parentRes.deps[depRes.id] = struct{}{}
 	parentRes.heldDependencyResults = append(parentRes.heldDependencyResults, dep)
-	c.traceExplicitDepAdded(ctx, parentRes.id, depShared.id, reason)
+	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
 	if parentRes.depOfPersistedResult {
 		if _, err := c.markResultAsDepOfPersistedLocked(ctx, depRes); err != nil {
 			return err
@@ -1956,6 +1972,115 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	if indexErr != nil {
 		c.egraphMu.Unlock()
 		return indexErr
+	}
+	if !resWasCacheBacked && oc.res.resultCall != nil {
+		seenResults := map[sharedResultID]struct{}{}
+		seenCalls := map[*ResultCall]struct{}{}
+
+		var walkFrame func(*ResultCall) error
+		var walkRef func(*ResultCallRef) error
+		var walkLiteral func(*ResultCallLiteral) error
+
+		walkRef = func(ref *ResultCallRef) error {
+			if ref == nil {
+				return nil
+			}
+			if ref.Call != nil {
+				return walkFrame(ref.Call)
+			}
+			if ref.ResultID == 0 {
+				return nil
+			}
+			resultID := sharedResultID(ref.ResultID)
+			if resultID == oc.res.id {
+				return nil
+			}
+			if _, seen := seenResults[resultID]; seen {
+				return nil
+			}
+			seenResults[resultID] = struct{}{}
+			depRes := c.resultsByID[resultID]
+			if depRes == nil {
+				return fmt.Errorf("retain result call ref %d: missing cached result", resultID)
+			}
+			if err := c.addExplicitDependencyLocked(
+				ctx,
+				oc.res,
+				depRes,
+				Result[Typed]{shared: depRes},
+				"result_call_ref",
+			); err != nil {
+				return fmt.Errorf("retain result call ref %d: %w", resultID, err)
+			}
+			return nil
+		}
+
+		walkLiteral = func(lit *ResultCallLiteral) error {
+			if lit == nil {
+				return nil
+			}
+			switch lit.Kind {
+			case ResultCallLiteralKindResultRef:
+				return walkRef(lit.ResultRef)
+			case ResultCallLiteralKindList:
+				for _, item := range lit.ListItems {
+					if err := walkLiteral(item); err != nil {
+						return err
+					}
+				}
+			case ResultCallLiteralKindObject:
+				for _, field := range lit.ObjectFields {
+					if field == nil {
+						continue
+					}
+					if err := walkLiteral(field.Value); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}
+
+		walkFrame = func(frame *ResultCall) error {
+			if frame == nil {
+				return nil
+			}
+			if _, seen := seenCalls[frame]; seen {
+				return nil
+			}
+			seenCalls[frame] = struct{}{}
+
+			if err := walkRef(frame.Receiver); err != nil {
+				return fmt.Errorf("receiver: %w", err)
+			}
+			if frame.Module != nil {
+				if err := walkRef(frame.Module.ResultRef); err != nil {
+					return fmt.Errorf("module: %w", err)
+				}
+			}
+			for _, arg := range frame.Args {
+				if arg == nil {
+					continue
+				}
+				if err := walkLiteral(arg.Value); err != nil {
+					return fmt.Errorf("arg %q: %w", arg.Name, err)
+				}
+			}
+			for _, input := range frame.ImplicitInputs {
+				if input == nil {
+					continue
+				}
+				if err := walkLiteral(input.Value); err != nil {
+					return fmt.Errorf("implicit input %q: %w", input.Name, err)
+				}
+			}
+			return nil
+		}
+
+		if err := walkFrame(oc.res.resultCall); err != nil {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("retain result call dependencies: %w", err)
+		}
 	}
 	if oc.isPersistable {
 		if _, err := c.markResultAsDepOfPersistedLocked(ctx, oc.res); err != nil {
