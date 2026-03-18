@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -874,7 +875,11 @@ func printEncodedID(w io.Writer, encodedID string) error {
 	if err := id.Decode(encodedID); err != nil {
 		return fmt.Errorf("failed to decode ID: %w", err)
 	}
-	_, err := fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), id.Digest())
+	dig, err := idDigest(encodedID)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), dig)
 	return err
 }
 
@@ -882,6 +887,9 @@ func idDigest(encodedID string) (digest.Digest, error) {
 	var id call.ID
 	if err := id.Decode(encodedID); err != nil {
 		return "", fmt.Errorf("failed to decode ID: %w", err)
+	}
+	if id.IsHandle() {
+		return hashutil.HashStrings(encodedID), nil
 	}
 	return id.Digest(), nil
 }
