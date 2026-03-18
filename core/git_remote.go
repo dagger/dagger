@@ -377,7 +377,6 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 				fetchRefs = append(fetchRefs, ref)
 			}
 		}
-
 		err = repo.fetch(ctx, git, depth, includeTags, fetchRefs)
 		if err != nil {
 			return err
@@ -599,7 +598,35 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if err != nil {
 		return nil, err
 	}
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return nil, fmt.Errorf("current call is nil")
+	}
+	cacheKeyDigest, err := curCall.RecipeDigest()
+	if err != nil {
+		return nil, fmt.Errorf("tree cache key: %w", err)
+	}
+	cacheKey := cacheKeyDigest.String()
 	cache := query.BuildkitCache()
+	locker := query.Locker()
+	locker.Lock(indexGitSnapshot + cacheKey)
+	defer locker.Unlock(indexGitSnapshot + cacheKey)
+	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
+	if err != nil {
+		return nil, fmt.Errorf("search git snapshot %s: %w", cacheKey, err)
+	}
+	if len(sis) > 0 {
+		snap, err := cache.Get(ctx, sis[0].ID())
+		if err != nil {
+			return nil, err
+		}
+		return &Directory{
+			Dir:       "/",
+			Platform:  query.Platform(),
+			LazyState: NewLazyState(),
+			Snapshot:  snap,
+		}, nil
+	}
 
 	var checkoutRef bkcache.MutableRef
 	defer func() {
@@ -651,6 +678,10 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			snap.Release(context.WithoutCancel(ctx))
 		}
 	}()
+	md := cacheRefMetadata{snap}
+	if err := md.setGitSnapshot(cacheKey); err != nil {
+		return nil, err
+	}
 
 	checkout := &Directory{
 		Dir:       "/",

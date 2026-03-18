@@ -711,6 +711,12 @@ func (cm *snapshotManager) Merge(ctx context.Context, inputParents []ImmutableRe
 	if err != nil {
 		return nil, err
 	}
+	if mergeRef != nil {
+		if err := mergeRef.Extract(ctx, nil); err != nil {
+			mergeRef.Release(context.WithoutCancel(ctx))
+			return nil, errors.Wrap(err, "failed to materialize merge ref")
+		}
+	}
 	return mergeRef, nil
 }
 
@@ -831,6 +837,11 @@ func (cm *snapshotManager) Diff(ctx context.Context, lower, upper ImmutableRef, 
 		}
 	}
 
+	var (
+		diffRef ImmutableRef
+		err     error
+	)
+
 	// Check to see if lower is an ancestor of upper. If so, define the diff as a merge
 	// of the layers separating the two. This can result in a different diff than just
 	// running the differ directly on lower and upper, but this is chosen as a default
@@ -881,14 +892,22 @@ func (cm *snapshotManager) Diff(ctx context.Context, lower, upper ImmutableRef, 
 				return nil, err
 			}
 			parents.release(context.TODO())
-			return mergeRef, nil
+			diffRef = mergeRef
+			goto materialize
 		}
 	}
 
 	// On success, createDiffRef takes ownership of parents
-	diffRef, err := cm.createDiffRef(ctx, parents, dhs, opts...)
+	diffRef, err = cm.createDiffRef(ctx, parents, dhs, opts...)
 	if err != nil {
 		return nil, err
+	}
+materialize:
+	if diffRef != nil {
+		if err := diffRef.Extract(ctx, nil); err != nil {
+			diffRef.Release(context.WithoutCancel(ctx))
+			return nil, errors.Wrap(err, "failed to materialize diff ref")
+		}
 	}
 	return diffRef, nil
 }
