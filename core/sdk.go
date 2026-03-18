@@ -170,8 +170,16 @@ func (r *ContainerRuntime) Call(
 ) ([]byte, string, error) {
 	srv := dagql.CurrentDagqlServer(ctx)
 
+	// Use the inner (canonical) server for core API plumbing so that
+	// entrypoint proxies on the outer server cannot shadow core fields
+	// like "directory" and cause infinite recursion.
+	coreSrv := srv
+	if srv.Inner != nil {
+		coreSrv = srv.Inner
+	}
+
 	var metaDir dagql.ObjectResult[*Directory]
-	err := srv.Select(ctx, srv.Root(), &metaDir,
+	err := coreSrv.Select(ctx, coreSrv.Root(), &metaDir,
 		dagql.Selector{
 			Field: "directory",
 		},
