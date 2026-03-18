@@ -4056,6 +4056,131 @@ func TestCachePruneDeterministicSelectionOrder(t *testing.T) {
 	assert.DeepEqual(t, gotOrder, wantOrder)
 }
 
+func TestCachePruneProtectsExactDependencyOfActiveResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	active := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     cacheTestSizedInt{Int: Int(1), sizeBytes: 10, usageIdentity: "snapshot://prune-active-root"},
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
+			SyntheticOp: "root",
+			Type:        NewResultCallType(Int(0).Type()),
+		},
+		refCount: 1,
+		deps:     map[sharedResultID]struct{}{2: {}},
+	}
+	dep := &sharedResult{
+		cache:    c,
+		id:       2,
+		self:     cacheTestSizedInt{Int: Int(2), sizeBytes: 20, usageIdentity: "snapshot://prune-active-dep"},
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
+			SyntheticOp: "dep",
+			Type:        NewResultCallType(Int(0).Type()),
+		},
+	}
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		active.id: active,
+		dep.id:    dep,
+	}
+	activeEq := c.ensureEqClassForDigestLocked(ctx, "prune-active-root")
+	depEq := c.ensureEqClassForDigestLocked(ctx, "prune-active-dep")
+	c.resultOutputEqClasses[active.id] = map[eqClassID]struct{}{activeEq: {}}
+	c.resultOutputEqClasses[dep.id] = map[eqClassID]struct{}{depEq: {}}
+	activeTermID := egraphTermID(1)
+	depTermID := egraphTermID(2)
+	c.egraphTerms[activeTermID] = newEgraphTerm(activeTermID, digest.FromString("prune-active-root-term"), nil, activeEq)
+	c.egraphTerms[depTermID] = newEgraphTerm(depTermID, digest.FromString("prune-active-dep-term"), nil, depEq)
+	c.outputEqClassToTerms[activeEq] = map[egraphTermID]struct{}{activeTermID: {}}
+	c.outputEqClassToTerms[depEq] = map[egraphTermID]struct{}{depTermID: {}}
+	c.egraphMu.Unlock()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, len(report.Entries))
+
+	c.egraphMu.RLock()
+	_, activePresent := c.resultsByID[active.id]
+	_, depPresent := c.resultsByID[dep.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, activePresent)
+	assert.Assert(t, depPresent)
+}
+
+func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	root := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     cacheTestSizedInt{Int: Int(1), sizeBytes: 10, usageIdentity: "snapshot://prune-structural-root"},
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
+			SyntheticOp: "root",
+			Type:        NewResultCallType(Int(0).Type()),
+		},
+		refCount: 1,
+	}
+	provenanceOnly := &sharedResult{
+		cache:    c,
+		id:       2,
+		self:     cacheTestSizedInt{Int: Int(2), sizeBytes: 20, usageIdentity: "snapshot://prune-structural-provenance-only"},
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
+			SyntheticOp: "provenanceOnly",
+			Type:        NewResultCallType(Int(0).Type()),
+		},
+	}
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		root.id:           root,
+		provenanceOnly.id: provenanceOnly,
+	}
+
+	rootEq := c.ensureEqClassForDigestLocked(ctx, "prune-structural-root")
+	provenanceEq := c.ensureEqClassForDigestLocked(ctx, "prune-structural-provenance-only")
+	c.resultOutputEqClasses[root.id] = map[eqClassID]struct{}{rootEq: {}}
+	c.resultOutputEqClasses[provenanceOnly.id] = map[eqClassID]struct{}{provenanceEq: {}}
+
+	termID := egraphTermID(1)
+	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("prune-structural-root-term"), []eqClassID{provenanceEq}, rootEq)
+	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
+	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
+	c.egraphMu.Unlock()
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, "dagql.result.2", report.Entries[0].ID)
+
+	c.egraphMu.RLock()
+	_, rootPresent := c.resultsByID[root.id]
+	_, provenancePresent := c.resultsByID[provenanceOnly.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, rootPresent)
+	assert.Assert(t, !provenancePresent)
+}
+
 func TestCacheAttachOwnedResults(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -4405,6 +4530,64 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 	assert.Assert(t, termIncluded)
 	assert.Assert(t, root.depOfPersistedResult)
 	assert.Assert(t, !provenanceOnly.depOfPersistedResult)
+}
+
+func TestActiveDependencyClosureDoesNotRetainTermProvenanceOnlyResults(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	root := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     cacheTestSizedInt{Int: Int(1), sizeBytes: 10, usageIdentity: "snapshot://active-root"},
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
+			SyntheticOp: "root",
+			Type:        NewResultCallType(Int(0).Type()),
+		},
+		refCount: 1,
+	}
+	provenanceOnly := &sharedResult{
+		cache:    c,
+		id:       2,
+		self:     cacheTestSizedInt{Int: Int(2), sizeBytes: 10, usageIdentity: "snapshot://active-provenance-only"},
+		hasValue: true,
+		resultCall: &ResultCall{
+			Kind:        ResultCallKindSynthetic,
+			SyntheticOp: "provenanceOnly",
+			Type:        NewResultCallType(Int(0).Type()),
+		},
+	}
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		root.id:           root,
+		provenanceOnly.id: provenanceOnly,
+	}
+
+	rootEq := c.ensureEqClassForDigestLocked(ctx, "active-closure-root")
+	provenanceEq := c.ensureEqClassForDigestLocked(ctx, "active-closure-provenance-only")
+	c.resultOutputEqClasses[root.id] = map[eqClassID]struct{}{rootEq: {}}
+	c.resultOutputEqClasses[provenanceOnly.id] = map[eqClassID]struct{}{provenanceEq: {}}
+
+	termID := egraphTermID(1)
+	c.egraphTerms[termID] = newEgraphTerm(termID, digest.FromString("active-closure-root-term"), []eqClassID{provenanceEq}, rootEq)
+	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
+	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
+
+	closure := c.activeDependencyClosureLocked()
+	c.egraphMu.Unlock()
+
+	_, rootIncluded := closure[root.id]
+	assert.Assert(t, rootIncluded)
+	_, provenanceIncluded := closure[provenanceOnly.id]
+	assert.Assert(t, !provenanceIncluded)
 }
 
 func TestPersistedClosureGraphRejectsPendingResultCallRef(t *testing.T) {

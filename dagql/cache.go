@@ -485,8 +485,10 @@ type sharedResult struct {
 	// depOfPersistedResult marks results that must remain live because they are
 	// dependencies of a persisted/retained result.
 	depOfPersistedResult bool
-	// deps tracks explicit non-structural owned child-result dependencies used
-	// for release/liveness propagation and persistence closure.
+	// deps tracks exact materialized child-result dependencies used for
+	// release/liveness propagation and persistence closure. This includes
+	// explicit out-of-band deps and exact resultCall refs mirrored into deps
+	// during materialization.
 	deps map[sharedResultID]struct{}
 	// heldDependencyResults are explicit owned child results whose refs are held
 	// while this result has active refs. They are released when this result's
@@ -1592,23 +1594,6 @@ func (c *cache) activeDependencyClosureLocked() map[sharedResultID]struct{} {
 		}
 		for depID := range cur.deps {
 			stack = append(stack, depID)
-		}
-		for termID := range c.termIDsForResultLocked(curID) {
-			term := c.egraphTerms[termID]
-			if term == nil {
-				continue
-			}
-			inputProvenance := c.termInputProvenance[termID]
-			for i, provenance := range inputProvenance {
-				if provenance != egraphInputProvenanceKindResult || i >= len(term.inputEqIDs) {
-					continue
-				}
-				dep := c.firstResultForOutputEqClassAnyAtLocked(term.inputEqIDs[i])
-				if dep == nil || dep.id == curID {
-					continue
-				}
-				stack = append(stack, dep.id)
-			}
 		}
 	}
 

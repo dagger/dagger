@@ -578,30 +578,6 @@ func (c *cache) firstResultForOutputEqClassDeterministicallyAtLocked(
 	return c.resultsByID[bestID]
 }
 
-func (c *cache) firstResultForOutputEqClassAnyAtLocked(outputEqID eqClassID) *sharedResult {
-	outputEqID = c.findEqClassLocked(outputEqID)
-	if outputEqID == 0 {
-		return nil
-	}
-	digests := c.eqClassToDigests[outputEqID]
-	if len(digests) == 0 {
-		return nil
-	}
-	var bestID sharedResultID
-	for dig := range digests {
-		for resID := range c.egraphResultsByDigest[dig] {
-			res := c.resultsByID[resID]
-			if res == nil {
-				continue
-			}
-			if bestID == 0 || res.id < bestID {
-				bestID = res.id
-			}
-		}
-	}
-	return c.resultsByID[bestID]
-}
-
 func (c *cache) deterministicDigestForEqClassLocked(eqID eqClassID) digest.Digest {
 	eqID = c.findEqClassLocked(eqID)
 	if eqID == 0 {
