@@ -2920,6 +2920,83 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	reqCall := cacheTestIntCall("teach-content-digest")
+	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(reqCall, 123), nil
+	})
+	assert.NilError(t, err)
+
+	beforeID := cacheTestMustID(t, res)
+	contentDigest := digest.FromString("teach-content-digest")
+	assert.NilError(t, c.TeachContentDigest(ctx, res, contentDigest))
+
+	afterID := cacheTestMustID(t, res)
+	assert.Equal(t, beforeID.EngineResultID(), afterID.EngineResultID())
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, res).ContentDigest().String())
+
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil)
+	c.egraphMu.RLock()
+	_, ok := c.egraphResultsByDigest[contentDigest.String()][shared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, ok)
+
+	assert.NilError(t, res.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	depCall := cacheTestIntCall("teach-content-digest-dep")
+	depRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(depCall, 11), nil
+	})
+	assert.NilError(t, err)
+
+	rootCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(Int(0).Type()),
+		Field: "teach-content-digest-root",
+		Args: []*ResultCallArg{
+			{
+				Name: "dep",
+				Value: &ResultCallLiteral{
+					Kind: ResultCallLiteralKindResultRef,
+					ResultRef: &ResultCallRef{
+						ResultID: uint64(depRes.cacheSharedResult().id),
+					},
+				},
+			},
+		},
+	}
+	rootRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: rootCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(rootCall, 22), nil
+	})
+	assert.NilError(t, err)
+
+	contentDigest := digest.FromString("teach-content-digest-with-result-refs")
+	assert.NilError(t, c.TeachContentDigest(ctx, rootRes, contentDigest))
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, rootRes).ContentDigest().String())
+
+	assert.NilError(t, rootRes.Release(ctx))
+	assert.NilError(t, depRes.Release(ctx))
+	assert.Equal(t, 0, c.Size())
+}
+
 func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

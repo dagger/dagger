@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -1032,6 +1033,89 @@ func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCa
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
+}
+
+func (c *cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDigest digest.Digest) error {
+	if res == nil {
+		return fmt.Errorf("teach content digest: nil result")
+	}
+	if contentDigest == "" {
+		return fmt.Errorf("teach content digest: empty digest")
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 || shared.cache != c {
+		return fmt.Errorf("teach content digest: result %T is not an attached result in this cache", res)
+	}
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		baseFrame := c.resultCallSnapshot(shared.id)
+		if baseFrame == nil {
+			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+		}
+		frame := baseFrame.clone()
+		frame.bindCache(c)
+
+		replaced := false
+		for i, extra := range frame.ExtraDigests {
+			if extra.Label != call.ExtraDigestLabelContent {
+				continue
+			}
+			frame.ExtraDigests[i].Digest = contentDigest
+			replaced = true
+			break
+		}
+		if !replaced {
+			frame.ExtraDigests = append(frame.ExtraDigests, call.ExtraDigest{
+				Label:  call.ExtraDigestLabelContent,
+				Digest: contentDigest,
+			})
+		}
+
+		requestDigest, err := frame.RecipeDigest()
+		if err != nil {
+			return fmt.Errorf("teach content digest: derive request digest: %w", err)
+		}
+		requestSelf, requestInputRefs, err := frame.SelfDigestAndInputRefs()
+		if err != nil {
+			return fmt.Errorf("teach content digest: derive request term digests: %w", err)
+		}
+		requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+		for _, ref := range requestInputRefs {
+			dig, err := ref.InputDigest()
+			if err != nil {
+				return fmt.Errorf("teach content digest: derive request term input digest: %w", err)
+			}
+			requestInputs = append(requestInputs, dig)
+		}
+
+		c.egraphMu.Lock()
+		shared = c.resultsByID[shared.id]
+		if shared == nil {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("teach content digest: result %T missing from cache", res)
+		}
+		if shared.resultCall == nil {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("teach content digest: result %T has no call frame", res)
+		}
+		latestFrame := shared.resultCall.clone()
+		latestFrame.bindCache(c)
+		if !reflect.DeepEqual(latestFrame, baseFrame) {
+			c.egraphMu.Unlock()
+			continue
+		}
+		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+			c.egraphMu.Unlock()
+			return err
+		}
+		shared.resultCall = frame
+		c.egraphMu.Unlock()
+		return nil
+	}
 }
 
 func (c *cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedResultID, error) {

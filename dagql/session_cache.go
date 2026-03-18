@@ -386,6 +386,10 @@ func (c *SessionCache) TeachCallEquivalentToResult(ctx context.Context, call *Re
 	return c.cache.TeachCallEquivalentToResult(ctx, call, res)
 }
 
+func (c *SessionCache) TeachContentDigest(ctx context.Context, res AnyResult, contentDigest digest.Digest) error {
+	return c.cache.TeachContentDigest(ctx, res, contentDigest)
+}
+
 func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
 	return c.cache.AttachResult(ctx, res)
 }

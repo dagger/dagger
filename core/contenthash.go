@@ -30,6 +30,17 @@ func MakeDirectoryContentHashed(
 		return retInst, err
 	}
 
+	if _, err := dirInst.ID(); err == nil {
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return retInst, err
+		}
+		if err := dag.Cache.TeachContentDigest(ctx, dirInst, dgst); err != nil {
+			return retInst, fmt.Errorf("teach directory content digest: %w", err)
+		}
+		return dirInst, nil
+	}
+
 	return dirInst.WithContentDigest(dgst), nil
 }
 

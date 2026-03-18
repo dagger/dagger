@@ -96,6 +96,11 @@ type Cache interface {
 	// the provided existing result, updating e-graph/cache identity state
 	// without re-executing or synthetic loading.
 	TeachCallEquivalentToResult(context.Context, *ResultCall, AnyResult) error
+
+	// TeachContentDigest records a content digest for an already-attached
+	// result, updating both the stored result call metadata and the e-graph's
+	// digest-equivalence knowledge without detaching or cloning the result.
+	TeachContentDigest(context.Context, AnyResult, digest.Digest) error
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
