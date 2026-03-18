@@ -380,14 +380,6 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		if err != nil {
 			return fmt.Errorf("failed to get field spec for %q: %w", fun.Name, err)
 		}
-		if _, exists := dag.Root().ObjectType().FieldSpec(proxySpec.Name, dag.View); exists {
-			slog.ExtraDebug("skipping entrypoint proxy due to root field conflict",
-				"module", obj.Module.Name(),
-				"function", proxySpec.Name,
-			)
-			continue
-		}
-
 		methodArgs := proxySpec.Args.Inputs(dag.View)
 		ambiguousArg := ""
 		for _, arg := range methodArgs {
@@ -405,12 +397,11 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			continue
 		}
 
-		methodSpec := proxySpec
 		mergedArgs := append([]dagql.InputSpec{}, constructorArgs...)
 		mergedArgs = append(mergedArgs, methodArgs...)
 		proxySpec.Args = dagql.NewInputSpecs(mergedArgs...)
 		proxySpec.Module = obj.Module.IDModule()
-		proxySpec.GetCacheConfig = obj.entrypointProxyCacheConfig(constructorSpec, methodSpec, constructorArgs, methodArgs)
+		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and method calls cache on their own."
 		proxySpec.NoTelemetry = true
 
 		methodName := proxySpec.Name
@@ -441,13 +432,6 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 
 	for _, field := range obj.TypeDef.Fields {
 		fieldName := gqlFieldName(field.Name)
-		if _, exists := dag.Root().ObjectType().FieldSpec(fieldName, dag.View); exists {
-			slog.ExtraDebug("skipping entrypoint field proxy due to root field conflict",
-				"module", obj.Module.Name(),
-				"field", fieldName,
-			)
-			continue
-		}
 
 		proxySpec := dagql.FieldSpec{
 			Name:        fieldName,
@@ -459,8 +443,7 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 
 		// Fields have no args of their own; only constructor args are needed.
 		proxySpec.Args = dagql.NewInputSpecs(constructorArgs...)
-		fieldSpec := proxySpec
-		proxySpec.GetCacheConfig = obj.entrypointProxyCacheConfig(constructorSpec, fieldSpec, constructorArgs, nil)
+		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own."
 
 		proxiedFieldName := fieldName
 		dag.Root().ObjectType().Extend(
@@ -487,89 +470,6 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	return nil
 }
 
-func (obj *ModuleObject) entrypointProxyCacheConfig(
-	constructorSpec dagql.FieldSpec,
-	methodSpec dagql.FieldSpec,
-	constructorArgs []dagql.InputSpec,
-	methodArgs []dagql.InputSpec,
-) dagql.GenericGetCacheConfigFunc {
-	return func(
-		ctx context.Context,
-		parent dagql.AnyResult,
-		args map[string]dagql.Input,
-		view call.View,
-		req dagql.GetCacheConfigRequest,
-	) (*dagql.GetCacheConfigResponse, error) {
-		constructorArgVals := subsetArgs(constructorArgs, args)
-		constructorID := selectionIDForSpec(nil, constructorSpec, constructorArgVals, "")
-		constructorReq := dagql.GetCacheConfigRequest{
-			CacheKey: dagql.CacheKey{ID: constructorID},
-		}
-		constructorResp := &dagql.GetCacheConfigResponse{CacheKey: constructorReq.CacheKey}
-		if constructorSpec.GetCacheConfig != nil {
-			var err error
-			constructorResp, err = constructorSpec.GetCacheConfig(
-				dagql.ContextWithID(ctx, constructorID),
-				parent,
-				constructorArgVals,
-				"",
-				constructorReq,
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if constructorResp.CacheKey.ID == nil {
-			return nil, fmt.Errorf("entrypoint constructor cache key is nil for %q", constructorSpec.Name)
-		}
-
-		srv := dagql.CurrentDagqlServer(ctx)
-		parentObj, err := dagql.NewObjectResultForID(&ModuleObject{
-			Module:  obj.Module,
-			TypeDef: obj.TypeDef,
-		}, srv, constructorResp.CacheKey.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		methodArgVals := subsetArgs(methodArgs, args)
-		methodReq := req
-		methodReq.CacheKey.ID = selectionIDForSpec(constructorResp.CacheKey.ID, methodSpec, methodArgVals, view)
-
-		methodResp := &dagql.GetCacheConfigResponse{CacheKey: methodReq.CacheKey}
-		if methodSpec.GetCacheConfig != nil {
-			methodResp, err = methodSpec.GetCacheConfig(
-				dagql.ContextWithID(ctx, methodReq.CacheKey.ID),
-				parentObj,
-				methodArgVals,
-				view,
-				methodReq,
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		if constructorResp.CacheKey.DoNotCache {
-			methodResp.CacheKey.DoNotCache = true
-		}
-		if constructorResp.CacheKey.TTL != 0 && (methodResp.CacheKey.TTL == 0 || constructorResp.CacheKey.TTL < methodResp.CacheKey.TTL) {
-			methodResp.CacheKey.TTL = constructorResp.CacheKey.TTL
-		}
-
-		// The caller (preselect) re-extracts inputArgs from the returned
-		// ID's leaf args. The chained constructor→method ID only carries
-		// method args at its leaf, so constructor args would be lost.
-		// Preserve the original request ID which has all proxy args
-		// (constructor + method merged) at the leaf, so ExtractIDArgs
-		// can find them all. Cache policy from the inner calls is still
-		// applied.
-		methodResp.CacheKey.ID = req.CacheKey.ID
-
-		return methodResp, nil
-	}
-}
-
 func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []dagql.NamedInput {
 	if len(args) == 0 {
 		return nil
@@ -587,52 +487,6 @@ func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []
 		})
 	}
 	return inputs
-}
-
-func subsetArgs(specs []dagql.InputSpec, args map[string]dagql.Input) map[string]dagql.Input {
-	if len(args) == 0 {
-		return nil
-	}
-
-	vals := make(map[string]dagql.Input, len(specs))
-	for _, spec := range specs {
-		arg, ok := args[spec.Name]
-		if !ok {
-			continue
-		}
-		vals[spec.Name] = arg
-	}
-	if len(vals) == 0 {
-		return nil
-	}
-	return vals
-}
-
-func selectionIDForSpec(parentID *call.ID, spec dagql.FieldSpec, args map[string]dagql.Input, view call.View) *call.ID {
-	if spec.ViewFilter == nil {
-		view = ""
-	}
-
-	idArgs := make([]*call.Argument, 0, len(args))
-	for _, argSpec := range spec.Args.Inputs(view) {
-		val, ok := args[argSpec.Name]
-		if !ok {
-			continue
-		}
-		idArgs = append(idArgs, call.NewArgument(
-			argSpec.Name,
-			val.ToLiteral(),
-			argSpec.Sensitive,
-		))
-	}
-
-	return parentID.Append(
-		spec.Type.Type(),
-		spec.Name,
-		call.WithView(view),
-		call.WithModule(spec.Module),
-		call.WithArgs(idArgs...),
-	)
 }
 
 func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {

@@ -16,11 +16,13 @@ type ServedMods struct {
 	root    *Query
 	entries []servedModEntry
 
-	// lazy schema cache
+	// lazy schema cache — outer (client-facing) server with entrypoint proxies
 	lazilyLoadedSchema         *dagql.Server
 	lazilyLoadedSchemaJSONFile dagql.Result[*File]
-	loadSchemaErr              error
-	loadSchemaLock             sync.Mutex
+	// lazy inner (canonical) server — no entrypoint proxies, used for ID loading
+	lazilyLoadedInner *dagql.Server
+	loadSchemaErr     error
+	loadSchemaLock    sync.Mutex
 }
 
 type servedModEntry struct {
@@ -100,14 +102,28 @@ func (s *ServedMods) ModDeps() *ModDeps {
 	return NewModDeps(s.root, s.Mods())
 }
 
-// Schema builds and caches the combined schema for all served modules.
+// Schema builds and caches the combined outer (client-facing) schema for all
+// served modules. This server includes entrypoint proxy fields on Query.
 func (s *ServedMods) Schema(ctx context.Context) (*dagql.Server, error) {
 	srv, _, err := s.lazilyLoadSchema(ctx)
 	return srv, err
 }
 
+// Server returns the inner (canonical) server used for ID loading. This server
+// has no entrypoint proxies, so IDs are always evaluated against a clean schema
+// where no proxy can shadow a core field. When no module has Entrypoint set,
+// the inner and outer servers are the same.
+func (s *ServedMods) Server(ctx context.Context) (*dagql.Server, error) {
+	_, _, err := s.lazilyLoadSchema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.lazilyLoadedInner, nil
+}
+
 func (s *ServedMods) invalidateCache() {
 	s.lazilyLoadedSchema = nil
+	s.lazilyLoadedInner = nil
 	s.lazilyLoadedSchemaJSONFile = dagql.Result[*File]{}
 	s.loadSchemaErr = nil
 }
@@ -127,21 +143,62 @@ func (s *ServedMods) lazilyLoadSchema(ctx context.Context) (
 	}
 	defer func() {
 		s.lazilyLoadedSchema = loadedSchema
+		s.lazilyLoadedInner = loadedSchema // default: inner == outer
 		s.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
 		s.loadSchemaErr = rerr
 	}()
 
-	mods := make([]modInstall, len(s.entries))
-	for i, e := range s.entries {
-		mods[i] = modInstall{
-			mod:  e.mod,
-			opts: e.opts,
+	// Check if any entry has Entrypoint set.
+	hasEntrypoint := false
+	for _, e := range s.entries {
+		if e.opts.Entrypoint {
+			hasEntrypoint = true
+			break
 		}
 	}
 
-	dag, schemaJSONFile, err := buildSchema(ctx, s.root, mods, nil)
+	if !hasEntrypoint {
+		// No entrypoints — single server suffices (inner == outer).
+		mods := make([]modInstall, len(s.entries))
+		for i, e := range s.entries {
+			mods[i] = modInstall{mod: e.mod, opts: e.opts}
+		}
+		dag, schemaJSONFile, err := buildSchema(ctx, s.root, mods, nil)
+		if err != nil {
+			return nil, loadedSchemaJSONFile, err
+		}
+		return dag, schemaJSONFile, nil
+	}
+
+	// Build inner server: all modules with Entrypoint forced to false.
+	innerMods := make([]modInstall, len(s.entries))
+	for i, e := range s.entries {
+		opts := e.opts
+		opts.Entrypoint = false
+		innerMods[i] = modInstall{mod: e.mod, opts: opts}
+	}
+	inner, _, err := buildSchema(ctx, s.root, innerMods, nil)
 	if err != nil {
 		return nil, loadedSchemaJSONFile, err
 	}
-	return dag, schemaJSONFile, nil
+
+	// Build outer server: all modules with real Entrypoint flags.
+	outerMods := make([]modInstall, len(s.entries))
+	for i, e := range s.entries {
+		outerMods[i] = modInstall{mod: e.mod, opts: e.opts}
+	}
+	outer, schemaJSONFile, err := buildSchema(ctx, s.root, outerMods, nil)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, err
+	}
+
+	// Wire up delegation: outer server delegates ID loading to inner server.
+	outer.IDLoader = inner.Load
+
+	// Override the default: inner is the canonical server for ID loading.
+	defer func() {
+		s.lazilyLoadedInner = inner
+	}()
+
+	return outer, schemaJSONFile, nil
 }

@@ -57,6 +57,13 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache *SessionCache
+
+	// IDLoader, if set, is used by Load and LoadType to delegate ID
+	// evaluation to another server. This is the mechanism by which the
+	// outer (client-facing) server delegates ID loading to the inner
+	// (canonical) server, ensuring IDs are always evaluated against a
+	// schema where no entrypoint proxy can shadow a core field.
+	IDLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 type ServerSchema struct {
@@ -668,6 +675,9 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error) {
+	if s.IDLoader != nil {
+		return s.IDLoader(ctx, id)
+	}
 	res, err := s.LoadType(ctx, id)
 	if err != nil {
 		return nil, err
@@ -676,6 +686,9 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
+	if s.IDLoader != nil {
+		return s.IDLoader(ctx, id)
+	}
 	var base AnyResult
 	var err error
 	if id.Receiver() != nil {
