@@ -1026,13 +1026,12 @@ type Test {
 	})
 }
 
-// TestEntrypointProxyCoreAPIShadowWithEmbedding verifies that a module
-// returning a core type (e.g. Directory) from a method whose name collides
-// with a core API field doesn't break the engine's internal use of that core
-// field. This was the root cause of the TestEmbedded failure: the runtime's
-// ContainerRuntime.Call selected "directory" from the outer server, hit the
-// proxy, and recursed infinitely.
-func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadowWithEmbedding(ctx context.Context, t *testctx.T) {
+// TestEntrypointProxyCoreAPIShadowWithMethods verifies that a module
+// returning core types (Directory, File, Container) from methods whose names
+// collide with core API fields doesn't break the engine's internal plumbing.
+// The proxy is skipped for conflicting names, but the namespaced path still
+// works.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadowWithMethods(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
@@ -1088,4 +1087,62 @@ type Dirs {
 		require.NoError(t, err)
 		require.Contains(t, strings.TrimSpace(out), "3.20")
 	})
+}
+
+// TestEntrypointProxyDirectoryField verifies that a container-based module
+// with a Directory field can be constructed without triggering infinite
+// recursion in the engine's ContainerRuntime.Call.
+//
+// ContainerRuntime.Call selects "directory" from the Query root to create a
+// metadata directory. When the module has a "directory" field, the entrypoint
+// proxy shadows the core field on the outer server. A raw GraphQL query
+// resolves the constructor on the outer server directly, so
+// ContainerRuntime.Call must use the inner server for its plumbing to avoid
+// hitting the proxy.
+//
+// This test uses Go (a container-based SDK) and daggerQuery (raw GraphQL)
+// because both are required to trigger the bug:
+// - Dang has a native runtime that doesn't use ContainerRuntime.Call
+// - daggerCall routes through proxy resolvers that delegate to the inner
+//   server, masking the issue
+func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/playground/internal/dagger"
+)
+
+type Playground struct {
+	*dagger.Directory
+}
+
+func New() Playground {
+	return Playground{Directory: dag.Directory()}
+}
+
+func (p *Playground) SayHello() string {
+	return "hello!"
+}
+`)
+
+	// Query through the constructor directly — exercises
+	// ContainerRuntime.Call on the outer server where the "directory"
+	// proxy shadows the core field. Must come first to avoid caching
+	// from the proxy path masking the bug.
+	out, err := base.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
+
+	// Query through entrypoint proxies — the intended usage pattern.
+	// Demonstrates that module methods and fields (including ones that
+	// shadow core API names) are accessible at Query root.
+	out, err = base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"sayHello":"hello!", "directory":{"entries": []}}`, out)
 }
