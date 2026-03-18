@@ -496,13 +496,7 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 			return err
 		}
 		if arg.IsRequired() {
-			// Don't mark as required if the parent has a matching
-			// local flag (constructor args registered on the root).
-			// The parent's value will be picked up by selectFunc.
-			parentHas := cmd.Parent() != nil && cmd.Parent().LocalFlags().Lookup(arg.FlagName()) != nil
-			if !parentHas {
-				cmd.MarkFlagRequired(arg.FlagName())
-			}
+			cmd.MarkFlagRequired(arg.FlagName())
 		}
 		cmd.Flags().SetAnnotation(
 			arg.FlagName(),
@@ -605,17 +599,6 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 		flag, err := a.GetFlag(cmd.Flags())
 		if err != nil {
 			return err
-		}
-
-		if !flag.Changed {
-			// For entrypoint proxy commands, check if the parent root
-			// command had this flag set (constructor args can be placed
-			// before the subcommand name).
-			if cmd.Parent() != nil {
-				if parentFlag := cmd.Parent().LocalFlags().Lookup(a.FlagName()); parentFlag != nil && parentFlag.Changed {
-					flag = parentFlag
-				}
-			}
 		}
 
 		if !flag.Changed {
