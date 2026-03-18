@@ -225,7 +225,7 @@ func (*Service) Terminal(
 
 	running := runnings[0]
 	if running.Exec == nil {
-		return fmt.Errorf("service %s does not support terminal", svcID.Digest())
+		return fmt.Errorf("service %s does not support terminal", svcID.Path())
 	}
 	return running.Exec(ctx, args.Cmd, env, &ServiceIO{
 		Stdin:       term.Stdin,
@@ -265,7 +265,28 @@ func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*buildkit
 	}
 	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
 	fmt.Fprint(term.Stderr, dump.Newline)
-	if err := dump.DumpID(output, svcID); err != nil {
+	dumpID := svcID
+	if svcID != nil && svcID.IsHandle() {
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+		res, err := dag.LoadType(ctx, svcID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to load service from handle ID: %w", err)
+		}
+		recipeIDable, ok := res.(interface {
+			RecipeID() (*call.ID, error)
+		})
+		if !ok {
+			return nil, nil, fmt.Errorf("loaded service %T does not expose a recipe ID", res)
+		}
+		dumpID, err = recipeIDable.RecipeID()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to derive service recipe ID: %w", err)
+		}
+	}
+	if err := dump.DumpID(output, dumpID); err != nil {
 		return nil, nil, fmt.Errorf("failed to serialize service ID: %w", err)
 	}
 	fmt.Fprint(term.Stderr, dump.Newline)
