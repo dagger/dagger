@@ -412,8 +412,14 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				// and method calls as internal — they are the real
 				// user-facing calls and should appear in telemetry.
 				ctx = dagql.WithNonInternalTelemetry(ctx)
+				// Use the inner server for Select to avoid infinite
+				// recursion when the proxy shadows the constructor.
+				target := dag
+				if dag.Inner != nil {
+					target = dag.Inner
+				}
 				var result dagql.AnyResult
-				if err := dag.Select(ctx, dag.Root(), &result,
+				if err := target.Select(ctx, target.Root(), &result,
 					dagql.Selector{
 						Field: constructorName,
 						Args:  orderedNamedInputs(constructorArgs, args),
@@ -450,8 +456,14 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			proxySpec,
 			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 				ctx = dagql.WithNonInternalTelemetry(ctx)
+				// Use the inner server for Select to avoid infinite
+				// recursion when the proxy shadows the constructor.
+				target := dag
+				if dag.Inner != nil {
+					target = dag.Inner
+				}
 				var result dagql.AnyResult
-				if err := dag.Select(ctx, dag.Root(), &result,
+				if err := target.Select(ctx, target.Root(), &result,
 					dagql.Selector{
 						Field: constructorName,
 						Args:  orderedNamedInputs(constructorArgs, args),

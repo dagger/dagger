@@ -64,6 +64,12 @@ type Server struct {
 	// (canonical) server, ensuring IDs are always evaluated against a
 	// schema where no entrypoint proxy can shadow a core field.
 	IDLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
+
+	// Inner, if set, is the canonical server that entrypoint proxy
+	// resolvers should use for dag.Select calls. This prevents infinite
+	// recursion when a proxy field shadows the constructor it needs to
+	// call through.
+	Inner *Server
 }
 
 type ServerSchema struct {
