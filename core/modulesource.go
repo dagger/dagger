@@ -1222,7 +1222,11 @@ func (src *ModuleSource) LoadContextDir(
 	if err != nil {
 		return inst, fmt.Errorf("context directory ID: %w", err)
 	}
-	if instID != nil && instID.ContentDigest() == "" {
+	instCall, err := inst.ResultCall()
+	if err != nil {
+		return inst, fmt.Errorf("context directory call: %w", err)
+	}
+	if instID != nil && instCall.ContentDigest() == "" {
 		inst, err = MakeDirectoryContentHashed(ctx, inst)
 		if err != nil {
 			return inst, fmt.Errorf("failed to content-hash contextual directory: %w", err)
