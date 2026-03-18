@@ -942,3 +942,150 @@ type Ci {
 		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})
 }
+
+// TestEntrypointProxyCoreAPIStillWorks verifies that when a module provides a
+// function whose name collides with a core API field (e.g. "container",
+// "file", "directory"), the core API remains functional for engine-internal
+// plumbing — the proxy is skipped, and the module function is still reachable
+// via the namespaced constructor path.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIStillWorks(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initStandaloneDangModule("shadows", `
+type Shadows {
+  pub container: String! {
+    "my-container"
+  }
+
+  pub file: String! {
+    "my-file"
+  }
+
+  pub directory: String! {
+    "my-directory"
+  }
+
+  pub hello: String! {
+    "hello!"
+  }
+}
+`))
+
+	t.Run("non-conflicting proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello!", strings.TrimSpace(out))
+	})
+
+	t.Run("namespaced path reaches shadowed functions", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("shadows", "container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-container", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("shadows", "file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-file", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("shadows", "directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-directory", strings.TrimSpace(out))
+	})
+}
+
+// TestEntrypointProxySelfNamedMethod verifies that a module whose main object
+// has a method with the same name as the module itself (e.g. module "test"
+// with method "test") doesn't cause infinite recursion. The proxy for "test"
+// would shadow the constructor; the inner server prevents the loop.
+func (WorkspaceSuite) TestEntrypointProxySelfNamedMethod(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initStandaloneDangModule("test", `
+type Test {
+  pub test: String! {
+    "test-result"
+  }
+
+  pub other: String! {
+    "other-result"
+  }
+}
+`))
+
+	t.Run("self-named proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("test")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test-result", strings.TrimSpace(out))
+	})
+
+	t.Run("other proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("other")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other-result", strings.TrimSpace(out))
+	})
+}
+
+// TestEntrypointProxyCoreAPIShadowWithEmbedding verifies that a module
+// returning a core type (e.g. Directory) from a method whose name collides
+// with a core API field doesn't break the engine's internal use of that core
+// field. This was the root cause of the TestEmbedded failure: the runtime's
+// ContainerRuntime.Call selected "directory" from the outer server, hit the
+// proxy, and recursed infinitely.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadowWithEmbedding(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		With(initStandaloneDangModule("dirs", `
+type Dirs {
+  """
+  Returns a directory — same name as the core API field.
+  """
+  pub directory: Directory! {
+    Dagger.directory.withNewFile("hello.txt", "hello from dirs")
+  }
+
+  """
+  Returns a file — same name as the core API field.
+  """
+  pub file: File! {
+    Dagger.file("greeting.txt", "hi")
+  }
+
+  """
+  Returns a container — same name as the core API field.
+  """
+  pub container: Container! {
+    Dagger.container.from("alpine:3.20")
+  }
+
+  pub greet: String! {
+    "greetings!"
+  }
+}
+`))
+
+	t.Run("non-conflicting proxy works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "greetings!", strings.TrimSpace(out))
+	})
+
+	t.Run("namespaced directory returns custom dir", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("dirs", "directory", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("namespaced file returns custom file", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("dirs", "file", "contents")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi", strings.TrimSpace(out))
+	})
+
+	t.Run("namespaced container runs", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("dirs", "container", "with-exec", "--args=cat,/etc/alpine-release", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, strings.TrimSpace(out), "3.20")
+	})
+}
