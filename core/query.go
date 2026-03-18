@@ -245,7 +245,9 @@ func (q *Query) NewHost() *Host {
 }
 
 func (q *Query) NewModule() *Module {
-	return &Module{}
+	return &Module{
+		Deps: NewModDeps(q, nil),
+	}
 }
 
 // ModDepsForCall loads the module dependencies referenced by the given result call.

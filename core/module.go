@@ -323,7 +323,7 @@ func (mod *Module) AttachOwnedResults(
 			if err != nil {
 				return nil, fmt.Errorf("attach module self dependency %q: dep ID: %w", dep.Name(), err)
 			}
-			if depID == nil || depID.Digest() != attachedSelfID.Digest() {
+			if depID == nil || depID.EngineResultID() != attachedSelfID.EngineResultID() {
 				continue
 			}
 			mod.Deps.mods[i] = NewUserMod(attachedSelf)
@@ -1076,7 +1076,7 @@ func (mod *userMod) Same(other Mod) (bool, error) {
 	if id == nil || otherID == nil {
 		return false, nil
 	}
-	return id.Digest() == otherID.Digest(), nil
+	return id.EngineResultID() == otherID.EngineResultID(), nil
 }
 
 func (mod *userMod) View() (call.View, bool) {

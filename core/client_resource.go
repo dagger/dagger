@@ -23,11 +23,10 @@ func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName 
 		if err != nil {
 			return "", err
 		}
-		id, err := scopedMod.ID()
+		scopeDigest, err = scopedMod.ContentPreferredDigest()
 		if err != nil {
 			return "", err
 		}
-		scopeDigest = id.ContentDigest()
 	}
 
 	// Use an HMAC, which allows us to keep the externalName un-inferrable.
@@ -61,11 +60,10 @@ var CachePerCallerModule = dagql.ImplicitInput{
 		if err != nil {
 			return nil, err
 		}
-		id, err := scopedMod.ID()
+		scopeDigest, err := scopedMod.ContentPreferredDigest()
 		if err != nil {
 			return nil, err
 		}
-		scopeDigest := id.ContentDigest()
 
 		return dagql.NewString(scopeDigest.String()), nil
 	},

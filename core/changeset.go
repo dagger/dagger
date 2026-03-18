@@ -67,15 +67,15 @@ func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) 
 }
 
 func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
-	beforeID, err := ch.Before.ID()
+	beforeDigest, err := ch.Before.ContentPreferredDigest()
 	if err != nil {
-		return nil, fmt.Errorf("before ID: %w", err)
+		return nil, fmt.Errorf("before content-preferred digest: %w", err)
 	}
-	afterID, err := ch.After.ID()
+	afterDigest, err := ch.After.ContentPreferredDigest()
 	if err != nil {
-		return nil, fmt.Errorf("after ID: %w", err)
+		return nil, fmt.Errorf("after content-preferred digest: %w", err)
 	}
-	if beforeID.Digest() == afterID.Digest() {
+	if beforeDigest == afterDigest {
 		return &ChangesetPaths{}, nil
 	}
 
@@ -253,15 +253,15 @@ func (ch *Changeset) Sync(ctx context.Context) error {
 const ChangesetPatchFilename = "diff.patch"
 
 func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
-	beforeID, err := ch.Before.RecipeID()
+	beforeDigest, err := ch.Before.ContentPreferredDigest()
 	if err != nil {
-		return false, fmt.Errorf("before recipe ID: %w", err)
+		return false, fmt.Errorf("before content-preferred digest: %w", err)
 	}
-	afterID, err := ch.After.RecipeID()
+	afterDigest, err := ch.After.ContentPreferredDigest()
 	if err != nil {
-		return false, fmt.Errorf("after recipe ID: %w", err)
+		return false, fmt.Errorf("after content-preferred digest: %w", err)
 	}
-	if beforeID.Digest() == afterID.Digest() {
+	if beforeDigest == afterDigest {
 		return true, nil
 	}
 
