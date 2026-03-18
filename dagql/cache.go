@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -75,6 +76,11 @@ type Cache interface {
 	// DebugEGraphSnapshot returns a deterministic point-in-time dump of the
 	// current in-memory e-graph/cache state for debugging.
 	DebugEGraphSnapshot() *EGraphDebugSnapshot
+
+	// WriteDebugCacheSnapshot streams a broader deterministic point-in-time dump
+	// of in-memory cache state, including cache entry metadata and call-frame
+	// provenance, for debugging retained-memory and liveness issues.
+	WriteDebugCacheSnapshot(io.Writer) error
 
 	// LoadResultByResultID loads a cache-backed result by its stable shared
 	// result handle.

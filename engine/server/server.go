@@ -6,6 +6,7 @@ import (
 	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -807,6 +808,13 @@ func (srv *Server) DagqlDebugSnapshot() *dagql.EGraphDebugSnapshot {
 		return nil
 	}
 	return srv.baseDagqlCache.DebugEGraphSnapshot()
+}
+
+func (srv *Server) WriteDagqlCacheDebugSnapshot(w io.Writer) error {
+	if srv.baseDagqlCache == nil {
+		return fmt.Errorf("dagql cache not available")
+	}
+	return srv.baseDagqlCache.WriteDebugCacheSnapshot(w)
 }
 
 // ConnectedClients returns the number of currently connected clients

@@ -1,8 +1,11 @@
 package dagql
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"runtime/debug"
 	"slices"
 	"sync/atomic"
@@ -32,6 +35,22 @@ type EGraphDebugSnapshot struct {
 	EqClasses          []EGraphDebugEqClass       `json:"eq_classes"`
 }
 
+type CacheDebugSnapshot struct {
+	TraceFormatVersion      int                           `json:"trace_format_version"`
+	BootID                  string                        `json:"boot_id"`
+	CapturedAtSeq           uint64                        `json:"captured_at_seq"`
+	CapturedAtTime          string                        `json:"captured_at_time"`
+	Results                 []CacheDebugResult            `json:"results"`
+	ResultDigestIndexes     []CacheDebugResultDigestIndex `json:"result_digest_indexes"`
+	Terms                   []EGraphDebugTerm             `json:"terms"`
+	ResultTerms             []EGraphDebugResultTerm       `json:"result_terms"`
+	Digests                 []EGraphDebugDigestMapping    `json:"digests"`
+	EqClasses               []EGraphDebugEqClass          `json:"eq_classes"`
+	OngoingCalls            []CacheDebugOngoingCall       `json:"ongoing_calls,omitempty"`
+	OngoingArbitraryCalls   []CacheDebugArbitraryCall     `json:"ongoing_arbitrary_calls,omitempty"`
+	CompletedArbitraryCalls []CacheDebugArbitraryCall     `json:"completed_arbitrary_calls,omitempty"`
+}
+
 type EGraphDebugResult struct {
 	SharedResultID        uint64                     `json:"shared_result_id"`
 	OutputEqClassIDs      []uint64                   `json:"output_eq_class_ids,omitempty"`
@@ -46,6 +65,32 @@ type EGraphDebugResult struct {
 	ExplicitDeps          []uint64                   `json:"explicit_dep_ids,omitempty"`
 	HeldDependencyResults int                        `json:"held_dependency_results_count"`
 	SnapshotLinks         []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
+}
+
+type CacheDebugResult struct {
+	EGraphDebugResult
+	ResultCall                            *ResultCall `json:"result_call,omitempty"`
+	ResultCallRecipeDigest                string      `json:"result_call_recipe_digest,omitempty"`
+	ResultCallRecipeDigestError           string      `json:"result_call_recipe_digest_error,omitempty"`
+	ResultCallContentPreferredDigest      string      `json:"result_call_content_preferred_digest,omitempty"`
+	ResultCallContentPreferredDigestError string      `json:"result_call_content_preferred_digest_error,omitempty"`
+	ResultCallInputDigests                []string    `json:"result_call_input_digests,omitempty"`
+	ResultCallInputDigestsError           string      `json:"result_call_input_digests_error,omitempty"`
+	AssociatedTermIDs                     []uint64    `json:"associated_term_ids,omitempty"`
+	IndexedDigests                        []string    `json:"indexed_digests,omitempty"`
+	SafeToPersistCache                    bool        `json:"safe_to_persist_cache"`
+	ExpiresAtUnix                         int64       `json:"expires_at_unix,omitempty"`
+	CreatedAtUnixNano                     int64       `json:"created_at_unix_nano,omitempty"`
+	LastUsedAtUnixNano                    int64       `json:"last_used_at_unix_nano,omitempty"`
+	SizeEstimateBytes                     int64       `json:"size_estimate_bytes"`
+	UsageIdentity                         string      `json:"usage_identity,omitempty"`
+	PersistedEnvelopeKind                 string      `json:"persisted_envelope_kind,omitempty"`
+	PersistedEnvelopeTypeName             string      `json:"persisted_envelope_type_name,omitempty"`
+}
+
+type CacheDebugResultDigestIndex struct {
+	Digest          string   `json:"digest"`
+	SharedResultIDs []uint64 `json:"shared_result_ids"`
 }
 
 type EGraphDebugTerm struct {
@@ -74,6 +119,30 @@ type EGraphDebugDigestMapping struct {
 type EGraphDebugEqClass struct {
 	EqClassID uint64   `json:"eq_class_id"`
 	Digests   []string `json:"digests"`
+}
+
+type CacheDebugOngoingCall struct {
+	CallKey           string `json:"call_key"`
+	ConcurrencyKey    string `json:"concurrency_key,omitempty"`
+	Waiters           int    `json:"waiters"`
+	IsPersistable     bool   `json:"is_persistable"`
+	TTLSeconds        int64  `json:"ttl_seconds,omitempty"`
+	Completed         bool   `json:"completed"`
+	Error             string `json:"error,omitempty"`
+	SharedResultID    uint64 `json:"shared_result_id,omitempty"`
+	ResultDescription string `json:"result_description,omitempty"`
+	ResultRecordType  string `json:"result_record_type,omitempty"`
+	ResultTypeName    string `json:"result_type_name,omitempty"`
+}
+
+type CacheDebugArbitraryCall struct {
+	CallKey   string `json:"call_key"`
+	Waiters   int    `json:"waiters"`
+	RefCount  int    `json:"ref_count"`
+	Completed bool   `json:"completed"`
+	HasValue  bool   `json:"has_value"`
+	ValueType string `json:"value_type,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 func newTraceBootID() string {
@@ -765,4 +834,513 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	}
 
 	return snap
+}
+
+func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
+	c.callsMu.Lock()
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	defer c.callsMu.Unlock()
+
+	bw := bufio.NewWriterSize(w, 128<<10)
+
+	writeValue := func(v any) error {
+		bs, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		_, err = bw.Write(bs)
+		return err
+	}
+
+	topFieldCount := 0
+	writeField := func(name string) error {
+		if topFieldCount > 0 {
+			if _, err := bw.WriteString(","); err != nil {
+				return err
+			}
+		}
+		topFieldCount++
+		if err := writeValue(name); err != nil {
+			return err
+		}
+		_, err := bw.WriteString(":")
+		return err
+	}
+
+	writeArrayField := func(name string, writeElems func(func(any) error) error) error {
+		if err := writeField(name); err != nil {
+			return err
+		}
+		if _, err := bw.WriteString("["); err != nil {
+			return err
+		}
+		elemCount := 0
+		if err := writeElems(func(v any) error {
+			if elemCount > 0 {
+				if _, err := bw.WriteString(","); err != nil {
+					return err
+				}
+			}
+			elemCount++
+			return writeValue(v)
+		}); err != nil {
+			return err
+		}
+		_, err := bw.WriteString("]")
+		return err
+	}
+
+	if _, err := bw.WriteString("{"); err != nil {
+		return err
+	}
+	if err := writeField("trace_format_version"); err != nil {
+		return err
+	}
+	if err := writeValue(egraphTraceFormatV1); err != nil {
+		return err
+	}
+	if err := writeField("boot_id"); err != nil {
+		return err
+	}
+	if err := writeValue(c.traceBootID); err != nil {
+		return err
+	}
+	if err := writeField("captured_at_seq"); err != nil {
+		return err
+	}
+	if err := writeValue(atomic.LoadUint64(&c.traceSeq)); err != nil {
+		return err
+	}
+	if err := writeField("captured_at_time"); err != nil {
+		return err
+	}
+	if err := writeValue(time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+
+	resultIDs := make([]sharedResultID, 0, len(c.resultsByID))
+	for resultID := range c.resultsByID {
+		resultIDs = append(resultIDs, resultID)
+	}
+	slices.Sort(resultIDs)
+
+	resultIndexDigests := make([]string, 0, len(c.egraphResultsByDigest))
+	for dig := range c.egraphResultsByDigest {
+		resultIndexDigests = append(resultIndexDigests, dig)
+	}
+	slices.Sort(resultIndexDigests)
+	indexedDigestsByResult := make(map[sharedResultID][]string, len(resultIDs))
+	for _, dig := range resultIndexDigests {
+		for resultID := range c.egraphResultsByDigest[dig] {
+			indexedDigestsByResult[resultID] = append(indexedDigestsByResult[resultID], dig)
+		}
+	}
+
+	if err := writeArrayField("results", func(writeElem func(any) error) error {
+		for _, resultID := range resultIDs {
+			res := c.resultsByID[resultID]
+			if res == nil {
+				continue
+			}
+
+			depIDs := make([]uint64, 0, len(res.deps))
+			for depID := range res.deps {
+				depIDs = append(depIDs, uint64(depID))
+			}
+			slices.Sort(depIDs)
+
+			outputEqIDs := make([]uint64, 0, len(c.resultOutputEqClasses[resultID]))
+			for outputEqID := range c.outputEqClassesForResultLocked(resultID) {
+				outputEqIDs = append(outputEqIDs, uint64(outputEqID))
+			}
+			slices.Sort(outputEqIDs)
+
+			links := append([]PersistedSnapshotRefLink(nil), res.persistedSnapshotLinks...)
+			slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
+				switch {
+				case a.RefKey < b.RefKey:
+					return -1
+				case a.RefKey > b.RefKey:
+					return 1
+				case a.Role < b.Role:
+					return -1
+				case a.Role > b.Role:
+					return 1
+				case a.Slot < b.Slot:
+					return -1
+				case a.Slot > b.Slot:
+					return 1
+				default:
+					return 0
+				}
+			})
+
+			typeName := ""
+			if res.self != nil && res.self.Type() != nil {
+				typeName = res.self.Type().Name()
+			} else if res.objType != nil {
+				typeName = res.objType.Typed().Type().Name()
+			}
+
+			payloadState := "uninitialized"
+			switch {
+			case res.persistedEnvelope != nil && !res.hasValue:
+				payloadState = "imported_lazy_envelope"
+			case res.hasValue && res.self == nil:
+				payloadState = "nil"
+			case res.hasValue:
+				payloadState = "materialized"
+			}
+
+			var recipeDigest string
+			var recipeDigestErr string
+			var contentPreferredDigest string
+			var contentPreferredDigestErr string
+			var inputDigests []string
+			var inputDigestsErr string
+			if res.resultCall != nil {
+				res.resultCall.bindCache(c)
+				if dig, err := res.resultCall.RecipeDigest(); err == nil {
+					recipeDigest = dig.String()
+				} else {
+					recipeDigestErr = err.Error()
+				}
+				if dig, err := res.resultCall.ContentPreferredDigest(); err == nil {
+					contentPreferredDigest = dig.String()
+				} else {
+					contentPreferredDigestErr = err.Error()
+				}
+				if digs, err := res.resultCall.Inputs(); err == nil {
+					inputDigests = make([]string, 0, len(digs))
+					for _, dig := range digs {
+						inputDigests = append(inputDigests, dig.String())
+					}
+				} else {
+					inputDigestsErr = err.Error()
+				}
+			}
+
+			assocTermIDs := make([]uint64, 0, len(c.termIDsForResultLocked(resultID)))
+			for termID := range c.termIDsForResultLocked(resultID) {
+				assocTermIDs = append(assocTermIDs, uint64(termID))
+			}
+			slices.Sort(assocTermIDs)
+
+			persistedEnvelopeKind := ""
+			persistedEnvelopeTypeName := ""
+			if res.persistedEnvelope != nil {
+				persistedEnvelopeKind = res.persistedEnvelope.Kind
+				persistedEnvelopeTypeName = res.persistedEnvelope.TypeName
+			}
+
+			if err := writeElem(CacheDebugResult{
+				EGraphDebugResult: EGraphDebugResult{
+					SharedResultID:        uint64(res.id),
+					OutputEqClassIDs:      outputEqIDs,
+					OutputEffectIDs:       append([]string(nil), res.outputEffectIDs...),
+					RecordType:            res.recordType,
+					Description:           res.description,
+					TypeName:              typeName,
+					RefCount:              atomic.LoadInt64(&res.refCount),
+					HasValue:              res.hasValue,
+					PayloadState:          payloadState,
+					DepOfPersistedResult:  res.depOfPersistedResult,
+					ExplicitDeps:          depIDs,
+					HeldDependencyResults: len(res.heldDependencyResults),
+					SnapshotLinks:         links,
+				},
+				ResultCall:                            res.resultCall,
+				ResultCallRecipeDigest:                recipeDigest,
+				ResultCallRecipeDigestError:           recipeDigestErr,
+				ResultCallContentPreferredDigest:      contentPreferredDigest,
+				ResultCallContentPreferredDigestError: contentPreferredDigestErr,
+				ResultCallInputDigests:                inputDigests,
+				ResultCallInputDigestsError:           inputDigestsErr,
+				AssociatedTermIDs:                     assocTermIDs,
+				IndexedDigests:                        append([]string(nil), indexedDigestsByResult[resultID]...),
+				SafeToPersistCache:                    res.safeToPersistCache,
+				ExpiresAtUnix:                         res.expiresAtUnix,
+				CreatedAtUnixNano:                     res.createdAtUnixNano,
+				LastUsedAtUnixNano:                    res.lastUsedAtUnixNano,
+				SizeEstimateBytes:                     res.sizeEstimateBytes,
+				UsageIdentity:                         res.usageIdentity,
+				PersistedEnvelopeKind:                 persistedEnvelopeKind,
+				PersistedEnvelopeTypeName:             persistedEnvelopeTypeName,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := writeArrayField("result_digest_indexes", func(writeElem func(any) error) error {
+		for _, dig := range resultIndexDigests {
+			resultSet := c.egraphResultsByDigest[dig]
+			if len(resultSet) == 0 {
+				continue
+			}
+			indexedResultIDs := make([]uint64, 0, len(resultSet))
+			for resultID := range resultSet {
+				indexedResultIDs = append(indexedResultIDs, uint64(resultID))
+			}
+			slices.Sort(indexedResultIDs)
+			if err := writeElem(CacheDebugResultDigestIndex{
+				Digest:          dig,
+				SharedResultIDs: indexedResultIDs,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	termIDs := make([]egraphTermID, 0, len(c.egraphTerms))
+	for termID := range c.egraphTerms {
+		termIDs = append(termIDs, termID)
+	}
+	slices.Sort(termIDs)
+	if err := writeArrayField("terms", func(writeElem func(any) error) error {
+		for _, termID := range termIDs {
+			term := c.egraphTerms[termID]
+			if term == nil {
+				continue
+			}
+			inputEqIDs := make([]uint64, 0, len(term.inputEqIDs))
+			for _, in := range term.inputEqIDs {
+				inputEqIDs = append(inputEqIDs, uint64(in))
+			}
+			if err := writeElem(EGraphDebugTerm{
+				TermID:     uint64(term.id),
+				SelfDigest: term.selfDigest.String(),
+				InputEqIDs: inputEqIDs,
+				TermDigest: term.termDigest,
+				OutputEqID: uint64(term.outputEqID),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := writeArrayField("result_terms", func(writeElem func(any) error) error {
+		for _, resultID := range resultIDs {
+			assocTermIDs := make([]egraphTermID, 0, len(c.termIDsForResultLocked(resultID)))
+			for termID := range c.termIDsForResultLocked(resultID) {
+				assocTermIDs = append(assocTermIDs, termID)
+			}
+			if len(assocTermIDs) == 0 {
+				continue
+			}
+			slices.Sort(assocTermIDs)
+			for _, termID := range assocTermIDs {
+				inputProvenance := make([]EGraphDebugInputProvenance, 0, len(c.termInputProvenance[termID]))
+				for _, input := range c.termInputProvenance[termID] {
+					inputProvenance = append(inputProvenance, EGraphDebugInputProvenance{Kind: string(input)})
+				}
+				if err := writeElem(EGraphDebugResultTerm{
+					SharedResultID:  uint64(resultID),
+					TermID:          uint64(termID),
+					InputProvenance: inputProvenance,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	digests := make([]string, 0, len(c.egraphDigestToClass))
+	for dig := range c.egraphDigestToClass {
+		digests = append(digests, dig)
+	}
+	slices.Sort(digests)
+	classMembers := make(map[eqClassID][]string)
+	if err := writeArrayField("digests", func(writeElem func(any) error) error {
+		for _, dig := range digests {
+			root := c.findEqClassLocked(c.egraphDigestToClass[dig])
+			classMembers[root] = append(classMembers[root], dig)
+			if err := writeElem(EGraphDebugDigestMapping{
+				Digest:    dig,
+				EqClassID: uint64(root),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	classIDs := make([]eqClassID, 0, len(classMembers))
+	for classID := range classMembers {
+		classIDs = append(classIDs, classID)
+	}
+	slices.Sort(classIDs)
+	if err := writeArrayField("eq_classes", func(writeElem func(any) error) error {
+		for _, classID := range classIDs {
+			members := append([]string(nil), classMembers[classID]...)
+			slices.Sort(members)
+			if err := writeElem(EGraphDebugEqClass{
+				EqClassID: uint64(classID),
+				Digests:   members,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if len(c.ongoingCalls) > 0 {
+		if err := writeArrayField("ongoing_calls", func(writeElem func(any) error) error {
+			keys := make([]callConcurrencyKeys, 0, len(c.ongoingCalls))
+			for key := range c.ongoingCalls {
+				keys = append(keys, key)
+			}
+			slices.SortFunc(keys, func(a, b callConcurrencyKeys) int {
+				switch {
+				case a.callKey < b.callKey:
+					return -1
+				case a.callKey > b.callKey:
+					return 1
+				case a.concurrencyKey < b.concurrencyKey:
+					return -1
+				case a.concurrencyKey > b.concurrencyKey:
+					return 1
+				default:
+					return 0
+				}
+			})
+			for _, key := range keys {
+				call := c.ongoingCalls[key]
+				if call == nil {
+					continue
+				}
+				completed := false
+				select {
+				case <-call.waitCh:
+					completed = true
+				default:
+				}
+				entry := CacheDebugOngoingCall{
+					CallKey:        key.callKey,
+					ConcurrencyKey: key.concurrencyKey,
+					Waiters:        call.waiters,
+					IsPersistable:  call.isPersistable,
+					TTLSeconds:     call.ttlSeconds,
+					Completed:      completed,
+				}
+				if call.err != nil {
+					entry.Error = call.err.Error()
+				}
+				if call.res != nil {
+					entry.SharedResultID = uint64(call.res.id)
+					entry.ResultDescription = call.res.description
+					entry.ResultRecordType = call.res.recordType
+					if call.res.self != nil && call.res.self.Type() != nil {
+						entry.ResultTypeName = call.res.self.Type().Name()
+					} else if call.res.objType != nil {
+						entry.ResultTypeName = call.res.objType.Typed().Type().Name()
+					}
+				}
+				if err := writeElem(entry); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	if len(c.ongoingArbitraryCalls) > 0 {
+		if err := writeArrayField("ongoing_arbitrary_calls", func(writeElem func(any) error) error {
+			keys := make([]string, 0, len(c.ongoingArbitraryCalls))
+			for key := range c.ongoingArbitraryCalls {
+				keys = append(keys, key)
+			}
+			slices.Sort(keys)
+			for _, key := range keys {
+				call := c.ongoingArbitraryCalls[key]
+				if call == nil {
+					continue
+				}
+				completed := false
+				select {
+				case <-call.waitCh:
+					completed = true
+				default:
+				}
+				entry := CacheDebugArbitraryCall{
+					CallKey:   key,
+					Waiters:   call.waiters,
+					RefCount:  call.refCount,
+					Completed: completed,
+					HasValue:  call.value != nil,
+				}
+				if call.value != nil {
+					entry.ValueType = fmt.Sprintf("%T", call.value)
+				}
+				if call.err != nil {
+					entry.Error = call.err.Error()
+				}
+				if err := writeElem(entry); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	if len(c.completedArbitraryCalls) > 0 {
+		if err := writeArrayField("completed_arbitrary_calls", func(writeElem func(any) error) error {
+			keys := make([]string, 0, len(c.completedArbitraryCalls))
+			for key := range c.completedArbitraryCalls {
+				keys = append(keys, key)
+			}
+			slices.Sort(keys)
+			for _, key := range keys {
+				call := c.completedArbitraryCalls[key]
+				if call == nil {
+					continue
+				}
+				entry := CacheDebugArbitraryCall{
+					CallKey:   key,
+					Waiters:   call.waiters,
+					RefCount:  call.refCount,
+					Completed: true,
+					HasValue:  call.value != nil,
+				}
+				if call.value != nil {
+					entry.ValueType = fmt.Sprintf("%T", call.value)
+				}
+				if call.err != nil {
+					entry.Error = call.err.Error()
+				}
+				if err := writeElem(entry); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	if _, err := bw.WriteString("}"); err != nil {
+		return err
+	}
+	return bw.Flush()
 }

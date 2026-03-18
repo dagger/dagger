@@ -41,3 +41,15 @@ Load on-demand for specific tasks:
 
 - **[debugging.md](references/debugging.md)** - Practical debugging loop and instrumentation points
 - **[filesync.md](references/filesync.md)** - Host filesystem sync internals and filesync cache model
+
+## Scripts
+
+- `scripts/dagql-cache-analyzer.go`
+  Analyze `/debug/dagql/cache` snapshot dumps offline and summarize retained
+  roots, result categories, and approximate cumulative closures.
+
+  Usage:
+
+  ```bash
+  go run ./skills/cache-expert/scripts/dagql-cache-analyzer.go /tmp/dagql.cache.1
+  ```

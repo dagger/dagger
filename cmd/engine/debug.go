@@ -70,6 +70,16 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 			return
 		}
 	}))
+	m.Handle("/debug/dagql/cache", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if eng == nil {
+			http.Error(rw, "engine server not available", http.StatusServiceUnavailable)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		if err := eng.WriteDagqlCacheDebugSnapshot(rw); err != nil {
+			logrus.WithError(err).Warn("failed streaming dagql cache debug snapshot")
+		}
+	}))
 
 	// setting debugaddr is opt-in. permission is defined by listener address
 	trace.AuthRequest = func(_ *http.Request) (bool, bool) {
