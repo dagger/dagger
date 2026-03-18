@@ -123,47 +123,31 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		return false, err
 	}
 
-	// Handle OAuth flows (they manage saving internally but we need to
-	// ensure they merge into the existing config).
+	// Each flow returns (configKey, *Provider, selectedModel).
+	var (
+		configKey     string
+		providerCfg   *Provider
+		selectedModel string
+	)
 	switch providerChoice {
 	case "anthropic-oauth":
-		return setupClaudeCodeOAuth(ctx, promptHandler)
+		configKey, providerCfg, selectedModel, err = setupClaudeCodeOAuth(ctx, promptHandler)
 	case "openai-codex":
-		return setupOpenAICodexOAuth(ctx, promptHandler)
+		configKey, providerCfg, selectedModel, err = setupOpenAICodexOAuth(ctx, promptHandler)
+	default:
+		configKey = providerChoice
+		providerCfg, selectedModel, err = setupAPIKeyProvider(ctx, promptHandler, providerChoice)
 	}
-
-	// API-key flow for the selected provider.
-	providerCfg, selectedModel, err := setupAPIKeyProvider(ctx, promptHandler, providerChoice)
 	if err != nil {
 		return false, err
 	}
 
 	// Merge into existing config.
-	cfg.LLM.Providers[providerChoice] = *providerCfg
+	cfg.LLM.Providers[configKey] = *providerCfg
 
-	// Set as default if it's the first provider or update the default.
-	if cfg.LLM.DefaultProvider == "" || cfg.LLM.DefaultProvider == providerChoice {
-		cfg.LLM.DefaultProvider = providerChoice
-		cfg.LLM.DefaultModel = selectedModel
-	} else {
-		// Ask whether to make this the new default.
-		var setDefault bool
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Set as default provider?").
-					Description(fmt.Sprintf("Current default is %q. Use %q instead?",
-						cfg.LLM.DefaultProvider, providerChoice)).
-					Value(&setDefault),
-			),
-		)
-		if err := checkAbort(promptHandler.HandleForm(ctx, form)); err != nil {
-			return false, err
-		}
-		if setDefault {
-			cfg.LLM.DefaultProvider = providerChoice
-			cfg.LLM.DefaultModel = selectedModel
-		}
+	// Set as default, or ask if another default already exists.
+	if err := promptSetDefault(ctx, promptHandler, cfg, configKey, selectedModel); err != nil {
+		return false, err
 	}
 
 	if err := cfg.Save(); err != nil {
@@ -512,13 +496,12 @@ func validateNonEmpty(label string) func(string) error {
 	}
 }
 
-// setupClaudeCodeOAuth guides the user through the Claude Code OAuth flow.
-// This allows using a Claude Pro/Max subscription instead of an API key.
-func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
-	// Generate the OAuth URL
+// setupClaudeCodeOAuth guides the user through the Claude Code OAuth flow
+// and returns the config key, provider config, and selected model.
+func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (string, *Provider, string, error) {
 	authURL, verifier, err := GenerateOAuthURL()
 	if err != nil {
-		return false, fmt.Errorf("failed to generate OAuth URL: %w", err)
+		return "", nil, "", fmt.Errorf("failed to generate OAuth URL: %w", err)
 	}
 
 	// Print the URL above the TUI if supported, so it's not word-wrapped
@@ -549,62 +532,36 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
 		),
 	)
 	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
-		return false, err
+		return "", nil, "", err
 	}
 	if authCode == "" {
-		return false, ErrAborted
+		return "", nil, "", ErrAborted
 	}
 
-	// Exchange the code for tokens
 	providerCfg, err := ExchangeOAuthCode(authCode, verifier)
 	if err != nil {
-		return false, fmt.Errorf("OAuth token exchange failed: %w", err)
-	}
-
-	// Load existing config or create new one
-	cfg, err := Load()
-	if err != nil || cfg == nil {
-		cfg = &Config{}
-	}
-
-	if cfg.LLM.Providers == nil {
-		cfg.LLM.Providers = make(map[string]Provider)
+		return "", nil, "", fmt.Errorf("OAuth token exchange failed: %w", err)
 	}
 
 	defaultModel := DefaultModelForProvider("anthropic")
-
-	// Let user pick a model
 	selectedModel, err := promptModelSelection(ctx, ph, "anthropic", defaultModel)
 	if err != nil {
-		return false, err
+		return "", nil, "", err
 	}
 
-	// Optionally configure thinking
 	if err := promptThinkingConfig(ctx, ph, "anthropic", selectedModel, providerCfg); err != nil {
-		return false, err
+		return "", nil, "", err
 	}
 
-	cfg.LLM.Providers["anthropic"] = *providerCfg
-
-	// Set as default, or ask if another default already exists.
-	if err := promptSetDefault(ctx, ph, cfg, "anthropic", selectedModel); err != nil {
-		return false, err
-	}
-
-	if err := cfg.Save(); err != nil {
-		return false, fmt.Errorf("failed to save config: %w", err)
-	}
-
-	return true, nil
+	return "anthropic", providerCfg, selectedModel, nil
 }
 
-// setupOpenAICodexOAuth guides the user through the OpenAI Codex OAuth flow.
-// This allows using a ChatGPT Plus/Pro subscription instead of an API key.
-func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) {
-	// Generate the OAuth URL
+// setupOpenAICodexOAuth guides the user through the OpenAI Codex OAuth flow
+// and returns the config key, provider config, and selected model.
+func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Provider, string, error) {
 	authURL, verifier, state, err := GenerateOpenAIOAuthURL()
 	if err != nil {
-		return false, fmt.Errorf("failed to generate OAuth URL: %w", err)
+		return "", nil, "", fmt.Errorf("failed to generate OAuth URL: %w", err)
 	}
 
 	// Start local callback server
@@ -623,7 +580,6 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 	if serverErr == nil {
 		defer callbackServer.Close()
 
-		// Race between browser callback and manual paste
 		codeCh := make(chan string, 1)
 		go func() {
 			codeCh <- callbackServer.WaitForCode(ctx)
@@ -648,7 +604,6 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 			),
 		)
 
-		// Run form in background — if browser callback fires first, we use that
 		formDone := make(chan error, 1)
 		go func() {
 			formDone <- ph.HandleForm(ctx, form)
@@ -661,19 +616,17 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 			}
 		case err := <-formDone:
 			if err != nil {
-				return false, err
+				return "", nil, "", err
 			}
 			if manualCode != "" {
 				code = parseOpenAIAuthInput(manualCode)
 			}
 		}
 
-		// If browser callback didn't fire yet and we got manual input, use it
 		if code == "" && manualCode != "" {
 			code = parseOpenAIAuthInput(manualCode)
 		}
 	} else {
-		// No callback server — fall back to manual paste only
 		description := "After authorizing, paste the code or redirect URL below."
 		if _, ok := ph.(AbovePrinter); !ok {
 			description = fmt.Sprintf(
@@ -694,58 +647,33 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (bool, error) 
 			),
 		)
 		if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
-			return false, err
+			return "", nil, "", err
 		}
 		code = parseOpenAIAuthInput(manualCode)
 	}
 
 	if code == "" {
-		return false, fmt.Errorf("no authorization code received")
+		return "", nil, "", fmt.Errorf("no authorization code received")
 	}
 
-	// Exchange the code for tokens
 	providerCfg, err := ExchangeOpenAIOAuthCode(code, verifier)
 	if err != nil {
-		return false, fmt.Errorf("OAuth token exchange failed: %w", err)
-	}
-
-	// Load existing config or create new one
-	cfg, err := Load()
-	if err != nil || cfg == nil {
-		cfg = &Config{}
-	}
-
-	if cfg.LLM.Providers == nil {
-		cfg.LLM.Providers = make(map[string]Provider)
+		return "", nil, "", fmt.Errorf("OAuth token exchange failed: %w", err)
 	}
 
 	providerCfg.SubscriptionType = "chatgpt"
 
 	defaultModel := DefaultModelForProvider("openai-codex")
-
-	// Let user pick a model
 	selectedModel, err := promptModelSelection(ctx, ph, "openai-codex", defaultModel)
 	if err != nil {
-		return false, err
+		return "", nil, "", err
 	}
 
-	// Optionally configure reasoning effort
 	if err := promptThinkingConfig(ctx, ph, "openai-codex", selectedModel, providerCfg); err != nil {
-		return false, err
+		return "", nil, "", err
 	}
 
-	cfg.LLM.Providers["openai-codex"] = *providerCfg
-
-	// Set as default, or ask if another default already exists.
-	if err := promptSetDefault(ctx, ph, cfg, "openai-codex", selectedModel); err != nil {
-		return false, err
-	}
-
-	if err := cfg.Save(); err != nil {
-		return false, fmt.Errorf("failed to save config: %w", err)
-	}
-
-	return true, nil
+	return "openai-codex", providerCfg, selectedModel, nil
 }
 
 // promptSetDefault sets the given provider as default, or asks the user
