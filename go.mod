@@ -99,7 +99,6 @@ require (
 	github.com/jackpal/gateway v1.1.1
 	github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
-	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
 	github.com/klauspost/compress v1.18.0
 	github.com/koron-go/prefixw v1.0.2
@@ -202,10 +201,12 @@ require (
 	resenje.org/singleflight v0.4.3
 )
 
-require github.com/openai/openai-go/v3 v3.26.0
+require (
+	charm.land/catwalk v0.30.7
+	github.com/openai/openai-go/v3 v3.26.0
+)
 
 require (
-	charm.land/catwalk v0.30.4 // indirect
 	github.com/charmbracelet/x/etag v0.2.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 )
