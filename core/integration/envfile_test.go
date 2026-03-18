@@ -538,6 +538,33 @@ func (m *Dep) Bar(
 	require.Equal(t, "doodoo", string(decodeOutput))
 }
 
+// Test that dagger init succeeds when .env is a directory, not a file
+func (EnvFileSuite) TestEnvDirectory(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	// Create .env as a directory instead of a file
+	require.NoError(t, os.Mkdir(filepath.Join(modDir, ".env"), 0755))
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+}
+
+// Test that dagger init succeeds when a parent directory contains a .env directory
+func (EnvFileSuite) TestEnvDirectoryInParent(ctx context.Context, t *testctx.T) {
+	parentDir := t.TempDir()
+
+	// Create .env as a directory in the parent
+	require.NoError(t, os.Mkdir(filepath.Join(parentDir, ".env"), 0755))
+
+	modDir := filepath.Join(parentDir, "mymod")
+	require.NoError(t, os.Mkdir(modDir, 0755))
+
+	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initOutput, err := initCmd.CombinedOutput()
+	require.NoError(t, err, string(initOutput))
+}
+
 func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ef := c.File(".env", "FOO=bar").AsEnvFile().

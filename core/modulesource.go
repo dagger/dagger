@@ -367,6 +367,10 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 			},
 		},
 	); err != nil {
+		// If .env exists but is a directory, skip it gracefully
+		if strings.Contains(err.Error(), "is a directory, not a file") {
+			return nil, "", nil
+		}
 		return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
 	}
 	return envFile, envFilePath, nil
@@ -405,6 +409,10 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 			},
 		},
 	); err != nil {
+		// If .env exists but is a directory, skip it gracefully
+		if strings.Contains(err.Error(), "is a directory, not a file") {
+			return &EnvFile{}, "", nil
+		}
 		return nil, envFilePath.String(), fmt.Errorf("failed to load outer env file from %q: %s", envFilePath.String(), err.Error())
 	}
 	return envFile, envFilePath.String(), nil
