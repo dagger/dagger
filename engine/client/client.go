@@ -1402,7 +1402,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		ConfigPath:                llmconfig.ConfigFile,
-		LLMConfig:                 loadLLMConfig(),
+		LLMConfig:                 loadLLMEnvConfig(),
 		AllowedLLMModules:         c.AllowedLLMModules,
 		EagerRuntime:              c.EagerRuntime,
 		CloudAuth:                 c.CloudAuth,
@@ -1411,18 +1411,12 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 }
 
-// loadLLMConfig loads the LLM config file and merges environment variable
-// overrides.  Returns nil if no configuration is available.
-func loadLLMConfig() *llmconfig.LLMConfig {
-	cfg, err := llmconfig.Load()
-	if err != nil {
-		cfg = &llmconfig.Config{}
-	}
-	if cfg == nil {
-		cfg = &llmconfig.Config{}
-	}
-	cfg = llmconfig.MergeEnvVars(cfg)
-	if len(cfg.LLM.Providers) == 0 && cfg.LLM.DefaultProvider == "" {
+// loadLLMEnvConfig packages LLM-related environment variables into an
+// LLMConfig.  Returns nil when no env vars are set.  The engine merges
+// this on top of the config file read via ConfigPath.
+func loadLLMEnvConfig() *llmconfig.LLMConfig {
+	cfg := llmconfig.MergeEnvVars(nil)
+	if len(cfg.LLM.Providers) == 0 {
 		return nil
 	}
 	return &cfg.LLM

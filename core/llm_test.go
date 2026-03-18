@@ -60,81 +60,90 @@ func newTestServer(t *testing.T, secrets map[string]string) *dagql.Server {
 	return srv
 }
 
-func TestLlmConfigFromMetadata(t *testing.T) {
+func TestLlmConfigFromEnvOverlay(t *testing.T) {
+	// Simulate: client sends env-var overrides in LLMConfig, no config file.
 	srv := newTestServer(t, nil)
 
-	// Simulate a client passing a fully-merged LLMConfig via metadata.
-	llmCfg := &llmconfig.LLMConfig{
-		DefaultProvider: "anthropic",
-		DefaultModel:    "claude-sonnet-4-6",
+	envCfg := &llmconfig.LLMConfig{
 		Providers: map[string]llmconfig.Provider{
-			"anthropic": {
-				APIKey:  "anthropic-api-key",
-				BaseURL: "anthropic-base-url",
-				Model:   "anthropic-model",
-				Enabled: true,
-			},
-			"openai": {
-				APIKey:          "openai-api-key",
-				AzureVersion:    "openai-azure-version",
-				BaseURL:         "openai-base-url",
-				Model:           "openai-model",
-				DisableStreaming: true,
-				Enabled:         true,
-			},
-			"google": {
-				APIKey:  "gemini-api-key",
-				BaseURL: "gemini-base-url",
-				Model:   "gemini-model",
-				Enabled: true,
-			},
+			"anthropic": {APIKey: "env-key", BaseURL: "env-url", Model: "env-model"},
+			"openai":    {APIKey: "oai-key", AzureVersion: "v1", BaseURL: "oai-url", Model: "oai-model", DisableStreaming: true},
+			"google":    {APIKey: "gem-key", BaseURL: "gem-url", Model: "gem-model"},
 		},
 	}
 
 	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-		LLMConfig: llmCfg,
+		LLMConfig: envCfg,
 	})
 
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 
-	anthropic := r.provider("anthropic")
-	assert.Equal(t, "anthropic-api-key", anthropic.APIKey)
-	assert.Equal(t, "anthropic-base-url", anthropic.BaseURL)
-	assert.Equal(t, "anthropic-model", anthropic.Model)
+	assert.Equal(t, "env-key", r.provider("anthropic").APIKey)
+	assert.Equal(t, "env-url", r.provider("anthropic").BaseURL)
+	assert.Equal(t, "env-model", r.provider("anthropic").Model)
 
-	openai := r.provider("openai")
-	assert.Equal(t, "openai-api-key", openai.APIKey)
-	assert.Equal(t, "openai-azure-version", openai.AzureVersion)
-	assert.Equal(t, "openai-base-url", openai.BaseURL)
-	assert.Equal(t, "openai-model", openai.Model)
-	assert.True(t, openai.DisableStreaming)
+	assert.Equal(t, "oai-key", r.provider("openai").APIKey)
+	assert.Equal(t, "v1", r.provider("openai").AzureVersion)
+	assert.Equal(t, "oai-url", r.provider("openai").BaseURL)
+	assert.Equal(t, "oai-model", r.provider("openai").Model)
+	assert.True(t, r.provider("openai").DisableStreaming)
 
-	google := r.provider("google")
-	assert.Equal(t, "gemini-api-key", google.APIKey)
-	assert.Equal(t, "gemini-base-url", google.BaseURL)
-	assert.Equal(t, "gemini-model", google.Model)
+	assert.Equal(t, "gem-key", r.provider("google").APIKey)
+	assert.Equal(t, "gem-url", r.provider("google").BaseURL)
+	assert.Equal(t, "gem-model", r.provider("google").Model)
+}
+
+func TestLlmConfigMerge(t *testing.T) {
+	// Test that mergeLLMConfigs correctly overlays env vars onto file config.
+	base := &llmconfig.LLMConfig{
+		DefaultProvider: "anthropic",
+		DefaultModel:    "claude-sonnet-4-6",
+		Providers: map[string]llmconfig.Provider{
+			"anthropic": {APIKey: "file-key", BaseURL: "file-url", Enabled: true, ThinkingMode: "adaptive"},
+			"openai":    {APIKey: "file-oai-key", Enabled: true},
+		},
+	}
+	overlay := &llmconfig.LLMConfig{
+		Providers: map[string]llmconfig.Provider{
+			"anthropic": {APIKey: "env-key"},          // override APIKey only
+			"google":    {APIKey: "env-gem", Model: "gem-2"}, // new provider from env
+		},
+	}
+
+	merged := mergeLLMConfigs(base, overlay)
+
+	// Anthropic: env key overrides, file fields preserved.
+	assert.Equal(t, "env-key", merged.Providers["anthropic"].APIKey)
+	assert.Equal(t, "file-url", merged.Providers["anthropic"].BaseURL)
+	assert.True(t, merged.Providers["anthropic"].Enabled)
+	assert.Equal(t, "adaptive", merged.Providers["anthropic"].ThinkingMode)
+
+	// OpenAI: untouched by overlay.
+	assert.Equal(t, "file-oai-key", merged.Providers["openai"].APIKey)
+
+	// Google: new from env.
+	assert.Equal(t, "env-gem", merged.Providers["google"].APIKey)
+	assert.Equal(t, "gem-2", merged.Providers["google"].Model)
+
+	// File-level defaults preserved.
+	assert.Equal(t, "anthropic", merged.DefaultProvider)
+	assert.Equal(t, "claude-sonnet-4-6", merged.DefaultModel)
 }
 
 func TestLlmConfigSecretRefResolution(t *testing.T) {
-	// Secret references in API keys should be resolved by the engine.
 	srv := newTestServer(t, map[string]string{
 		"op://vault/item/key": "resolved-secret-key",
 	})
 
-	llmCfg := &llmconfig.LLMConfig{
-		DefaultProvider: "anthropic",
-		DefaultModel:    "claude-sonnet-4-6",
+	envCfg := &llmconfig.LLMConfig{
 		Providers: map[string]llmconfig.Provider{
-			"anthropic": {
-				APIKey:  "op://vault/item/key",
-				Enabled: true,
-			},
+			"anthropic": {APIKey: "op://vault/item/key"},
 		},
 	}
 
 	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-		LLMConfig: llmCfg,
+		LLMConfig: envCfg,
 	})
 
 	r, err := NewLLMRouter(ctx, srv)
@@ -142,35 +151,12 @@ func TestLlmConfigSecretRefResolution(t *testing.T) {
 	assert.Equal(t, "resolved-secret-key", r.provider("anthropic").APIKey)
 }
 
-func TestLlmConfigDisableStreaming(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		disable  bool
-		expected bool
-	}{
-		{"not disabled by default", false, false},
-		{"disabled", true, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			srv := newTestServer(t, nil)
+func TestLlmConfigMergeNils(t *testing.T) {
+	assert.Nil(t, mergeLLMConfigs(nil, nil))
 
-			llmCfg := &llmconfig.LLMConfig{
-				Providers: map[string]llmconfig.Provider{
-					"openai": {
-						APIKey:          "key",
-						DisableStreaming: tc.disable,
-						Enabled:         true,
-					},
-				},
-			}
+	base := &llmconfig.LLMConfig{DefaultProvider: "x"}
+	assert.Equal(t, "x", mergeLLMConfigs(base, nil).DefaultProvider)
 
-			ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-				LLMConfig: llmCfg,
-			})
-
-			r, err := NewLLMRouter(ctx, srv)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, r.provider("openai").DisableStreaming)
-		})
-	}
+	overlay := &llmconfig.LLMConfig{DefaultProvider: "y"}
+	assert.Equal(t, "y", mergeLLMConfigs(nil, overlay).DefaultProvider)
 }

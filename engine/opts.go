@@ -91,10 +91,10 @@ type ClientMetadata struct {
 	// Used for writing back OAuth token refreshes.
 	ConfigPath string `json:"config_path,omitempty"`
 
-	// LLMConfig is the fully-merged LLM configuration, resolved client-side
-	// from the config file and environment variables.  API keys that are
-	// secret references (op://, vault://, etc.) are left unresolved for the
-	// engine to handle via the secret provider system.
+	// LLMConfig carries LLM provider configuration derived from environment
+	// variables on the client host.  The engine merges this on top of the
+	// config file (read via ConfigPath) so that env vars override file values.
+	// Secret references (op://, vault://, etc.) are resolved engine-side.
 	LLMConfig *llmconfig.LLMConfig `json:"llm_config,omitempty"`
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.

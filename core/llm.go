@@ -891,32 +891,80 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	// The client merges the config file + env vars and passes the result
-	// in ClientMetadata.LLMConfig.  If that's available, use it directly.
-	// Fall back to reading the config file from the client's filesystem
-	// for backward compat with older clients.
-	var llmCfg *llmconfig.LLMConfig
+	// 1. Load config file from the client's filesystem (base layer).
+	fileCfg := loadLLMConfigFromPath(ctx, srv)
+
+	// 2. The client sends env-var overrides in LLMConfig (top layer).
+	var envCfg *llmconfig.LLMConfig
 	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		llmCfg = md.LLMConfig
+		envCfg = md.LLMConfig
 	}
 
-	if llmCfg == nil {
-		// Backward compat: older clients only send ConfigPath.
-		llmCfg = loadLLMConfigFromPath(ctx, srv)
-	}
-
-	if llmCfg != nil {
-		// Resolve API keys that may be secret references (op://, vault://, etc.).
-		resolveSecretRefs(ctx, srv, llmCfg)
-		router.LoadFromConfig(&llmconfig.Config{LLM: *llmCfg})
+	// Merge: start from the file config, overlay env var providers.
+	merged := mergeLLMConfigs(fileCfg, envCfg)
+	if merged != nil {
+		resolveSecretRefs(ctx, srv, merged)
+		router.LoadFromConfig(&llmconfig.Config{LLM: *merged})
 	}
 
 	return router, nil
 }
 
+// mergeLLMConfigs merges a base config (from file) with env-var overrides.
+// Env-var provider fields override file values when non-zero.
+// Returns nil if both inputs are nil.
+func mergeLLMConfigs(base, overlay *llmconfig.LLMConfig) *llmconfig.LLMConfig {
+	if base == nil && overlay == nil {
+		return nil
+	}
+	if base == nil {
+		base = &llmconfig.LLMConfig{}
+	}
+	if overlay == nil {
+		return base
+	}
+
+	// Start from a copy of the base.
+	merged := *base
+	if merged.Providers == nil {
+		merged.Providers = make(map[string]llmconfig.Provider)
+	}
+
+	// Overlay each provider's non-zero fields.
+	for name, op := range overlay.Providers {
+		bp := merged.Providers[name]
+		if op.APIKey != "" {
+			bp.APIKey = op.APIKey
+			bp.Enabled = true // env-var credentials imply enabled
+		}
+		if op.BaseURL != "" {
+			bp.BaseURL = op.BaseURL
+		}
+		if op.Model != "" {
+			bp.Model = op.Model
+		}
+		if op.AzureVersion != "" {
+			bp.AzureVersion = op.AzureVersion
+		}
+		if op.DisableStreaming {
+			bp.DisableStreaming = true
+		}
+		merged.Providers[name] = bp
+	}
+
+	// Overlay-level defaults don't override file-level defaults.
+	if overlay.DefaultProvider != "" && merged.DefaultProvider == "" {
+		merged.DefaultProvider = overlay.DefaultProvider
+	}
+	if overlay.DefaultModel != "" && merged.DefaultModel == "" {
+		merged.DefaultModel = overlay.DefaultModel
+	}
+
+	return &merged
+}
+
 // loadLLMConfigFromPath reads the config file from the client's filesystem
-// via the secret provider.  Used as a fallback when the client doesn't send
-// the pre-merged LLMConfig.
+// via the secret provider (base layer).
 func loadLLMConfigFromPath(ctx context.Context, srv *dagql.Server) *llmconfig.LLMConfig {
 	configPath := ""
 	if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md.ConfigPath != "" {
