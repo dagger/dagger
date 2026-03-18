@@ -136,6 +136,13 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "myroot").
 		WithEnvVariable("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200").
 		WithEnvVariable("SKIP_SETCAP", "1").
+		WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{
+			Interval:      "1s",
+			Timeout:       "5s",
+			StartPeriod:   "30s",
+			StartInterval: "1s",
+			Retries:       30,
+		}).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{"vault", "server", "-dev"},
 		}).Start(ctx)
@@ -149,7 +156,6 @@ func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithEnvVariable("VAULT_TOKEN", "myroot").
 		WithEnvVariable("NOCACHE", time.Now().String()).
-		WithExec([]string{"sleep", "5"}). // Wait for server to be ready
 		WithExec([]string{"vault", "kv", "put", "/secret/testsecret", "foo=" + secretValue}).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -204,8 +210,9 @@ func (SecretProvider) TestVaultOIDCFallbackError(ctx context.Context, t *testctx
 		"vault://testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
-	requireErrOut(t, err, "Vault OIDC login failed")
+	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
 	requireErrRegexp(t, err, `(?i)(oidc/auth_url|OIDC auth URL)`)
+	requireErrRegexp(t, err, `(?i)permission denied`)
 }
 
 func (SecretProvider) TestVaultOIDCMissingVaultAddr(ctx context.Context, t *testctx.T) {
@@ -282,8 +289,9 @@ func (SecretProvider) TestVaultOIDCExpiredCachedToken(ctx context.Context, t *te
 		"vault://testsecret.foo",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
-	requireErrOut(t, err, "Vault OIDC login failed")
+	requireErrRegexp(t, err, `(?i)vault oidc login failed`)
 	requireErrRegexp(t, err, `(?i)(oidc/auth_url|OIDC auth URL)`)
+	requireErrRegexp(t, err, `(?i)permission denied`)
 }
 
 func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
@@ -415,6 +423,13 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 				From("hashicorp/vault").
 				WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "vault-root-token").
 				WithEnvVariable("VAULT_LOG_LEVEL", "debug").
+				WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{
+					Interval:      "1s",
+					Timeout:       "5s",
+					StartPeriod:   "30s",
+					StartInterval: "1s",
+					Retries:       30,
+				}).
 				WithExposedPort(8200).
 				AsService(dagger.ContainerAsServiceOpts{
 					UseEntrypoint:                 true,
@@ -668,7 +683,6 @@ func seedVaultSecret(ctx context.Context, t *testctx.T, vaultImage *dagger.Conta
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithEnvVariable("VAULT_TOKEN", "myroot").
 		WithEnvVariable("NOCACHE", time.Now().String()).
-		WithExec([]string{"sleep", "5"}).
 		WithExec([]string{"vault", "kv", "put", "/secret/" + path, field + "=" + value}).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -715,6 +729,13 @@ staticPasswords:
 		From("dexidp/dex:v2.37.0").
 		WithNewFile("/etc/dex/config.yaml", dexConfig).
 		WithExposedPort(5556).
+		WithDockerHealthcheck([]string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"}, dagger.ContainerWithDockerHealthcheckOpts{
+			Interval:      "1s",
+			Timeout:       "5s",
+			StartPeriod:   "30s",
+			StartInterval: "1s",
+			Retries:       30,
+		}).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{"dex", "serve", "/etc/dex/config.yaml"},
 		}).Start(ctx)
@@ -730,14 +751,6 @@ func configureVaultOIDC(ctx context.Context, t *testctx.T, vaultImage *dagger.Co
 		WithEnvVariable("VAULT_SKIP_VERIFY", "1").
 		WithServiceBinding("vault", vaultServer).
 		WithServiceBinding("dex", dex).
-		WithExec([]string{"sh", "-c", `for i in $(seq 1 30); do
-  if vault status >/dev/null 2>&1; then
-    exit 0
-  fi
-  sleep 1
-done
-echo "Vault did not become ready in time" >&2
-exit 1`}).
 		WithExec([]string{"vault", "auth", "enable", "oidc"}).
 		WithExec([]string{"sh", "-c", `cat >/tmp/oidc-read.hcl <<'EOF'
 path "secret/data/oidctest" {
