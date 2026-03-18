@@ -79,31 +79,17 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 	}
 
 	// Build provider menu with status indicators.
-	type providerEntry struct {
-		label    string
-		value    string
-		configKey string   // key in cfg.LLM.Providers
-		wantOAuth bool     // true if this entry expects OAuth auth
-	}
-	entries := []providerEntry{
-		{"Anthropic (API key)", "anthropic", "anthropic", false},
-		{"Anthropic (Claude Code OAuth)", "anthropic-oauth", "anthropic", true},
-		{"Google (Gemini)", "google", "google", false},
-		{"OpenAI (API key)", "openai", "openai", false},
-		{"OpenAI Codex (ChatGPT subscription)", "openai-codex", "openai-codex", true},
-		{"OpenRouter", "openrouter", "openrouter", false},
-	}
-
+	entries := ProviderEntries()
 	opts := make([]huh.Option[string], 0, len(entries))
 	for _, e := range entries {
-		label := e.label
-		if p, ok := cfg.LLM.Providers[e.configKey]; ok && p.Enabled {
+		label := e.Label
+		if p, ok := cfg.LLM.Providers[e.ConfigKey]; ok && p.Enabled {
 			// Only show checkmark if the auth type matches this entry.
-			if e.wantOAuth == p.IsOAuth() {
+			if e.IsOAuth == p.IsOAuth() {
 				label += " \033[1;32m" + idtui.IconSuccess + " " + providerSummary(p) + "\033[0m"
 			}
 		}
-		opts = append(opts, huh.NewOption(label, e.value))
+		opts = append(opts, huh.NewOption(label, e.Value))
 	}
 
 	var providerChoice string

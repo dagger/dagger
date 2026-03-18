@@ -25,13 +25,42 @@ type ModelInfo struct {
 	Default bool
 }
 
+// ProviderEntry describes a provider option for the setup UI.
+type ProviderEntry struct {
+	// Label is the human-readable name shown in the selector.
+	Label string
+	// Value is the choice identifier used in the setup switch.
+	Value string
+	// ConfigKey is the key in Config.LLM.Providers (may differ from Value
+	// for OAuth variants, e.g. "anthropic-oauth" → "anthropic").
+	ConfigKey string
+	// IsOAuth is true if this entry expects OAuth authentication.
+	IsOAuth bool
+}
+
+// providerEntries is the ordered list of provider options for setup.
+// Derived from the catalog keys plus OAuth variants.
+var providerEntries = []ProviderEntry{
+	{"Anthropic (API key)", "anthropic", "anthropic", false},
+	{"Anthropic (Claude Code OAuth)", "anthropic-oauth", "anthropic", true},
+	{"Google (Gemini)", "google", "google", false},
+	{"OpenAI (API key)", "openai", "openai", false},
+	{"OpenAI Codex (ChatGPT subscription)", "openai-codex", "openai-codex", true},
+	{"OpenRouter", "openrouter", "openrouter", false},
+}
+
+// ProviderEntries returns the ordered list of provider options for setup UIs.
+func ProviderEntries() []ProviderEntry {
+	return providerEntries
+}
+
 // catwalkProviderID maps our provider keys to catwalk provider IDs.
 var catwalkProviderID = map[string]catwalk.InferenceProvider{
-	"anthropic":   catwalk.InferenceProviderAnthropic,
-	"openai":      catwalk.InferenceProviderOpenAI,
+	"anthropic":    catwalk.InferenceProviderAnthropic,
+	"openai":       catwalk.InferenceProviderOpenAI,
 	"openai-codex": catwalk.InferenceProviderOpenAI,
-	"google":      catwalk.InferenceProviderGemini,
-	"openrouter":  catwalk.InferenceProviderOpenRouter,
+	"google":       catwalk.InferenceProviderGemini,
+	"openrouter":   catwalk.InferenceProviderOpenRouter,
 }
 
 var (
