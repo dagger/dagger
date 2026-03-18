@@ -271,6 +271,11 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		if inst.Self() == nil {
 			return nil
 		}
+		if !inst.Self().Source.Valid {
+			// Bare dag.module() builder shells are intermediate construction results,
+			// not source-backed dependency modules to install into a schema.
+			return nil
+		}
 		instID, err := inst.ID()
 		if err != nil {
 			return fmt.Errorf("module %q handle ID: %w", inst.Self().Name(), err)
