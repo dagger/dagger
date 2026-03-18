@@ -11,7 +11,6 @@ Expected stderr:
 ╰╴✔ starting session X.Xs
 
 ✔ load workspace: . X.Xs
-├╴✔ resolve module selection: github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875 X.Xs
 ╰╴✔ loading type definitions X.Xs
 
 ✔ parsing command line arguments X.Xs

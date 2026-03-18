@@ -12,7 +12,6 @@ Expected stderr:
 ╰╴✔ starting session X.Xs
 
 ✔ load workspace: . X.Xs
-├╴✔ resolve module selection: ./viztest/typescript X.Xs
 ╰╴✔ loading type definitions X.Xs
 
 ✔ parsing command line arguments X.Xs

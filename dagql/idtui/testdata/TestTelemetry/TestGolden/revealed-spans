@@ -12,7 +12,6 @@ Expected stderr:
 ╰╴✔ starting session X.Xs
 
 ✔ load workspace: . X.Xs
-├╴✔ resolve module selection: ./viztest X.Xs
 ╰╴✔ loading type definitions X.Xs
 
 ✔ parsing command line arguments X.Xs
@@ -21,7 +20,7 @@ Expected stderr:
 ✔ .revealedSpans: String! X.Xs
 ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
   ✔ revealed span X.Xs
- 
+
   ✔ sometimes you gotta be [1mbold
   ┃ X.Xs
 
