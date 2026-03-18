@@ -9,7 +9,6 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	engineclient "github.com/dagger/dagger/engine/client"
@@ -22,7 +21,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type mockServer struct {
@@ -134,13 +132,16 @@ func (ms *mockServer) CloudEngineClient(context.Context, string, string, []strin
 func (ms *mockServer) CleanMountNS() *os.File { return nil }
 
 func TestParseCallerCalleeRefs(t *testing.T) {
-	mID := call.New().Append(&ast.Type{}, "callee1")
-	pcID := call.New().Append(&ast.Type{}, "VersionedGitSSH.hello",
-		call.WithModule(call.NewModule(
-			mID,
-			"versioned_git_ssh",
-			"git@github.com:dagger/dagger-test-modules/versioned@main", "0cabe03cc0a9079e738c92b2c589d81fd560011f",
-		)))
+	call := &dagql.ResultCall{
+		Kind:  dagql.ResultCallKindField,
+		Field: "VersionedGitSSH.hello",
+		Type:  dagql.NewResultCallType((&Void{}).Type()),
+		Module: &dagql.ResultCallModule{
+			Name: "versioned_git_ssh",
+			Ref:  "git@github.com:dagger/dagger-test-modules/versioned@main",
+			Pin:  "0cabe03cc0a9079e738c92b2c589d81fd560011f",
+		},
+	}
 
 	// Set up mock server with Git source for the caller
 	mockSrv := &mockServer{
@@ -156,7 +157,7 @@ func TestParseCallerCalleeRefs(t *testing.T) {
 		},
 	}
 
-	callerRef, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, pcID)
+	callerRef, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: mockSrv}, call)
 
 	require.NotNil(t, callerRef)
 	require.Equal(t, "github.com/dagger/dagger-test-modules/caller", callerRef.ref)

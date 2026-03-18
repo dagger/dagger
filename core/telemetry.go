@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -21,45 +22,59 @@ var _ dagql.AroundFunc = AroundFunc
 
 func AroundFunc(
 	ctx context.Context,
-	id *call.ID,
+	req *dagql.CallRequest,
 ) (
 	context.Context,
 	func(res dagql.AnyResult, cached bool, rerr *error),
 ) {
-	if dagql.IsSkipped(ctx) || isIntrospection(ctx, id) || isMeta(id) {
+	if req == nil || req.ResultCall == nil {
+		return ctx, dagql.NoopDone
+	}
+	if dagql.IsSkipped(ctx) || isIntrospection(ctx, req.ResultCall) || isMeta(req.ResultCall) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
 	}
 
-	var base string
-	if id.Receiver() == nil {
+	base := "Unknown"
+	if receiver, err := req.ResultCall.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+		base = receiver.Type.NamedType
+	} else if req.Receiver == nil {
 		base = "Query"
-	} else {
-		base = id.Receiver().Type().ToAST().Name()
 	}
-	spanName := fmt.Sprintf("%s.%s", base, id.Field())
+	spanName := fmt.Sprintf("%s.%s", base, req.Field)
+
+	callDigest, err := req.RecipeDigest()
+	if err != nil {
+		slog.WarnContext(ctx, "failed to derive call digest", "field", spanName, "err", err)
+		return ctx, dagql.NoopDone
+	}
 
 	slog.InfoContext(ctx, "start call",
 		"field", spanName,
-		"digest", id.Digest().String(),
+		"digest", callDigest.String(),
 	)
 
-	callAttr, err := id.Call().Encode()
+	callPB, err := req.ResultCall.CallPB()
 	if err != nil {
-		slog.WarnContext(ctx, "failed to encode call", "id", id.DisplaySelf(), "err", err)
+		slog.WarnContext(ctx, "failed to build call payload", "field", spanName, "err", err)
+		return ctx, dagql.NoopDone
+	}
+	callAttr, err := callPB.Encode()
+	if err != nil {
+		slog.WarnContext(ctx, "failed to encode call", "field", spanName, "err", err)
 		return ctx, dagql.NoopDone
 	}
 	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
+		attribute.String(telemetry.DagDigestAttr, callDigest.String()),
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
-	if q, err := CurrentQuery(ctx); id.Call().Module != nil && err == nil {
-		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, id)
+	if q, err := CurrentQuery(ctx); req.Module != nil && err == nil {
+		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, req.ResultCall)
 
 		if callerRef != nil && calleeRef != nil {
 			var callerRefAttr string
@@ -86,11 +101,11 @@ func AroundFunc(
 		}
 	}
 
-	if idInputs, err := id.Inputs(); err != nil {
-		slog.WarnContext(ctx, "failed to compute inputs(id)", "id", id.DisplaySelf(), "err", err)
+	if callInputs, err := req.ResultCall.Inputs(); err != nil {
+		slog.WarnContext(ctx, "failed to compute inputs(call)", "field", spanName, "err", err)
 	} else {
-		inputs := make([]string, len(idInputs))
-		for i, input := range idInputs {
+		inputs := make([]string, len(callInputs))
+		for i, input := range callInputs {
 			inputs[i] = input.String()
 		}
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
@@ -105,13 +120,13 @@ func AroundFunc(
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",
 			"field", spanName,
-			"digest", id.Digest().String(),
+			"digest", callDigest.String(),
 		)
 
 		defer telemetry.EndWithCause(span, err)
-		recordStatus(ctx, res, span, cached, id)
-		logResult(ctx, res, id)
-		collectEffects(res, span, id)
+		recordStatus(ctx, res, span, cached, req.ResultCall)
+		logResult(ctx, res, req.ResultCall)
+		collectEffects(res, span, req.ResultCall)
 	}
 }
 
@@ -122,14 +137,14 @@ type moduleCallRef struct {
 	typeName     string
 }
 
-func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*moduleCallRef, *moduleCallRef) {
+func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCall) (*moduleCallRef, *moduleCallRef) {
+	if frame == nil || frame.Module == nil {
+		return nil, nil
+	}
 	cm, _ := q.MainClientCallerMetadata(ctx)
 	fc, _ := q.CurrentFunctionCall(ctx)
 	m, _ := q.CurrentModule(ctx)
 	sd, _ := q.CurrentServedDeps(ctx)
-
-	call := callID.Call()
-	calleeModule := call.Module
 
 	callerRef, calleeRef := &moduleCallRef{}, &moduleCallRef{}
 	// there's a caller
@@ -137,7 +152,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 	var ms *ModuleSource
 	if m.Self() != nil {
 		ms = m.Self().GetSource()
-	} else if m, ok := sd.LookupDep(calleeModule.Name); ok {
+	} else if m, ok := sd.LookupDep(frame.Module.Name); ok {
 		ms = m.GetSource()
 	}
 
@@ -165,14 +180,14 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 
 	callerRef.ref = normalizeRef(callerRef.ref)
 
-	calleeRef.functionName = call.Field
-	calleeRef.version = call.Module.Pin
-	calleeRef.ref = normalizeRef(call.Module.Ref)
+	calleeRef.functionName = frame.Field
+	calleeRef.version = frame.Module.Pin
+	calleeRef.ref = normalizeRef(frame.Module.Ref)
 
 	var voidType Void
-	if callID.Receiver() != nil {
-		calleeRef.typeName = callID.Receiver().Type().NamedType()
-	} else if call.Type.NamedType == voidType.TypeName() {
+	if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+		calleeRef.typeName = receiver.Type.NamedType
+	} else if frame.Type != nil && frame.Type.NamedType == voidType.TypeName() {
 		// it's a top level module function call so set the ParentName as the callee type
 		calleeRef.typeName = callerRef.typeName
 	}
@@ -222,7 +237,7 @@ func normalizeRef(ref string) string {
 }
 
 // recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, id *call.ID) {
+func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cached bool, frame *dagql.ResultCall) {
 	if cached {
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
@@ -244,20 +259,24 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		// NB: so long as the simplifying process rejects larger IDs, this
 		// shouldn't be necessary, but it seems like a good idea to just never even
 		// consider it.
-		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
+		field := ""
+		if frame != nil {
+			field = frame.Field
+		}
+		isLoader := strings.HasPrefix(field, "load") && strings.HasSuffix(field, "FromID")
 		if !isLoader {
-			if objID, err := obj.RecipeID(); err == nil {
-				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objID.Digest().String()))
+			if objDig, err := objectRecipeDigest(obj); err == nil && objDig != "" {
+				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDig.String()))
 			}
 		}
 	}
 }
 
 // logResult prints the result of a call to the span's stdout.
-func logResult(ctx context.Context, res dagql.AnyResult, id *call.ID) {
+func logResult(ctx context.Context, res dagql.AnyResult, frame *dagql.ResultCall) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
-	fieldSpec, ok := fieldSpecForCall(ctx, id)
+	fieldSpec, ok := fieldSpecForCall(ctx, frame)
 	if !ok {
 		return
 	}
@@ -274,22 +293,22 @@ func logResult(ctx context.Context, res dagql.AnyResult, id *call.ID) {
 	}
 }
 
-func fieldSpecForCall(ctx context.Context, id *call.ID) (dagql.FieldSpec, bool) {
+func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.FieldSpec, bool) {
 	srv := dagql.CurrentDagqlServer(ctx)
-	if srv == nil || id == nil {
+	if srv == nil || frame == nil || frame.Field == "" {
 		return dagql.FieldSpec{}, false
 	}
 
 	parentTypeName := srv.Root().Type().Name()
-	if receiver := id.Receiver(); receiver != nil {
-		parentTypeName = receiver.Type().NamedType()
+	if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+		parentTypeName = receiver.Type.NamedType
 	}
 
 	parentType, ok := srv.ObjectType(parentTypeName)
 	if !ok {
 		return dagql.FieldSpec{}, false
 	}
-	return parentType.FieldSpec(id.Field(), id.View())
+	return parentType.FieldSpec(frame.Field, frame.View)
 }
 
 // collectEffects records LLB op digests installed by this call so that we can
@@ -297,10 +316,12 @@ func fieldSpecForCall(ctx context.Context, id *call.ID) (dagql.FieldSpec, bool) 
 //
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
-func collectEffects(res dagql.AnyResult, span trace.Span, id *call.ID) {
+func collectEffects(res dagql.AnyResult, span trace.Span, frame *dagql.ResultCall) {
 	var parentEffects []string
-	if receiver := id.Receiver(); receiver != nil {
-		parentEffects = receiver.AllEffectIDs()
+	if frame != nil {
+		if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil {
+			parentEffects, _ = receiver.AllEffectIDs()
+		}
 	}
 
 	if res == nil {
@@ -310,15 +331,13 @@ func collectEffects(res dagql.AnyResult, span trace.Span, id *call.ID) {
 		return
 	}
 
-	recipeID, err := res.RecipeID()
-	if err != nil || recipeID == nil {
+	allEffects, err := resultEffectIDs(res)
+	if err != nil {
 		if len(parentEffects) > 0 {
 			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
 		}
 		return
 	}
-
-	allEffects := recipeID.AllEffectIDs()
 	if len(allEffects) == 0 && len(parentEffects) == 0 {
 		return
 	}
@@ -349,9 +368,12 @@ func collectEffects(res dagql.AnyResult, span trace.Span, id *call.ID) {
 //
 // These queries tend to be very large and are not interesting for users to
 // see.
-func isIntrospection(ctx context.Context, id *call.ID) bool {
-	if id.Receiver() == nil {
-		switch id.Field() {
+func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
+	if frame == nil {
+		return false
+	}
+	if frame.Receiver == nil {
+		switch frame.Field {
 		case "__schema",
 			"__schemaJSONFile",
 			"__schemaVersion",
@@ -369,33 +391,46 @@ func isIntrospection(ctx context.Context, id *call.ID) bool {
 	//nolint:gocritic
 	// disable these unless debug is set in OTEL baggage
 	if !slog.IsDebug(ctx) {
-		switch id.Receiver().Type().NamedType() {
-		case "Function":
-			switch id.Field() {
-			case "withCachePolicy",
-				"withArg",
-				"withSourceMap",
-				"withDescription":
-				return true
+		if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+			switch receiver.Type.NamedType {
+			case "Function":
+				switch frame.Field {
+				case "withCachePolicy",
+					"withArg",
+					"withSourceMap",
+					"withDescription":
+					return true
+				}
 			}
 		}
 	}
 
-	return isIntrospection(ctx, id.Receiver())
+	receiver, err := frame.ReceiverCall()
+	if err != nil || receiver == nil {
+		return false
+	}
+	return isIntrospection(ctx, receiver)
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
 // for example span and error APIs.
-func isMeta(id *call.ID) bool {
-	if anyReturns(id, "Error") {
+func isMeta(frame *dagql.ResultCall) bool {
+	if frame == nil {
+		return false
+	}
+	if anyReturns(frame, "Error") {
 		return true
 	}
-	switch id.Field() {
+	typeName := ""
+	if frame.Type != nil {
+		typeName = frame.Type.NamedType
+	}
+	switch frame.Field {
 	case
 		// Seeing loadFooFromID is only really interesting if it actually
 		// resulted in evaluating the ID, so we don't need to give it its own
 		// span.
-		fmt.Sprintf("load%sFromID", id.Type().NamedType()),
+		fmt.Sprintf("load%sFromID", typeName),
 		// We also don't care about seeing the id field selection itself,
 		// since it's more noisy and confusing than helpful. We'll still show
 		// all the spans leading up to it, just not the ID selection.
@@ -411,14 +446,45 @@ func isMeta(id *call.ID) bool {
 
 // anyReturns returns true if the call or any of its ancestors return any of
 // the given types.
-func anyReturns(id *call.ID, types ...string) bool {
-	ret := id.Type().NamedType()
+func anyReturns(frame *dagql.ResultCall, types ...string) bool {
+	if frame == nil || frame.Type == nil {
+		return false
+	}
+	ret := frame.Type.NamedType
 	if slices.Contains(types, ret) {
 		return true
 	}
-	if id.Receiver() != nil {
-		return anyReturns(id.Receiver(), types...)
-	} else {
+	receiver, err := frame.ReceiverCall()
+	if err != nil || receiver == nil {
 		return false
 	}
+	return anyReturns(receiver, types...)
+}
+
+func objectRecipeDigest(obj dagql.AnyResult) (digest.Digest, error) {
+	type recipeDigester interface {
+		RecipeDigest() (digest.Digest, error)
+	}
+	if digester, ok := any(obj).(recipeDigester); ok {
+		return digester.RecipeDigest()
+	}
+	id, err := obj.RecipeID()
+	if err != nil || id == nil {
+		return "", err
+	}
+	return id.Digest(), nil
+}
+
+func resultEffectIDs(res dagql.AnyResult) ([]string, error) {
+	type effecter interface {
+		AllEffectIDs() ([]string, error)
+	}
+	if eff, ok := any(res).(effecter); ok {
+		return eff.AllEffectIDs()
+	}
+	id, err := res.RecipeID()
+	if err != nil || id == nil {
+		return nil, err
+	}
+	return id.AllEffectIDs(), nil
 }

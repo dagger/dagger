@@ -94,7 +94,7 @@ type InstallHook interface {
 // soon.
 type AroundFunc func(
 	context.Context,
-	*call.ID,
+	*CallRequest,
 ) (context.Context, func(res AnyResult, cached bool, err *error))
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,

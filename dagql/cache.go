@@ -835,6 +835,28 @@ func (r Result[T]) RecipeID() (*call.ID, error) {
 	return call.RecipeID()
 }
 
+func (r Result[T]) RecipeDigest() (digest.Digest, error) {
+	if r.shared == nil || r.shared.resultCall == nil {
+		return "", fmt.Errorf("result %T has no call frame", r.Self())
+	}
+	call := r.shared.resultCall
+	if r.shared.cache != nil {
+		call.bindCache(r.shared.cache)
+	}
+	return call.RecipeDigest()
+}
+
+func (r Result[T]) AllEffectIDs() ([]string, error) {
+	if r.shared == nil || r.shared.resultCall == nil {
+		return nil, fmt.Errorf("result %T has no call frame", r.Self())
+	}
+	call := r.shared.resultCall
+	if r.shared.cache != nil {
+		call.bindCache(r.shared.cache)
+	}
+	return call.AllEffectIDs()
+}
+
 func (r Result[T]) ContentPreferredDigest() (digest.Digest, error) {
 	if r.shared == nil || r.shared.resultCall == nil {
 		return "", fmt.Errorf("result %T has no call frame", r.Self())

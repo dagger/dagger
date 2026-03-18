@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -283,8 +284,275 @@ func (frame *ResultCall) ContentPreferredDigest() (digest.Digest, error) {
 	return frame.contentPreferredDigestWithVisiting(map[sharedResultID]struct{}{})
 }
 
+func (frame *ResultCall) Inputs() ([]digest.Digest, error) {
+	if frame == nil {
+		return nil, nil
+	}
+
+	seen := map[digest.Digest]struct{}{}
+	var inputs []digest.Digest
+	see := func(dig digest.Digest) {
+		if dig == "" {
+			return
+		}
+		if _, ok := seen[dig]; ok {
+			return
+		}
+		seen[dig] = struct{}{}
+		inputs = append(inputs, dig)
+	}
+
+	if frame.Receiver != nil {
+		receiverDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Receiver, map[sharedResultID]struct{}{})
+		if err != nil {
+			return nil, fmt.Errorf("receiver: %w", err)
+		}
+		see(receiverDigest)
+	}
+
+	var walkLiteral func(*ResultCallLiteral) error
+	walkLiteral = func(lit *ResultCallLiteral) error {
+		if lit == nil {
+			return nil
+		}
+		switch lit.Kind {
+		case ResultCallLiteralKindResultRef:
+			dig, err := recipeDigestForResultCallRef(frame.cache, lit.ResultRef, map[sharedResultID]struct{}{})
+			if err != nil {
+				return err
+			}
+			see(dig)
+		case ResultCallLiteralKindDigestedString:
+			see(lit.DigestedStringDigest)
+		case ResultCallLiteralKindList:
+			for _, item := range lit.ListItems {
+				if err := walkLiteral(item); err != nil {
+					return err
+				}
+			}
+		case ResultCallLiteralKindObject:
+			for _, field := range lit.ObjectFields {
+				if field == nil {
+					continue
+				}
+				if err := walkLiteral(field.Value); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	for _, arg := range frame.Args {
+		if arg == nil {
+			continue
+		}
+		if err := walkLiteral(arg.Value); err != nil {
+			return nil, fmt.Errorf("arg %q: %w", arg.Name, err)
+		}
+	}
+	for _, input := range frame.ImplicitInputs {
+		if input == nil {
+			continue
+		}
+		if err := walkLiteral(input.Value); err != nil {
+			return nil, fmt.Errorf("implicit input %q: %w", input.Name, err)
+		}
+	}
+
+	return inputs, nil
+}
+
 func (frame *ResultCall) RecipeID() (*call.ID, error) {
 	return frame.recipeIDWithVisiting(map[sharedResultID]struct{}{})
+}
+
+func (frame *ResultCall) CallPB() (*callpbv1.Call, error) {
+	if frame == nil {
+		return nil, fmt.Errorf("nil result call")
+	}
+	field, err := resultCallIdentityField(frame)
+	if err != nil {
+		return nil, err
+	}
+	if frame.Type == nil {
+		return nil, fmt.Errorf("missing call type")
+	}
+	callDigest, err := frame.RecipeDigest()
+	if err != nil {
+		return nil, fmt.Errorf("call digest: %w", err)
+	}
+
+	pbCall := &callpbv1.Call{
+		Type:      resultCallTypePB(frame.Type),
+		Field:     field,
+		Nth:       frame.Nth,
+		View:      frame.View.String(),
+		Digest:    callDigest.String(),
+		EffectIds: slices.Clone(frame.EffectIDs),
+	}
+	if frame.Receiver != nil {
+		receiverDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Receiver, map[sharedResultID]struct{}{})
+		if err != nil {
+			return nil, fmt.Errorf("receiver digest: %w", err)
+		}
+		pbCall.ReceiverDigest = receiverDigest.String()
+	}
+	if frame.Module != nil && frame.Module.ResultRef != nil {
+		moduleDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Module.ResultRef, map[sharedResultID]struct{}{})
+		if err != nil {
+			return nil, fmt.Errorf("module digest: %w", err)
+		}
+		pbCall.Module = &callpbv1.Module{
+			CallDigest: moduleDigest.String(),
+			Name:       frame.Module.Name,
+			Ref:        frame.Module.Ref,
+			Pin:        frame.Module.Pin,
+		}
+	}
+	for _, extra := range frame.ExtraDigests {
+		if extra.Digest == "" {
+			continue
+		}
+		pbCall.ExtraDigests = append(pbCall.ExtraDigests, &callpbv1.ExtraDigest{
+			Digest: extra.Digest.String(),
+			Label:  extra.Label,
+		})
+	}
+	for _, arg := range frame.Args {
+		if arg == nil {
+			continue
+		}
+		pbArg, err := resultCallArgPB(frame.cache, arg)
+		if err != nil {
+			return nil, fmt.Errorf("arg %q: %w", arg.Name, err)
+		}
+		pbCall.Args = append(pbCall.Args, pbArg)
+	}
+	for _, input := range frame.ImplicitInputs {
+		if input == nil {
+			continue
+		}
+		pbArg, err := resultCallArgPB(frame.cache, input)
+		if err != nil {
+			return nil, fmt.Errorf("implicit input %q: %w", input.Name, err)
+		}
+		pbCall.ImplicitInputs = append(pbCall.ImplicitInputs, pbArg)
+	}
+	return pbCall, nil
+}
+
+func resultCallTypePB(typ *ResultCallType) *callpbv1.Type {
+	if typ == nil {
+		return nil
+	}
+	return &callpbv1.Type{
+		NamedType: typ.NamedType,
+		NonNull:   typ.NonNull,
+		Elem:      resultCallTypePB(typ.Elem),
+	}
+}
+
+func resultCallArgPB(c *cache, arg *ResultCallArg) (*callpbv1.Argument, error) {
+	if arg == nil {
+		return nil, nil
+	}
+	lit, err := resultCallLiteralPB(c, arg.Value)
+	if err != nil {
+		return nil, err
+	}
+	return &callpbv1.Argument{
+		Name:  arg.Name,
+		Value: lit,
+	}, nil
+}
+
+func resultCallLiteralPB(c *cache, lit *ResultCallLiteral) (*callpbv1.Literal, error) {
+	if lit == nil {
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Null{Null: true}}, nil
+	}
+	switch lit.Kind {
+	case ResultCallLiteralKindNull:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Null{Null: true}}, nil
+	case ResultCallLiteralKindBool:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Bool{Bool: lit.BoolValue}}, nil
+	case ResultCallLiteralKindInt:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Int{Int: lit.IntValue}}, nil
+	case ResultCallLiteralKindFloat:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Float{Float: lit.FloatValue}}, nil
+	case ResultCallLiteralKindString:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: lit.StringValue}}, nil
+	case ResultCallLiteralKindEnum:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Enum{Enum: lit.EnumValue}}, nil
+	case ResultCallLiteralKindDigestedString:
+		return &callpbv1.Literal{Value: &callpbv1.Literal_DigestedString{
+			DigestedString: &callpbv1.DigestedString{
+				Value:  lit.DigestedStringValue,
+				Digest: lit.DigestedStringDigest.String(),
+			},
+		}}, nil
+	case ResultCallLiteralKindResultRef:
+		dig, err := recipeDigestForResultCallRef(c, lit.ResultRef, map[sharedResultID]struct{}{})
+		if err != nil {
+			return nil, err
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: dig.String()}}, nil
+	case ResultCallLiteralKindList:
+		values := make([]*callpbv1.Literal, 0, len(lit.ListItems))
+		for _, item := range lit.ListItems {
+			pbItem, err := resultCallLiteralPB(c, item)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, pbItem)
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_List{
+			List: &callpbv1.List{Values: values},
+		}}, nil
+	case ResultCallLiteralKindObject:
+		fields := make([]*callpbv1.Argument, 0, len(lit.ObjectFields))
+		for _, field := range lit.ObjectFields {
+			if field == nil {
+				continue
+			}
+			pbField, err := resultCallArgPB(c, field)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, pbField)
+		}
+		return &callpbv1.Literal{Value: &callpbv1.Literal_Object{
+			Object: &callpbv1.Object{Values: fields},
+		}}, nil
+	default:
+		return nil, fmt.Errorf("unknown result call literal kind %q", lit.Kind)
+	}
+}
+
+func (frame *ResultCall) ReceiverCall() (*ResultCall, error) {
+	if frame == nil || frame.Receiver == nil {
+		return nil, nil
+	}
+	return frame.refCall(frame.Receiver)
+}
+
+func (frame *ResultCall) refCall(ref *ResultCallRef) (*ResultCall, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	if ref.Call != nil {
+		ref.Call.bindCache(frame.cache)
+		return ref.Call, nil
+	}
+	if frame.cache == nil {
+		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
+	}
+	target := frame.cache.resultCallByResultID(sharedResultID(ref.ResultID))
+	if target == nil {
+		return nil, fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
+	}
+	target.bindCache(frame.cache)
+	return target, nil
 }
 
 func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]struct{}) (digest.Digest, error) {
