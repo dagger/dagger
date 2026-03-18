@@ -1518,6 +1518,11 @@ func (container *Container) WithExec(
 				}
 			}
 
+			var existingExecErr *ExecError
+			if errors.As(rerr, &existingExecErr) {
+				return
+			}
+
 			execErr, ok, err := execErrorFromMetaRef(ctx, bkClient, causeCtx, rerr, metaSpec, metaRef)
 			if err != nil {
 				rerr = errors.Join(err, rerr)
