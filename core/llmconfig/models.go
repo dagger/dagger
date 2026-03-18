@@ -25,9 +25,6 @@ type ModelInfo struct {
 	Default bool
 }
 
-// SupportsThinking is a convenience alias for CanReason.
-func (m ModelInfo) SupportsThinking() bool { return m.CanReason }
-
 // catwalkProviderID maps our provider keys to catwalk provider IDs.
 var catwalkProviderID = map[string]catwalk.InferenceProvider{
 	"anthropic":   catwalk.InferenceProviderAnthropic,
