@@ -351,6 +351,35 @@ func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
 	assert.Equal(t, 0, base.Size())
 }
 
+func TestSessionCacheAttachResultTrackedOnClose(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+
+	key := cacheTestIntCall("session-attach-tracked")
+	var releaseCalls atomic.Int32
+	detached := cacheTestDetachedResult(key, cacheTestOnReleaseInt{
+		Int: NewInt(7),
+		onRelease: func(context.Context) error {
+			releaseCalls.Add(1)
+			return nil
+		},
+	})
+
+	attached, err := sc.AttachResult(ctx, detached)
+	assert.NilError(t, err)
+	assert.Assert(t, attached != nil)
+	assert.Assert(t, is.Equal(int32(0), releaseCalls.Load()))
+	assert.Assert(t, is.Equal(1, base.Size()))
+
+	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	assert.Assert(t, is.Equal(int32(1), releaseCalls.Load()))
+	assert.Assert(t, is.Equal(0, base.Size()))
+}
+
 func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

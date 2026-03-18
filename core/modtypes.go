@@ -341,7 +341,7 @@ func (t *ListType) CollectContent(ctx context.Context, value dagql.AnyResult, co
 	}
 
 	for i := 1; i <= list.Len(); i++ {
-		item, err := value.NthValue(i)
+		item, err := value.NthValue(ctx, i)
 		if err != nil {
 			return err
 		}

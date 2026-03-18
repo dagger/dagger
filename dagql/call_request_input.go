@@ -38,7 +38,17 @@ func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
 		return nil, nil
 	}
 	shared := res.cacheSharedResult()
-	if shared == nil || shared.id == 0 {
+	if shared == nil || shared.resultCall == nil {
+		return nil, fmt.Errorf("result %T has no call frame", res)
+	}
+	if shared.id == 0 {
+		call := shared.resultCall.clone()
+		if shared.cache != nil {
+			call.bindCache(shared.cache)
+		}
+		return &ResultCallRef{Call: call}, nil
+	}
+	if shared == nil {
 		return nil, fmt.Errorf("result %T is not cache-backed", res)
 	}
 	return &ResultCallRef{ResultID: uint64(shared.id)}, nil

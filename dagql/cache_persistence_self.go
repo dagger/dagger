@@ -126,7 +126,7 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	if enumerable, ok := res.Unwrap().(Enumerable); ok {
 		itemEnvs := make([]PersistedResultEnvelope, 0, enumerable.Len())
 		for i := 1; i <= enumerable.Len(); i++ {
-			item, err := res.NthValue(i)
+			item, err := res.NthValue(ctx, i)
 			if err != nil {
 				return PersistedResultEnvelope{}, fmt.Errorf("encode persisted list item %d: %w", i, err)
 			}

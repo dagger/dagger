@@ -462,7 +462,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				if err != nil {
 					return nil, fmt.Errorf("failed to get object return type for %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
-				return wrapIface(dagql.CurrentCall(ctx), ifaceReturnType, objReturnType, res, dag)
+				return wrapIface(ctx, dagql.CurrentCall(ctx), ifaceReturnType, objReturnType, res, dag)
 			},
 		})
 	}
@@ -508,7 +508,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			if ok := loadedImpl.valType.TypeDef().IsSubtypeOf(iface.TypeDef()); !ok {
 				return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
 			}
-			return wrapIface(nil, iface, loadedImpl.valType, loadedImpl.val, dag)
+			return wrapIface(ctx, nil, iface, loadedImpl.valType, loadedImpl.val, dag)
 		},
 	)
 
@@ -516,6 +516,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 }
 
 func wrapIface(
+	ctx context.Context,
 	callFrame *dagql.ResultCall,
 	ifaceType *InterfaceType,
 	underlyingType ModType,
@@ -558,14 +559,14 @@ func wrapIface(
 
 		ret := dagql.DynamicResultArrayOutput{}
 		for i := 1; i <= enum.Len(); i++ {
-			item, err := res.NthValue(i)
+			item, err := res.NthValue(ctx, i)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get item %d: %w", i, err)
 			}
 			if ret.Elem == nil { // set the return type
 				ret.Elem = item.Unwrap()
 			}
-			val, err := wrapIface(wrappedIfaceNthCall(callFrame, i), ifaceType, underlyingType.Underlying, item, srv)
+			val, err := wrapIface(ctx, wrappedIfaceNthCall(callFrame, i), ifaceType, underlyingType.Underlying, item, srv)
 			if err != nil {
 				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
 			}

@@ -323,6 +323,21 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 	}
 	if inst, ok := val.(Result[Typed]); ok {
 		if _, ok := UnwrapAs[T](inst.Self()); !ok {
+			if derefCapable, ok := any(inst).(interface{ withDerefViewAny() AnyResult }); ok {
+				if shared := inst.cacheSharedResult(); shared != nil && shared.self != nil {
+					if inner, valid := derefTyped(shared.self); valid {
+						if _, ok := UnwrapAs[T](inner); ok {
+							derefVal := derefCapable.withDerefViewAny()
+							if derefInst, ok := derefVal.(Result[Typed]); ok {
+								return ObjectResult[T]{
+									Result: Result[T](derefInst),
+									class:  class,
+								}, nil
+							}
+						}
+					}
+				}
+			}
 			return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 		}
 		return ObjectResult[T]{
@@ -390,23 +405,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		view = ""
 	}
 	ctx = srvToContext(ctx, s)
+	receiverDetached := false
 	if typ := r.Type(); typ != nil && typ.Name() != "Query" {
 		shared := r.cacheSharedResult()
-		if shared == nil || shared.id == 0 {
-			attached, err := s.Cache.AttachResult(ctx, r)
-			if err != nil {
-				return r, nil, fmt.Errorf("attach receiver for %s.%s: %w", typ.Name(), sel.Field, err)
-			}
-			attachedObj, err := r.class.New(attached)
-			if err != nil {
-				return r, nil, fmt.Errorf("wrap attached receiver for %s.%s: %w", typ.Name(), sel.Field, err)
-			}
-			var ok bool
-			r, ok = attachedObj.(ObjectResult[T])
-			if !ok {
-				return r, nil, fmt.Errorf("wrap attached receiver for %s.%s: unexpected %T", typ.Name(), sel.Field, attachedObj)
-			}
-		}
+		receiverDetached = shared == nil || shared.id == 0
 	}
 
 	inputArgs := make(map[string]Input, len(sel.Args))
@@ -476,7 +478,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			ImplicitInputs: implicitInputs,
 		},
 		TTL:           field.Spec.TTL,
-		DoNotCache:    field.Spec.DoNotCache != "",
+		DoNotCache:    receiverDetached || field.Spec.DoNotCache != "",
 		IsPersistable: field.Spec.IsPersistable,
 	}
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
@@ -553,7 +555,7 @@ func (r ObjectResult[T]) call(
 		}
 		nth := int(req.Nth)
 		if nth != 0 {
-			val, err = val.NthValue(nth)
+			val, err = val.NthValue(ctx, nth)
 			if err != nil {
 				return nil, fmt.Errorf("cannot get %dth value from %T: %w", nth, val, err)
 			}

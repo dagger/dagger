@@ -696,38 +696,7 @@ func (s *Server) loadNthValue(
 		return nil, nil
 	}
 
-	shared := parent.cacheSharedResult()
-	if shared == nil || shared.id == 0 {
-		attached, err := s.Cache.AttachResult(srvToContext(ctx, s), parent)
-		if err != nil {
-			return nil, fmt.Errorf("nth %d: attach enumerable parent: %w", nth, err)
-		}
-		parent = attached
-		shared = parent.cacheSharedResult()
-	}
-	if shared == nil || shared.id == 0 || shared.resultCall == nil {
-		return nil, fmt.Errorf("nth %d: parent enumerable is not cache-backed", nth)
-	}
-	if shared.resultCall.Type == nil || shared.resultCall.Type.Elem == nil {
-		return nil, fmt.Errorf("nth %d: parent enumerable has no element type", nth)
-	}
-
-	req := &CallRequest{
-		ResultCall: shared.resultCall.fork(),
-	}
-	req.Type = req.Type.Elem.clone()
-	req.Receiver = &ResultCallRef{ResultID: uint64(shared.id)}
-	req.Nth = int64(nth)
-
-	callCtx := srvToContext(ctx, s)
-
-	if res, err := s.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
-		return nil, fmt.Errorf("cache miss")
-	}, opts...); err == nil {
-		return res, nil
-	}
-
-	res, err := parent.NthValue(nth)
+	res, err := parent.NthValue(srvToContext(ctx, s), nth)
 	if err != nil {
 		return nil, fmt.Errorf("nth %d: %w", nth, err)
 	}
@@ -745,10 +714,7 @@ func (s *Server) loadNthValue(
 		}
 		return nil, nil
 	}
-
-	return s.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
-		return res, nil
-	}, opts...)
+	return res, nil
 }
 
 func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
@@ -759,6 +725,15 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), s, id.EngineResultID())
 		if err != nil {
 			return nil, err
+		}
+		if id.Type() != nil && id.Type().ToAST().NonNull {
+			if derefCapable, ok := res.(interface{ withDerefViewAny() AnyResult }); ok {
+				if shared := res.cacheSharedResult(); shared != nil && shared.self != nil {
+					if inner, valid := derefTyped(shared.self); valid && inner != nil && inner.Type() != nil && inner.Type().Name() == id.Type().NamedType() {
+						res = derefCapable.withDerefViewAny()
+					}
+				}
+			}
 		}
 		if id.Type() != nil && res.Type() != nil && res.Type().Name() != id.Type().NamedType() {
 			return nil, fmt.Errorf("load %s: expected %s, got %s", idInputDebugString(id), id.Type().ToAST(), res.Type())

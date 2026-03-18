@@ -101,7 +101,7 @@ type AnyResult interface {
 
 	// NthValue returns the Nth value of the wrapped value when the wrapped value
 	// is an Enumerable. If the wrapped value is not Enumerable, it returns an error.
-	NthValue(int) (AnyResult, error)
+	NthValue(context.Context, int) (AnyResult, error)
 
 	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
 	WithPostCall(fn PostCallFunc) AnyResult

@@ -803,6 +803,10 @@ type Result[T Typed] struct {
 
 	// per-call cache-hit signal for callers/tests.
 	hitCache bool
+
+	// derefView means the result should present the dereferenced view of a
+	// nullable/shared wrapper payload while keeping the same sharedResult.
+	derefView bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -811,6 +815,13 @@ func (r Result[T]) Type() *ast.Type {
 	if r.shared == nil || r.shared.self == nil {
 		var zero T
 		return zero.Type()
+	}
+	if r.derefView {
+		if inner, ok := derefTyped(r.shared.self); ok && inner != nil && inner.Type() != nil {
+			cp := *inner.Type()
+			cp.NonNull = true
+			return &cp
+		}
 	}
 	return r.shared.self.Type()
 }
@@ -886,12 +897,9 @@ func (r Result[T]) ResultCall() (*ResultCall, error) {
 }
 
 func (r Result[T]) Self() T {
-	var zero T
-	if r.shared == nil || r.shared.self == nil {
-		return zero
-	}
-	self, ok := UnwrapAs[T](r.shared.self)
+	self, ok := UnwrapAs[T](r.Unwrap())
 	if !ok {
+		var zero T
 		return zero
 	}
 	return self
@@ -911,26 +919,35 @@ func (r Result[T]) Unwrap() Typed {
 		var zero T
 		return zero
 	}
+	if r.derefView {
+		if inner, ok := derefTyped(r.shared.self); ok && inner != nil {
+			return inner
+		}
+	}
 	return r.shared.self
 }
 
 func (r Result[T]) DerefValue() (AnyResult, bool) {
-	self := r.Self()
-	derefableSelf, ok := any(self).(DerefableResult)
-	if !ok {
+	if r.derefView {
 		return r, true
 	}
-	var postCall PostCallFunc
-	if r.shared != nil {
-		postCall = r.shared.postCall
+	if r.shared == nil || r.shared.self == nil {
+		return r, true
 	}
-	if r.shared == nil || r.shared.resultCall == nil {
-		panic(fmt.Sprintf("deref result %T: missing call frame", self))
+	inner, valid := derefTyped(r.shared.self)
+	if !valid {
+		if _, ok := any(r.shared.self).(Derefable); ok {
+			return nil, false
+		}
+		return r, true
 	}
-	return derefableSelf.DerefToResult(r.shared.resultCall, postCall, r.IsSafeToPersistCache())
+	if anyRes, ok := inner.(AnyResult); ok {
+		return anyRes.WithSafeToPersistCache(r.IsSafeToPersistCache()), true
+	}
+	return r.resultWithDerefView(), true
 }
 
-func (r Result[T]) NthValue(nth int) (AnyResult, error) {
+func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	self := r.Self()
 	enumerableSelf, ok := any(self).(Enumerable)
 	if !ok {
@@ -939,7 +956,41 @@ func (r Result[T]) NthValue(nth int) (AnyResult, error) {
 	if r.shared == nil || r.shared.resultCall == nil {
 		return nil, fmt.Errorf("cannot get %dth value from %T without call frame", nth, self)
 	}
-	return enumerableSelf.NthValue(nth, r.shared.resultCall)
+	detached, err := enumerableSelf.NthValue(nth, r.shared.resultCall)
+	if err != nil || detached == nil {
+		return detached, err
+	}
+	if r.shared.id == 0 {
+		return detached, nil
+	}
+	srv := CurrentDagqlServer(ctx)
+	if srv == nil {
+		return detached, nil
+	}
+	if r.shared.resultCall.Type == nil || r.shared.resultCall.Type.Elem == nil {
+		return nil, fmt.Errorf("cannot get %dth value from %T without element type", nth, self)
+	}
+	req := &CallRequest{
+		ResultCall: r.shared.resultCall.fork(),
+	}
+	req.Type = req.Type.Elem.clone()
+	req.Receiver = &ResultCallRef{ResultID: uint64(r.shared.id)}
+	req.Nth = int64(nth)
+	callCtx := srvToContext(ctx, srv)
+	if shared := detached.cacheSharedResult(); shared != nil && shared.id == 0 {
+		shared.resultCall = req.ResultCall.clone()
+		if r.shared.cache != nil {
+			shared.resultCall.bindCache(r.shared.cache)
+		}
+	}
+	if res, err := srv.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("cache miss")
+	}); err == nil {
+		return res, nil
+	}
+	return srv.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
+		return detached, nil
+	})
 }
 
 // withDetachedPayload clones shared payload so per-result metadata changes do
@@ -968,6 +1019,23 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 		r.shared = &sharedResult{}
 	}
 	return r
+}
+
+func (r Result[T]) resultWithDerefView() Result[T] {
+	r.derefView = true
+	return r
+}
+
+func (r Result[T]) withDerefViewAny() AnyResult {
+	return r.resultWithDerefView()
+}
+
+func derefTyped(val Typed) (Typed, bool) {
+	derefable, ok := any(val).(Derefable)
+	if !ok {
+		return nil, false
+	}
+	return derefable.Deref()
 }
 
 func (r Result[T]) withDetachedCallPayload() Result[T] {
@@ -1099,19 +1167,24 @@ func (r ObjectResult[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
-	self := r.Self()
-	derefableSelf, ok := any(self).(DerefableResult)
-	if !ok {
+	if r.derefView {
 		return r, true
 	}
-	var postCall PostCallFunc
-	if r.shared != nil {
-		postCall = r.shared.postCall
+	if r.shared == nil || r.shared.self == nil {
+		return r, true
 	}
-	if r.shared == nil || r.shared.resultCall == nil {
-		panic(fmt.Sprintf("deref object result %T: missing call frame", self))
+	inner, valid := derefTyped(r.shared.self)
+	if !valid {
+		if _, ok := any(r.shared.self).(Derefable); ok {
+			return nil, false
+		}
+		return r, true
 	}
-	return derefableSelf.DerefToResult(r.shared.resultCall, postCall, r.IsSafeToPersistCache())
+	if anyRes, ok := inner.(AnyResult); ok {
+		return anyRes.WithSafeToPersistCache(r.IsSafeToPersistCache()), true
+	}
+	r.Result = r.Result.resultWithDerefView()
+	return r, true
 }
 
 func (r ObjectResult[T]) SetField(field reflect.Value) error {
@@ -1172,6 +1245,15 @@ func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[
 func (r ObjectResult[T]) ObjectResultWithCall(frame *ResultCall) ObjectResult[T] {
 	r.Result = r.Result.ResultWithCall(frame)
 	return r
+}
+
+func (r ObjectResult[T]) objectResultWithDerefView() AnyResult {
+	r.Result = r.Result.resultWithDerefView()
+	return r
+}
+
+func (r ObjectResult[T]) withDerefViewAny() AnyResult {
+	return r.objectResultWithDerefView()
 }
 
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {

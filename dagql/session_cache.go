@@ -394,7 +394,43 @@ func (c *SessionCache) TeachContentDigest(ctx context.Context, res AnyResult, co
 }
 
 func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
-	return c.cache.AttachResult(ctx, res)
+	c.mu.Lock()
+	if c.isClosed {
+		c.mu.Unlock()
+		return nil, errors.New("session cache is closed")
+	}
+	c.inflight++
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.inflight--
+		if c.inflight == 0 {
+			c.cond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
+
+	attached, err := c.cache.AttachResult(ctx, res)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	isClosed := c.isClosed
+	if !isClosed && attached != nil {
+		c.results = append(c.results, attached)
+	}
+	c.mu.Unlock()
+
+	if isClosed {
+		closeErr := errors.New("session cache was closed during execution")
+		if attached != nil {
+			closeErr = errors.Join(closeErr, attached.Release(context.WithoutCancel(ctx)))
+		}
+		return nil, closeErr
+	}
+
+	return attached, nil
 }
 
 func (c *SessionCache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
