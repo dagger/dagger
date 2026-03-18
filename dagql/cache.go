@@ -35,6 +35,14 @@ type Cache interface {
 		func(context.Context) (AnyResult, error),
 	) (AnyResult, error)
 
+	// LookupCacheForDigests performs only the direct digest/extra-digest cache-hit
+	// check and returns an already-cached result when one exists.
+	LookupCacheForDigests(
+		context.Context,
+		digest.Digest,
+		[]call.ExtraDigest,
+	) (AnyResult, bool, error)
+
 	// Like GetOrInitCall, but for in-memory opaque values keyed by a plain string key.
 	// These values are not persisted and are only cached in memory.
 	GetOrInitArbitrary(
@@ -1605,6 +1613,112 @@ func (c *cache) GetOrInitCall(
 
 	c.callsMu.Unlock()
 	return c.wait(ctx, oc, req)
+}
+
+func (c *cache) lookupCallRequest(
+	ctx context.Context,
+	req *CallRequest,
+) (AnyResult, bool, error) {
+	if req == nil || req.ResultCall == nil {
+		return nil, false, fmt.Errorf("call request is nil")
+	}
+	req = req.Clone()
+	req.ResultCall.bindCache(c)
+
+	callDigest, err := req.RecipeDigest()
+	if err != nil {
+		return nil, false, fmt.Errorf("derive request digest: %w", err)
+	}
+	requestSelf, requestInputRefs, err := req.SelfDigestAndInputRefs()
+	if err != nil {
+		return nil, false, fmt.Errorf("derive request term digests: %w", err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return nil, false, fmt.Errorf("derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
+
+	c.egraphMu.Lock()
+	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
+	c.egraphMu.Unlock()
+	if err != nil {
+		return nil, false, err
+	}
+	if !hit {
+		return nil, false, nil
+	}
+
+	loadedHit, loadErr := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
+	if loadErr == nil {
+		return loadedHit, true, nil
+	}
+	if !errors.Is(loadErr, errPersistedHitNotDecodable) {
+		return nil, false, loadErr
+	}
+	return nil, false, nil
+}
+
+func (c *cache) LookupCacheForDigests(
+	ctx context.Context,
+	recipeDigest digest.Digest,
+	extraDigests []call.ExtraDigest,
+) (AnyResult, bool, error) {
+	if recipeDigest == "" {
+		return nil, false, nil
+	}
+
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+
+	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests)
+	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
+	hitRes := match.hitRes
+	if hitRes == nil {
+		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
+		return nil, false, nil
+	}
+	if !hitRes.hasValue && hitRes.persistedEnvelope != nil {
+		if !persistedEnvelopeDecodableInContext(ctx, hitRes.persistedEnvelope) {
+			c.traceLookupMissUndecodableEnvelope(ctx, recipeDigest.String(), hitRes.id)
+			return nil, false, nil
+		}
+	}
+
+	now := time.Now()
+	nowUnix := now.Unix()
+	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
+		hitRes.expiresAtUnix,
+		candidateSharedResultExpiryUnix(nowUnix, 0),
+	)
+	touchSharedResultLastUsed(hitRes, now.UnixNano())
+	newRefCount := atomic.AddInt64(&hitRes.refCount, 1)
+	c.traceRefAcquired(ctx, hitRes, newRefCount)
+
+	if !hitRes.hasValue {
+		c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
+		return Result[Typed]{
+			shared:   hitRes,
+			hitCache: true,
+		}, true, nil
+	}
+	retRes := Result[Typed]{
+		shared:   hitRes,
+		hitCache: true,
+	}
+	if hitRes.objType == nil {
+		c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
+		return retRes, true, nil
+	}
+	retObjRes, err := hitRes.objType.New(retRes)
+	if err != nil {
+		return nil, false, fmt.Errorf("reconstruct digest-hit object result from cache: %w", err)
+	}
+	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
+	return retObjRes, true, nil
 }
 
 func (c *cache) wait(

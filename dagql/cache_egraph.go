@@ -646,6 +646,39 @@ type lookupMatch struct {
 	termSetSize           int
 }
 
+func (c *cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest) lookupMatch {
+	match := lookupMatch{
+		primaryLookupPossible: true,
+		missingInputIndex:     -1,
+	}
+	if recipeDigest == "" {
+		return match
+	}
+
+	nowUnix := time.Now().Unix()
+	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
+	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
+	if match.hitRes != nil {
+		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
+		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[recipeDigest.String()])
+		return match
+	}
+	for _, extra := range extraDigests {
+		if extra.Digest == "" {
+			continue
+		}
+		resultSet := c.egraphResultsByDigest[extra.Digest.String()]
+		match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
+		if match.hitRes == nil {
+			continue
+		}
+		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
+		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[extra.Digest.String()])
+		return match
+	}
+	return match
+}
+
 func (c *cache) lookupMatchForCallLocked(
 	ctx context.Context,
 	frame *ResultCall,
@@ -661,26 +694,10 @@ func (c *cache) lookupMatchForCallLocked(
 		return match, nil
 	}
 	frame.bindCache(c)
-
 	nowUnix := time.Now().Unix()
-	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
-	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
+
+	match = c.lookupMatchForDigestsLocked(recipeDigest, frame.ExtraDigests)
 	if match.hitRes != nil {
-		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
-		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[recipeDigest.String()])
-		return match, nil
-	}
-	for _, extra := range frame.ExtraDigests {
-		if extra.Digest == "" {
-			continue
-		}
-		resultSet := c.egraphResultsByDigest[extra.Digest.String()]
-		match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
-		if match.hitRes == nil {
-			continue
-		}
-		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
-		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[extra.Digest.String()])
 		return match, nil
 	}
 
@@ -723,29 +740,10 @@ func (c *cache) lookupMatchForIDLocked(ctx context.Context, id *call.ID) (lookup
 	if id == nil {
 		return match, nil
 	}
-
 	nowUnix := time.Now().Unix()
 
-	// first do a fast path check by id digests (recipe and extra)
-
-	resultSet := c.egraphResultsByDigest[id.Digest().String()]
-	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
+	match = c.lookupMatchForDigestsLocked(id.Digest(), id.ExtraDigests())
 	if match.hitRes != nil {
-		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
-		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[id.Digest().String()])
-		return match, nil
-	}
-	for _, dig := range id.ExtraDigests() {
-		if dig.Digest == "" {
-			continue
-		}
-		resultSet := c.egraphResultsByDigest[dig.Digest.String()]
-		match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
-		if match.hitRes == nil {
-			continue
-		}
-		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
-		match.hitEqClassID = c.findEqClassLocked(c.egraphDigestToClass[dig.Digest.String()])
 		return match, nil
 	}
 

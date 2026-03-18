@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/opencontainers/go-digest"
 )
 
 type SessionCache struct {
@@ -252,6 +253,126 @@ func (c *SessionCache) GetOrInitCall(
 
 func (c *SessionCache) RecipeIDForCall(call *ResultCall) (*call.ID, error) {
 	return c.cache.RecipeIDForCall(call)
+}
+
+func (c *SessionCache) LookupCacheForDigests(
+	ctx context.Context,
+	recipeDigest digest.Digest,
+	extraDigests []call.ExtraDigest,
+) (res AnyResult, hit bool, err error) {
+	c.mu.Lock()
+	if c.isClosed {
+		c.mu.Unlock()
+		return nil, false, errors.New("session cache is closed")
+	}
+	c.inflight++
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.inflight--
+		if c.inflight == 0 {
+			c.cond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
+
+	res, hit, err = c.cache.LookupCacheForDigests(ctx, recipeDigest, extraDigests)
+	if err != nil || !hit {
+		return res, hit, err
+	}
+	if res != nil {
+		base, baseErr := c.basePersistedCache()
+		if baseErr != nil {
+			return nil, false, baseErr
+		}
+		res, err = base.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), res)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	nilResult := false
+	if res != nil {
+		if shared := res.cacheSharedResult(); shared != nil && !shared.hasValue {
+			nilResult = true
+		}
+	}
+
+	c.mu.Lock()
+	isClosed := c.isClosed
+	if !isClosed && res != nil {
+		c.results = append(c.results, res)
+	}
+	c.mu.Unlock()
+
+	if isClosed {
+		err := errors.New("session cache was closed during execution")
+		if res != nil {
+			err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
+		}
+		return nil, false, err
+	}
+	if nilResult {
+		return nil, true, nil
+	}
+	return res, true, nil
+}
+
+func (c *SessionCache) lookupCallRequest(
+	ctx context.Context,
+	req *CallRequest,
+) (res AnyResult, hit bool, err error) {
+	c.mu.Lock()
+	if c.isClosed {
+		c.mu.Unlock()
+		return nil, false, errors.New("session cache is closed")
+	}
+	c.inflight++
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.inflight--
+		if c.inflight == 0 {
+			c.cond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
+
+	base, err := c.basePersistedCache()
+	if err != nil {
+		return nil, false, err
+	}
+
+	res, hit, err = base.lookupCallRequest(ctx, req)
+	if err != nil || !hit {
+		return res, hit, err
+	}
+
+	nilResult := false
+	if res != nil {
+		if shared := res.cacheSharedResult(); shared != nil && !shared.hasValue {
+			nilResult = true
+		}
+	}
+
+	c.mu.Lock()
+	isClosed := c.isClosed
+	if !isClosed && res != nil {
+		c.results = append(c.results, res)
+	}
+	c.mu.Unlock()
+
+	if isClosed {
+		err := errors.New("session cache was closed during execution")
+		if res != nil {
+			err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
+		}
+		return nil, false, err
+	}
+	if nilResult {
+		return nil, true, nil
+	}
+	return res, true, nil
 }
 
 func (c *SessionCache) TeachCallEquivalentToResult(ctx context.Context, call *ResultCall, res AnyResult) error {

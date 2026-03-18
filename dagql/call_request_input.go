@@ -24,11 +24,10 @@ func idInputDebugString(id *call.ID) string {
 	if id == nil {
 		return "<nil>"
 	}
-	enc, err := id.Encode()
-	if err == nil {
-		return enc
+	if id.IsHandle() {
+		return id.Display()
 	}
-	return "<encode-error>"
+	return string(id.Digest())
 }
 
 func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
