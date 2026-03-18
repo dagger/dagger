@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type moduleSchema struct{}
@@ -1205,6 +1206,7 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
+	scopedDigest := hashutil.HashStrings("Module._implementationScoped", sourceDigest.String())
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -1213,5 +1215,5 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(sourceDigest), nil
+	return inst.WithContentDigest(scopedDigest), nil
 }

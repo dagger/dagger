@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
 	"golang.org/x/sync/errgroup"
@@ -2093,19 +2094,19 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	}
 
 	// Set the updated blueprint on the parent source
-		bpUpdatedID, err := bpUpdated.ID()
-		if err != nil {
-			return inst, fmt.Errorf("failed to get updated blueprint ID: %w", err)
-		}
-		err = dag.Select(ctx, parentSrc, &inst,
-			dagql.Selector{
-				Field: "withBlueprint",
-				Args: []dagql.NamedInput{{
-					Name:  "blueprint",
-					Value: dagql.NewID[*core.ModuleSource](bpUpdatedID),
-				}},
-			},
-		)
+	bpUpdatedID, err := bpUpdated.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get updated blueprint ID: %w", err)
+	}
+	err = dag.Select(ctx, parentSrc, &inst,
+		dagql.Selector{
+			Field: "withBlueprint",
+			Args: []dagql.NamedInput{{
+				Name:  "blueprint",
+				Value: dagql.NewID[*core.ModuleSource](bpUpdatedID),
+			}},
+		},
+	)
 	return inst, err
 }
 
@@ -2392,7 +2393,7 @@ func (s *moduleSourceSchema) runCodegen(
 				return res, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-				deps = mod.Self().Deps.Append(core.NewUserMod(mod))
+			deps = mod.Self().Deps.Append(core.NewUserMod(mod))
 		}
 	}
 
@@ -2580,7 +2581,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-				deps = mod.Self().Deps.Append(core.NewUserMod(mod))
+			deps = mod.Self().Deps.Append(core.NewUserMod(mod))
 		}
 	}
 
@@ -2609,7 +2610,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 				},
 				{
 					Name:  "source",
-						Value: dagql.NewID[*core.Directory](generatedClientDirID),
+					Value: dagql.NewID[*core.Directory](generatedClientDirID),
 				},
 			},
 		})
@@ -2708,7 +2709,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
-					{Name: "other", Value: dagql.NewID[*core.Directory](genDirInstID)},
+				{Name: "other", Value: dagql.NewID[*core.Directory](genDirInstID)},
 			},
 		},
 	)
@@ -2743,7 +2744,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextChangeset(
 		dagql.Selector{
 			Field: "changes",
 			Args: []dagql.NamedInput{
-					{Name: "from", Value: dagql.NewID[*core.Directory](originalCtxDirID)},
+				{Name: "from", Value: dagql.NewID[*core.Directory](originalCtxDirID)},
 			},
 		},
 	); err != nil {
@@ -2860,9 +2861,9 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-		if typeDefsEnabled && isSelfCallsEnabled(src) {
-			mod.IncludeSelfInDeps = true
-		}
+	if typeDefsEnabled && isSelfCallsEnabled(src) {
+		mod.IncludeSelfInDeps = true
+	}
 
 	// Verify if lazy loading is disabled ; if so, load the runtime eagerly.
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -2870,23 +2871,23 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-		if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
-			runtimeDeps := mod.Deps
-			if mod.IncludeSelfInDeps {
-				// This eager runtime path happens before the final asModule result exists,
-				// so we localize the self-call special case to just this runtime load by
-				// using a temporary attached synthetic self module. The final returned
-				// module gets its real attached self dep later during AttachOwnedResults.
-				selfInst, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "eagerRuntimeSelfDeps", dag)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create temporary self module for eager runtime: %w", err)
-				}
-				runtimeDeps = runtimeDeps.Append(core.NewUserMod(selfInst))
-			}
-			runtime, err := runtimeImpl.Runtime(ctx, runtimeDeps, src)
+	if clientMetadata.EagerRuntime && !mod.Runtime.Valid {
+		runtimeDeps := mod.Deps
+		if mod.IncludeSelfInDeps {
+			// This eager runtime path happens before the final asModule result exists,
+			// so we localize the self-call special case to just this runtime load by
+			// using a temporary attached synthetic self module. The final returned
+			// module gets its real attached self dep later during AttachOwnedResults.
+			selfInst, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "eagerRuntimeSelfDeps", dag)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to create temporary self module for eager runtime: %w", err)
 			}
+			runtimeDeps = runtimeDeps.Append(core.NewUserMod(selfInst))
+		}
+		runtime, err := runtimeImpl.Runtime(ctx, runtimeDeps, src)
+		if err != nil {
+			return nil, err
+		}
 		mod.Runtime = dagql.NonNull(runtime)
 
 		// Force load the runtime to fill the cache
@@ -3428,6 +3429,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module source implementation digest: %w", err)
 	}
+	scopedDigest := hashutil.HashStrings("ModuleSource._implementationScoped", sourceDigest.String())
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -3436,7 +3438,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, err
 	}
-	return inst.WithContentDigest(sourceDigest), nil
+	return inst.WithContentDigest(scopedDigest), nil
 }
 
 func (s *moduleSourceSchema) moduleSourceAsModule(
