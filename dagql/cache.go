@@ -1555,6 +1555,9 @@ func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
 			continue
 		}
 		// Gate size work to prune-relevant candidates only.
+		// TODO: Investigate whether this gate is inverted. Prune selection skips
+		// depOfPersistedResult entries, but this size pass only measures
+		// depOfPersistedResult entries.
 		if !res.depOfPersistedResult {
 			continue
 		}

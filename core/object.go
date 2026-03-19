@@ -174,7 +174,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 			}
 			if id != nil {
 				if id.EngineResultID() == 0 {
-					return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+					return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 				}
 				return id.Encode()
 			}
@@ -188,7 +188,7 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 				return nil, nil
 			}
 			if id.EngineResultID() == 0 {
-				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 			}
 			return id.Encode()
 		case *call.ID:
@@ -196,12 +196,12 @@ func moduleObjectValueToSDKInput(ctx context.Context, modType ModType, value any
 				return nil, nil
 			}
 			if value.EngineResultID() == 0 {
-				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 			}
 			return value.Encode()
 		case call.ID:
 			if value.EngineResultID() == 0 {
-				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 			}
 			return value.Encode()
 		default:
@@ -256,7 +256,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 		}
 		if id != nil {
 			if id.EngineResultID() == 0 {
-				return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+				return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 			}
 			return id.Encode()
 		}
@@ -270,7 +270,7 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 			return nil, nil
 		}
 		if id.EngineResultID() == 0 {
-			return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", id.DisplaySelf())
+			return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 		}
 		return id.Encode()
 	case *call.ID:
@@ -278,12 +278,12 @@ func unknownModuleObjectValueToSDKInput(ctx context.Context, value any) (any, er
 			return nil, nil
 		}
 		if value.EngineResultID() == 0 {
-			return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+			return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 		}
 		return value.Encode()
 	case call.ID:
 		if value.EngineResultID() == 0 {
-			return nil, fmt.Errorf("module object SDK input requires engine-result IDs, got %s", value.DisplaySelf())
+			return nil, fmt.Errorf("module object SDK input requires engine-result IDs")
 		}
 		return value.Encode()
 	case []any:

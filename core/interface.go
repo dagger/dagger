@@ -121,11 +121,11 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	}
 	val, err := dag.Cache.LoadResultByResultID(ctx, dag, id.EngineResultID())
 	if err != nil {
-		return nil, fmt.Errorf("load interface ID %s: %w", id.DisplaySelf(), err)
+		return nil, fmt.Errorf("load interface implementation: %w", err)
 	}
 	objVal, ok := val.(dagql.AnyObjectResult)
 	if !ok {
-		return nil, fmt.Errorf("load interface ID %s: unexpected result %T", id.DisplaySelf(), val)
+		return nil, fmt.Errorf("load interface implementation: unexpected result %T", val)
 	}
 	call, err := val.ResultCall()
 	if err != nil {
