@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -24,9 +26,273 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/sortutil"
 )
+
+const typeDefDebugMessageName = "dagql_typedef_debug"
+
+var typeDefDebugAllFieldReceiverTypes = map[string]struct{}{
+	"TypeDef":          {},
+	"ObjectTypeDef":    {},
+	"InterfaceTypeDef": {},
+	"InputTypeDef":     {},
+	"ListTypeDef":      {},
+	"EnumTypeDef":      {},
+	"EnumValueTypeDef": {},
+	"ScalarTypeDef":    {},
+	"FieldTypeDef":     {},
+	"Function":         {},
+	"FunctionArg":      {},
+}
+
+var typeDefDebugQueryFields = map[string]struct{}{
+	"module":                     {},
+	"typeDef":                    {},
+	"function":                   {},
+	"currentModule":              {},
+	"currentTypeDefs":            {},
+	"currentFunctionCall":        {},
+	"loadTypeDefFromID":          {},
+	"loadFunctionFromID":         {},
+	"loadFunctionArgFromID":      {},
+	"loadFieldTypeDefFromID":     {},
+	"loadObjectTypeDefFromID":    {},
+	"loadInterfaceTypeDefFromID": {},
+	"loadInputTypeDefFromID":     {},
+	"loadListTypeDefFromID":      {},
+	"loadEnumTypeDefFromID":      {},
+	"loadEnumValueTypeDefFromID": {},
+	"loadScalarTypeDefFromID":    {},
+}
+
+var typeDefDebugModuleFields = map[string]struct{}{
+	"objects":       {},
+	"interfaces":    {},
+	"enums":         {},
+	"withObject":    {},
+	"withInterface": {},
+	"withEnum":      {},
+}
+
+type typeDefDebugCtxKey struct{}
+type typeDefDebugFieldCtxKey struct{}
+
+type typeDefDebugFieldInfo struct {
+	ReceiverType string
+	Field        string
+}
+
+func (info typeDefDebugFieldInfo) key() string {
+	return fmt.Sprintf("%s.%s", info.ReceiverType, info.Field)
+}
+
+type typeDefDebugTrace struct {
+	rawQuery               string
+	rawQueryHash           string
+	operationName          string
+	topLevelFields         []string
+	interestingTopLevel    []string
+	startLogged            bool
+	interestingFieldCounts map[string]int
+	builtinFieldCounts     map[string]int
+	cacheHitCounts         map[string]int
+	cacheMissCounts        map[string]int
+	cacheWaitCounts        map[string]int
+	mu                     sync.Mutex
+}
+
+func newTypeDefDebugTrace(gqlOp *graphql.OperationContext) *typeDefDebugTrace {
+	trace := &typeDefDebugTrace{
+		interestingFieldCounts: make(map[string]int),
+		builtinFieldCounts:     make(map[string]int),
+		cacheHitCounts:         make(map[string]int),
+		cacheMissCounts:        make(map[string]int),
+		cacheWaitCounts:        make(map[string]int),
+	}
+	if gqlOp == nil {
+		return trace
+	}
+	trace.rawQuery = gqlOp.RawQuery
+	trace.rawQueryHash = fmt.Sprintf("%x", xxh3.HashString(gqlOp.RawQuery))
+	trace.operationName = gqlOp.OperationName
+	return trace
+}
+
+func typeDefDebugTraceFromContext(ctx context.Context) *typeDefDebugTrace {
+	trace, _ := ctx.Value(typeDefDebugCtxKey{}).(*typeDefDebugTrace)
+	return trace
+}
+
+func typeDefDebugFieldFromContext(ctx context.Context) *typeDefDebugFieldInfo {
+	info, _ := ctx.Value(typeDefDebugFieldCtxKey{}).(*typeDefDebugFieldInfo)
+	return info
+}
+
+func isTypeDefDebugSelection(receiverType, field string) bool {
+	switch receiverType {
+	case "Query":
+		_, ok := typeDefDebugQueryFields[field]
+		return ok
+	case "Module":
+		_, ok := typeDefDebugModuleFields[field]
+		return ok
+	default:
+		_, ok := typeDefDebugAllFieldReceiverTypes[receiverType]
+		return ok
+	}
+}
+
+func typeDefDebugTopLevelFields(gqlOp *graphql.OperationContext) []string {
+	if gqlOp == nil || gqlOp.Doc == nil {
+		return nil
+	}
+	fields := []string{}
+	for _, op := range gqlOp.Doc.Operations {
+		if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
+			continue
+		}
+		for _, sel := range op.SelectionSet {
+			field, ok := sel.(*ast.Field)
+			if !ok {
+				continue
+			}
+			fields = append(fields, field.Name)
+		}
+	}
+	slices.Sort(fields)
+	return slices.Compact(fields)
+}
+
+func typeDefDebugExcerpt(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.Join(strings.Fields(raw), " ")
+	if len(raw) > 400 {
+		return raw[:400] + "..."
+	}
+	return raw
+}
+
+func typeDefDebugCountStrings(m map[string]int) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, fmt.Sprintf("%s=%d", key, m[key]))
+	}
+	return out
+}
+
+func (trace *typeDefDebugTrace) ensureStartLogged(ctx context.Context) {
+	if trace == nil {
+		return
+	}
+	trace.mu.Lock()
+	if trace.startLogged {
+		trace.mu.Unlock()
+		return
+	}
+	trace.startLogged = true
+	fields := append([]string(nil), trace.topLevelFields...)
+	interesting := append([]string(nil), trace.interestingTopLevel...)
+	trace.mu.Unlock()
+	args := []any{
+		"event", "op_start",
+		"operation_name", trace.operationName,
+		"raw_query_hash", trace.rawQueryHash,
+		"raw_query_excerpt", typeDefDebugExcerpt(trace.rawQuery),
+		"top_level_fields", fields,
+		"interesting_top_level_fields", interesting,
+	}
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		args = append(args,
+			"client_id", md.ClientID,
+			"session_id", md.SessionID,
+			"client_stable_id", md.ClientStableID,
+			"client_version", md.ClientVersion,
+			"client_hostname", md.ClientHostname,
+		)
+	}
+	slog.InfoContext(ctx, typeDefDebugMessageName, args...)
+}
+
+func (trace *typeDefDebugTrace) recordField(ctx context.Context, info typeDefDebugFieldInfo, builtinLoadByID bool) {
+	if trace == nil {
+		return
+	}
+	trace.ensureStartLogged(ctx)
+	trace.mu.Lock()
+	trace.interestingFieldCounts[info.key()]++
+	if builtinLoadByID {
+		trace.builtinFieldCounts[info.key()]++
+	}
+	trace.mu.Unlock()
+}
+
+func (trace *typeDefDebugTrace) recordCache(ctx context.Context, info typeDefDebugFieldInfo, outcome string) {
+	if trace == nil {
+		return
+	}
+	trace.ensureStartLogged(ctx)
+	trace.mu.Lock()
+	switch outcome {
+	case "hit":
+		trace.cacheHitCounts[info.key()]++
+	case "miss":
+		trace.cacheMissCounts[info.key()]++
+	case "wait":
+		trace.cacheWaitCounts[info.key()]++
+	}
+	trace.mu.Unlock()
+}
+
+func (trace *typeDefDebugTrace) logSummary(ctx context.Context, err error) {
+	if trace == nil {
+		return
+	}
+	trace.mu.Lock()
+	hasInteresting := trace.startLogged
+	fields := typeDefDebugCountStrings(trace.interestingFieldCounts)
+	builtin := typeDefDebugCountStrings(trace.builtinFieldCounts)
+	cacheHits := typeDefDebugCountStrings(trace.cacheHitCounts)
+	cacheMisses := typeDefDebugCountStrings(trace.cacheMissCounts)
+	cacheWaits := typeDefDebugCountStrings(trace.cacheWaitCounts)
+	trace.mu.Unlock()
+	if !hasInteresting {
+		return
+	}
+	args := []any{
+		"event", "op_summary",
+		"operation_name", trace.operationName,
+		"raw_query_hash", trace.rawQueryHash,
+		"field_counts", fields,
+		"builtin_field_counts", builtin,
+		"cache_hit_counts", cacheHits,
+		"cache_miss_counts", cacheMisses,
+		"cache_wait_counts", cacheWaits,
+	}
+	if err != nil {
+		args = append(args, "error", err)
+	}
+	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
+		args = append(args,
+			"client_id", md.ClientID,
+			"session_id", md.SessionID,
+		)
+	}
+	slog.InfoContext(ctx, typeDefDebugMessageName, args...)
+}
 
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
@@ -582,12 +848,17 @@ func gqlErrs(err error) (errs gqlerror.List) {
 	return
 }
 
-func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (map[string]any, error) {
+func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (results map[string]any, rerr error) {
+	typedefDebug := newTypeDefDebugTrace(gqlOp)
+	ctx = context.WithValue(ctx, typeDefDebugCtxKey{}, typedefDebug)
+	defer func() {
+		typedefDebug.logSummary(ctx, rerr)
+	}()
+
 	if gqlOp.Doc == nil {
-		var err error
-		gqlOp.Doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
-		if err != nil {
-			return nil, gqlErrs(err)
+		gqlOp.Doc, rerr = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
+		if rerr != nil {
+			return nil, gqlErrs(rerr)
 		}
 
 		//nolint:staticcheck // annoying, but we can't easily switch to this without inconsistencies
@@ -599,20 +870,28 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			return nil, listErr
 		}
 	}
-	results := make(map[string]any)
+	typedefDebug.topLevelFields = typeDefDebugTopLevelFields(gqlOp)
+	typedefDebug.interestingTopLevel = make([]string, 0, len(typedefDebug.topLevelFields))
+	for _, field := range typedefDebug.topLevelFields {
+		if isTypeDefDebugSelection("Query", field) {
+			typedefDebug.interestingTopLevel = append(typedefDebug.interestingTopLevel, field)
+		}
+	}
+	results = make(map[string]any)
 	for _, op := range gqlOp.Doc.Operations {
 		switch op.Operation {
 		case ast.Query:
 			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 				continue
 			}
-			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
-			if err != nil {
-				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
+			var sels []Selection
+			sels, rerr = s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
+			if rerr != nil {
+				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, rerr)
 			}
-			results, err = s.Resolve(ctx, s.root, sels...)
-			if err != nil {
-				return nil, err
+			results, rerr = s.Resolve(ctx, s.root, sels...)
+			if rerr != nil {
+				return nil, rerr
 			}
 		case ast.Mutation:
 			// TODO

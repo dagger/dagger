@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -121,6 +122,45 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	originalRecipeEnc, err := cacheTestMustRecipeID(t, original).Encode()
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
+}
+
+func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	srv := NewServer(&persistCodecRoot{}, NewSessionCache(cacheIface))
+	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
+
+	req := &CallRequest{
+		ResultCall: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&persistCodecObj{}).Type()),
+			Field: "obj",
+		},
+	}
+
+	first, err := cacheIface.GetOrInitCall(ctx, req, func(callCtx context.Context) (AnyResult, error) {
+		return NewObjectResultForCurrentCall(callCtx, srv, &persistCodecObj{Name: "x"})
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, first != nil)
+	_, ok := first.(ObjectResult[*persistCodecObj])
+	assert.Assert(t, ok)
+	assert.Assert(t, !first.HitCache())
+
+	second, err := cacheIface.GetOrInitCall(ctx, req, func(context.Context) (AnyResult, error) {
+		return nil, errors.New("unexpected initializer call")
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, second != nil)
+	_, ok = second.(ObjectResult[*persistCodecObj])
+	assert.Assert(t, ok)
+	assert.Assert(t, second.HitCache())
+
+	assert.NilError(t, first.Release(ctx))
+	assert.NilError(t, second.Release(ctx))
 }
 
 func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {

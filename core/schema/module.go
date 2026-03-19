@@ -11,6 +11,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -26,6 +28,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("typeDef", s.typeDef).
 			Doc(`Create a new TypeDef.`),
 
+		dagql.Func("__inputTypeDef", s.inputTypeDef).
+			Doc(`Load an input TypeDef by name for internal server use.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the input type.`),
+			),
+
 		dagql.Func("generatedCode", s.generatedCode).
 			Doc(`Create a code generation result, given a directory containing the generated code.`),
 
@@ -39,9 +47,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("sourceMap", s.sourceMap).
 			Doc(`Creates source map metadata.`).
 			Args(
+				dagql.Arg("module").Doc("The source module owning this source map.").Internal(),
 				dagql.Arg("filename").Doc("The filename from the module source."),
 				dagql.Arg("line").Doc("The line number within the filename."),
 				dagql.Arg("column").Doc("The column number within the line."),
+				dagql.Arg("url").Doc("The browser URL for this source map, if any.").Internal(),
 			),
 
 		dagql.FuncWithDynamicInputs("currentModule", s.currentModule, s.currentModuleCacheKey).
@@ -234,7 +244,15 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 	}.Install(dag)
 
+	dagql.Fields[*core.Function]{
+		dagql.Func("returnType", s.functionReturnType).Extend(),
+	}.Install(dag)
+
 	dagql.Fields[*core.FunctionArg]{}.Install(dag)
+
+	dagql.Fields[*core.FunctionArg]{
+		dagql.Func("typeDef", s.functionArgTypeDef).Extend(),
+	}.Install(dag)
 
 	dagql.Fields[*core.FunctionCallArgValue]{}.Install(dag)
 
@@ -248,7 +266,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Sets the kind of the type.`),
 
 		dagql.Func("withScalar", s.typeDefWithScalar).
-			Doc(`Returns a TypeDef of kind Scalar with the provided name.`),
+			Doc(`Returns a TypeDef of kind Scalar with the provided name.`).
+			Args(
+				dagql.Arg("sourceModuleName").Doc(`The module owning this scalar type.`).Internal(),
+			),
 
 		dagql.Func("withListOf", s.typeDefWithListOf).
 			Doc(`Returns a TypeDef of kind List with the provided type for its elements.`),
@@ -257,10 +278,16 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Returns a TypeDef of kind Object with the provided name.`,
 				`Note that an object's fields and functions may be omitted if the
 				intent is only to refer to an object. This is how functions are able to
-				return their own object, or any other circular reference.`),
+				return their own object, or any other circular reference.`).
+			Args(
+				dagql.Arg("sourceModuleName").Doc(`The module owning this object type.`).Internal(),
+			),
 
 		dagql.Func("withInterface", s.typeDefWithInterface).
-			Doc(`Returns a TypeDef of kind Interface with the provided name.`),
+			Doc(`Returns a TypeDef of kind Interface with the provided name.`).
+			Args(
+				dagql.Arg("sourceModuleName").Doc(`The module owning this interface type.`).Internal(),
+			),
 
 		dagql.Func("withField", s.typeDefWithObjectField).
 			Doc(`Adds a static field for an Object TypeDef, failing if the type is not an object.`).
@@ -286,6 +313,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the enum`),
 				dagql.Arg("description").Doc(`A doc string for the enum, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the enum definition.`),
+				dagql.Arg("sourceModuleName").Doc(`The module owning this enum type.`).Internal(),
 			),
 
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
@@ -314,7 +342,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
 	dagql.Fields[*core.FieldTypeDef]{}.Install(dag)
+	dagql.Fields[*core.FieldTypeDef]{
+		dagql.Func("typeDef", s.fieldTypeDefTypeDef).Extend(),
+	}.Install(dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ListTypeDef]{
+		dagql.Func("elementTypeDef", s.listElementTypeDef).Extend(),
+	}.Install(dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) (dagql.Array[*core.EnumMemberTypeDef], error) {
@@ -341,13 +375,18 @@ func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, a
 }
 
 func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef, args struct {
-	Name        string
-	Description string `default:""`
+	Name             string
+	Description      string                       `default:""`
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("scalar type def must have a name")
 	}
-	return def.WithScalar(args.Name, args.Description), nil
+	def = def.WithScalar(args.Name, args.Description)
+	if args.SourceModuleName.Valid && def.AsScalar.Valid {
+		def.AsScalar.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return def, nil
 }
 
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
@@ -366,10 +405,11 @@ func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef,
 }
 
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
-	Name        string
-	Description string `default:""`
-	SourceMap   dagql.Optional[core.SourceMapID]
-	Deprecated  *string
+	Name             string
+	Description      string `default:""`
+	SourceMap        dagql.Optional[core.SourceMapID]
+	Deprecated       *string
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
@@ -378,13 +418,18 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObject(args.Name, args.Description, args.Deprecated, sourceMap), nil
+	def = def.WithObject(args.Name, args.Description, args.Deprecated, sourceMap)
+	if args.SourceModuleName.Valid && def.AsObject.Valid {
+		def.AsObject.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return def, nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
-	Name        string
-	Description string `default:""`
-	SourceMap   dagql.Optional[core.SourceMapID]
+	Name             string
+	Description      string `default:""`
+	SourceMap        dagql.Optional[core.SourceMapID]
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("interface type def must have a name")
@@ -393,7 +438,11 @@ func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeD
 	if err != nil {
 		return nil, err
 	}
-	return def.WithInterface(args.Name, args.Description, sourceMap), nil
+	def = def.WithInterface(args.Name, args.Description, sourceMap)
+	if args.SourceModuleName.Valid && def.AsInterface.Valid {
+		def.AsInterface.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return def, nil
 }
 
 func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.TypeDef, args struct {
@@ -455,9 +504,10 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 }
 
 func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
-	Name        string
-	Description string `default:""`
-	SourceMap   dagql.Optional[core.SourceMapID]
+	Name             string
+	Description      string `default:""`
+	SourceMap        dagql.Optional[core.SourceMapID]
+	SourceModuleName dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("enum type def must have a name")
@@ -466,7 +516,11 @@ func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, a
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnum(args.Name, args.Description, sourceMap), nil
+	def = def.WithEnum(args.Name, args.Description, sourceMap)
+	if args.SourceModuleName.Valid && def.AsEnum.Valid {
+		def.AsEnum.Value.SourceModuleName = string(args.SourceModuleName.Value)
+	}
+	return def, nil
 }
 
 func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
@@ -540,14 +594,26 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 }
 
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
+	Module   dagql.Optional[dagql.String] `internal:"true"`
 	Filename string
 	Line     int
 	Column   int
+	URL      dagql.Optional[dagql.String] `internal:"true"`
 }) (*core.SourceMap, error) {
+	var module string
+	if args.Module.Valid {
+		module = string(args.Module.Value)
+	}
+	var url string
+	if args.URL.Valid {
+		url = string(args.URL.Value)
+	}
 	return &core.SourceMap{
+		Module:   module,
 		Filename: args.Filename,
 		Line:     args.Line,
 		Column:   args.Column,
+		URL:      url,
 	}, nil
 }
 
@@ -795,7 +861,7 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -804,7 +870,30 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
 	}
-	return deps.TypeDefs(ctx, dag)
+	typeDefs, err := deps.TypeDefs(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	modNames := make([]string, 0, len(deps.Mods()))
+	for _, mod := range deps.Mods() {
+		modNames = append(modNames, mod.Name())
+	}
+	args := []any{
+		"event", "current_type_defs_value",
+		"served_mods", modNames,
+		"typedef_count", len(typeDefs),
+	}
+	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
+		args = append(args,
+			"client_id", md.ClientID,
+			"session_id", md.SessionID,
+		)
+	}
+	if call := dagql.CurrentCall(ctx); call != nil {
+		args = append(args, "call_field", call.Field)
+	}
+	slog.InfoContext(ctx, "dagql_typedef_debug", args...)
+	return s.canonicalCurrentTypeDefs(ctx, dag, typeDefs)
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {

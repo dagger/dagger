@@ -417,7 +417,21 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 
 	state := res.loadPayloadState()
 	if state.hasValue || state.persistedEnvelope == nil {
-		return hit, nil
+		if state.objType == nil {
+			return hit, nil
+		}
+		if _, ok := hit.(AnyObjectResult); ok {
+			return hit, nil
+		}
+		ret := Result[Typed]{
+			shared:   res,
+			hitCache: hit.HitCache(),
+		}
+		objRes, err := state.objType.New(ret)
+		if err != nil {
+			return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
+		}
+		return objRes, nil
 	}
 
 	call := res.loadResultCall()
