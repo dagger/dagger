@@ -151,7 +151,7 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:          resultID,
-			frame:             res.resultCall.clone(),
+			frame:             res.loadResultCall().clone(),
 			self:              res.self,
 			objType:           res.objType,
 			hasValue:          res.hasValue,
@@ -340,12 +340,12 @@ func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")
 	}
 	shared := &sharedResult{
-		self:       snapshot.self,
-		objType:    snapshot.objType,
-		resultCall: snapshot.frame,
-		hasValue:   snapshot.hasValue,
-		id:         snapshot.resultID,
+		self:     snapshot.self,
+		objType:  snapshot.objType,
+		hasValue: snapshot.hasValue,
+		id:       snapshot.resultID,
 	}
+	shared.storeResultCall(snapshot.frame)
 	typedRes := Result[Typed]{
 		shared: shared,
 	}

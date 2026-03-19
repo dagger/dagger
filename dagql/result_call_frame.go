@@ -63,6 +63,10 @@ func (typ *ResultCallType) toAST() *ast.Type {
 type ResultCallRef struct {
 	ResultID uint64      `json:"resultID,omitempty"`
 	Call     *ResultCall `json:"call,omitempty"`
+
+	// shared is a runtime-only fast path for attached result refs. It is not
+	// persisted and must never be the sole source of truth for identity.
+	shared *sharedResult
 }
 
 type ResultCallModule struct {
@@ -544,6 +548,12 @@ func (frame *ResultCall) refCall(ref *ResultCallRef) (*ResultCall, error) {
 		ref.Call.bindCache(frame.cache)
 		return ref.Call, nil
 	}
+	if target := ref.loadSharedCall(frame.cache); target != nil {
+		if frame.cache != nil {
+			target.bindCache(frame.cache)
+		}
+		return target, nil
+	}
 	if frame.cache == nil {
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
 	}
@@ -897,7 +907,18 @@ func (ref *ResultCallRef) clone() *ResultCallRef {
 	return &ResultCallRef{
 		ResultID: ref.ResultID,
 		Call:     ref.Call.clone(),
+		shared:   ref.shared,
 	}
+}
+
+func (ref *ResultCallRef) loadSharedCall(c *cache) *ResultCall {
+	if ref == nil || ref.shared == nil {
+		return nil
+	}
+	if c != nil && ref.shared.cache != nil && ref.shared.cache != c {
+		return nil
+	}
+	return ref.shared.loadResultCall()
 }
 
 func (ref *ResultCallRef) Validate() error {
@@ -961,6 +982,12 @@ func recipeDigestForResultCallRef(c *cache, ref *ResultCallRef, visiting map[sha
 		ref.Call.bindCache(c)
 		return ref.Call.recipeDigestWithVisiting(visiting)
 	}
+	if frame := ref.loadSharedCall(c); frame != nil {
+		if c != nil {
+			frame.bindCache(c)
+		}
+		return frame.recipeDigestWithVisiting(visiting)
+	}
 	return recipeDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
 }
 
@@ -992,6 +1019,12 @@ func contentPreferredDigestForResultCallRef(c *cache, ref *ResultCallRef, visiti
 	if ref.Call != nil {
 		ref.Call.bindCache(c)
 		return ref.Call.contentPreferredDigestWithVisiting(visiting)
+	}
+	if frame := ref.loadSharedCall(c); frame != nil {
+		if c != nil {
+			frame.bindCache(c)
+		}
+		return frame.contentPreferredDigestWithVisiting(visiting)
 	}
 	return contentPreferredDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
 }
@@ -1354,7 +1387,7 @@ func (c *cache) resultCallRefForInputIDLocked(ctx context.Context, inputID *call
 	if shared == nil || shared.id == 0 {
 		return nil, fmt.Errorf("missing shared result")
 	}
-	return &ResultCallRef{ResultID: uint64(shared.id)}, nil
+	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
 func (c *cache) RecipeIDForCall(frame *ResultCall) (*call.ID, error) {
@@ -1382,10 +1415,10 @@ func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 	res := c.resultsByID[resultID]
-	if res == nil || res.resultCall == nil {
+	if res == nil {
 		return nil
 	}
-	return res.resultCall
+	return res.loadResultCall()
 }
 
 func (frame *ResultCall) recipeIDWithVisiting(visiting map[sharedResultID]struct{}) (*call.ID, error) {
@@ -1466,7 +1499,10 @@ func (frame *ResultCall) resolveRefRecipeID(ref *ResultCallRef, visiting map[sha
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
 	}
 	refID := sharedResultID(ref.ResultID)
-	refFrame := frame.cache.resultCallByResultID(refID)
+	refFrame := ref.loadSharedCall(frame.cache)
+	if refFrame == nil {
+		refFrame = frame.cache.resultCallByResultID(refID)
+	}
 	if refFrame == nil {
 		return nil, fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
 	}

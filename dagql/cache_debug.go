@@ -284,8 +284,8 @@ func (c *cache) traceSessionResultTracked(ctx context.Context, sessionCache *Ses
 				"record_type", shared.recordType,
 				"description", shared.description,
 			)
-			if shared.resultCall != nil {
-				if field, err := resultCallIdentityField(shared.resultCall); err == nil {
+			if frame := shared.loadResultCall(); frame != nil {
+				if field, err := resultCallIdentityField(frame); err == nil {
 					args = append(args, "result_call_field", field)
 				}
 			}
@@ -313,8 +313,8 @@ func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionCache *S
 				"record_type", shared.recordType,
 				"description", shared.description,
 			)
-			if shared.resultCall != nil {
-				if field, err := resultCallIdentityField(shared.resultCall); err == nil {
+			if frame := shared.loadResultCall(); frame != nil {
+				if field, err := resultCallIdentityField(frame); err == nil {
 					args = append(args, "result_call_field", field)
 				}
 			}
@@ -999,19 +999,20 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			var contentPreferredDigestErr string
 			var inputDigests []string
 			var inputDigestsErr string
-			if res.resultCall != nil {
-				res.resultCall.bindCache(c)
-				if dig, err := res.resultCall.RecipeDigest(); err == nil {
+			frame := res.loadResultCall()
+			if frame != nil {
+				frame.bindCache(c)
+				if dig, err := frame.RecipeDigest(); err == nil {
 					recipeDigest = dig.String()
 				} else {
 					recipeDigestErr = err.Error()
 				}
-				if dig, err := res.resultCall.ContentPreferredDigest(); err == nil {
+				if dig, err := frame.ContentPreferredDigest(); err == nil {
 					contentPreferredDigest = dig.String()
 				} else {
 					contentPreferredDigestErr = err.Error()
 				}
-				if digs, err := res.resultCall.Inputs(); err == nil {
+				if digs, err := frame.Inputs(); err == nil {
 					inputDigests = make([]string, 0, len(digs))
 					for _, dig := range digs {
 						inputDigests = append(inputDigests, dig.String())
@@ -1050,7 +1051,7 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					HeldDependencyResults: len(res.heldDependencyResults),
 					SnapshotLinks:         links,
 				},
-				ResultCall:                            res.resultCall,
+				ResultCall:                            frame,
 				ResultCallRecipeDigest:                recipeDigest,
 				ResultCallRecipeDigestError:           recipeDigestErr,
 				ResultCallContentPreferredDigest:      contentPreferredDigest,

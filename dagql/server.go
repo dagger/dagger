@@ -980,7 +980,7 @@ func (state *recipeLoadState) loadedResultCallRefForRecipeID(id *call.ID, loaded
 	if shared == nil || shared.id == 0 {
 		return nil, fmt.Errorf("loaded result for %s is not attached", id.Digest())
 	}
-	return &ResultCallRef{ResultID: uint64(shared.id)}, nil
+	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
 func (state *recipeLoadState) loadedResultCallArgFromRecipeArgument(arg *call.Argument, loadedInputs map[string]AnyResult) (*ResultCallArg, error) {
@@ -1496,10 +1496,11 @@ func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResu
 		class, ok = s.ObjectType(className)
 		if ok {
 			shared := val.cacheSharedResult()
-			if shared == nil || shared.resultCall == nil {
+			frame := shared.loadResultCall()
+			if shared == nil || frame == nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: missing result call frame")
 			}
-			val, err = NewResultForCall(obj, shared.resultCall)
+			val, err = NewResultForCall(obj, frame)
 			if err != nil {
 				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
 			}

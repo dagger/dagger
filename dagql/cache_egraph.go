@@ -1026,7 +1026,7 @@ func (c *cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return err
 		}
 
-		baseFrame := c.resultCallByResultID(shared.id)
+		baseFrame := shared.loadResultCall()
 		if baseFrame == nil {
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
@@ -1072,11 +1072,11 @@ func (c *cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %T missing from cache", res)
 		}
-		if shared.resultCall == nil {
+		if shared.loadResultCall() == nil {
 			c.egraphMu.Unlock()
 			return fmt.Errorf("teach content digest: result %T has no call frame", res)
 		}
-		if shared.resultCall != baseFrame {
+		if shared.loadResultCall() != baseFrame {
 			c.egraphMu.Unlock()
 			continue
 		}
@@ -1084,7 +1084,7 @@ func (c *cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			c.egraphMu.Unlock()
 			return err
 		}
-		shared.resultCall = frame
+		shared.storeResultCall(frame)
 		c.egraphMu.Unlock()
 		return nil
 	}
@@ -1453,9 +1453,9 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		c.nextSharedResultID++
 	}
 	c.resultsByID[res.id] = res
-	if res.resultCall == nil && requestFrame != nil {
-		res.resultCall = requestFrame.clone()
-		res.resultCall.bindCache(c)
+	if res.loadResultCall() == nil && requestFrame != nil {
+		res.storeResultCall(requestFrame.clone())
+		res.loadResultCall().bindCache(c)
 	}
 	setTypedPersistedResultID(res.self, res.id)
 	c.traceResultCreated(ctx, res)
@@ -1729,7 +1729,7 @@ func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) (persis
 			graph.addDep(curID, depID)
 			stack = append(stack, depID)
 		}
-		if err := addPersistedCallDeps(curID, res.resultCall, &graph, &stack); err != nil {
+		if err := addPersistedCallDeps(curID, res.loadResultCall(), &graph, &stack); err != nil {
 			return persistedClosureGraph{}, err
 		}
 		for termID := range c.termIDsForResultLocked(curID) {
@@ -1784,6 +1784,7 @@ func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	}
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	delete(c.resultOutputEqClasses, res.id)
+	res.storeResultCall(nil)
 	delete(c.resultsByID, res.id)
 	c.traceResultRemoved(ctx, res)
 

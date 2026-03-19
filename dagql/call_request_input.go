@@ -38,11 +38,12 @@ func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
 		return nil, nil
 	}
 	shared := res.cacheSharedResult()
-	if shared == nil || shared.resultCall == nil {
+	frame := shared.loadResultCall()
+	if shared == nil || frame == nil {
 		return nil, fmt.Errorf("result %T has no call frame", res)
 	}
 	if shared.id == 0 {
-		call := shared.resultCall.clone()
+		call := frame.clone()
 		if shared.cache != nil {
 			call.bindCache(shared.cache)
 		}
@@ -51,7 +52,7 @@ func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
 	if shared == nil {
 		return nil, fmt.Errorf("result %T is not cache-backed", res)
 	}
-	return &ResultCallRef{ResultID: uint64(shared.id)}, nil
+	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
 func resultCallRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallRef, error) {
@@ -238,8 +239,8 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 		return nil, err
 	}
 	var gqlType *ast.Type
-	if res.resultCall != nil && res.resultCall.Type != nil {
-		gqlType = res.resultCall.Type.toAST()
+	if frame := res.loadResultCall(); frame != nil && frame.Type != nil {
+		gqlType = frame.Type.toAST()
 	}
 	if gqlType == nil && res.self != nil {
 		gqlType = res.self.Type()

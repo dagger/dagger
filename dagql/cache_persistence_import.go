@@ -153,7 +153,6 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			res := &sharedResult{
 				cache:                c,
 				id:                   resultID,
-				resultCall:           &frame,
 				safeToPersistCache:   row.SafeToPersistCache,
 				depOfPersistedResult: row.DepOfPersistedResult,
 				outputEffectIDs:      outputEffects,
@@ -166,7 +165,8 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 				recordType:           row.RecordType,
 				persistedEnvelope:    &env,
 			}
-			res.resultCall.bindCache(c)
+			res.storeResultCall(&frame)
+			res.loadResultCall().bindCache(c)
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true
