@@ -109,9 +109,14 @@ func functionListRun(o functionProvider, writer io.Writer, filterCore bool) erro
 	if filterCore {
 		filtered := make([]*modFunction, 0, len(fns))
 		for _, fn := range fns {
-			if fn.SourceModuleName != "" {
-				filtered = append(filtered, fn)
+			if fn.SourceModuleName == "" {
+				continue
 			}
+			// Hide loadXxxFromID plumbing functions.
+			if strings.HasPrefix(fn.Name, "load") && strings.HasSuffix(fn.Name, "FromID") {
+				continue
+			}
+			filtered = append(filtered, fn)
 		}
 		fns = filtered
 		skipped = nil // don't show core "skipped" noise either

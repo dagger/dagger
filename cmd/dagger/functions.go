@@ -566,6 +566,11 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 			if fn.SourceModuleName == "" {
 				continue
 			}
+			// Hide loadXxxFromID plumbing functions — they are internal
+			// helpers for ID loading, not user-facing.
+			if strings.HasPrefix(fn.Name, "load") && strings.HasSuffix(fn.Name, "FromID") {
+				continue
+			}
 		}
 		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
