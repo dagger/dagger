@@ -110,6 +110,10 @@ type FuncCommand struct {
 	q   *querybuilder.Selection
 	c   *client.Client
 	ctx context.Context
+
+	// withFn is the `with` function on Query root, if present.
+	// Used to forward constructor args from the root command.
+	withFn *modFunction
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -433,9 +437,10 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		// The function name can be empty if it's the mocked constructor for
 		// the root type (Query). That constructor has `fn.ReturnType` set to
 		// the root type itself, but empty name so we can exclude a selection
-		// in the query builder here.
+		// in the query builder here. If constructor flags were provided,
+		// add a `with(args...)` selection to the query builder.
 		if fn.Name == "" {
-			return nil
+			return fc.selectWith(c)
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.
@@ -443,27 +448,24 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 	}
 }
 
-// addConstructorLocalFlags collects constructor args from all modules on the
-// Query root and registers them as local flags on the root command. This lets
-// users write `dagger call --port 8080 serve up` — the root command consumes
-// the flag, and proxy subcommands pick up the value via parentConstructorFlags.
+// addConstructorLocalFlags looks for a `with` field on the Query root and
+// registers its args as local flags on the root command. This lets users
+// write `dagger call --foo=abc build` — the root command consumes the
+// flag, and selectWith adds `with(foo: "abc")` to the query builder.
 func (fc *FuncCommand) addConstructorLocalFlags(cmd *cobra.Command, rootType *modTypeDef) {
 	fp := rootType.AsFunctionProvider()
 	if fp == nil {
 		return
 	}
 	for _, fn := range fp.GetFunctions() {
-		obj := fn.ReturnType.AsObject
-		if obj == nil || obj.SourceModuleName == "" {
+		if fn.Name != "with" {
 			continue
 		}
-		if fn.Name != gqlFieldName(obj.SourceModuleName) {
-			continue
-		}
-		// This is a module constructor — register its args as local flags.
+		// Found the `with` field — register its args as local flags.
+		fc.withFn = fn
 		for _, arg := range fn.SupportedArgs() {
 			if cmd.Flags().Lookup(arg.FlagName()) != nil {
-				continue // already registered from another constructor
+				continue // already registered
 			}
 			fc.mod.LoadTypeDef(arg.TypeDef)
 			if err := arg.AddFlag(cmd.Flags()); err != nil {
@@ -475,7 +477,32 @@ func (fc *FuncCommand) addConstructorLocalFlags(cmd *cobra.Command, rootType *mo
 				[]string{"Arguments"},
 			)
 		}
+		break
 	}
+}
+
+// selectWith adds a `with(args...)` selection to the query builder if any
+// constructor flags were set.
+func (fc *FuncCommand) selectWith(cmd *cobra.Command) error {
+	if fc.withFn == nil {
+		return nil
+	}
+	// Check if any with-args flags were changed.
+	anyChanged := false
+	for _, a := range fc.withFn.SupportedArgs() {
+		flag, err := a.GetFlag(cmd.Flags())
+		if err != nil {
+			continue
+		}
+		if flag.Changed {
+			anyChanged = true
+			break
+		}
+	}
+	if !anyChanged {
+		return nil
+	}
+	return fc.selectFunc(fc.withFn, cmd)
 }
 
 // addFlagsForFunction creates the flags for a function's arguments.

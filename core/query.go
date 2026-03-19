@@ -33,6 +33,11 @@ type Query struct {
 
 	// An Env value propagated to a module function call, i.e. from LLM.
 	CurrentEnv *call.ID
+
+	// ConstructorArgs stores arguments to pass to the entrypoint module's
+	// constructor. Set by the `with` field on Query so that entrypoint
+	// proxy resolvers can forward them to the constructor.
+	ConstructorArgs map[string]dagql.Input
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -229,7 +234,14 @@ func (*Query) TypeDescription() string {
 }
 
 func (q Query) Clone() *Query {
-	return &q
+	cp := q
+	if q.ConstructorArgs != nil {
+		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
+		for k, v := range q.ConstructorArgs {
+			cp.ConstructorArgs[k] = v
+		}
+	}
+	return &cp
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {

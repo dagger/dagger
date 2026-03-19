@@ -362,9 +362,33 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	}
 
 	constructorArgs := constructorSpec.Args.Inputs(dag.View)
-	constructorArgNames := make(map[string]struct{}, len(constructorArgs))
-	for _, arg := range constructorArgs {
-		constructorArgNames[arg.Name] = struct{}{}
+
+	// Install `with` field on Query that stores constructor args for
+	// entrypoint proxy resolvers to forward to the constructor.
+	// Only installed when the constructor has arguments.
+	if len(constructorArgs) > 0 {
+		withSpec := dagql.FieldSpec{
+			Name:        "with",
+			Description: fmt.Sprintf("Configure the %s constructor arguments.", obj.Module.Name()),
+			Type:        &Query{},
+			Module:      obj.Module.IDModule(),
+			Args:        dagql.NewInputSpecs(constructorArgs...),
+		}
+		dag.Root().ObjectType().Extend(
+			withSpec,
+			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
+				query, ok := dagql.UnwrapAs[*Query](self)
+				if !ok {
+					return nil, fmt.Errorf("expected *Query, got %T", self)
+				}
+				cp := query.Clone()
+				cp.ConstructorArgs = make(map[string]dagql.Input, len(args))
+				for k, v := range args {
+					cp.ConstructorArgs[k] = v
+				}
+				return dagql.NewObjectResultForCurrentID(ctx, dag, cp)
+			},
+		)
 	}
 
 	for _, fun := range obj.TypeDef.Functions {
@@ -380,31 +404,14 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		if err != nil {
 			return fmt.Errorf("failed to get field spec for %q: %w", fun.Name, err)
 		}
-		methodArgs := proxySpec.Args.Inputs(dag.View)
-		ambiguousArg := ""
-		for _, arg := range methodArgs {
-			if _, exists := constructorArgNames[arg.Name]; exists {
-				ambiguousArg = arg.Name
-				break
-			}
-		}
-		if ambiguousArg != "" {
-			slog.ExtraDebug("skipping entrypoint proxy due to constructor arg conflict",
-				"module", obj.Module.Name(),
-				"function", proxySpec.Name,
-				"arg", ambiguousArg,
-			)
-			continue
-		}
-
-		mergedArgs := append([]dagql.InputSpec{}, constructorArgs...)
-		mergedArgs = append(mergedArgs, methodArgs...)
-		proxySpec.Args = dagql.NewInputSpecs(mergedArgs...)
+		// Proxy specs only carry the method's own args — constructor args
+		// are stored on the Query via the `with` field.
 		proxySpec.Module = obj.Module.IDModule()
 		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and method calls cache on their own."
 		proxySpec.NoTelemetry = true
 
 		methodName := proxySpec.Name
+		methodArgs := proxySpec.Args.Inputs(dag.View)
 		dag.Root().ObjectType().Extend(
 			proxySpec,
 			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
@@ -418,11 +425,17 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if dag.Inner != nil {
 					target = dag.Inner
 				}
+				// Read constructor args from the Query (set by `with`).
+				query, _ := dagql.UnwrapAs[*Query](self)
+				var ctorNamedArgs []dagql.NamedInput
+				if query != nil && query.ConstructorArgs != nil {
+					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
+				}
 				var result dagql.AnyResult
 				if err := target.Select(ctx, target.Root(), &result,
 					dagql.Selector{
 						Field: constructorName,
-						Args:  orderedNamedInputs(constructorArgs, args),
+						Args:  ctorNamedArgs,
 					},
 					dagql.Selector{
 						Field: methodName,
@@ -445,11 +458,8 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 			Type:        field.TypeDef.ToTyped(),
 			Module:      obj.Module.IDModule(),
 			NoTelemetry: true,
+			DoNotCache:  "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own.",
 		}
-
-		// Fields have no args of their own; only constructor args are needed.
-		proxySpec.Args = dagql.NewInputSpecs(constructorArgs...)
-		proxySpec.DoNotCache = "Entrypoint proxy is pure routing; the inner constructor and field calls cache on their own."
 
 		proxiedFieldName := fieldName
 		dag.Root().ObjectType().Extend(
@@ -462,11 +472,17 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if dag.Inner != nil {
 					target = dag.Inner
 				}
+				// Read constructor args from the Query (set by `with`).
+				query, _ := dagql.UnwrapAs[*Query](self)
+				var ctorNamedArgs []dagql.NamedInput
+				if query != nil && query.ConstructorArgs != nil {
+					ctorNamedArgs = orderedNamedInputs(constructorArgs, query.ConstructorArgs)
+				}
 				var result dagql.AnyResult
 				if err := target.Select(ctx, target.Root(), &result,
 					dagql.Selector{
 						Field: constructorName,
-						Args:  orderedNamedInputs(constructorArgs, args),
+						Args:  ctorNamedArgs,
 					},
 					dagql.Selector{
 						Field: proxiedFieldName,
