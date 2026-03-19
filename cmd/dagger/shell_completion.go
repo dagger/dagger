@@ -230,6 +230,9 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 
 	case ctx.ModType != nil:
 		// complete possible functions for this type
+		if def := ctx.Completer.GetDef(nil); def != nil {
+			_ = def.ensureFunctionProviderLoadedByProvider(ctx.ModType)
+		}
 		for _, f := range ctx.ModType.GetFunctions() {
 			results = append(results, f.CmdName())
 		}

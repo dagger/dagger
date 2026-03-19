@@ -146,6 +146,8 @@ type moduleDef struct {
 	typeDefsByID    map[dagger.TypeDefID]*modTypeDef
 	typeRefDefsByID map[dagger.TypeDefID]*modTypeDef
 	namedTypeDefs   map[string]*modTypeDef
+	dag             *dagger.Client
+	loadCtx         context.Context
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
@@ -306,6 +308,8 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	m.typeDefsByID = make(map[dagger.TypeDefID]*modTypeDef, len(indexRes.TypeDefs))
 	m.typeRefDefsByID = make(map[dagger.TypeDefID]*modTypeDef, len(indexRes.TypeDefs))
 	m.namedTypeDefs = make(map[string]*modTypeDef, len(indexRes.TypeDefs))
+	m.dag = dag
+	m.loadCtx = ctx
 
 	bootstrapTypeDefs := make([]*modTypeDef, 0, len(indexRes.TypeDefs))
 	for _, typeDef := range indexRes.TypeDefs {
@@ -332,15 +336,20 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 
 	for _, typeDef := range typeDefs {
 		m.indexCanonicalTypeDef(typeDef)
+		typeDef.owner = m
 		switch typeDef.Kind {
 		case dagger.TypeDefKindObjectKind:
 			m.Objects = append(m.Objects, typeDef)
 			if typeDef.AsObject != nil {
+				typeDef.AsObject.owner = m
+				typeDef.AsObject.typeDef = typeDef
 				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsObject.Name)] = typeDef
 			}
 		case dagger.TypeDefKindInterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
 			if typeDef.AsInterface != nil {
+				typeDef.AsInterface.owner = m
+				typeDef.AsInterface.typeDef = typeDef
 				m.namedTypeDefs[namedTypeDefKey(typeDef.Kind, typeDef.AsInterface.Name)] = typeDef
 			}
 		case dagger.TypeDefKindEnumKind:
@@ -361,6 +370,9 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	}
 
 	rootType := m.GetTypeDef("Query")
+	if err := m.ensureFunctionProviderLoaded(rootType); err != nil {
+		return fmt.Errorf("load query provider details: %w", err)
+	}
 
 	for _, fn := range rootType.AsObject.Functions {
 		if err := m.LoadFunctionTypeDefs(fn); err != nil {
@@ -388,6 +400,15 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 	// For core API only, main object is the Query type.
 	if m.Name == "" {
 		m.MainObject = rootType
+	}
+	if m.MainObject != nil {
+		mainObjectConstructor := m.MainObject.AsObject.Constructor
+		if err := m.ensureFunctionProviderLoaded(m.MainObject); err != nil {
+			return fmt.Errorf("load main object provider details: %w", err)
+		}
+		if mainObjectConstructor != nil {
+			m.MainObject.AsObject.Constructor = mainObjectConstructor
+		}
 	}
 
 	if m.Name != "" && m.MainObject == nil {
@@ -447,7 +468,7 @@ typeDef {` + minimalTypeDefRefSelection() + `
 }`
 }
 
-func topLevelTypeDefSelection(kind dagger.TypeDefKind) string {
+func topLevelTypeDefMetadataSelection(kind dagger.TypeDefKind) string {
 	switch kind {
 	case dagger.TypeDefKindObjectKind:
 		return `
@@ -458,12 +479,6 @@ asObject {
 	name
 	description
 	sourceModuleName
-	constructor {` + functionDetailsSelection() + `
-	}
-	functions {` + functionDetailsSelection() + `
-	}
-	fields {` + fieldDetailsSelection() + `
-	}
 }`
 	case dagger.TypeDefKindInterfaceKind:
 		return `
@@ -474,8 +489,6 @@ asInterface {
 	name
 	description
 	sourceModuleName
-	functions {` + functionDetailsSelection() + `
-	}
 }`
 	case dagger.TypeDefKindInputKind:
 		return `
@@ -484,8 +497,6 @@ kind
 optional
 asInput {
 	name
-	fields {` + fieldDetailsSelection() + `
-	}
 }`
 	case dagger.TypeDefKindEnumKind:
 		return `
@@ -518,6 +529,41 @@ asScalar {
 id
 kind
 optional`
+	}
+}
+
+func providerTypeDefSelection(kind dagger.TypeDefKind) string {
+	switch kind {
+	case dagger.TypeDefKindObjectKind:
+		return `
+id
+kind
+optional
+asObject {
+	name
+	description
+	sourceModuleName
+	constructor {` + functionDetailsSelection() + `
+	}
+	functions {` + functionDetailsSelection() + `
+	}
+	fields {` + fieldDetailsSelection() + `
+	}
+}`
+	case dagger.TypeDefKindInterfaceKind:
+		return `
+id
+kind
+optional
+asInterface {
+	name
+	description
+	sourceModuleName
+	functions {` + functionDetailsSelection() + `
+	}
+}`
+	default:
+		return topLevelTypeDefMetadataSelection(kind)
 	}
 }
 
@@ -630,7 +676,7 @@ func decodeAliasedTypeDefs(query string, aliasPrefix string, typeDefs []*modType
 
 func (m *moduleDef) loadTopLevelTypeDefs(ctx context.Context, dag *dagger.Client, typeDefs []*modTypeDef) ([]*modTypeDef, error) {
 	loaded, err := decodeAliasedTypeDefs(
-		buildTypeDefLoadQuery("typedef", typeDefs, topLevelTypeDefSelection),
+		buildTypeDefLoadQuery("typedef", typeDefs, topLevelTypeDefMetadataSelection),
 		"typedef",
 		typeDefs,
 		dag,
@@ -761,6 +807,93 @@ func (m *moduleDef) loadNestedTypeDefRefs(ctx context.Context, dag *dagger.Clien
 	return nil
 }
 
+func (m *moduleDef) ensureFunctionProviderLoaded(typeDef *modTypeDef) error {
+	if typeDef == nil {
+		return nil
+	}
+	switch typeDef.Kind {
+	case dagger.TypeDefKindObjectKind, dagger.TypeDefKindInterfaceKind:
+	default:
+		return nil
+	}
+	typeDef.providerOnce.Do(func() {
+		typeDef.providerErr = m.loadFunctionProvider(typeDef)
+	})
+	return typeDef.providerErr
+}
+
+func (m *moduleDef) ensureFunctionProviderLoadedByProvider(fp functionProvider) error {
+	switch fp := fp.(type) {
+	case *modObject:
+		if fp == nil || fp.typeDef == nil {
+			return nil
+		}
+		return m.ensureFunctionProviderLoaded(fp.typeDef)
+	case *modInterface:
+		if fp == nil || fp.typeDef == nil {
+			return nil
+		}
+		return m.ensureFunctionProviderLoaded(fp.typeDef)
+	default:
+		return nil
+	}
+}
+
+func (m *moduleDef) loadFunctionProvider(typeDef *modTypeDef) error {
+	if m.dag == nil || m.loadCtx == nil {
+		return fmt.Errorf("provider details requested before module typedef load completed")
+	}
+	loaded, err := decodeAliasedTypeDefs(
+		buildTypeDefLoadQuery("provider", []*modTypeDef{typeDef}, providerTypeDefSelection),
+		"provider",
+		[]*modTypeDef{typeDef},
+		m.dag,
+		m.loadCtx,
+	)
+	if err != nil {
+		return fmt.Errorf("load provider typedef %q: %w", typeDef.ID, err)
+	}
+	provider := loaded[0]
+	if err := m.loadNestedTypeDefRefs(m.loadCtx, m.dag, loaded); err != nil {
+		return err
+	}
+	existingObject := typeDef.AsObject
+	existingInterface := typeDef.AsInterface
+
+	typeDef.Kind = provider.Kind
+	if existingObject != nil && provider.AsObject != nil {
+		*existingObject = *provider.AsObject
+		typeDef.AsObject = existingObject
+	} else {
+		typeDef.AsObject = provider.AsObject
+	}
+	if existingInterface != nil && provider.AsInterface != nil {
+		*existingInterface = *provider.AsInterface
+		typeDef.AsInterface = existingInterface
+	} else {
+		typeDef.AsInterface = provider.AsInterface
+	}
+	typeDef.AsInput = provider.AsInput
+	typeDef.AsList = provider.AsList
+	typeDef.AsScalar = provider.AsScalar
+	typeDef.AsEnum = provider.AsEnum
+	if typeDef.AsObject != nil {
+		if existingObject != nil && existingObject.Constructor != nil {
+			typeDef.AsObject.Constructor = existingObject.Constructor
+		}
+		typeDef.AsObject.owner = m
+		typeDef.AsObject.typeDef = typeDef
+	}
+	if typeDef.AsInterface != nil {
+		if len(typeDef.AsInterface.Functions) == 0 && existingInterface != nil {
+			typeDef.AsInterface.Functions = existingInterface.Functions
+		}
+		typeDef.AsInterface.owner = m
+		typeDef.AsInterface.typeDef = typeDef
+	}
+	return nil
+}
+
 func (m *moduleDef) Long() string {
 	s := m.Name
 	if m.Description != "" {
@@ -841,6 +974,9 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
+	if err := m.ensureFunctionProviderLoadedByProvider(fp); err != nil {
+		return nil, err
+	}
 	for _, fn := range fp.GetFunctions() {
 		if fn.Name == functionName || fn.CmdName() == functionName {
 			if err := m.LoadFunctionTypeDefs(fn); err != nil {
@@ -1061,6 +1197,7 @@ func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
 			}
 		}
 		optional := typeDef.Optional
+		typeDef.ID = canonical.ID
 		typeDef.Kind = canonical.Kind
 		typeDef.Optional = optional
 		typeDef.AsObject = canonical.AsObject
@@ -1109,6 +1246,10 @@ type modTypeDef struct {
 	// once protects concurrent update from LoadTypeDef
 	once    sync.Once
 	loadErr error
+
+	owner        *moduleDef
+	providerOnce sync.Once
+	providerErr  error
 }
 
 func (t *modTypeDef) String() string {
@@ -1272,6 +1413,8 @@ type modObject struct {
 	Fields           []*modField
 	Constructor      *modFunction
 	SourceModuleName string
+	owner            *moduleDef
+	typeDef          *modTypeDef
 }
 
 var _ functionProvider = (*modObject)(nil)
@@ -1320,6 +1463,8 @@ type modInterface struct {
 	Description      string
 	Functions        []*modFunction
 	SourceModuleName string
+	owner            *moduleDef
+	typeDef          *modTypeDef
 }
 
 var _ functionProvider = (*modInterface)(nil)

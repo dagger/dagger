@@ -464,6 +464,10 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	if fnProvider == nil {
 		return nil
 	}
+	if err := fc.mod.ensureFunctionProviderLoaded(typeDef); err != nil {
+		return err
+	}
+	fnProvider = typeDef.AsFunctionProvider()
 
 	cmd.AddGroup(funcGroup)
 
@@ -573,7 +577,10 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 // RunE is the final command in the function chain, where the API request is made.
 func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		q := handleObjectLeaf(fc.q, fn.ReturnType)
+		q, err := handleObjectLeaf(fc.mod, fc.q, fn.ReturnType)
+		if err != nil {
+			return err
+		}
 
 		// Silence usage from this point on as errors don't likely come
 		// from wrong CLI usage.
@@ -599,10 +606,13 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 	}
 }
 
-func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuilder.Selection {
+func handleObjectLeaf(md *moduleDef, q *querybuilder.Selection, typeDef *modTypeDef) (*querybuilder.Selection, error) {
 	obj := typeDef.AsFunctionProvider()
 	if obj == nil {
-		return q
+		return q, nil
+	}
+	if err := md.ensureFunctionProviderLoaded(typeDef); err != nil {
+		return nil, err
 	}
 
 	// Use duck typing to detect supported functions.
@@ -634,15 +644,15 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 		if hasExportAllowParentDirPath {
 			q = q.Arg("allowParentDirPath", true)
 		}
-		return q
+		return q, nil
 	}
 
 	// TODO: Replace with interface when possible.
 	if hasSync {
-		return q.SelectWithAlias("id", "sync")
+		return q.SelectWithAlias("id", "sync"), nil
 	}
 
-	return q.Select("id")
+	return q.Select("id"), nil
 }
 
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
