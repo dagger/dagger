@@ -291,67 +291,9 @@ func (id *ID) EffectIDs() []string {
 // AllEffectIDs returns the effect IDs attached to this call and any of its inputs.
 func (id *ID) AllEffectIDs() []string {
 	id.mustBeRecipe("AllEffectIDs")
-	if id == nil {
-		return nil
-	}
-	seenCalls := map[digest.Digest]struct{}{}
-	seenEffects := map[string]struct{}{}
-	var out []string
-	var walk func(*ID)
-	walkLiteral := func(lit Literal) {}
-	walkLiteral = func(lit Literal) {
-		if lit == nil {
-			return
-		}
-		switch v := lit.(type) {
-		case *LiteralID:
-			walk(v.id)
-		case *LiteralList:
-			for _, val := range v.values {
-				walkLiteral(val)
-			}
-		case *LiteralObject:
-			for _, arg := range v.values {
-				if arg == nil {
-					continue
-				}
-				walkLiteral(arg.value)
-			}
-		}
-	}
-	walk = func(cur *ID) {
-		if cur == nil {
-			return
-		}
-		if _, ok := seenCalls[cur.Digest()]; ok {
-			return
-		}
-		seenCalls[cur.Digest()] = struct{}{}
-		for _, effect := range cur.pb.EffectIds {
-			if _, ok := seenEffects[effect]; ok {
-				continue
-			}
-			seenEffects[effect] = struct{}{}
-			out = append(out, effect)
-		}
-		if cur.receiver != nil {
-			walk(cur.receiver)
-		}
-		for _, arg := range cur.args {
-			if arg == nil {
-				continue
-			}
-			walkLiteral(arg.value)
-		}
-		for _, input := range cur.implicitInputs {
-			if input == nil {
-				continue
-			}
-			walkLiteral(input.value)
-		}
-	}
-	walk(id)
-	return out
+	// FIXME: effect IDs are currently broken and only feed telemetry. Re-implement
+	// them properly before restoring recursive effect traversal over recipe IDs.
+	return []string{}
 }
 
 // Inputs returns the ID digests referenced by this ID, starting with the

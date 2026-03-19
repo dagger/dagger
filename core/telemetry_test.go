@@ -23,6 +23,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *dagql.ResultCall {
+	var ref *dagql.ResultCallRef
+	if receiver != nil {
+		ref = &dagql.ResultCallRef{Call: receiver}
+	}
+	return &dagql.ResultCall{
+		Kind:     dagql.ResultCallKindField,
+		Field:    field,
+		Type:     dagql.NewResultCallType(typ.Type()),
+		Receiver: ref,
+	}
+}
+
 type mockServer struct {
 	moduleSource   *ModuleSource
 	functionCall   *FunctionCall
@@ -168,4 +181,74 @@ func TestParseCallerCalleeRefs(t *testing.T) {
 	require.Equal(t, "github.com/dagger/dagger-test-modules/versioned", calleeRef.ref)
 	require.Equal(t, "0cabe03cc0a9079e738c92b2c589d81fd560011f", calleeRef.version)
 	require.Equal(t, "VersionedGitSSH.hello", calleeRef.functionName)
+}
+
+func TestAroundFuncMarksIntrospectionRootAsSkipped(t *testing.T) {
+	req := &dagql.CallRequest{
+		ResultCall: testResultCall("currentTypeDefs", dagql.String(""), nil),
+	}
+
+	ctx, _ := AroundFunc(t.Context(), req)
+	require.True(t, dagql.IsSkipped(ctx))
+}
+
+func TestAroundFuncSkipsIntrospectionDescendantsViaContext(t *testing.T) {
+	rootReq := &dagql.CallRequest{
+		ResultCall: testResultCall("currentTypeDefs", dagql.String(""), nil),
+	}
+	rootCtx, _ := AroundFunc(t.Context(), rootReq)
+	require.True(t, dagql.IsSkipped(rootCtx))
+
+	childReq := &dagql.CallRequest{
+		ResultCall: testResultCall(
+			"name",
+			dagql.String(""),
+			rootReq.ResultCall,
+		),
+	}
+	childCtx, _ := AroundFunc(rootCtx, childReq)
+	require.True(t, dagql.IsSkipped(childCtx))
+}
+
+func TestIsIntrospectionPreservesClassification(t *testing.T) {
+	functionFrame := testResultCall("function", dagql.String(""), nil)
+	functionFrame.Type = dagql.NewResultCallType((&Function{}).Type())
+
+	tests := []struct {
+		name  string
+		frame *dagql.ResultCall
+		want  bool
+	}{
+		{
+			name:  "root currentTypeDefs",
+			frame: testResultCall("currentTypeDefs", dagql.String(""), nil),
+			want:  true,
+		},
+		{
+			name:  "root plain field",
+			frame: testResultCall("plain", dagql.String(""), nil),
+			want:  false,
+		},
+		{
+			name:  "function builder field",
+			frame: testResultCall("withArg", dagql.String(""), functionFrame),
+			want:  true,
+		},
+		{
+			name:  "descendant of introspection root",
+			frame: testResultCall("name", dagql.String(""), testResultCall("currentTypeDefs", dagql.String(""), nil)),
+			want:  true,
+		},
+		{
+			name:  "descendant of plain root",
+			frame: testResultCall("name", dagql.String(""), testResultCall("plain", dagql.String(""), nil)),
+			want:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isIntrospection(t.Context(), tc.frame))
+		})
+	}
 }

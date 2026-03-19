@@ -30,14 +30,21 @@ func AroundFunc(
 	if req == nil || req.ResultCall == nil {
 		return ctx, dagql.NoopDone
 	}
-	if dagql.IsSkipped(ctx) || isIntrospection(ctx, req.ResultCall) || isMeta(req.ResultCall) {
+	if dagql.IsSkipped(ctx) {
+		return ctx, dagql.NoopDone
+	}
+	introspection, receiver := introspectionInfo(ctx, req.ResultCall)
+	if introspection {
+		return dagql.WithSkip(ctx), dagql.NoopDone
+	}
+	if isMeta(req.ResultCall) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
 	}
 
 	base := "Unknown"
-	if receiver, err := req.ResultCall.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+	if receiver != nil && receiver.Type != nil {
 		base = receiver.Type.NamedType
 	} else if req.Receiver == nil {
 		base = "Query"
@@ -369,47 +376,61 @@ func collectEffects(res dagql.AnyResult, span trace.Span, frame *dagql.ResultCal
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
+	introspection, _ := introspectionInfo(ctx, frame)
+	return introspection
+}
+
+func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
 	if frame == nil {
-		return false
-	}
-	if frame.Receiver == nil {
-		switch frame.Field {
-		case "__schema",
-			"__schemaJSONFile",
-			"__schemaVersion",
-			"currentTypeDefs",
-			"currentModule",
-			"currentFunctionCall",
-			"typeDef",
-			"sourceMap":
-			return true
-		default:
-			return false
-		}
+		return false, nil
 	}
 
-	//nolint:gocritic
-	// disable these unless debug is set in OTEL baggage
-	if !slog.IsDebug(ctx) {
-		if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+	cur := frame
+	var immediateReceiver *dagql.ResultCall
+	for cur != nil {
+		if cur.Receiver == nil {
+			switch cur.Field {
+			case "__schema",
+				"__schemaJSONFile",
+				"__schemaVersion",
+				"currentTypeDefs",
+				"currentModule",
+				"currentFunctionCall",
+				"typeDef",
+				"sourceMap":
+				return true, immediateReceiver
+			default:
+				return false, immediateReceiver
+			}
+		}
+
+		receiver, err := cur.ReceiverCall()
+		if err != nil || receiver == nil {
+			return false, immediateReceiver
+		}
+		if cur == frame {
+			immediateReceiver = receiver
+		}
+
+		//nolint:gocritic
+		// disable these unless debug is set in OTEL baggage
+		if !slog.IsDebug(ctx) && receiver.Type != nil {
 			switch receiver.Type.NamedType {
 			case "Function":
-				switch frame.Field {
+				switch cur.Field {
 				case "withCachePolicy",
 					"withArg",
 					"withSourceMap",
 					"withDescription":
-					return true
+					return true, immediateReceiver
 				}
 			}
 		}
+
+		cur = receiver
 	}
 
-	receiver, err := frame.ReceiverCall()
-	if err != nil || receiver == nil {
-		return false
-	}
-	return isIntrospection(ctx, receiver)
+	return false, immediateReceiver
 }
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
