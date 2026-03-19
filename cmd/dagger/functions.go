@@ -974,6 +974,11 @@ func printID(w io.Writer, response any, typeDef *modTypeDef) error {
 }
 
 func printEncodedID(w io.Writer, encodedID string) error {
+	if encodedID == "" {
+		// special case: return value was the root object (Query itself)
+		fmt.Fprintln(w, "Query")
+		return nil
+	}
 	var id call.ID
 	if err := id.Decode(encodedID); err != nil {
 		return fmt.Errorf("failed to decode ID: %w", err)

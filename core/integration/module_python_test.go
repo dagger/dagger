@@ -952,7 +952,7 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Regexp(t, `Test@xxh3:[a-f0-9]{16}`, out)
+		require.Equal(t, "Query\n", out)
 	})
 
 	t.Run("no uv.lock on develop", func(ctx context.Context, t *testctx.T) {
