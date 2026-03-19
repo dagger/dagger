@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Fix possible cases where dagger call may exit 0 even if the function itself returned an error.
-time: 2026-03-12T12:31:45.78854013-07:00
-custom:
-  Author: sipsma
-  PR: "12000"
