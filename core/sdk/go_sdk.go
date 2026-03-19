@@ -28,8 +28,8 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	// CURRENT commit: v0.19.11
-	goSDKLibVersion = "cfc72d4f3f84fa6cbf710407c2930b0cd824c142"
+	// CURRENT commit: v0.20.1
+	goSDKLibVersion = "8ac3501b479993c6e8289fa9022d42edd50bbf0e"
 )
 
 /*
