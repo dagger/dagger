@@ -201,11 +201,22 @@ func constructorFunctionFromMainObject(mainObj *ObjectTypeDef, name, modName str
 	return fn
 }
 
-// findFunctionOnObject looks up a function by its GraphQL field name on an object.
+// findFunctionOnObject looks up a function or field by its GraphQL field name
+// on an object. Fields are converted to a Function representation so that
+// callers can treat both uniformly.
 func findFunctionOnObject(obj *ObjectTypeDef, fieldName string) *Function {
 	for _, fn := range obj.Functions {
 		if gqlFieldName(fn.Name) == fieldName {
 			return fn
+		}
+	}
+	for _, f := range obj.Fields {
+		if gqlFieldName(f.Name) == fieldName {
+			return &Function{
+				Name:        f.Name,
+				Description: f.Description,
+				ReturnType:  f.TypeDef,
+			}
 		}
 	}
 	return nil
