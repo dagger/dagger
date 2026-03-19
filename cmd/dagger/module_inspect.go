@@ -1189,9 +1189,13 @@ func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
 		if canonical == nil {
 			switch typeDef.Kind {
 			case dagger.TypeDefKindObjectKind:
-				return fmt.Errorf("canonical object typedef %q from module %q not found in currentTypeDefs", typeDef.AsObject.Name, typeDef.AsObject.SourceModuleName)
+				typeDef.AsObject.owner = m
+				typeDef.AsObject.typeDef = typeDef
+				return nil
 			case dagger.TypeDefKindInterfaceKind:
-				return fmt.Errorf("canonical interface typedef %q from module %q not found in currentTypeDefs", typeDef.AsInterface.Name, typeDef.AsInterface.SourceModuleName)
+				typeDef.AsInterface.owner = m
+				typeDef.AsInterface.typeDef = typeDef
+				return nil
 			case dagger.TypeDefKindInputKind:
 				return fmt.Errorf("canonical input typedef %q not found in currentTypeDefs", typeDef.AsInput.Name)
 			case dagger.TypeDefKindEnumKind:
