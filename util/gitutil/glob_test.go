@@ -231,15 +231,15 @@ func TestGlob(t *testing.T) {
 				require.ElementsMatch(t, test.matches, got)
 			})
 
-				// also verify using git itself (sanity check)
-				t.Run(pattern+" (git)", func(t *testing.T) {
-					cmd := exec.Command("git", "ls-remote", "file://"+tmpDir)
-					// Avoid inheriting the outer repo's broken worktree .git file in containerized test runs.
-					cmd.Dir = tmpDir
-					if pattern != "" {
-						cmd.Args = append(cmd.Args, "--", pattern)
-					}
-					out, err := cmd.CombinedOutput()
+			// also verify using git itself (sanity check)
+			t.Run(pattern+" (git)", func(t *testing.T) {
+				cmd := exec.Command("git", "ls-remote", "file://"+tmpDir)
+				// Avoid inheriting the outer repo's broken worktree .git file in containerized test runs.
+				cmd.Dir = tmpDir
+				if pattern != "" {
+					cmd.Args = append(cmd.Args, "--", pattern)
+				}
+				out, err := cmd.CombinedOutput()
 				require.NoError(t, err, "git ls-remote failed: %s", out)
 
 				var got []string

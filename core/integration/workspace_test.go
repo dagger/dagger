@@ -1130,9 +1130,9 @@ type Dirs {
 //
 // This test uses Go (a container-based SDK) and daggerQuery (raw GraphQL)
 // because both are required to trigger the bug:
-// - Dang has a native runtime that doesn't use ContainerRuntime.Call
-// - daggerCall routes through proxy resolvers that delegate to the inner
-//   server, masking the issue
+//   - Dang has a native runtime that doesn't use ContainerRuntime.Call
+//   - daggerCall routes through proxy resolvers that delegate to the inner
+//     server, masking the issue
 func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
