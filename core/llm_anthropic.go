@@ -122,12 +122,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		for _, block := range msg.Content {
 			switch block.Kind {
 			case LLMContentText:
-				text := block.Text
-				// Anthropic's API sometimes returns empty content but rejects it on input.
-				if text == "" {
-					text = " "
-				}
-				blocks = append(blocks, anthropic.NewTextBlock(text))
+				blocks = append(blocks, anthropic.NewTextBlock(block.Text))
 			case LLMContentThinking:
 				blocks = append(blocks, anthropic.NewThinkingBlock(block.Signature, block.Text))
 			case LLMContentToolCall:
@@ -137,11 +132,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 				blocks = append(blocks, anthropic.NewToolUseBlock(block.CallID, args, block.ToolName))
 			case LLMContentToolResult:
-				text := block.Text
-				if text == "" {
-					text = " "
-				}
-				blocks = append(blocks, anthropic.NewToolResultBlock(block.CallID, text, block.Errored))
+				blocks = append(blocks, anthropic.NewToolResultBlock(block.CallID, block.Text, block.Errored))
 			}
 		}
 
