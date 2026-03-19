@@ -103,23 +103,35 @@ func Summarize(out *termenv.Output, entries []Entry, maxWidth int) {
 	}
 }
 
-// foldRemovedDirs merges removed files into their parent removed directory,
-// summing line counts. E.g. if "dir/" and "dir/a.txt" are both removed,
-// only "dir/" is kept with the combined count.
+// foldRemovedDirs merges removed entries (files and subdirectories) into
+// their topmost removed parent directory, summing line counts. E.g. if
+// "dir/", "dir/sub/", and "dir/sub/a.txt" are all removed, only "dir/"
+// is kept with the combined count.
 func foldRemovedDirs(entries []Entry) []Entry {
-	var dirs []Entry
+	var allDirs []Entry
 	for _, e := range entries {
 		if e.Kind == KindRemoved && strings.HasSuffix(e.Path, "/") {
-			dirs = append(dirs, e)
+			allDirs = append(allDirs, e)
 		}
 	}
-	if len(dirs) == 0 {
+	if len(allDirs) == 0 {
 		return entries
+	}
+
+	// Keep only topmost removed directories (discard children).
+	var dirs []Entry
+	for _, d := range allDirs {
+		isChild := slices.ContainsFunc(allDirs, func(parent Entry) bool {
+			return parent.Path != d.Path && strings.HasPrefix(d.Path, parent.Path)
+		})
+		if !isChild {
+			dirs = append(dirs, d)
+		}
 	}
 
 	var result []Entry
 	for _, e := range entries {
-		// Skip directory entries; re-added below with updated counts.
+		// Skip all removed directory entries; topmost ones re-added below.
 		if e.Kind == KindRemoved && strings.HasSuffix(e.Path, "/") {
 			continue
 		}
