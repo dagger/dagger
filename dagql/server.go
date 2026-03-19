@@ -132,12 +132,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		schemaOnces:   make(map[call.View]*sync.Once),
 		schemaLock:    &sync.Mutex{},
 	}
-	rootClass := NewClass(srv, ClassOpts[T]{
-		// NB: there's nothing actually stopping this from being a thing, except it
-		// currently confuses the Dagger Go SDK. could be a nifty way to pass
-		// around global config I suppose.
-		NoIDs: true,
-	})
+	rootClass := NewClass(srv, ClassOpts[T]{})
 	srv.root = ObjectResult[T]{
 		Result: newDetachedResult(nil, root),
 		class:  rootClass,

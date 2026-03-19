@@ -192,6 +192,12 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	return client.HTTP(url, opts...)
 }
 
+// A unique identifier for this Query.
+func ID(ctx context.Context) (dagger.QueryID, error) {
+	client := initClient()
+	return client.ID(ctx)
+}
+
 // Initialize a JSON value
 func JSON() *dagger.JSONValue {
 	client := initClient()
@@ -480,6 +486,12 @@ func LoadObjectTypeDefFromID(id dagger.ObjectTypeDefID) *dagger.ObjectTypeDef {
 func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	client := initClient()
 	return client.LoadPortFromID(id)
+}
+
+// Load a Query from its ID.
+func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
+	client := initClient()
+	return client.LoadQueryFromID(id)
 }
 
 // Load a SDKConfig from its ID.
