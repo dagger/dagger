@@ -68,3 +68,24 @@ func TestMergeEnvVarsOverridesConfig(t *testing.T) {
 	assert.True(t, cfg.LLM.Providers["anthropic"].Enabled)
 	assert.Equal(t, "anthropic", cfg.LLM.DefaultProvider)
 }
+
+func TestDaggerModelEnvVar(t *testing.T) {
+	t.Setenv("DAGGER_MODEL", "my-custom-model")
+
+	cfg := MergeEnvVars(nil)
+	assert.Equal(t, "my-custom-model", cfg.LLM.DefaultModel)
+}
+
+func TestDaggerModelEnvVarOverridesConfig(t *testing.T) {
+	t.Setenv("DAGGER_MODEL", "env-model")
+
+	cfg := &Config{
+		LLM: LLMConfig{
+			DefaultModel: "config-model",
+			Providers:    map[string]Provider{},
+		},
+	}
+
+	cfg = MergeEnvVars(cfg)
+	assert.Equal(t, "env-model", cfg.LLM.DefaultModel)
+}

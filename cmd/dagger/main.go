@@ -75,6 +75,8 @@ var (
 	dotFocusField     string
 	dotShowInternal   bool
 
+	llmModel string
+
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
@@ -339,6 +341,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
+	flags.StringVar(&llmModel, "model", "", "LLM model to use (overrides config and DAGGER_MODEL)")
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
@@ -418,6 +421,13 @@ var opts dagui.FrontendOpts
 
 func main() {
 	parseGlobalFlags()
+
+	// Propagate --model flag to DAGGER_MODEL env var so the engine picks it
+	// up via loadLLMEnvConfig.  The flag takes priority over the env var.
+	if llmModel != "" {
+		os.Setenv("DAGGER_MODEL", llmModel)
+	}
+
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q

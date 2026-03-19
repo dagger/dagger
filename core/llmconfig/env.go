@@ -53,5 +53,10 @@ func MergeEnvVars(cfg *Config) *Config {
 		}
 	}
 
+	// DAGGER_MODEL overrides the default model for all providers.
+	if v := os.Getenv("DAGGER_MODEL"); v != "" {
+		cfg.LLM.DefaultModel = v
+	}
+
 	return cfg
 }

@@ -31,15 +31,10 @@ import (
 )
 
 // shellCode is the code to be executed in the shell command
-var (
-	shellCode string
-
-	llmModel string
-)
+var shellCode string
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
-	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')")
 }
 
 var shellCmd = &cobra.Command{
