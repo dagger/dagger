@@ -1833,13 +1833,14 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
 // using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
+	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
 	if fe.shell != nil {
 		if row.Depth == 0 && row.Previous != nil {
 			return []string{""}
 		}
 		// Gap above each LLM response to visually group RTTT sequences.
 		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
-			return []string{gapPrefix}
+			return []string{trimmedPrefix}
 		}
 		return nil
 	}
@@ -1853,7 +1854,7 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
 			(row.PreviousVisual.Span.Message != "" && row.Span.Message != "") ||
 			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
-		return []string{gapPrefix}
+		return []string{trimmedPrefix}
 	}
 	return nil
 }
@@ -2731,8 +2732,11 @@ func (fe *frontendPretty) renderRowContentRest(out TermOutput, r *renderer, row 
 		multi := len(row.Span.ErrorOrigins.Order) > 1
 		for _, cause := range row.Span.ErrorOrigins.Order {
 			if multi {
-				r.fancyIndent(out, row, false, false)
-				fmt.Fprintln(out, prefix)
+				var gapBuf strings.Builder
+				gapOut := NewOutput(&gapBuf, termenv.WithProfile(fe.profile))
+				r.fancyIndent(gapOut, row, false, false)
+				fmt.Fprint(&gapBuf, prefix)
+				fmt.Fprintln(out, strings.TrimRight(gapBuf.String(), " "))
 			}
 			fe.renderErrorCause(out, r, row, prefix, cause)
 		}
