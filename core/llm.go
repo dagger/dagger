@@ -991,11 +991,11 @@ func mergeLLMConfigs(base, overlay *llmconfig.LLMConfig) *llmconfig.LLMConfig {
 		merged.Providers[name] = bp
 	}
 
-	// Overlay-level defaults don't override file-level defaults.
-	if overlay.DefaultProvider != "" && merged.DefaultProvider == "" {
+	// Overlay-level defaults (env vars) override file-level defaults.
+	if overlay.DefaultProvider != "" {
 		merged.DefaultProvider = overlay.DefaultProvider
 	}
-	if overlay.DefaultModel != "" && merged.DefaultModel == "" {
+	if overlay.DefaultModel != "" {
 		merged.DefaultModel = overlay.DefaultModel
 	}
 

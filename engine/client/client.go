@@ -1416,7 +1416,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 // this on top of the config file read via ConfigPath.
 func loadLLMEnvConfig() *llmconfig.LLMConfig {
 	cfg := llmconfig.MergeEnvVars(nil)
-	if len(cfg.LLM.Providers) == 0 {
+	if len(cfg.LLM.Providers) == 0 && cfg.LLM.DefaultModel == "" {
 		return nil
 	}
 	return &cfg.LLM

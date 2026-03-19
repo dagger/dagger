@@ -131,6 +131,21 @@ func TestLlmConfigMerge(t *testing.T) {
 	assert.Equal(t, "claude-sonnet-4-6", merged.DefaultModel)
 }
 
+func TestLlmConfigMergeDefaultModelOverride(t *testing.T) {
+	// Test that overlay DefaultModel (from env vars) overrides file-level DefaultModel.
+	base := &llmconfig.LLMConfig{
+		DefaultModel: "file-model",
+		Providers: map[string]llmconfig.Provider{
+			"anthropic": {APIKey: "key", Enabled: true},
+		},
+	}
+	overlay := &llmconfig.LLMConfig{
+		DefaultModel: "env-model",
+	}
+	merged := mergeLLMConfigs(base, overlay)
+	assert.Equal(t, "env-model", merged.DefaultModel)
+}
+
 func TestLlmConfigSecretRefResolution(t *testing.T) {
 	srv := newTestServer(t, map[string]string{
 		"op://vault/item/key": "resolved-secret-key",
