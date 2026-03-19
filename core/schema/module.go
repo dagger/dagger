@@ -58,7 +58,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			WithInput(dagql.PerCallInput).
+			WithInput(dagql.PerSchemaInput(dag)).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.Func("currentFunctionCall", s.currentFunctionCall).
