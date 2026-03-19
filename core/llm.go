@@ -621,10 +621,17 @@ const (
 // Internally it stores the same llmconfig.Provider map that the config
 // file uses, so the config flows through unsullied. Environment variables
 // and .env entries are merged into the map as synthetic provider entries.
+//
+// Secret references (op://, vault://, etc.) in API keys are resolved
+// lazily — only when Route is called for a specific provider — so that
+// unused providers never trigger external secret lookups.
 type LLMRouter struct {
 	providers       map[string]*llmconfig.Provider
 	defaultProvider string
 	defaultModel    string
+
+	// srv is kept for lazy secret resolution at Route time.
+	srv *dagql.Server
 }
 
 // provider returns the provider config for the given name, or an empty
@@ -809,9 +816,27 @@ func (r *LLMRouter) DefaultModel() string {
 	}
 }
 
+// resolveProviderSecret resolves any secret-provider reference (op://,
+// vault://, env://, etc.) in the named provider's API key.  It is a
+// no-op when the key is a plain literal or when the server is nil.
+// Resolution happens at most once per provider (the resolved value is
+// written back into the provider entry).
+func (r *LLMRouter) resolveProviderSecret(ctx context.Context, name string) error {
+	p := r.providers[name]
+	if p == nil || p.APIKey == "" || r.srv == nil {
+		return nil
+	}
+	resolved, err := resolveSecret(ctx, r.srv, p.APIKey)
+	if err != nil {
+		return fmt.Errorf("resolve secret for provider %q: %w", name, err)
+	}
+	p.APIKey = resolved
+	return nil
+}
+
 // Return an endpoint for the requested model
 // If the model name is not set, a default will be selected.
-func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
+func (r *LLMRouter) Route(ctx context.Context, model string) (*LLMEndpoint, error) {
 	if model == "" {
 		model = r.DefaultModel()
 	} else {
@@ -821,12 +846,24 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	var err error
 	switch {
 	case r.isAnthropicModel(model):
+		if err := r.resolveProviderSecret(ctx, "anthropic"); err != nil {
+			return nil, err
+		}
 		endpoint = r.routeAnthropicModel()
 	case r.isCodexModel(model):
+		if err := r.resolveProviderSecret(ctx, "openai-codex"); err != nil {
+			return nil, err
+		}
 		endpoint = r.routeCodexModel()
 	case r.isOpenAIModel(model):
+		if err := r.resolveProviderSecret(ctx, "openai"); err != nil {
+			return nil, err
+		}
 		endpoint = r.routeOpenAIModel()
 	case r.isGoogleModel(model):
+		if err := r.resolveProviderSecret(ctx, "google"); err != nil {
+			return nil, err
+		}
 		endpoint, err = r.routeGoogleModel()
 		if err != nil {
 			return nil, err
@@ -839,11 +876,17 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 			return nil, err
 		}
 	case r.isLocalModel(model):
+		if err := r.resolveProviderSecret(ctx, "local"); err != nil {
+			return nil, err
+		}
 		endpoint, err = r.routeLocalModel()
 		if err != nil {
 			return nil, err
 		}
 	default:
+		if err := r.resolveProviderSecret(ctx, "openai"); err != nil {
+			return nil, err
+		}
 		endpoint = r.routeOtherModel()
 	}
 	endpoint.Model = model
@@ -922,7 +965,7 @@ For unified access to all models with a single key:
 }
 
 func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
-	router := &LLMRouter{providers: make(map[string]*llmconfig.Provider)}
+	router := &LLMRouter{providers: make(map[string]*llmconfig.Provider), srv: srv}
 
 	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -937,9 +980,10 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	}
 
 	// Merge: start from the file config, overlay env var providers.
+	// Secret references (op://, vault://, etc.) are NOT resolved here;
+	// they are resolved lazily in Route() for only the selected provider.
 	merged := mergeLLMConfigs(fileCfg, envCfg)
 	if merged != nil {
-		resolveSecretRefs(ctx, srv, merged)
 		router.LoadFromConfig(&llmconfig.Config{LLM: *merged})
 	}
 
@@ -1024,20 +1068,6 @@ func loadLLMConfigFromPath(ctx context.Context, srv *dagql.Server) *llmconfig.LL
 		cfg.LLM.Providers = make(map[string]llmconfig.Provider)
 	}
 	return &cfg.LLM
-}
-
-// resolveSecretRefs resolves any secret-provider references (op://, vault://,
-// env://, etc.) in the config's API keys.
-func resolveSecretRefs(ctx context.Context, srv *dagql.Server, cfg *llmconfig.LLMConfig) {
-	for name, p := range cfg.Providers {
-		if p.APIKey == "" {
-			continue
-		}
-		if resolved, err := resolveSecret(ctx, srv, p.APIKey); err == nil {
-			p.APIKey = resolved
-			cfg.Providers[name] = p
-		}
-	}
 }
 
 // resolveSecret resolves a URI-or-plaintext value through the secret provider
@@ -1146,7 +1176,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := router.Route(llm.model)
+	endpoint, err := router.Route(routeCtx, llm.model)
 	if err != nil {
 		return nil, err
 	}

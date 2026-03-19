@@ -163,7 +163,52 @@ func TestLlmConfigSecretRefResolution(t *testing.T) {
 
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
+
+	// Secret should NOT be resolved yet — resolution is lazy.
+	assert.Equal(t, "op://vault/item/key", r.provider("anthropic").APIKey)
+
+	// After resolving the provider secret (as Route would do), it should be resolved.
+	err = r.resolveProviderSecret(ctx, "anthropic")
+	assert.NoError(t, err)
 	assert.Equal(t, "resolved-secret-key", r.provider("anthropic").APIKey)
+}
+
+func TestLlmConfigSecretRefLazyResolution(t *testing.T) {
+	// Verify that only the routed provider's secret is resolved, not all of them.
+	resolveCalls := map[string]int{}
+	secrets := map[string]string{
+		"op://vault/anthropic-key": "anthropic-resolved",
+		"op://vault/openai-key":    "openai-resolved",
+	}
+	srv := newTestServer(t, secrets)
+
+	// Wrap to count resolution calls by tracking provider state.
+	envCfg := &llmconfig.LLMConfig{
+		Providers: map[string]llmconfig.Provider{
+			"anthropic": {APIKey: "op://vault/anthropic-key"},
+			"openai":    {APIKey: "op://vault/openai-key"},
+		},
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		LLMConfig: envCfg,
+	})
+
+	r, err := NewLLMRouter(ctx, srv)
+	assert.NoError(t, err)
+
+	// Neither secret should be resolved yet.
+	assert.Equal(t, "op://vault/anthropic-key", r.provider("anthropic").APIKey)
+	assert.Equal(t, "op://vault/openai-key", r.provider("openai").APIKey)
+
+	// Resolve only anthropic.
+	err = r.resolveProviderSecret(ctx, "anthropic")
+	assert.NoError(t, err)
+	assert.Equal(t, "anthropic-resolved", r.provider("anthropic").APIKey)
+	// OpenAI should still be unresolved.
+	assert.Equal(t, "op://vault/openai-key", r.provider("openai").APIKey)
+
+	_ = resolveCalls // unused in this simplified form
 }
 
 func TestLlmConfigMergeNils(t *testing.T) {
