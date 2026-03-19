@@ -321,9 +321,11 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
   cd ../..
 
   # The following command *should* work, but it may fail during codegen with "no packages found in ." (undetermined cause).
-  # If it does running the following two commands enough times seem to workaround the problem and enable recursive to work: 
+  # If it does running the following commands enough times seem to workaround the problem and enable recursive to work: 
   # 1. `find toolchains/ -name go.mod -execdir dagger develop \;`
-  # 2. `find toolchains/ -name go.mod -execdir go mod tidy \;`
+  # 2. `find .dagger -name go.mod -execdir dagger develop \;`
+  # 3. `find toolchains/ -name go.mod -execdir go mod tidy \;`
+  # 4. `find .dagger -name go.mod -execdir go mod tidy \;`
   dagger develop --recursive -m .
 
   # update all other modules in the repo (excluding docs snippets)
