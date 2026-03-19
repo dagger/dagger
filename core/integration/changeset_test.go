@@ -244,7 +244,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, modifiedPaths, "dir/added.txt")
 	})
 
-	t.Run("diffStat basic", func(ctx context.Context, t *testctx.T) {
+	t.Run("diffStats basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		oldDir := c.Directory().
@@ -283,6 +283,79 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "remove.txt", diffStats[2].Path)
 		require.Equal(t, "REMOVED", diffStats[2].Kind)
 		require.Equal(t, 1, diffStats[2].RemovedLines)
+	})
+
+	t.Run("diffStats includes nested removed paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create a directory tree that will be entirely removed.
+		// This tests whether DiffStats emits entries for every nested
+		// file and subdirectory (current behavior via AllRemoved) or
+		// only the top-level collapsed directory.
+		oldDir := c.Directory().
+			WithNewFile("keep.txt", "stay\n").
+			WithNewFile("dir/file1.txt", "one\ntwo\n").
+			WithNewFile("dir/file2.txt", "three\n").
+			WithNewFile("dir/sub/deep.txt", "deep\n")
+
+		newDir := c.Directory().
+			WithNewFile("keep.txt", "stay\n")
+
+		var diffStats []struct {
+			Path         string `json:"path"`
+			Kind         string `json:"kind"`
+			AddedLines   int    `json:"addedLines"`
+			RemovedLines int    `json:"removedLines"`
+		}
+		err := c.QueryBuilder().
+			Select("loadChangesetFromID").
+			Arg("id", newDir.Changes(oldDir)).
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
+		require.NoError(t, err)
+
+		// Collect returned paths for inspection.
+		paths := make([]string, len(diffStats))
+		for i, s := range diffStats {
+			paths[i] = s.Path
+		}
+
+		// Current behavior: AllRemoved is uncollapsed, so DiffStats
+		// returns entries for the parent dir, the nested subdir, AND
+		// every removed file. This is intentional so that
+		// patchpreview.foldRemovedDirs can fold them at the rendering
+		// layer with summed line counts.
+		require.Contains(t, paths, "dir/")
+		require.Contains(t, paths, "dir/sub/")
+		require.Contains(t, paths, "dir/file1.txt")
+		require.Contains(t, paths, "dir/file2.txt")
+		require.Contains(t, paths, "dir/sub/deep.txt")
+
+		// All entries should be REMOVED.
+		for _, s := range diffStats {
+			if s.Path == "keep.txt" {
+				continue
+			}
+			require.Equal(t, "REMOVED", s.Kind, "path %s should be REMOVED", s.Path)
+		}
+
+		// Verify line counts on the files (dirs have 0 lines).
+		for _, s := range diffStats {
+			switch s.Path {
+			case "dir/file1.txt":
+				require.Equal(t, 2, s.RemovedLines)
+			case "dir/file2.txt":
+				require.Equal(t, 1, s.RemovedLines)
+			case "dir/sub/deep.txt":
+				require.Equal(t, 1, s.RemovedLines)
+			}
+		}
+
+		// By contrast, removedPaths (the public API) collapses nested
+		// entries under the parent directory.
+		removedPaths, err := newDir.Changes(oldDir).RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"dir/"}, removedPaths)
 	})
 
 	t.Run("layer basic", func(ctx context.Context, t *testctx.T) {
