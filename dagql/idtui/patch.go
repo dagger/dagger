@@ -12,7 +12,7 @@ func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Cha
 	q := dag.QueryBuilder().
 		Select("loadChangesetFromID").
 		Arg("id", changeset).
-		Select("diffStat")
+		Select("diffStats")
 
 	var diffStat []struct {
 		Path         string `json:"path"`

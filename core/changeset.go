@@ -61,50 +61,51 @@ type ChangesetPaths struct {
 	Renamed    map[string]string // newPath → oldPath (also included in Added/Removed)
 }
 
-type ChangesetDiffStatKind string
+type DiffStatKind string
 
-var ChangesetDiffStatKindEnum = dagql.NewEnum[ChangesetDiffStatKind]()
+var DiffStatKindEnum = dagql.NewEnum[DiffStatKind]()
 
 var (
-	DiffStatKindAdded = ChangesetDiffStatKindEnum.Register("ADDED",
+	DiffStatKindAdded = DiffStatKindEnum.Register("ADDED",
 		`A file or directory was added.`)
-	DiffStatKindModified = ChangesetDiffStatKindEnum.Register("MODIFIED",
+	DiffStatKindModified = DiffStatKindEnum.Register("MODIFIED",
 		`A file was modified.`)
-	DiffStatKindRemoved = ChangesetDiffStatKindEnum.Register("REMOVED",
+	DiffStatKindRemoved = DiffStatKindEnum.Register("REMOVED",
 		`A file or directory was removed.`)
-	DiffStatKindRenamed = ChangesetDiffStatKindEnum.Register("RENAMED",
+	DiffStatKindRenamed = DiffStatKindEnum.Register("RENAMED",
 		`A file was renamed.`)
 )
 
-func (ChangesetDiffStatKind) Type() *ast.Type {
+func (DiffStatKind) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "ChangesetDiffStatKind",
+		NamedType: "DiffStatKind",
 		NonNull:   true,
 	}
 }
 
-func (ChangesetDiffStatKind) TypeDescription() string {
+func (DiffStatKind) TypeDescription() string {
 	return "The type of change for a diff stat entry."
 }
 
-func (ChangesetDiffStatKind) Decoder() dagql.InputDecoder {
-	return ChangesetDiffStatKindEnum
+func (DiffStatKind) Decoder() dagql.InputDecoder {
+	return DiffStatKindEnum
 }
 
-func (k ChangesetDiffStatKind) ToLiteral() call.Literal {
-	return ChangesetDiffStatKindEnum.Literal(k)
+func (k DiffStatKind) ToLiteral() call.Literal {
+	return DiffStatKindEnum.Literal(k)
 }
 
-type ChangesetDiffStatEntry struct {
-	Path         string                `field:"true" doc:"Path of the changed file or directory."`
-	Kind         ChangesetDiffStatKind `field:"true" doc:"Type of change."`
-	AddedLines   int                   `field:"true" doc:"Number of added lines for this path."`
-	RemovedLines int                   `field:"true" doc:"Number of removed lines for this path."`
+type DiffStat struct {
+	Path         string       `field:"true" doc:"Path of the changed file or directory."`
+	OldPath      string       `field:"true" doc:"Previous path of the file, set only for renames."`
+	Kind         DiffStatKind `field:"true" doc:"Type of change."`
+	AddedLines   int          `field:"true" doc:"Number of added lines for this path."`
+	RemovedLines int          `field:"true" doc:"Number of removed lines for this path."`
 }
 
-func (*ChangesetDiffStatEntry) Type() *ast.Type {
+func (*DiffStat) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "ChangesetDiffStatEntry",
+		NamedType: "DiffStat",
 		NonNull:   true,
 	}
 }
@@ -322,7 +323,7 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 	return isEmpty, nil
 }
 
-func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, error) {
+func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	var paths *ChangesetPaths
 	var statsByPath map[string]lineChanges
 	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
@@ -343,13 +344,13 @@ func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, e
 		return nil, err
 	}
 
-	addEntry := func(entries []*ChangesetDiffStatEntry, path string, kind ChangesetDiffStatKind) []*ChangesetDiffStatEntry {
-		entry := &ChangesetDiffStatEntry{Path: path, Kind: kind}
+	addEntry := func(path string, kind DiffStatKind) *DiffStat {
+		entry := &DiffStat{Path: path, Kind: kind}
 		if stat, ok := statsByPath[path]; ok {
 			entry.AddedLines = stat.Added
 			entry.RemovedLines = stat.Removed
 		}
-		return append(entries, entry)
+		return entry
 	}
 
 	// Build a set of old renamed paths so we can skip them in Removed
@@ -359,16 +360,18 @@ func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, e
 		renamedOld[oldPath] = true
 	}
 
-	var entries []*ChangesetDiffStatEntry
+	var entries []*DiffStat
 	for _, path := range paths.Added {
-		if _, isRenamed := paths.Renamed[path]; isRenamed {
-			entries = addEntry(entries, path, DiffStatKindRenamed)
+		if oldPath, isRenamed := paths.Renamed[path]; isRenamed {
+			entry := addEntry(path, DiffStatKindRenamed)
+			entry.OldPath = oldPath
+			entries = append(entries, entry)
 		} else {
-			entries = addEntry(entries, path, DiffStatKindAdded)
+			entries = append(entries, addEntry(path, DiffStatKindAdded))
 		}
 	}
 	for _, path := range paths.Modified {
-		entries = addEntry(entries, path, DiffStatKindModified)
+		entries = append(entries, addEntry(path, DiffStatKindModified))
 	}
 	// Use AllRemoved (uncollapsed) so that patchpreview.foldRemovedDirs can
 	// fold child files into their parent directory with summed line counts.
@@ -376,10 +379,10 @@ func (ch *Changeset) DiffStat(ctx context.Context) ([]*ChangesetDiffStatEntry, e
 		if renamedOld[path] {
 			continue
 		}
-		entries = addEntry(entries, path, DiffStatKindRemoved)
+		entries = append(entries, addEntry(path, DiffStatKindRemoved))
 	}
 
-	slices.SortFunc(entries, func(a, b *ChangesetDiffStatEntry) int {
+	slices.SortFunc(entries, func(a, b *DiffStat) int {
 		return strings.Compare(a.Path, b.Path)
 	})
 	return entries, nil

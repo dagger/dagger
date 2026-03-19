@@ -255,8 +255,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			WithNewFile("mod.txt", "one\nnew\n").
 			WithNewFile("add.txt", "hello\n")
 
-		var diffStat []struct {
+		var diffStats []struct {
 			Path         string `json:"path"`
+			OldPath      string `json:"oldPath"`
 			Kind         string `json:"kind"`
 			AddedLines   int    `json:"addedLines"`
 			RemovedLines int    `json:"removedLines"`
@@ -264,24 +265,24 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		err := c.QueryBuilder().
 			Select("loadChangesetFromID").
 			Arg("id", newDir.Changes(oldDir)).
-			Select("diffStat").
-			Bind(&diffStat).Execute(ctx)
+			Select("diffStats").
+			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)
 
 		// Results are sorted by path.
-		require.Len(t, diffStat, 3)
-		require.Equal(t, "add.txt", diffStat[0].Path)
-		require.Equal(t, "ADDED", diffStat[0].Kind)
-		require.Equal(t, 1, diffStat[0].AddedLines)
+		require.Len(t, diffStats, 3)
+		require.Equal(t, "add.txt", diffStats[0].Path)
+		require.Equal(t, "ADDED", diffStats[0].Kind)
+		require.Equal(t, 1, diffStats[0].AddedLines)
 
-		require.Equal(t, "mod.txt", diffStat[1].Path)
-		require.Equal(t, "MODIFIED", diffStat[1].Kind)
-		require.Equal(t, 1, diffStat[1].AddedLines)
-		require.Equal(t, 1, diffStat[1].RemovedLines)
+		require.Equal(t, "mod.txt", diffStats[1].Path)
+		require.Equal(t, "MODIFIED", diffStats[1].Kind)
+		require.Equal(t, 1, diffStats[1].AddedLines)
+		require.Equal(t, 1, diffStats[1].RemovedLines)
 
-		require.Equal(t, "remove.txt", diffStat[2].Path)
-		require.Equal(t, "REMOVED", diffStat[2].Kind)
-		require.Equal(t, 1, diffStat[2].RemovedLines)
+		require.Equal(t, "remove.txt", diffStats[2].Path)
+		require.Equal(t, "REMOVED", diffStats[2].Kind)
+		require.Equal(t, 1, diffStats[2].RemovedLines)
 	})
 
 	t.Run("layer basic", func(ctx context.Context, t *testctx.T) {

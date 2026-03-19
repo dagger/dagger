@@ -410,16 +410,16 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 
 	const summaryWidth = 80
 
-	var diffStat []*ChangesetDiffStatEntry
-	if err := srv.Select(ctx, changes, &diffStat, dagql.Selector{
+	var stats []*DiffStat
+	if err := srv.Select(ctx, changes, &stats, dagql.Selector{
 		View:  srv.View,
-		Field: "diffStat",
+		Field: "diffStats",
 	}); err != nil {
 		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err)
 	}
 
-	entries := make([]patchpreview.Entry, len(diffStat))
-	for i, s := range diffStat {
+	entries := make([]patchpreview.Entry, len(stats))
+	for i, s := range stats {
 		entries[i] = patchpreview.Entry{Path: s.Path, Kind: string(s.Kind), Added: s.AddedLines, Removed: s.RemovedLines}
 	}
 	return patchpreview.SummarizeString(entries, summaryWidth)
