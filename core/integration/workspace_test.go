@@ -881,7 +881,7 @@ type Test {
 	})
 }
 
-func (WorkspaceSuite) TestEntrypointProxySkipsRootFieldConflicts(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestEntrypointProxyShadowsCoreFields(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
@@ -897,11 +897,17 @@ type Ci {
 }
 `))
 
-	t.Run("functions omit the conflicting proxy", func(ctx context.Context, t *testctx.T) {
+	t.Run("both proxies appear in functions", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerFunctions()).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "build")
-		require.NotContains(t, out, "container\t")
+		require.Contains(t, out, "container")
+	})
+
+	t.Run("proxy shadows core field", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "custom container", strings.TrimSpace(out))
 	})
 
 	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
@@ -911,7 +917,7 @@ type Ci {
 	})
 }
 
-func (WorkspaceSuite) TestEntrypointProxySkipsConstructorArgConflicts(ctx context.Context, t *testctx.T) {
+func (WorkspaceSuite) TestEntrypointProxyConstructorArgOverlap(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
@@ -930,25 +936,27 @@ type Ci {
 }
 `))
 
-	t.Run("functions omit the ambiguous proxy", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerFunctions()).Stdout(ctx)
+	t.Run("proxy works with overlapping arg names", func(ctx context.Context, t *testctx.T) {
+		// Constructor args are set via `with`, method args are on the proxy.
+		// No collision even though both use "prefix".
+		out, err := base.With(daggerCall("--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, out, "echo\t")
+		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced method still accepts both args", func(ctx context.Context, t *testctx.T) {
+	t.Run("namespaced method still works", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("ci", "--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})
 }
 
-// TestEntrypointProxyCoreAPIStillWorks verifies that when a module provides a
-// function whose name collides with a core API field (e.g. "container",
-// "file", "directory"), the core API remains functional for engine-internal
-// plumbing — the proxy is skipped, and the module function is still reachable
-// via the namespaced constructor path.
-func (WorkspaceSuite) TestEntrypointProxyCoreAPIStillWorks(ctx context.Context, t *testctx.T) {
+// TestEntrypointProxyCoreAPIShadow verifies that when a module provides
+// functions whose names collide with core API fields (e.g. "container",
+// "file", "directory"), the proxies shadow the core fields on the outer
+// server. The core API remains functional for engine-internal plumbing
+// because it uses the inner server. Both proxy and namespaced paths work.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadow(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
@@ -978,7 +986,21 @@ type Shadows {
 		require.Equal(t, "hello!", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced path reaches shadowed functions", func(ctx context.Context, t *testctx.T) {
+	t.Run("proxy shadows core field", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-container", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-file", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-directory", strings.TrimSpace(out))
+	})
+
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("shadows", "container")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "my-container", strings.TrimSpace(out))
@@ -1026,12 +1048,12 @@ type Test {
 	})
 }
 
-// TestEntrypointProxyCoreAPIShadowWithMethods verifies that a module
+// TestEntrypointProxyCoreAPIShadowWithCoreReturnTypes verifies that a module
 // returning core types (Directory, File, Container) from methods whose names
-// collide with core API fields doesn't break the engine's internal plumbing.
-// The proxy is skipped for conflicting names, but the namespaced path still
-// works.
-func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadowWithMethods(ctx context.Context, t *testctx.T) {
+// collide with core API fields works correctly. The proxies shadow the core
+// fields on the outer server but engine-internal plumbing uses the inner
+// server, so there's no breakage.
+func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadowWithCoreReturnTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := workspaceBase(t, c).
@@ -1070,22 +1092,28 @@ type Dirs {
 		require.Equal(t, "greetings!", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced directory returns custom dir", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("dirs", "directory", "entries")).Stdout(ctx)
+	t.Run("proxy directory returns custom dir", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello.txt", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced file returns custom file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("dirs", "file", "contents")).Stdout(ctx)
+	t.Run("proxy file returns custom file", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("file", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced container runs", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("dirs", "container", "with-exec", "--args=cat,/etc/alpine-release", "stdout")).Stdout(ctx)
+	t.Run("proxy container runs", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("container", "with-exec", "--args=cat,/etc/alpine-release", "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, strings.TrimSpace(out), "3.20")
+	})
+
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("dirs", "directory", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello.txt", strings.TrimSpace(out))
 	})
 }
 
