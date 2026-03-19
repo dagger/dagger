@@ -245,13 +245,17 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
-		dagql.Func("returnType", s.functionReturnType).Extend(),
+		dagql.Func("args", s.functionArgs).
+			Doc(`Arguments accepted by the function, if any.`),
+		dagql.Func("returnType", s.functionReturnType).
+			Doc(`The type returned by the function.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.FunctionArg]{}.Install(dag)
 
 	dagql.Fields[*core.FunctionArg]{
-		dagql.Func("typeDef", s.functionArgTypeDef).Extend(),
+		dagql.Func("typeDef", s.functionArgTypeDef).
+			Doc(`The type of the argument.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.FunctionCallArgValue]{}.Install(dag)
@@ -337,23 +341,58 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
 	}.Install(dag)
+	dagql.Fields[*core.TypeDef]{
+		dagql.Func("asList", s.typeDefAsList).
+			Doc(`If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.`),
+		dagql.Func("asObject", s.typeDefAsObject).
+			Doc(`If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.`),
+		dagql.Func("asInterface", s.typeDefAsInterface).
+			Doc(`If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.`),
+		dagql.Func("asInput", s.typeDefAsInput).
+			Doc(`If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.`),
+		dagql.Func("asScalar", s.typeDefAsScalar).
+			Doc(`If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.`),
+		dagql.Func("asEnum", s.typeDefAsEnum).
+			Doc(`If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.`),
+	}.Install(dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ObjectTypeDef]{
+		dagql.Func("fields", s.objectTypeDefFields).
+			Doc(`Static fields defined on this object, if any.`),
+		dagql.Func("functions", s.objectTypeDefFunctions).
+			Doc(`Functions defined on this object, if any.`),
+		dagql.Func("constructor", s.objectTypeDefConstructor).
+			Doc(`The function used to construct new instances of this object, if any.`),
+	}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
+	dagql.Fields[*core.InterfaceTypeDef]{
+		dagql.Func("functions", s.interfaceTypeDefFunctions).
+			Doc(`Functions defined on this interface, if any.`),
+	}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
+	dagql.Fields[*core.InputTypeDef]{
+		dagql.Func("fields", s.inputTypeDefFields).
+			Doc(`Static fields defined on this input object, if any.`),
+	}.Install(dag)
 	dagql.Fields[*core.FieldTypeDef]{}.Install(dag)
 	dagql.Fields[*core.FieldTypeDef]{
-		dagql.Func("typeDef", s.fieldTypeDefTypeDef).Extend(),
+		dagql.Func("typeDef", s.fieldTypeDefTypeDef).
+			Doc(`The type of the field.`),
 	}.Install(dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(dag)
 	dagql.Fields[*core.ListTypeDef]{
-		dagql.Func("elementTypeDef", s.listElementTypeDef).Extend(),
+		dagql.Func("elementTypeDef", s.listElementTypeDef).
+			Doc(`The type of the elements in the list.`),
 	}.Install(dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
+	dagql.Fields[*core.EnumTypeDef]{}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
-		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) (dagql.Array[*core.EnumMemberTypeDef], error) {
-			return self.Members, nil
-		}).Deprecated("use members instead"),
+		dagql.Func("values", s.enumTypeDefValues).
+			Deprecated("use members instead").
+			Doc(`The members of the enum.`),
+		dagql.Func("members", s.enumTypeDefMembers).
+			Doc(`The members of the enum.`),
 	}.Install(dag)
 	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(dag)
 }

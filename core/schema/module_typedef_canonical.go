@@ -35,6 +35,18 @@ func (s *moduleSchema) inputTypeDef(ctx context.Context, self *core.Query, args 
 	return nil, fmt.Errorf("input type %q not found", args.Name)
 }
 
+func (s *moduleSchema) functionArgs(
+	ctx context.Context,
+	fn *core.Function,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.FunctionArg], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return currentCallObjectResultArray(ctx, dag, fn.Args)
+}
+
 func (s *moduleSchema) functionReturnType(
 	ctx context.Context,
 	fn *core.Function,
@@ -45,6 +57,54 @@ func (s *moduleSchema) functionReturnType(
 		return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to get dag server: %w", err)
 	}
 	return s.canonicalTypeDefRef(ctx, dag, fn.ReturnType)
+}
+
+func (s *moduleSchema) typeDefAsList(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.ListTypeDef]], error) {
+	return currentCallNullableObjectResult(ctx, typeDef.AsList)
+}
+
+func (s *moduleSchema) typeDefAsObject(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.ObjectTypeDef]], error) {
+	return currentCallNullableObjectResult(ctx, typeDef.AsObject)
+}
+
+func (s *moduleSchema) typeDefAsInterface(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.InterfaceTypeDef]], error) {
+	return currentCallNullableObjectResult(ctx, typeDef.AsInterface)
+}
+
+func (s *moduleSchema) typeDefAsInput(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.InputTypeDef]], error) {
+	return currentCallNullableObjectResult(ctx, typeDef.AsInput)
+}
+
+func (s *moduleSchema) typeDefAsScalar(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.ScalarTypeDef]], error) {
+	return currentCallNullableObjectResult(ctx, typeDef.AsScalar)
+}
+
+func (s *moduleSchema) typeDefAsEnum(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.EnumTypeDef]], error) {
+	return currentCallNullableObjectResult(ctx, typeDef.AsEnum)
 }
 
 func (s *moduleSchema) functionArgTypeDef(
@@ -71,6 +131,77 @@ func (s *moduleSchema) fieldTypeDefTypeDef(
 	return s.canonicalTypeDefRef(ctx, dag, field.TypeDef)
 }
 
+func (s *moduleSchema) objectTypeDefFields(
+	ctx context.Context,
+	obj *core.ObjectTypeDef,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.FieldTypeDef], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return currentCallObjectResultArray(ctx, dag, obj.Fields)
+}
+
+func (s *moduleSchema) objectTypeDefFunctions(
+	ctx context.Context,
+	obj *core.ObjectTypeDef,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.Function], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	arr := make(dagql.ObjectResultArray[*core.Function], 0, len(obj.Functions))
+	for _, fn := range obj.Functions {
+		inst, err := s.canonicalFunction(ctx, dag, fn)
+		if err != nil {
+			return nil, fmt.Errorf("canonical object function %q: %w", fn.Name, err)
+		}
+		arr = append(arr, inst)
+	}
+	return arr, nil
+}
+
+func (s *moduleSchema) objectTypeDefConstructor(
+	ctx context.Context,
+	obj *core.ObjectTypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.Function]], error) {
+	if !obj.Constructor.Valid {
+		return dagql.Null[dagql.ObjectResult[*core.Function]](), nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Null[dagql.ObjectResult[*core.Function]](), fmt.Errorf("failed to get dag server: %w", err)
+	}
+	inst, err := s.canonicalFunction(ctx, dag, obj.Constructor.Value)
+	if err != nil {
+		return dagql.Null[dagql.ObjectResult[*core.Function]](), fmt.Errorf("canonical object constructor: %w", err)
+	}
+	return dagql.NonNull(inst), nil
+}
+
+func (s *moduleSchema) interfaceTypeDefFunctions(
+	ctx context.Context,
+	iface *core.InterfaceTypeDef,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.Function], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	arr := make(dagql.ObjectResultArray[*core.Function], 0, len(iface.Functions))
+	for _, fn := range iface.Functions {
+		inst, err := s.canonicalFunction(ctx, dag, fn)
+		if err != nil {
+			return nil, fmt.Errorf("canonical interface function %q: %w", fn.Name, err)
+		}
+		arr = append(arr, inst)
+	}
+	return arr, nil
+}
+
 func (s *moduleSchema) listElementTypeDef(
 	ctx context.Context,
 	list *core.ListTypeDef,
@@ -81,6 +212,38 @@ func (s *moduleSchema) listElementTypeDef(
 		return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to get dag server: %w", err)
 	}
 	return s.canonicalTypeDefRef(ctx, dag, list.ElementTypeDef)
+}
+
+func (s *moduleSchema) inputTypeDefFields(
+	ctx context.Context,
+	input *core.InputTypeDef,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.FieldTypeDef], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return currentCallObjectResultArray(ctx, dag, input.Fields)
+}
+
+func (s *moduleSchema) enumTypeDefMembers(
+	ctx context.Context,
+	enum *core.EnumTypeDef,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.EnumMemberTypeDef], error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return currentCallObjectResultArray(ctx, dag, enum.Members)
+}
+
+func (s *moduleSchema) enumTypeDefValues(
+	ctx context.Context,
+	enum *core.EnumTypeDef,
+	_ struct{},
+) (dagql.ObjectResultArray[*core.EnumMemberTypeDef], error) {
+	return s.enumTypeDefMembers(ctx, enum, struct{}{})
 }
 
 func (s *moduleSchema) canonicalCurrentTypeDefs(
@@ -754,4 +917,50 @@ func canonicalTopLevelTypeDefKey(typeDef *core.TypeDef) string {
 		return fmt.Sprintf("kind:%t:%s", typeDef.Optional, typeDef.Kind)
 	}
 	return fmt.Sprintf("fallback:%t:%s", typeDef.Optional, typeDef.Kind)
+}
+
+func currentCallNullableObjectResult[T dagql.Typed](
+	ctx context.Context,
+	val dagql.Nullable[T],
+) (dagql.Nullable[dagql.ObjectResult[T]], error) {
+	if !val.Valid {
+		return dagql.Null[dagql.ObjectResult[T]](), nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Null[dagql.ObjectResult[T]](), fmt.Errorf("failed to get dag server: %w", err)
+	}
+	inst, err := dagql.NewObjectResultForCurrentCall(ctx, dag, val.Value)
+	if err != nil {
+		return dagql.Null[dagql.ObjectResult[T]](), err
+	}
+	return dagql.NonNull(inst), nil
+}
+
+func currentCallObjectResultArray[T dagql.Typed](
+	ctx context.Context,
+	dag *dagql.Server,
+	items []T,
+) (dagql.ObjectResultArray[T], error) {
+	arrResult, err := dagql.NewResultForCurrentCall(ctx, dagql.Array[T](items))
+	if err != nil {
+		return nil, fmt.Errorf("wrap current call array: %w", err)
+	}
+	arr := make(dagql.ObjectResultArray[T], 0, len(items))
+	for i, item := range items {
+		nth, err := arrResult.NthValue(ctx, i+1)
+		if err != nil {
+			return nil, fmt.Errorf("current call array nth %d: %w", i+1, err)
+		}
+		nthCall, err := nth.ResultCall()
+		if err != nil {
+			return nil, fmt.Errorf("current call array nth %d result call: %w", i+1, err)
+		}
+		inst, err := dagql.NewObjectResultForCall(item, dag, nthCall)
+		if err != nil {
+			return nil, fmt.Errorf("current call array nth %d object result: %w", i+1, err)
+		}
+		arr = append(arr, inst)
+	}
+	return arr, nil
 }
