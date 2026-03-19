@@ -44,6 +44,7 @@ var providerEntries = []ProviderEntry{
 	{"Anthropic (API key)", "anthropic", "anthropic", false},
 	{"Anthropic (Claude Code OAuth)", "anthropic-oauth", "anthropic", true},
 	{"Google (Gemini)", "google", "google", false},
+	{"Local / custom endpoint", "local", "local", false},
 	{"OpenAI (API key)", "openai", "openai", false},
 	{"OpenAI Codex (ChatGPT subscription)", "openai-codex", "openai-codex", true},
 	{"OpenRouter", "openrouter", "openrouter", false},

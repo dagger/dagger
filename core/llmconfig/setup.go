@@ -48,6 +48,9 @@ func providerSummary(p Provider) string {
 		}
 		return label
 	}
+	if p.APICompat != "" && p.BaseURL != "" {
+		return p.BaseURL
+	}
 	return RedactKey(p.APIKey)
 }
 
@@ -120,6 +123,8 @@ func InteractiveSetup(ctx context.Context, promptHandler PromptHandler) (bool, e
 		configKey, providerCfg, selectedModel, err = setupClaudeCodeOAuth(ctx, promptHandler)
 	case "openai-codex":
 		configKey, providerCfg, selectedModel, err = setupOpenAICodexOAuth(ctx, promptHandler)
+	case "local":
+		configKey, providerCfg, selectedModel, err = setupLocalProvider(ctx, promptHandler)
 	default:
 		configKey = providerChoice
 		providerCfg, selectedModel, err = setupAPIKeyProvider(ctx, promptHandler, providerChoice)
@@ -792,6 +797,110 @@ func promptThinkingConfig(ctx context.Context, ph PromptHandler, provider, model
 
 	cfg.ThinkingMode = mode
 	return nil
+}
+
+// setupLocalProvider guides the user through configuring a local / custom LLM endpoint.
+// It returns (configKey, providerCfg, selectedModel, err).
+func setupLocalProvider(ctx context.Context, ph PromptHandler) (string, *Provider, string, error) {
+	var endpoint string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Endpoint URL").
+				Description("The base URL of your local LLM server (e.g. http://192.168.2.225:1234).").
+				Placeholder("http://localhost:11434").
+				Value(&endpoint).
+				Validate(func(s string) error {
+					s = strings.TrimSpace(s)
+					if s == "" {
+						return fmt.Errorf("endpoint URL is required")
+					}
+					u, err := url.Parse(s)
+					if err != nil {
+						return fmt.Errorf("invalid URL: %w", err)
+					}
+					if u.Scheme != "http" && u.Scheme != "https" {
+						return fmt.Errorf("URL must start with http:// or https://")
+					}
+					if u.Host == "" {
+						return fmt.Errorf("URL must include a host")
+					}
+					return nil
+				}),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
+		return "", nil, "", err
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	// Strip trailing slash for consistency
+	endpoint = strings.TrimRight(endpoint, "/")
+
+	var compat string
+	compatForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Height(5).
+				Title("API compatibility").
+				Description("Which API protocol does this server speak?").
+				Options(
+					huh.NewOption("OpenAI-compatible (Ollama, LM Studio, vLLM, etc.)", "openai"),
+					huh.NewOption("Anthropic-compatible", "anthropic"),
+				).
+				Value(&compat),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, compatForm)); err != nil {
+		return "", nil, "", err
+	}
+
+	var model string
+	modelForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Model name").
+				Description("The model identifier to use (e.g. llama3, qwen2.5-coder, etc.).").
+				Placeholder("llama3").
+				Value(&model).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return fmt.Errorf("model name is required")
+					}
+					return nil
+				}),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, modelForm)); err != nil {
+		return "", nil, "", err
+	}
+	model = strings.TrimSpace(model)
+
+	// Check for optional API key
+	var apiKey string
+	keyForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("API key (optional)").
+				Description("Leave empty if your server doesn't require authentication.").
+				Value(&apiKey),
+		),
+	)
+	if err := checkAbort(ph.HandleForm(ctx, keyForm)); err != nil {
+		return "", nil, "", err
+	}
+	apiKey = strings.TrimSpace(apiKey)
+
+	cfg := &Provider{
+		BaseURL:   endpoint,
+		APICompat: compat,
+		Model:     model,
+		Enabled:   true,
+	}
+	if apiKey != "" {
+		cfg.APIKey = apiKey
+	}
+
+	return "local", cfg, model, nil
 }
 
 // parseOpenAIAuthInput extracts an authorization code from user input.

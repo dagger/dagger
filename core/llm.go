@@ -606,6 +606,7 @@ const (
 	Meta        LLMProvider = "meta"
 	Mistral     LLMProvider = "mistral"
 	DeepSeek    LLMProvider = "deepseek"
+	Local       LLMProvider = "local"
 	Other       LLMProvider = "other"
 )
 
@@ -658,6 +659,11 @@ func (r *LLMRouter) isGoogleModel(model string) bool {
 
 func (r *LLMRouter) isMistralModel(model string) bool {
 	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
+}
+
+func (r *LLMRouter) isLocalModel(model string) bool {
+	p := r.provider("local")
+	return p.BaseURL != "" && p.APICompat != "" && p.Model == model
 }
 
 func (r *LLMRouter) isReplay(model string) bool {
@@ -736,6 +742,20 @@ func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 	return endpoint, nil
 }
 
+func (r *LLMRouter) routeLocalModel() (*LLMEndpoint, error) {
+	p := r.provider("local")
+	endpoint := endpointFromProvider(p, Local)
+	switch p.APICompat {
+	case "openai":
+		endpoint.Client = newOpenAIClient(endpoint, "", false)
+	case "anthropic":
+		endpoint.Client = newAnthropicClient(endpoint)
+	default:
+		return nil, fmt.Errorf("unsupported API compatibility mode: %q (must be \"openai\" or \"anthropic\")", p.APICompat)
+	}
+	return endpoint, nil
+}
+
 func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 	p := r.provider("openai")
 	endpoint := endpointFromProvider(p, Other)
@@ -760,13 +780,15 @@ func (r *LLMRouter) DefaultModel() string {
 		return r.defaultModel
 	}
 	// Check for any provider with an explicit model set.
-	for _, name := range []string{"openai-codex", "openai", "anthropic", "google"} {
+	for _, name := range []string{"local", "openai-codex", "openai", "anthropic", "google"} {
 		if m := r.provider(name).Model; m != "" {
 			return m
 		}
 	}
 	// Infer from credentials.
 	switch {
+	case r.provider("local").BaseURL != "":
+		return r.provider("local").Model
 	case r.provider("openai-codex").AuthToken != "":
 		return modelDefaultCodex
 	case r.provider("openai").APIKey != "":
@@ -808,6 +830,11 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 		return nil, fmt.Errorf("mistral models are not yet supported")
 	case r.isReplay(model):
 		endpoint, err = r.routeReplayModel(model)
+		if err != nil {
+			return nil, err
+		}
+	case r.isLocalModel(model):
+		endpoint, err = r.routeLocalModel()
 		if err != nil {
 			return nil, err
 		}
@@ -860,6 +887,10 @@ func (r *LLMRouter) LoadFromConfig(cfg *llmconfig.Config) {
 func (r *LLMRouter) IsEmpty() bool {
 	for _, p := range r.providers {
 		if p.APIKey != "" || p.AuthToken != "" {
+			return false
+		}
+		// Local providers don't need API keys — just a base URL.
+		if p.BaseURL != "" && p.APICompat != "" {
 			return false
 		}
 	}
@@ -948,6 +979,9 @@ func mergeLLMConfigs(base, overlay *llmconfig.LLMConfig) *llmconfig.LLMConfig {
 		}
 		if op.DisableStreaming {
 			bp.DisableStreaming = true
+		}
+		if op.APICompat != "" {
+			bp.APICompat = op.APICompat
 		}
 		merged.Providers[name] = bp
 	}
@@ -1108,6 +1142,22 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	}
 	if endpoint.Model == "" {
 		return nil, fmt.Errorf("no valid LLM endpoint configuration")
+	}
+
+	// For local endpoints, set up a c2h tunnel so the engine can reach
+	// the user's local network through the client's SSH session.
+	if endpoint.Provider == Local {
+		if err := setupLocalTunnel(ctx, query, endpoint); err != nil {
+			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
+		}
+		// Rebuild the client with the rewritten (tunneled) base URL.
+		p := router.provider("local")
+		switch p.APICompat {
+		case "openai":
+			endpoint.Client = newOpenAIClient(endpoint, "", false)
+		case "anthropic":
+			endpoint.Client = newAnthropicClient(endpoint)
+		}
 	}
 
 	llm.endpoint = endpoint

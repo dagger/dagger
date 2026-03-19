@@ -57,17 +57,20 @@ var llmConfigCmd = &cobra.Command{
 
 		for name, provider := range cfg.LLM.Providers {
 			if provider.Enabled {
-				if provider.IsOAuth() {
+				switch {
+				case provider.IsOAuth():
 					label := llmconfig.SubscriptionLabel(provider.SubscriptionType)
 					if label == "" {
 						label = "OAuth"
 					}
 					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s\n", idtui.IconSuccess, name, label)
-				} else {
+				case provider.APICompat != "":
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s (%s-compatible)\n", idtui.IconSuccess, name, provider.BaseURL, provider.APICompat)
+				default:
 					redacted := llmconfig.RedactKey(provider.APIKey)
 					fmt.Fprintf(cmd.OutOrStdout(), "  %s %s: %s\n", idtui.IconSuccess, name, redacted)
 				}
-				if provider.BaseURL != "" {
+				if provider.BaseURL != "" && provider.APICompat == "" {
 					fmt.Fprintf(cmd.OutOrStdout(), "    Base URL: %s\n", provider.BaseURL)
 				}
 			}

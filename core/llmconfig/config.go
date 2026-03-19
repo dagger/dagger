@@ -59,6 +59,11 @@ type Provider struct {
 	// Values are provider-specific reasoning levels from catwalk
 	// (e.g. "low", "medium", "high", "adaptive").
 	ThinkingMode string `toml:"thinking_mode,omitempty"`
+
+	// APICompat selects which API protocol to use for custom/local endpoints.
+	// Values: "openai" (OpenAI-compatible) or "anthropic" (Anthropic-compatible).
+	// When set, BaseURL is used as the endpoint and the model name is passed through.
+	APICompat string `toml:"api_compat,omitempty"`
 }
 
 // IsOAuth returns true if this provider uses OAuth authentication.
