@@ -4450,7 +4450,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 	assert.Assert(t, !childStillPresent)
 }
 
-func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
+func TestMarkResultAsDepOfPersistedIncludesFrameRefs(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
@@ -4552,21 +4552,17 @@ func TestPersistedClosureGraphIncludesFrameRefs(t *testing.T) {
 
 	c.egraphMu.Lock()
 	c.resultsByID = results
-	graph, err := c.persistedClosureGraphLocked(root.id)
-	assert.NilError(t, err)
 	changed, err := c.markResultAsDepOfPersistedLocked(ctx, root)
 	assert.NilError(t, err)
 	c.egraphMu.Unlock()
 
 	assert.Assert(t, changed)
 	for resultID, res := range results {
-		_, ok := graph.resultIDs[resultID]
-		assert.Assert(t, ok, "expected result %d in persisted closure graph", resultID)
 		assert.Assert(t, res.depOfPersistedResult, "expected result %d to be marked as depOfPersistedResult", resultID)
 	}
 }
 
-func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.T) {
+func TestMarkResultAsDepOfPersistedDoesNotRetainTermProvenanceOnlyResults(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
@@ -4614,19 +4610,11 @@ func TestPersistedClosureGraphDoesNotRetainTermProvenanceOnlyResults(t *testing.
 	c.outputEqClassToTerms[rootEq] = map[egraphTermID]struct{}{termID: {}}
 	c.termInputProvenance[termID] = []egraphInputProvenanceKind{egraphInputProvenanceKindResult}
 
-	graph, err := c.persistedClosureGraphLocked(root.id)
-	assert.NilError(t, err)
 	changed, err := c.markResultAsDepOfPersistedLocked(ctx, root)
 	assert.NilError(t, err)
 	c.egraphMu.Unlock()
 
 	assert.Assert(t, changed)
-	_, rootIncluded := graph.resultIDs[root.id]
-	assert.Assert(t, rootIncluded)
-	_, provenanceIncluded := graph.resultIDs[provenanceOnly.id]
-	assert.Assert(t, !provenanceIncluded)
-	_, termIncluded := graph.termIDs[termID]
-	assert.Assert(t, termIncluded)
 	assert.Assert(t, root.depOfPersistedResult)
 	assert.Assert(t, !provenanceOnly.depOfPersistedResult)
 }
@@ -4689,7 +4677,7 @@ func TestActiveDependencyClosureDoesNotRetainTermProvenanceOnlyResults(t *testin
 	assert.Assert(t, !provenanceIncluded)
 }
 
-func TestPersistedClosureGraphRejectsPendingResultCallRef(t *testing.T) {
+func TestMarkResultAsDepOfPersistedRejectsPendingResultCallRef(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
@@ -4714,10 +4702,62 @@ func TestPersistedClosureGraphRejectsPendingResultCallRef(t *testing.T) {
 
 	c.egraphMu.Lock()
 	c.resultsByID = map[sharedResultID]*sharedResult{root.id: root}
-	_, err = c.persistedClosureGraphLocked(root.id)
+	_, err = c.markResultAsDepOfPersistedLocked(ctx, root)
 	c.egraphMu.Unlock()
 
-	assert.ErrorContains(t, err, "pending result call ref leaked into persisted closure graph")
+	assert.ErrorContains(t, err, "pending result call ref leaked into persisted mark walk")
+}
+
+func TestMarkResultAsDepOfPersistedStopsAtAlreadyMarkedSubtrees(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	child := &sharedResult{
+		cache:                c,
+		id:                   2,
+		self:                 Int(2),
+		hasValue:             true,
+		depOfPersistedResult: true,
+		resultCall: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
+			Field: "child",
+			Receiver: &ResultCallRef{
+				Call: cacheTestIntCall("pending-under-already-persisted"),
+			},
+		},
+	}
+	root := &sharedResult{
+		cache:    c,
+		id:       1,
+		self:     Int(1),
+		hasValue: true,
+		deps: map[sharedResultID]struct{}{
+			child.id: {},
+		},
+		resultCall: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
+			Field: "root",
+		},
+	}
+
+	c.egraphMu.Lock()
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		root.id:  root,
+		child.id: child,
+	}
+	changed, err := c.markResultAsDepOfPersistedLocked(ctx, root)
+	c.egraphMu.Unlock()
+
+	assert.NilError(t, err)
+	assert.Assert(t, changed)
+	assert.Assert(t, root.depOfPersistedResult)
+	assert.Assert(t, child.depOfPersistedResult)
 }
 
 func TestCacheResultCallDerivedFromRequestID(t *testing.T) {

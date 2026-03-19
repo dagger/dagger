@@ -79,47 +79,6 @@ type eqMergePair struct {
 	b eqClassID
 }
 
-type persistedClosureGraph struct {
-	resultIDs      map[sharedResultID]struct{}
-	termIDs        map[egraphTermID]struct{}
-	depIDsByParent map[sharedResultID]map[sharedResultID]struct{}
-}
-
-func (graph *persistedClosureGraph) addResult(resultID sharedResultID) {
-	if resultID == 0 {
-		return
-	}
-	if graph.resultIDs == nil {
-		graph.resultIDs = make(map[sharedResultID]struct{})
-	}
-	graph.resultIDs[resultID] = struct{}{}
-}
-
-func (graph *persistedClosureGraph) addTerm(termID egraphTermID) {
-	if termID == 0 {
-		return
-	}
-	if graph.termIDs == nil {
-		graph.termIDs = make(map[egraphTermID]struct{})
-	}
-	graph.termIDs[termID] = struct{}{}
-}
-
-func (graph *persistedClosureGraph) addDep(parentID, depID sharedResultID) {
-	if parentID == 0 || depID == 0 || parentID == depID {
-		return
-	}
-	if graph.depIDsByParent == nil {
-		graph.depIDsByParent = make(map[sharedResultID]map[sharedResultID]struct{})
-	}
-	deps := graph.depIDsByParent[parentID]
-	if deps == nil {
-		deps = make(map[sharedResultID]struct{})
-		graph.depIDsByParent[parentID] = deps
-	}
-	deps[depID] = struct{}{}
-}
-
 func touchSharedResultLastUsed(res *sharedResult, nowUnixNano int64) {
 	if res == nil || nowUnixNano <= res.lastUsedAtUnixNano {
 		return
@@ -1597,40 +1556,29 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		}
 	}
 
-	// TODO: ??? Why do we do this here...?
-	if res.depOfPersistedResult {
-		if _, err := c.markResultAsDepOfPersistedLocked(ctx, res); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
 func addPersistedCallRefDep(
-	parentID sharedResultID,
 	ref *ResultCallRef,
-	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
 ) error {
 	if ref == nil {
 		return nil
 	}
 	if ref.Call != nil {
-		return fmt.Errorf("pending result call ref leaked into persisted closure graph")
+		return fmt.Errorf("pending result call ref leaked into persisted mark walk")
 	}
 	depID := sharedResultID(ref.ResultID)
-	if depID == 0 || depID == parentID {
+	if depID == 0 {
 		return nil
 	}
-	graph.addDep(parentID, depID)
 	*stack = append(*stack, depID)
 	return nil
 }
 
 func addPersistedCallLiteralDeps(
-	parentID sharedResultID,
 	lit *ResultCallLiteral,
-	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
 ) error {
 	if lit == nil {
@@ -1638,10 +1586,10 @@ func addPersistedCallLiteralDeps(
 	}
 	switch lit.Kind {
 	case ResultCallLiteralKindResultRef:
-		return addPersistedCallRefDep(parentID, lit.ResultRef, graph, stack)
+		return addPersistedCallRefDep(lit.ResultRef, stack)
 	case ResultCallLiteralKindList:
 		for _, item := range lit.ListItems {
-			if err := addPersistedCallLiteralDeps(parentID, item, graph, stack); err != nil {
+			if err := addPersistedCallLiteralDeps(item, stack); err != nil {
 				return err
 			}
 		}
@@ -1650,7 +1598,7 @@ func addPersistedCallLiteralDeps(
 			if field == nil {
 				continue
 			}
-			if err := addPersistedCallLiteralDeps(parentID, field.Value, graph, stack); err != nil {
+			if err := addPersistedCallLiteralDeps(field.Value, stack); err != nil {
 				return err
 			}
 		}
@@ -1659,19 +1607,17 @@ func addPersistedCallLiteralDeps(
 }
 
 func addPersistedCallDeps(
-	parentID sharedResultID,
 	frame *ResultCall,
-	graph *persistedClosureGraph,
 	stack *[]sharedResultID,
 ) error {
 	if frame == nil {
 		return nil
 	}
-	if err := addPersistedCallRefDep(parentID, frame.Receiver, graph, stack); err != nil {
+	if err := addPersistedCallRefDep(frame.Receiver, stack); err != nil {
 		return err
 	}
 	if frame.Module != nil {
-		if err := addPersistedCallRefDep(parentID, frame.Module.ResultRef, graph, stack); err != nil {
+		if err := addPersistedCallRefDep(frame.Module.ResultRef, stack); err != nil {
 			return err
 		}
 	}
@@ -1679,7 +1625,7 @@ func addPersistedCallDeps(
 		if arg == nil {
 			continue
 		}
-		if err := addPersistedCallLiteralDeps(parentID, arg.Value, graph, stack); err != nil {
+		if err := addPersistedCallLiteralDeps(arg.Value, stack); err != nil {
 			return err
 		}
 	}
@@ -1687,27 +1633,27 @@ func addPersistedCallDeps(
 		if input == nil {
 			continue
 		}
-		if err := addPersistedCallLiteralDeps(parentID, input.Value, graph, stack); err != nil {
+		if err := addPersistedCallLiteralDeps(input.Value, stack); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// walks exact materialized dependencies for persisted results: explicit
-// sharedResult.deps plus exact result refs reachable through resultCall
-// metadata. Symbolic term/eq-class state is still gathered for persisted cache
-// hitability, but no longer pulls in extra materialized results by provenance.
-func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) (persistedClosureGraph, error) {
-	if rootResultID == 0 {
-		return persistedClosureGraph{}, nil
+func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *sharedResult) (bool, error) {
+	if root == nil || root.id == 0 {
+		return false, nil
 	}
-	graph := persistedClosureGraph{
-		resultIDs:      make(map[sharedResultID]struct{}),
-		termIDs:        make(map[egraphTermID]struct{}),
-		depIDsByParent: make(map[sharedResultID]map[sharedResultID]struct{}),
+	if root.depOfPersistedResult {
+		return false, nil
 	}
-	stack := []sharedResultID{rootResultID}
+	changed := false
+	// Persisted-closure invariant: once a result is marked as dependency-of-
+	// persisted, every transitive materialized dependency reachable through
+	// exact explicit deps and resultCall refs must also be marked. Already-
+	// marked results are treated as cut points because their whole closure was
+	// already proven and marked when they first became persisted.
+	stack := []sharedResultID{root.id}
 	seen := make(map[sharedResultID]struct{})
 	for len(stack) > 0 {
 		n := len(stack) - 1
@@ -1717,54 +1663,25 @@ func (c *cache) persistedClosureGraphLocked(rootResultID sharedResultID) (persis
 			continue
 		}
 		seen[curID] = struct{}{}
-		res := c.resultsByID[curID]
-		if res == nil {
-			continue
-		}
-		graph.addResult(curID)
-		for depID := range res.deps {
-			if depID == 0 || depID == curID {
-				continue
-			}
-			graph.addDep(curID, depID)
-			stack = append(stack, depID)
-		}
-		if err := addPersistedCallDeps(curID, res.loadResultCall(), &graph, &stack); err != nil {
-			return persistedClosureGraph{}, err
-		}
-		for termID := range c.termIDsForResultLocked(curID) {
-			term := c.egraphTerms[termID]
-			if term == nil {
-				continue
-			}
-			graph.addTerm(termID)
-		}
-	}
-	return graph, nil
-}
-
-func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *sharedResult) (bool, error) {
-	if root == nil {
-		return false, nil
-	}
-	changed := false
-	// Persisted-closure invariant: once a result is marked as dependency-of-
-	// persisted, every transitive materialized dependency reachable through
-	// explicit deps and resultCall refs must also be marked.
-	graph, err := c.persistedClosureGraphLocked(root.id)
-	if err != nil {
-		return false, err
-	}
-	for curID := range graph.resultIDs {
 		cur := c.resultsByID[curID]
 		if cur == nil {
 			continue
 		}
-		if !cur.depOfPersistedResult {
-			changed = true
-			c.tracePersistRootMarked(ctx, cur.id, root.id, "runtime", "")
+		if cur.depOfPersistedResult {
+			continue
 		}
+		changed = true
+		c.tracePersistRootMarked(ctx, cur.id, root.id, "runtime", "")
 		cur.depOfPersistedResult = true
+		for depID := range cur.deps {
+			if depID == 0 || depID == curID {
+				continue
+			}
+			stack = append(stack, depID)
+		}
+		if err := addPersistedCallDeps(cur.loadResultCall(), &stack); err != nil {
+			return false, err
+		}
 	}
 	return changed, nil
 }

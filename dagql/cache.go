@@ -2099,6 +2099,105 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 			return fmt.Errorf("derive result digest: %w", err)
 		}
 	}
+	var resultCallDepIDs []sharedResultID
+	if !resWasCacheBacked {
+		if resultCall := oc.res.loadResultCall(); resultCall != nil {
+			seenResults := map[sharedResultID]struct{}{}
+			seenCalls := map[*ResultCall]struct{}{}
+
+			var walkFrame func(*ResultCall) error
+			var walkRef func(*ResultCallRef) error
+			var walkLiteral func(*ResultCallLiteral) error
+
+			walkRef = func(ref *ResultCallRef) error {
+				if ref == nil {
+					return nil
+				}
+				if ref.Call != nil {
+					return walkFrame(ref.Call)
+				}
+				if ref.ResultID == 0 {
+					return nil
+				}
+				resultID := sharedResultID(ref.ResultID)
+				if resultID == oc.res.id {
+					return nil
+				}
+				if _, seen := seenResults[resultID]; seen {
+					return nil
+				}
+				seenResults[resultID] = struct{}{}
+				resultCallDepIDs = append(resultCallDepIDs, resultID)
+				return nil
+			}
+
+			walkLiteral = func(lit *ResultCallLiteral) error {
+				if lit == nil {
+					return nil
+				}
+				switch lit.Kind {
+				case ResultCallLiteralKindResultRef:
+					return walkRef(lit.ResultRef)
+				case ResultCallLiteralKindList:
+					for _, item := range lit.ListItems {
+						if err := walkLiteral(item); err != nil {
+							return err
+						}
+					}
+				case ResultCallLiteralKindObject:
+					for _, field := range lit.ObjectFields {
+						if field == nil {
+							continue
+						}
+						if err := walkLiteral(field.Value); err != nil {
+							return err
+						}
+					}
+				}
+				return nil
+			}
+
+			walkFrame = func(frame *ResultCall) error {
+				if frame == nil {
+					return nil
+				}
+				if _, seen := seenCalls[frame]; seen {
+					return nil
+				}
+				seenCalls[frame] = struct{}{}
+
+				if err := walkRef(frame.Receiver); err != nil {
+					return fmt.Errorf("receiver: %w", err)
+				}
+				if frame.Module != nil {
+					if err := walkRef(frame.Module.ResultRef); err != nil {
+						return fmt.Errorf("module: %w", err)
+					}
+				}
+				for _, arg := range frame.Args {
+					if arg == nil {
+						continue
+					}
+					if err := walkLiteral(arg.Value); err != nil {
+						return fmt.Errorf("arg %q: %w", arg.Name, err)
+					}
+				}
+				for _, input := range frame.ImplicitInputs {
+					if input == nil {
+						continue
+					}
+					if err := walkLiteral(input.Value); err != nil {
+						return fmt.Errorf("implicit input %q: %w", input.Name, err)
+					}
+				}
+				return nil
+			}
+
+			if err := walkFrame(resultCall); err != nil {
+				return fmt.Errorf("collect result call dependencies: %w", err)
+			}
+		}
+	}
 
 	c.egraphMu.Lock()
 	resultCall := oc.res.loadResultCall()
@@ -2121,113 +2220,21 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 		c.egraphMu.Unlock()
 		return indexErr
 	}
-	if !resWasCacheBacked && resultCall != nil {
-		seenResults := map[sharedResultID]struct{}{}
-		seenCalls := map[*ResultCall]struct{}{}
-
-		var walkFrame func(*ResultCall) error
-		var walkRef func(*ResultCallRef) error
-		var walkLiteral func(*ResultCallLiteral) error
-
-		walkRef = func(ref *ResultCallRef) error {
-			if ref == nil {
-				return nil
-			}
-			if ref.Call != nil {
-				return walkFrame(ref.Call)
-			}
-			if ref.ResultID == 0 {
-				return nil
-			}
-			resultID := sharedResultID(ref.ResultID)
-			if resultID == oc.res.id {
-				return nil
-			}
-			if _, seen := seenResults[resultID]; seen {
-				return nil
-			}
-			seenResults[resultID] = struct{}{}
-			depRes := c.resultsByID[resultID]
-			if depRes == nil {
-				return fmt.Errorf("retain result call ref %d: missing cached result", resultID)
-			}
-			if err := c.addExplicitDependencyLocked(
-				ctx,
-				oc.res,
-				depRes,
-				Result[Typed]{shared: depRes},
-				"result_call_ref",
-			); err != nil {
-				return fmt.Errorf("retain result call ref %d: %w", resultID, err)
-			}
-			return nil
-		}
-
-		walkLiteral = func(lit *ResultCallLiteral) error {
-			if lit == nil {
-				return nil
-			}
-			switch lit.Kind {
-			case ResultCallLiteralKindResultRef:
-				return walkRef(lit.ResultRef)
-			case ResultCallLiteralKindList:
-				for _, item := range lit.ListItems {
-					if err := walkLiteral(item); err != nil {
-						return err
-					}
-				}
-			case ResultCallLiteralKindObject:
-				for _, field := range lit.ObjectFields {
-					if field == nil {
-						continue
-					}
-					if err := walkLiteral(field.Value); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		}
-
-		walkFrame = func(frame *ResultCall) error {
-			if frame == nil {
-				return nil
-			}
-			if _, seen := seenCalls[frame]; seen {
-				return nil
-			}
-			seenCalls[frame] = struct{}{}
-
-			if err := walkRef(frame.Receiver); err != nil {
-				return fmt.Errorf("receiver: %w", err)
-			}
-			if frame.Module != nil {
-				if err := walkRef(frame.Module.ResultRef); err != nil {
-					return fmt.Errorf("module: %w", err)
-				}
-			}
-			for _, arg := range frame.Args {
-				if arg == nil {
-					continue
-				}
-				if err := walkLiteral(arg.Value); err != nil {
-					return fmt.Errorf("arg %q: %w", arg.Name, err)
-				}
-			}
-			for _, input := range frame.ImplicitInputs {
-				if input == nil {
-					continue
-				}
-				if err := walkLiteral(input.Value); err != nil {
-					return fmt.Errorf("implicit input %q: %w", input.Name, err)
-				}
-			}
-			return nil
-		}
-
-		if err := walkFrame(resultCall); err != nil {
+	for _, depID := range resultCallDepIDs {
+		depRes := c.resultsByID[depID]
+		if depRes == nil {
 			c.egraphMu.Unlock()
-			return fmt.Errorf("retain result call dependencies: %w", err)
+			return fmt.Errorf("retain result call ref %d: missing cached result", depID)
+		}
+		if err := c.addExplicitDependencyLocked(
+			ctx,
+			oc.res,
+			depRes,
+			Result[Typed]{shared: depRes},
+			"result_call_ref",
+		); err != nil {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("retain result call ref %d: %w", depID, err)
 		}
 	}
 	if oc.isPersistable {
