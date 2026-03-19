@@ -9,7 +9,13 @@ Expected stderr:
 ✔ load workspace: . X.Xs
 ╰╴✔ loading type definitions X.Xs
 
-✘ parsing command line arguments X.Xs ERROR
-! unknown command "broken" for "dagger call"
+✔ parsing command line arguments X.Xs
+
+✔ broken: Broken! X.Xs
+✘ .broken: Void X.Xs ERROR
+✘ go SDK: load runtime X.Xs ERROR
+# dagger/broken
+./main.go:6:6: undefined: ctx
+! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

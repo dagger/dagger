@@ -7,6 +7,7 @@ Expected stderr:
 ╰╴✔ starting session X.Xs
 
 ✘ load workspace: . X.Xs ERROR
+╰╴✘ loading type definitions X.Xs ERROR
   ╰╴✔ load extra module: ./viztest/broken-dep-sdk X.Xs
     ╰╴✘ moduleSource(refString: "./viztest/broken-dep-sdk"): ModuleSource! X.Xs ERROR
       ├╴✘ moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid", disableFindUp: true): ModuleSource! X.Xs ERROR
