@@ -1113,7 +1113,11 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) error {
 
 func (m *moduleDef) loadTypeDef(typeDef *modTypeDef) error {
 	if typeDef.ID != "" {
-		if ref := m.typeRefDefsByID[typeDef.ID]; ref != nil {
+		ref := m.typeRefDefsByID[typeDef.ID]
+		if ref == nil {
+			ref = m.typeDefsByID[typeDef.ID]
+		}
+		if ref != nil {
 			if typeDef.AsList == nil && ref.AsList != nil {
 				typeDef.AsList = ref.AsList
 			}
@@ -1359,18 +1363,47 @@ type functionProvider interface {
 	IsCore() bool
 }
 
-func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string) {
+func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string, error) {
+	switch fp := fp.(type) {
+	case *modObject:
+		if fp != nil && fp.owner != nil {
+			if err := fp.owner.ensureFunctionProviderLoadedByProvider(fp); err != nil {
+				return nil, nil, err
+			}
+		}
+	case *modInterface:
+		if fp != nil && fp.owner != nil {
+			if err := fp.owner.ensureFunctionProviderLoadedByProvider(fp); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
 	allFns := fp.GetFunctions()
 	fns := make([]*modFunction, 0, len(allFns))
 	skipped := make([]string, 0, len(allFns))
 	for _, fn := range allFns {
+		switch fp := fp.(type) {
+		case *modObject:
+			if fp != nil && fp.owner != nil {
+				if err := fp.owner.LoadFunctionTypeDefs(fn); err != nil {
+					return nil, nil, err
+				}
+			}
+		case *modInterface:
+			if fp != nil && fp.owner != nil {
+				if err := fp.owner.LoadFunctionTypeDefs(fn); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
 		if dagui.ShouldSkipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
 			skipped = append(skipped, fn.CmdName())
 		} else {
 			fns = append(fns, fn)
 		}
 	}
-	return fns, skipped
+	return fns, skipped, nil
 }
 
 func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*modFunction, error) {
@@ -1378,7 +1411,10 @@ func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*mod
 	if err != nil {
 		return nil, err
 	}
-	_, skipped := GetSupportedFunctions(fp)
+	_, skipped, err := GetSupportedFunctions(fp)
+	if err != nil {
+		return nil, err
+	}
 	if slices.Contains(skipped, fn.CmdName()) {
 		return nil, fmt.Errorf("function %q in type %q is not supported", name, fp.ProviderName())
 	}

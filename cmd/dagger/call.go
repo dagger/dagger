@@ -93,7 +93,10 @@ available functions.
 }
 
 func functionListRun(o functionProvider, writer io.Writer) error {
-	fns, skipped := GetSupportedFunctions(o)
+	fns, skipped, err := GetSupportedFunctions(o)
+	if err != nil {
+		return err
+	}
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",

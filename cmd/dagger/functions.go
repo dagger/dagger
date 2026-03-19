@@ -471,7 +471,10 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 
 	cmd.AddGroup(funcGroup)
 
-	fns, skipped := GetSupportedFunctions(fnProvider)
+	fns, skipped, err := GetSupportedFunctions(fnProvider)
+	if err != nil {
+		return err
+	}
 
 	for _, fn := range fns {
 		subCmd := fc.makeSubCmd(ctx, fn)
