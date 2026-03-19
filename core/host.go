@@ -53,14 +53,16 @@ func (Host) GetEnv(ctx context.Context, name string) string {
 }
 
 // find-up a given soughtName in curDirPath and its parent directories,
-// return the absolute path to the dir it was found in, if any
+// return the absolute path to the dir it was found in, if any.
+// If soughtType is non-empty, only matches entries of that FileType.
 func (Host) FindUp(
 	ctx context.Context,
 	statFS StatFS,
 	curDirPath string,
 	soughtName string,
+	soughtType FileType,
 ) (string, bool, error) {
-	found, err := Host{}.FindUpAll(ctx, statFS, curDirPath, map[string]struct{}{soughtName: {}})
+	found, err := Host{}.FindUpAll(ctx, statFS, curDirPath, map[string]FileType{soughtName: soughtType})
 	if err != nil {
 		return "", false, err
 	}
@@ -69,18 +71,23 @@ func (Host) FindUp(
 }
 
 // find-up a set of soughtNames in curDirPath and its parent directories return what
-// was found (name -> absolute path of dir containing it)
+// was found (name -> absolute path of dir containing it).
+// The map value is the expected FileType; empty string means any type matches.
 func (Host) FindUpAll(
 	ctx context.Context,
 	statFS StatFS,
 	curDirPath string,
-	soughtNames map[string]struct{},
+	soughtNames map[string]FileType,
 ) (map[string]string, error) {
 	found := make(map[string]string, len(soughtNames))
 	for {
-		for soughtName := range soughtNames {
-			dirName, _, err := statFS.Stat(ctx, filepath.Join(curDirPath, soughtName))
+		for soughtName, soughtType := range soughtNames {
+			dirName, stat, err := statFS.Stat(ctx, filepath.Join(curDirPath, soughtName))
 			if err == nil {
+				if soughtType != "" && stat.FileType != soughtType {
+					// type mismatch, skip this entry
+					continue
+				}
 				delete(soughtNames, soughtName)
 				// NOTE: important that we use dirName here rather than curDirPath since the stat also
 				// does some normalization of paths when the client is using case-insensitive filesystems

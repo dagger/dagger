@@ -60,6 +60,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
 			Args(
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
+				dagql.Arg("fileType").Doc(`only match entries of this file type (e.g. REGULAR, DIRECTORY). If unset, any type matches`),
 			),
 
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
@@ -216,7 +217,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", gitRootPath, err)
 			}
 		} else {
-			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), initialAbsCopyPath, ".git")
+			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), initialAbsCopyPath, ".git", core.FileTypeDirectory)
 			if err != nil {
 				return inst, fmt.Errorf("failed to find up .git: %w", err)
 			}
@@ -524,7 +525,8 @@ func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Hos
 }
 
 type hostFindUpArgs struct {
-	Name string
+	Name     string
+	FileType core.FileType `default:""`
 	HostDirCacheConfig
 }
 
@@ -541,7 +543,7 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, fmt.Errorf("failed to get cwd: %w", err)
 	}
-	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
+	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name, args.FileType)
 	if err != nil {
 		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
 	}

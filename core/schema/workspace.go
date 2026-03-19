@@ -79,7 +79,7 @@ func (s *workspaceSchema) currentWorkspace(
 	}
 
 	statFS := core.NewCallerStatFS(bk)
-	repoRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git")
+	repoRoot, found, err := core.Host{}.FindUp(ctx, statFS, cwd, ".git", core.FileTypeDirectory)
 	if err != nil {
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}

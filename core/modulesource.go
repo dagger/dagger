@@ -384,6 +384,7 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 		dagql.Selector{Field: "findUp",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString(".env")},
+				{Name: "fileType", Value: dagql.Opt(FileTypeRegular)},
 			},
 		},
 	); err != nil {
@@ -406,10 +407,6 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 			},
 		},
 	); err != nil {
-		// If .env exists but is a directory, skip it gracefully
-		if errors.As(err, &notAFileError{}) {
-			return &EnvFile{}, "", nil
-		}
 		return nil, envFilePath.String(), fmt.Errorf("failed to load outer env file from %q: %s", envFilePath.String(), err.Error())
 	}
 	return envFile, envFilePath.String(), nil
