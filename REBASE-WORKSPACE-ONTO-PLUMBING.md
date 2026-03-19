@@ -4,6 +4,11 @@
 
 Draft operational plan.
 
+Snapshot refreshed on 2026-03-18 against the latest fetched plumbing tip:
+
+- `workspace`: `b45355fe0` `engine: keep rename backport behavior-neutral`
+- `origin/workspace-plumbing`: `570a25dc3` `feat(core): hide entrypoint constructor from outer schema`
+
 This file is not canonical branch policy. The canonical plumbing ledger remains `workspace-plumbing:hack/designs/workspace-foundation-compat.md`
 
 This file exists to make the later rebase tractable.
@@ -26,8 +31,8 @@ The target outcome is:
 - Current merge-base:
   - `dcb1b99c7898c4ca61ce4858a13697d9713bc1be`
 - Branch distance at time of planning:
-  - `workspace-plumbing`: 58 commits ahead of merge-base
-  - `workspace`: 311 commits ahead of merge-base
+  - `origin/workspace-plumbing`: 96 commits ahead of merge-base
+  - `workspace`: 314 commits ahead of merge-base
 - Canonical ledger:
   - `workspace-plumbing:hack/designs/workspace-foundation-compat.md`
 
@@ -53,19 +58,24 @@ Three scratch experiments were run.
 Command shape:
 
 ```sh
-git rebase --rebase-merges --onto workspace-plumbing <merge-base>
+git rebase --rebase-merges --onto origin/workspace-plumbing <merge-base>
 ```
 
 Result:
 
-- Rebasing progressed through 313 of 314 steps.
+- Rebasing progressed through 313 of 317 steps.
 - The first stop was the top merge commit:
   - `eeea90802` `Merge branch 'main' into workspace`
-- Conflict count at that stop: 40 files.
+- Conflict count at that stop: 43 files.
 - Conflict cluster was concentrated in:
   - `cmd/dagger/*`
+  - `core/object.go`
+  - `core/served_mods.go`
+  - `core/schema/coremod.go`
   - `core/schema/workspace.go`
   - `core/workspace/*`
+  - `engine/client/client.go`
+  - `engine/server/client_resources.go`
   - `engine/server/session.go`
   - generated docs/SDK outputs
 - Skipping that merge commit let the rebase finish.
@@ -99,7 +109,7 @@ Interpretation:
 Command shape:
 
 ```sh
-git rebase --onto workspace-plumbing <merge-base>
+git rebase --onto origin/workspace-plumbing <merge-base>
 ```
 
 Result:
@@ -110,12 +120,20 @@ Result:
 - After skipping that, the next real conflict arrived immediately at:
   - `bd6d55956` `engine: load workspace modules at connect time`
   - conflict file: `engine/server/session.go`
+- Skipping those exposes the next stale-foundation cluster immediately:
+  - `4e6a886d1` `cli: replace initializeDefaultModule with workspace-aware loading`
+  - `c31ac7c35` `cli: remove dead initializeDefaultModule function`
+  - `1d09d0b5a` `fix: use dagql.ObjectResult instead of non-existent dagql.Instance`
+  - conflict files stay concentrated in old CLI default-module code and `session.go`
 
 Interpretation:
 
 - A literal chronological replay of early `workspace` foundation commits is wrong.
 - `workspace-plumbing` intentionally rolled back initialized-workspace/config
   parsing and old connect-time loading shape.
+- The broader rewrite bucket also includes the older CLI-side
+  `initializeDefaultModule` / focused-Query assumptions that plumbing has since
+  replaced with the current entrypoint-proxy architecture.
 - The eventual integration should be bucketed and rewritten, not replayed blindly.
 
 ## Working Conclusion
@@ -137,54 +155,81 @@ These should be reconciled by intent, not replayed blindly:
 
 - `workspace: adopt path contract`
   - `workspace`: `5e0b1e4a7`
-  - `workspace-plumbing`: `df14b8416`
+  - `origin/workspace-plumbing`: `3db01c79c`
 - `workspace: move entrypoints to Query root`
   - `workspace`: `bbdfa797e`
-  - `workspace-plumbing`: `033c92644`
+  - `origin/workspace-plumbing`: `ae45fb66c`
+- `engine: rename extra-module blueprint to entrypoint`
+  - `workspace`: `bfced037f`
+  - `workspace`: `b45355fe0`
+  - `origin/workspace-plumbing`: `99c0047b9`
 
 Near-duplicate intent also exists around:
 
 - path-contract rollout follow-ups
 - foundation/compat plumbing
 - engine-backed authoring compatibility
+- entrypoint proxy / outer-schema follow-ups
 
 ## Plumbing Fix Threads That Must Survive
 
-These come directly from `workspace-foundation-compat.md` and should be treated as
-non-negotiable until proven superseded by equivalent `workspace` behavior.
+These are the current `origin/workspace-plumbing` equivalents of the ledger's
+must-keep threads, and should be treated as non-negotiable until proven
+superseded by equivalent `workspace` behavior.
 
 ### Required To Preserve Or Re-prove
 
-- `cd4c63ff1` `engine: preserve legacy toolchain customizations`
+- `2af637736` `engine: preserve legacy toolchain customizations`
   - proof:
     - `TestToolchain/TestToolchainsWithConfiguration/override_constructor_defaultPath_argument`
-- `fec23805b` `core: restore legacy blueprint caller env defaults`
+- `392947385` `core: restore legacy blueprint caller env defaults`
   - proof:
     - `TestUserDefaults/TestLocalBlueprint/inner_envfile`
-- `6c93ddba9` `core/schema: restore legacy generator include matching`
+- `30ed7c5f6` `core/schema: restore legacy generator include matching`
   - proof:
     - `TestGenerators/TestGeneratorsDirectSDK/java/generate_multiple`
     - `TestGenerators/TestGeneratorsAsBlueprint/java/generate`
-- `1bd6065c7` `engine: seed runtime module content cache`
+- `843bca331` `engine: seed runtime module content cache`
   - broader than generators; protects runtime contextual dir/file reloads
 
 ### Also Treat As Must-Keep Plumbing Behavior
 
-- `13f2abf15` `engine: fix sandboxing under root slash`
-- `1adb147a4` `cli: make bare init idempotent`
-- `eefd243f0` `cli: route query-root ctor flags to modules`
-- `ce32ecb46` `workspace: repair explicit -m entrypoints`
-- `31a0f6dad` `test(workspace): fix tests`
+- `db34d9710` `engine: fix sandboxing under root slash`
+- `c21f25ef5` `cli: make bare init idempotent`
+- `a4f551bd0` `cli: route query-root ctor flags to modules`
+- `e7f30322e` `workspace: repair explicit -m entrypoints`
+- `9f1336827` `test(workspace): fix tests`
+- `99c0047b9` `engine: rename extra-module blueprint to entrypoint`
+- `54c097019` `cli: drop local explicit -m query projection shims`
+- `1635ccd5a` `cli: stop hoisting query-root constructor flags`
+- `225467934` `restore(cli): use local flags for constructor args on root command`
+- `dc1b8dffc` `feat(dagql): two-server architecture for entrypoint proxies`
+- `abfd53e57` `fix(dagql): proxy resolvers through inner server`
+- `ac4a6d2fc` `fix(core): respect directives core currentTypeDefs`
+- `627273e27` `fix(core): use inner server for runtime plumbing in ContainerRuntime.Call`
+- `32e99dd61` `feat(core): use 'with' field for entrypoint constructor args`
+- `570a25dc3` `feat(core): hide entrypoint constructor from outer schema`
+- `6f4da0159` `test(workspace): update entrypoint proxy tests for with/shadow`
+- `2e6939dda` `test(workspace): cover entrypoint proxy corner cases`
+- `e341496df` `test(workspace): add entrypoint test using Go SDK`
 
-These are late plumbing fixes validated against the entrypoint hold bucket and
-explicit `-m` behavior. They are exactly the kind of “easy to lose in a replay”
-fixes that should be preserved first and then revalidated.
+These are late plumbing fixes validated against the current entrypoint-proxy
+contract and explicit `-m` behavior. They define the present plumbing-side
+truth:
+
+- the outer schema exposes entrypoint proxies and `with`
+- the entrypoint constructor is hidden from the outer schema
+- proxies may shadow core fields on the outer server
+- ID loading and engine-internal runtime plumbing must stay on the inner server
+
+They are exactly the kind of “easy to lose in a replay” fixes that should be
+preserved first and then revalidated.
 
 ## Proposed Replay Strategy
 
 ### Phase 0: Prepare The Integration Branch
 
-Create a fresh branch from `workspace-plumbing`.
+Create a fresh branch from an up-to-date `workspace-plumbing`.
 
 Goals:
 
@@ -210,6 +255,9 @@ This is the point to confirm:
 - root-`/` sandbox fix
 - compat restoration threads
 - explicit `-m` entrypoint fixes
+- `with`-field constructor flow on Query root
+- entrypoint constructor hidden from the outer schema
+- outer/inner server split for proxy resolution and ID/runtime loading
 
 ### Phase 2: Drop Historical Merge Noise
 
@@ -259,6 +307,8 @@ Do not replay these as historical commits:
 
 - `5e0b1e4a7` `workspace: adopt path contract`
 - `bbdfa797e` `workspace: move entrypoints to Query root`
+- `bfced037f` `engine: rename extra-module blueprint to entrypoint`
+- `b45355fe0` `engine: keep rename backport behavior-neutral`
 
 Action:
 
@@ -276,6 +326,7 @@ verified replacement:
 - runtime module content cache seeding
 - root-`/` sandbox handling
 - explicit `-m` entrypoint fixes
+- current entrypoint proxy / `with` / outer-schema architecture
 
 Action:
 
@@ -317,11 +368,17 @@ Reason:
 Highest risk:
 
 - `engine/server/session.go`
+- `engine/server/client_resources.go`
+- `engine/client/client.go`
 - `core/schema/workspace.go`
+- `core/schema/coremod.go`
 - `core/workspace/detect.go`
 - `core/workspace/legacy.go`
 - `core/module.go`
 - `core/modulesource.go`
+- `core/object.go`
+- `core/served_mods.go`
+- `core/sdk.go`
 - `core/schema/modulesource.go`
 - `cmd/dagger/module.go`
 - `cmd/dagger/functions.go`
@@ -375,8 +432,12 @@ From the plumbing ledger, these are mandatory:
 From the entrypoint hold-bucket notes, also mandatory:
 
 - `TestWorkspace/TestBlueprintFunctionsIncludesOtherModules`
-- `TestWorkspace/TestEntrypointProxySkipsRootFieldConflicts`
-- `TestWorkspace/TestEntrypointProxySkipsConstructorArgConflicts`
+- `TestWorkspace/TestEntrypointProxyShadowsCoreFields`
+- `TestWorkspace/TestEntrypointProxyConstructorArgOverlap`
+- `TestWorkspace/TestEntrypointProxyCoreAPIShadow`
+- `TestWorkspace/TestEntrypointProxySelfNamedMethod`
+- `TestWorkspace/TestEntrypointProxyCoreAPIShadowWithCoreReturnTypes`
+- `TestWorkspace/TestEntrypointProxyDirectoryField`
 - `TestUserDefaults/TestLocalBlueprint`
 - `TestUserDefaults/TestLocalToolchain`
 
@@ -400,7 +461,10 @@ dagger --progress=plain call engine-dev test --pkg=./cmd/dagger --run='TestSomet
    workspace integration settles?
 3. Is there any early `workspace` foundation logic worth porting manually from
    `c8fc9d728` / `bd6d55956`, or should those commits be treated as fully obsolete?
-4. After replay, should the branch be linearized first and only then merged with
+4. Should the plumbing ledger be updated to replace the older
+   “skip conflicting entrypoint proxies” wording with the current
+   outer-schema / `with`-field design before the real move starts?
+5. After replay, should the branch be linearized first and only then merged with
    fresh `main`, or should a fresh `main` merge happen earlier to reduce drift?
 
 ## Initial Commit Buckets To Build Next
@@ -416,15 +480,25 @@ Seed entries for that checklist:
 
 ### Preserve Plumbing Instead
 
-- `cd4c63ff1`
-- `fec23805b`
-- `6c93ddba9`
-- `1bd6065c7`
-- `13f2abf15`
-- `1adb147a4`
-- `eefd243f0`
-- `ce32ecb46`
-- `31a0f6dad`
+- `2af637736`
+- `392947385`
+- `30ed7c5f6`
+- `843bca331`
+- `db34d9710`
+- `c21f25ef5`
+- `a4f551bd0`
+- `e7f30322e`
+- `9f1336827`
+- `99c0047b9`
+- `54c097019`
+- `1635ccd5a`
+- `225467934`
+- `dc1b8dffc`
+- `abfd53e57`
+- `ac4a6d2fc`
+- `627273e27`
+- `32e99dd61`
+- `570a25dc3`
 - plumbing’s versions of path-contract and Query-root entrypoint commits
 
 ### Drop Historical Replay
