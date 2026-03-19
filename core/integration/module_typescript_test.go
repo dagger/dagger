@@ -1366,9 +1366,9 @@ export class PModule {
 }
 `))
 
-		out, err := modGen.With(daggerQuery(`{test{test{print}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerCall("test", "print")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test": {"test": {"print": 8 }}}`, out)
+		require.Equal(t, "8", out)
 	})
 }
 
