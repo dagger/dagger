@@ -112,6 +112,9 @@ type AnyResult interface {
 	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
 	WithSafeToPersistCache(safe bool) AnyResult
 
+	// NullableWrapped returns a nullable view over the same underlying result.
+	NullableWrapped() AnyResult
+
 	// WithContentDigest returns a new AnyResult with the given content digest.
 	WithContentDigestAny(digest.Digest) AnyResult
 

@@ -736,6 +736,9 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 				}
 			}
 		}
+		if id.Type() != nil && !id.Type().ToAST().NonNull && res.Type() != nil && res.Type().NonNull && res.Type().Name() == id.Type().NamedType() {
+			res = res.NullableWrapped()
+		}
 		if id.Type() != nil && res.Type() != nil && res.Type().Name() != id.Type().NamedType() {
 			return nil, fmt.Errorf("load %s: expected %s, got %s", idInputDebugString(id), id.Type().ToAST(), res.Type())
 		}
@@ -1258,6 +1261,22 @@ func CurrentCall(ctx context.Context) *ResultCall {
 		return nil
 	}
 	return val.(*ResultCall)
+}
+
+// ChildFieldCall derives the call frame for a child field selection while
+// preserving the receiver lineage, module, and view from the parent call.
+func ChildFieldCall(parent *ResultCall, field string, fieldType *ast.Type) *ResultCall {
+	if parent == nil {
+		return nil
+	}
+	return &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType(fieldType),
+		Field:    field,
+		View:     parent.View,
+		Receiver: &ResultCallRef{Call: parent.clone()},
+		Module:   parent.Module.clone(),
+	}
 }
 
 type srvCtx struct{}

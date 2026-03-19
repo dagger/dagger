@@ -864,6 +864,10 @@ type Result[T Typed] struct {
 	// derefView means the result should present the dereferenced view of a
 	// nullable/shared wrapper payload while keeping the same sharedResult.
 	derefView bool
+
+	// nullableWrapped means the result should present the same shared payload as
+	// a nullable wrapper view while keeping the same sharedResult.
+	nullableWrapped bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -873,6 +877,21 @@ func (r Result[T]) Type() *ast.Type {
 	if r.shared == nil || state.self == nil {
 		var zero T
 		return zero.Type()
+	}
+	if r.nullableWrapped {
+		var innerType *ast.Type
+		if r.derefView {
+			if inner, ok := derefTyped(state.self); ok && inner != nil {
+				innerType = inner.Type()
+			}
+		} else {
+			innerType = state.self.Type()
+		}
+		if innerType != nil {
+			cp := *innerType
+			cp.NonNull = false
+			return &cp
+		}
 	}
 	if r.derefView {
 		if inner, ok := derefTyped(state.self); ok && inner != nil && inner.Type() != nil {
@@ -979,6 +998,19 @@ func (r Result[T]) Unwrap() Typed {
 		var zero T
 		return zero
 	}
+	if r.nullableWrapped {
+		wrapped := state.self
+		if r.derefView {
+			if inner, ok := derefTyped(state.self); ok && inner != nil {
+				wrapped = inner
+			}
+		}
+		return DynamicNullable{
+			Elem:  wrapped,
+			Value: wrapped,
+			Valid: true,
+		}
+	}
 	if r.derefView {
 		if inner, ok := derefTyped(state.self); ok && inner != nil {
 			return inner
@@ -992,6 +1024,10 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 	if r.derefView {
 		return r, true
 	}
+	if r.nullableWrapped {
+		r.nullableWrapped = false
+		return r, true
+	}
 	if r.shared == nil || state.self == nil {
 		return r, true
 	}
@@ -1003,6 +1039,10 @@ func (r Result[T]) DerefValue() (AnyResult, bool) {
 		return r, true
 	}
 	if anyRes, ok := inner.(AnyResult); ok {
+		// Suspicious: WithSafeToPersistCache currently clones into a detached
+		// payload. If we hit weird secret/function caching bugs, check whether
+		// this propagation is incorrectly stripping attachment from an already-
+		// attached inner result.
 		return anyRes.WithSafeToPersistCache(r.IsSafeToPersistCache()), true
 	}
 	return r.resultWithDerefView(), true
@@ -1086,11 +1126,21 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 
 func (r Result[T]) resultWithDerefView() Result[T] {
 	r.derefView = true
+	r.nullableWrapped = false
 	return r
 }
 
 func (r Result[T]) withDerefViewAny() AnyResult {
 	return r.resultWithDerefView()
+}
+
+func (r Result[T]) resultNullableWrapped() Result[T] {
+	r.nullableWrapped = true
+	return r
+}
+
+func (r Result[T]) NullableWrapped() AnyResult {
+	return r.resultNullableWrapped()
 }
 
 func derefTyped(val Typed) (Typed, bool) {
@@ -1248,6 +1298,10 @@ func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
 		return r, true
 	}
 	if anyRes, ok := inner.(AnyResult); ok {
+		// Suspicious: WithSafeToPersistCache currently clones into a detached
+		// payload. If we hit weird secret/function caching bugs, check whether
+		// this propagation is incorrectly stripping attachment from an already-
+		// attached inner result.
 		return anyRes.WithSafeToPersistCache(r.IsSafeToPersistCache()), true
 	}
 	r.Result = r.Result.resultWithDerefView()
@@ -1321,6 +1375,10 @@ func (r ObjectResult[T]) objectResultWithDerefView() AnyResult {
 
 func (r ObjectResult[T]) withDerefViewAny() AnyResult {
 	return r.objectResultWithDerefView()
+}
+
+func (r ObjectResult[T]) NullableWrapped() AnyResult {
+	return r.Result.resultNullableWrapped()
 }
 
 func (r ObjectResult[T]) cacheSharedResult() *sharedResult {

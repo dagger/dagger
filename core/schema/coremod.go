@@ -403,7 +403,7 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
-func (obj *CoreModScalar) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+func (obj *CoreModScalar) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}
@@ -437,72 +437,25 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		slog.ExtraDebug("CoreModObject.ConvertFromSDKResult: got nil value")
 		return nil, nil
 	}
-	switch value := value.(type) {
-	case dagql.AnyResult:
-		if value.Type() == nil || value.Type().Name() != obj.name {
-			return nil, fmt.Errorf("unexpected core object result type %T for %q", value, obj.name)
-		}
-		return value, nil
-	case dagql.IDable:
-		id, err := value.ID()
-		if err != nil {
-			return nil, err
-		}
-		if id == nil {
-			return nil, nil
-		}
-		return obj.ConvertFromSDKResult(ctx, id)
-	case *call.ID:
-		if value == nil {
-			return nil, nil
-		}
-		enc, err := value.Encode()
-		if err != nil {
-			return nil, err
-		}
-		return obj.ConvertFromSDKResult(ctx, enc)
-	case call.ID:
-		return obj.ConvertFromSDKResult(ctx, &value)
-	case string:
-		var idp call.ID
-		if err := idp.Decode(value); err != nil {
-			return nil, err
-		}
 
-		q, err := core.CurrentQuery(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("current query: %w", err)
-		}
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("current dagql server: %w", err)
-		}
-		if idp.EngineResultID() != 0 {
-			res, err := dag.Cache.LoadResultByResultID(ctx, dag, idp.EngineResultID())
-			if err != nil {
-				return nil, fmt.Errorf("load result from ID: %w", err)
-			}
-			call, err := res.ResultCall()
-			if err != nil {
-				return nil, fmt.Errorf("get result call from ID: %w", err)
-			}
-			deps, err := q.ModDepsForCall(ctx, call)
-			if err != nil {
-				return nil, fmt.Errorf("get result dependencies: %w", err)
-			}
-			dag, err = deps.Schema(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("get schema from dependencies: %w", err)
-			}
-		}
-		val, err := dag.Load(ctx, &idp)
-		if err != nil {
-			return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
-		}
-		return val, nil
-	default:
-		return nil, fmt.Errorf("expected object ID or result, got %T", value)
+	id, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string, got %T", value)
 	}
+	var idp call.ID
+	if err := idp.Decode(id); err != nil {
+		return nil, err
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current dagql server: %w", err)
+	}
+	val, err := dag.Load(ctx, &idp)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
+	}
+	return val, nil
 }
 
 func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -528,19 +481,32 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 
 func (obj *CoreModObject) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
 	if value == nil {
-		return content.CollectJSONable(nil)
+		if err := content.CollectJSONable(nil); err != nil {
+			return fmt.Errorf("collect_jsonable nil core object %q: %w", obj.name, err)
+		}
+		return nil
 	}
 	switch x := value.(type) {
 	case dagql.Input:
-		return content.CollectJSONable(x)
+		if err := content.CollectJSONable(x); err != nil {
+			return fmt.Errorf("collect_jsonable input core object %q (%T): %w", obj.name, x, err)
+		}
+		return nil
 	case dagql.AnyResult:
 		id, err := x.ID()
 		if err != nil {
-			return err
+			return fmt.Errorf("resolve result ID core object %q (%T): %w", obj.name, x, err)
 		}
-		return content.CollectID(ctx, id, false)
+		if err := content.CollectID(ctx, id, false); err != nil {
+			return fmt.Errorf("collect_id core object %q (%T): %w", obj.name, x, err)
+		}
+		return nil
 	default:
-		return content.CollectJSONable(value.Unwrap())
+		unwrapped := value.Unwrap()
+		if err := content.CollectJSONable(unwrapped); err != nil {
+			return fmt.Errorf("collect_jsonable unwrapped core object %q (%T): %w", obj.name, unwrapped, err)
+		}
+		return nil
 	}
 }
 
@@ -594,7 +560,7 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(input)
 }
 
-func (enum *CoreModEnum) CollectContent(_ context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
+func (enum *CoreModEnum) CollectContent(ctx context.Context, value dagql.AnyResult, content *core.CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}

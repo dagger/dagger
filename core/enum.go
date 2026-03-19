@@ -85,7 +85,7 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return enum.memberTypedef().Name, nil
 }
 
-func (m *ModuleEnumType) CollectContent(_ context.Context, value dagql.AnyResult, content *CollectedContent) error {
+func (m *ModuleEnumType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}

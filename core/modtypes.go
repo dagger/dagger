@@ -60,7 +60,10 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 			// Unknown/private fields are collected on a best-effort basis only.
 			// Some SDK paths can surface zero-value IDs for unset optional fields;
 			// treat those as absent rather than crashing the engine.
-			return content.CollectJSONable(nil)
+			if err := content.CollectJSONable(nil); err != nil {
+				return fmt.Errorf("collect id unknown-invalid-id fallback jsonable nil: %w", err)
+			}
+			return nil
 		}
 		return fmt.Errorf("invalid ID")
 	}
@@ -72,7 +75,7 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 	if idp.IsHandle() {
 		encoded, err := idp.Encode()
 		if err != nil {
-			return err
+			return fmt.Errorf("encode handle ID: %w", err)
 		}
 		key = digest.FromString(encoded)
 	} else {
@@ -86,17 +89,20 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 	var dgst digest.Digest
 	if idp.IsHandle() {
 		dag := dagql.CurrentDagqlServer(ctx)
+		if dag == nil {
+			return fmt.Errorf("current dagql server is nil")
+		}
 		res, err := dag.LoadType(ctx, idp)
 		if err != nil {
-			return err
+			return fmt.Errorf("load handle type: %w", err)
 		}
 		call, err := res.ResultCall()
 		if err != nil {
-			return err
+			return fmt.Errorf("result call: %w", err)
 		}
 		dgst, err = call.ContentPreferredDigest()
 		if err != nil {
-			return err
+			return fmt.Errorf("content preferred digest: %w", err)
 		}
 	} else {
 		dgst = rid.ID.ContentPreferredDigest()
@@ -172,7 +178,7 @@ func (content *CollectedContent) CollectUnknown(ctx context.Context, value any) 
 func (content *CollectedContent) CollectJSONable(value any) error {
 	bytes, err := json.Marshal(value)
 	if err != nil {
-		return err
+		return fmt.Errorf("json marshal %T: %w", value, err)
 	}
 	content.hasher.WithBytes(bytes...)
 	return nil
@@ -250,7 +256,7 @@ func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectContent(_ context.Context, value dagql.AnyResult, content *CollectedContent) error {
+func (t *PrimitiveType) CollectContent(ctx context.Context, value dagql.AnyResult, content *CollectedContent) error {
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}
@@ -388,18 +394,16 @@ type NullableType struct {
 var _ ModType = &NullableType{}
 
 func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
-	nullable := dagql.DynamicNullable{
-		Elem: t.InnerDef.ToTyped(),
-	}
 	if value != nil {
 		val, err := t.Inner.ConvertFromSDKResult(ctx, value)
 		if err != nil {
 			return nil, err
 		}
-		nullable.Value = val
-		nullable.Valid = true
+		return val.NullableWrapped(), nil
 	}
-	return dagql.NewResultForCurrentCall(ctx, nullable)
+	return dagql.NewResultForCurrentCall(ctx, dagql.DynamicNullable{
+		Elem: t.InnerDef.ToTyped(),
+	})
 }
 
 func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {

@@ -148,6 +148,65 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	assert.Assert(t, ok)
 }
 
+func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	srv := cacheTestServer(t, base)
+	ctx = srvToContext(ctx, srv)
+
+	call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "object",
+	}
+	detached := cacheTestObjectResult(t, srv, call, 17, nil)
+	attached, err := srv.Cache.AttachResult(ctx, detached)
+	assert.NilError(t, err)
+	assert.Assert(t, attached != nil)
+	attachedShared := attached.cacheSharedResult()
+	assert.Assert(t, attachedShared != nil)
+	assert.Assert(t, attachedShared.id != 0)
+
+	wrapped := attached.NullableWrapped()
+	assert.Assert(t, wrapped != nil)
+	assert.Assert(t, wrapped.cacheSharedResult() == attachedShared)
+	assert.Assert(t, !wrapped.Type().NonNull)
+
+	wrappedNullable, ok := wrapped.Unwrap().(DynamicNullable)
+	assert.Assert(t, ok)
+	assert.Assert(t, wrappedNullable.Valid)
+	_, ok = UnwrapAs[*cacheTestObject](wrappedNullable.Value)
+	assert.Assert(t, ok)
+
+	derefWrapped, ok := wrapped.DerefValue()
+	assert.Assert(t, ok)
+	assert.Assert(t, derefWrapped != nil)
+	assert.Assert(t, derefWrapped.cacheSharedResult() == attachedShared)
+	assert.Assert(t, derefWrapped.Type().NonNull)
+	_, ok = UnwrapAs[*cacheTestObject](derefWrapped.Unwrap())
+	assert.Assert(t, ok)
+
+	id, err := wrapped.ID()
+	assert.NilError(t, err)
+	assert.Assert(t, id != nil)
+	assert.Assert(t, !id.Type().ToAST().NonNull)
+
+	loaded, err := srv.LoadType(ctx, id)
+	assert.NilError(t, err)
+	assert.Assert(t, loaded != nil)
+	assert.Assert(t, loaded.cacheSharedResult() == attachedShared)
+	assert.Assert(t, !loaded.Type().NonNull)
+
+	loadedNullable, ok := loaded.Unwrap().(DynamicNullable)
+	assert.Assert(t, ok)
+	assert.Assert(t, loadedNullable.Valid)
+	_, ok = UnwrapAs[*cacheTestObject](loadedNullable.Value)
+	assert.Assert(t, ok)
+}
+
 func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

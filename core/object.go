@@ -52,87 +52,13 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		}
 		return value, nil
 	case map[string]any:
-		fields := make(map[string]any, len(value))
-		mod := NewUserMod(t.mod)
-		for _, k := range slices.Sorted(maps.Keys(value)) {
-			v := value[k]
-			fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
-			if !ok {
-				fields[k] = v
-				continue
-			}
-			modType, ok, err := mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get mod type for field %q: %w", k, err)
-			}
-			if !ok {
-				return nil, fmt.Errorf("could not find mod type for field %q", k)
-			}
-			normalized, err := normalizeModuleObjectValue(ctx, modType, v)
-			if err != nil {
-				return nil, fmt.Errorf("normalize field %q: %w", k, err)
-			}
-			fields[k] = normalized
-		}
 		return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
-			Fields:  fields,
+			Fields:  value,
 		})
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
-	}
-}
-
-func newModuleObjectResultForCurrentCall(
-	ctx context.Context,
-	mod dagql.ObjectResult[*Module],
-	typeDef *ObjectTypeDef,
-	fields map[string]any,
-) (dagql.AnyResult, error) {
-	return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
-		Module:  mod,
-		TypeDef: typeDef,
-		Fields:  fields,
-	})
-}
-
-func normalizeModuleObjectValue(ctx context.Context, modType ModType, value any) (any, error) {
-	switch modType.TypeDef().Kind {
-	case TypeDefKindObject, TypeDefKindInterface:
-		switch value := value.(type) {
-		case nil:
-			return nil, nil
-		case string, *call.ID, call.ID, dagql.IDable, dagql.AnyResult:
-			return modType.ConvertFromSDKResult(ctx, value)
-		}
-	}
-	switch modType := modType.(type) {
-	case *ListType:
-		if value == nil {
-			return nil, nil
-		}
-		switch value := value.(type) {
-		case []any:
-			items := make([]any, 0, len(value))
-			for i, item := range value {
-				normalized, err := normalizeModuleObjectValue(ctx, modType.Underlying, item)
-				if err != nil {
-					return nil, fmt.Errorf("item %d: %w", i, err)
-				}
-				items = append(items, normalized)
-			}
-			return items, nil
-		default:
-			return value, nil
-		}
-	case *NullableType:
-		if value == nil {
-			return nil, nil
-		}
-		return normalizeModuleObjectValue(ctx, modType.Inner, value)
-	default:
-		return value, nil
 	}
 }
 
@@ -147,13 +73,21 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case dagql.ObjectResult[*ModuleObject]:
-		return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
+		parentCall, err := x.ResultCall()
+		if err != nil {
+			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
+		}
+		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 	case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-		return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
+		parentCall, err := x.ResultCall()
+		if err != nil {
+			return nil, fmt.Errorf("interface SDK input call frame: %w", err)
+		}
+		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 	case *ModuleObject:
-		return moduleObjectFieldsToSDKInput(ctx, t, x.Fields)
+		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
 	case *InterfaceAnnotatedValue:
-		return moduleObjectFieldsToSDKInput(ctx, t, x.Fields)
+		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
 	case DynamicID:
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
@@ -172,9 +106,17 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		}
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
-			return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
+			parentCall, err := x.ResultCall()
+			if err != nil {
+				return nil, fmt.Errorf("loaded module object SDK input call frame: %w", err)
+			}
+			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-			return moduleObjectFieldsToSDKInput(ctx, t, x.Self().Fields)
+			parentCall, err := x.ResultCall()
+			if err != nil {
+				return nil, fmt.Errorf("loaded interface SDK input call frame: %w", err)
+			}
+			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
@@ -183,7 +125,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, fields map[string]any) (map[string]any, error) {
+func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, parentCall *dagql.ResultCall, fields map[string]any) (map[string]any, error) {
 	if len(fields) == 0 {
 		return map[string]any{}, nil
 	}
@@ -206,7 +148,11 @@ func moduleObjectFieldsToSDKInput(ctx context.Context, t *ModuleObjectType, fiel
 		if !ok {
 			return nil, fmt.Errorf("could not find mod type for field %q", name)
 		}
-		updated, err := moduleObjectValueToSDKInput(ctx, modType, value)
+		fieldCtx := ctx
+		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.ToType()); fieldCall != nil {
+			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
+		}
+		updated, err := moduleObjectValueToSDKInput(fieldCtx, modType, value)
 		if err != nil {
 			return nil, fmt.Errorf("convert field %q: %w", name, err)
 		}
@@ -377,6 +323,10 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	} else {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
+	parentCall, err := value.ResultCall()
+	if err != nil {
+		return fmt.Errorf("resolve module object result call: %w", err)
+	}
 
 	// Iterate fields in sorted order to produce a deterministic hash.
 	for _, k := range slices.Sorted(maps.Keys(objFields)) {
@@ -401,12 +351,16 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 			return fmt.Errorf("could not find mod type for field %q", k)
 		}
 
-		typed, err := modType.ConvertFromSDKResult(ctx, v)
+		fieldCtx := ctx
+		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.ToType()); fieldCall != nil {
+			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
+		}
+		typed, err := modType.ConvertFromSDKResult(fieldCtx, v)
 		if err != nil {
 			return fmt.Errorf("failed to convert field %q: %w", k, err)
 		}
 		if err := content.CollectKeyed(k, func() error {
-			return modType.CollectContent(ctx, typed, content)
+			return modType.CollectContent(fieldCtx, typed, content)
 		}); err != nil {
 			return fmt.Errorf("failed to collect content for field %q: %w", k, err)
 		}
@@ -968,7 +922,11 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		dag.Root().ObjectType().Extend(
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
-				return newModuleObjectResultForCurrentCall(ctx, obj.Module, objDef, map[string]any{})
+				return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
+					Module:  obj.Module,
+					TypeDef: objDef,
+					Fields:  map[string]any{},
+				})
 			},
 		)
 		return nil
