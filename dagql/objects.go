@@ -122,6 +122,18 @@ func (class Class[T]) FieldSpec(name string, view call.View) (FieldSpec, bool) {
 	return *field.Spec, true
 }
 
+func (class Class[T]) FieldSpecs(view call.View) []FieldSpec {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	var specs []FieldSpec
+	for name := range class.fields {
+		if field, ok := class.fieldLocked(name, view); ok {
+			specs = append(specs, *field.Spec)
+		}
+	}
+	return specs
+}
+
 func (class Class[T]) fieldLocked(name string, view call.View) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {

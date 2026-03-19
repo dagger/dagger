@@ -119,16 +119,8 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 // mergeModuleQueryFields finds the Query TypeDef and adds any module-provided
 // fields (constructors and entrypoint proxy methods) using the function
 // metadata from the source module's own TypeDefs.
-//
-// CoreMod.TypeDefs skips module-provided Query fields to avoid lossy
-// introspection reconstruction. This function adds them back using the
-// module's own type definitions, which have correct metadata (interface
-// return types, directives, source maps, etc.).
 func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
-	queryObjType, ok := dag.ObjectType("Query")
-	if !ok {
-		return typeDefs
-	}
+	queryObjType := dag.Root().ObjectType()
 
 	// Find the Query TypeDef and build a lookup of module main objects by
 	// source module name.
@@ -155,20 +147,9 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
 		existingFns[fn.Name] = true
 	}
 
-	// Check each field on the dagql Query type for module-provided fields.
-	// We use the introspection schema to enumerate field names, then look up
-	// the FieldSpec to determine the source module.
-	schema := dag.Schema()
-	querySchema, ok := schema.Types["Query"]
-	if !ok {
-		return typeDefs
-	}
-	for _, field := range querySchema.Fields {
-		if existingFns[field.Name] || field.Name == "id" {
-			continue
-		}
-		spec, ok := queryObjType.FieldSpec(field.Name, dag.View)
-		if !ok || spec.Module == nil {
+	// Enumerate module-provided Query fields directly from the dagql type.
+	for _, spec := range queryObjType.FieldSpecs(dag.View) {
+		if existingFns[spec.Name] || spec.Module == nil {
 			continue
 		}
 
@@ -182,7 +163,7 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
 		// methods (entrypoint proxy). If so, use the method's function
 		// definition directly — it has the correct return type, directives,
 		// etc.
-		if fn := findFunctionOnObject(mainObj, field.Name); fn != nil {
+		if fn := findFunctionOnObject(mainObj, spec.Name); fn != nil {
 			proxied := fn.Clone()
 			proxied.SourceModuleName = modName
 			queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
@@ -192,7 +173,7 @@ func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
 		// Otherwise this is the constructor. Synthesize a function that
 		// returns the main object type, using args from the module's
 		// explicit constructor if one was defined.
-		fn := constructorFunctionFromMainObject(mainObj, field.Name, modName)
+		fn := constructorFunctionFromMainObject(mainObj, spec.Name, modName)
 		queryTypeDef.Functions = append(queryTypeDef.Functions, fn)
 	}
 
