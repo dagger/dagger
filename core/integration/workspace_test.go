@@ -910,10 +910,10 @@ type Ci {
 		require.Equal(t, "custom container", strings.TrimSpace(out))
 	})
 
-	t.Run("constructor not exposed", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerFunctions()).Stdout(ctx)
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("ci", "container")).Stdout(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, out, "ci\t")
+		require.Equal(t, "custom container", strings.TrimSpace(out))
 	})
 }
 
@@ -943,13 +943,19 @@ type Ci {
 		require.NoError(t, err)
 		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})
+
+	t.Run("namespaced method still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("ci", "--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ctor:method", strings.TrimSpace(out))
+	})
 }
 
 // TestEntrypointProxyCoreAPIShadow verifies that when a module provides
 // functions whose names collide with core API fields (e.g. "container",
 // "file", "directory"), the proxies shadow the core fields on the outer
 // server. The core API remains functional for engine-internal plumbing
-// because it uses the inner server.
+// because it uses the inner server. Both proxy and namespaced paths work.
 func (WorkspaceSuite) TestEntrypointProxyCoreAPIShadow(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -990,6 +996,20 @@ type Shadows {
 		require.Equal(t, "my-file", strings.TrimSpace(out))
 
 		out, err = base.With(daggerCall("directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-directory", strings.TrimSpace(out))
+	})
+
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("shadows", "container")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-container", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("shadows", "file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "my-file", strings.TrimSpace(out))
+
+		out, err = base.With(daggerCall("shadows", "directory")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "my-directory", strings.TrimSpace(out))
 	})
@@ -1090,6 +1110,11 @@ type Dirs {
 		require.Contains(t, strings.TrimSpace(out), "3.20")
 	})
 
+	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("dirs", "directory", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello.txt", strings.TrimSpace(out))
+	})
 }
 
 // TestEntrypointProxyDirectoryField verifies that a container-based module
@@ -1098,12 +1123,16 @@ type Dirs {
 //
 // ContainerRuntime.Call selects "directory" from the Query root to create a
 // metadata directory. When the module has a "directory" field, the entrypoint
-// proxy shadows the core field on the outer server. The proxy resolver
-// exercises ContainerRuntime.Call, which must use the inner server for its
-// plumbing to avoid hitting the proxy.
+// proxy shadows the core field on the outer server. A raw GraphQL query
+// resolves the constructor on the outer server directly, so
+// ContainerRuntime.Call must use the inner server for its plumbing to avoid
+// hitting the proxy.
 //
-// This test uses Go (a container-based SDK) because Dang has a native
-// runtime that doesn't use ContainerRuntime.Call.
+// This test uses Go (a container-based SDK) and daggerQuery (raw GraphQL)
+// because both are required to trigger the bug:
+// - Dang has a native runtime that doesn't use ContainerRuntime.Call
+// - daggerCall routes through proxy resolvers that delegate to the inner
+//   server, masking the issue
 func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1130,11 +1159,18 @@ func (p *Playground) SayHello() string {
 }
 `)
 
-	// Query through entrypoint proxies — exercises ContainerRuntime.Call
-	// on the outer server where the "directory" proxy shadows the core
-	// field. Module methods and fields (including ones that shadow core
-	// API names) are accessible at Query root.
-	out, err := base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
+	// Query through the constructor directly — exercises
+	// ContainerRuntime.Call on the outer server where the "directory"
+	// proxy shadows the core field. Must come first to avoid caching
+	// from the proxy path masking the bug.
+	out, err := base.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
+
+	// Query through entrypoint proxies — the intended usage pattern.
+	// Demonstrates that module methods and fields (including ones that
+	// shadow core API names) are accessible at Query root.
+	out, err = base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"sayHello":"hello!", "directory":{"entries": []}}`, out)
 }

@@ -15,10 +15,8 @@ instances that share a single `SessionCache`:
   `loadXxxFromID` fields. No entrypoint proxies. IDs are loaded here.
 
 - **Outer (client-facing)**: Everything the inner server has, PLUS
-  entrypoint proxy fields and the `with` field on `Query`, MINUS the
-  entrypoint module's constructor (which is redundant with `with` and
-  the proxies). Served to clients over HTTP and used for schema
-  introspection.
+  entrypoint proxy fields and the `with` field on `Query`. Served to
+  clients over HTTP and used for schema introspection.
 
 When no module has `Entrypoint` set, only one server is built and inner
 == outer.
@@ -177,4 +175,4 @@ contextual defaults survive the round-trip through introspection.
 | Conflict | Behavior |
 |----------|----------|
 | Method name == core field name (e.g. `container`) | Proxy shadows core field on outer server. Core field is unambiguous on inner server. IDs produced by core `container` load correctly. |
-| Method name == module name (e.g. module `test`, method `test`) | No conflict — the constructor is not installed on the outer server, so there is nothing to shadow. The proxy resolves through the inner server where the constructor exists. |
+| Method name == constructor name (e.g. module `test`, method `test`) | Proxy shadows constructor on outer server. Resolver calls through inner server where constructor is unambiguous. |
