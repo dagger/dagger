@@ -302,7 +302,11 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	// are more likely to be from wrong CLI usage.
 	fc.showUsage = true
 
-	cmd, flags, err := fc.loadCommand(c, a)
+	// Use c.Flags().Args() rather than the raw `a` because PreRunE
+	// already parsed (and consumed) known and unknown flags.  Passing
+	// the raw slice would re-introduce inherited persistent flags
+	// (e.g. --model) that the dynamic sub-commands don't recognise.
+	cmd, flags, err := fc.loadCommand(c, c.Flags().Args())
 	if err != nil {
 		return err
 	}
@@ -410,6 +414,12 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 }
 
 // addFlagsForFunction creates the flags for a function's arguments.
+//
+// Function arg flags are added to cmd.Flags() before mergePersistentFlags
+// runs (triggered by the subsequent ParseFlags call in cobraBuilder).
+// This means that if a function arg has the same name as an inherited
+// persistent flag (e.g. --model), AddFlagSet during the merge will skip
+// the parent's flag and the function arg's flag wins.
 func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
 	var skipped []string
 
@@ -424,7 +434,17 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 				skipped = append(skipped, arg.FlagName())
 				continue
 			}
-			return err
+			// If the collision is with an inherited persistent flag
+			// (e.g. --model from the root command), silently reuse
+			// the existing flag — ParseFlags will store the value in
+			// the same *pflag.Flag either way.
+			if cmd.InheritedFlags().Lookup(arg.FlagName()) != nil {
+				// Flag exists but only because it was inherited.
+				// The inherited flag will receive the CLI value,
+				// and GetFlag will read it back; no action needed.
+			} else {
+				return err
+			}
 		}
 		if arg.IsRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())

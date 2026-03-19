@@ -194,8 +194,6 @@ var rootCmd = &cobra.Command{
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
 
-
-
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
 			if err != nil {
@@ -258,10 +256,6 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 && !isFile(args[0]) {
 			return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
-		}
-		// Propagate --model to env so the engine's LLM router picks it up.
-		if llmModel != "" {
-			os.Setenv("DAGGER_MODEL", llmModel)
 		}
 		cmd.SetArgs(append([]string{"shell"}, args...))
 		return cmd.Execute()
@@ -347,7 +341,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
-
+	flags.StringVar(&llmModel, "model", "", "LLM model to use (overrides config and DAGGER_MODEL)")
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
@@ -427,6 +421,14 @@ var opts dagui.FrontendOpts
 
 func main() {
 	parseGlobalFlags()
+
+	// Propagate --model to DAGGER_MODEL so the engine's LLM router picks it
+	// up.  parseGlobalFlags already parsed --model from argv (via its own
+	// standalone FlagSet with UnknownFlags=true), so llmModel is set here
+	// even when a subcommand like "call" will later consume it too.
+	if llmModel != "" {
+		os.Setenv("DAGGER_MODEL", llmModel)
+	}
 
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v
