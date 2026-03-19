@@ -541,15 +541,15 @@ func doGitCheckout(
 }
 
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
-	ref1RepoID, err1 := ref1.Repo.ID()
+	ref1RepoDgst, err1 := ref1.Repo.RecipeDigest()
 	if err1 != nil {
 		return nil, fmt.Errorf("merge-base ref1 repo ID: %w", err1)
 	}
-	ref2RepoID, err2 := ref2.Repo.ID()
+	ref2RepoDgst, err2 := ref2.Repo.RecipeDigest()
 	if err2 != nil {
 		return nil, fmt.Errorf("merge-base ref2 repo ID: %w", err2)
 	}
-	if ref1RepoID.Digest() == ref2RepoID.Digest() { // fast-path, just grab both refs from the same repo
+	if ref1RepoDgst == ref2RepoDgst { // fast-path, just grab both refs from the same repo
 		var mergeBase string
 		err := ref1.Repo.Self().Backend.mount(ctx, 0, false, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
 			out, err := git.Run(ctx, "merge-base", ref1.Ref.SHA, ref2.Ref.SHA)
