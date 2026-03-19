@@ -147,9 +147,9 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 
 		switch msg.Role {
 		case LLMMessageRoleUser:
-			messages = append(messages, anthropic.NewUserMessage(blocks...))
+			messages = appendOrMerge(messages, anthropic.MessageParamRoleUser, blocks)
 		case LLMMessageRoleAssistant:
-			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
+			messages = appendOrMerge(messages, anthropic.MessageParamRoleAssistant, blocks)
 		}
 	}
 
@@ -398,4 +398,21 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		DisplaySpans:     displaySpans,
 		ToolCallDisplays: toolCalls,
 	}, nil
+}
+
+// appendOrMerge appends content blocks to the messages slice. If the last
+// message has the same role, the blocks are merged into it rather than
+// creating a new message. This is required by the Anthropic API spec
+// (and strictly enforced by compatible servers like LM Studio) which
+// mandates alternating user/assistant roles — consecutive tool_result
+// blocks from parallel tool calls must be in a single user message.
+func appendOrMerge(messages []anthropic.MessageParam, role anthropic.MessageParamRole, blocks []anthropic.ContentBlockParamUnion) []anthropic.MessageParam {
+	if len(messages) > 0 && messages[len(messages)-1].Role == role {
+		messages[len(messages)-1].Content = append(messages[len(messages)-1].Content, blocks...)
+		return messages
+	}
+	return append(messages, anthropic.MessageParam{
+		Role:    role,
+		Content: blocks,
+	})
 }
