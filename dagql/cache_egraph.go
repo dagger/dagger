@@ -80,10 +80,14 @@ type eqMergePair struct {
 }
 
 func touchSharedResultLastUsed(res *sharedResult, nowUnixNano int64) {
-	if res == nil || nowUnixNano <= res.lastUsedAtUnixNano {
+	if res == nil {
 		return
 	}
-	res.lastUsedAtUnixNano = nowUnixNano
+	res.payloadMu.Lock()
+	if nowUnixNano > res.lastUsedAtUnixNano {
+		res.lastUsedAtUnixNano = nowUnixNano
+	}
+	res.payloadMu.Unlock()
 }
 
 func calcEgraphTermDigest(selfDigest digest.Digest, inputEqIDs []eqClassID) string {
@@ -824,18 +828,6 @@ func (c *cache) lookupCacheForRequest(
 		return nil, false, nil
 	}
 
-	if !hitRes.hasValue && hitRes.persistedEnvelope != nil {
-		// Imported envelopes are decoded lazily on hit. If this context cannot
-		// decode the envelope shape (for example object IDs requiring server.Load,
-		// or custom scalar/list types when no server is present), treat as miss so
-		// the resolver path can re-materialize safely instead of failing or
-		// recursing.
-		if !persistedEnvelopeDecodableInContext(ctx, hitRes.persistedEnvelope) {
-			c.traceLookupMissUndecodableEnvelope(ctx, requestDigest.String(), hitRes.id)
-			return nil, false, nil
-		}
-	}
-
 	// We have a cache hit. Teach this request identity onto the existing shared
 	// result so any raw ID we hand back is itself resolvable by the cache later.
 	res := hitRes
@@ -862,65 +854,12 @@ func (c *cache) lookupCacheForRequest(
 	}
 	newRefCount := atomic.AddInt64(&res.refCount, 1)
 	c.traceRefAcquired(ctx, res, newRefCount)
-	if !res.hasValue {
-		c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
-		return Result[Typed]{
-			shared:   res,
-			hitCache: true,
-		}, true, nil
-	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
 	}
-	if res.objType == nil {
-		c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
-		return retRes, true, nil
-	}
-	retObjRes, err := res.objType.New(retRes)
-	if err != nil {
-		return nil, false, fmt.Errorf("reconstruct structural-hit object result from cache: %w", err)
-	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, hitTerm, match.termDigest)
-	return retObjRes, true, nil
-}
-
-func persistedEnvelopeDecodableInContext(ctx context.Context, env *PersistedResultEnvelope) bool {
-	if env == nil {
-		return true
-	}
-	srv := CurrentDagqlServer(ctx)
-	switch env.Kind {
-	case persistedResultKindNull:
-		return true
-	case persistedResultKindObject:
-		if srv == nil {
-			return false
-		}
-		objType, ok := srv.ObjectType(env.TypeName)
-		if !ok {
-			return false
-		}
-		_, ok = objType.Typed().(PersistedObjectDecoder)
-		return ok
-	case persistedResultKindScalar:
-		if isBuiltinPersistedScalarType(env.TypeName) {
-			return true
-		}
-		return srv != nil
-	case persistedResultKindList:
-		if srv != nil {
-			return true
-		}
-		for i := range env.Items {
-			if !persistedEnvelopeDecodableInContext(ctx, &env.Items[i]) {
-				return false
-			}
-		}
-		return true
-	default:
-		return false
-	}
+	return retRes, true, nil
 }
 
 func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCall, res AnyResult) error {
@@ -1083,15 +1022,6 @@ func (c *cache) resultIDForCall(ctx context.Context, frame *ResultCall) (sharedR
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
 	}
 	return match.hitRes.id, nil
-}
-
-func isBuiltinPersistedScalarType(typeName string) bool {
-	switch typeName {
-	case "String", "Int", "Float", "Boolean", "JSON", "Void":
-		return true
-	default:
-		return false
-	}
 }
 
 func (c *cache) termForResultByDigestLocked(resID sharedResultID, termDigest string) *egraphTerm {
@@ -1416,7 +1346,7 @@ func (c *cache) indexWaitResultInEgraphLocked(
 		res.storeResultCall(requestFrame.clone())
 		res.loadResultCall().bindCache(c)
 	}
-	setTypedPersistedResultID(res.self, res.id)
+	setTypedPersistedResultID(res.loadPayloadState().self, res.id)
 	c.traceResultCreated(ctx, res)
 
 	//

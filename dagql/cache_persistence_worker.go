@@ -149,21 +149,22 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
+		payload := res.loadPayloadState()
 		snapshot.results = append(snapshot.results, persistResultSnapshot{
 			resultID:          resultID,
 			frame:             res.loadResultCall().clone(),
-			self:              res.self,
-			objType:           res.objType,
-			hasValue:          res.hasValue,
-			persistedEnvelope: res.persistedEnvelope,
+			self:              payload.self,
+			objType:           payload.objType,
+			hasValue:          payload.hasValue,
+			persistedEnvelope: payload.persistedEnvelope,
 			outputEffectIDs:   slices.Clone(res.outputEffectIDs),
 			row: persistdb.MirrorResult{
 				ID:                   int64(resultID),
 				SafeToPersistCache:   res.safeToPersistCache,
 				DepOfPersistedResult: res.depOfPersistedResult,
 				ExpiresAtUnix:        res.expiresAtUnix,
-				CreatedAtUnixNano:    res.createdAtUnixNano,
-				LastUsedAtUnixNano:   res.lastUsedAtUnixNano,
+				CreatedAtUnixNano:    payload.createdAtUnixNano,
+				LastUsedAtUnixNano:   payload.lastUsedAtUnixNano,
 				SizeEstimateBytes:    res.sizeEstimateBytes,
 				UsageIdentity:        res.usageIdentity,
 				RecordType:           res.recordType,
@@ -366,7 +367,7 @@ func (c *cache) persistedSnapshotLinksForResultLocked(res *sharedResult) []Persi
 	if res == nil {
 		return nil
 	}
-	typedLinks := persistedSnapshotLinksFromTyped(res.self)
+	typedLinks := persistedSnapshotLinksFromTyped(res.loadPayloadState().self)
 	if len(typedLinks) > 0 {
 		return typedLinks
 	}

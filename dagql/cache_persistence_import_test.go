@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
@@ -111,6 +112,52 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	assert.Assert(t, ok)
 	assert.Equal(t, "x", obj.Name)
 	assert.NilError(t, resB.Release(rootCtxB))
+}
+
+func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath)
+	assert.NilError(t, err)
+	cA := cacheA.(*cache)
+	srvA := newPersistCodecImportTestServer(cacheA)
+
+	rootCtxA := ContextWithCall(ctx, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
+		Field: "persist-import-object-root",
+	})
+	rootCtxA = srvToContext(rootCtxA, srvA)
+
+	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
+	assert.NilError(t, err)
+	assert.Assert(t, resA != nil)
+
+	reqCall, err := resA.ResultCall()
+	assert.NilError(t, err)
+
+	assert.NilError(t, resA.Release(rootCtxA))
+	assert.NilError(t, cA.persistCurrentState(ctx))
+	assert.NilError(t, cA.Close(context.Background()))
+
+	cacheB, err := NewCache(ctx, dbPath)
+	assert.NilError(t, err)
+	cB := cacheB.(*cache)
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+
+	initCalls := 0
+	_, err = cB.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return nil, errors.New("unexpected initializer call")
+	})
+	assert.Assert(t, err != nil)
+	assert.Equal(t, 0, initCalls)
+	assert.Assert(t, strings.Contains(err.Error(), "decode persisted hit payload"))
 }
 
 func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {

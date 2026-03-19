@@ -162,7 +162,7 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult)
 		c.egraphMu.Unlock()
 		return nil, fmt.Errorf("teach persisted shared result identity for result %d: %w", res.id, err)
 	}
-	objType := res.objType
+	objType := res.loadPayloadState().objType
 	c.egraphMu.Unlock()
 
 	retRes := Result[Typed]{

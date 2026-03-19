@@ -234,15 +234,16 @@ func (c *cache) traceRefReleased(ctx context.Context, res *sharedResult, refCoun
 
 func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, refCount int64) {
 	c.traceLazy(ctx, "ref_underflow", func() []any {
+		state := res.loadPayloadState()
 		payloadState := "uninitialized"
 		switch {
 		case res == nil:
 			payloadState = "unknown"
-		case res.persistedEnvelope != nil && !res.hasValue:
+		case state.persistedEnvelope != nil && !state.hasValue:
 			payloadState = "imported_lazy_envelope"
-		case res.hasValue && res.self == nil:
+		case state.hasValue && state.self == nil:
 			payloadState = "nil"
-		case res.hasValue:
+		case state.hasValue:
 			payloadState = "materialized"
 		}
 		args := []any{
@@ -253,8 +254,8 @@ func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, refCou
 			"description", res.description,
 			"payload_state", payloadState,
 		}
-		if res.self != nil {
-			args = append(args, "type_name", fmt.Sprintf("%T", res.self))
+		if state.self != nil {
+			args = append(args, "type_name", fmt.Sprintf("%T", state.self))
 		}
 		args = append(args, "stack", string(debug.Stack()))
 		return args
@@ -415,12 +416,6 @@ func (c *cache) traceLookupAttempt(ctx context.Context, requestDigest, selfDiges
 func (c *cache) traceLookupMissNoMatch(ctx context.Context, requestDigest string, primaryLookupPossible bool, missingInputIndex int, termDigest string, termSetSize int) {
 	c.traceLazy(ctx, "lookup_miss_reason", func() []any {
 		return []any{"phase", "runtime", "request_digest", requestDigest, "reason", "no_matching_result", "primary_lookup_possible", primaryLookupPossible, "missing_input_index", missingInputIndex, "term_digest", termDigest, "term_set_size", termSetSize}
-	})
-}
-
-func (c *cache) traceLookupMissUndecodableEnvelope(ctx context.Context, requestDigest string, resultID sharedResultID) {
-	c.traceLazy(ctx, "lookup_miss_reason", func() []any {
-		return []any{"phase", "runtime", "request_digest", requestDigest, "reason", "persisted_envelope_not_decodable_in_context", "shared_result_id", resultID}
 	})
 }
 
@@ -724,20 +719,21 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			}
 		})
 
+		state := res.loadPayloadState()
 		typeName := ""
-		if res.self != nil && res.self.Type() != nil {
-			typeName = res.self.Type().Name()
-		} else if res.objType != nil {
-			typeName = res.objType.Typed().Type().Name()
+		if state.self != nil && state.self.Type() != nil {
+			typeName = state.self.Type().Name()
+		} else if state.objType != nil {
+			typeName = state.objType.Typed().Type().Name()
 		}
 
 		payloadState := "uninitialized"
 		switch {
-		case res.persistedEnvelope != nil && !res.hasValue:
+		case state.persistedEnvelope != nil && !state.hasValue:
 			payloadState = "imported_lazy_envelope"
-		case res.hasValue && res.self == nil:
+		case state.hasValue && state.self == nil:
 			payloadState = "nil"
-		case res.hasValue:
+		case state.hasValue:
 			payloadState = "materialized"
 		}
 
@@ -749,7 +745,7 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 			Description:           res.description,
 			TypeName:              typeName,
 			RefCount:              atomic.LoadInt64(&res.refCount),
-			HasValue:              res.hasValue,
+			HasValue:              state.hasValue,
 			PayloadState:          payloadState,
 			DepOfPersistedResult:  res.depOfPersistedResult,
 			ExplicitDeps:          depIDs,
@@ -976,20 +972,21 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				}
 			})
 
+			state := res.loadPayloadState()
 			typeName := ""
-			if res.self != nil && res.self.Type() != nil {
-				typeName = res.self.Type().Name()
-			} else if res.objType != nil {
-				typeName = res.objType.Typed().Type().Name()
+			if state.self != nil && state.self.Type() != nil {
+				typeName = state.self.Type().Name()
+			} else if state.objType != nil {
+				typeName = state.objType.Typed().Type().Name()
 			}
 
 			payloadState := "uninitialized"
 			switch {
-			case res.persistedEnvelope != nil && !res.hasValue:
+			case state.persistedEnvelope != nil && !state.hasValue:
 				payloadState = "imported_lazy_envelope"
-			case res.hasValue && res.self == nil:
+			case state.hasValue && state.self == nil:
 				payloadState = "nil"
-			case res.hasValue:
+			case state.hasValue:
 				payloadState = "materialized"
 			}
 
@@ -1030,9 +1027,9 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 
 			persistedEnvelopeKind := ""
 			persistedEnvelopeTypeName := ""
-			if res.persistedEnvelope != nil {
-				persistedEnvelopeKind = res.persistedEnvelope.Kind
-				persistedEnvelopeTypeName = res.persistedEnvelope.TypeName
+			if state.persistedEnvelope != nil {
+				persistedEnvelopeKind = state.persistedEnvelope.Kind
+				persistedEnvelopeTypeName = state.persistedEnvelope.TypeName
 			}
 
 			if err := writeElem(CacheDebugResult{
@@ -1044,7 +1041,7 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					Description:           res.description,
 					TypeName:              typeName,
 					RefCount:              atomic.LoadInt64(&res.refCount),
-					HasValue:              res.hasValue,
+					HasValue:              state.hasValue,
 					PayloadState:          payloadState,
 					DepOfPersistedResult:  res.depOfPersistedResult,
 					ExplicitDeps:          depIDs,
@@ -1062,8 +1059,8 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				IndexedDigests:                        append([]string(nil), indexedDigestsByResult[resultID]...),
 				SafeToPersistCache:                    res.safeToPersistCache,
 				ExpiresAtUnix:                         res.expiresAtUnix,
-				CreatedAtUnixNano:                     res.createdAtUnixNano,
-				LastUsedAtUnixNano:                    res.lastUsedAtUnixNano,
+				CreatedAtUnixNano:                     state.createdAtUnixNano,
+				LastUsedAtUnixNano:                    state.lastUsedAtUnixNano,
 				SizeEstimateBytes:                     res.sizeEstimateBytes,
 				UsageIdentity:                         res.usageIdentity,
 				PersistedEnvelopeKind:                 persistedEnvelopeKind,
@@ -1248,10 +1245,11 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					entry.SharedResultID = uint64(call.res.id)
 					entry.ResultDescription = call.res.description
 					entry.ResultRecordType = call.res.recordType
-					if call.res.self != nil && call.res.self.Type() != nil {
-						entry.ResultTypeName = call.res.self.Type().Name()
-					} else if call.res.objType != nil {
-						entry.ResultTypeName = call.res.objType.Typed().Type().Name()
+					state := call.res.loadPayloadState()
+					if state.self != nil && state.self.Type() != nil {
+						entry.ResultTypeName = state.self.Type().Name()
+					} else if state.objType != nil {
+						entry.ResultTypeName = state.objType.Typed().Type().Name()
 					}
 				}
 				if err := writeElem(entry); err != nil {

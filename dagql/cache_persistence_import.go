@@ -362,32 +362,38 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 
 	for _, resultID := range eagerDecodeResultIDs {
 		res := c.resultsByID[resultID]
-		if res == nil || res.hasValue || res.persistedEnvelope == nil {
+		state := res.loadPayloadState()
+		if res == nil || state.hasValue || state.persistedEnvelope == nil {
 			continue
 		}
-		call := c.resultCallByResultID(resultID)
+		call := res.loadResultCall()
 		if call == nil {
 			continue
 		}
 		decodeCtx := ContextWithCall(ctx, call)
-		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *res.persistedEnvelope); err == nil && decoded != nil {
-			res.self = decoded.Unwrap()
-			res.hasValue = true
-			if objRes, ok := decoded.(AnyObjectResult); ok {
-				res.objType = objRes.ObjectType()
+		if decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, nil, uint64(resultID), call, *state.persistedEnvelope); err == nil && decoded != nil {
+			res.payloadMu.Lock()
+			if !res.hasValue && res.persistedEnvelope != nil {
+				res.self = decoded.Unwrap()
+				res.hasValue = true
+				if objRes, ok := decoded.(AnyObjectResult); ok {
+					res.objType = objRes.ObjectType()
+				}
+				setTypedPersistedResultID(res.self, resultID)
+				res.persistedEnvelope = nil
 			}
-			setTypedPersistedResultID(res.self, resultID)
-			res.persistedEnvelope = nil
+			res.payloadMu.Unlock()
 			c.tracePersistedPayloadImportedEager(ctx, importRunID, resultID, "", "materialized")
 		}
 	}
 
 	for _, resultID := range eagerDecodeResultIDs {
 		res := c.resultsByID[resultID]
-		if res == nil || res.persistedEnvelope == nil || res.hasValue {
+		state := res.loadPayloadState()
+		if res == nil || state.persistedEnvelope == nil || state.hasValue {
 			continue
 		}
-		c.tracePersistedPayloadImportedLazy(ctx, importRunID, resultID, "", res.persistedEnvelope.Kind, res.persistedEnvelope.TypeName)
+		c.tracePersistedPayloadImportedLazy(ctx, importRunID, resultID, "", state.persistedEnvelope.Kind, state.persistedEnvelope.TypeName)
 	}
 
 	return nil
@@ -409,26 +415,23 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 		return hit, nil
 	}
 
-	c.egraphMu.RLock()
-	hasValue := res.hasValue
-	env := res.persistedEnvelope
-	c.egraphMu.RUnlock()
-	if hasValue || env == nil {
+	state := res.loadPayloadState()
+	if state.hasValue || state.persistedEnvelope == nil {
 		return hit, nil
 	}
 
-	call := c.resultCallByResultID(res.id)
+	call := res.loadResultCall()
 	if call == nil {
 		return hit, nil
 	}
 	decodeCtx := ContextWithCall(ctx, call)
-	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *env)
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 	if err != nil {
-		c.tracePersistedPayloadDecodeFailed(ctx, res, env, err)
+		c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
 		return nil, fmt.Errorf("decode persisted hit payload: %w", err)
 	}
 
-	c.egraphMu.Lock()
+	res.payloadMu.Lock()
 	if !res.hasValue && res.persistedEnvelope != nil {
 		res.self = decoded.Unwrap()
 		res.hasValue = true
@@ -437,10 +440,10 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 		}
 		setTypedPersistedResultID(res.self, res.id)
 		res.persistedEnvelope = nil
-		c.tracePersistedPayloadDecoded(ctx, res, env)
+		c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 	}
 	objType := res.objType
-	c.egraphMu.Unlock()
+	res.payloadMu.Unlock()
 
 	ret := Result[Typed]{
 		shared:   res,

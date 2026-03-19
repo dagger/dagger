@@ -161,7 +161,6 @@ type CachePruneReport struct {
 const cachePersistenceSchemaVersion = "7"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
-var errPersistedHitNotDecodable = errors.New("persisted hit payload not decodable in current context")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
 func NewCache(ctx context.Context, dbPath string) (Cache, error) {
@@ -461,7 +460,7 @@ type cacheUsageMayChange interface {
 	CacheUsageMayChange() bool
 }
 
-// sharedResult holds cache-entry state and immutable payload shared by per-call Result values.
+// sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
 	cache *cache
 
@@ -480,6 +479,9 @@ type sharedResult struct {
 	// which frame is currently published for this shared result.
 	resultCallMu sync.RWMutex
 	resultCall   *ResultCall
+	// payloadMu guards lazy payload publication for imported persisted hits and
+	// prune-accounting timestamps that can change after initial publication.
+	payloadMu sync.RWMutex
 	// hasValue distinguishes "initialized with a nil value" from "not initialized".
 	hasValue bool
 	postCall PostCallFunc
@@ -521,6 +523,15 @@ type sharedResult struct {
 	refCount int64
 }
 
+type sharedResultPayloadState struct {
+	self               Typed
+	objType            ObjectType
+	hasValue           bool
+	persistedEnvelope  *PersistedResultEnvelope
+	createdAtUnixNano  int64
+	lastUsedAtUnixNano int64
+}
+
 func (res *sharedResult) loadResultCall() *ResultCall {
 	if res == nil {
 		return nil
@@ -538,6 +549,23 @@ func (res *sharedResult) storeResultCall(frame *ResultCall) {
 	res.resultCallMu.Lock()
 	res.resultCall = frame
 	res.resultCallMu.Unlock()
+}
+
+func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
+	if res == nil {
+		return sharedResultPayloadState{}
+	}
+	res.payloadMu.RLock()
+	state := sharedResultPayloadState{
+		self:               res.self,
+		objType:            res.objType,
+		hasValue:           res.hasValue,
+		persistedEnvelope:  res.persistedEnvelope,
+		createdAtUnixNano:  res.createdAtUnixNano,
+		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
+	}
+	res.payloadMu.RUnlock()
+	return state
 }
 
 // ongoingCall tracks one in-flight GetOrInitCall execution and points at the
@@ -841,18 +869,19 @@ type Result[T Typed] struct {
 var _ AnyResult = Result[Typed]{}
 
 func (r Result[T]) Type() *ast.Type {
-	if r.shared == nil || r.shared.self == nil {
+	state := r.shared.loadPayloadState()
+	if r.shared == nil || state.self == nil {
 		var zero T
 		return zero.Type()
 	}
 	if r.derefView {
-		if inner, ok := derefTyped(r.shared.self); ok && inner != nil && inner.Type() != nil {
+		if inner, ok := derefTyped(state.self); ok && inner != nil && inner.Type() != nil {
 			cp := *inner.Type()
 			cp.NonNull = true
 			return &cp
 		}
 	}
-	return r.shared.self.Type()
+	return state.self.Type()
 }
 
 // ID returns the runtime handle ID of the instance.
@@ -941,32 +970,34 @@ func (r Result[T]) SetField(field reflect.Value) error {
 
 // Unwrap returns the inner value of the instance.
 func (r Result[T]) Unwrap() Typed {
+	state := r.shared.loadPayloadState()
 	if r.shared == nil {
 		var zero T
 		return zero
 	}
-	if r.shared.self == nil {
+	if state.self == nil {
 		var zero T
 		return zero
 	}
 	if r.derefView {
-		if inner, ok := derefTyped(r.shared.self); ok && inner != nil {
+		if inner, ok := derefTyped(state.self); ok && inner != nil {
 			return inner
 		}
 	}
-	return r.shared.self
+	return state.self
 }
 
 func (r Result[T]) DerefValue() (AnyResult, bool) {
+	state := r.shared.loadPayloadState()
 	if r.derefView {
 		return r, true
 	}
-	if r.shared == nil || r.shared.self == nil {
+	if r.shared == nil || state.self == nil {
 		return r, true
 	}
-	inner, valid := derefTyped(r.shared.self)
+	inner, valid := derefTyped(state.self)
 	if !valid {
-		if _, ok := any(r.shared.self).(Derefable); ok {
+		if _, ok := any(state.self).(Derefable); ok {
 			return nil, false
 		}
 		return r, true
@@ -1029,18 +1060,19 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 // frame; call-frame mutations must fork explicitly.
 func (r Result[T]) withDetachedPayload() Result[T] {
 	if r.shared != nil {
+		state := r.shared.loadPayloadState()
 		r.shared = &sharedResult{
-			self:                   r.shared.self,
-			objType:                r.shared.objType,
+			self:                   state.self,
+			objType:                state.objType,
 			resultCall:             r.shared.loadResultCall(),
-			hasValue:               r.shared.hasValue,
+			hasValue:               state.hasValue,
 			postCall:               r.shared.postCall,
 			safeToPersistCache:     r.shared.safeToPersistCache,
-			persistedEnvelope:      r.shared.persistedEnvelope,
+			persistedEnvelope:      state.persistedEnvelope,
 			persistedSnapshotLinks: slices.Clone(r.shared.persistedSnapshotLinks),
 			outputEffectIDs:        slices.Clone(r.shared.outputEffectIDs),
-			createdAtUnixNano:      r.shared.createdAtUnixNano,
-			lastUsedAtUnixNano:     r.shared.lastUsedAtUnixNano,
+			createdAtUnixNano:      state.createdAtUnixNano,
+			lastUsedAtUnixNano:     state.lastUsedAtUnixNano,
 			sizeEstimateBytes:      r.shared.sizeEstimateBytes,
 			usageIdentity:          r.shared.usageIdentity,
 			description:            r.shared.description,
@@ -1201,15 +1233,16 @@ func (r ObjectResult[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (r ObjectResult[T]) DerefValue() (AnyResult, bool) {
+	state := r.shared.loadPayloadState()
 	if r.derefView {
 		return r, true
 	}
-	if r.shared == nil || r.shared.self == nil {
+	if r.shared == nil || state.self == nil {
 		return r, true
 	}
-	inner, valid := derefTyped(r.shared.self)
+	inner, valid := derefTyped(state.self)
 	if !valid {
-		if _, ok := any(r.shared.self).(Derefable); ok {
+		if _, ok := any(state.self).(Derefable); ok {
 			return nil, false
 		}
 		return r, true
@@ -1408,8 +1441,9 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 		if res == nil {
 			continue
 		}
-		createdAt := res.createdAtUnixNano
-		lastUsedAt := res.lastUsedAtUnixNano
+		state := res.loadPayloadState()
+		createdAt := state.createdAtUnixNano
+		lastUsedAt := state.lastUsedAtUnixNano
 		if createdAt == 0 {
 			createdAt = lastUsedAt
 		}
@@ -1717,13 +1751,7 @@ func (c *cache) GetOrInitCall(
 		return nil, err
 	}
 	if hit {
-		loadedHit, loadErr := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
-		if loadErr == nil {
-			return loadedHit, nil
-		}
-		if !errors.Is(loadErr, errPersistedHitNotDecodable) {
-			return nil, loadErr
-		}
+		return c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
 	}
 
 	c.callsMu.Lock()
@@ -1813,13 +1841,10 @@ func (c *cache) lookupCallRequest(
 	}
 
 	loadedHit, loadErr := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
-	if loadErr == nil {
-		return loadedHit, true, nil
-	}
-	if !errors.Is(loadErr, errPersistedHitNotDecodable) {
+	if loadErr != nil {
 		return nil, false, loadErr
 	}
-	return nil, false, nil
+	return loadedHit, true, nil
 }
 
 func (c *cache) LookupCacheForDigests(
@@ -1832,20 +1857,13 @@ func (c *cache) LookupCacheForDigests(
 	}
 
 	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests)
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
 	hitRes := match.hitRes
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
+		c.egraphMu.Unlock()
 		return nil, false, nil
-	}
-	if !hitRes.hasValue && hitRes.persistedEnvelope != nil {
-		if !persistedEnvelopeDecodableInContext(ctx, hitRes.persistedEnvelope) {
-			c.traceLookupMissUndecodableEnvelope(ctx, recipeDigest.String(), hitRes.id)
-			return nil, false, nil
-		}
 	}
 
 	now := time.Now()
@@ -1857,28 +1875,17 @@ func (c *cache) LookupCacheForDigests(
 	touchSharedResultLastUsed(hitRes, now.UnixNano())
 	newRefCount := atomic.AddInt64(&hitRes.refCount, 1)
 	c.traceRefAcquired(ctx, hitRes, newRefCount)
-
-	if !hitRes.hasValue {
-		c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
-		return Result[Typed]{
-			shared:   hitRes,
-			hitCache: true,
-		}, true, nil
-	}
 	retRes := Result[Typed]{
 		shared:   hitRes,
 		hitCache: true,
 	}
-	if hitRes.objType == nil {
-		c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
-		return retRes, true, nil
-	}
-	retObjRes, err := hitRes.objType.New(retRes)
-	if err != nil {
-		return nil, false, fmt.Errorf("reconstruct digest-hit object result from cache: %w", err)
-	}
 	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
-	return retObjRes, true, nil
+	c.egraphMu.Unlock()
+	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), retRes)
+	if err != nil {
+		return nil, false, err
+	}
+	return loadedHit, true, nil
 }
 
 func (c *cache) wait(
@@ -1924,22 +1931,21 @@ func (c *cache) wait(
 
 	atomic.AddInt64(&oc.res.refCount, 1)
 	c.traceRefAcquired(ctx, oc.res, atomic.LoadInt64(&oc.res.refCount))
-	c.egraphMu.Lock()
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
-	c.egraphMu.Unlock()
 
 	retRes := Result[Typed]{
 		shared:   oc.res,
 		hitCache: false,
 	}
 
-	if !retRes.shared.hasValue {
+	state := retRes.shared.loadPayloadState()
+	if !state.hasValue {
 		return retRes, nil
 	}
-	if retRes.shared.objType == nil {
+	if state.objType == nil {
 		return retRes, nil
 	}
-	retObjRes, constructErr := retRes.shared.objType.New(retRes)
+	retObjRes, constructErr := state.objType.New(retRes)
 	if constructErr != nil {
 		return retRes, nil
 	}
@@ -2226,16 +2232,16 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 			c.egraphMu.Unlock()
 			return fmt.Errorf("retain result call ref %d: missing cached result", depID)
 		}
-		if err := c.addExplicitDependencyLocked(
-			ctx,
-			oc.res,
-			depRes,
-			Result[Typed]{shared: depRes},
-			"result_call_ref",
-		); err != nil {
-			c.egraphMu.Unlock()
-			return fmt.Errorf("retain result call ref %d: %w", depID, err)
+		if oc.res.deps == nil {
+			oc.res.deps = make(map[sharedResultID]struct{})
 		}
+		if _, alreadyHeld := oc.res.deps[depID]; alreadyHeld {
+			continue
+		}
+		newRefCount := atomic.AddInt64(&depRes.refCount, 1)
+		c.traceRefAcquired(ctx, depRes, newRefCount)
+		oc.res.deps[depID] = struct{}{}
+		oc.res.heldDependencyResults = append(oc.res.heldDependencyResults, Result[Typed]{shared: depRes})
 	}
 	if oc.isPersistable {
 		if _, err := c.markResultAsDepOfPersistedLocked(ctx, oc.res); err != nil {
@@ -2262,8 +2268,9 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 	}
 	self := Result[Typed]{shared: parent}
 	var attachedSelf AnyResult = self
-	if parent.hasValue && parent.objType != nil {
-		objSelf, err := parent.objType.New(self)
+	parentState := parent.loadPayloadState()
+	if parentState.hasValue && parentState.objType != nil {
+		objSelf, err := parentState.objType.New(self)
 		if err != nil {
 			return fmt.Errorf("attach owned results: reconstruct attached self: %w", err)
 		}
@@ -2346,10 +2353,11 @@ func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix i
 }
 
 func cacheUsageSizeBytes(ctx context.Context, res *sharedResult) (int64, bool, error) {
-	if res == nil || !res.hasValue || res.self == nil {
+	state := res.loadPayloadState()
+	if res == nil || !state.hasValue || state.self == nil {
 		return 0, false, nil
 	}
-	sizer, ok := any(res.self).(cacheUsageSizer)
+	sizer, ok := any(state.self).(cacheUsageSizer)
 	if !ok {
 		return 0, false, nil
 	}
@@ -2357,10 +2365,11 @@ func cacheUsageSizeBytes(ctx context.Context, res *sharedResult) (int64, bool, e
 }
 
 func cacheUsageIdentity(res *sharedResult) (string, bool) {
-	if res == nil || !res.hasValue || res.self == nil {
+	state := res.loadPayloadState()
+	if res == nil || !state.hasValue || state.self == nil {
 		return "", false
 	}
-	identityer, ok := any(res.self).(hasCacheUsageIdentity)
+	identityer, ok := any(state.self).(hasCacheUsageIdentity)
 	if !ok {
 		return "", false
 	}
@@ -2368,10 +2377,11 @@ func cacheUsageIdentity(res *sharedResult) (string, bool) {
 }
 
 func cacheUsageSizeMayChange(res *sharedResult) bool {
-	if res == nil || !res.hasValue || res.self == nil {
+	state := res.loadPayloadState()
+	if res == nil || !state.hasValue || state.self == nil {
 		return false
 	}
-	mutableSizer, ok := any(res.self).(cacheUsageMayChange)
+	mutableSizer, ok := any(state.self).(cacheUsageMayChange)
 	if !ok {
 		return false
 	}

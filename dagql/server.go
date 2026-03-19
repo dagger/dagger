@@ -728,8 +728,9 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		}
 		if id.Type() != nil && id.Type().ToAST().NonNull {
 			if derefCapable, ok := res.(interface{ withDerefViewAny() AnyResult }); ok {
-				if shared := res.cacheSharedResult(); shared != nil && shared.self != nil {
-					if inner, valid := derefTyped(shared.self); valid && inner != nil && inner.Type() != nil && inner.Type().Name() == id.Type().NamedType() {
+				if shared := res.cacheSharedResult(); shared != nil {
+					payload := shared.loadPayloadState()
+					if inner, valid := derefTyped(payload.self); valid && inner != nil && inner.Type() != nil && inner.Type().Name() == id.Type().NamedType() {
 						res = derefCapable.withDerefViewAny()
 					}
 				}
