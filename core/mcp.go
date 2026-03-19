@@ -34,6 +34,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -1116,9 +1117,13 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		return ctx
 	}
 
-	// endToolCallSpan ends the tool call's display span if one exists.
-	endToolCallSpan := func(callID string) {
+	// endToolCallSpan ends the tool call's display span. If the call
+	// errored, it marks the span as failed so the TUI shows it in red.
+	endToolCallSpan := func(callID string, errored bool, errMsg string) {
 		if tc, ok := toolCallDisplays[callID]; ok {
+			if errored {
+				tc.Span.SetStatus(codes.Error, errMsg)
+			}
 			tc.Span.End()
 		}
 	}
@@ -1126,7 +1131,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(callCtx(call.CallID), tools, call)
-		endToolCallSpan(call.CallID)
+		endToolCallSpan(call.CallID, isError, result)
 		allResults = append(allResults, &LLMMessage{
 			Role: LLMMessageRoleUser,
 			Content: []*LLMContentBlock{{
@@ -1238,6 +1243,9 @@ func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls [
 			}
 			content, isError := m.Call(callCtx, tools, toolCall)
 			if tc, ok := toolCallDisplays[toolCall.CallID]; ok {
+				if isError {
+					tc.Span.SetStatus(codes.Error, content)
+				}
 				tc.Span.End()
 			}
 			return &LLMMessage{
