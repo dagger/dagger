@@ -2112,6 +2112,11 @@ func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeDef *ast.Definition,
 	properties := map[string]any{}
 	required := []string{}
 	for _, arg := range field.Arguments {
+		// Skip Workspace args — they are automatically filled in.
+		if arg.Type.Name() == "WorkspaceID" {
+			continue
+		}
+
 		argSchema, err := m.typeToJSONSchema(schema, arg.Type)
 		if err != nil {
 			return nil, err
