@@ -194,6 +194,8 @@ var rootCmd = &cobra.Command{
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
 
+
+
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
 			if err != nil {
@@ -256,6 +258,10 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 && !isFile(args[0]) {
 			return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+		}
+		// Propagate --model to env so the engine's LLM router picks it up.
+		if llmModel != "" {
+			os.Setenv("DAGGER_MODEL", llmModel)
 		}
 		cmd.SetArgs(append([]string{"shell"}, args...))
 		return cmd.Execute()
@@ -383,12 +389,6 @@ func parseGlobalFlags() {
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
-
-	// --model is parsed early to set DAGGER_MODEL but is NOT added to
-	// rootCmd.PersistentFlags() because it would collide with dynamically
-	// generated subcommands (e.g. `dagger core llm model`).
-	flags.StringVar(&llmModel, "model", "", "LLM model to use")
-
 	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
@@ -427,12 +427,6 @@ var opts dagui.FrontendOpts
 
 func main() {
 	parseGlobalFlags()
-
-	// Propagate --model flag to DAGGER_MODEL env var so the engine picks it
-	// up via loadLLMEnvConfig.  The flag takes priority over the env var.
-	if llmModel != "" {
-		os.Setenv("DAGGER_MODEL", llmModel)
-	}
 
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v

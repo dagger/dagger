@@ -141,6 +141,7 @@ func init() {
 	moduleAddFlags(checksCmd, checksCmd.PersistentFlags(), false)
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
+	rootCmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (overrides config and DAGGER_MODEL)")
 
 	// module management commands
 	moduleAddFlags(configCmd, configCmd.PersistentFlags(), false)
