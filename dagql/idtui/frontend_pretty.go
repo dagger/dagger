@@ -1448,6 +1448,12 @@ func (fe *frontendPretty) recalculateViewLocked() {
 		fe.topTrees = nil
 		return
 	}
+
+	if fe.formWrap != nil {
+		// avoid stealing focus from a form if present
+		return
+	}
+
 	if fe.focusedIndex() < 0 {
 		// durability: focused span disappeared from view
 		fe.autoFocus = true
