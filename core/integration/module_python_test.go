@@ -1546,7 +1546,7 @@ func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
             from_: str = field(default="")
 
             @function
-            def with_(self, import_: str = "") -> str:
+            def pass_(self, import_: str = "") -> str:
                 return import_
         `)
 
@@ -1554,7 +1554,7 @@ func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "foo", out)
 
-	out, err = modGen.With(daggerCall("with", "--import=bar")).Stdout(ctx)
+	out, err = modGen.With(daggerCall("pass", "--import=bar")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar", out)
 }
