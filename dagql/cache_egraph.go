@@ -1854,3 +1854,151 @@ func (c *cache) maybeResetEgraphLocked() {
 	c.nextEgraphTermID = 0
 	c.nextSharedResultID = 0
 }
+
+func (c *cache) compactEqClassesLocked() (changed bool, oldSlots int, newSlots int) {
+	if len(c.egraphParents) <= 1 {
+		return false, 0, 0
+	}
+
+	liveRoots := make(map[eqClassID]struct{})
+	for _, term := range c.egraphTerms {
+		if term == nil {
+			continue
+		}
+		for _, inputEqID := range term.inputEqIDs {
+			root := c.findEqClassLocked(inputEqID)
+			if root != 0 {
+				liveRoots[root] = struct{}{}
+			}
+		}
+		root := c.findEqClassLocked(term.outputEqID)
+		if root != 0 {
+			liveRoots[root] = struct{}{}
+		}
+	}
+	for _, outputEqIDs := range c.resultOutputEqClasses {
+		for outputEqID := range outputEqIDs {
+			root := c.findEqClassLocked(outputEqID)
+			if root != 0 {
+				liveRoots[root] = struct{}{}
+			}
+		}
+	}
+
+	oldSlots = len(c.egraphParents) - 1
+	newSlots = len(liveRoots)
+	if newSlots == 0 || oldSlots < newSlots*2 {
+		return false, oldSlots, newSlots
+	}
+
+	oldRoots := make([]eqClassID, 0, len(liveRoots))
+	for root := range liveRoots {
+		oldRoots = append(oldRoots, root)
+	}
+	slices.Sort(oldRoots)
+
+	remap := make(map[eqClassID]eqClassID, len(oldRoots))
+	newParents := make([]eqClassID, len(oldRoots)+1)
+	newRanks := make([]uint8, len(oldRoots)+1)
+	for i, oldRoot := range oldRoots {
+		newRoot := eqClassID(i + 1)
+		remap[oldRoot] = newRoot
+		newParents[newRoot] = newRoot
+	}
+
+	newEqClassToDigests := make(map[eqClassID]map[string]struct{}, len(oldRoots))
+	newEqClassExtraDigests := make(map[eqClassID]map[call.ExtraDigest]struct{}, len(oldRoots))
+	newEgraphDigestToClass := make(map[string]eqClassID, len(c.egraphDigestToClass))
+	for _, oldRoot := range oldRoots {
+		newRoot := remap[oldRoot]
+		if oldDigests := c.eqClassToDigests[oldRoot]; len(oldDigests) > 0 {
+			newDigests := make(map[string]struct{}, len(oldDigests))
+			for dig := range oldDigests {
+				newDigests[dig] = struct{}{}
+				newEgraphDigestToClass[dig] = newRoot
+			}
+			newEqClassToDigests[newRoot] = newDigests
+		}
+		if oldExtras := c.eqClassExtraDigests[oldRoot]; len(oldExtras) > 0 {
+			newExtras := make(map[call.ExtraDigest]struct{}, len(oldExtras))
+			for extra := range oldExtras {
+				newExtras[extra] = struct{}{}
+			}
+			newEqClassExtraDigests[newRoot] = newExtras
+		}
+	}
+
+	newInputEqClassToTerms := make(map[eqClassID]map[egraphTermID]struct{})
+	newOutputEqClassToTerms := make(map[eqClassID]map[egraphTermID]struct{})
+	newEgraphTermsByTermDigest := make(map[string]map[egraphTermID]struct{}, len(c.egraphTermsByTermDigest))
+	for termID, term := range c.egraphTerms {
+		if term == nil {
+			continue
+		}
+		newInputEqIDs := make([]eqClassID, 0, len(term.inputEqIDs))
+		for _, inputEqID := range term.inputEqIDs {
+			root := c.findEqClassLocked(inputEqID)
+			newRoot := remap[root]
+			if newRoot == 0 {
+				continue
+			}
+			newInputEqIDs = append(newInputEqIDs, newRoot)
+			set := newInputEqClassToTerms[newRoot]
+			if set == nil {
+				set = make(map[egraphTermID]struct{})
+				newInputEqClassToTerms[newRoot] = set
+			}
+			set[termID] = struct{}{}
+		}
+		term.inputEqIDs = newInputEqIDs
+
+		outputRoot := c.findEqClassLocked(term.outputEqID)
+		newOutputRoot := remap[outputRoot]
+		if newOutputRoot == 0 {
+			continue
+		}
+		term.outputEqID = newOutputRoot
+		outputTerms := newOutputEqClassToTerms[newOutputRoot]
+		if outputTerms == nil {
+			outputTerms = make(map[egraphTermID]struct{})
+			newOutputEqClassToTerms[newOutputRoot] = outputTerms
+		}
+		outputTerms[termID] = struct{}{}
+
+		term.termDigest = calcEgraphTermDigest(term.selfDigest, term.inputEqIDs)
+		digestTerms := newEgraphTermsByTermDigest[term.termDigest]
+		if digestTerms == nil {
+			digestTerms = make(map[egraphTermID]struct{})
+			newEgraphTermsByTermDigest[term.termDigest] = digestTerms
+		}
+		digestTerms[termID] = struct{}{}
+	}
+
+	newResultOutputEqClasses := make(map[sharedResultID]map[eqClassID]struct{}, len(c.resultOutputEqClasses))
+	for resID, outputEqIDs := range c.resultOutputEqClasses {
+		newOutputEqIDs := make(map[eqClassID]struct{}, len(outputEqIDs))
+		for outputEqID := range outputEqIDs {
+			root := c.findEqClassLocked(outputEqID)
+			newRoot := remap[root]
+			if newRoot != 0 {
+				newOutputEqIDs[newRoot] = struct{}{}
+			}
+		}
+		if len(newOutputEqIDs) > 0 {
+			newResultOutputEqClasses[resID] = newOutputEqIDs
+		}
+	}
+
+	c.egraphParents = newParents
+	c.egraphRanks = newRanks
+	c.eqClassToDigests = newEqClassToDigests
+	c.eqClassExtraDigests = newEqClassExtraDigests
+	c.egraphDigestToClass = newEgraphDigestToClass
+	c.inputEqClassToTerms = newInputEqClassToTerms
+	c.outputEqClassToTerms = newOutputEqClassToTerms
+	c.resultOutputEqClasses = newResultOutputEqClasses
+	c.egraphTermsByTermDigest = newEgraphTermsByTermDigest
+	c.nextEgraphClassID = eqClassID(len(newParents))
+
+	return true, oldSlots, newSlots
+}

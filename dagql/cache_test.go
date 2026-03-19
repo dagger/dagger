@@ -4056,6 +4056,105 @@ func TestCachePruneDeterministicSelectionOrder(t *testing.T) {
 	assert.DeepEqual(t, gotOrder, wantOrder)
 }
 
+func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	c.egraphMu.Lock()
+	c.initEgraphLocked()
+	a := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-a")
+	b := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-b")
+	c1 := c.ensureEqClassForDigestLocked(ctx, "compact-threshold-c")
+	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-1")
+	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-2")
+	c.resultsByID = map[sharedResultID]*sharedResult{
+		1: {cache: c, id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-a")},
+		2: {cache: c, id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
+		3: {cache: c, id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
+	}
+	c.resultOutputEqClasses[1] = map[eqClassID]struct{}{a: {}}
+	c.resultOutputEqClasses[2] = map[eqClassID]struct{}{b: {}}
+	c.resultOutputEqClasses[3] = map[eqClassID]struct{}{c1: {}}
+	compacted, oldSlots, newSlots := c.compactEqClassesLocked()
+	c.egraphMu.Unlock()
+
+	assert.Assert(t, !compacted)
+	assert.Equal(t, 5, oldSlots)
+	assert.Equal(t, 3, newSlots)
+	assert.Equal(t, 6, len(c.egraphParents))
+}
+
+func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	activeKey := cacheTestIntCall("prune-compact-active")
+	activeRes, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall: activeKey,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(activeKey, 11), nil
+	})
+	assert.NilError(t, err)
+	activeShared := activeRes.cacheSharedResult()
+	assert.Assert(t, activeShared != nil)
+
+	prunableKey := cacheTestIntCall("prune-compact-prunable")
+	prunableRes, err := c.GetOrInitCall(ctx, &CallRequest{
+		ResultCall:    prunableKey,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(prunableKey, 22, 10, "snapshot://prune-compact-prunable", nil), nil
+	})
+	assert.NilError(t, err)
+	prunableShared := prunableRes.cacheSharedResult()
+	assert.Assert(t, prunableShared != nil)
+
+	assert.NilError(t, prunableRes.Release(ctx))
+	c.egraphMu.Lock()
+	prunableShared.depOfPersistedResult = false
+	originalSlots := len(c.egraphParents)
+	_ = c.ensureEqClassForDigestLocked(ctx, "prune-compact-dead-1")
+	_ = c.ensureEqClassForDigestLocked(ctx, "prune-compact-dead-2")
+	_ = c.ensureEqClassForDigestLocked(ctx, "prune-compact-dead-3")
+	_ = c.ensureEqClassForDigestLocked(ctx, "prune-compact-dead-4")
+	bloatedSlots := len(c.egraphParents)
+	c.egraphMu.Unlock()
+	assert.Assert(t, bloatedSlots > originalSlots)
+
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, cacheTestSharedResultEntryID(prunableRes), report.Entries[0].ID)
+
+	c.egraphMu.RLock()
+	assert.Assert(t, len(c.egraphParents) < bloatedSlots)
+	assert.Assert(t, len(c.egraphParents) >= 2)
+	_, activePresent := c.resultsByID[activeShared.id]
+	_, prunablePresent := c.resultsByID[prunableShared.id]
+	c.egraphMu.RUnlock()
+	assert.Assert(t, activePresent)
+	assert.Assert(t, !prunablePresent)
+
+	hitCount := 0
+	hitRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: activeKey}, func(context.Context) (AnyResult, error) {
+		hitCount++
+		return cacheTestIntResult(activeKey, 99), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, hitCount)
+	assert.Assert(t, hitRes.HitCache())
+	assert.Equal(t, 11, cacheTestUnwrapInt(t, hitRes))
+
+	assert.NilError(t, hitRes.Release(ctx))
+	assert.NilError(t, activeRes.Release(ctx))
+}
+
 func TestCachePruneProtectsExactDependencyOfActiveResult(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

@@ -160,6 +160,13 @@ func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 				"policyReclaimedBytes", reclaimed)
 		}
 	}
+	if len(report.Entries) > 0 {
+		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(); compacted {
+			slog.Debug("dagql prune compacted eq classes",
+				"oldSlots", oldSlots,
+				"newSlots", newSlots)
+		}
+	}
 	c.egraphMu.Unlock()
 
 	var releaseErr error
