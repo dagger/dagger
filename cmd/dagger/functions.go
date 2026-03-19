@@ -302,11 +302,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	// are more likely to be from wrong CLI usage.
 	fc.showUsage = true
 
-	// Use c.Flags().Args() rather than the raw `a` because PreRunE
-	// already parsed (and consumed) known and unknown flags.  Passing
-	// the raw slice would re-introduce inherited persistent flags
-	// (e.g. --model) that the dynamic sub-commands don't recognise.
-	cmd, flags, err := fc.loadCommand(c, c.Flags().Args())
+	cmd, flags, err := fc.loadCommand(c, a)
 	if err != nil {
 		return err
 	}
