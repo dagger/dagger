@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -319,21 +318,23 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 			continue
 		}
 
+		// For Query root fields, skip any field provided by a module
+		// (e.g. constructors, entrypoint proxies). These will be merged
+		// from the module's own TypeDefs by ModDeps.TypeDefs, which
+		// preserves the full function metadata (interface return types,
+		// directives, etc.) without the lossy introspection round-trip.
+		if introspectionType.Name == "Query" {
+			if queryType, ok := dag.ObjectType("Query"); ok {
+				if spec, ok := queryType.FieldSpec(introspectionField.Name, dag.View); ok && spec.Module != nil {
+					continue
+				}
+			}
+		}
+
 		fn := &core.Function{
 			Name:        introspectionField.Name,
 			Description: introspectionField.Description,
 			Deprecated:  introspectionField.DeprecationReason,
-		}
-
-		// Restore source map from the field's @sourceMap directive.
-		if sm := introspectionField.Directives.SourceMap(); sm != nil {
-			fn.SourceMap = dagql.NonNull(&core.SourceMap{
-				Module:   sm.Module,
-				Filename: sm.Filename,
-				Line:     sm.Line,
-				Column:   sm.Column,
-				URL:      sm.URL,
-			})
 		}
 
 		rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
@@ -345,17 +346,6 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 		}
 		fn.ReturnType = rtType
 
-		// For Query root fields, check if the field was provided by a
-		// module (e.g. module constructor or auto-alias). This lets the
-		// CLI distinguish module functions from core API constructors.
-		if introspectionType.Name == "Query" {
-			if queryType, ok := dag.ObjectType("Query"); ok {
-				if spec, ok := queryType.FieldSpec(introspectionField.Name, dag.View); ok && spec.Module != nil {
-					fn.SourceModuleName = spec.Module.Name()
-				}
-			}
-		}
-
 		for _, introspectionArg := range introspectionField.Args {
 			fnArg := &core.FunctionArg{
 				Name:        introspectionArg.Name,
@@ -365,40 +355,6 @@ func introspectionObjectToTypeDef(introspectionType *introspection.Type, dag *da
 
 			if introspectionArg.DefaultValue != nil {
 				fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
-			}
-
-			// Restore metadata from directives that the module SDK
-			// attached to this argument (defaultPath, defaultAddress,
-			// ignorePatterns, sourceMap). These are needed so the CLI
-			// can apply ignore patterns and contextual defaults when
-			// a user provides an explicit value for an arg that also
-			// has a +defaultPath or +ignore annotation.
-			if dir := introspectionArg.Directives.Directive("defaultPath"); dir != nil {
-				if v := dir.Arg("path"); v != nil {
-					fnArg.DefaultPath = *v
-				}
-			}
-			if dir := introspectionArg.Directives.Directive("defaultAddress"); dir != nil {
-				if v := dir.Arg("address"); v != nil {
-					fnArg.DefaultAddress = *v
-				}
-			}
-			if dir := introspectionArg.Directives.Directive("ignorePatterns"); dir != nil {
-				if v := dir.Arg("patterns"); v != nil {
-					var patterns []string
-					if err := json.Unmarshal([]byte(*v), &patterns); err == nil {
-						fnArg.Ignore = patterns
-					}
-				}
-			}
-			if sm := introspectionArg.Directives.SourceMap(); sm != nil {
-				fnArg.SourceMap = dagql.NonNull(&core.SourceMap{
-					Module:   sm.Module,
-					Filename: sm.Filename,
-					Line:     sm.Line,
-					Column:   sm.Column,
-					URL:      sm.URL,
-				})
 			}
 
 			argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)

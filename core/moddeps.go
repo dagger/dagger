@@ -104,7 +104,130 @@ func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, 
 		}
 		typeDefs = append(typeDefs, modTypeDefs...)
 	}
+
+	// Merge module-provided Query fields into the Query TypeDef.
+	//
+	// CoreMod.TypeDefs skips Query fields provided by modules to avoid a lossy
+	// introspection round-trip (which loses interface return types, directives,
+	// etc.). Instead, we add those functions here using the module's own
+	// TypeDefs, which have the correct metadata.
+	typeDefs = mergeModuleQueryFields(typeDefs, dag)
+
 	return typeDefs, nil
+}
+
+// mergeModuleQueryFields finds the Query TypeDef and adds any module-provided
+// fields (constructors and entrypoint proxy methods) using the function
+// metadata from the source module's own TypeDefs.
+//
+// CoreMod.TypeDefs skips module-provided Query fields to avoid lossy
+// introspection reconstruction. This function adds them back using the
+// module's own type definitions, which have correct metadata (interface
+// return types, directives, source maps, etc.).
+func mergeModuleQueryFields(typeDefs []*TypeDef, dag *dagql.Server) []*TypeDef {
+	queryObjType, ok := dag.ObjectType("Query")
+	if !ok {
+		return typeDefs
+	}
+
+	// Find the Query TypeDef and build a lookup of module main objects by
+	// source module name.
+	var queryTypeDef *ObjectTypeDef
+	modMainObjects := map[string]*ObjectTypeDef{}
+	for _, td := range typeDefs {
+		if td.Kind == TypeDefKindObject && td.AsObject.Valid {
+			obj := td.AsObject.Value
+			if obj.Name == "Query" {
+				queryTypeDef = obj
+			}
+			if obj.SourceModuleName != "" {
+				modMainObjects[obj.SourceModuleName] = obj
+			}
+		}
+	}
+	if queryTypeDef == nil {
+		return typeDefs
+	}
+
+	// Collect existing Query function names so we don't add duplicates.
+	existingFns := map[string]bool{}
+	for _, fn := range queryTypeDef.Functions {
+		existingFns[fn.Name] = true
+	}
+
+	// Check each field on the dagql Query type for module-provided fields.
+	// We use the introspection schema to enumerate field names, then look up
+	// the FieldSpec to determine the source module.
+	schema := dag.Schema()
+	querySchema, ok := schema.Types["Query"]
+	if !ok {
+		return typeDefs
+	}
+	for _, field := range querySchema.Fields {
+		if existingFns[field.Name] || field.Name == "id" {
+			continue
+		}
+		spec, ok := queryObjType.FieldSpec(field.Name, dag.View)
+		if !ok || spec.Module == nil {
+			continue
+		}
+
+		modName := spec.Module.Name()
+		mainObj, ok := modMainObjects[modName]
+		if !ok {
+			continue
+		}
+
+		// Check if this field is a proxy for one of the main object's
+		// methods (entrypoint proxy). If so, use the method's function
+		// definition directly — it has the correct return type, directives,
+		// etc.
+		if fn := findFunctionOnObject(mainObj, field.Name); fn != nil {
+			proxied := fn.Clone()
+			proxied.SourceModuleName = modName
+			queryTypeDef.Functions = append(queryTypeDef.Functions, proxied)
+			continue
+		}
+
+		// Otherwise this is the constructor. Synthesize a function that
+		// returns the main object type, using args from the module's
+		// explicit constructor if one was defined.
+		fn := constructorFunctionFromMainObject(mainObj, field.Name, modName)
+		queryTypeDef.Functions = append(queryTypeDef.Functions, fn)
+	}
+
+	return typeDefs
+}
+
+// constructorFunctionFromMainObject creates a Function TypeDef for a module
+// constructor on Query. The constructor returns the module's main object.
+func constructorFunctionFromMainObject(mainObj *ObjectTypeDef, name, modName string) *Function {
+	fn := &Function{
+		Name:             name,
+		Description:      mainObj.Description,
+		SourceModuleName: modName,
+		ReturnType: &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.NonNull(&ObjectTypeDef{
+				Name: mainObj.Name,
+			}),
+		},
+	}
+	// Constructor args come from the module's explicit constructor if defined.
+	if mainObj.Constructor.Valid {
+		fn.Args = mainObj.Constructor.Value.Args
+	}
+	return fn
+}
+
+// findFunctionOnObject looks up a function by its GraphQL field name on an object.
+func findFunctionOnObject(obj *ObjectTypeDef, fieldName string) *Function {
+	for _, fn := range obj.Functions {
+		if gqlFieldName(fn.Name) == fieldName {
+			return fn
+		}
+	}
+	return nil
 }
 
 func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (

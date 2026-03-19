@@ -675,9 +675,6 @@ func (srv *Server) initializeDaggerClient(
 			return fmt.Errorf("failed to load module: %w", err)
 		}
 		client.mod = modInst.Self()
-		if err := core.CacheModuleByContentDigest(ctx, coreMod.Dag, modInst); err != nil {
-			return fmt.Errorf("failed to cache current module by content digest: %w", err)
-		}
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
