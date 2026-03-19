@@ -8,8 +8,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 const (
@@ -143,31 +141,13 @@ func (d *ModDeps) SchemaIntrospectionJSONFileForClient(ctx context.Context) (ins
 // All the TypeDefs exposed by this set of dependencies
 func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
 	var typeDefs []*TypeDef
-	perModCounts := make([]string, 0, len(d.mods))
 	for _, mod := range d.mods {
 		modTypeDefs, err := mod.TypeDefs(ctx, dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
 		}
 		typeDefs = append(typeDefs, modTypeDefs...)
-		perModCounts = append(perModCounts, fmt.Sprintf("%s=%d", mod.Name(), len(modTypeDefs)))
 	}
-	args := []any{
-		"event", "moddeps_typedefs_value",
-		"mod_count", len(d.mods),
-		"typedef_count", len(typeDefs),
-		"per_mod_counts", perModCounts,
-	}
-	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
-		args = append(args,
-			"client_id", md.ClientID,
-			"session_id", md.SessionID,
-		)
-	}
-	if call := dagql.CurrentCall(ctx); call != nil {
-		args = append(args, "call_field", call.Field)
-	}
-	slog.InfoContext(ctx, "dagql_typedef_debug", args...)
 	return typeDefs, nil
 }
 

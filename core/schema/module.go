@@ -11,8 +11,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -356,7 +354,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.`),
 	}.Install(dag)
 
-	dagql.Fields[*core.ObjectTypeDef]{}.Install(dag)
 	dagql.Fields[*core.ObjectTypeDef]{
 		dagql.Func("fields", s.objectTypeDefFields).
 			Doc(`Static fields defined on this object, if any.`),
@@ -365,28 +362,23 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("constructor", s.objectTypeDefConstructor).
 			Doc(`The function used to construct new instances of this object, if any.`),
 	}.Install(dag)
-	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{
 		dagql.Func("functions", s.interfaceTypeDefFunctions).
 			Doc(`Functions defined on this interface, if any.`),
 	}.Install(dag)
-	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
 	dagql.Fields[*core.InputTypeDef]{
 		dagql.Func("fields", s.inputTypeDefFields).
 			Doc(`Static fields defined on this input object, if any.`),
 	}.Install(dag)
-	dagql.Fields[*core.FieldTypeDef]{}.Install(dag)
 	dagql.Fields[*core.FieldTypeDef]{
 		dagql.Func("typeDef", s.fieldTypeDefTypeDef).
 			Doc(`The type of the field.`),
 	}.Install(dag)
-	dagql.Fields[*core.ListTypeDef]{}.Install(dag)
 	dagql.Fields[*core.ListTypeDef]{
 		dagql.Func("elementTypeDef", s.listElementTypeDef).
 			Doc(`The type of the elements in the list.`),
 	}.Install(dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
-	dagql.Fields[*core.EnumTypeDef]{}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", s.enumTypeDefValues).
 			Deprecated("use members instead").
@@ -913,25 +905,6 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, err
 	}
-	modNames := make([]string, 0, len(deps.Mods()))
-	for _, mod := range deps.Mods() {
-		modNames = append(modNames, mod.Name())
-	}
-	args := []any{
-		"event", "current_type_defs_value",
-		"served_mods", modNames,
-		"typedef_count", len(typeDefs),
-	}
-	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
-		args = append(args,
-			"client_id", md.ClientID,
-			"session_id", md.SessionID,
-		)
-	}
-	if call := dagql.CurrentCall(ctx); call != nil {
-		args = append(args, "call_field", call.Field)
-	}
-	slog.InfoContext(ctx, "dagql_typedef_debug", args...)
 	return s.canonicalCurrentTypeDefs(ctx, dag, typeDefs)
 }
 

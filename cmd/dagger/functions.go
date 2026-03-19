@@ -378,7 +378,9 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return c.FlagErrorFunc()(c, err)
 		}
 
-		fc.addSubCommands(ctx, c, fn.ReturnType)
+		if err := fc.addSubCommands(ctx, c, fn.ReturnType); err != nil {
+			return err
+		}
 
 		if fc.needsHelp {
 			// May be too noisy to always show a warning for skipped functions
@@ -417,7 +419,9 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 	var hasArgs bool
 
 	for _, arg := range fn.Args {
-		fc.mod.LoadTypeDef(arg.TypeDef)
+		if err := fc.mod.LoadTypeDef(arg.TypeDef); err != nil {
+			return err
+		}
 
 		if err := arg.AddFlag(cmd.Flags()); err != nil {
 			var e *UnsupportedFlagError
@@ -451,12 +455,14 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 
 // addSubCommands creates sub-commands for the functions in an object or
 // interface type definition.
-func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, typeDef *modTypeDef) {
-	fc.mod.LoadTypeDef(typeDef)
+func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, typeDef *modTypeDef) error {
+	if err := fc.mod.LoadTypeDef(typeDef); err != nil {
+		return err
+	}
 
 	fnProvider := typeDef.AsFunctionProvider()
 	if fnProvider == nil {
-		return
+		return nil
 	}
 
 	cmd.AddGroup(funcGroup)
@@ -475,6 +481,8 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	if len(skipped) > 0 {
 		cmd.Annotations[skippedCmdsAnnotation] = strings.Join(skipped, ", ")
 	}
+
+	return nil
 }
 
 // makeSubCmd creates a sub-command for a function definition.

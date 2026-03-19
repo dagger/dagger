@@ -530,18 +530,6 @@ func (r ObjectResult[T]) call(
 	if !ok {
 		return nil, fmt.Errorf("Call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
 	}
-	receiverType := r.class.TypeName()
-	var typeDefDebugInfo *typeDefDebugFieldInfo
-	if isTypeDefDebugSelection(receiverType, fieldName) {
-		typeDefDebugInfo = &typeDefDebugFieldInfo{
-			ReceiverType: receiverType,
-			Field:        fieldName,
-		}
-		if trace := typeDefDebugTraceFromContext(ctx); trace != nil {
-			trace.recordField(ctx, *typeDefDebugInfo, field.Spec.BuiltinLoadByIDFunc != nil)
-		}
-		ctx = context.WithValue(ctx, typeDefDebugFieldCtxKey{}, typeDefDebugInfo)
-	}
 	if field.Spec.BuiltinLoadByIDFunc != nil {
 		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
 	}

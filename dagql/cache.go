@@ -1743,8 +1743,6 @@ func (c *cache) GetOrInitCall(
 		callKey:        callKey,
 		concurrencyKey: req.ConcurrencyKey,
 	}
-	typedefDebugInfo := typeDefDebugFieldFromContext(ctx)
-	typedefDebugTrace := typeDefDebugTraceFromContext(ctx)
 
 	c.egraphMu.Lock()
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
@@ -1753,9 +1751,6 @@ func (c *cache) GetOrInitCall(
 		return nil, err
 	}
 	if hit {
-		if typedefDebugTrace != nil && typedefDebugInfo != nil {
-			typedefDebugTrace.recordCache(ctx, *typedefDebugInfo, "hit")
-		}
 		return c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
 	}
 
@@ -1772,9 +1767,6 @@ func (c *cache) GetOrInitCall(
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
-			if typedefDebugTrace != nil && typedefDebugInfo != nil {
-				typedefDebugTrace.recordCache(ctx, *typedefDebugInfo, "wait")
-			}
 			return c.wait(ctx, oc, req)
 		}
 	}
@@ -1799,9 +1791,6 @@ func (c *cache) GetOrInitCall(
 
 	if req.ConcurrencyKey != "" {
 		c.ongoingCalls[callConcKeys] = oc
-	}
-	if typedefDebugTrace != nil && typedefDebugInfo != nil {
-		typedefDebugTrace.recordCache(ctx, *typedefDebugInfo, "miss")
 	}
 
 	go func() {

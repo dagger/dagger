@@ -599,28 +599,105 @@ func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef,
 	// TODO: use dag arg to reflect dynamic updates (if/when we support that)
 
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
+	ownedObjects := make(map[string]struct{}, len(mod.ObjectDefs))
+	for _, def := range mod.ObjectDefs {
+		if def.AsObject.Valid {
+			ownedObjects[def.AsObject.Value.Name] = struct{}{}
+		}
+	}
+	ownedInterfaces := make(map[string]struct{}, len(mod.InterfaceDefs))
+	for _, def := range mod.InterfaceDefs {
+		if def.AsInterface.Valid {
+			ownedInterfaces[def.AsInterface.Value.Name] = struct{}{}
+		}
+	}
+	ownedEnums := make(map[string]struct{}, len(mod.EnumDefs))
+	for _, def := range mod.EnumDefs {
+		if def.AsEnum.Valid {
+			ownedEnums[def.AsEnum.Value.Name] = struct{}{}
+		}
+	}
+	markOwnedTypeRefs := func(typeDef *TypeDef) {}
+	markOwnedTypeRefs = func(typeDef *TypeDef) {
+		if typeDef == nil {
+			return
+		}
+		switch typeDef.Kind {
+		case TypeDefKindList:
+			if typeDef.AsList.Valid {
+				markOwnedTypeRefs(typeDef.AsList.Value.ElementTypeDef)
+			}
+		case TypeDefKindObject:
+			if !typeDef.AsObject.Valid {
+				return
+			}
+			obj := typeDef.AsObject.Value
+			if _, ok := ownedObjects[obj.Name]; ok {
+				obj.SourceModuleName = mod.Name()
+			}
+			for _, field := range obj.Fields {
+				markOwnedTypeRefs(field.TypeDef)
+			}
+			for _, fn := range obj.Functions {
+				markOwnedTypeRefs(fn.ReturnType)
+				for _, arg := range fn.Args {
+					markOwnedTypeRefs(arg.TypeDef)
+				}
+			}
+			if obj.Constructor.Valid {
+				markOwnedTypeRefs(obj.Constructor.Value.ReturnType)
+				for _, arg := range obj.Constructor.Value.Args {
+					markOwnedTypeRefs(arg.TypeDef)
+				}
+			}
+		case TypeDefKindInterface:
+			if !typeDef.AsInterface.Valid {
+				return
+			}
+			iface := typeDef.AsInterface.Value
+			if _, ok := ownedInterfaces[iface.Name]; ok {
+				iface.SourceModuleName = mod.Name()
+			}
+			for _, fn := range iface.Functions {
+				markOwnedTypeRefs(fn.ReturnType)
+				for _, arg := range fn.Args {
+					markOwnedTypeRefs(arg.TypeDef)
+				}
+			}
+		case TypeDefKindInput:
+			if !typeDef.AsInput.Valid {
+				return
+			}
+			for _, field := range typeDef.AsInput.Value.Fields {
+				markOwnedTypeRefs(field.TypeDef)
+			}
+		case TypeDefKindEnum:
+			if !typeDef.AsEnum.Valid {
+				return
+			}
+			if enum := typeDef.AsEnum.Value; enum != nil {
+				if _, ok := ownedEnums[enum.Name]; ok {
+					enum.SourceModuleName = mod.Name()
+				}
+			}
+		}
+	}
 
 	for _, def := range mod.ObjectDefs {
 		typeDef := def.Clone()
-		if typeDef.AsObject.Valid {
-			typeDef.AsObject.Value.SourceModuleName = mod.Name()
-		}
+		markOwnedTypeRefs(typeDef)
 		typeDefs = append(typeDefs, typeDef)
 	}
 
 	for _, def := range mod.InterfaceDefs {
 		typeDef := def.Clone()
-		if typeDef.AsInterface.Valid {
-			typeDef.AsInterface.Value.SourceModuleName = mod.Name()
-		}
+		markOwnedTypeRefs(typeDef)
 		typeDefs = append(typeDefs, typeDef)
 	}
 
 	for _, def := range mod.EnumDefs {
 		typeDef := def.Clone()
-		if typeDef.AsEnum.Valid {
-			typeDef.AsEnum.Value.SourceModuleName = mod.Name()
-		}
+		markOwnedTypeRefs(typeDef)
 		typeDefs = append(typeDefs, typeDef)
 	}
 

@@ -305,7 +305,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 	}
 }
 
-func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
+func (h *shellCallHandler) registerCommands() error { //nolint:gocyclo
 	var builtins []*ShellCommand
 	var stdlib []*ShellCommand
 
@@ -690,7 +690,9 @@ Without arguments, the current working directory is replaced by the initial cont
 	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
-		def.LoadFunctionTypeDefs(fn)
+		if err := def.LoadFunctionTypeDefs(fn); err != nil {
+			return err
+		}
 
 		// TODO: Don't hardcode this list.
 		promoted := []string{
@@ -792,6 +794,7 @@ Without arguments, the current working directory is replaced by the initial cont
 
 	h.builtins = builtins
 	h.stdlib = stdlib
+	return nil
 }
 
 func cobraToShellCommand(c *cobra.Command) *ShellCommand {
