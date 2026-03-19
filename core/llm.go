@@ -114,6 +114,11 @@ type LLMEndpoint struct {
 	// "high", "adaptive"). Provider-specific values from catwalk.
 	ThinkingMode string
 
+	// tunnel holds a running c2h tunnel for local LLM endpoints.
+	// The tunnel is started when the endpoint is first created and
+	// stopped when the endpoint is no longer needed.
+	tunnel *localTunnel
+
 	// rebuildClient recreates the Client after a token refresh.
 	// Set by the route* methods that produce OAuth endpoints.
 	rebuildClient func()
@@ -1081,18 +1086,22 @@ func (llm *LLM) WithStaticTools() *LLM {
 	return llm
 }
 
-// loadLLMRouter creates an LLM router that routes to the root client
-func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
+// loadLLMRouter creates an LLM router that routes to the root client.
+// It also returns a context enriched with the root client's metadata,
+// which callers should use for operations that need to go through the
+// CLI client's SSH session (e.g. c2h tunnels for local LLMs).
+func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, context.Context, error) {
 	parentClient, err := query.NonModuleParentClientMetadata(ctx)
 	if err != nil {
-		return nil, err
+		return nil, ctx, err
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, parentClient)
 	mainSrv, err := query.Server.Server(ctx)
 	if err != nil {
-		return nil, err
+		return nil, ctx, err
 	}
-	return NewLLMRouter(ctx, mainSrv)
+	router, err := NewLLMRouter(ctx, mainSrv)
+	return router, ctx, err
 }
 
 func (*LLM) Type() *ast.Type {
@@ -1132,7 +1141,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	router, err := loadLLMRouter(ctx, query)
+
+	router, routeCtx, err := loadLLMRouter(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -1147,9 +1157,11 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	// For local endpoints, set up a c2h tunnel so the engine can reach
 	// the user's local network through the client's SSH session.
 	if endpoint.Provider == Local {
-		if err := setupLocalTunnel(ctx, query, endpoint); err != nil {
+		tunnel, err := setupLocalTunnel(routeCtx, query, endpoint)
+		if err != nil {
 			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
 		}
+		endpoint.tunnel = tunnel
 		// Rebuild the client with the rewritten (tunneled) base URL.
 		p := router.provider("local")
 		switch p.APICompat {
