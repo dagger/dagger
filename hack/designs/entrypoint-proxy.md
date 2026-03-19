@@ -15,8 +15,8 @@ instances that share a single `SessionCache`:
   `loadXxxFromID` fields. No entrypoint proxies. IDs are loaded here.
 
 - **Outer (client-facing)**: Everything the inner server has, PLUS
-  entrypoint proxy fields on `Query`. Served to clients over HTTP and
-  used for schema introspection.
+  entrypoint proxy fields and the `with` field on `Query`. Served to
+  clients over HTTP and used for schema introspection.
 
 When no module has `Entrypoint` set, only one server is built and inner
 == outer.
@@ -37,6 +37,37 @@ When no module has `Entrypoint` set, only one server is built and inner
 4. **Proxy fields use `DoNotCache` and `NoTelemetry`.** They are pure
    routing — the real work (and caching) happens in the inner
    constructor and method calls.
+
+## Constructor Args: The `with` Field
+
+When an entrypoint module has a constructor with arguments, a `with`
+field is installed on `Query`. It takes the constructor's args and
+returns a new `Query` with those args stored in `Query.ConstructorArgs`.
+
+### GraphQL Flow
+
+```graphql
+# CLI translates: dagger call --foo=abc gimme-foo
+{ with(foo: "abc") { gimmeFoo } }
+```
+
+### How It Works
+
+1. `with(foo: "abc")` stores `{"foo": "abc"}` on the Query object and
+   returns it with a canonical ID like `with(foo: "abc")`.
+
+2. `gimmeFoo` proxy resolver reads `Query.ConstructorArgs` from `self`,
+   calls `test(foo: "abc").gimmeFoo()` through the inner server.
+
+3. The result carries a canonical ID like `test(foo: "abc").gimmeFoo()`.
+
+### CLI Integration
+
+The CLI (`cmd/dagger/functions.go`) detects the `with` field on Query
+during `addConstructorLocalFlags`. It registers the `with` args as
+local flags on the root `call` command. When any of these flags are
+set, `selectWith` adds `with(args...)` to the query builder chain
+before the proxy subcommand.
 
 ## dagql.Server Fields
 
@@ -71,22 +102,22 @@ but before any resolver runs, the closures see it through the pointer.
 
 | Caller | File | Purpose |
 |--------|------|---------|
-| `session.go` HTTP handler | `engine/server/session.go:1293` | GraphQL endpoint served to clients |
-| `currentTypeDefs` | `core/schema/module.go:766` | Schema introspection — sees proxy fields so CLI discovers them |
+| `session.go` HTTP handler | `engine/server/session.go` | GraphQL endpoint served to clients |
+| `currentTypeDefs` | `core/schema/module.go` | Schema introspection — sees proxy fields and `with` so CLI discovers them |
 
 ### Inner server (`servedMods.Server(ctx)`)
 
 | Caller | File | Purpose |
 |--------|------|---------|
-| `client_resources.go` | `engine/server/client_resources.go:76` | `LoadIDResults` / `LoadIDs` for secrets and sockets — needs canonical ID evaluation |
+| `client_resources.go` | `engine/server/client_resources.go` | `LoadIDResults` / `LoadIDs` for secrets and sockets — needs canonical ID evaluation |
 
 ### `dag.Inner` (inner server via pointer on outer)
 
 | Caller | File | Purpose |
 |--------|------|---------|
-| Proxy resolvers (functions) | `core/object.go:418` | `target.Select(ctx, target.Root(), ...)` — calls constructor→method chain without hitting the proxy |
-| Proxy resolvers (fields) | `core/object.go:462` | Same pattern for field proxies |
-| `ContainerRuntime.Call` | `core/sdk.go:177` | Selects `directory` from Query root to create module metadata dir — must not hit a `directory` proxy |
+| Proxy resolvers (functions) | `core/object.go` | `target.Select(ctx, target.Root(), ...)` — calls constructor→method chain without hitting the proxy |
+| Proxy resolvers (fields) | `core/object.go` | Same pattern for field proxies |
+| `ContainerRuntime.Call` | `core/sdk.go` | Selects `directory` from Query root to create module metadata dir — must not hit a `directory` proxy |
 
 ## Schema Build Flow
 
@@ -111,27 +142,24 @@ fields, specs) — no I/O — so the double build is cheap.
 ## Proxy Installation
 
 `ModuleObject.installEntrypointMethods` in `core/object.go` runs during
-`Install` when `opts.Entrypoint` is true. For each function and field on
-the module's primary type:
+`Install` when `opts.Entrypoint` is true:
 
-1. **Arg conflict check**: If any method arg has the same name as a
-   constructor arg, the proxy is skipped (the merged flat arg list would
-   be ambiguous). The function remains reachable via the namespaced
-   constructor path (`dagger call myModule myMethod`).
+1. **Install `with` field** (if constructor has args): Takes constructor
+   args, stores them on `Query.ConstructorArgs`, returns the new Query.
 
-2. **Merge args**: Constructor args + method args are merged into a
-   single `InputSpecs` list.
+2. **Install function proxies**: For each function on the primary type,
+   extend Query root with a proxy that:
+   - Takes only the method's own args (no constructor args)
+   - Reads stored constructor args from `self` (the Query)
+   - Calls `target.Select(target.Root(), constructorSel, methodSel)`
+     through the inner server
 
-3. **Extend Query root**: `dag.Root().ObjectType().Extend(proxySpec,
-   resolver)` appends the proxy. Since `Extend` appends and field
-   lookup iterates backwards, the proxy takes precedence over any
-   existing field with the same name (including core fields).
+3. **Install field proxies**: Same pattern for fields (no args of their
+   own — constructor args come from `self`).
 
-4. **Resolver**: Calls `target.Select(ctx, target.Root(), &result,
-   constructorSel, methodSel)` where `target` is `dag.Inner` (or `dag`
-   itself if `Inner` is nil). The `Select` chains two steps: first the
-   constructor, then the method/field on the constructed object. The
-   result carries a canonical ID.
+Since `Extend` appends and field lookup iterates backwards, proxies take
+precedence over any existing field with the same name (including core
+fields).
 
 ## Directive Reconstruction
 
@@ -148,10 +176,3 @@ contextual defaults survive the round-trip through introspection.
 |----------|----------|
 | Method name == core field name (e.g. `container`) | Proxy shadows core field on outer server. Core field is unambiguous on inner server. IDs produced by core `container` load correctly. |
 | Method name == constructor name (e.g. module `test`, method `test`) | Proxy shadows constructor on outer server. Resolver calls through inner server where constructor is unambiguous. |
-| Method arg name == constructor arg name | Proxy is **skipped** — merged flat arg list would be ambiguous. Method is reachable via namespaced path. |
-
-## Future Work
-
-The remaining conflict-skip (ambiguous arg names) could potentially be
-resolved by prefixing or namespacing constructor args in the proxy's
-merged arg list, but this hasn't been implemented yet.
