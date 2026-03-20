@@ -260,6 +260,15 @@ func (op DangEvalOp) eval(
 		return nil, err
 	}
 
+	// Flush telemetry before returning so that spans/logs from GraphQL
+	// requests made during the evaluation are fully written to the DB.
+	// Without this, the BatchSpanProcessor's 100ms buffer can race
+	// with captureLogs which walks the span tree immediately after the
+	// tool call completes.
+	if flushErr := query.Server.FlushSessionTelemetry(ctx); flushErr != nil {
+		slog.Debug("failed to flush telemetry after Dang eval", "error", flushErr)
+	}
+
 	return json.Marshal(result)
 }
 
