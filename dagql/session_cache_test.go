@@ -29,15 +29,15 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		key2 := cacheTestIntCall("session-2")
 		key3 := cacheTestIntCall("session-3")
 
-		_, err = sc1.GetOrInitCall(ctx, &CallRequest{ResultCall: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
+		_, err = sc1.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
 		assert.NilError(t, err)
-		_, err = sc1.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
+		_, err = sc1.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
 		assert.NilError(t, err)
 		assert.Equal(t, 2, base.Size())
 
-		_, err = sc2.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
+		_, err = sc2.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)))
 		assert.NilError(t, err)
-		_, err = sc2.GetOrInitCall(ctx, &CallRequest{ResultCall: key3}, ValueFunc(cacheTestIntResult(key3, 3)))
+		_, err = sc2.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key3}, ValueFunc(cacheTestIntResult(key3, 3)))
 		assert.NilError(t, err)
 		assert.Equal(t, 3, base.Size())
 
@@ -45,7 +45,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, 2, base.Size())
 
-		_, err = sc1.GetOrInitCall(ctx, &CallRequest{ResultCall: cacheTestIntCall("closed-session")}, func(context.Context) (AnyResult, error) {
+		_, err = sc1.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: cacheTestIntCall("closed-session")}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(cacheTestIntCall("closed-session"), 9), nil
 		})
 		assert.ErrorContains(t, err, "session cache is closed")
@@ -65,7 +65,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 
 		key1 := cacheTestIntCall("close-running-1")
 		key2 := cacheTestIntCall("close-running-2")
-		_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
+		_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1}, ValueFunc(cacheTestIntResult(key1, 1)))
 		assert.NilError(t, err)
 		assert.Equal(t, 1, base.Size())
 
@@ -73,7 +73,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		stopCh := make(chan struct{})
 		errCh := make(chan error, 1)
 		go func() {
-			_, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, func(context.Context) (AnyResult, error) {
+			_, err := sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key2}, func(context.Context) (AnyResult, error) {
 				close(startCh)
 				<-stopCh
 				return cacheTestIntResult(key2, 2), nil
@@ -134,21 +134,21 @@ func TestSessionCacheErrorThenSuccessIsCached(t *testing.T) {
 		return cacheTestIntResult(key, 99), nil
 	}
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, fn)
 	assert.ErrorContains(t, err, "boom 1")
 	assert.Equal(t, 1, callCount)
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, fn)
 	assert.ErrorContains(t, err, "boom 2")
 	assert.Equal(t, 2, callCount)
 
-	res, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
+	res, err := sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, fn)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, callCount)
 	assert.Assert(t, !res.HitCache())
 	assert.Equal(t, 99, cacheTestUnwrapInt(t, res))
 
-	res, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, fn)
+	res, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, fn)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, callCount)
 	assert.Assert(t, res.HitCache())
@@ -187,22 +187,22 @@ func TestSessionCacheTelemetryBehavior(t *testing.T) {
 		}
 	})
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt)
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt)
 	assert.NilError(t, err)
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt)
 	assert.NilError(t, err)
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 		DoNotCache: true,
 	}, ValueFunc(cacheTestIntResult(key, 2)), telemetryOpt)
 	assert.NilError(t, err)
 
 	repeatedCtx := WithRepeatedTelemetry(ctx)
-	_, err = sc.GetOrInitCall(repeatedCtx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(repeatedCtx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt)
 	assert.NilError(t, err)
@@ -243,12 +243,12 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	})
 	hitOnlyOpt := WithTelemetryPolicy(TelemetryPolicyCacheHitOnly)
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt, hitOnlyOpt)
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, ValueFunc(cacheTestIntResult(key, 1)), telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
 	assert.Equal(t, int32(0), beginCalls.Load())
 	assert.Equal(t, int32(0), doneCalls.Load())
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
@@ -257,7 +257,7 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.Assert(t, beginSawResult.Load())
 	assert.DeepEqual(t, []bool{true}, cachedVals)
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
@@ -266,7 +266,7 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.DeepEqual(t, []bool{true}, cachedVals)
 
 	repeatedCtx := WithRepeatedTelemetry(ctx)
-	_, err = sc.GetOrInitCall(repeatedCtx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(repeatedCtx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
@@ -274,12 +274,12 @@ func TestSessionCacheTelemetryCacheHitOnly(t *testing.T) {
 	assert.Equal(t, int32(2), doneCalls.Load())
 	assert.DeepEqual(t, []bool{true, true}, cachedVals)
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)), telemetryOpt, hitOnlyOpt)
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key2}, ValueFunc(cacheTestIntResult(key2, 2)), telemetryOpt, hitOnlyOpt)
 	assert.NilError(t, err)
 	assert.Equal(t, int32(2), beginCalls.Load())
 	assert.Equal(t, int32(2), doneCalls.Load())
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key2}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key2}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	}, telemetryOpt)
 	assert.NilError(t, err)
@@ -298,7 +298,7 @@ func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
 
 	key := cacheTestIntCall("session-donotcache-untracked")
 	var releaseCalls atomic.Int32
-	res, err := sc.GetOrInitCall(ctx, &CallRequest{
+	res, err := sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 		DoNotCache: true,
 	}, ValueFunc(cacheTestIntResultWithOnRelease(key, 1, func(context.Context) error {
@@ -326,7 +326,7 @@ func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
 	key := cacheTestIntCall("session-donotcache-nil")
 	initCalls := 0
 
-	res, err := sc.GetOrInitCall(ctx, &CallRequest{
+	res, err := sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 		DoNotCache: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -338,7 +338,7 @@ func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
 	assert.Equal(t, 1, initCalls)
 	assert.Equal(t, 0, base.Size())
 
-	res, err = sc.GetOrInitCall(ctx, &CallRequest{
+	res, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 		DoNotCache: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -369,7 +369,7 @@ func TestSessionCacheAttachResultTrackedOnClose(t *testing.T) {
 		},
 	})
 
-	attached, err := sc.AttachResult(ctx, detached)
+	attached, err := sc.AttachResult(ctx, noopTypeResolver{}, detached)
 	assert.NilError(t, err)
 	assert.Assert(t, attached != nil)
 	assert.Assert(t, is.Equal(int32(0), releaseCalls.Load()))
@@ -390,7 +390,7 @@ func TestSessionCacheReleaseAndCloseWithNilResult(t *testing.T) {
 	sc := NewSessionCache(base)
 
 	key := cacheTestIntCall("session-nil-result")
-	res, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	res, err := sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return nil, nil
 	})
 	assert.NilError(t, err)
@@ -409,7 +409,7 @@ func TestSessionCacheGetOrInitCallNilID(t *testing.T) {
 	sc := NewSessionCache(cacheIface.(*cache))
 
 	called := false
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{}}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{}}, func(context.Context) (AnyResult, error) {
 		called = true
 		return nil, nil
 	})
@@ -429,14 +429,14 @@ func TestSessionCacheErrorThenNilResultStaysNil(t *testing.T) {
 	key := cacheTestIntCall("session-error-then-nil")
 	initCalls := 0
 
-	_, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, errors.New("boom")
 	})
 	assert.ErrorContains(t, err, "boom")
 	assert.Equal(t, 1, initCalls)
 
-	res, err := sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	res, err := sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, nil
 	})
@@ -445,7 +445,7 @@ func TestSessionCacheErrorThenNilResultStaysNil(t *testing.T) {
 	assert.Equal(t, 2, initCalls)
 
 	initCalledAgain := false
-	res, err = sc.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	res, err = sc.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		initCalledAgain = true
 		return cacheTestIntResult(key, 42), nil
 	})

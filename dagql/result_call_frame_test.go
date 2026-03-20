@@ -103,7 +103,7 @@ func TestResultCallRefReceiverUsesSharedFastPath(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-fast-path")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 7), nil
 	})
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestResultCallRefContentPreferredDigestUsesLatestSharedFrame(t *testing.T) 
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-content-digest")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 13), nil
 	})
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-recipe-id")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 19), nil
 	})
 	require.NoError(t, err)
@@ -194,7 +194,7 @@ func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-fast-path-removal")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 23), nil
 	})
 	require.NoError(t, err)
@@ -227,7 +227,7 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-fallback")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 29), nil
 	})
 	require.NoError(t, err)

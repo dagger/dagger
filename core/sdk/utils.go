@@ -62,7 +62,7 @@ func ScopeModuleForSDKOperation(
 	}
 
 	scopedDigest := hashutil.HashStrings("sdk_scope_module", op, sourceImplementationDigest.String())
-	attached, err := dag.Cache.AttachResult(ctx, scopedModInst.WithContentDigest(scopedDigest))
+	attached, err := dag.Cache.AttachResult(ctx, dag, scopedModInst.WithContentDigest(scopedDigest))
 	if err != nil {
 		return inst, err
 	}

@@ -32,7 +32,6 @@ type persistResultSnapshot struct {
 	resultID            sharedResultID
 	frame               *ResultCall
 	self                Typed
-	objType             ObjectType
 	hasValue            bool
 	persistedEnvelope   *PersistedResultEnvelope
 	outputEffectIDs     []string

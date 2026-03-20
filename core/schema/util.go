@@ -17,7 +17,7 @@ type SchemaResolvers interface {
 
 func Syncer[T core.Syncable]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
-		Recipe bool `default:"false"`
+		Recipe bool `default:"false" internal:"true"`
 	}) (res dagql.Result[dagql.ID[T]], _ error) {
 		err := self.Self().Sync(ctx)
 		if err != nil {

@@ -65,6 +65,25 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 	assert.ErrorContains(t, err, substring)
 }
 
+func recipeIDForObject[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql.Server, obj dagql.ObjectResult[T]) string {
+	t.Helper()
+
+	var id dagql.ID[T]
+	assert.NilError(t, srv.Select(ctx, obj, &id, dagql.Selector{
+		Field: "id",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "recipe",
+				Value: dagql.Boolean(true),
+			},
+		},
+	}))
+
+	enc, err := id.Encode()
+	assert.NilError(t, err)
+	return enc
+}
+
 func newCache(t *testing.T) *dagql.SessionCache {
 	baseCache, err := dagql.NewCache(t.Context(), "")
 	assert.NilError(t, err)
@@ -912,31 +931,28 @@ func TestLoadingFromID(t *testing.T) {
 }
 
 func TestIDsReflectQuery(t *testing.T) {
+	ctx := context.Background()
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	var point dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, srv.Root(), &point,
+		dagql.Selector{
+			Field: "point",
+			Args: []dagql.NamedInput{
+				{Name: "x", Value: dagql.Int(6)},
+				{Name: "y", Value: dagql.Int(7)},
+			},
+		},
+	))
 
-	var res struct {
-		Point struct {
-			ShiftLeft struct {
-				ID        string
-				Neighbors []struct {
-					ID string
-				}
-			}
-		}
-	}
-	req(t, gql, `query {
-		point(x: 6, y: 7) {
-			shiftLeft {
-				id(recipe: true)
-				neighbors {
-					id(recipe: true)
-				}
-			}
-		}
-	}`, &res)
+	var shiftLeft dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, point, &shiftLeft, dagql.Selector{Field: "shiftLeft"}))
+
+	shiftLeftID := recipeIDForObject(t, ctx, srv, shiftLeft)
+
+	var neighbors []dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, shiftLeft, &neighbors, dagql.Selector{Field: "neighbors"}))
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
@@ -955,12 +971,13 @@ func TestIDsReflectQuery(t *testing.T) {
 		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
+	eqIDs(t, shiftLeftID, expectedEnc)
 
-	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
-	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
+	assert.Assert(t, cmp.Len(neighbors, 4))
+	for i, neighbor := range neighbors {
+		neighborID := recipeIDForObject(t, ctx, srv, neighbor)
 		var id call.ID
-		assert.NilError(t, id.Decode(neighbor.ID))
+		assert.NilError(t, id.Decode(neighborID))
 		assert.Check(t, !id.IsHandle())
 		assert.Equal(t, "Point", id.Type().NamedType())
 		switch i {
@@ -977,10 +994,9 @@ func TestIDsReflectQuery(t *testing.T) {
 }
 
 func TestIDsDoNotContainSensitiveValues(t *testing.T) {
+	ctx := context.Background()
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
-
-	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	dagql.Fields[*points.Point]{
 		dagql.Func("loginTag", func(ctx context.Context, self *points.Point, _ struct {
@@ -1002,26 +1018,44 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 		),
 	}.Install(srv)
 
-	var res struct {
-		Point struct {
-			LoginTag, LoginTagFalse, LoginChain struct {
-				ID string
-			}
-		}
-	}
-	req(t, gql, `query {
-		point(x: 6, y: 7) {
-			loginTag(password: "hunter2") {
-				id(recipe: true)
-			}
-			loginTagFalse(password: "hunter2") {
-				id(recipe: true)
-			}
-			loginChain(password: "hunter2") {
-				id(recipe: true)
-			}
-		}
-	}`, &res)
+	var point dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, srv.Root(), &point,
+		dagql.Selector{
+			Field: "point",
+			Args: []dagql.NamedInput{
+				{Name: "x", Value: dagql.Int(6)},
+				{Name: "y", Value: dagql.Int(7)},
+			},
+		},
+	))
+
+	var loginTag dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, point, &loginTag, dagql.Selector{
+		Field: "loginTag",
+		Args: []dagql.NamedInput{
+			{Name: "password", Value: dagql.String("hunter2")},
+		},
+	}))
+
+	var loginTagFalse dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, point, &loginTagFalse, dagql.Selector{
+		Field: "loginTagFalse",
+		Args: []dagql.NamedInput{
+			{Name: "password", Value: dagql.String("hunter2")},
+		},
+	}))
+
+	var loginChain dagql.ObjectResult[*points.Point]
+	assert.NilError(t, srv.Select(ctx, point, &loginChain, dagql.Selector{
+		Field: "loginChain",
+		Args: []dagql.NamedInput{
+			{Name: "password", Value: dagql.String("hunter2")},
+		},
+	}))
+
+	loginTagID := recipeIDForObject(t, ctx, srv, loginTag)
+	loginTagFalseID := recipeIDForObject(t, ctx, srv, loginTagFalse)
+	loginChainID := recipeIDForObject(t, ctx, srv, loginChain)
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
@@ -1047,7 +1081,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
+	eqIDs(t, loginTagID, expectedEnc)
 
 	expectedID = call.New().
 		Append(pointT, "point", call.WithArgs(
@@ -1072,7 +1106,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
+	eqIDs(t, loginChainID, expectedEnc)
 
 	expectedID = call.New().
 		Append(pointT, "point", call.WithArgs(
@@ -1096,7 +1130,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 		))
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.LoginTagFalse.ID, expectedEnc)
+	eqIDs(t, loginTagFalseID, expectedEnc)
 }
 
 func TestEmptyID(t *testing.T) {

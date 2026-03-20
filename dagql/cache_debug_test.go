@@ -15,7 +15,7 @@ func TestDebugCacheSnapshotIncludesResultMetadata(t *testing.T) {
 	assert.NilError(t, err)
 	c := base.(*cache)
 
-	attached, err := c.AttachResult(t.Context(), cacheTestDetachedResult(cacheTestIntCall("debugCache"), NewInt(123)))
+	attached, err := c.AttachResult(t.Context(), noopTypeResolver{}, cacheTestDetachedResult(cacheTestIntCall("debugCache"), NewInt(123)))
 	assert.NilError(t, err)
 	shared := attached.cacheSharedResult()
 	assert.Assert(t, shared != nil)

@@ -132,6 +132,66 @@ type cacheTestObject struct {
 	onRelease func(context.Context) error
 }
 
+type noopTypeResolver struct{}
+
+func (noopTypeResolver) ObjectType(string) (ObjectType, bool) {
+	return nil, false
+}
+
+func (noopTypeResolver) ScalarType(string) (ScalarType, bool) {
+	return nil, false
+}
+
+func TestCacheRejectsNilTypeResolver(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	key := cacheTestIntCall("nil-type-resolver")
+
+	_, err = c.GetOrInitCall(ctx, nil, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 1), nil
+	})
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "type resolver is nil")
+
+	_, _, err = c.LookupCacheForDigests(ctx, nil, digest.FromString("nil-type-resolver"), nil)
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "type resolver is nil")
+
+	_, err = c.AttachResult(ctx, nil, cacheTestDetachedResult(key, NewInt(1)))
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "type resolver is nil")
+}
+
+func TestSessionCacheRejectsNilTypeResolver(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	baseCacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	sc := NewSessionCache(baseCacheIface)
+
+	key := cacheTestIntCall("session-nil-type-resolver")
+
+	_, err = sc.GetOrInitCall(ctx, nil, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 1), nil
+	})
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "type resolver is nil")
+
+	_, _, err = sc.LookupCacheForDigests(ctx, nil, digest.FromString("session-nil-type-resolver"), nil)
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "type resolver is nil")
+
+	_, err = sc.AttachResult(ctx, nil, cacheTestDetachedResult(key, NewInt(1)))
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "type resolver is nil")
+}
+
 func (*cacheTestObject) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "CacheTestObject",
@@ -153,6 +213,22 @@ func cacheTestServer(t *testing.T, base Cache) *Server {
 		Func("value", func(_ context.Context, self *cacheTestObject, _ struct{}) (Int, error) {
 			return NewInt(self.Value), nil
 		}),
+	}.Install(srv)
+	return srv
+}
+
+func cacheTestObjectResolverServer(t *testing.T, base Cache, marker int) *Server {
+	t.Helper()
+	srv := cacheTestServer(t, base)
+	Fields[cacheTestQuery]{
+		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[cacheTestQuery], _ struct{}) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{Value: 0})
+		}),
+	}.Install(srv)
+	Fields[*cacheTestObject]{
+		Func("marker", func(_ context.Context, _ *cacheTestObject, _ struct{}) (Int, error) {
+			return NewInt(marker), nil
+		}).DoNotCache("test marker must execute against the current server class"),
 	}.Install(srv)
 	return srv
 }
@@ -198,7 +274,7 @@ func TestCacheConcurrent(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		res, err := cacheIface.GetOrInitCall(ctx, &CallRequest{
+		res, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:     keyCall,
 			ConcurrencyKey: concurrencyKey,
 		}, func(_ context.Context) (AnyResult, error) {
@@ -224,7 +300,7 @@ func TestCacheConcurrent(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			res, err := cacheIface.GetOrInitCall(ctx, &CallRequest{
+			res, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: concurrencyKey,
 			}, func(_ context.Context) (AnyResult, error) {
@@ -291,24 +367,24 @@ func TestCacheErrors(t *testing.T) {
 	keyCall := cacheTestIntCall("42")
 
 	myErr := errors.New("nope")
-	_, err = cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
+	_, err = cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
 		return nil, myErr
 	})
 	assert.Assert(t, is.ErrorIs(err, myErr))
 
 	otherErr := errors.New("nope 2")
-	_, err = cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
+	_, err = cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
 		return nil, otherErr
 	})
 	assert.Assert(t, is.ErrorIs(err, otherErr))
 
-	res, err := cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
+	res, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
 		return cacheTestIntResult(keyCall, 1), nil
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 1, cacheTestUnwrapInt(t, res))
 
-	res, err = cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
+	res, err = cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(_ context.Context) (AnyResult, error) {
 		return nil, errors.New("ignored")
 	})
 	assert.NilError(t, err)
@@ -324,8 +400,8 @@ func TestCacheRecursiveCall(t *testing.T) {
 	key1Call := cacheTestIntCall("1")
 
 	// recursive calls that are guaranteed to result in deadlock should error out
-	_, err = cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: key1Call}, func(ctx context.Context) (AnyResult, error) {
-		_, err := cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
+	_, err = cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1Call}, func(ctx context.Context) (AnyResult, error) {
+		_, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(cacheTestIntCall("2"), 2), nil
 		})
 		return nil, err
@@ -335,8 +411,8 @@ func TestCacheRecursiveCall(t *testing.T) {
 	// verify same cache can be called recursively with different keys
 	key10Call := cacheTestIntCall("10")
 	key11Call := cacheTestIntCall("11")
-	v, err := cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: key10Call}, func(ctx context.Context) (AnyResult, error) {
-		res, err := cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: key11Call}, func(context.Context) (AnyResult, error) {
+	v, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key10Call}, func(ctx context.Context) (AnyResult, error) {
+		res, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key11Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(key11Call, 12), nil
 		})
 		if err != nil {
@@ -351,8 +427,8 @@ func TestCacheRecursiveCall(t *testing.T) {
 	cacheIface2, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	key100Call := cacheTestIntCall("100")
-	v, err = cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: key100Call}, func(ctx context.Context) (AnyResult, error) {
-		res, err := cacheIface2.GetOrInitCall(ctx, &CallRequest{ResultCall: key100Call}, func(context.Context) (AnyResult, error) {
+	v, err = cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key100Call}, func(ctx context.Context) (AnyResult, error) {
+		res, err := cacheIface2.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key100Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(key100Call, 101), nil
 		})
 		if err != nil {
@@ -380,7 +456,7 @@ func TestCacheContextCancel(t *testing.T) {
 		started1 := make(chan struct{})
 		go func() {
 			defer close(errCh1)
-			_, err := cacheIface.GetOrInitCall(ctx1, &CallRequest{
+			_, err := cacheIface.GetOrInitCall(ctx1, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: "1",
 			}, func(ctx context.Context) (AnyResult, error) {
@@ -399,7 +475,7 @@ func TestCacheContextCancel(t *testing.T) {
 		errCh2 := make(chan error, 1)
 		go func() {
 			defer close(errCh2)
-			_, err := cacheIface.GetOrInitCall(ctx2, &CallRequest{
+			_, err := cacheIface.GetOrInitCall(ctx2, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: "1",
 			}, func(ctx context.Context) (AnyResult, error) {
@@ -412,7 +488,7 @@ func TestCacheContextCancel(t *testing.T) {
 		errCh3 := make(chan error, 1)
 		go func() {
 			defer close(errCh3)
-			_, err := cacheIface.GetOrInitCall(ctx3, &CallRequest{
+			_, err := cacheIface.GetOrInitCall(ctx3, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: "1",
 			}, func(context.Context) (AnyResult, error) {
@@ -476,7 +552,7 @@ func TestCacheContextCancel(t *testing.T) {
 		go func() {
 			defer close(resCh1)
 			defer close(errCh1)
-			res, err := cacheIface.GetOrInitCall(ctx1, &CallRequest{
+			res, err := cacheIface.GetOrInitCall(ctx1, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: "1",
 			}, func(context.Context) (AnyResult, error) {
@@ -496,7 +572,7 @@ func TestCacheContextCancel(t *testing.T) {
 		errCh2 := make(chan error, 1)
 		go func() {
 			defer close(errCh2)
-			_, err := cacheIface.GetOrInitCall(ctx2, &CallRequest{
+			_, err := cacheIface.GetOrInitCall(ctx2, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: "1",
 			}, func(context.Context) (AnyResult, error) {
@@ -547,7 +623,7 @@ func TestCacheContextCancel(t *testing.T) {
 
 		errCh := make(chan error, 1)
 		go func() {
-			_, err := cacheIface.GetOrInitCall(ctx1, &CallRequest{
+			_, err := cacheIface.GetOrInitCall(ctx1, noopTypeResolver{}, &CallRequest{
 				ResultCall:     keyCall,
 				ConcurrencyKey: "1",
 			}, func(context.Context) (AnyResult, error) {
@@ -597,16 +673,16 @@ func TestCacheResultRelease(t *testing.T) {
 		key1Call := cacheTestIntCall("1")
 		key2Call := cacheTestIntCall("2")
 
-		res1A, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
+		res1A, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(key1Call, 1), nil
 		})
 		assert.NilError(t, err)
-		res1B, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
+		res1B, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(key1Call, 1), nil
 		})
 		assert.NilError(t, err)
 
-		res2, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: key2Call}, func(context.Context) (AnyResult, error) {
+		res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(key2Call, 2), nil
 		})
 		assert.NilError(t, err)
@@ -642,7 +718,7 @@ func TestCacheResultRelease(t *testing.T) {
 		key2Call := cacheTestIntCall("2")
 
 		releaseCalledCh := make(chan struct{})
-		res1A, err := c.GetOrInitCall(ctx, &CallRequest{
+		res1A, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:     key1Call,
 			ConcurrencyKey: "1",
 		}, func(context.Context) (AnyResult, error) {
@@ -652,7 +728,7 @@ func TestCacheResultRelease(t *testing.T) {
 			}), nil
 		})
 		assert.NilError(t, err)
-		res1B, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
+		res1B, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(key1Call, 1), nil
 		})
 		assert.NilError(t, err)
@@ -676,7 +752,7 @@ func TestCacheResultRelease(t *testing.T) {
 		}
 
 		// test error in onRelease
-		res2, err := c.GetOrInitCall(ctx, &CallRequest{
+		res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:     key2Call,
 			ConcurrencyKey: "1",
 		}, func(context.Context) (AnyResult, error) {
@@ -705,7 +781,7 @@ func TestSkipDedupe(t *testing.T) {
 	started1 := make(chan struct{})
 	stop1 := make(chan struct{})
 	eg.Go(func() error {
-		_, err := cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+		_, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 			defer close(valCh1)
 			close(started1)
 			valCh1 <- 1
@@ -719,7 +795,7 @@ func TestSkipDedupe(t *testing.T) {
 	started2 := make(chan struct{})
 	stop2 := make(chan struct{})
 	eg.Go(func() error {
-		_, err := cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+		_, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 			defer close(valCh2)
 			close(started2)
 			valCh2 <- 2
@@ -765,7 +841,7 @@ func TestCacheNilKeyIDRejected(t *testing.T) {
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 
-	_, err = cacheIface.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{}}, func(context.Context) (AnyResult, error) {
+	_, err = cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{}}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	})
 	assert.ErrorContains(t, err, "missing field")
@@ -785,7 +861,7 @@ func TestCacheDifferentConcurrencyKeysDoNotDedupe(t *testing.T) {
 	var initCalls atomic.Int32
 
 	go func() {
-		_, err := cacheIface.GetOrInitCall(ctx, &CallRequest{
+		_, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:     keyCall,
 			ConcurrencyKey: "a",
 		}, func(context.Context) (AnyResult, error) {
@@ -797,7 +873,7 @@ func TestCacheDifferentConcurrencyKeysDoNotDedupe(t *testing.T) {
 		errCh <- err
 	}()
 	go func() {
-		_, err := cacheIface.GetOrInitCall(ctx, &CallRequest{
+		_, err := cacheIface.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:     keyCall,
 			ConcurrencyKey: "b",
 		}, func(context.Context) (AnyResult, error) {
@@ -836,7 +912,7 @@ func TestCacheNilResultIsCached(t *testing.T) {
 	keyCall := cacheTestIntCall("nil-result")
 	initCalls := 0
 
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, nil
 	})
@@ -844,7 +920,7 @@ func TestCacheNilResultIsCached(t *testing.T) {
 	assert.Assert(t, res != nil)
 	assert.Assert(t, res.Unwrap() == nil)
 
-	res, err = c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res, err = c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return cacheTestIntResult(keyCall, 42), nil
 	})
@@ -884,14 +960,14 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		fInitCalls := 0
 		f1Call := cacheTestIntCall("content-f-1")
 		f2Call := cacheTestIntCall("content-f-2")
-		f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 			fInitCalls++
 			return cacheTestIntResult(f1OutCall, 11), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
 
-		f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 			fInitCalls++
 			return cacheTestIntResult(f2OutCall, 22), nil
 		})
@@ -900,7 +976,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, 2, fInitCalls)
 		assert.Assert(t, cacheTestMustRecipeID(t, f1Res).Digest() != cacheTestMustRecipeID(t, f2Res).Digest())
 
-		g1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "content-g",
@@ -912,7 +988,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !g1Res.HitCache())
 
 		g2InitCalls := 0
-		g2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		g2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "content-g",
@@ -960,13 +1036,13 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		f2OutCall := cacheTestIntCall("deep-f-2", sharedEq, noiseB)
 
 		fInitCalls := 0
-		f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 			fInitCalls++
 			return cacheTestIntResult(f1OutCall, 21), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
-		f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 			fInitCalls++
 			return cacheTestIntResult(f2OutCall, 22), nil
 		})
@@ -974,7 +1050,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !f2Res.HitCache())
 		assert.Equal(t, 2, fInitCalls)
 
-		g1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "deep-g",
@@ -985,7 +1061,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !g1Res.HitCache())
 
-		h1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		h1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "deep-h",
@@ -996,7 +1072,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !h1Res.HitCache())
 
-		i1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		i1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "deep-i",
@@ -1008,7 +1084,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !i1Res.HitCache())
 
 		g2InitCalls := 0
-		g2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		g2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "deep-g",
@@ -1024,7 +1100,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, cacheTestMustEncodeID(t, g1Res), cacheTestMustEncodeID(t, g2Res))
 
 		h2InitCalls := 0
-		h2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		h2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "deep-h",
@@ -1040,7 +1116,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, cacheTestMustEncodeID(t, h1Res), cacheTestMustEncodeID(t, h2Res))
 
 		i2InitCalls := 0
-		i2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		i2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "deep-i",
@@ -1086,13 +1162,13 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 
 		f1Call := cacheTestIntCall("late-f-1")
 		f2Call := cacheTestIntCall("late-f-2")
-		f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(cacheTestIntCall("late-f-1", f1Only), 41), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
 
-		g1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "late-g",
@@ -1109,7 +1185,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !g1Res.HitCache())
 
-		h1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		h1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "late-h",
@@ -1126,7 +1202,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !h1Res.HitCache())
 
-		i1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		i1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "late-i",
@@ -1138,7 +1214,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !i1Res.HitCache())
 
 		f2InitCalls := 0
-		f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 			f2InitCalls++
 			return cacheTestIntResult(cacheTestIntCall("late-f-2", f2Only), 42), nil
 		})
@@ -1147,7 +1223,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !f2Res.HitCache())
 
 		g2InitCalls := 0
-		g2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		g2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "late-g",
@@ -1167,7 +1243,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !g2Res.HitCache())
 
 		h2InitCalls := 0
-		h2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		h2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "late-h",
@@ -1187,7 +1263,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, !h2Res.HitCache())
 
 		i2InitCalls := 0
-		i2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+		i2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
 			Type:     NewResultCallType(Int(0).Type()),
 			Field:    "late-i",
@@ -1238,23 +1314,23 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		y1OutCall := cacheTestIntCall("multi-y-1", yShared, yNoise1)
 		y2OutCall := cacheTestIntCall("multi-y-2", yShared, yNoise2)
 
-		x1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: x1Call}, func(context.Context) (AnyResult, error) {
+		x1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: x1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(x1OutCall, 11), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !x1Res.HitCache())
-		x2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: x2Call}, func(context.Context) (AnyResult, error) {
+		x2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: x2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(x2OutCall, 12), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !x2Res.HitCache())
 
-		y1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: y1Call}, func(context.Context) (AnyResult, error) {
+		y1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: y1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(y1OutCall, 21), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !y1Res.HitCache())
-		y2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: y2Call}, func(context.Context) (AnyResult, error) {
+		y2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: y2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(y2OutCall, 22), nil
 		})
 		assert.NilError(t, err)
@@ -1276,14 +1352,14 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		z1Res, err := c.GetOrInitCall(ctx, zReq(x1Res, y1Res), func(context.Context) (AnyResult, error) {
+		z1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, zReq(x1Res, y1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(501)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !z1Res.HitCache())
 
 		z2InitCalls := 0
-		z2Res, err := c.GetOrInitCall(ctx, zReq(x2Res, y2Res), func(context.Context) (AnyResult, error) {
+		z2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, zReq(x2Res, y2Res), func(context.Context) (AnyResult, error) {
 			z2InitCalls++
 			return cacheTestPlainResult(NewInt(502)), nil
 		})
@@ -1325,23 +1401,23 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		y1OutCall := cacheTestIntCall("multi-partial-y-1", yOnly1)
 		y2OutCall := cacheTestIntCall("multi-partial-y-2", yOnly2)
 
-		x1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: x1Call}, func(context.Context) (AnyResult, error) {
+		x1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: x1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(x1OutCall, 31), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !x1Res.HitCache())
-		x2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: x2Call}, func(context.Context) (AnyResult, error) {
+		x2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: x2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(x2OutCall, 32), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !x2Res.HitCache())
 
-		y1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: y1Call}, func(context.Context) (AnyResult, error) {
+		y1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: y1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(y1OutCall, 41), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !y1Res.HitCache())
-		y2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: y2Call}, func(context.Context) (AnyResult, error) {
+		y2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: y2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(y2OutCall, 42), nil
 		})
 		assert.NilError(t, err)
@@ -1363,14 +1439,14 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		z1Res, err := c.GetOrInitCall(ctx, zReq(x1Res, y1Res), func(context.Context) (AnyResult, error) {
+		z1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, zReq(x1Res, y1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(701)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !z1Res.HitCache())
 
 		z2InitCalls := 0
-		z2Res, err := c.GetOrInitCall(ctx, zReq(x2Res, y2Res), func(context.Context) (AnyResult, error) {
+		z2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, zReq(x2Res, y2Res), func(context.Context) (AnyResult, error) {
 			z2InitCalls++
 			return cacheTestPlainResult(NewInt(702)), nil
 		})
@@ -1412,17 +1488,17 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		f2OutCall := cacheTestIntCall("bridge-f-2", bridgeA, bridgeB, noise2)
 		f3OutCall := cacheTestIntCall("bridge-f-3", bridgeB, noise3)
 
-		f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(f1OutCall, 101), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
-		f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(f2OutCall, 102), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f2Res.HitCache())
-		f3Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f3Call}, func(context.Context) (AnyResult, error) {
+		f3Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f3Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(f3OutCall, 103), nil
 		})
 		assert.NilError(t, err)
@@ -1440,14 +1516,14 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		g1Res, err := c.GetOrInitCall(ctx, gReq(f1Res), func(context.Context) (AnyResult, error) {
+		g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, gReq(f1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(901)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !g1Res.HitCache())
 
 		g3InitCalls := 0
-		g3Res, err := c.GetOrInitCall(ctx, gReq(f3Res), func(context.Context) (AnyResult, error) {
+		g3Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, gReq(f3Res), func(context.Context) (AnyResult, error) {
 			g3InitCalls++
 			return cacheTestPlainResult(NewInt(903)), nil
 		})
@@ -1488,17 +1564,17 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		f2OutCall := cacheTestIntCall("nobridge-f-2", bridgeA, other, noise2)
 		f3OutCall := cacheTestIntCall("nobridge-f-3", bridgeB, noise3)
 
-		f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(f1OutCall, 111), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
-		f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(f2OutCall, 112), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f2Res.HitCache())
-		f3Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f3Call}, func(context.Context) (AnyResult, error) {
+		f3Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f3Call}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(f3OutCall, 113), nil
 		})
 		assert.NilError(t, err)
@@ -1516,14 +1592,14 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		g1Res, err := c.GetOrInitCall(ctx, gReq(f1Res), func(context.Context) (AnyResult, error) {
+		g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, gReq(f1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(911)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !g1Res.HitCache())
 
 		g2InitCalls := 0
-		g2Res, err := c.GetOrInitCall(ctx, gReq(f2Res), func(context.Context) (AnyResult, error) {
+		g2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, gReq(f2Res), func(context.Context) (AnyResult, error) {
 			g2InitCalls++
 			return cacheTestPlainResult(NewInt(912)), nil
 		})
@@ -1534,7 +1610,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, cacheTestMustEncodeID(t, g1Res), cacheTestMustEncodeID(t, g2Res))
 
 		g3InitCalls := 0
-		g3Res, err := c.GetOrInitCall(ctx, gReq(f3Res), func(context.Context) (AnyResult, error) {
+		g3Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, gReq(f3Res), func(context.Context) (AnyResult, error) {
 			g3InitCalls++
 			return cacheTestPlainResult(NewInt(913)), nil
 		})
@@ -1593,12 +1669,12 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		f1Res, err := c.GetOrInitCall(ctx, rootReq("fanout-f-1"), func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-f-1"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(101)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
-		f2Res, err := c.GetOrInitCall(ctx, rootReq("fanout-f-2"), func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-f-2"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(102)), nil
 		})
 		assert.NilError(t, err)
@@ -1631,24 +1707,24 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		left1Res, err := c.GetOrInitCall(ctx, unaryReq(f1Res, "fanout-left"), func(context.Context) (AnyResult, error) {
+		left1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f1Res, "fanout-left"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(1001)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !left1Res.HitCache())
-		right1Res, err := c.GetOrInitCall(ctx, unaryReq(f1Res, "fanout-right"), func(context.Context) (AnyResult, error) {
+		right1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f1Res, "fanout-right"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(1002)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !right1Res.HitCache())
-		join1Res, err := c.GetOrInitCall(ctx, joinReq(left1Res, right1Res), func(context.Context) (AnyResult, error) {
+		join1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, joinReq(left1Res, right1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(1101)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !join1Res.HitCache())
 
 		f1AliasInitCalls := 0
-		f1AliasRes, err := c.GetOrInitCall(ctx, rootReq("fanout-f-1", shared, noise1), func(context.Context) (AnyResult, error) {
+		f1AliasRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-f-1", shared, noise1), func(context.Context) (AnyResult, error) {
 			f1AliasInitCalls++
 			return cacheTestPlainResult(NewInt(1911)), nil
 		})
@@ -1658,7 +1734,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, 101, cacheTestUnwrapInt(t, f1AliasRes))
 
 		f2AliasInitCalls := 0
-		f2AliasRes, err := c.GetOrInitCall(ctx, rootReq("fanout-f-2", shared, noise2), func(context.Context) (AnyResult, error) {
+		f2AliasRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-f-2", shared, noise2), func(context.Context) (AnyResult, error) {
 			f2AliasInitCalls++
 			return cacheTestPlainResult(NewInt(1912)), nil
 		})
@@ -1668,7 +1744,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, 102, cacheTestUnwrapInt(t, f2AliasRes))
 
 		left2InitCalls := 0
-		left2Res, err := c.GetOrInitCall(ctx, unaryReq(f2Res, "fanout-left"), func(context.Context) (AnyResult, error) {
+		left2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f2Res, "fanout-left"), func(context.Context) (AnyResult, error) {
 			left2InitCalls++
 			return cacheTestPlainResult(NewInt(2001)), nil
 		})
@@ -1678,7 +1754,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, 1001, cacheTestUnwrapInt(t, left2Res))
 
 		right2InitCalls := 0
-		right2Res, err := c.GetOrInitCall(ctx, unaryReq(f2Res, "fanout-right"), func(context.Context) (AnyResult, error) {
+		right2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f2Res, "fanout-right"), func(context.Context) (AnyResult, error) {
 			right2InitCalls++
 			return cacheTestPlainResult(NewInt(2002)), nil
 		})
@@ -1688,7 +1764,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, 1002, cacheTestUnwrapInt(t, right2Res))
 
 		join2InitCalls := 0
-		join2Res, err := c.GetOrInitCall(ctx, joinReq(left2Res, right2Res), func(context.Context) (AnyResult, error) {
+		join2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, joinReq(left2Res, right2Res), func(context.Context) (AnyResult, error) {
 			join2InitCalls++
 			return cacheTestPlainResult(NewInt(2101)), nil
 		})
@@ -1732,12 +1808,12 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		f1Res, err := c.GetOrInitCall(ctx, rootReq("fanout-late-f-1"), func(context.Context) (AnyResult, error) {
+		f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-late-f-1"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(301)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !f1Res.HitCache())
-		f2Res, err := c.GetOrInitCall(ctx, rootReq("fanout-late-f-2"), func(context.Context) (AnyResult, error) {
+		f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-late-f-2"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(302)), nil
 		})
 		assert.NilError(t, err)
@@ -1783,40 +1859,40 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 			}
 		}
 
-		left1Res, err := c.GetOrInitCall(ctx, unaryReq(f1Res, "fanout-late-left"), func(context.Context) (AnyResult, error) {
+		left1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f1Res, "fanout-late-left"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(3001)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !left1Res.HitCache())
-		right1Res, err := c.GetOrInitCall(ctx, unaryReq(f1Res, "fanout-late-right"), func(context.Context) (AnyResult, error) {
+		right1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f1Res, "fanout-late-right"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(3002)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !right1Res.HitCache())
-		join1Res, err := c.GetOrInitCall(ctx, joinReq(left1Res, right1Res), func(context.Context) (AnyResult, error) {
+		join1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, joinReq(left1Res, right1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(3101)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !join1Res.HitCache())
 
-		left2Res, err := c.GetOrInitCall(ctx, unaryReq(f2Res, "fanout-late-left"), func(context.Context) (AnyResult, error) {
+		left2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f2Res, "fanout-late-left"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(4001)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !left2Res.HitCache())
-		right2Res, err := c.GetOrInitCall(ctx, unaryReq(f2Res, "fanout-late-right"), func(context.Context) (AnyResult, error) {
+		right2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, unaryReq(f2Res, "fanout-late-right"), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(4002)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !right2Res.HitCache())
-		join2Res, err := c.GetOrInitCall(ctx, joinReq(left2Res, right2Res), func(context.Context) (AnyResult, error) {
+		join2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, joinReq(left2Res, right2Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(4101)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !join2Res.HitCache())
 
 		f1AliasInitCalls := 0
-		f1AliasRes, err := c.GetOrInitCall(ctx, rootReq("fanout-late-f-1", shared, noise1), func(context.Context) (AnyResult, error) {
+		f1AliasRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-late-f-1", shared, noise1), func(context.Context) (AnyResult, error) {
 			f1AliasInitCalls++
 			return cacheTestPlainResult(NewInt(3911)), nil
 		})
@@ -1826,7 +1902,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Equal(t, 301, cacheTestUnwrapInt(t, f1AliasRes))
 
 		f2AliasInitCalls := 0
-		f2AliasRes, err := c.GetOrInitCall(ctx, rootReq("fanout-late-f-2", shared, noise2), func(context.Context) (AnyResult, error) {
+		f2AliasRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, rootReq("fanout-late-f-2", shared, noise2), func(context.Context) (AnyResult, error) {
 			f2AliasInitCalls++
 			return cacheTestPlainResult(NewInt(3912)), nil
 		})
@@ -1835,14 +1911,14 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.Assert(t, f2AliasRes.HitCache())
 		assert.Equal(t, 302, cacheTestUnwrapInt(t, f2AliasRes))
 
-		top1Res, err := c.GetOrInitCall(ctx, topReq(join1Res), func(context.Context) (AnyResult, error) {
+		top1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, topReq(join1Res), func(context.Context) (AnyResult, error) {
 			return cacheTestPlainResult(NewInt(5101)), nil
 		})
 		assert.NilError(t, err)
 		assert.Assert(t, !top1Res.HitCache())
 
 		top2InitCalls := 0
-		top2Res, err := c.GetOrInitCall(ctx, topReq(join2Res), func(context.Context) (AnyResult, error) {
+		top2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, topReq(join2Res), func(context.Context) (AnyResult, error) {
 			top2InitCalls++
 			return cacheTestPlainResult(NewInt(5201)), nil
 		})
@@ -1881,7 +1957,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		outputID := call.New().Append(Int(0).Type(), "direct-recipe-output")
 		assert.Assert(t, requestID.Digest() != outputID.Digest())
 
-		firstRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+		firstRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(outputCall, 51), nil
 		})
 		assert.NilError(t, err)
@@ -1897,7 +1973,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.egraphMu.Unlock()
 
 		initCalls := 0
-		hitRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+		hitRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 			initCalls++
 			return cacheTestIntResult(requestCall, 52), nil
 		})
@@ -1929,7 +2005,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		lookupCall := cacheTestIntCall("direct-extra-lookup", shared)
 		assert.Assert(t, storedRequestID.Digest() != lookupID.Digest())
 
-		firstRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: storedRequestCall}, func(context.Context) (AnyResult, error) {
+		firstRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: storedRequestCall}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(storedOutputCall, 71), nil
 		})
 		assert.NilError(t, err)
@@ -1945,7 +2021,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		c.egraphMu.Unlock()
 
 		initCalls := 0
-		hitRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: lookupCall}, func(context.Context) (AnyResult, error) {
+		hitRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: lookupCall}, func(context.Context) (AnyResult, error) {
 			initCalls++
 			return cacheTestIntResult(lookupCall, 72), nil
 		})
@@ -1993,7 +2069,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 		},
 	}
 
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 		return NewResultForCall(NewInt(42), responseCall)
 	})
 	assert.NilError(t, err)
@@ -2038,13 +2114,13 @@ func TestStructuralHitCanReuseResultFromSameOutputEqClass(t *testing.T) {
 	t1OutCall := cacheTestIntCall("output-eq-out-1", shared)
 	t2OutCall := cacheTestIntCall("output-eq-out-2", shared)
 
-	t1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: t1Call}, func(context.Context) (AnyResult, error) {
+	t1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: t1Call}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(t1OutCall, 11), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !t1Res.HitCache())
 
-	t2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: t2Call}, func(context.Context) (AnyResult, error) {
+	t2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: t2Call}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(t2OutCall, 22), nil
 	})
 	assert.NilError(t, err)
@@ -2053,7 +2129,7 @@ func TestStructuralHitCanReuseResultFromSameOutputEqClass(t *testing.T) {
 	assert.NilError(t, t1Res.Release(ctx))
 
 	initCalls := 0
-	hitRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: t1Call}, func(context.Context) (AnyResult, error) {
+	hitRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: t1Call}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return cacheTestIntResult(t1Call, 33), nil
 	})
@@ -2077,7 +2153,7 @@ func TestTeachCallEquivalentToResult(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	parentCall := cacheTestIntCall("teach-parent")
-	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
+	parentRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestPlainResult(NewInt(42)), nil
 	})
 	assert.NilError(t, err)
@@ -2096,7 +2172,7 @@ func TestTeachCallEquivalentToResult(t *testing.T) {
 	assert.NilError(t, c.TeachCallEquivalentToResult(ctx, childCall, parentRes))
 
 	childInitCalls := 0
-	childRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall.clone()}, func(context.Context) (AnyResult, error) {
+	childRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall.clone()}, func(context.Context) (AnyResult, error) {
 		childInitCalls++
 		return cacheTestPlainResult(NewInt(99)), nil
 	})
@@ -2146,7 +2222,7 @@ func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
 	parentCall := cacheTestIntCall("normalize-parent")
 	parentRes, err := NewResultForCall(NewInt(1), parentCall)
 	assert.NilError(t, err)
-	attachedParent, err := c.AttachResult(ctx, parentRes)
+	attachedParent, err := c.AttachResult(ctx, noopTypeResolver{}, parentRes)
 	assert.NilError(t, err)
 
 	childCall := &ResultCall{
@@ -2159,7 +2235,7 @@ func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
 	}
 	childRes, err := NewResultForCall(NewInt(2), childCall)
 	assert.NilError(t, err)
-	attachedChild, err := c.AttachResult(ctx, childRes)
+	attachedChild, err := c.AttachResult(ctx, noopTypeResolver{}, childRes)
 	assert.NilError(t, err)
 
 	parentShared := attachedParent.cacheSharedResult()
@@ -2191,7 +2267,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		Type:  NewResultCallType(objType),
 	}
 	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
-	attachedParentAny, err := srv.Cache.AttachResult(ctx, parentRes)
+	attachedParentAny, err := srv.Cache.AttachResult(ctx, srv, parentRes)
 	assert.NilError(t, err)
 	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
 
@@ -2215,7 +2291,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		},
 	}
 	argOnlyRes := cacheTestObjectResult(t, srv, argOnlyFrame, 12, nil)
-	attachedArgOnlyAny, err := srv.Cache.AttachResult(ctx, argOnlyRes)
+	attachedArgOnlyAny, err := srv.Cache.AttachResult(ctx, srv, argOnlyRes)
 	assert.NilError(t, err)
 	attachedArgOnly := attachedArgOnlyAny.(ObjectResult[*cacheTestObject])
 	argOnlyDig, err := attachedArgOnly.ContentPreferredDigest()
@@ -2233,7 +2309,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		},
 	}
 	receiverOnlyRes := cacheTestObjectResult(t, srv, receiverOnlyFrame, 13, nil)
-	attachedReceiverOnlyAny, err := srv.Cache.AttachResult(ctx, receiverOnlyRes)
+	attachedReceiverOnlyAny, err := srv.Cache.AttachResult(ctx, srv, receiverOnlyRes)
 	assert.NilError(t, err)
 	attachedReceiverOnly := attachedReceiverOnlyAny.(ObjectResult[*cacheTestObject])
 	receiverOnlyDig, err := attachedReceiverOnly.ContentPreferredDigest()
@@ -2251,7 +2327,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		},
 	}
 	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
-	attachedChildAny, err := srv.Cache.AttachResult(ctx, childRes)
+	attachedChildAny, err := srv.Cache.AttachResult(ctx, srv, childRes)
 	assert.NilError(t, err)
 	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
 
@@ -2270,6 +2346,39 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 	receiverCall, err := receiverObj.ResultCall()
 	assert.NilError(t, err)
 	assert.Equal(t, "parent", receiverCall.Field)
+}
+
+func TestCacheHitRewrapsObjectResultForCurrentServer(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+
+	srvA := cacheTestObjectResolverServer(t, cacheIface, 1)
+	srvB := cacheTestObjectResolverServer(t, cacheIface, 2)
+	ctxA := srvToContext(ctx, srvA)
+	ctxB := srvToContext(ctx, srvB)
+
+	objAAny, err := srvA.Root().Select(ctxA, srvA, Selector{Field: "obj"})
+	assert.NilError(t, err)
+	objA := objAAny.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, !objA.HitCache())
+	markerAAny, err := objA.Select(ctxA, srvA, Selector{Field: "marker"})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, cacheTestUnwrapInt(t, markerAAny))
+
+	objBAny, err := srvB.Root().Select(ctxB, srvB, Selector{Field: "obj"})
+	assert.NilError(t, err)
+	objB := objBAny.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, objB.HitCache())
+	markerBAny, err := objB.Select(ctxB, srvB, Selector{Field: "marker"})
+	assert.NilError(t, err)
+	assert.Equal(t, 2, cacheTestUnwrapInt(t, markerBAny))
+
+	assert.NilError(t, markerBAny.Release(ctxB))
+	assert.NilError(t, objB.Release(ctxB))
+	assert.NilError(t, markerAAny.Release(ctxA))
+	assert.NilError(t, objA.Release(ctxA))
 }
 
 func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
@@ -2311,7 +2420,7 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 		Type:  NewResultCallType(objType),
 	}
 	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
-	attachedParentAny, err := srv.Cache.AttachResult(ctx, parentRes)
+	attachedParentAny, err := srv.Cache.AttachResult(ctx, srv, parentRes)
 	assert.NilError(t, err)
 	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
 
@@ -2333,7 +2442,7 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 		},
 	}
 	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
-	attachedChildAny, err := srv.Cache.AttachResult(ctx, childRes)
+	attachedChildAny, err := srv.Cache.AttachResult(ctx, srv, childRes)
 	assert.NilError(t, err)
 	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
 
@@ -2360,7 +2469,7 @@ func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 		ExtraDigests: []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: contentDig}},
 	}
 	res := cacheTestObjectResult(t, srv, frame, 33, nil)
-	attachedAny, err := srv.Cache.AttachResult(ctx, res)
+	attachedAny, err := srv.Cache.AttachResult(ctx, srv, res)
 	assert.NilError(t, err)
 	attached := attachedAny.(ObjectResult[*cacheTestObject])
 
@@ -2389,7 +2498,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 
 		sourceKey := call.New().Append(Int(0).Type(), "_contextDirectory")
 		sourceCall := cacheTestIntCall("_contextDirectory")
-		sourceRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
+		sourceRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(&ResultCall{
 				Kind:         ResultCallKindField,
 				Type:         NewResultCallType(Int(0).Type()),
@@ -2416,7 +2525,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		assert.Assert(t, sourceKey.Digest() != requestKey.Digest())
 
 		requestInitCalls := 0
-		requestRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+		requestRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 			requestInitCalls++
 			return cacheTestIntResult(requestCall, 999), nil
 		})
@@ -2455,7 +2564,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		}
 
 		sourceCall := cacheTestIntCall("fallback-miss-source")
-		sourceRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
+		sourceRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
 			return cacheTestIntResult(cacheTestIntCall("fallback-miss-source", sourceExtra), 81), nil
 		})
 		assert.NilError(t, err)
@@ -2463,7 +2572,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 
 		requestCall := cacheTestIntCall("fallback-miss-request", requestExtra)
 		requestInitCalls := 0
-		requestRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+		requestRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 			requestInitCalls++
 			return cacheTestIntResult(requestCall, 82), nil
 		})
@@ -2504,19 +2613,19 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	f1OutCall := cacheTestIntCall("release-f-1", sharedEq, noiseA)
 	f2OutCall := cacheTestIntCall("release-f-2", sharedEq, noiseB)
 
-	f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+	f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(f1OutCall, 101), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !f1Res.HitCache())
 
-	f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+	f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(f2OutCall, 102), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !f2Res.HitCache())
 
-	g1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "release-g",
@@ -2528,7 +2637,7 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	assert.Assert(t, !g1Res.HitCache())
 
 	g2InitCalls := 0
-	g2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	g2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "release-g",
@@ -2543,7 +2652,7 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	assert.Equal(t, 201, cacheTestUnwrapInt(t, g2Res))
 	assert.Equal(t, cacheTestMustEncodeID(t, g1Res), cacheTestMustEncodeID(t, g2Res))
 
-	h1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	h1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "release-h",
@@ -2555,7 +2664,7 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	assert.Assert(t, !h1Res.HitCache())
 
 	h2InitCalls := 0
-	h2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	h2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "release-h",
@@ -2570,7 +2679,7 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	assert.Equal(t, 301, cacheTestUnwrapInt(t, h2Res))
 	assert.Equal(t, cacheTestMustEncodeID(t, h1Res), cacheTestMustEncodeID(t, h2Res))
 
-	j1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	j1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "release-j",
@@ -2582,7 +2691,7 @@ func TestCacheReleaseLifecycleEquivalentGraphMixedReleaseOrder(t *testing.T) {
 	assert.Assert(t, !j1Res.HitCache())
 
 	j2InitCalls := 0
-	j2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	j2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "release-j",
@@ -2664,13 +2773,13 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	parentAOutCall := cacheTestIntCall("teach-hit-parent-a", shared)
 	parentBOutCall := cacheTestIntCall("teach-hit-parent-b", shared)
 
-	parentARes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentACall}, func(context.Context) (AnyResult, error) {
+	parentARes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentACall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(parentAOutCall, 1), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !parentARes.HitCache())
 
-	parentBRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentBCall}, func(context.Context) (AnyResult, error) {
+	parentBRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentBCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(parentBOutCall, 2), nil
 	})
 	assert.NilError(t, err)
@@ -2678,7 +2787,7 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 
 	childBKey := parentBKey.Append(Int(0).Type(), "teach-hit-child")
 
-	childARes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	childARes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "teach-hit-child",
@@ -2690,7 +2799,7 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.Assert(t, !childARes.HitCache())
 
 	childBInitCalls := 0
-	childBRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	childBRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "teach-hit-child",
@@ -2785,7 +2894,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	assert.Assert(t, !f1HasLabelB)
 	assert.Assert(t, !f2HasLabelA)
 
-	f1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
+	f1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f1Call}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(f1Call, 501).(Result[Int]).WithContentDigest(contentA).ResultWithCall(
 			&ResultCall{
 				Kind:         ResultCallKindField,
@@ -2798,7 +2907,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !f1Res.HitCache())
 
-	f2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
+	f2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: f2Call}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(f2Call, 502).(Result[Int]).WithContentDigest(contentB).ResultWithCall(
 			&ResultCall{
 				Kind:         ResultCallKindField,
@@ -2815,7 +2924,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	g2Key := f2Key.Append(Int(0).Type(), "label-isolation-g")
 	assert.Assert(t, g1Key.Digest() != g2Key.Digest())
 
-	g1Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	g1Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "label-isolation-g",
@@ -2827,7 +2936,7 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	assert.Assert(t, !g1Res.HitCache())
 
 	g2InitCalls := 0
-	g2Res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	g2Res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "label-isolation-g",
@@ -2863,7 +2972,7 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	requestCall := cacheTestIntCall("hit-return-id-request")
 	outputCall := cacheTestIntCall("hit-return-id-output")
 
-	res1, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+	res1, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(outputCall, 77).(Result[Int]).WithContentDigest(contentDigest), nil
 	})
 	assert.NilError(t, err)
@@ -2872,7 +2981,7 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	shared := res1.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 	initCalls := 0
-	res2, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+	res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return cacheTestIntResult(requestCall, 88), nil
 	})
@@ -2898,7 +3007,7 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	sourceCall := cacheTestIntCall("fresh-return-id-source")
 	sourceOutCall := cacheTestIntCall("fresh-return-id-output")
 
-	sourceRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
+	sourceRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: sourceCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(sourceOutCall, 91).(Result[Int]).WithContentDigest(contentDigest), nil
 	})
 	assert.NilError(t, err)
@@ -2906,7 +3015,7 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	assert.Assert(t, shared != nil)
 
 	requestCall := cacheTestIntCall("fresh-return-id-request")
-	wrappedRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+	wrappedRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 		return Result[Typed]{
 			shared: shared,
 		}, nil
@@ -2929,7 +3038,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("teach-content-digest")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 123), nil
 	})
 	assert.NilError(t, err)
@@ -2962,7 +3071,7 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	depCall := cacheTestIntCall("teach-content-digest-dep")
-	depRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
+	depRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(depCall, 11), nil
 	})
 	assert.NilError(t, err)
@@ -2983,7 +3092,7 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 			},
 		},
 	}
-	rootRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: rootCall}, func(context.Context) (AnyResult, error) {
+	rootRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: rootCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(rootCall, 22), nil
 	})
 	assert.NilError(t, err)
@@ -3007,7 +3116,7 @@ func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
 	keyCall := cacheTestIntCall("metadata")
 	postCallCount := 0
 
-	res1, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res1, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(keyCall, 7).(Result[Int]).
 			ResultWithPostCall(func(context.Context) error {
 				postCallCount++
@@ -3020,7 +3129,7 @@ func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
 	assert.NilError(t, res1.PostCall(ctx))
 	assert.Equal(t, 1, postCallCount)
 
-	res2, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	})
 	assert.NilError(t, err)
@@ -3086,18 +3195,18 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	innerCall := cacheTestIntCall("inner")
-	innerRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: innerCall}, func(context.Context) (AnyResult, error) {
+	innerRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: innerCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(innerCall, 9), nil
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !innerRes.HitCache())
 
 	outerCall := cacheTestIntCall("outer")
-	outerRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	outerRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: outerCall,
 		DoNotCache: true,
 	}, func(ctx context.Context) (AnyResult, error) {
-		nested, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: innerCall}, func(context.Context) (AnyResult, error) {
+		nested, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: innerCall}, func(context.Context) (AnyResult, error) {
 			return nil, fmt.Errorf("unexpected nested initializer call")
 		})
 		if err != nil {
@@ -3130,7 +3239,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 		With(call.WithExtraDigest(call.ExtraDigest{Digest: digest.FromString("result-digest")})).
 		With(call.WithContentDigest(digest.FromString("result-content")))
 
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: storageCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: storageCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(storageCall, 44).(Result[Int]).
 			WithContentDigest(digest.FromString("result-content")).
 			ResultWithCall(&ResultCall{
@@ -3168,11 +3277,11 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 	keeperCall := cacheTestIntCall("release-eq-class-keeper")
 	foreignDigest := digest.FromString("release-eq-class-foreign")
 
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: requestCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(outputCall, 44), nil
 	})
 	assert.NilError(t, err)
-	keeperRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keeperCall}, func(context.Context) (AnyResult, error) {
+	keeperRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keeperCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(keeperCall, 55), nil
 	})
 	assert.NilError(t, err)
@@ -3226,7 +3335,7 @@ func TestCacheArrayResultRoundTrip(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	keyCall := cacheTestIntCall("array-result")
-	res1, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res1, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestDetachedResult(&ResultCall{
 			Kind:  ResultCallKindField,
 			Type:  NewResultCallType(NewIntArray[int]().Type()),
@@ -3243,7 +3352,7 @@ func TestCacheArrayResultRoundTrip(t *testing.T) {
 	assert.Assert(t, ok)
 	assert.Equal(t, 2, int(v2))
 
-	res2, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	})
 	assert.NilError(t, err)
@@ -3265,10 +3374,14 @@ func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
 	c := cacheIface.(*cache)
 	srv := cacheTestServer(t, c)
 
-	keyCall := cacheTestIntCall("object-result")
+	keyCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "object-result",
+	}
 	var releaseCalls atomic.Int32
 
-	res1, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res1, err := c.GetOrInitCall(ctx, srv, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestObjectResult(t, srv, keyCall, 42, func(context.Context) error {
 			releaseCalls.Add(1)
 			return nil
@@ -3280,7 +3393,7 @@ func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
 	assert.Equal(t, 42, obj1.Self().Value)
 	assert.Assert(t, !obj1.HitCache())
 
-	res2, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
+	res2, err := c.GetOrInitCall(ctx, srv, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("unexpected initializer call")
 	})
 	assert.NilError(t, err)
@@ -3311,7 +3424,7 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	keyCall := cacheTestIntCall("ttl-key")
 	initCalls := 0
 
-	res1, err := c.GetOrInitCall(ctx, &CallRequest{
+	res1, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: keyCall,
 		TTL:        60,
 	}, func(context.Context) (AnyResult, error) {
@@ -3321,7 +3434,7 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 1, initCalls)
 
-	res2, err := c.GetOrInitCall(ctx, &CallRequest{
+	res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: keyCall,
 		TTL:        60,
 	}, func(context.Context) (AnyResult, error) {
@@ -3360,7 +3473,7 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 
 	sc1 := NewSessionCache(base)
 	initCallsA := 0
-	resA, err := sc1.GetOrInitCall(ctxSessionA, &CallRequest{
+	resA, err := sc1.GetOrInitCall(ctxSessionA, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3378,7 +3491,7 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 
 	sc2 := NewSessionCache(base)
 	initCallsB := 0
-	resB, err := sc2.GetOrInitCall(ctxSessionB, &CallRequest{
+	resB, err := sc2.GetOrInitCall(ctxSessionB, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3403,7 +3516,7 @@ func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	key := cacheTestIntCall("non-persistable-drops")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: false,
 	}, func(context.Context) (AnyResult, error) {
@@ -3429,7 +3542,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	key := cacheTestIntCall("persistable-hit-upgrade")
 	initCalls := 0
 
-	resA, err := c.GetOrInitCall(ctx, &CallRequest{
+	resA, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: false,
 	}, func(context.Context) (AnyResult, error) {
@@ -3441,7 +3554,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Assert(t, !resA.HitCache())
 	assert.Equal(t, 0, c.EntryStats().RetainedCalls)
 
-	resB, err := c.GetOrInitCall(ctx, &CallRequest{
+	resB, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3460,7 +3573,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	assert.Equal(t, 1, len(c.resultOutputEqClasses))
 
 	initCallsAfter := 0
-	resC, err := c.GetOrInitCall(ctx, &CallRequest{
+	resC, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		initCallsAfter++
@@ -3487,7 +3600,7 @@ func TestCacheUsageEntriesIncludeRetainedPersistedResults(t *testing.T) {
 	})
 
 	sc := NewSessionCache(c)
-	res, err := sc.GetOrInitCall(ctxSession, &CallRequest{
+	res, err := sc.GetOrInitCall(ctxSession, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3521,7 +3634,7 @@ func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	key := cacheTestIntCall("usage-most-recent-use")
-	res1, err := c.GetOrInitCall(ctx, &CallRequest{
+	res1, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3537,7 +3650,7 @@ func TestCacheUsageEntriesTracksMostRecentUseAndInUse(t *testing.T) {
 
 	time.Sleep(2 * time.Millisecond)
 
-	res2, err := c.GetOrInitCall(ctx, &CallRequest{
+	res2, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3575,14 +3688,14 @@ func TestCacheUsageEntriesDeterministicOrdering(t *testing.T) {
 	keyA := cacheTestIntCall("usage-order-a")
 	keyB := cacheTestIntCall("usage-order-b")
 
-	resB, err := c.GetOrInitCall(ctx, &CallRequest{
+	resB, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyB,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(keyB, 2), nil
 	})
 	assert.NilError(t, err)
-	resA, err := c.GetOrInitCall(ctx, &CallRequest{
+	resA, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyA,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3609,7 +3722,7 @@ func TestCacheUsageEntriesMeasureOnlyPruneCandidates(t *testing.T) {
 
 	sizeCalls := &atomic.Int32{}
 	key := cacheTestIntCall("usage-candidate-only")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3641,14 +3754,14 @@ func TestCacheUsageEntriesDedupesByUsageIdentity(t *testing.T) {
 	keyB := cacheTestIntCall("usage-dedupe-b")
 	const dedupeIdentity = "snapshot://shared-identity"
 
-	resA, err := c.GetOrInitCall(ctx, &CallRequest{
+	resA, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyA,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestSizedIntResult(keyA, 1, 512, dedupeIdentity, sizeCalls), nil
 	})
 	assert.NilError(t, err)
-	resB, err := c.GetOrInitCall(ctx, &CallRequest{
+	resB, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyB,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3689,14 +3802,14 @@ func TestCacheUsageEntriesDedupesByUsageIdentityDeterministicOwner(t *testing.T)
 
 	// Intentionally initialize first/second in this order so sharedResult IDs are
 	// deterministic and owner tie-break can be asserted directly.
-	firstRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	firstRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyFirst,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestSizedIntResult(keyFirst, 1, 333, dedupeIdentity, sizeCalls), nil
 	})
 	assert.NilError(t, err)
-	secondRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	secondRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keySecond,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3732,7 +3845,7 @@ func TestCacheUsageEntriesMutableUsageRemeasuresAfterSizeChange(t *testing.T) {
 	sizeSource.Store(100)
 
 	key := cacheTestIntCall("usage-mutable-refresh")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3767,7 +3880,7 @@ func TestCachePruneKeepDuration(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	oldKey := cacheTestIntCall("prune-keep-duration-old")
-	oldRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	oldRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    oldKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3776,7 +3889,7 @@ func TestCachePruneKeepDuration(t *testing.T) {
 	assert.NilError(t, err)
 
 	newKey := cacheTestIntCall("prune-keep-duration-new")
-	newRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	newRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    newKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3839,7 +3952,7 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 		keyCopy := key
 		valueCopy := i + 1
 		identityCopy := fmt.Sprintf("snapshot://prune-threshold-%d", i+1)
-		res, getErr := c.GetOrInitCall(ctx, &CallRequest{
+		res, getErr := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:    keyCopy,
 			IsPersistable: true,
 		}, func(context.Context) (AnyResult, error) {
@@ -3885,7 +3998,7 @@ func TestCachePruneThresholdNotTriggeredDoesNotForceAllPrune(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	key := cacheTestIntCall("prune-threshold-not-triggered")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3925,14 +4038,14 @@ func TestCachePruneReservedSpacePrecedenceOverMaxUsed(t *testing.T) {
 	keyA := cacheTestIntCall("prune-reserved-a")
 	keyB := cacheTestIntCall("prune-reserved-b")
 
-	resA, err := c.GetOrInitCall(ctx, &CallRequest{
+	resA, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyA,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestSizedIntResult(keyA, 1, 100, "snapshot://prune-reserved-a", nil), nil
 	})
 	assert.NilError(t, err)
-	resB, err := c.GetOrInitCall(ctx, &CallRequest{
+	resB, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    keyB,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3966,7 +4079,7 @@ func TestCachePruneInUseEntriesAreNeverPruned(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	inUseKey := cacheTestIntCall("prune-in-use")
-	inUseRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	inUseRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    inUseKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -3975,7 +4088,7 @@ func TestCachePruneInUseEntriesAreNeverPruned(t *testing.T) {
 	assert.NilError(t, err)
 
 	prunableKey := cacheTestIntCall("prune-prunable")
-	prunableRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	prunableRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    prunableKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -4014,7 +4127,7 @@ func TestCachePruneDeterministicSelectionOrder(t *testing.T) {
 		keyCopy := key
 		valueCopy := i + 1
 		identityCopy := fmt.Sprintf("snapshot://prune-order-%d", i+1)
-		res, getErr := c.GetOrInitCall(ctx, &CallRequest{
+		res, getErr := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 			ResultCall:    keyCopy,
 			IsPersistable: true,
 		}, func(context.Context) (AnyResult, error) {
@@ -4095,7 +4208,7 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	activeKey := cacheTestIntCall("prune-compact-active")
-	activeRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	activeRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: activeKey,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(activeKey, 11), nil
@@ -4105,7 +4218,7 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	assert.Assert(t, activeShared != nil)
 
 	prunableKey := cacheTestIntCall("prune-compact-prunable")
-	prunableRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	prunableRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    prunableKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -4142,7 +4255,7 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	assert.Assert(t, !prunablePresent)
 
 	hitCount := 0
-	hitRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: activeKey}, func(context.Context) (AnyResult, error) {
+	hitRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: activeKey}, func(context.Context) (AnyResult, error) {
 		hitCount++
 		return cacheTestIntResult(activeKey, 99), nil
 	})
@@ -4291,7 +4404,7 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	childCall := cacheTestIntCall("child-additional-output")
 	childPostCallCount := &atomic.Int32{}
 
-	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	parentRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    parentCall,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -4305,7 +4418,7 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 			childPostCallCount.Add(1)
 			return nil
 		})
-		attachedChild, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, ValueFunc(child))
+		attachedChild, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, ValueFunc(child))
 		if err != nil {
 			return nil, err
 		}
@@ -4323,7 +4436,7 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	assert.Assert(t, parentShared.cache == c)
 
 	childInitCalls := 0
-	childRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+	childRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
 		childInitCalls++
 		return cacheTestIntResult(childCall, 99), nil
 	})
@@ -4368,13 +4481,13 @@ func TestCacheAttachOwnedResultsAlreadyAttachedChild(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	childCall := cacheTestIntCall("child-already-attached")
-	attachedChild, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
+	attachedChild, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
 	assert.NilError(t, err)
 	childShared := attachedChild.cacheSharedResult()
 	assert.Assert(t, childShared != nil)
 
 	parentCall := cacheTestIntCall("parent-already-attached-child")
-	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
+	parentRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestDetachedResult(parentCall, &cacheTestOwnedDepsInt{
 			Int:          NewInt(1),
 			ownedResults: []AnyResult{attachedChild},
@@ -4409,9 +4522,9 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 	parentCall := cacheTestIntCall("parent-explicit-dependency")
 	childCall := cacheTestIntCall("child-explicit-dependency")
 
-	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: parentCall}, ValueFunc(cacheTestIntResult(parentCall, 1)))
+	parentRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentCall}, ValueFunc(cacheTestIntResult(parentCall, 1)))
 	assert.NilError(t, err)
-	childRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
+	childRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
 	assert.NilError(t, err)
 
 	parentShared := parentRes.cacheSharedResult()
@@ -4769,7 +4882,7 @@ func TestCacheResultCallDerivedFromRequestID(t *testing.T) {
 	c := cacheIface.(*cache)
 
 	childCall := cacheTestIntCall("frameChild")
-	childRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+	childRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(childCall, 7), nil
 	})
 	assert.NilError(t, err)
@@ -4777,7 +4890,7 @@ func TestCacheResultCallDerivedFromRequestID(t *testing.T) {
 	assert.Assert(t, childShared != nil)
 	assert.Assert(t, childShared.id != 0)
 
-	parentRes, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: &ResultCall{
+	parentRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:  ResultCallKindField,
 		Type:  NewResultCallType(Int(0).Type()),
 		Field: "frameParent",
@@ -4831,7 +4944,7 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 		Type:        NewResultCallType(Int(0).Type()),
 	}
 
-	first, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: id}, func(context.Context) (AnyResult, error) {
+	first, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: id}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(id, 1).(Result[Int]).ResultWithCall(firstFrame), nil
 	})
 	assert.NilError(t, err)
@@ -4840,7 +4953,7 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 	assert.Assert(t, firstShared.resultCall != nil)
 	assert.Equal(t, "first", firstShared.resultCall.SyntheticOp)
 
-	second, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: id}, func(context.Context) (AnyResult, error) {
+	second, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: id}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(id, 2).(Result[Int]).ResultWithCall(secondFrame), nil
 	})
 	assert.NilError(t, err)

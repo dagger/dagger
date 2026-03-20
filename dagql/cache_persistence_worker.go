@@ -154,7 +154,6 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultID:          resultID,
 			frame:             res.loadResultCall().clone(),
 			self:              payload.self,
-			objType:           payload.objType,
 			hasValue:          payload.hasValue,
 			persistedEnvelope: payload.persistedEnvelope,
 			outputEffectIDs:   slices.Clone(res.outputEffectIDs),
@@ -342,25 +341,13 @@ func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	}
 	shared := &sharedResult{
 		self:     snapshot.self,
-		objType:  snapshot.objType,
 		hasValue: snapshot.hasValue,
 		id:       snapshot.resultID,
 	}
 	shared.storeResultCall(snapshot.frame)
-	typedRes := Result[Typed]{
-		shared: shared,
-	}
-	var anyRes AnyResult = typedRes
-	if snapshot.objType != nil {
-		objRes, err := snapshot.objType.New(typedRes)
-		if err != nil {
-			return PersistedResultEnvelope{}, fmt.Errorf("reconstruct object result: %w", err)
-		}
-		anyRes = objRes
-	}
 	persistCtx := context.WithoutCancel(ctx)
 	persistCtx = ContextWithCall(persistCtx, snapshot.frame)
-	return DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, anyRes)
+	return DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, Result[Typed]{shared: shared})
 }
 
 func (c *cache) persistedSnapshotLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {

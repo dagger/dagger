@@ -140,6 +140,11 @@ func (d DynamicArrayOutput) SetField(val reflect.Value) error {
 }
 
 type DynamicResultArrayOutput struct {
+	// TODO: Implement HasOwnedResults here so list-valued results retain any
+	// attached child results they contain. Today explicit owned-result retention
+	// covers objects like ModuleObject/Directory/File/Container, but a function
+	// result that is just a DynamicResultArrayOutput of attached results does not
+	// recurse through this wrapper to add parent->child cache deps.
 	Elem   Typed
 	Values []AnyResult
 }

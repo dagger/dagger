@@ -33,7 +33,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	cA := cacheA.(*cache)
 
 	key := cacheTestIntCall("persist-import-roundtrip")
-	resA, err := cA.GetOrInitCall(ctx, &CallRequest{
+	resA, err := cA.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -52,7 +52,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, &CallRequest{
+	resB, err := cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -151,7 +151,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	}()
 
 	initCalls := 0
-	_, err = cB.GetOrInitCall(ctx, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	_, err = cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, errors.New("unexpected initializer call")
 	})
@@ -171,7 +171,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	cA := cacheA.(*cache)
 
 	key := cacheTestIntCall("persist-import-unclean-wipe")
-	resA, err := cA.GetOrInitCall(ctx, &CallRequest{
+	resA, err := cA.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -194,7 +194,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, &CallRequest{
+	resB, err := cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -217,7 +217,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	cA := cacheA.(*cache)
 
 	key := cacheTestIntCall("persist-import-corrupt-wipe")
-	resA, err := cA.GetOrInitCall(ctx, &CallRequest{
+	resA, err := cA.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -242,7 +242,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, &CallRequest{
+	resB, err := cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {

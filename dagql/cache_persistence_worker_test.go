@@ -23,7 +23,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	}()
 
 	key := cacheTestIntCall("persist-worker-retained")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -62,7 +62,7 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 	}()
 
 	key := cacheTestIntCall("persist-runtime-no-write")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -90,7 +90,7 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 	}()
 
 	key := cacheTestIntCall("persist-worker-pruned")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 99), nil
 	})
 	assert.NilError(t, err)
@@ -117,7 +117,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	}()
 
 	sourceKey := cacheTestIntCall("persist-worker-source")
-	sourceRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	sourceRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    sourceKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -131,7 +131,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 		Field:    "persist-worker-root",
 		Receiver: &ResultCallRef{ResultID: uint64(sourceRes.cacheSharedResult().id)},
 	}
-	rootRes, err := c.GetOrInitCall(ctx, &CallRequest{
+	rootRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall:    rootKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -177,7 +177,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 	}()
 
 	key := cacheTestIntCall("persist-snapshot-self-contained")
-	res, err := c.GetOrInitCall(ctx, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 42), nil

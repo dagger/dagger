@@ -141,7 +141,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 		},
 	}
 
-	first, err := cacheIface.GetOrInitCall(ctx, req, func(callCtx context.Context) (AnyResult, error) {
+	first, err := cacheIface.GetOrInitCall(ctx, srv, req, func(callCtx context.Context) (AnyResult, error) {
 		return NewObjectResultForCurrentCall(callCtx, srv, &persistCodecObj{Name: "x"})
 	})
 	assert.NilError(t, err)
@@ -150,7 +150,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	assert.Assert(t, ok)
 	assert.Assert(t, !first.HitCache())
 
-	second, err := cacheIface.GetOrInitCall(ctx, req, func(context.Context) (AnyResult, error) {
+	second, err := cacheIface.GetOrInitCall(ctx, srv, req, func(context.Context) (AnyResult, error) {
 		return nil, errors.New("unexpected initializer call")
 	})
 	assert.NilError(t, err)

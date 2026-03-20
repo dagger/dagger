@@ -153,6 +153,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			res := &sharedResult{
 				cache:                c,
 				id:                   resultID,
+				isObject:             env.Kind == persistedResultKindObject,
 				safeToPersistCache:   row.SafeToPersistCache,
 				depOfPersistedResult: row.DepOfPersistedResult,
 				outputEffectIDs:      outputEffects,
@@ -376,9 +377,6 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			if !res.hasValue && res.persistedEnvelope != nil {
 				res.self = decoded.Unwrap()
 				res.hasValue = true
-				if objRes, ok := decoded.(AnyObjectResult); ok {
-					res.objType = objRes.ObjectType()
-				}
 				setTypedPersistedResultID(res.self, resultID)
 				res.persistedEnvelope = nil
 			}
@@ -406,7 +404,21 @@ func normalizeImportedDigest(raw string) digest.Digest {
 	return digest.Digest(raw)
 }
 
-func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, hit AnyResult) (AnyResult, error) {
+func resolverServer(resolver TypeResolver) *Server {
+	if resolver == nil {
+		return nil
+	}
+	dag, ok := resolver.(*Server)
+	if !ok {
+		return nil
+	}
+	return dag
+}
+
+func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
+	if resolver == nil {
+		return nil, fmt.Errorf("ensure persisted hit value loaded: type resolver is nil")
+	}
 	if hit == nil {
 		return nil, nil
 	}
@@ -417,17 +429,10 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 
 	state := res.loadPayloadState()
 	if state.hasValue || state.persistedEnvelope == nil {
-		if state.objType == nil {
+		if !state.isObject {
 			return hit, nil
 		}
-		if _, ok := hit.(AnyObjectResult); ok {
-			return hit, nil
-		}
-		ret := Result[Typed]{
-			shared:   res,
-			hitCache: hit.HitCache(),
-		}
-		objRes, err := state.objType.New(ret)
+		objRes, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
 		if err != nil {
 			return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
 		}
@@ -439,6 +444,10 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 		return hit, nil
 	}
 	decodeCtx := ContextWithCall(ctx, call)
+	dag := resolverServer(resolver)
+	if dag == nil {
+		return nil, fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", resolver)
+	}
 	decoded, err := DefaultPersistedSelfCodec.DecodeResult(decodeCtx, dag, uint64(res.id), call, *state.persistedEnvelope)
 	if err != nil {
 		c.tracePersistedPayloadDecodeFailed(ctx, res, state.persistedEnvelope, err)
@@ -449,26 +458,10 @@ func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, dag *Server, 
 	if !res.hasValue && res.persistedEnvelope != nil {
 		res.self = decoded.Unwrap()
 		res.hasValue = true
-		if objRes, ok := decoded.(AnyObjectResult); ok {
-			res.objType = objRes.ObjectType()
-		}
 		setTypedPersistedResultID(res.self, res.id)
 		res.persistedEnvelope = nil
 		c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 	}
-	objType := res.objType
 	res.payloadMu.Unlock()
-
-	ret := Result[Typed]{
-		shared:   res,
-		hitCache: hit.HitCache(),
-	}
-	if objType == nil {
-		return ret, nil
-	}
-	objRes, err := objType.New(ret)
-	if err != nil {
-		return nil, fmt.Errorf("reconstruct object result from persisted hit payload: %w", err)
-	}
-	return objRes, nil
+	return wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
 }

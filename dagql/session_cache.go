@@ -114,10 +114,14 @@ func (c *SessionCache) traceCache() *cache {
 
 func (c *SessionCache) GetOrInitCall(
 	ctx context.Context,
+	resolver TypeResolver,
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 	opts ...CacheCallOpt,
 ) (res AnyResult, err error) {
+	if resolver == nil {
+		return nil, errors.New("session get or init call: type resolver is nil")
+	}
 	// do a quick check to see if the cache is closed; we do another check
 	// at the end in case the cache is closed while we're waiting for the call
 	c.mu.Lock()
@@ -155,7 +159,7 @@ func (c *SessionCache) GetOrInitCall(
 	callKey := callDigest.String()
 	switch o.TelemetryPolicy {
 	case TelemetryPolicyCacheHitOnly:
-		res, err = c.cache.GetOrInitCall(ctx, req, fn)
+		res, err = c.cache.GetOrInitCall(ctx, resolver, req, fn)
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +194,7 @@ func (c *SessionCache) GetOrInitCall(
 			ctx = telemetryCtx
 		}
 
-		res, err = c.cache.GetOrInitCall(ctx, req, fn)
+		res, err = c.cache.GetOrInitCall(ctx, resolver, req, fn)
 		if err != nil {
 			return nil, err
 		}
@@ -260,9 +264,13 @@ func (c *SessionCache) RecipeDigestForCall(call *ResultCall) (digest.Digest, err
 
 func (c *SessionCache) LookupCacheForDigests(
 	ctx context.Context,
+	resolver TypeResolver,
 	recipeDigest digest.Digest,
 	extraDigests []call.ExtraDigest,
 ) (res AnyResult, hit bool, err error) {
+	if resolver == nil {
+		return nil, false, errors.New("session lookup cache for digests: type resolver is nil")
+	}
 	c.mu.Lock()
 	if c.isClosed {
 		c.mu.Unlock()
@@ -279,7 +287,7 @@ func (c *SessionCache) LookupCacheForDigests(
 		c.mu.Unlock()
 	}()
 
-	res, hit, err = c.cache.LookupCacheForDigests(ctx, recipeDigest, extraDigests)
+	res, hit, err = c.cache.LookupCacheForDigests(ctx, resolver, recipeDigest, extraDigests)
 	if err != nil || !hit {
 		return res, hit, err
 	}
@@ -288,7 +296,7 @@ func (c *SessionCache) LookupCacheForDigests(
 		if baseErr != nil {
 			return nil, false, baseErr
 		}
-		res, err = base.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), res)
+		res, err = base.ensurePersistedHitValueLoaded(ctx, resolver, res)
 		if err != nil {
 			return nil, false, err
 		}
@@ -323,8 +331,12 @@ func (c *SessionCache) LookupCacheForDigests(
 
 func (c *SessionCache) lookupCallRequest(
 	ctx context.Context,
+	resolver TypeResolver,
 	req *CallRequest,
 ) (res AnyResult, hit bool, err error) {
+	if resolver == nil {
+		return nil, false, errors.New("session lookup call request: type resolver is nil")
+	}
 	c.mu.Lock()
 	if c.isClosed {
 		c.mu.Unlock()
@@ -346,7 +358,7 @@ func (c *SessionCache) lookupCallRequest(
 		return nil, false, err
 	}
 
-	res, hit, err = base.lookupCallRequest(ctx, req)
+	res, hit, err = base.lookupCallRequest(ctx, resolver, req)
 	if err != nil || !hit {
 		return res, hit, err
 	}
@@ -380,7 +392,7 @@ func (c *SessionCache) lookupCallRequest(
 
 func (c *SessionCache) TeachCallEquivalentToResult(ctx context.Context, call *ResultCall, res AnyResult) error {
 	if res != nil {
-		attached, err := c.AttachResult(ctx, res)
+		attached, err := c.AttachResult(ctx, CurrentDagqlServer(ctx), res)
 		if err != nil {
 			return err
 		}
@@ -393,7 +405,10 @@ func (c *SessionCache) TeachContentDigest(ctx context.Context, res AnyResult, co
 	return c.cache.TeachContentDigest(ctx, res, contentDigest)
 }
 
-func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
+func (c *SessionCache) AttachResult(ctx context.Context, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+	if resolver == nil {
+		return nil, errors.New("session attach result: type resolver is nil")
+	}
 	c.mu.Lock()
 	if c.isClosed {
 		c.mu.Unlock()
@@ -410,7 +425,7 @@ func (c *SessionCache) AttachResult(ctx context.Context, res AnyResult) (AnyResu
 		c.mu.Unlock()
 	}()
 
-	attached, err := c.cache.AttachResult(ctx, res)
+	attached, err := c.cache.AttachResult(ctx, resolver, res)
 	if err != nil {
 		return nil, err
 	}

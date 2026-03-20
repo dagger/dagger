@@ -190,7 +190,7 @@ func ResourceTransferPostCall(
 				// cache results such that a function call return value result inherently results in any referenced
 				// secrets also staying in cache.
 				secretDigest := SecretDigest(secret.inst)
-				_, err = destDag.Cache.AttachResult(ctx, secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall))
+				_, err = destDag.Cache.AttachResult(ctx, destDag, secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall))
 				if err != nil {
 					return fmt.Errorf("failed to cache secret: %w", err)
 				}

@@ -32,6 +32,7 @@ type Cache interface {
 	// initializing it with fn when needed.
 	GetOrInitCall(
 		context.Context,
+		TypeResolver,
 		*CallRequest,
 		func(context.Context) (AnyResult, error),
 	) (AnyResult, error)
@@ -40,6 +41,7 @@ type Cache interface {
 	// check and returns an already-cached result when one exists.
 	LookupCacheForDigests(
 		context.Context,
+		TypeResolver,
 		digest.Digest,
 		[]call.ExtraDigest,
 	) (AnyResult, bool, error)
@@ -88,7 +90,7 @@ type Cache interface {
 
 	// AttachResult promotes a detached result into the cache so subsequent
 	// selections can refer to it by stable result handle.
-	AttachResult(context.Context, AnyResult) (AnyResult, error)
+	AttachResult(context.Context, TypeResolver, AnyResult) (AnyResult, error)
 
 	// AddExplicitDependency records that parent must retain dep until parent is
 	// released, without changing either result's structural call identity.
@@ -468,8 +470,8 @@ type sharedResult struct {
 	id sharedResultID
 
 	// Immutable payload shared by all per-call Result values.
-	self    Typed
-	objType ObjectType
+	self     Typed
+	isObject bool
 	// resultCall is the non-lossy semantic/provenance call-node metadata
 	// for this materialized result. It is used for canonical recipe
 	// reconstruction and telemetry hierarchy reconstruction, not execution or
@@ -525,7 +527,7 @@ type sharedResult struct {
 
 type sharedResultPayloadState struct {
 	self               Typed
-	objType            ObjectType
+	isObject           bool
 	hasValue           bool
 	persistedEnvelope  *PersistedResultEnvelope
 	createdAtUnixNano  int64
@@ -558,7 +560,7 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	res.payloadMu.RLock()
 	state := sharedResultPayloadState{
 		self:               res.self,
-		objType:            res.objType,
+		isObject:           res.isObject,
 		hasValue:           res.hasValue,
 		persistedEnvelope:  res.persistedEnvelope,
 		createdAtUnixNano:  res.createdAtUnixNano,
@@ -566,6 +568,76 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 	}
 	res.payloadMu.RUnlock()
 	return state
+}
+
+func resultIsObject(val AnyResult, resolver TypeResolver) (bool, error) {
+	if resolver == nil {
+		return false, errors.New("type resolver is nil")
+	}
+	if val == nil {
+		return false, nil
+	}
+	if _, ok := val.(AnyObjectResult); ok {
+		return true, nil
+	}
+	typ := val.Type()
+	if typ == nil || typ.Elem != nil || typ.Name() == "" {
+		return false, nil
+	}
+	objType, ok := resolver.ObjectType(typ.Name())
+	if !ok {
+		return false, nil
+	}
+	if _, err := objType.New(val); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
+func sharedResultObjectTypeName(res *sharedResult, state sharedResultPayloadState) string {
+	if res == nil || !state.isObject {
+		return ""
+	}
+	if frame := res.loadResultCall(); frame != nil && frame.Type != nil && frame.Type.NamedType != "" {
+		return frame.Type.NamedType
+	}
+	if state.persistedEnvelope != nil && state.persistedEnvelope.TypeName != "" {
+		return state.persistedEnvelope.TypeName
+	}
+	if state.self != nil && state.self.Type() != nil {
+		return state.self.Type().Name()
+	}
+	return ""
+}
+
+func wrapSharedResultWithResolver(res *sharedResult, hitCache bool, resolver TypeResolver) (AnyResult, error) {
+	ret := Result[Typed]{
+		shared:   res,
+		hitCache: hitCache,
+	}
+	if res == nil {
+		return ret, nil
+	}
+	state := res.loadPayloadState()
+	if !state.isObject {
+		return ret, nil
+	}
+	typeName := sharedResultObjectTypeName(res, state)
+	if typeName == "" {
+		return nil, fmt.Errorf("reconstruct object result: missing type name")
+	}
+	if resolver == nil {
+		return nil, fmt.Errorf("reconstruct object result %q: missing type resolver", typeName)
+	}
+	objType, ok := resolver.ObjectType(typeName)
+	if !ok {
+		return nil, fmt.Errorf("reconstruct object result %q: unknown object type", typeName)
+	}
+	objRes, err := objType.New(ret)
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct object result %q: %w", typeName, err)
+	}
+	return objRes, nil
 }
 
 // ongoingCall tracks one in-flight GetOrInitCall execution and points at the
@@ -706,7 +778,10 @@ func (c *cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, l
 	return nil
 }
 
-func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, error) {
+func (c *cache) AttachResult(ctx context.Context, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+	if resolver == nil {
+		return nil, errors.New("attach result: type resolver is nil")
+	}
 	if res == nil {
 		return nil, nil
 	}
@@ -727,7 +802,7 @@ func (c *cache) AttachResult(ctx context.Context, res AnyResult) (AnyResult, err
 	}
 	shared.storeResultCall(req.ResultCall)
 	req.ResultCall.bindCache(c)
-	attached, err := c.GetOrInitCall(ctx, req, ValueFunc(res))
+	attached, err := c.GetOrInitCall(ctx, resolver, req, ValueFunc(res))
 	if err != nil {
 		return nil, fmt.Errorf("attach owned result: %w", err)
 	}
@@ -1085,12 +1160,12 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 			shared.loadResultCall().bindCache(r.shared.cache)
 		}
 	}
-	if res, err := srv.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
+	if res, err := srv.Cache.GetOrInitCall(callCtx, srv, req, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("cache miss")
 	}); err == nil {
 		return res, nil
 	}
-	return srv.Cache.GetOrInitCall(callCtx, req, func(context.Context) (AnyResult, error) {
+	return srv.Cache.GetOrInitCall(callCtx, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
 	})
 }
@@ -1103,7 +1178,7 @@ func (r Result[T]) withDetachedPayload() Result[T] {
 		state := r.shared.loadPayloadState()
 		r.shared = &sharedResult{
 			self:                   state.self,
-			objType:                state.objType,
+			isObject:               state.isObject,
 			resultCall:             r.shared.loadResultCall(),
 			hasValue:               state.hasValue,
 			postCall:               r.shared.postCall,
@@ -1730,9 +1805,13 @@ func (c *cache) activeDependencyClosureLocked() map[sharedResultID]struct{} {
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *cache) GetOrInitCall(
 	ctx context.Context,
+	resolver TypeResolver,
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 ) (AnyResult, error) {
+	if resolver == nil {
+		return nil, errors.New("get or init call: type resolver is nil")
+	}
 	if req == nil || req.ResultCall == nil {
 		return nil, fmt.Errorf("call request is nil")
 	}
@@ -1766,18 +1845,18 @@ func (c *cache) GetOrInitCall(
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			detached.onRelease = onReleaser.OnRelease
 		}
-		if obj, ok := val.(AnyObjectResult); ok {
-			detached.objType = obj.ObjectType()
+		detached.isObject, err = resultIsObject(val, resolver)
+		if err != nil {
+			return nil, fmt.Errorf("classify do-not-cache result: %w", err)
 		}
-		perCall := Result[Typed]{shared: detached}
-		if detached.objType != nil {
-			normalized, err := detached.objType.New(perCall)
+		if detached.isObject {
+			normalized, err := wrapSharedResultWithResolver(detached, false, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("normalize do-not-cache object result: %w", err)
 			}
 			return normalized, nil
 		}
-		return perCall, nil
+		return Result[Typed]{shared: detached}, nil
 	}
 
 	callDigest, err := req.RecipeDigest()
@@ -1812,7 +1891,7 @@ func (c *cache) GetOrInitCall(
 		return nil, err
 	}
 	if hit {
-		return c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
+		return c.ensurePersistedHitValueLoaded(ctx, resolver, hitRes)
 	}
 
 	c.callsMu.Lock()
@@ -1828,7 +1907,7 @@ func (c *cache) GetOrInitCall(
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
-			return c.wait(ctx, oc, req)
+			return c.wait(ctx, resolver, oc, req)
 		}
 	}
 
@@ -1862,13 +1941,17 @@ func (c *cache) GetOrInitCall(
 	}()
 
 	c.callsMu.Unlock()
-	return c.wait(ctx, oc, req)
+	return c.wait(ctx, resolver, oc, req)
 }
 
 func (c *cache) lookupCallRequest(
 	ctx context.Context,
+	resolver TypeResolver,
 	req *CallRequest,
 ) (AnyResult, bool, error) {
+	if resolver == nil {
+		return nil, false, errors.New("lookup call request: type resolver is nil")
+	}
 	if req == nil || req.ResultCall == nil {
 		return nil, false, fmt.Errorf("call request is nil")
 	}
@@ -1901,7 +1984,7 @@ func (c *cache) lookupCallRequest(
 		return nil, false, nil
 	}
 
-	loadedHit, loadErr := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), hitRes)
+	loadedHit, loadErr := c.ensurePersistedHitValueLoaded(ctx, resolver, hitRes)
 	if loadErr != nil {
 		return nil, false, loadErr
 	}
@@ -1910,9 +1993,13 @@ func (c *cache) lookupCallRequest(
 
 func (c *cache) LookupCacheForDigests(
 	ctx context.Context,
+	resolver TypeResolver,
 	recipeDigest digest.Digest,
 	extraDigests []call.ExtraDigest,
 ) (AnyResult, bool, error) {
+	if resolver == nil {
+		return nil, false, errors.New("lookup cache for digests: type resolver is nil")
+	}
 	if recipeDigest == "" {
 		return nil, false, nil
 	}
@@ -1942,7 +2029,7 @@ func (c *cache) LookupCacheForDigests(
 	}
 	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.hitTerm, match.termDigest)
 	c.egraphMu.Unlock()
-	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, CurrentDagqlServer(ctx), retRes)
+	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1951,6 +2038,7 @@ func (c *cache) LookupCacheForDigests(
 
 func (c *cache) wait(
 	ctx context.Context,
+	resolver TypeResolver,
 	oc *ongoingCall,
 	req *CallRequest,
 ) (AnyResult, error) {
@@ -1981,7 +2069,7 @@ func (c *cache) wait(
 	}
 
 	oc.initCompletedResultOnce.Do(func() {
-		oc.initCompletedResultErr = c.initCompletedResult(ctx, oc, req, sessionID)
+		oc.initCompletedResultErr = c.initCompletedResult(ctx, resolver, oc, req, sessionID)
 	})
 	if oc.initCompletedResultErr != nil {
 		return nil, oc.initCompletedResultErr
@@ -1999,21 +2087,17 @@ func (c *cache) wait(
 		hitCache: false,
 	}
 
-	state := retRes.shared.loadPayloadState()
-	if !state.hasValue {
+	if !retRes.shared.loadPayloadState().hasValue {
 		return retRes, nil
 	}
-	if state.objType == nil {
-		return retRes, nil
+	retResAny, err := wrapSharedResultWithResolver(oc.res, false, resolver)
+	if err != nil {
+		return nil, fmt.Errorf("wait: reconstruct result: %w", err)
 	}
-	retObjRes, constructErr := state.objType.New(retRes)
-	if constructErr != nil {
-		return retRes, nil
-	}
-	return retObjRes, nil
+	return retResAny, nil
 }
 
-func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *CallRequest, sessionID string) error {
+func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
@@ -2055,13 +2139,11 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 			if onReleaser, ok := UnwrapAs[OnReleaser](oc.val); ok {
 				oc.res.onRelease = onReleaser.OnRelease
 			}
-			if obj, ok := oc.val.(AnyObjectResult); ok {
-				oc.res.objType = obj.ObjectType()
-			} else if srv := CurrentDagqlServer(ctx); srv != nil && oc.val.Type() != nil && oc.val.Type().Elem == nil {
-				if objType, ok := srv.ObjectType(oc.val.Type().Name()); ok {
-					oc.res.objType = objType
-				}
+			isObject, err := resultIsObject(oc.val, resolver)
+			if err != nil {
+				return fmt.Errorf("classify completed result: %w", err)
 			}
+			oc.res.isObject = isObject
 		}
 	}
 	requestForIndex := req
@@ -2312,14 +2394,14 @@ func (c *cache) initCompletedResult(ctx context.Context, oc *ongoingCall, req *C
 	}
 	c.egraphMu.Unlock()
 
-	if err := c.attachOwnedResults(ctx, oc.res, oc.val); err != nil {
+	if err := c.attachOwnedResults(ctx, resolver, oc.res, oc.val); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, val AnyResult) (rerr error) {
+func (c *cache) attachOwnedResults(ctx context.Context, resolver TypeResolver, parent *sharedResult, val AnyResult) (rerr error) {
 	if parent == nil || val == nil {
 		return nil
 	}
@@ -2330,8 +2412,8 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 	self := Result[Typed]{shared: parent}
 	var attachedSelf AnyResult = self
 	parentState := parent.loadPayloadState()
-	if parentState.hasValue && parentState.objType != nil {
-		objSelf, err := parentState.objType.New(self)
+	if parentState.hasValue && parentState.isObject {
+		objSelf, err := wrapSharedResultWithResolver(parent, false, resolver)
 		if err != nil {
 			return fmt.Errorf("attach owned results: reconstruct attached self: %w", err)
 		}
@@ -2343,7 +2425,7 @@ func (c *cache) attachOwnedResults(ctx context.Context, parent *sharedResult, va
 		if shared := child.cacheSharedResult(); shared == nil || shared.id == 0 {
 			wasDetached = true
 		}
-		attached, err := c.AttachResult(ctx, child)
+		attached, err := c.AttachResult(ctx, resolver, child)
 		if err != nil {
 			return nil, err
 		}

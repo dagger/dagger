@@ -101,7 +101,7 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	id := call.New().Append(dagql.String("").Type(), "persistedModuleObjectValue")
 	initial, err := dagql.NewResultForID(dagql.String("hello"), id)
 	assert.NilError(t, err)
-	res, err := sc.GetOrInitCall(ctx, dagql.CacheKey{ID: id}, dagql.ValueFunc(initial))
+	res, err := sc.GetOrInitCall(ctx, nil, dagql.CacheKey{ID: id}, dagql.ValueFunc(initial))
 	assert.NilError(t, err)
 	resultID, err := sc.PersistedResultID(res)
 	assert.NilError(t, err)
@@ -305,7 +305,7 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 		},
 	}, childID)
 	assert.NilError(t, err)
-	child, err := sc.GetOrInitCall(ctx, dagql.CacheKey{ID: childID}, dagql.ValueFunc(childInitial))
+	child, err := sc.GetOrInitCall(ctx, nil, dagql.CacheKey{ID: childID}, dagql.ValueFunc(childInitial))
 	assert.NilError(t, err)
 
 	obj := &ModuleObject{

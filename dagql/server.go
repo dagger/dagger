@@ -795,7 +795,7 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 
 func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	callCtx := srvToContext(state.ctx, state.srv)
-	if hit, ok, err := state.cache.LookupCacheForDigests(callCtx, id.Digest(), id.ExtraDigests()); err != nil {
+	if hit, ok, err := state.cache.LookupCacheForDigests(callCtx, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
 		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
@@ -858,7 +858,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
 	req := &CallRequest{ResultCall: frame}
-	if hit, ok, err := state.cache.lookupCallRequest(callCtx, req); err != nil {
+	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.srv, req); err != nil {
 		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil

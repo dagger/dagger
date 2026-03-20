@@ -872,7 +872,7 @@ func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCa
 
 	shared := res.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
-		attached, err := c.AttachResult(ctx, res)
+		attached, err := c.AttachResult(ctx, CurrentDagqlServer(ctx), res)
 		if err != nil {
 			return fmt.Errorf("teach call equivalence: attach result: %w", err)
 		}

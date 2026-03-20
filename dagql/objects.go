@@ -90,6 +90,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
 							Type:        Boolean(false),
 							Default:     Boolean(false),
+							Internal:    true,
 						},
 					),
 				},
@@ -540,7 +541,7 @@ func (r ObjectResult[T]) call(
 		}))
 	}
 
-	res, err := s.Cache.GetOrInitCall(ctx, req, func(ctx context.Context) (AnyResult, error) {
+	res, err := s.Cache.GetOrInitCall(ctx, s, req, func(ctx context.Context) (AnyResult, error) {
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err

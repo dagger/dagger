@@ -59,6 +59,13 @@ type ObjectType interface {
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
 }
 
+// TypeResolver is the minimal schema lookup surface needed by dagql cache and
+// persisted-payload reconstruction.
+type TypeResolver interface {
+	ObjectType(name string) (ObjectType, bool)
+	ScalarType(name string) (ScalarType, bool)
+}
+
 type IDType interface {
 	Input
 	IDable

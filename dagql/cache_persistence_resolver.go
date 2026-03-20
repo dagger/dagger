@@ -107,19 +107,8 @@ func (c *cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, 
 		return nil, err
 	}
 	obj, ok := res.(AnyObjectResult)
-	if ok {
-		return obj, nil
-	}
-	if dag == nil || res.Type() == nil || res.Type().Elem != nil {
-		return nil, fmt.Errorf("load persisted object by result ID %d: result is %T", resultID, res)
-	}
-	objType, ok := dag.ObjectType(res.Type().Name())
 	if !ok {
 		return nil, fmt.Errorf("load persisted object by result ID %d: result is %T", resultID, res)
-	}
-	obj, err = objType.New(res)
-	if err != nil {
-		return nil, fmt.Errorf("load persisted object by result ID %d: wrap result as object: %w", resultID, err)
 	}
 	return obj, nil
 }
@@ -162,19 +151,9 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult)
 		c.egraphMu.Unlock()
 		return nil, fmt.Errorf("teach persisted shared result identity for result %d: %w", res.id, err)
 	}
-	objType := res.loadPayloadState().objType
 	c.egraphMu.Unlock()
-
-	retRes := Result[Typed]{
+	return Result[Typed]{
 		shared:   res,
 		hitCache: true,
-	}
-	if objType == nil {
-		return retRes, nil
-	}
-	objRes, err := objType.New(retRes)
-	if err != nil {
-		return nil, fmt.Errorf("wrap persisted shared result %d: %w", res.id, err)
-	}
-	return objRes, nil
+	}, nil
 }

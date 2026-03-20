@@ -255,7 +255,6 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 			)
 		}
 	}
-
 	return dag, nil
 }
 

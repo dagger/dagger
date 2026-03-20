@@ -720,11 +720,9 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		})
 
 		state := res.loadPayloadState()
-		typeName := ""
-		if state.self != nil && state.self.Type() != nil {
+		typeName := sharedResultObjectTypeName(res, state)
+		if typeName == "" && state.self != nil && state.self.Type() != nil {
 			typeName = state.self.Type().Name()
-		} else if state.objType != nil {
-			typeName = state.objType.Typed().Type().Name()
 		}
 
 		payloadState := "uninitialized"
@@ -973,11 +971,9 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			})
 
 			state := res.loadPayloadState()
-			typeName := ""
-			if state.self != nil && state.self.Type() != nil {
+			typeName := sharedResultObjectTypeName(res, state)
+			if typeName == "" && state.self != nil && state.self.Type() != nil {
 				typeName = state.self.Type().Name()
-			} else if state.objType != nil {
-				typeName = state.objType.Typed().Type().Name()
 			}
 
 			payloadState := "uninitialized"
@@ -1246,10 +1242,10 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					entry.ResultDescription = call.res.description
 					entry.ResultRecordType = call.res.recordType
 					state := call.res.loadPayloadState()
-					if state.self != nil && state.self.Type() != nil {
+					if typeName := sharedResultObjectTypeName(call.res, state); typeName != "" {
+						entry.ResultTypeName = typeName
+					} else if state.self != nil && state.self.Type() != nil {
 						entry.ResultTypeName = state.self.Type().Name()
-					} else if state.objType != nil {
-						entry.ResultTypeName = state.objType.Typed().Type().Name()
 					}
 				}
 				if err := writeElem(entry); err != nil {
