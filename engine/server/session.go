@@ -471,6 +471,12 @@ type ClientInitOpts struct {
 	// that this client should have access to due to being set in the parent
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
+
+	// SessionProxyClientID, when set, causes the new client's buildkit
+	// session lookups to fall back to the specified client's session.
+	// Used by in-process SDKs (e.g. Dang) that don't establish their
+	// own gRPC session but need filesync access.
+	SessionProxyClientID string
 }
 
 // requires that client.stateMu is held
@@ -512,10 +518,25 @@ func (srv *Server) initializeDaggerClient(
 	}
 	failureCleanups.Add("close llb solver", client.llbSolver.Close)
 
+	sessionProxyClientID := opts.SessionProxyClientID
 	var callerG singleflight.Group[string, bksession.Caller]
 	client.getClientCaller = func(id string) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
+
+		// When a session proxy is configured (e.g. Dang SDK which runs
+		// in-process and never establishes a gRPC session), try the
+		// requested ID first without waiting, then fall back to the
+		// main client's session.
+		if sessionProxyClientID != "" {
+			caller, err := srv.bkSessionManager.Get(ctx, id, true)
+			if err == nil && caller != nil {
+				return caller, nil
+			}
+			mainID := client.daggerSession.mainClientCallerID
+			return srv.bkSessionManager.Get(ctx, mainID, false)
+		}
+
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
 			return srv.bkSessionManager.Get(ctx, id, false)
 		})
@@ -1046,11 +1067,12 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			EagerRuntime:         eagerRuntime,
 			Workspace:            workspaceRef,
 		},
-		CallID:              execMD.CallID,
-		CallerClientID:      execMD.CallerClientID,
-		EncodedModuleID:     execMD.EncodedModuleID,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
-		ParentIDs:           execMD.ParentIDs,
+		CallID:               execMD.CallID,
+		CallerClientID:       execMD.CallerClientID,
+		EncodedModuleID:      execMD.EncodedModuleID,
+		EncodedFunctionCall:  execMD.EncodedFunctionCall,
+		ParentIDs:            execMD.ParentIDs,
+		SessionProxyClientID: execMD.SessionProxyClientID,
 	}).ServeHTTP(w, r)
 }
 
