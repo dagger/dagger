@@ -144,6 +144,15 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
+	// Apply the cause span context so that child spans (e.g. from
+	// in-process SDKs like Dang) are properly parented under the
+	// original dagql selection.  Without this, the buildkit solver's
+	// context lacks the original trace hierarchy and downstream
+	// telemetry (tool call log roll-ups) can't walk the span tree.
+	if op.causeCtx.IsValid() {
+		ctx = trace.ContextWithRemoteSpanContext(ctx, op.causeCtx)
+	}
+
 	server, err := op.server.Server(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
