@@ -367,7 +367,7 @@ type cache struct {
 	// conceptually a map of eqClassID->parent eqClassID
 	egraphParents []eqClassID
 
-	// the rand of the given eqClassID, slice is index by eqClassID so it's
+	// the rank of the given eqClassID, slice is index by eqClassID so it's
 	// conceptually a map of eqClassID->rank
 	egraphRanks []uint8
 

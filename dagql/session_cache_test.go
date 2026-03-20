@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/opencontainers/go-digest"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
@@ -106,6 +109,292 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		assert.ErrorContains(t, runErr, "session cache was closed during execution")
 		assert.Equal(t, 0, base.Size())
 	})
+}
+
+func TestSessionCachePersistableReturnedCacheBackedResultRetainsReceiverAcrossSessions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retains exact receiver across session close", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		base := cacheIface.(*cache)
+
+		ctxSessionA := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  "persistable-wrapper-client-a",
+			SessionID: "persistable-wrapper-session-a",
+		})
+		ctxSessionB := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+			ClientID:  "persistable-wrapper-client-b",
+			SessionID: "persistable-wrapper-session-b",
+		})
+
+		sc1 := NewSessionCache(base)
+
+		receiverCallA := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
+			Field: "persistable-wrapper-receiver",
+		}
+		receiverInitCallsA := 0
+		receiverResA, err := sc1.GetOrInitCall(ctxSessionA, noopTypeResolver{}, &CallRequest{
+			ResultCall:    receiverCallA,
+			IsPersistable: false,
+		}, func(context.Context) (AnyResult, error) {
+			receiverInitCallsA++
+			return cacheTestIntResult(receiverCallA, 41), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, receiverInitCallsA)
+
+		leafCall := cacheTestIntCall("persistable-wrapper-leaf")
+		leafInitCallsA := 0
+		leafResA, err := sc1.GetOrInitCall(ctxSessionA, noopTypeResolver{}, &CallRequest{
+			ResultCall:    leafCall,
+			IsPersistable: false,
+		}, func(context.Context) (AnyResult, error) {
+			leafInitCallsA++
+			return cacheTestIntResult(leafCall, 99), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, leafInitCallsA)
+
+		receiverSharedA := receiverResA.cacheSharedResult()
+		assert.Assert(t, receiverSharedA != nil)
+		receiverID := receiverSharedA.id
+
+		wrapperCallA := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
+			Field: "persistable-wrapper",
+			Receiver: &ResultCallRef{
+				ResultID: uint64(receiverID),
+			},
+		}
+		wrapperInitCallsA := 0
+		wrapperResA, err := sc1.GetOrInitCall(ctxSessionA, noopTypeResolver{}, &CallRequest{
+			ResultCall:    wrapperCallA,
+			IsPersistable: true,
+		}, func(context.Context) (AnyResult, error) {
+			wrapperInitCallsA++
+			return leafResA, nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 1, wrapperInitCallsA)
+		assert.Equal(t, leafResA.cacheSharedResult().id, wrapperResA.cacheSharedResult().id)
+
+		assert.NilError(t, sc1.ReleaseAndClose(ctxSessionA))
+		assert.Equal(t, 1, base.EntryStats().RetainedCalls)
+
+		base.egraphMu.RLock()
+		_, receiverStillPresent := base.resultsByID[receiverID]
+		base.egraphMu.RUnlock()
+		assert.Check(t, receiverStillPresent, "persistable returned shared result should retain its exact receiver after session close")
+
+		sc2 := NewSessionCache(base)
+		receiverCallB := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(Int(0).Type()),
+			Field: "persistable-wrapper-receiver",
+		}
+		receiverInitCallsB := 0
+		receiverResB, err := sc2.GetOrInitCall(ctxSessionB, noopTypeResolver{}, &CallRequest{
+			ResultCall:    receiverCallB,
+			IsPersistable: false,
+		}, func(context.Context) (AnyResult, error) {
+			receiverInitCallsB++
+			return cacheTestIntResult(receiverCallB, 123), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, receiverInitCallsB)
+		assert.Assert(t, receiverResB.HitCache())
+		assert.Equal(t, 41, cacheTestUnwrapInt(t, receiverResB))
+
+		assert.NilError(t, sc2.ReleaseAndClose(ctxSessionB))
+	})
+
+	t.Run("stable receiver eq class still allows downstream hit after recompute", func(t *testing.T) {
+		ctx := t.Context()
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		base := cacheIface.(*cache)
+
+		sharedEq := call.ExtraDigest{
+			Digest: digest.FromString("session-returned-cache-backed-shared"),
+			Label:  "eq-shared",
+		}
+		noiseA := call.ExtraDigest{
+			Digest: digest.FromString("session-returned-cache-backed-noise-a"),
+			Label:  "noise-a",
+		}
+		noiseB := call.ExtraDigest{
+			Digest: digest.FromString("session-returned-cache-backed-noise-b"),
+			Label:  "noise-b",
+		}
+
+		parentACall := cacheTestIntCall("session-returned-parent-a")
+		parentBCall := cacheTestIntCall("session-returned-parent-b")
+		parentAOutCall := cacheTestIntCall("session-returned-parent-a", sharedEq, noiseA)
+		parentBOutCall := cacheTestIntCall("session-returned-parent-b", sharedEq, noiseB)
+		leafCall := cacheTestIntCall("session-returned-leaf")
+
+		childReqFor := func(receiver AnyResult) *CallRequest {
+			return &CallRequest{
+				ResultCall: &ResultCall{
+					Kind:     ResultCallKindField,
+					Type:     NewResultCallType(Int(0).Type()),
+					Field:    "session-returned-child",
+					Receiver: &ResultCallRef{ResultID: uint64(receiver.cacheSharedResult().id)},
+				},
+				IsPersistable: true,
+			}
+		}
+
+		sc1 := NewSessionCache(base)
+
+		parentARes, err := sc1.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentACall}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(parentAOutCall, 11), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !parentARes.HitCache())
+
+		leafRes, err := sc1.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: leafCall}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(leafCall, 201), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !leafRes.HitCache())
+
+		childARes, err := sc1.GetOrInitCall(ctx, noopTypeResolver{}, childReqFor(parentARes), func(context.Context) (AnyResult, error) {
+			return leafRes, nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !childARes.HitCache())
+		assert.Assert(t, childARes.cacheSharedResult() == leafRes.cacheSharedResult())
+
+		parentAID := parentARes.cacheSharedResult().id
+		childSharedID := childARes.cacheSharedResult().id
+
+		assert.NilError(t, sc1.ReleaseAndClose(ctx))
+
+		base.egraphMu.RLock()
+		_, childStillPresent := base.resultsByID[childSharedID]
+		base.egraphMu.RUnlock()
+		assert.Check(t, childStillPresent, "persistable returned shared result should stay live after session close")
+		// NOTE: this variant is intentionally *not* asserting that parentA stays
+		// live. The point here is to test whether a recomputed equivalent receiver
+		// can still drive a downstream hit via the same eq-class, even if the
+		// original non-persistable receiver itself was dropped.
+		_ = parentAID
+
+		sc2 := NewSessionCache(base)
+
+		parentBRes, err := sc2.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: parentBCall}, func(context.Context) (AnyResult, error) {
+			return cacheTestIntResult(parentBOutCall, 12), nil
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, !parentBRes.HitCache())
+
+		childBInitCalls := 0
+		childBRes, err := sc2.GetOrInitCall(ctx, noopTypeResolver{}, childReqFor(parentBRes), func(context.Context) (AnyResult, error) {
+			childBInitCalls++
+			return cacheTestPlainResult(NewInt(999)), nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, 0, childBInitCalls)
+		assert.Assert(t, childBRes.HitCache())
+		assert.Equal(t, 201, cacheTestUnwrapInt(t, childBRes))
+
+		assert.NilError(t, sc2.ReleaseAndClose(ctx))
+	})
+}
+
+func TestSessionCachePersistableReturnedHandleIDRetainsReferencedObjectAcrossSessions(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+
+	ctxInner := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-id-inner-client",
+		SessionID: "persistable-id-inner-session",
+	})
+	ctxOuter := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-id-outer-client",
+		SessionID: "persistable-id-outer-session",
+	})
+	ctxReplay := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "persistable-id-replay-client",
+		SessionID: "persistable-id-replay-session",
+	})
+
+	srvInner := cacheTestObjectResolverServer(t, base, 1)
+	var innerObj ObjectResult[*cacheTestObject]
+	assert.NilError(t, srvInner.Select(ctxInner, srvInner.Root(), &innerObj, Selector{
+		Field: "obj",
+	}))
+	innerObjID, err := innerObj.ID()
+	assert.NilError(t, err)
+
+	outerCache := NewSessionCache(base)
+	returnedIDCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((ID[*cacheTestObject]{}).Type()),
+		Field: "persistable-returned-object-id",
+	}
+
+	outerInitCalls := 0
+	outerRes, err := outerCache.GetOrInitCall(ctxOuter, noopTypeResolver{}, &CallRequest{
+		ResultCall:    returnedIDCall,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		outerInitCalls++
+		return cacheTestDetachedResult(returnedIDCall, NewID[*cacheTestObject](innerObjID)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, outerInitCalls)
+
+	returnedID, ok := UnwrapAs[ID[*cacheTestObject]](outerRes)
+	assert.Assert(t, ok)
+	encodedReturnedID, err := returnedID.Encode()
+	assert.NilError(t, err)
+	encodedInnerID, err := innerObjID.Encode()
+	assert.NilError(t, err)
+	assert.Equal(t, encodedInnerID, encodedReturnedID)
+
+	assert.NilError(t, srvInner.Cache.ReleaseAndClose(ctxInner))
+	assert.NilError(t, outerCache.ReleaseAndClose(ctxOuter))
+
+	srvReplay := cacheTestObjectResolverServer(t, base, 1)
+	replayInitCalls := 0
+	replayRes, err := srvReplay.Cache.GetOrInitCall(ctxReplay, noopTypeResolver{}, &CallRequest{
+		ResultCall:    returnedIDCall,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		replayInitCalls++
+		return cacheTestDetachedResult(returnedIDCall, NewID[*cacheTestObject](innerObjID)), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 0, replayInitCalls)
+	assert.Assert(t, replayRes.HitCache())
+
+	replayID, ok := UnwrapAs[ID[*cacheTestObject]](replayRes)
+	assert.Assert(t, ok)
+
+	var loaded ObjectResult[*cacheTestObject]
+	assert.NilError(t, srvReplay.Select(ctxReplay, srvReplay.Root(), &loaded, Selector{
+		Field: "loadCacheTestObjectFromID",
+		Args: []NamedInput{
+			{
+				Name:  "id",
+				Value: replayID,
+			},
+		},
+	}))
+	assert.Equal(t, 0, loaded.Self().Value)
+
+	assert.NilError(t, srvReplay.Cache.ReleaseAndClose(ctxReplay))
 }
 
 func TestSessionCacheErrorThenSuccessIsCached(t *testing.T) {

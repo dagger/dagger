@@ -63,8 +63,10 @@ async function main() {
   // Idea: We should output a JSON schema of the module that can be transformed
   // into a Dagger module by the engine.
   await connection(async () => {
+    const outputFilePath = process.env.TYPEDEF_OUTPUT_FILE ?? "/module-id.json"
     const moduleID = await new Register(result).run()
-    process.stdout.write(JSON.stringify(moduleID))
+
+    await fs.promises.writeFile(outputFilePath, JSON.stringify(moduleID))
   })
 }
 

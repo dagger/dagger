@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsutils"
@@ -72,7 +70,8 @@ func (t *TypescriptSdk) ModuleTypes(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
-) (*dagger.Module, error) {
+	outputFilePath string,
+) (*dagger.Container, error) {
 	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
@@ -82,27 +81,13 @@ func (t *TypescriptSdk) ModuleTypes(
 	clientBindings := NewLibGenerator(t.SDKSourceDir, cfg.libGeneratorOpts()).
 		GenerateBindings(introspectionJSON, Bundle, ModSourceDirPath)
 
-	moduleIDJSON, err := NewIntrospector(t.SDKSourceDir).
+	return NewIntrospector(t.SDKSourceDir).
 		AsEntrypoint(
+			outputFilePath,
 			cfg.name,
 			modSource.ContextDirectory().Directory(cfg.subPath).Directory("src"),
 			clientBindings,
-		).
-		WithExec([]string{}, dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
-		}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute typescript module introspector: %w", err)
-	}
-
-	var modID dagger.ModuleID
-	if err := json.Unmarshal([]byte(strings.TrimSpace(moduleIDJSON)), &modID); err != nil {
-		return nil, fmt.Errorf("failed to decode module ID from introspector stdout: %w", err)
-	}
-
-	return dag.LoadModuleFromID(modID), nil
+		), nil
 }
 
 // Codegen implements the `Codegen` method from the SDK module interface.

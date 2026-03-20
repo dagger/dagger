@@ -187,7 +187,8 @@ type ModuleTypes interface {
 			  moduleTypes(
 			    modSource: ModuleSource!
 			    introspectionJSON: File!
-			  ): Module!
+				outputFilePath: String!
+			  ): Container!
 			```
 	*/
 	ModuleTypes(

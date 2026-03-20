@@ -1,7 +1,6 @@
 package dagql
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"sync"
@@ -1305,20 +1304,6 @@ func appendResultCallLiteralSelfRefs(
 	}
 	h = h.WithDelim()
 	return h, inputs, nil
-}
-
-func (c *cache) resultCallRefForInputIDLocked(ctx context.Context, inputID *call.ID) (*ResultCallRef, error) {
-	if inputID == nil {
-		return nil, nil
-	}
-	shared, err := c.resolveSharedResultForInputIDLocked(ctx, inputID)
-	if err != nil {
-		return nil, err
-	}
-	if shared == nil || shared.id == 0 {
-		return nil, fmt.Errorf("missing shared result")
-	}
-	return &ResultCallRef{ResultID: uint64(shared.id), shared: shared}, nil
 }
 
 func (c *cache) RecipeIDForCall(frame *ResultCall) (*call.ID, error) {

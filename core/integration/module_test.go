@@ -7945,6 +7945,44 @@ func (m *Test) Fn(
 	})
 }
 
+func (ModuleSuite) TestFunctionCacheControlReturnedContainer(ctx context.Context, t *testctx.T) {
+	const modSDK = "go"
+	const modSrc = `package main
+
+import (
+	"crypto/rand"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestAlwaysCacheContainer() *dagger.Container {
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"echo", rand.Text()})
+}
+`
+
+	c1 := connect(ctx, t)
+	modGen1 := modInit(t, c1, modSDK, modSrc)
+
+	out1, err := modGen1.
+		WithEnvVariable("CACHE_BUST", rand.Text()).
+		With(daggerCall("test-always-cache-container", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c1.Close())
+
+	c2 := connect(ctx, t)
+	modGen2 := modInit(t, c2, modSDK, modSrc)
+
+	out2, err := modGen2.
+		WithEnvVariable("CACHE_BUST", rand.Text()).
+		With(daggerCall("test-always-cache-container", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, out1, out2, "outputs should be equal since the function result is always cached")
+}
+
 func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
