@@ -35,7 +35,7 @@ func awsParameterStoreProvider(ctx context.Context, pathWithQuery string) ([]byt
 	// Parse the URI
 	parsed, err := url.Parse(pathWithQuery)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse aws:// URI: %w", err)
+		return nil, fmt.Errorf("failed to parse aws+ps:// URI: %w", err)
 	}
 
 	path := parsed.Path
@@ -71,7 +71,7 @@ func awsSecretManagerProvider(ctx context.Context, pathWithQuery string) ([]byte
 	// Parse the URI
 	parsed, err := url.Parse(pathWithQuery)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse aws:// URI: %w", err)
+		return nil, fmt.Errorf("failed to parse aws+sm:// URI: %w", err)
 	}
 
 	path := parsed.Path
