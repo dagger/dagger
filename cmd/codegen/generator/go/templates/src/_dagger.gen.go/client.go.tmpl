@@ -144,12 +144,6 @@ func serveModuleDependencies(ctx context.Context, client *Client) error {
 		return err
 	}
 
-	{{- if (HasLocalDependencies) }}
-	if !configExist {
-		return fmt.Errorf("dagger.json not found but is required to load local dependencies or the module itself")
-	}
-	{{- end }}
-
 	if configExist {
 		if err := modSrc.AsModule().Serve(ctx, ModuleServeOpts{
 			IncludeDependencies: true,

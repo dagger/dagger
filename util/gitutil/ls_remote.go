@@ -224,6 +224,9 @@ func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
 	}
 
 	if isHead && remote.Head != nil && remote.Head.SHA != "" {
+		if !IsCommitSHA(remote.Head.SHA) {
+			return nil, fmt.Errorf("invalid commit sha %q for %q", remote.Head.SHA, "HEAD")
+		}
 		match.SHA = remote.Head.SHA
 	}
 

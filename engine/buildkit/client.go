@@ -652,8 +652,11 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	case *git.GitConfigResponse_Config:
 		return result.Config.Entries, nil
 	case *git.GitConfigResponse_Error:
-		// if git is not found, ignore that error
-		if result.Error.Type == git.NOT_FOUND {
+		// Git config is best-effort: it provides url.*.insteadOf mappings
+		// but is not required for normal operation. Ignore errors from
+		// missing git or failed config retrieval (e.g. broken .git
+		// pointers inside containers with mounted worktrees).
+		if result.Error.Type == git.NOT_FOUND || result.Error.Type == git.CONFIG_RETRIEVAL_FAILED {
 			return []*git.GitConfigEntry{}, nil
 		}
 

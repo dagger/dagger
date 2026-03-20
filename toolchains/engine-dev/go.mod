@@ -1,9 +1,9 @@
 module dagger/engine-dev
 
-go 1.25.0
+go 1.25.6
 
 require (
-	github.com/dagger/dagger/engine/distconsts v0.20.1
+	github.com/dagger/dagger/engine/distconsts v0.20.3
 	github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
 )
 
@@ -19,7 +19,7 @@ require (
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -29,7 +29,7 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.1
+	dagger.io/dagger v0.20.3
 	github.com/99designs/gqlgen v0.17.81 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/adrg/xdg v0.5.3 // indirect
@@ -60,11 +60,11 @@ require (
 	go.opentelemetry.io/otel/trace v1.41.0
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
-	google.golang.org/grpc v1.79.1 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 

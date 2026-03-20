@@ -285,6 +285,10 @@ func findSuggestions(c *cobra.Command, arg string) string {
 }
 
 func checkForUpdates(ctx context.Context, w io.Writer) {
+	if os.Getenv("DAGGER_NO_UPDATE_CHECK") != "" {
+		return
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	updateCh := make(chan string)
@@ -485,7 +489,7 @@ func main() {
 		var exit idtui.ExitError
 		switch {
 		case errors.As(err, &exit):
-			os.Exit(exit.Code)
+			os.Exit(exit.Code())
 		case errors.Is(err, idtui.ErrShellExited):
 			os.Exit(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
