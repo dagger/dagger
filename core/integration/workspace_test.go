@@ -2046,3 +2046,28 @@ type Cacheme {
 			"expected function to be re-executed on fourth call with changed workspace content")
 	})
 }
+
+// TestDangCurrentWorkspace verifies that a Dang module function can
+// call currentWorkspace transitively (e.g. via llm()). This exercises
+// the Dang SDK's in-process nested client, which historically lacked a
+// buildkit filesync session and failed with "session not found".
+func (WorkspaceSuite) TestDangCurrentWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("hello.txt", "workspace content").
+		With(initDangModule("wstest", `
+type Wstest {
+  """
+  Read a file from the workspace obtained via currentWorkspace.
+  """
+  pub read(ws: Workspace!): String! {
+    ws.file("hello.txt").contents
+  }
+}
+`))
+
+	out, err := ctr.With(daggerCall("wstest", "read")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "workspace content", strings.TrimSpace(out))
+}

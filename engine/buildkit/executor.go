@@ -105,6 +105,12 @@ type ExecutionMetadata struct {
 	// any value of "all" bypasses restrictions, a nil slice imposes them
 	AllowedLLMModules []string
 
+	// SessionProxyClientID, when set, tells the server to register a
+	// session alias so that the new client's filesync lookups resolve
+	// to the specified client's session. Used by in-process SDKs (e.g.
+	// Dang) that don't establish their own gRPC session.
+	SessionProxyClientID string
+
 	// ConfigPath is the path to the dagger config file on the client host.
 	// Forwarded so nested clients (e.g. Dang SDK) can resolve LLM config.
 	ConfigPath string

@@ -790,6 +790,8 @@ github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb h1:Ho4c8V5nikU9zaeXc
 github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb/go.mod h1:/641L6H9ILAQTmBZrVkUCCNpp1H1vOoQIQzBvQ6Fm7o=
 github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3 h1:4Slm5GFGstn0SBea2G12bhZgnp92D6goFASKLmpZzAg=
 github.com/vito/dang v0.0.0-20260316153434-9d320da57ad3/go.mod h1:JkHwIP9BebHS9d0VHgt/0XvX3T/NXB8+GBuMHvZHSIA=
+github.com/vito/dang v0.0.0-20260320014409-6d7648c9d004 h1:ikpU3AMxKPlh/U70af28yein123u6OUea1WXsRMuako=
+github.com/vito/dang v0.0.0-20260320014409-6d7648c9d004/go.mod h1:DzrtSLk9XSgdh01JlmWoAxZEIMjojzzSTeiBDhmFucU=
 github.com/vito/go-interact v1.0.2 h1:viJuANio3WH9utUG4rKbJC9V3JR5JgYNS+i0efeA+GU=
 github.com/vito/go-interact v1.0.2/go.mod h1:s+y0jK9Z2etBYt5ZM6+DhpOsE5C7NNGC3jrJvW0BBpc=
 github.com/vito/go-sse v1.1.3 h1:tZOiC+xKmuRPoySTupO6liK7ciSX0B2NKXha5hEtUAE=
