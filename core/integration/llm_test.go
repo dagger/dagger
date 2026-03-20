@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -796,8 +797,9 @@ func (LLMSuite) TestToolCallLogRollup(ctx context.Context, t *testctx.T) {
 	}
 	c := connect(ctx, t, dagger.WithConfigPath(configPath))
 
+	filename := rand.Text()
 	base := workspaceBase(t, c).
-		WithNewFile("foo.txt", "line 1\nline 2\nline 3\nHello!\nline 5\n").
+		WithNewFile(filename+".txt", "line 1\nline 2\nline 3\nHello!\nline 5\n").
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init"}).
 		With(initDangModule("grep-test", `
@@ -808,7 +810,7 @@ type GrepTest {
   pub run(source: Workspace!): LLM! {
     llm
       .withEnv(env.withCurrentModule.withWorkspace(source))
-      .withPrompt("Use the GrepTest grep tool to search for the literal text 'Hello!' in the workspace. Do not use any other tool.")
+      .withPrompt("Use the grep tool to search for the literal text 'Hello!' in the workspace. Respond with the exact output. Do not use any other tool.")
       .loop
   }
 
@@ -840,7 +842,8 @@ type GrepTest {
 
 	// The reply should contain the grep-like output from Workspace.search
 	// (rolled up from span stdio), not just the tool's return value.
-	require.Contains(t, reply, "foo.txt", "reply should contain the filename from search results")
+	require.Contains(t, reply, filename, "reply should contain the filename from search results")
+	require.Contains(t, reply, ":4:", "reply should contain the line number")
 	require.Contains(t, reply, "Hello!", "reply should contain the matched content")
 	require.Contains(t, reply, "1 result found", "reply should contain the tool's summary")
 }
