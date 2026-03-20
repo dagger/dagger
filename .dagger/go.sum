@@ -1,5 +1,5 @@
-dagger.io/dagger v0.20.1 h1:BbQis4P12Ijvf+kzJrC1Gmm4VVwBu2ahMrDV1Sxl1Xk=
-dagger.io/dagger v0.20.1/go.mod h1:hoOWggeS4rxqcxyQruKDbx0nOwLNtnKjL+khAPwnU6g=
+dagger.io/dagger v0.20.3 h1:AuA+0rYluQRzHh/hgQd4Ay2zyhZed65PZfgU1VdVKT4=
+dagger.io/dagger v0.20.3/go.mod h1:hoOWggeS4rxqcxyQruKDbx0nOwLNtnKjL+khAPwnU6g=
 github.com/99designs/gqlgen v0.17.81 h1:kCkN/xVyRb5rEQpuwOHRTYq83i0IuTQg9vdIiwEerTs=
 github.com/99designs/gqlgen v0.17.81/go.mod h1:vgNcZlLwemsUhYim4dC1pvFP5FX0pr2Y+uYUoHFb1ig=
 github.com/Khan/genqlient v0.8.1 h1:wtOCc8N9rNynRLXN3k3CnfzheCUNKBcvXmVv5zt6WCs=
@@ -100,8 +100,8 @@ google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171 h1:
 google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171/go.mod h1:M5krXqk4GhBKvB596udGL3UyjL4I1+cTbK0orROM9ng=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 h1:ggcbiqK8WWh6l1dnltU4BgWGIGo+EVYxCaAPih/zQXQ=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171/go.mod h1:4Hqkh8ycfw05ld/3BWL7rJOSfebL2Q+DVDeRgYgxUU8=
-google.golang.org/grpc v1.79.1 h1:zGhSi45ODB9/p3VAawt9a+O/MULLl9dpizzNNpq7flY=
-google.golang.org/grpc v1.79.1/go.mod h1:KmT0Kjez+0dde/v2j9vzwoAScgEPx/Bw1CYChhHLrHQ=
+google.golang.org/grpc v1.79.3 h1:sybAEdRIEtvcD68Gx7dmnwjZKlyfuc61Dyo9pGXXkKE=
+google.golang.org/grpc v1.79.3/go.mod h1:KmT0Kjez+0dde/v2j9vzwoAScgEPx/Bw1CYChhHLrHQ=
 google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
 google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
