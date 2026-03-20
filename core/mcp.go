@@ -99,12 +99,15 @@ type MCP struct {
 	mu *sync.Mutex
 }
 
-func newMCP(env dagql.ObjectResult[*Env]) *MCP {
+// newMCPEmpty creates an MCP with no env. The env can be set later
+// via setEnv. This allows LLM instances to be created without
+// requiring workspace access (e.g. for querying the model name).
+func newMCPEmpty() *MCP {
 	blocked := maps.Clone(defaultBlockedMethods)
 	for typeName, methods := range blocked {
 		blocked[typeName] = slices.Clone(methods)
 	}
-	m := &MCP{
+	return &MCP{
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
 		objsByID:        map[string]*call.ID{},
@@ -113,6 +116,10 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		mcpServers:      make(map[string]*MCPServerConfig),
 		mu:              &sync.Mutex{},
 	}
+}
+
+func newMCP(env dagql.ObjectResult[*Env]) *MCP {
+	m := newMCPEmpty()
 	m.setEnv(env)
 	return m
 }

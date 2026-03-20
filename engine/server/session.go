@@ -46,7 +46,6 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -966,8 +965,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 	allowedLLMModules := execMD.AllowedLLMModules
 	eagerRuntime := false
-	configPath := ""
-	var llmConfig *llmconfig.LLMConfig
+	configPath := execMD.ConfigPath
+	llmConfig := execMD.LLMConfig
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules

@@ -22,6 +22,7 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -103,6 +104,14 @@ type ExecutionMetadata struct {
 	// list of remote modules allowed to access LLM APIs
 	// any value of "all" bypasses restrictions, a nil slice imposes them
 	AllowedLLMModules []string
+
+	// ConfigPath is the path to the dagger config file on the client host.
+	// Forwarded so nested clients (e.g. Dang SDK) can resolve LLM config.
+	ConfigPath string
+
+	// LLMConfig carries LLM provider configuration derived from environment
+	// variables. Forwarded so nested clients inherit the caller's LLM settings.
+	LLMConfig *llmconfig.LLMConfig
 
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.

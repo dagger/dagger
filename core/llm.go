@@ -1093,19 +1093,9 @@ func resolveSecret(ctx context.Context, srv *dagql.Server, uriOrPlaintext string
 }
 
 func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var env dagql.ObjectResult[*Env]
-	if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
-		Field: "env",
-	}); err != nil {
-		return nil, err
-	}
 	return &LLM{
 		model:       model,
-		mcp:         newMCP(env),
+		mcp:         newMCPEmpty(),
 		endpointMtx: &sync.Mutex{},
 	}, nil
 }

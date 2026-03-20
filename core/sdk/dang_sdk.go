@@ -101,6 +101,8 @@ func (r *DangRuntime) Call(
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
+	execMD.ConfigPath = clientMetadata.ConfigPath
+	execMD.LLMConfig = clientMetadata.LLMConfig
 
 	if execMD.CallID == nil {
 		execMD.CallID = dagql.CurrentID(ctx)
