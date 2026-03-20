@@ -403,19 +403,30 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.ClientID)
 	}()
 
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, !wait)
-	if err != nil {
-		return nil, err
+	// Use GetClientCaller when available — it may include fallback
+	// logic (e.g. session proxy for in-process SDKs like Dang).
+	if c.GetClientCaller != nil {
+		caller, err := c.GetClientCaller(clientMetadata.ClientID)
+		if err != nil {
+			return nil, err
+		}
+		if caller != nil {
+			return caller, nil
+		}
+	} else {
+		caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, !wait)
+		if err != nil {
+			return nil, err
+		}
+		if caller != nil {
+			return caller, nil
+		}
 	}
-	if caller == nil {
-		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
-		// where for instance the first client cancels and closes its session while others
-		// are waiting on the result. In this case its safe to retry the operation again with
-		// the still connected client metadata.
-		err := flightcontrol.RetryableError{Err: fmt.Errorf("session for %q not found", clientMetadata.ClientID)}
-		return nil, err
-	}
-	return caller, nil
+	// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
+	// where for instance the first client cancels and closes its session while others
+	// are waiting on the result. In this case its safe to retry the operation again with
+	// the still connected client metadata.
+	return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session for %q not found", clientMetadata.ClientID)}
 }
 
 func (c *Client) ListenHostToContainer(
