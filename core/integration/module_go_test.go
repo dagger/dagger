@@ -28,7 +28,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=go"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -43,7 +43,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=go", "--sdk=go"))
 
 		out, err := modGen.
-			With(daggerQuery(`{go{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"go":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -58,7 +58,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=My-Module", "--sdk=go"))
 
 		out, err := modGen.
-			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -81,7 +81,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=beneathGoMod", "--sdk=go"))
 
 		out, err := modGen.
-			With(daggerQuery(`{beneathGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"beneathGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -103,7 +103,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -126,7 +126,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("./subdir").
-			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -153,7 +153,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("./subdir").
-			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -182,7 +182,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=hasMainGo", "--sdk=go", "--source=."))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasMainGo{hello}}`)).
+			With(daggerQuery(`{hello}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasMainGo":{"hello":"Hello, world!"}}`, out)
@@ -212,7 +212,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=hasDaggerTypes", "--sdk=go"))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasDaggerTypes{hello{stdout}}}`)).
+			With(daggerQuery(`{hello{stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasDaggerTypes":{"hello":{"stdout":"Hello, world!\n"}}}`, out)
@@ -234,7 +234,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			With(daggerExec("init", "--source=.", "--name=hasNotMainGo", "--sdk=go"))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasNotMainGo{hello}}`)).
+			With(daggerQuery(`{hello}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasNotMainGo":{"hello":"Hello, world!"}}`, out)
@@ -249,7 +249,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			With(daggerExec("init", "--name=bare", "--sdk=go", "--source=some/subdir"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -280,14 +280,14 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 
 		out, err := modGen.
 			WithWorkdir("./foo").
-			With(daggerQuery(`{foo{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"foo":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		out, err = modGen.
 			WithWorkdir("./bar").
-			With(daggerQuery(`{bar{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bar":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -316,7 +316,7 @@ func main() {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -337,7 +337,7 @@ func main() {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -353,7 +353,7 @@ func main() {
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
 
 		_, err := modGen.
-			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
 		requireErrRegexp(t, err, `existing go.mod path ".*" does not match the module's name ".*"`)
@@ -667,150 +667,150 @@ func (GoSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 		WithNewFile("main.go", goSignatures)
 
 	t.Run("func Hello() string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
 	t.Run("func Echo(string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echo(msg: "hello")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoPointer(*string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoPointer(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoPointer(msg: "hello")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoPointer":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoPointerPointer(**string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoPointerPointer(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoPointerPointer(msg: "hello")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoPointerPointer":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoOptional(string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptional(msg: "hello")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptional":"hello...hello...hello..."}}`, out)
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptional}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptional}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
 	})
 
 	t.Run("func EchoOptionalPointer(string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalPointer(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptionalPointer(msg: "hello")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"hello...hello...hello..."}}`, out)
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptionalPointer}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptionalPointer}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"default...default...default..."}}`, out)
 	})
 
 	t.Run("func EchoOptionalSlice([]string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptionalSlice(msg: ["hello", "there"])}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"hello+there...hello+there...hello+there..."}}`, out)
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptionalSlice}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptionalSlice}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"foobar...foobar...foobar..."}}`, out)
 	})
 
 	t.Run("func Echoes([]string) []string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoes(msgs: ["hello"])}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
 	t.Run("func EchoesVariadic(...string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoesVariadic(msgs: ["hello"])}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func HelloContext(context.Context) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{helloContext}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloContext":"hello context"}}`, out)
 	})
 
 	t.Run("func EchoContext(context.Context, string) string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoContext(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoContext(msg: "hello")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoContext":"ctx.hello...ctx.hello...ctx.hello..."}}`, out)
 	})
 
 	t.Run("func HelloStringError() (string, error)", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{helloStringError}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{helloStringError}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloStringError":"hello i worked"}}`, out)
 	})
 
 	t.Run("func HelloVoid()", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{helloVoid}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
 	t.Run("func HelloVoidError() error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{helloVoidError}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{helloVoidError}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoidError":null}}`, out)
 	})
 
 	t.Run("func EchoOpts(string, string, int) error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOpts(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOpts(msg: "hi", suffix: "!", times: 2)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 	})
 
 	t.Run("func EchoOptsInline(struct{string, string, int}) error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptsInline(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi"}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptsInline(msg: "hi", suffix: "!", times: 2)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi!hi!"}}`, out)
 	})
 
 	t.Run("func EchoOptsInlinePointer(*struct{string, string, int}) error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlinePointer(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptsInlinePointer(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlinePointer":"hi"}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlinePointer(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptsInlinePointer(msg: "hi", suffix: "!", times: 2)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlinePointer":"hi!hi!"}}`, out)
 	})
 
 	t.Run("func EchoOptsInlineCtx(ctx, struct{string, string, int}) error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineCtx(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptsInlineCtx(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineCtx":"hi"}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlineCtx(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptsInlineCtx(msg: "hi", suffix: "!", times: 2)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineCtx":"hi!hi!"}}`, out)
 	})
 
 	t.Run("func EchoOptsInlineTags(struct{string, string, int}) error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineTags(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptsInlineTags(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi"}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlineTags(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptsInlineTags(msg: "hi", suffix: "!", times: 2)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi!hi!"}}`, out)
 	})
 
 	t.Run("func EchoOptsPragmas(string, string, int) error", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptsPragmas(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptsPragmas(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsPragmas":"hi...hi...hi..."}}`, out)
 	})
@@ -860,7 +860,7 @@ func (m *Minimal) ReadOptional(
 			`,
 		)
 
-	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
@@ -892,7 +892,7 @@ func (m *Minimal) ReadOptional(
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
-		out, err = modGen.With(daggerQuery(`{minimal{readOptional}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{readOptional}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":""}}`, out)
 	})
@@ -1015,7 +1015,7 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 `,
 		)
 
-	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	_, err := modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
 	require.Regexp(t, "nested structs are not supported", logs.String())
@@ -1341,18 +1341,18 @@ func (m *Minimal) HelloOpts(opts struct{
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{minimal{w, x, y, z}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{w, x, y, z}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"w": "-", "x": "-", "y": "-", "z": "-"}}`, out)
 
 	for _, name := range []string{"say", "sayOpts"} {
-		out, err := modGen.With(daggerQuery(`{minimal{%s(a: "hello", b: "world", c: "!")}}`, name)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{%s(a: "hello", b: "world", c: "!")}`, name)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": "hello world !"}}`, name), out)
 	}
 
 	for _, name := range []string{"hello", "helloOpts"} {
-		out, err := modGen.With(daggerQuery(`{minimal{%s(string: "")}}`, name)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{%s(string: "")}`, name)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": "hello"}}`, name), out)
 	}
@@ -1393,7 +1393,7 @@ func (m *Minimal) IsEmpty() bool {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{isEmpty}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
@@ -1447,7 +1447,7 @@ func (m Test) Publish(ctx context.Context) (string, error) {
 `,
 		)
 
-	out, err := ctr.With(daggerQuery(`{test{publish}}`)).Stdout(ctx)
+	out, err := ctr.With(daggerQuery(`{publish}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test": {"publish": "registry/repo:latest"}}`, out)
 }
@@ -1477,7 +1477,7 @@ func New() *Minimal {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{minimal{config}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{config}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal":{"config":"{\"a\":1}"}}`, out)
 }
@@ -1504,7 +1504,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
-			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
+			With(daggerQuery(`{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -1524,7 +1524,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
 			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
-			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
+			With(daggerQuery(`{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -1554,7 +1554,7 @@ func (f *Foo) Echo(ctx context.Context, ctx2 context.Context) (string, error) {
 }
 `,
 		).
-		With(daggerQuery(`{foo{echo}}`)).
+		With(daggerQuery(`{echo}`)).
 		Sync(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
@@ -1757,15 +1757,15 @@ func (m *Minimal) Bar(dir *dagger.Directory) (*dagger.Directory) {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{directory{id}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{id}`)).Stdout(ctx)
 	require.NoError(t, err)
 	dirID := gjson.Get(out, "directory.id").String()
 
-	out, err = modGen.With(daggerQuery(`{minimal{foo(dir: "%s"){file(path: "foo"){contents}}}}`, dirID)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{foo(dir: "%s"){file(path: "foo"){contents}}}`, dirID)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal":{"foo":{"file":{"contents": "xxx"}}}}`, out)
 
-	out, err = modGen.With(daggerQuery(`{minimal{bar(dir: "%s"){file(path: "bar"){contents}}}}`, dirID)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{bar(dir: "%s"){file(path: "bar"){contents}}}`, dirID)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal":{"bar":{"file":{"contents": "yyy"}}}}`, out)
 }
@@ -1804,7 +1804,7 @@ func Foo() *dagger.Directory {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal":{"hello":"hello world"}}`, out)
 }
@@ -1863,7 +1863,7 @@ func (ssh *Ssh) SayHello() string {
 }
 `,
 		)
-	out, err := ctr.With(daggerQuery(`{ssh{sayHello}}`)).Stdout(ctx)
+	out, err := ctr.With(daggerQuery(`{sayHello}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"ssh":{"sayHello":"hello!"}}`, out)
 
@@ -1884,7 +1884,7 @@ func (t *Toplevel) SayHello(ctx context.Context) (string, error) {
 		)
 	logGen(ctx, t, ctr.Directory("."))
 
-	out, err = ctr.With(daggerQuery(`{toplevel{sayHello}}`)).Stdout(ctx)
+	out, err = ctr.With(daggerQuery(`{sayHello}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"toplevel":{"sayHello":"hello!"}}`, out)
 }
@@ -1918,7 +1918,7 @@ func (p *Playground) SayHello() string {
 `,
 		)
 
-	out, err := ctr.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
+	out, err := ctr.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
 }

@@ -338,7 +338,7 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=bare", "--sdk="+tc.sdk))
 
 			out, err := modGen.
-				With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+				With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)

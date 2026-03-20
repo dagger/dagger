@@ -120,7 +120,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -141,7 +141,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -184,7 +184,7 @@ class HelloWorld:
 			).
 			With(daggerExec("init", "--name=hello-world", "--sdk=python", "--source=."))
 
-		out, err := modGen.With(daggerQuery(`{helloWorld{message}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
 	})
@@ -241,7 +241,7 @@ class Test:
 			).
 			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
 
-		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
 	})
@@ -288,7 +288,7 @@ class Test:
 			).
 			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
 
-		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
 	})
@@ -1181,7 +1181,7 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
                 return "" if dir is None else await dir.file("foo").contents()
     `)
 
-	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
@@ -1601,7 +1601,7 @@ func (PythonSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
                 self.message = "bar"
                 return self
         `).
-		With(daggerQuery(`{test{foo{message}}}`)).
+		With(daggerQuery(`{foo{message}}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)

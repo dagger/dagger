@@ -569,7 +569,7 @@ func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testct
 		With(daggerExec("init", "--name=bare", "--sdk=go")).
 		WithNewFile("dagger.json", `{ "name": "bare", "engineVersion": "v100.0.0", "sdk": 123 }`)
 	_, err := modGen.
-		With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+		With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 		Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)

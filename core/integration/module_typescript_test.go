@@ -29,7 +29,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -59,7 +59,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=My-Module", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -87,7 +87,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasPkgJson":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -118,7 +118,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=hasTsConfig", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasTsConfig{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -153,7 +153,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=existingSource", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{existingSource{helloWorld(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{helloWorld(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
@@ -169,7 +169,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithDirectory("/work/src/empty-dir", c.Directory())
 
 		out, err := modGen.
-			With(daggerQuery(`{emptyDir{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"emptyDir":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -184,7 +184,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=typescript", "--source=some/subdir"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -249,7 +249,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -270,7 +270,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -290,24 +290,24 @@ func (TypescriptSuite) TestSyntaxSupport(ctx context.Context, t *testctx.T) {
 		With(sdkSource("typescript", tsSyntax))
 
 	t.Run("singleQuoteDefaultArgHello(msg: string = 'world'): string", func(ctx context.Context, t *testctx.T) {
-		defaultOut, err := modGen.With(daggerQuery(`{syntax{singleQuoteDefaultArgHello}}`)).Stdout(ctx)
+		defaultOut, err := modGen.With(daggerQuery(`{singleQuoteDefaultArgHello}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"syntax":{"singleQuoteDefaultArgHello":"hello world"}}`, defaultOut)
 
-		out, err := modGen.With(daggerQuery(`{syntax{singleQuoteDefaultArgHello(msg: "dagger")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{singleQuoteDefaultArgHello(msg: "dagger")}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"syntax":{"singleQuoteDefaultArgHello":"hello dagger"}}`, out)
 	})
 
 	t.Run("doubleQuotesDefaultArgHello(msg: string = \"world\"): string", func(ctx context.Context, t *testctx.T) {
-		defaultOut, err := modGen.With(daggerQuery(`{syntax{doubleQuotesDefaultArgHello}}`)).Stdout(ctx)
+		defaultOut, err := modGen.With(daggerQuery(`{doubleQuotesDefaultArgHello}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"syntax":{"doubleQuotesDefaultArgHello":"hello world"}}`, defaultOut)
 
-		out, err := modGen.With(daggerQuery(`{syntax{doubleQuotesDefaultArgHello(msg: "dagger")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{doubleQuotesDefaultArgHello(msg: "dagger")}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"syntax":{"doubleQuotesDefaultArgHello":"hello dagger"}}`, out)
@@ -327,91 +327,91 @@ func (TypescriptSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 		With(sdkSource("typescript", tsSignatures))
 
 	t.Run("hello(): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
 	t.Run("echoes(msgs: string[]): string[]", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoes(msgs: ["hello"])}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
 	t.Run("echoOptional(msg = 'default'): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptional(msg: "hello")}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptional":"hello...hello...hello..."}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptional}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptional}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
 	})
 
 	t.Run("echoesVariadic(...msgs: string[]): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoesVariadic(msgs: ["hello"])}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("echo(msg: string): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echo(msg: "hello")}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("echoOptionalSlice(msg = ['foobar']): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOptionalSlice(msg: ["hello", "there"])}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"hello+there...hello+there...hello+there..."}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOptionalSlice}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOptionalSlice}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"foobar...foobar...foobar..."}}`, out)
 	})
 
 	t.Run("helloVoid(): void", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{helloVoid}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
 	t.Run("echoOpts(msg: string, suffix: string = '', times: number = 1): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoOpts(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoOpts(msg: "hi", suffix: "!", times: 2)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 
 		t.Run("execute with unordered args", func(ctx context.Context, t *testctx.T) {
-			out, err = modGen.With(daggerQuery(`{minimal{echoOpts(times: 2, msg: "order", suffix: "?")}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{echoOpts(times: 2, msg: "order", suffix: "?")}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"minimal":{"echoOpts":"order?order?"}}`, out)
 		})
 	})
 
 	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoMaybe(msg: "hi")}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
 
-		out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi", isQuestion: true)}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{echoMaybe(msg: "hi", isQuestion: true)}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi?...hi?...hi?..."}}`, out)
 
 		t.Run("execute with unordered args", func(ctx context.Context, t *testctx.T) {
-			out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(isQuestion: false, msg: "hi")}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{echoMaybe(isQuestion: false, msg: "hi")}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
 		})
@@ -430,7 +430,7 @@ func (TypescriptSuite) TestSignaturesBuildinTypes(ctx context.Context, t *testct
 		With(daggerExec("init", "--name=minimal", "--sdk=typescript")).
 		With(sdkSource("typescript", tsSignaturesBuiltin))
 
-	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
@@ -456,7 +456,7 @@ func (TypescriptSuite) TestSignaturesBuildinTypes(ctx context.Context, t *testct
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
-		out, err = modGen.With(daggerQuery(`{minimal{readOptional}}`)).Stdout(ctx)
+		out, err = modGen.With(daggerQuery(`{readOptional}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":""}}`, out)
 	})
@@ -537,15 +537,15 @@ func (TypescriptSuite) TestOptional(ctx context.Context, t *testctx.T) {
 		With(daggerExec("init", "--name=minimal", "--sdk=typescript")).
 		With(sdkSource("typescript", tsOptional))
 
-	out, err := modGen.With(daggerQuery(`{minimal{foo}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{foo}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"foo": ""}}`, out)
 
-	out, err = modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{isEmpty}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 
-	out, err = modGen.With(daggerQuery(`{minimal{resolveValue}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{resolveValue}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"resolveValue": "hello world"}}`, out)
 }
@@ -586,7 +586,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
     `))
 
 	t.Run("should default to node", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
 	})
@@ -599,7 +599,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
 	})
@@ -612,7 +612,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
@@ -636,7 +636,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       `)).
 			WithExec([]string{"npm", "install", "--package-lock-only"})
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
 	})
@@ -660,7 +660,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       `)).
 			WithExec([]string{"bun", "install"})
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
@@ -684,7 +684,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       `)).
 			WithExec([]string{"bun", "install"})
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
@@ -714,7 +714,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			).
 			WithExec([]string{"npm", "install", "--package-lock-only"})
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
@@ -726,7 +726,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
         }
       }`,
 		)
-		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.Error(t, err)
 	})
 
@@ -738,7 +738,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"version":"node@20.15.0"}}`, out)
 	})
@@ -751,7 +751,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"version":"node@22.4.0"}}`, out)
 	})
@@ -769,7 +769,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.1.23"}}`, out)
 	})
@@ -793,7 +793,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			}
 		`))
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{echoRuntime}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"deno"}}`, out)
 	})
@@ -821,7 +821,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			}
 		`))
 
-		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"version":"deno@2.2.0"}}`, out)
 	})
@@ -902,7 +902,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 		require.Contains(t, files, "yarn.lock")
 
 		// Verify that it executes dagger example properly.
-		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -930,7 +930,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 		require.Contains(t, files, "pnpm-lock.yaml")
 
 		// Verify that it executes dagger example properly.
-		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -958,7 +958,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 		require.Contains(t, files, "package-lock.json")
 
 		// Verify that it executes dagger example properly.
-		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -986,7 +986,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 		require.Contains(t, files, "package-lock.json")
 
 		// Verify that it executes dagger example properly.
-		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -1015,7 +1015,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 		require.Contains(t, files, "pnpm-lock.yaml")
 
 		// Verify that it executes dagger example properly.
-		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -1221,7 +1221,7 @@ export class Alias {
 }
 `))
 
-		out, err := modGen.With(daggerQuery(`{alias{bar}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{bar}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"alias": {"bar": "hello world"}}`, out)
 	})
@@ -1261,7 +1261,7 @@ export class Alias {
 }
 `))
 
-		out, err := modGen.With(daggerQuery(`{alias{bar{hello{zoo}}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{bar{hello{zoo}}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"alias": {"bar": {"hello": {"zoo": "hello world"}}}}`, out)
 	})
@@ -1312,7 +1312,7 @@ export class Alias {
 }
 `))
 
-		out, err := modGen.With(daggerQuery(`{alias{bar{hello,foo{zoo,hey,far{farFarNested}}}}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{bar{hello,foo{zoo,hey,far{farFarNested}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"alias": {"bar": {"hello": "a", "foo": {"zoo": 4, "hey": [true, false, true], "far": {"farFarNested": true} }}}}`, out)
 	})
@@ -1382,7 +1382,7 @@ func (TypescriptSuite) TestModuleSubPathLoading(ctx context.Context, t *testctx.
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			WithWorkdir("/work")
 
-		_, err := modGen.With(daggerQuery(`{host{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}`)).Stdout(ctx)
 		require.NoError(t, err)
 	})
 }
@@ -1407,7 +1407,7 @@ export class Test {
 }
 `))
 
-		_, err := modGen.With(daggerQuery(`{test{str("hello")}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{str("hello")}`)).Stdout(ctx)
 		requireErrOut(t, err, "Use of primitive 'String' type detected, please use 'string' instead.")
 	})
 
@@ -1430,7 +1430,7 @@ export class Test {
 }
 `))
 
-		_, err := modGen.With(daggerQuery(`{test{integer(4)}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{integer(4)}`)).Stdout(ctx)
 		requireErrOut(t, err, "Use of primitive 'Number' type detected, please use 'number' instead.")
 	})
 
@@ -1453,7 +1453,7 @@ export class Test {
 }
 `))
 
-		_, err := modGen.With(daggerQuery(`{test{bool(false)}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{bool(false)}`)).Stdout(ctx)
 		requireErrOut(t, err, "Use of primitive 'Boolean' type detected, please use 'boolean' instead.")
 	})
 }
@@ -1908,7 +1908,7 @@ export class Test {
 `,
 			))
 
-		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{foo}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
@@ -1935,7 +1935,7 @@ class Test {
 `,
 			))
 
-		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{foo}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})

@@ -57,7 +57,7 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 		)
 
 	out, err := modGen.
-		With(daggerQuery(`{bare{testContainer, testDirectory, testFile}}`)).
+		With(daggerQuery(`{testContainer, testDirectory, testFile}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"bare": {"testContainer": true, "testDirectory": true, "testFile": true}}`, out)
@@ -263,7 +263,7 @@ func (m *Test) Default(ctx context.Context) (string, error) {
 }
 `,
 		).
-		With(daggerQuery(`{test{container default}}`)).
+		With(daggerQuery(`{container default}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
@@ -401,7 +401,7 @@ func (m *Test) NoExec(ctx context.Context) *dagger.Container {
 `, alpineImage),
 		)
 
-	out, err := modGen.With(daggerQuery(`{test{stdout stderr}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{stdout stderr}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test": {"stdout": "hello\n", "stderr": "goodbye\n"}}`, out)
 
@@ -450,7 +450,7 @@ func (m *Dep) Dummy() error {
 		)).
 		WithWorkdir("/work").
 		With(daggerExec("install", "./dep", "--compat=skip")).
-		With(daggerQuery(`{test{test}}`)).
+		With(daggerQuery(`{test}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
@@ -1104,7 +1104,7 @@ func (m *Bare) dir() *dagger.Directory {
 `)
 
 	out, err := modGen.
-		With(daggerQuery(`{bare{testEntries, testGlob, testName}}`)).
+		With(daggerQuery(`{testEntries, testGlob, testName}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
@@ -1242,17 +1242,17 @@ export class Test {
 				With(daggerExec("develop", "--compat=v0.18.10"))
 
 			// status property
-			out, err := modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{status}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "here", gjson.Get(out, "test.status").String())
 
 			// fromStatus
-			out, err = modGen.With(daggerQuery(`{test{fromStatus(status: there)}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{fromStatus(status: there)}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "there", gjson.Get(out, "test.fromStatus").String())
 
 			// toStatus
-			out, err = modGen.With(daggerQuery(`{test{toStatus(status: "there")}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{toStatus(status: "there")}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "there", gjson.Get(out, "test.toStatus").String())
 		})
@@ -1287,11 +1287,11 @@ export class Test {
 	modGen := modInit(t, c, "typescript", tsSrc).
 		With(daggerExec("develop", "--compat=v0.18.10"))
 
-	out, err := modGen.With(daggerQuery(`{test{fromStatus(status: ACTIVE)}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{fromStatus(status: ACTIVE)}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
 
-	out, err = modGen.With(daggerQuery(`{test{fromStatus(status: INACTIVE)}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQuery(`{fromStatus(status: INACTIVE)}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "INACTIVE", gjson.Get(out, "test.fromStatus").String())
 }
@@ -1437,7 +1437,7 @@ export class Test {
 				With(daggerExec("develop", "-m", "./dep", "--compat=v0.18.10")).
 				With(daggerExec("install", "./dep"))
 
-			out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "here", gjson.Get(out, "test.active").String())
 			require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
