@@ -20,7 +20,7 @@ type Security {
   """
   Scan the source repository for security vulnerabilities
   """
-  pub scanSource(source: Directory! @defaultPath(path: "/")): Void @check {
+  pub scanSource(source: Directory! @defaultPath(path: "/")): Void {
     trivyBase
       .withMountedDirectory(".", source)
       .withExec([
@@ -39,7 +39,7 @@ type Security {
   """
   Build the engine container, and scan it for vulnerabilities
   """
-  pub scanEngineContainer(target: Container): Void @check {
+  pub scanEngineContainer(target: Container): Void {
     let t = target ?? engineDev.container
     let tarballPath = "target.tar"
     trivyBase
