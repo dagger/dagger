@@ -463,15 +463,63 @@ func (obj *ModuleObject) SetPersistedResultID(resultID uint64) {
 
 func (obj *ModuleObject) AttachOwnedResults(
 	ctx context.Context,
-	_ dagql.AnyResult,
+	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
 	if obj == nil || len(obj.Fields) == 0 {
 		return nil, nil
 	}
+
+	if obj.Module.Self() == nil || obj.TypeDef == nil {
+		owned := make([]dagql.AnyResult, 0)
+		for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
+			updated, deps, err := attachModuleObjectValue(attach, obj.Fields[name])
+			if err != nil {
+				return nil, fmt.Errorf("attach module object field %q: %w", name, err)
+			}
+			obj.Fields[name] = updated
+			owned = append(owned, deps...)
+		}
+		return owned, nil
+	}
+
+	var parentCall *dagql.ResultCall
+	if self != nil {
+		call, err := self.ResultCall()
+		if err != nil {
+			return nil, fmt.Errorf("module object attach owned results: resolve parent call: %w", err)
+		}
+		parentCall = call
+	}
+
+	modInst := NewUserMod(obj.Module)
 	owned := make([]dagql.AnyResult, 0)
 	for _, name := range slices.Sorted(maps.Keys(obj.Fields)) {
-		updated, deps, err := attachModuleObjectValue(attach, obj.Fields[name])
+		fieldTypeDef, ok := obj.TypeDef.FieldByOriginalName(name)
+		if !ok {
+			updated, deps, err := attachModuleObjectValue(attach, obj.Fields[name])
+			if err != nil {
+				return nil, fmt.Errorf("attach module object field %q: %w", name, err)
+			}
+			obj.Fields[name] = updated
+			owned = append(owned, deps...)
+			continue
+		}
+
+		modType, ok, err := modInst.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		if err != nil {
+			return nil, fmt.Errorf("attach module object field %q: resolve mod type: %w", name, err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("attach module object field %q: missing mod type", name)
+		}
+
+		fieldCtx := ctx
+		if fieldCall := dagql.ChildFieldCall(parentCall, fieldTypeDef.Name, fieldTypeDef.TypeDef.ToType()); fieldCall != nil {
+			fieldCtx = dagql.ContextWithCall(ctx, fieldCall)
+		}
+
+		updated, deps, err := attachTypedModuleObjectValue(fieldCtx, modType, obj.Fields[name], attach)
 		if err != nil {
 			return nil, fmt.Errorf("attach module object field %q: %w", name, err)
 		}
@@ -479,6 +527,77 @@ func (obj *ModuleObject) AttachOwnedResults(
 		owned = append(owned, deps...)
 	}
 	return owned, nil
+}
+
+func attachTypedModuleObjectValue(
+	ctx context.Context,
+	modType ModType,
+	val any,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) (any, []dagql.AnyResult, error) {
+	switch x := modType.(type) {
+	case *NullableType:
+		if val == nil {
+			return nil, nil, nil
+		}
+		return attachTypedModuleObjectValue(ctx, x.Inner, val, attach)
+	case *ListType:
+		if val == nil {
+			return nil, nil, nil
+		}
+		items, ok := val.([]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("expected []any, got %T", val)
+		}
+		updatedItems := make([]any, 0, len(items))
+		owned := make([]dagql.AnyResult, 0)
+		for i, item := range items {
+			itemCtx := ctx
+			if curCall := dagql.CurrentCall(ctx); curCall != nil {
+				itemCall := cloneResultCall(curCall)
+				itemCall.Nth = int64(i + 1)
+				if itemCall.Type != nil {
+					itemCall.Type = itemCall.Type.Elem
+				}
+				itemCtx = dagql.ContextWithCall(ctx, itemCall)
+			}
+			updated, deps, err := attachTypedModuleObjectValue(itemCtx, x.Underlying, item, attach)
+			if err != nil {
+				return nil, nil, fmt.Errorf("item %d: %w", i, err)
+			}
+			updatedItems = append(updatedItems, updated)
+			owned = append(owned, deps...)
+		}
+		return updatedItems, owned, nil
+	}
+
+	typeDef := modType.TypeDef()
+	if typeDef == nil {
+		return val, nil, nil
+	}
+	switch typeDef.Kind {
+	case TypeDefKindObject, TypeDefKindInterface:
+		typed, err := modType.ConvertFromSDKResult(ctx, val)
+		if err != nil {
+			return nil, nil, err
+		}
+		if typed == nil {
+			return nil, nil, nil
+		}
+		attached, err := attach(typed)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, ok := val.(dagql.AnyResult); ok {
+			return attached, []dagql.AnyResult{attached}, nil
+		}
+		if _, ok := val.(dagql.IDable); ok {
+			return attached, []dagql.AnyResult{attached}, nil
+		}
+		return val, []dagql.AnyResult{attached}, nil
+	default:
+		return val, nil, nil
+	}
 }
 
 func attachModuleObjectValue(

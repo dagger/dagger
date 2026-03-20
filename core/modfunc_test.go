@@ -53,10 +53,27 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 			},
 			expectSessionScope: true,
 		},
-	} {
+		} {
 		t.Run(tc.name, func(t *testing.T) {
+			modRes, err := dagql.NewObjectResultForCall(
+				tc.mod,
+				func() *dagql.Server {
+					cacheIface, err := dagql.NewCache(t.Context(), "")
+					require.NoError(t, err)
+					dag := dagql.NewServer(&Query{}, dagql.NewSessionCache(cacheIface))
+					dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+					return dag
+				}(),
+				&dagql.ResultCall{
+					Kind:        dagql.ResultCallKindSynthetic,
+					SyntheticOp: "modfunc_test_module",
+					Type:        dagql.NewResultCallType((&Module{}).Type()),
+				},
+			)
+			require.NoError(t, err)
+
 			modFn := &ModuleFunction{
-				mod:      tc.mod,
+				mod:      modRes,
 				metadata: tc.fn,
 			}
 
@@ -81,8 +98,22 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 func TestModuleFunctionCacheImplicitInputsNilSafe(t *testing.T) {
 	require.Nil(t, (*ModuleFunction)(nil).cacheImplicitInputs())
 	require.Nil(t, (&ModuleFunction{}).cacheImplicitInputs())
+	cacheIface, err := dagql.NewCache(context.Background(), "")
+	require.NoError(t, err)
+	dag := dagql.NewServer(&Query{}, dagql.NewSessionCache(cacheIface))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+	modRes, err := dagql.NewObjectResultForCall(
+		&Module{},
+		dag,
+		&dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			SyntheticOp: "modfunc_test_nil_safe_module",
+			Type:        dagql.NewResultCallType((&Module{}).Type()),
+		},
+	)
+	require.NoError(t, err)
 	require.Nil(t, (&ModuleFunction{
-		mod: &Module{},
+		mod: modRes,
 	}).cacheImplicitInputs())
 }
 

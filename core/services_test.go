@@ -10,11 +10,9 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -32,16 +30,16 @@ func TestServicesStartHappy(t *testing.T) {
 	svc2 := newStartable("fake-2")
 
 	startOne := func(t *testing.T, stub *fakeStartable) {
-		_, err := services.Get(ctx, stub.ID(), false)
+		_, err := services.Get(ctx, stub.Digest(), false)
 		require.Error(t, err)
 
 		expected := stub.Succeed()
 
-		running, err := services.Start(ctx, stub.ID(), stub, false)
+		running, err := services.Start(ctx, stub.Digest(), stub, false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 
-		running, err = services.Get(ctx, stub.ID(), false)
+		running, err = services.Get(ctx, stub.Digest(), false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 	}
@@ -71,14 +69,14 @@ func TestServicesStartHappyDifferentServers(t *testing.T) {
 
 		expected := stub.Succeed()
 
-		_, err := services.Get(ctx, stub.ID(), false)
+		_, err := services.Get(ctx, stub.Digest(), false)
 		require.Error(t, err)
 
-		running, err := services.Start(ctx, stub.ID(), stub, false)
+		running, err := services.Start(ctx, stub.Digest(), stub, false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 
-		running, err = services.Get(ctx, stub.ID(), false)
+		running, err = services.Get(ctx, stub.Digest(), false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 	}
@@ -106,10 +104,10 @@ func TestServicesStartSad(t *testing.T) {
 
 	expected := stub.Fail()
 
-	_, err := services.Start(ctx, stub.ID(), stub, false)
+	_, err := services.Start(ctx, stub.Digest(), stub, false)
 	require.Equal(t, expected, err)
 
-	_, err = services.Get(ctx, stub.ID(), false)
+	_, err = services.Get(ctx, stub.Digest(), false)
 	require.Error(t, err)
 }
 
@@ -127,7 +125,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		return err
 	})
 
@@ -138,7 +136,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 
 	// start another attempt
 	eg.Go(func() error {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		return err
 	})
 
@@ -173,7 +171,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 
 	errs := make(chan error, 100)
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		errs <- err
 	}()
 
@@ -184,7 +182,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 
 	// start another attempt
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		errs <- err
 	}()
 
@@ -210,7 +208,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 	require.Equal(t, 2, stub.Starts())
 
 	// make sure Get doesn't wait for any attempts, as they've all failed
-	_, err := services.Get(ctx, stub.ID(), false)
+	_, err := services.Get(ctx, stub.Digest(), false)
 	require.Error(t, err)
 }
 
@@ -228,7 +226,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 
 	errs := make(chan error, 100)
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub, false)
+		_, err := services.Start(ctx, stub.Digest(), stub, false)
 		errs <- err
 	}()
 
@@ -240,7 +238,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 	// start a few more attempts
 	for range 3 {
 		go func() {
-			_, err := services.Start(ctx, stub.ID(), stub, false)
+			_, err := services.Start(ctx, stub.Digest(), stub, false)
 			errs <- err
 		}()
 	}
@@ -298,15 +296,11 @@ func newStartable(id string) *fakeStartable {
 	}
 }
 
-func (f *fakeStartable) ID() *call.ID {
-	id := call.New().Append(&ast.Type{
-		NamedType: "FakeService",
-		NonNull:   true,
-	}, f.name)
-	return id
+func (f *fakeStartable) Digest() digest.Digest {
+	return f.digest
 }
 
-func (f *fakeStartable) Start(context.Context, *call.ID, *core.ServiceIO) (*core.RunningService, error) {
+func (f *fakeStartable) Start(context.Context, digest.Digest, *core.ServiceIO) (*core.RunningService, error) {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
 	return res.Started, res.Failed
@@ -373,7 +367,7 @@ func TestServicesDetachRace(t *testing.T) {
 
 	// Client A starts the service
 	expected := stub.Succeed()
-	running, err := services.Start(ctx, stub.ID(), stub, false)
+	running, err := services.Start(ctx, stub.Digest(), stub, false)
 	require.NoError(t, err)
 	require.Equal(t, expected, running)
 	require.Equal(t, 1, stub.Starts())
@@ -400,7 +394,7 @@ func TestServicesDetachRace(t *testing.T) {
 
 	// Client B should see the service is not running and start a new one
 	stub.Succeed() // prepare for Client B's start
-	runningB, err := services.Start(ctxB, stub.ID(), stub, false)
+	runningB, err := services.Start(ctxB, stub.Digest(), stub, false)
 	require.NoError(t, err)
 	require.NotNil(t, runningB)
 
@@ -416,7 +410,7 @@ func TestServicesDetachRace(t *testing.T) {
 	}
 
 	// Client B's service should still be running
-	retrieved, err := services.Get(ctxB, stub.ID(), false)
+	retrieved, err := services.Get(ctxB, stub.Digest(), false)
 	require.NoError(t, err)
 	require.Equal(t, runningB, retrieved)
 }

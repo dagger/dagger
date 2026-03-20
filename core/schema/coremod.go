@@ -438,6 +438,10 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 		return nil, nil
 	}
 
+	if res, ok := value.(dagql.AnyResult); ok {
+		return res, nil
+	}
+
 	id, ok := value.(string)
 	if !ok {
 		return nil, fmt.Errorf("expected string, got %T", value)

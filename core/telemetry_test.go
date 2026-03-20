@@ -51,7 +51,15 @@ func (ms *mockServer) CurrentModule(context.Context) (dagql.ObjectResult[*Module
 	if ms.moduleSource == nil {
 		return zero, nil
 	}
-	sourceRes, err := dagql.NewObjectResultForCall(ms.moduleSource, &dagql.ResultCall{
+	cacheIface, err := dagql.NewCache(context.Background(), "")
+	if err != nil {
+		panic(err)
+	}
+	dag := dagql.NewServer(&Query{}, dagql.NewSessionCache(cacheIface))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+
+	sourceRes, err := dagql.NewObjectResultForCall(ms.moduleSource, dag, &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "mock_module_source",
 		Type:        dagql.NewResultCallType(ms.moduleSource.Type()),
@@ -66,7 +74,7 @@ func (ms *mockServer) CurrentModule(context.Context) (dagql.ObjectResult[*Module
 	}
 	return dagql.NewObjectResultForCall(&Module{
 		Source: dn,
-	}, &dagql.ResultCall{
+	}, dag, &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
 		SyntheticOp: "mock_current_module",
 		Type:        dagql.NewResultCallType((&Module{}).Type()),
