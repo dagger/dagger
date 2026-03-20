@@ -201,9 +201,15 @@ func (c *SessionCache) GetOrInitCall(
 	}
 
 	nilResult := false
+	trackAttachedDoNotCacheResult := false
 	if res != nil {
-		if shared := res.cacheSharedResult(); shared != nil && !shared.hasValue {
-			nilResult = true
+		if shared := res.cacheSharedResult(); shared != nil {
+			if !shared.hasValue {
+				nilResult = true
+			}
+			if req.DoNotCache && shared.id != 0 && shared.cache != nil {
+				trackAttachedDoNotCacheResult = true
+			}
 		}
 	}
 
@@ -212,7 +218,7 @@ func (c *SessionCache) GetOrInitCall(
 	var traceCache *cache
 	trackedCount := 0
 	trackedCountForResult := 0
-	if !isClosed && res != nil && !req.DoNotCache {
+	if !isClosed && res != nil && (!req.DoNotCache || trackAttachedDoNotCacheResult) {
 		c.results = append(c.results, res)
 		traceCache = c.traceCache()
 		trackedCount = len(c.results)

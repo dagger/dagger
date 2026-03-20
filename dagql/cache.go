@@ -1828,6 +1828,16 @@ func (c *cache) GetOrInitCall(
 		if val == nil {
 			return nil, nil
 		}
+		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 && shared.cache == c {
+			touchSharedResultLastUsed(shared, time.Now().UnixNano())
+			newRefCount := atomic.AddInt64(&shared.refCount, 1)
+			c.traceRefAcquired(ctx, shared, newRefCount)
+			normalized, err := wrapSharedResultWithResolver(shared, false, resolver)
+			if err != nil {
+				return nil, fmt.Errorf("normalize do-not-cache attached result: %w", err)
+			}
+			return normalized, nil
+		}
 
 		detached := &sharedResult{
 			self:               val.Unwrap(),

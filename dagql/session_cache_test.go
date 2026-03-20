@@ -604,6 +604,57 @@ func TestSessionCacheDoNotCacheResultNotTrackedOnClose(t *testing.T) {
 	assert.Assert(t, is.Equal(int32(1), releaseCalls.Load()))
 }
 
+func TestSessionCacheDoNotCacheAttachedResultTrackedOnClose(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	base := cacheIface.(*cache)
+	sc := NewSessionCache(base)
+	srv := cacheTestServer(t, base)
+
+	objectCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "session-donotcache-attached-inner",
+	}
+	var releaseCalls atomic.Int32
+	innerAny, err := sc.GetOrInitCall(ctx, srv, &CallRequest{ResultCall: objectCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, objectCall, 11, func(context.Context) error {
+			releaseCalls.Add(1)
+			return nil
+		}), nil
+	})
+	assert.NilError(t, err)
+	innerRes, ok := innerAny.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, ok)
+	assert.Assert(t, is.Equal(int32(0), releaseCalls.Load()))
+
+	outerCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "session-donotcache-attached-outer",
+	}
+	outerAny, err := sc.GetOrInitCall(ctx, srv, &CallRequest{
+		ResultCall: outerCall,
+		DoNotCache: true,
+	}, func(context.Context) (AnyResult, error) {
+		return innerRes, nil
+	})
+	assert.NilError(t, err)
+	outerRes, ok := outerAny.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, ok)
+	assert.Assert(t, is.Equal(int32(0), releaseCalls.Load()))
+	innerID, err := innerRes.ID()
+	assert.NilError(t, err)
+	outerID, err := outerRes.ID()
+	assert.NilError(t, err)
+	assert.Equal(t, innerID.EngineResultID(), outerID.EngineResultID())
+
+	assert.NilError(t, sc.ReleaseAndClose(ctx))
+	assert.Assert(t, is.Equal(int32(1), releaseCalls.Load()))
+}
+
 func TestSessionCacheDoNotCacheNilResult(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
