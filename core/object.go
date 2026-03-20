@@ -913,6 +913,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Type:             obj,
 			Module:           moduleID,
 			DeprecatedReason: objDef.Deprecated,
+			IsPersistable:    true,
 		}
 
 		if objDef.SourceMap.Valid {
