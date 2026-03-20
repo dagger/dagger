@@ -3143,6 +3143,66 @@ func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheWrapperPostCallMergedOntoCacheBackedResult(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	c := cacheIface.(*cache)
+
+	childCall := cacheTestIntCall("child-postcall")
+	wrapperCallA := cacheTestIntCall("wrapper-postcall", call.ExtraDigest{
+		Digest: digest.FromString("wrapper-a"),
+		Label:  "noise",
+	})
+	wrapperCallB := cacheTestIntCall("wrapper-postcall", call.ExtraDigest{
+		Digest: digest.FromString("wrapper-b"),
+		Label:  "noise",
+	})
+	postCallCount := 0
+
+	childRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(childCall, 7), nil
+	})
+	assert.NilError(t, err)
+
+	wrapperRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: wrapperCallA}, func(context.Context) (AnyResult, error) {
+		attachedChild, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
+			return nil, fmt.Errorf("unexpected child initializer call")
+		})
+		if err != nil {
+			return nil, err
+		}
+		return attachedChild.WithPostCall(func(context.Context) error {
+			postCallCount++
+			return nil
+		}), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !wrapperRes.HitCache())
+	assert.NilError(t, wrapperRes.PostCall(ctx))
+	assert.Equal(t, 1, postCallCount)
+	wrapperShared := wrapperRes.cacheSharedResult()
+	assert.Assert(t, wrapperShared != nil)
+	childShared := childRes.cacheSharedResult()
+	assert.Assert(t, childShared != nil)
+	assert.Assert(t, wrapperShared.id != childShared.id)
+
+	hitRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: wrapperCallB}, func(context.Context) (AnyResult, error) {
+		return nil, fmt.Errorf("unexpected wrapper initializer call")
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, hitRes.HitCache())
+	hitShared := hitRes.cacheSharedResult()
+	assert.Assert(t, hitShared != nil)
+	assert.Equal(t, wrapperShared.id, hitShared.id)
+	assert.NilError(t, hitRes.PostCall(ctx))
+	assert.Equal(t, 2, postCallCount)
+	assert.NilError(t, wrapperRes.Release(ctx))
+	assert.NilError(t, childRes.Release(ctx))
+	assert.NilError(t, hitRes.Release(ctx))
+}
+
 func TestDerefValuePropagatesSafeToPersistMetadataForNullables(t *testing.T) {
 	t.Parallel()
 

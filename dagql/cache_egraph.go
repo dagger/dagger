@@ -166,6 +166,12 @@ func (c *cache) initEgraphLocked() {
 	if c.resultOutputEqClasses == nil {
 		c.resultOutputEqClasses = make(map[sharedResultID]map[eqClassID]struct{})
 	}
+	if c.termResults == nil {
+		c.termResults = make(map[egraphTermID]map[sharedResultID]egraphResultTermAssoc)
+	}
+	if c.resultTerms == nil {
+		c.resultTerms = make(map[sharedResultID]map[egraphTermID]struct{})
+	}
 	if c.egraphTerms == nil {
 		c.egraphTerms = make(map[egraphTermID]*egraphTerm)
 	}
@@ -490,6 +496,25 @@ func (c *cache) firstResultForTermSetDeterministicallyAtLocked(
 	termSet map[egraphTermID]struct{},
 	nowUnix int64,
 ) *sharedResult {
+	var bestAssociatedID sharedResultID
+	for termID := range termSet {
+		for resID := range c.termResults[termID] {
+			res := c.resultsByID[resID]
+			if res == nil {
+				continue
+			}
+			if c.resultExpiredAtLocked(res, nowUnix) {
+				continue
+			}
+			if bestAssociatedID == 0 || resID < bestAssociatedID {
+				bestAssociatedID = resID
+			}
+		}
+	}
+	if bestAssociatedID != 0 {
+		return c.resultsByID[bestAssociatedID]
+	}
+
 	seenOutputEqClasses := make(map[eqClassID]struct{}, len(termSet))
 	var bestID sharedResultID
 	for termID := range termSet {
@@ -1054,17 +1079,21 @@ func (c *cache) outputEqClassesForResultLocked(resID sharedResultID) map[eqClass
 }
 
 func (c *cache) termIDsForResultLocked(resID sharedResultID) map[egraphTermID]struct{} {
-	outputEqClasses := c.outputEqClassesForResultLocked(resID)
-	if len(outputEqClasses) == 0 {
+	termIDs := c.resultTerms[resID]
+	if len(termIDs) == 0 {
 		return nil
 	}
-	termIDs := make(map[egraphTermID]struct{})
-	for outputEqID := range outputEqClasses {
-		for termID := range c.outputEqClassToTerms[outputEqID] {
-			termIDs[termID] = struct{}{}
+	out := make(map[egraphTermID]struct{}, len(termIDs))
+	for termID := range termIDs {
+		if c.egraphTerms[termID] == nil {
+			continue
 		}
+		out[termID] = struct{}{}
 	}
-	return termIDs
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (c *cache) mergeOutputsForTermDigestLocked(ctx context.Context, termDigest string, outputEqID eqClassID) eqClassID {
@@ -1125,8 +1154,32 @@ func (c *cache) associateResultWithTermLocked(
 	}
 	if _, ok := resultOutputEqClasses[outputEqID]; !ok {
 		resultOutputEqClasses[outputEqID] = struct{}{}
-		c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 	}
+
+	termResults := c.termResults[termID]
+	if termResults == nil {
+		termResults = make(map[sharedResultID]egraphResultTermAssoc)
+		c.termResults[termID] = termResults
+	}
+	resultTerms := c.resultTerms[res.id]
+	if resultTerms == nil {
+		resultTerms = make(map[egraphTermID]struct{})
+		c.resultTerms[res.id] = resultTerms
+	}
+	assoc, ok := termResults[res.id]
+	if ok {
+		if !sameInputProvenance(assoc.inputProvenance, inputProvenance) {
+			assoc.inputProvenance = slices.Clone(inputProvenance)
+			termResults[res.id] = assoc
+			c.traceResultTermAssocUpdated(ctx, res.id, termID, inputProvenance)
+		}
+		return
+	}
+	termResults[res.id] = egraphResultTermAssoc{
+		inputProvenance: slices.Clone(inputProvenance),
+	}
+	resultTerms[termID] = struct{}{}
+	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
 }
 
 func (c *cache) teachResultIdentityLocked(
@@ -1627,8 +1680,15 @@ func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 
 	affectedOutputEqClasses := c.outputEqClassesForResultLocked(res.id)
 	for termID := range c.termIDsForResultLocked(res.id) {
+		if termResults := c.termResults[termID]; termResults != nil {
+			delete(termResults, res.id)
+			if len(termResults) == 0 {
+				delete(c.termResults, termID)
+			}
+		}
 		c.traceResultTermAssocRemoved(ctx, res.id, termID)
 	}
+	delete(c.resultTerms, res.id)
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	delete(c.resultOutputEqClasses, res.id)
 	res.storeResultCall(nil)
@@ -1671,6 +1731,7 @@ func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 				delete(set, termID)
 			}
 			delete(c.egraphTerms, termID)
+			delete(c.termResults, termID)
 			delete(c.termInputProvenance, termID)
 			c.traceTermRemoved(ctx, termID)
 		}
@@ -1693,6 +1754,8 @@ func (c *cache) maybeResetEgraphLocked() {
 	c.inputEqClassToTerms = nil
 	c.outputEqClassToTerms = nil
 	c.resultOutputEqClasses = nil
+	c.termResults = nil
+	c.resultTerms = nil
 	c.egraphTerms = nil
 	c.termInputProvenance = nil
 	c.egraphTermsByTermDigest = nil

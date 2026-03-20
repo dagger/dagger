@@ -404,6 +404,13 @@ type cache struct {
 	// currently associated with
 	resultOutputEqClasses map[sharedResultID]map[eqClassID]struct{}
 
+	// explicit result<->term associations. These are distinct from output eq
+	// class membership: multiple results can share an output eq class, but
+	// cache lookup for a matched term should first prefer results that were
+	// actually observed for that term before falling back to equivalent outputs.
+	termResults map[egraphTermID]map[sharedResultID]egraphResultTermAssoc
+	resultTerms map[sharedResultID]map[egraphTermID]struct{}
+
 	// Reverse index from any known result-associated digest to materialized results.
 	// This includes request recipe+extra digests and result recipe+extra digests.
 	egraphResultsByDigest map[string]map[sharedResultID]struct{}
