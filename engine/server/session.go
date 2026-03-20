@@ -1645,7 +1645,12 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	if err != nil {
 		return nil, err
 	}
-	if err := client.FlushTelemetry(ctx); err != nil {
+	// Flush ALL clients in the session, not just the requested one.
+	// Spans/logs from nested clients (e.g. Dang SDK) are fanned out to
+	// parent DBs, but the span batch processor may still be buffering.
+	// A session-wide flush ensures the span tree is complete before
+	// captureLogs walks it via SelectLogsBeneathSpan.
+	if err := client.daggerSession.FlushTelemetry(ctx); err != nil {
 		return nil, fmt.Errorf("flush telemetry: %w", err)
 	}
 	return client.TelemetryDB(ctx)
