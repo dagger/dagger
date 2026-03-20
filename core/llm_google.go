@@ -69,19 +69,59 @@ func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) ([]*genai.Tool, error
 }
 
 func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
+	// Build a map from CallID to ToolName so that tool result blocks
+	// (which only carry CallID) can recover the function name that
+	// Google's FunctionResponse.Name requires.
+	callIDToToolName := map[string]string{}
+	for _, msg := range history {
+		for _, block := range msg.Content {
+			if block.Kind == LLMContentToolCall && block.CallID != "" {
+				callIDToToolName[block.CallID] = block.ToolName
+			}
+		}
+	}
+
 	systemInstruction = &genai.Content{
 		Parts: []*genai.Part{},
 		Role:  "system",
 	}
+	// isToolResultOnly reports whether every block in a message is a
+	// TOOL_RESULT block.
+	isToolResultOnly := func(msg *LLMMessage) bool {
+		if len(msg.Content) == 0 {
+			return false
+		}
+		for _, b := range msg.Content {
+			if b.Kind != LLMContentToolResult {
+				return false
+			}
+		}
+		return true
+	}
+
 	for _, msg := range history {
 		var content *genai.Content
 		switch msg.Role {
 		case LLMMessageRoleSystem:
 			content = systemInstruction
 		case LLMMessageRoleUser:
-			content = &genai.Content{
-				Parts: []*genai.Part{},
-				Role:  "user",
+			// Google's API requires all FunctionResponse parts for a
+			// batch of parallel tool calls to be in a single Content.
+			// Dagger stores each tool result as a separate user message,
+			// so we merge consecutive tool-result-only user messages
+			// into one Content.
+			if isToolResultOnly(msg) && len(genaiHistory) > 0 {
+				prev := genaiHistory[len(genaiHistory)-1]
+				if prev.Role == "user" && len(prev.Parts) > 0 && prev.Parts[len(prev.Parts)-1].FunctionResponse != nil {
+					// Merge into the previous user Content.
+					content = prev
+				}
+			}
+			if content == nil {
+				content = &genai.Content{
+					Parts: []*genai.Part{},
+					Role:  "user",
+				}
 			}
 		case LLMMessageRoleAssistant:
 			content = &genai.Content{
@@ -95,9 +135,15 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 		for _, block := range msg.Content {
 			switch block.Kind {
 			case LLMContentToolResult:
+				toolName := callIDToToolName[block.CallID]
+				if toolName == "" {
+					// Fallback: CallID may already be a function name
+					// (e.g. from older history formats).
+					toolName = block.CallID
+				}
 				content.Parts = append(content.Parts, &genai.Part{
 					FunctionResponse: &genai.FunctionResponse{
-						Name: block.CallID,
+						Name: toolName,
 						Response: map[string]any{
 							"response": block.Text,
 							"error":    block.Errored,
@@ -117,7 +163,7 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 				}
 				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
-						Name: block.CallID,
+						Name: block.ToolName,
 						Args: args,
 					},
 				}
@@ -147,7 +193,12 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 			}
 		}
 
-		if content.Role != "system" {
+		// Only append to genaiHistory if this is a new Content (not
+		// merged into an existing one).
+		if content.Role == "system" {
+			continue
+		}
+		if len(genaiHistory) == 0 || genaiHistory[len(genaiHistory)-1] != content {
 			genaiHistory = append(genaiHistory, content)
 		}
 	}
@@ -171,6 +222,9 @@ func (c *GenaiClient) processStreamResponse(
 	// Phase index counter. Index 0 is reserved for thinking (if present),
 	// index 1 for text. Tool calls start at 2.
 	var toolIdx int64 = 1
+
+	// Counter for generating unique call IDs (Google's API doesn't provide them).
+	var callCounter int
 
 	// Track whether we've started a thinking phase so we can close it
 	// when the first non-thinking part arrives.
@@ -237,9 +291,11 @@ func (c *GenaiClient) processStreamResponse(
 				if err != nil {
 					return contentBlocks, tokenUsage, err
 				}
+				callCounter++
+				callID := fmt.Sprintf("google-%s-%d", x.Name, callCounter)
 				block := &LLMContentBlock{
 					Kind:      LLMContentToolCall,
-					CallID:    x.Name,
+					CallID:    callID,
 					ToolName:  x.Name,
 					Arguments: JSON(bytes),
 				}
@@ -251,7 +307,7 @@ func (c *GenaiClient) processStreamResponse(
 				contentBlocks = append(contentBlocks, block)
 
 				toolIdx++
-				p := dp.StartToolCall(toolIdx, x.Name, x.Name)
+				p := dp.StartToolCall(toolIdx, callID, x.Name)
 				fmt.Fprint(p.Stdio.Stdout, string(bytes))
 				dp.Close(toolIdx)
 			} else {
