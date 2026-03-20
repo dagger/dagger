@@ -396,24 +396,17 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		})
 	}
 
-	// Write to this client's DB and all parent DBs, mirroring the
-	// fan-out behavior of the HTTP /v1/traces handler.  Without this,
-	// spans from nested in-process clients (e.g. Dang SDK) only land
-	// in the immediate client's DB and captureLogs (which reads from
-	// the main/CLI client's DB) can't find them.
-	clients := append([]*daggerClient{ps.client}, ps.client.parents...)
-	for _, c := range clients {
-		db, err := c.TelemetryDB(ctx)
+	db, err := ps.client.TelemetryDB(ctx)
+	if err != nil {
+		return fmt.Errorf("get telemetry db: %w", err)
+	}
+	defer db.Close()
+
+	for _, insert := range inserts {
+		_, err = db.InsertSpan(ctx, *insert)
 		if err != nil {
-			return fmt.Errorf("get telemetry db for %s: %w", c.clientID, err)
+			return fmt.Errorf("insert span: %w", err)
 		}
-		for _, insert := range inserts {
-			if _, err = db.InsertSpan(ctx, *insert); err != nil {
-				db.Close()
-				return fmt.Errorf("insert span: %w", err)
-			}
-		}
-		db.Close()
 	}
 
 	return nil
@@ -443,21 +436,13 @@ func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
 		return fmt.Errorf("prepare log record %v: %w", rec, err)
 	}
 
-	// Write to this client and all parents, matching the fan-out in
-	// the HTTP /v1/logs handler.
-	clients := append([]*daggerClient{ps.client}, ps.client.parents...)
-	for _, c := range clients {
-		db, err := c.TelemetryDB(ctx)
-		if err != nil {
-			return fmt.Errorf("get telemetry db for %s: %w", c.clientID, err)
-		}
-		_, err = db.InsertLog(ctx, *insert)
-		db.Close()
-		if err != nil {
-			return err
-		}
+	db, err := ps.client.TelemetryDB(ctx)
+	if err != nil {
+		return fmt.Errorf("get telemetry db: %w", err)
 	}
-	return nil
+	defer db.Close()
+	_, err = db.InsertLog(ctx, *insert)
+	return err
 }
 
 var _ sdklog.Exporter = clientLogs{}
@@ -474,20 +459,17 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		inserts = append(inserts, insert)
 	}
 
-	// Write to this client and all parents, matching the fan-out in
-	// the HTTP /v1/logs handler.
-	clients := append([]*daggerClient{ps.client}, ps.client.parents...)
-	for _, c := range clients {
-		db, err := c.TelemetryDB(ctx)
-		if err != nil {
-			return fmt.Errorf("get telemetry db for %s: %w", c.clientID, err)
+	db, err := ps.client.TelemetryDB(ctx)
+	if err != nil {
+		return fmt.Errorf("get telemetry db: %w", err)
+	}
+	defer db.Close()
+
+	for _, insert := range inserts {
+		if _, err := db.InsertLog(ctx, *insert); err != nil {
+			slog.Warn("failed to insert log record", "error", err)
+			continue
 		}
-		for _, insert := range inserts {
-			if _, err := db.InsertLog(ctx, *insert); err != nil {
-				slog.Warn("failed to insert log record", "error", err)
-			}
-		}
-		db.Close()
 	}
 
 	return nil
