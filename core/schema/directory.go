@@ -1592,11 +1592,15 @@ func (s *directorySchema) terminal(
 		ctr = inst.Self()
 	}
 
+	dirDig, err := dir.ContentPreferredDigest()
+	if err != nil {
+		return res, err
+	}
 	dirID, err := dir.ID()
 	if err != nil {
 		return res, err
 	}
-	err = dir.Self().Terminal(ctx, dirID, ctr, &args.TerminalArgs, dir)
+	err = dir.Self().Terminal(ctx, dirID, dirDig, ctr, &args.TerminalArgs, dir)
 	if err != nil {
 		return res, err
 	}

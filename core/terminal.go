@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
@@ -60,25 +61,28 @@ type TerminalArgs struct {
 
 func (container *Container) Terminal(
 	ctx context.Context,
-	svcID *call.ID,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
 	args *TerminalArgs,
 ) error {
-	return container.terminal(ctx, svcID, args, nil, nil, nil)
+	return container.terminal(ctx, selectedID, selectedDigest, args, nil, nil, nil)
 }
 
 func (container *Container) TerminalExecError(
 	ctx context.Context,
-	svcID *call.ID,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
 	execMD *buildkit.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
 ) error {
-	return container.terminal(ctx, svcID, nil, execMD, execMeta, execErr)
+	return container.terminal(ctx, selectedID, selectedDigest, nil, execMD, execMeta, execErr)
 }
 
 func (container *Container) terminal(
 	ctx context.Context,
-	svcID *call.ID,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
 	args *TerminalArgs,
 	execMD *buildkit.ExecutionMetadata,
 	execMeta *executor.Meta,
@@ -93,7 +97,7 @@ func (container *Container) terminal(
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
 
-	term, output, err := prepTerminal(ctx, svcID, execErr)
+	term, output, err := prepTerminal(ctx, selectedID, execErr)
 	if err != nil {
 		return err
 	}
@@ -119,11 +123,13 @@ func (container *Container) terminal(
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
 
-	svcDig := svcID.ContentPreferredDigest()
+	if selectedDigest == "" {
+		return fmt.Errorf("terminal selection digest is empty")
+	}
 	eg, egctx := errgroup.WithContext(ctx)
 	runningSvc, err := svc.Start(
 		ctx,
-		svcDig,
+		selectedDigest,
 		&ServiceIO{
 			Stdin:       term.Stdin,
 			Stdout:      term.Stdout,
@@ -168,7 +174,8 @@ func (container *Container) terminal(
 
 func (dir *Directory) Terminal(
 	ctx context.Context,
-	svcID *call.ID,
+	selectedID *call.ID,
+	selectedDigest digest.Digest,
 	ctr *Container,
 	args *TerminalArgs,
 	parent dagql.ObjectResult[*Directory],
@@ -189,7 +196,7 @@ func (dir *Directory) Terminal(
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
-	return ctr.Terminal(ctx, svcID, args)
+	return ctr.Terminal(ctx, selectedID, selectedDigest, args)
 }
 
 func (*Service) Terminal(

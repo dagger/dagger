@@ -3112,11 +3112,15 @@ func (s *containerSchema) terminal(
 		args.Cmd = []string{"sh"}
 	}
 
+	ctrDig, err := ctr.ContentPreferredDigest()
+	if err != nil {
+		return res, err
+	}
 	ctrID, err := ctr.ID()
 	if err != nil {
 		return res, err
 	}
-	err = ctr.Self().Terminal(ctx, ctrID, &args.TerminalArgs)
+	err = ctr.Self().Terminal(ctx, ctrID, ctrDig, &args.TerminalArgs)
 	if err != nil {
 		return res, err
 	}

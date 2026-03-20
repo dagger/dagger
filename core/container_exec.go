@@ -1495,6 +1495,7 @@ func (container *Container) WithExec(
 				metaSpec != nil &&
 				(execMD.ExecID == "" || bkClient.RegisterInteractiveExec(execMD.ExecID)) {
 				var callID *call.ID
+				var callDig digest.Digest
 				if execMD.Call != nil {
 					dagqlCache, err := query.Cache(ctx)
 					if err != nil {
@@ -1506,13 +1507,14 @@ func (container *Container) WithExec(
 						rerr = fmt.Errorf("rebuild recipe ID for terminal exec error: %w", err)
 						return
 					}
+					callDig = callID.ContentPreferredDigest()
 				}
 				meta := *metaSpec
 				meta.Args = []string{"/bin/sh"}
 				if len(bkClient.InteractiveCommand) > 0 {
 					meta.Args = bkClient.InteractiveCommand
 				}
-				if err := container.TerminalExecError(ctx, callID, execMD, &meta, rerr); err != nil {
+				if err := container.TerminalExecError(ctx, callID, callDig, execMD, &meta, rerr); err != nil {
 					rerr = err
 					return
 				}
