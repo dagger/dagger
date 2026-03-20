@@ -160,7 +160,7 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 }
 
-const cachePersistenceSchemaVersion = "7"
+const cachePersistenceSchemaVersion = "8"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")

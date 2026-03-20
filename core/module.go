@@ -366,9 +366,9 @@ type persistedModulePayload struct {
 	OriginalName                  string                          `json:"originalName,omitempty"`
 	SDKConfig                     *SDKConfig                      `json:"sdkConfig,omitempty"`
 	Description                   string                          `json:"description,omitempty"`
-	ObjectDefs                    []*TypeDef                      `json:"objectDefs,omitempty"`
-	InterfaceDefs                 []*TypeDef                      `json:"interfaceDefs,omitempty"`
-	EnumDefs                      []*TypeDef                      `json:"enumDefs,omitempty"`
+	ObjectDefs                    []*persistedTypeDef             `json:"objectDefs,omitempty"`
+	InterfaceDefs                 []*persistedTypeDef             `json:"interfaceDefs,omitempty"`
+	EnumDefs                      []*persistedTypeDef             `json:"enumDefs,omitempty"`
 	IsToolchain                   bool                            `json:"isToolchain,omitempty"`
 	DisableDefaultFunctionCaching bool                            `json:"disableDefaultFunctionCaching,omitempty"`
 }
@@ -455,30 +455,20 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	persisted.OriginalName = mod.OriginalName
 	persisted.SDKConfig = mod.SDKConfig
 	persisted.Description = mod.Description
-	persisted.ObjectDefs = mod.ObjectDefs
-	persisted.InterfaceDefs = mod.InterfaceDefs
-	persisted.EnumDefs = mod.EnumDefs
+	persisted.ObjectDefs = make([]*persistedTypeDef, 0, len(mod.ObjectDefs))
+	for _, def := range mod.ObjectDefs {
+		persisted.ObjectDefs = append(persisted.ObjectDefs, encodePersistedTypeDef(def))
+	}
+	persisted.InterfaceDefs = make([]*persistedTypeDef, 0, len(mod.InterfaceDefs))
+	for _, def := range mod.InterfaceDefs {
+		persisted.InterfaceDefs = append(persisted.InterfaceDefs, encodePersistedTypeDef(def))
+	}
+	persisted.EnumDefs = make([]*persistedTypeDef, 0, len(mod.EnumDefs))
+	for _, def := range mod.EnumDefs {
+		persisted.EnumDefs = append(persisted.EnumDefs, encodePersistedTypeDef(def))
+	}
 	persisted.IsToolchain = mod.IsToolchain
 	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
-
-	objectSummaries := make([]string, 0, len(mod.ObjectDefs))
-	for _, def := range mod.ObjectDefs {
-		if !def.AsObject.Valid {
-			continue
-		}
-		obj := def.AsObject.Value
-		fnNames := make([]string, 0, len(obj.Functions))
-		for _, fn := range obj.Functions {
-			fnNames = append(fnNames, fn.Name)
-		}
-		objectSummaries = append(objectSummaries, fmt.Sprintf("%s:%v", obj.Name, fnNames))
-	}
-	slog.Info(
-		"cache-debug module persist encode",
-		"module", mod.Name(),
-		"object_defs", len(mod.ObjectDefs),
-		"objects", objectSummaries,
-	)
 
 	jsonBytes, err := json.Marshal(persisted)
 	if err != nil {
@@ -525,15 +515,28 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		loadedDepMods[depID] = depRes
 	}
 
+	objectDefs := make([]*TypeDef, 0, len(persisted.ObjectDefs))
+	for _, def := range persisted.ObjectDefs {
+		objectDefs = append(objectDefs, decodePersistedTypeDef(def))
+	}
+	interfaceDefs := make([]*TypeDef, 0, len(persisted.InterfaceDefs))
+	for _, def := range persisted.InterfaceDefs {
+		interfaceDefs = append(interfaceDefs, decodePersistedTypeDef(def))
+	}
+	enumDefs := make([]*TypeDef, 0, len(persisted.EnumDefs))
+	for _, def := range persisted.EnumDefs {
+		enumDefs = append(enumDefs, decodePersistedTypeDef(def))
+	}
+
 	mod := &Module{
 		NameField:                     persisted.NameField,
 		OriginalName:                  persisted.OriginalName,
 		SDKConfig:                     persisted.SDKConfig,
 		Deps:                          deps,
 		Description:                   persisted.Description,
-		ObjectDefs:                    persisted.ObjectDefs,
-		InterfaceDefs:                 persisted.InterfaceDefs,
-		EnumDefs:                      persisted.EnumDefs,
+		ObjectDefs:                    objectDefs,
+		InterfaceDefs:                 interfaceDefs,
+		EnumDefs:                      enumDefs,
 		IsToolchain:                   persisted.IsToolchain,
 		IncludeSelfInDeps:             persisted.IncludeSelfInDeps,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
@@ -572,25 +575,6 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 			}
 		}
 	}
-
-	objectSummaries := make([]string, 0, len(mod.ObjectDefs))
-	for _, def := range mod.ObjectDefs {
-		if !def.AsObject.Valid {
-			continue
-		}
-		obj := def.AsObject.Value
-		fnNames := make([]string, 0, len(obj.Functions))
-		for _, fn := range obj.Functions {
-			fnNames = append(fnNames, fn.Name)
-		}
-		objectSummaries = append(objectSummaries, fmt.Sprintf("%s:%v", obj.Name, fnNames))
-	}
-	slog.Info(
-		"cache-debug module persist decode",
-		"module", mod.Name(),
-		"object_defs", len(mod.ObjectDefs),
-		"objects", objectSummaries,
-	)
 
 	return mod, nil
 }

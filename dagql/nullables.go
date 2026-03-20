@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -136,9 +137,16 @@ func (o Optional[I]) Deref() (Typed, bool) {
 }
 
 func (o *Optional[I]) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		var zero I
+		o.Value = zero
+		o.Valid = false
+		return nil
+	}
 	if err := json.Unmarshal(p, &o.Value); err != nil {
 		return err
 	}
+	o.Valid = true
 	return nil
 }
 
@@ -261,6 +269,28 @@ func (o DynamicOptional) MarshalJSON() ([]byte, error) {
 	return optional, nil
 }
 
+func (o *DynamicOptional) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		o.Value = nil
+		o.Valid = false
+		return nil
+	}
+	if o.Elem == nil {
+		return fmt.Errorf("dynamic optional: missing element template")
+	}
+	dst := reflect.New(reflect.TypeOf(o.Elem))
+	if err := json.Unmarshal(p, dst.Interface()); err != nil {
+		return err
+	}
+	input, ok := dst.Elem().Interface().(Input)
+	if !ok {
+		return fmt.Errorf("dynamic optional: decoded value %T is not an input", dst.Elem().Interface())
+	}
+	o.Value = input
+	o.Valid = true
+	return nil
+}
+
 // Nullable wraps a type and allows it to be null.
 //
 // This is used for optional arguments and return values.
@@ -322,9 +352,16 @@ func (n Nullable[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (n *Nullable[T]) UnmarshalJSON(p []byte) error {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		var zero T
+		n.Value = zero
+		n.Valid = false
+		return nil
+	}
 	if err := json.Unmarshal(p, &n.Value); err != nil {
 		return err
 	}
+	n.Valid = true
 	return nil
 }
 
@@ -376,8 +413,23 @@ func (n DynamicNullable) MarshalJSON() ([]byte, error) {
 }
 
 func (n *DynamicNullable) UnmarshalJSON(p []byte) error {
-	if err := json.Unmarshal(p, &n.Value); err != nil {
+	if bytes.Equal(bytes.TrimSpace(p), []byte("null")) {
+		n.Value = nil
+		n.Valid = false
+		return nil
+	}
+	if n.Elem == nil {
+		return fmt.Errorf("dynamic nullable: missing element template")
+	}
+	dst := reflect.New(reflect.TypeOf(n.Elem))
+	if err := json.Unmarshal(p, dst.Interface()); err != nil {
 		return err
 	}
+	typed, ok := dst.Elem().Interface().(Typed)
+	if !ok {
+		return fmt.Errorf("dynamic nullable: decoded value %T is not typed", dst.Elem().Interface())
+	}
+	n.Value = typed
+	n.Valid = true
 	return nil
 }

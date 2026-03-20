@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/opencontainers/go-digest"
-	"gotest.tools/v3/assert"
 	"github.com/vektah/gqlparser/v2/ast"
+	"gotest.tools/v3/assert"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -216,6 +216,109 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	actualID, err := decodedRes.RecipeID()
 	assert.NilError(t, err)
 	assert.Equal(t, expectedID.Digest(), actualID.Digest())
+}
+
+func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cacheIface, err := dagql.NewCache(ctx, "")
+	assert.NilError(t, err)
+	sc := dagql.NewSessionCache(cacheIface)
+
+	root := &Query{}
+	testSrv := &moduleObjectTestServer{
+		mockServer: &mockServer{},
+		cache:      sc,
+		root:       root,
+	}
+	root.Server = testSrv
+	dag := dagql.NewServer(root, sc)
+	testSrv.dag = dag
+	ctx = ContextWithQuery(ctx, root)
+
+	nestedObjDef := NewObjectTypeDef("Nested", "", nil)
+	ifaceDef := NewInterfaceTypeDef("Iface", "")
+	enumDef := NewEnumTypeDef("Choice", "", nil)
+	enumDef.Members = []*EnumMemberTypeDef{
+		NewEnumMemberTypeDef("one", "one", "", nil, nil),
+	}
+	objDef := NewObjectTypeDef("Thing", "", nil)
+	objDef.Fields = []*FieldTypeDef{
+		{
+			Name:         "child",
+			OriginalName: "child",
+			TypeDef: &TypeDef{
+				Kind:     TypeDefKindObject,
+				AsObject: dagql.NonNull(nestedObjDef),
+			},
+		},
+		{
+			Name:         "iface",
+			OriginalName: "iface",
+			TypeDef: &TypeDef{
+				Kind:        TypeDefKindInterface,
+				AsInterface: dagql.NonNull(ifaceDef),
+			},
+		},
+		{
+			Name:         "choice",
+			OriginalName: "choice",
+			TypeDef: &TypeDef{
+				Kind:   TypeDefKindEnum,
+				AsEnum: dagql.NonNull(enumDef),
+			},
+		},
+	}
+
+	mod := &Module{
+		NameField:    "Test",
+		OriginalName: "Test",
+		SDKConfig:    &SDKConfig{},
+		Deps:         NewModDeps(root, nil),
+		ObjectDefs: []*TypeDef{
+			{
+				Kind:     TypeDefKindObject,
+				AsObject: dagql.NonNull(objDef),
+			},
+		},
+		InterfaceDefs: []*TypeDef{
+			{
+				Kind:        TypeDefKindInterface,
+				AsInterface: dagql.NonNull(ifaceDef),
+			},
+		},
+		EnumDefs: []*TypeDef{
+			{
+				Kind:   TypeDefKindEnum,
+				AsEnum: dagql.NonNull(enumDef),
+			},
+		},
+	}
+
+	payload, err := mod.EncodePersistedObject(ctx, nil)
+	assert.NilError(t, err)
+
+	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload)
+	assert.NilError(t, err)
+	decoded, ok := decodedTyped.(*Module)
+	assert.Assert(t, ok)
+
+	assert.Equal(t, 1, len(decoded.ObjectDefs))
+	assert.Equal(t, 1, len(decoded.InterfaceDefs))
+	assert.Equal(t, 1, len(decoded.EnumDefs))
+	assert.Assert(t, decoded.ObjectDefs[0].AsObject.Valid)
+	assert.Assert(t, decoded.InterfaceDefs[0].AsInterface.Valid)
+	assert.Assert(t, decoded.EnumDefs[0].AsEnum.Valid)
+
+	decodedFields := decoded.ObjectDefs[0].AsObject.Value.Fields
+	assert.Equal(t, 3, len(decodedFields))
+	assert.Assert(t, decodedFields[0].TypeDef.AsObject.Valid)
+	assert.Assert(t, decodedFields[1].TypeDef.AsInterface.Valid)
+	assert.Assert(t, decodedFields[2].TypeDef.AsEnum.Valid)
+	assert.Equal(t, "Thing", decoded.ObjectDefs[0].AsObject.Value.Name)
+	assert.Equal(t, "Iface", decoded.InterfaceDefs[0].AsInterface.Value.Name)
+	assert.Equal(t, "Choice", decoded.EnumDefs[0].AsEnum.Value.Name)
 }
 
 func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
