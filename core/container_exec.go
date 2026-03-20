@@ -1449,6 +1449,16 @@ func (container *Container) WithExec(
 
 			var metaRef bkcache.ImmutableRef
 			var moduleRef bkcache.ImmutableRef
+			resolveAndTrackFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
+				ref, err := resolveFailureRef(state)
+				if err != nil {
+					return nil, err
+				}
+				if ref != nil {
+					resolvedRefs = append(resolvedRefs, ref)
+				}
+				return ref, nil
+			}
 			for _, state := range mountStates {
 				keepRef := state.Dest == buildkit.MetaMountDestPath
 				if extractModuleError && state.Dest == modMetaDirPath {
@@ -1457,7 +1467,7 @@ func (container *Container) WithExec(
 				if !keepRef {
 					continue
 				}
-				ref, err := resolveFailureRef(state)
+				ref, err := resolveAndTrackFailureRef(state)
 				if err != nil {
 					rerr = errors.Join(rerr, err)
 					continue
@@ -1465,7 +1475,6 @@ func (container *Container) WithExec(
 				if ref == nil {
 					continue
 				}
-				resolvedRefs = append(resolvedRefs, ref)
 				if state.Dest == buildkit.MetaMountDestPath {
 					metaRef = ref
 				}
@@ -1489,11 +1498,27 @@ func (container *Container) WithExec(
 				}
 			}
 
+			execMDPresent := execMD != nil
+			execInternal := false
+			execID := ""
+			hasMetaSpec := metaSpec != nil
+			registerAllowed := false
+			if execMDPresent {
+				execInternal = execMD.Internal
+				execID = execMD.ExecID
+			}
+			if bkClient.Interactive && execMDPresent && !execInternal && hasMetaSpec {
+				if execID == "" {
+					registerAllowed = true
+				} else {
+					registerAllowed = bkClient.RegisterInteractiveExec(execID)
+				}
+			}
 			if bkClient.Interactive &&
-				execMD != nil &&
-				!execMD.Internal &&
-				metaSpec != nil &&
-				(execMD.ExecID == "" || bkClient.RegisterInteractiveExec(execMD.ExecID)) {
+				execMDPresent &&
+				!execInternal &&
+				hasMetaSpec &&
+				registerAllowed {
 				var callID *call.ID
 				var callDig digest.Digest
 				if execMD.Call != nil {
@@ -1514,7 +1539,84 @@ func (container *Container) WithExec(
 				if len(bkClient.InteractiveCommand) > 0 {
 					meta.Args = bkClient.InteractiveCommand
 				}
-				if err := container.TerminalExecError(ctx, callID, callDig, execMD, &meta, rerr); err != nil {
+				terminalContainer := cloneContainerForTerminal(container)
+				terminalContainer.LazyState = NewLazyState()
+				terminalContainer.FS = inputRootFS
+				terminalContainer.Mounts = slices.Clone(inputMounts)
+				terminalContainer.MetaSnapshot = metaRef
+				if len(mountStates) >= 1 {
+					rootRef, err := resolveAndTrackFailureRef(mountStates[0])
+					if err != nil {
+						rerr = fmt.Errorf("resolve failed rootfs for terminal: %w", err)
+						return
+					}
+					if rootRef != nil {
+						rootDir := &Directory{
+							Dir:       "/",
+							Platform:  terminalContainer.Platform,
+							Services:  terminalContainer.Services,
+							LazyState: NewLazyState(),
+						}
+						if inputRootFS != nil && inputRootFS.Self() != nil {
+							rootDir.Dir = inputRootFS.Self().Dir
+							rootDir.Platform = inputRootFS.Self().Platform
+							rootDir.Services = inputRootFS.Self().Services
+						}
+						rootDir.setSnapshot(rootRef)
+						terminalContainer.FS, err = UpdatedRootFS(ctx, terminalContainer, rootDir)
+						if err != nil {
+							rerr = fmt.Errorf("rebuild failed rootfs for terminal: %w", err)
+							return
+						}
+					}
+				}
+				for i, ctrMount := range inputMounts {
+					stateIdx := i + 2
+					if stateIdx >= len(mountStates) {
+						break
+					}
+					mountRef, err := resolveAndTrackFailureRef(mountStates[stateIdx])
+					if err != nil {
+						rerr = fmt.Errorf("resolve failed mount %d for terminal: %w", i, err)
+						return
+					}
+					if mountRef == nil {
+						continue
+					}
+					switch {
+					case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.Self() != nil && !ctrMount.Readonly:
+						outputDir := &Directory{
+							Dir:       ctrMount.DirectorySource.Self().Dir,
+							Platform:  ctrMount.DirectorySource.Self().Platform,
+							Services:  ctrMount.DirectorySource.Self().Services,
+							LazyState: NewLazyState(),
+						}
+						outputDir.setSnapshot(mountRef)
+						updatedMnt, err := updatedDirMount(ctx, terminalContainer, outputDir, ctrMount.Target)
+						if err != nil {
+							rerr = fmt.Errorf("rebuild failed directory mount %d for terminal: %w", i, err)
+							return
+						}
+						ctrMount.DirectorySource = updatedMnt
+						terminalContainer.Mounts[i] = ctrMount
+					case ctrMount.FileSource != nil && ctrMount.FileSource.Self() != nil && !ctrMount.Readonly:
+						outputFile := &File{
+							File:      ctrMount.FileSource.Self().File,
+							Platform:  ctrMount.FileSource.Self().Platform,
+							Services:  ctrMount.FileSource.Self().Services,
+							LazyState: NewLazyState(),
+						}
+						outputFile.setSnapshot(mountRef)
+						updatedMnt, err := updatedFileMount(ctx, terminalContainer, outputFile, ctrMount.Target)
+						if err != nil {
+							rerr = fmt.Errorf("rebuild failed file mount %d for terminal: %w", i, err)
+							return
+						}
+						ctrMount.FileSource = updatedMnt
+						terminalContainer.Mounts[i] = ctrMount
+					}
+				}
+				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, execMD, &meta, rerr); err != nil {
 					rerr = err
 					return
 				}
