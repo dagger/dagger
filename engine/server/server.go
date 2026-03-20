@@ -713,9 +713,10 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			doneClosingCh <- err
 		}()
 
-		// all the DBs closed, do a final sync
-		// need an fd for an arbitrary file on the filesystem
-		f, err := os.Open(srv.snapshotterDBPath)
+		// all the DBs closed, do a final sync of the engine state filesystem.
+		// Use a guaranteed child of the state root rather than the mountpoint
+		// itself so path resolution is unambiguously inside the mounted tree.
+		f, err := os.Open(srv.workerRootDir)
 		if err != nil {
 			err = fmt.Errorf("failed to open root dir for final sync: %w", err)
 			return

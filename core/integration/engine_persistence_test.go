@@ -393,6 +393,8 @@ printf 'layered\n' > /work/layered.txt
 	t.Run("engine-dev container build survives restart", func(ctx context.Context, t *testctx.T) {
 		stateKey := "phase7-engine-dev-build-state-" + identity.NewID()
 		repoDir := c.Host().Directory("/app")
+		writeRandomScript := "set -eu\nhead -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /tmp/random\n"
+		writeSummaryScript := "set -eu\ntest -x /usr/local/bin/dagger-engine\nprintf '%s|layered\\n' \"$(cat /tmp/random)\" > /tmp/summary\n"
 
 		runCLI := func(ctx context.Context, t *testctx.T, engineSvc *dagger.Service, args ...string) string {
 			t.Helper()
@@ -415,7 +417,8 @@ printf 'layered\n' > /work/layered.txt
 			upstreamSvcA,
 			"call", "engine-dev", "container",
 			"with-exec", "--args", "true",
-			"with-exec", "--args", "sh", "--args", "-ec", "--args", `head -c 32 /dev/urandom | sha256sum | cut -d" " -f1 > /tmp/random`,
+			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
+			"with-exec", "--args", "sh,/tmp/write-random.sh",
 			"file", "--path", "/tmp/random",
 			"contents",
 		)
@@ -435,7 +438,8 @@ printf 'layered\n' > /work/layered.txt
 			upstreamSvcB,
 			"call", "engine-dev", "container",
 			"with-exec", "--args", "true",
-			"with-exec", "--args", "sh", "--args", "-ec", "--args", `head -c 32 /dev/urandom | sha256sum | cut -d" " -f1 > /tmp/random`,
+			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
+			"with-exec", "--args", "sh,/tmp/write-random.sh",
 			"file", "--path", "/tmp/random",
 			"contents",
 		)
@@ -447,8 +451,10 @@ printf 'layered\n' > /work/layered.txt
 			upstreamSvcB,
 			"call", "engine-dev", "container",
 			"with-exec", "--args", "true",
-			"with-exec", "--args", "sh", "--args", "-ec", "--args", `head -c 32 /dev/urandom | sha256sum | cut -d" " -f1 > /tmp/random`,
-			"with-exec", "--args", "sh", "--args", "-ec", "--args", `test -x /usr/local/bin/dagger-engine && printf '%s|layered\n' "$(cat /tmp/random)" > /tmp/summary`,
+			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
+			"with-exec", "--args", "sh,/tmp/write-random.sh",
+			"with-new-file", "--path", "/tmp/write-summary.sh", "--contents", writeSummaryScript,
+			"with-exec", "--args", "sh,/tmp/write-summary.sh",
 			"file", "--path", "/tmp/summary",
 			"contents",
 		)
