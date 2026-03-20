@@ -247,7 +247,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 	}
 
 	class := dagql.NewClass(dag, classOpts)
-	if obj.isMainObject() && !opt.SkipConstructor {
+	if obj.isMainObject() && !opt.SkipConstructor && !opt.Entrypoint {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
@@ -356,12 +356,25 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagql.Server) error {
 	constructorName := gqlFieldName(obj.Module.Name())
-	constructorSpec, ok := dag.Root().ObjectType().FieldSpec(constructorName, dag.View)
-	if !ok {
-		return fmt.Errorf("constructor %q not found", constructorName)
-	}
 
-	constructorArgs := constructorSpec.Args.Inputs(dag.View)
+	// Build constructor arg specs from the module's type definition
+	// rather than looking them up from the server — the constructor
+	// is not installed on the outer server when Entrypoint is set.
+	var constructorArgs []dagql.InputSpec
+	if obj.TypeDef.Constructor.Valid {
+		fn, err := NewModFunction(ctx, obj.Module, obj.TypeDef, obj.TypeDef.Constructor.Value)
+		if err != nil {
+			return fmt.Errorf("failed to create constructor function: %w", err)
+		}
+		if err := fn.mergeUserDefaultsTypeDefs(ctx); err != nil {
+			return fmt.Errorf("failed to merge constructor user defaults: %w", err)
+		}
+		spec, err := fn.metadata.FieldSpec(ctx, obj.Module)
+		if err != nil {
+			return fmt.Errorf("failed to get constructor field spec: %w", err)
+		}
+		constructorArgs = spec.Args.Inputs(dag.View)
+	}
 
 	// Install `with` field on Query that stores constructor args for
 	// entrypoint proxy resolvers to forward to the constructor.

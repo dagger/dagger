@@ -909,12 +909,6 @@ type Ci {
 		require.NoError(t, err)
 		require.Equal(t, "custom container", strings.TrimSpace(out))
 	})
-
-	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("ci", "container")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "custom container", strings.TrimSpace(out))
-	})
 }
 
 func (WorkspaceSuite) TestEntrypointProxyConstructorArgOverlap(ctx context.Context, t *testctx.T) {
@@ -944,10 +938,10 @@ type Ci {
 		require.Equal(t, "ctor:method", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced method still works", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("ci", "--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
+	t.Run("graphql with works for constructor args", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{with(prefix:"ctor"){echo(prefix:"method")}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "ctor:method", strings.TrimSpace(out))
+		require.JSONEq(t, `{"with":{"echo":"ctor:method"}}`, out)
 	})
 }
 
@@ -1000,19 +994,6 @@ type Shadows {
 		require.Equal(t, "my-directory", strings.TrimSpace(out))
 	})
 
-	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("shadows", "container")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "my-container", strings.TrimSpace(out))
-
-		out, err = base.With(daggerCall("shadows", "file")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "my-file", strings.TrimSpace(out))
-
-		out, err = base.With(daggerCall("shadows", "directory")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "my-directory", strings.TrimSpace(out))
-	})
 }
 
 // TestEntrypointProxySelfNamedMethod verifies that a module whose main object
@@ -1110,11 +1091,6 @@ type Dirs {
 		require.Contains(t, strings.TrimSpace(out), "3.20")
 	})
 
-	t.Run("namespaced path still works", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("dirs", "directory", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello.txt", strings.TrimSpace(out))
-	})
 }
 
 // TestEntrypointProxyDirectoryField verifies that a container-based module
@@ -1159,18 +1135,12 @@ func (p *Playground) SayHello() string {
 }
 `)
 
-	// Query through the constructor directly — exercises
-	// ContainerRuntime.Call on the outer server where the "directory"
-	// proxy shadows the core field. Must come first to avoid caching
-	// from the proxy path masking the bug.
-	out, err := base.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
-
-	// Query through entrypoint proxies — the intended usage pattern.
-	// Demonstrates that module methods and fields (including ones that
-	// shadow core API names) are accessible at Query root.
-	out, err = base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
+	// Query through entrypoint proxies — exercises ContainerRuntime.Call
+	// because the proxy resolver delegates to the inner server, which
+	// calls the container-based SDK. The "directory" proxy shadows the
+	// core field on the outer server, but the inner server resolves
+	// the core "directory" for engine plumbing.
+	out, err := base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"sayHello":"hello!", "directory":{"entries": []}}`, out)
 }
