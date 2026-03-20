@@ -36,6 +36,7 @@ import (
 	"github.com/vito/dang/pkg/introspection"
 	"github.com/vito/dang/pkg/ioctx"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -113,8 +114,17 @@ func (op DangEvalOp) Exec(ctx context.Context, g bksession.Group, inputs []solve
 	}
 	schemaFile := schemaObj.Unwrap().(*core.File)
 
+	// Use the cause span context for trace propagation to nested clients.
+	// The buildkit vertex span's parent can be wrong under parallel
+	// execution (MultiSpan first-wins race), but the cause context
+	// (from WithTracePropagation) always has the correct parent.
+	traceCtx := ctx
+	if opt.CauseCtx.IsValid() {
+		traceCtx = trace.ContextWithRemoteSpanContext(ctx, opt.CauseCtx)
+	}
+
 	// Run the Dang evaluation.
-	output, err := op.eval(ctx, query, modSource, schemaFile)
+	output, err := op.eval(ctx, traceCtx, query, modSource, schemaFile)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +135,7 @@ func (op DangEvalOp) Exec(ctx context.Context, g bksession.Group, inputs []solve
 
 func (op DangEvalOp) eval(
 	ctx context.Context,
+	traceCtx context.Context,
 	query *core.Query,
 	modSource *core.ModuleSource,
 	schemaFile *core.File,
@@ -142,7 +153,10 @@ func (op DangEvalOp) eval(
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+			// Use traceCtx (derived from the cause span context) for
+			// trace propagation. The buildkit vertex ctx can have a
+			// misparented span under parallel execution.
+			telemetry.Propagator.Inject(traceCtx, propagation.HeaderCarrier(req.Header))
 			query.ServeHTTPToNestedClient(resp, req, execMD)
 		}), http2Srv),
 	}
@@ -182,7 +196,9 @@ func (op DangEvalOp) eval(
 		AutoImport: true,
 	})
 
-	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+	// Attach stdio to the trace context so print() logs land under
+	// the correct span regardless of buildkit vertex misparenting.
+	stdio := telemetry.SpanStdio(traceCtx, core.InstrumentationLibrary)
 	ctx = ioctx.StdoutToContext(ctx, stdio.Stdout)
 	ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 
