@@ -784,3 +784,63 @@ func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
 	//		return ctr
 	//	}
 }
+
+// TestToolCallLogRollup verifies that logs written by engine operations
+// (e.g. Workspace.search writing grep-like output to span stdio) appear
+// in the LLM's tool call result, not just the tool function's own return
+// value. This is the "log roll-up" feature in MCP.captureLogs.
+func (LLMSuite) TestToolCallLogRollup(ctx context.Context, t *testctx.T) {
+	configPath := llmconfig.ConfigFile
+	if !llmconfig.LLMConfigured() {
+		t.Skip("no LLM config found; pass --config-file to engine-dev test")
+	}
+	c := connect(ctx, t, dagger.WithConfigPath(configPath))
+
+	base := workspaceBase(t, c).
+		WithNewFile("foo.txt", "line 1\nline 2\nline 3\nHello!\nline 5\n").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init"}).
+		With(initDangModule("grep-test", `
+type GrepTest {
+  """
+  Run an LLM session that searches for a pattern.
+  """
+  pub run(source: Workspace!): LLM! {
+    llm
+      .withEnv(env.withCurrentModule.withWorkspace(source))
+      .withPrompt("Use the GrepTest grep tool to search for the literal text 'Hello!' in the workspace. Do not use any other tool.")
+      .loop
+  }
+
+  """
+  Search the workspace for a pattern and return a summary.
+  The actual grep-like results are written to span stdio by
+  Workspace.search and should appear in the tool call logs.
+  """
+  pub grep(
+    source: Workspace!,
+    """
+    Pattern to search for.
+    """
+    pattern: String!,
+  ): String! {
+    let matches = source.search(pattern: pattern, literal: true, globs: ["*.txt"])
+    toJSON(matches.{id}.length) + " result found"
+  }
+}
+`)).
+		WithMountedSecret("/root/.config/dagger/config.toml",
+			c.Secret("file://"+configPath))
+
+	reply, err := base.With(daggerCall("grep-test", "run", "last-reply")).Stdout(ctx)
+	require.NoError(t, err)
+
+	reply = strings.TrimSpace(reply)
+	t.Logf("LLM reply: %s", reply)
+
+	// The reply should contain the grep-like output from Workspace.search
+	// (rolled up from span stdio), not just the tool's return value.
+	require.Contains(t, reply, "foo.txt", "reply should contain the filename from search results")
+	require.Contains(t, reply, "Hello!", "reply should contain the matched content")
+	require.Contains(t, reply, "1 result found", "reply should contain the tool's summary")
+}
