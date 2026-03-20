@@ -47,9 +47,13 @@ func ResourceTransferPostCall(
 		// this same source-client-missing case.
 		return nil, false, nil //nolint:nilerr
 	}
-	srcDag, err := query.Server.Server(srcClientCtx)
+	srcDeps, err := query.Server.CurrentServedDeps(srcClientCtx)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to get source client dagql server: %w", err)
+		return nil, false, fmt.Errorf("failed to get source client served deps: %w", err)
+	}
+	srcDag, err := srcDeps.Schema(srcClientCtx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get source client served schema: %w", err)
 	}
 
 	secretsByDgst := map[digest.Digest]dagql.ID[*Secret]{}
