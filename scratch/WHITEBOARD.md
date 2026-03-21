@@ -196,13 +196,13 @@ These are brainstorming notes and opinions, not a settled design:
   * ownership / liveness edges
   * identity / equivalence / e-graph knowledge
   However, there is still an important intersection: cache-hit knowledge learned through term/equivalence machinery must be retained while it remains relevant to some materialized shared result, and should be released once it is no longer relevant to any remaining shared result. So the e-graph should stay separate from liveness, but the two still need controlled points of contact.
-* It may make sense to remove session cache as a concept separate from the base cache and instead make the base cache session-aware. One possible direction is that sessions become first-class nodes or owners in the same liveness/indexing system as results, rather than an outside slice of handles that happens to release things later.
+* It likely makes sense to remove `SessionCache` entirely and make the base cache session-aware. Session ownership should be part of the one ownership model, not an outside slice of handles that happens to release things later.
 * The current direction is increasingly edge-centric:
   * one conceptual root
   * edges from that root to shared results for session ownership and persisted retention
   * ordinary sharedResult -> sharedResult dependency edges below that
   This is appealing because session close and TTL expiry both become "remove some root edges, then cascade".
-* Telemetry is definitely a future pressure in this area, but it should not drive the current redesign. It is worth keeping in mind that a more session-aware cache model may help later, but we should not design around telemetry yet.
+* Telemetry is adjacent to this redesign, but it should not live in the cache anymore. If we need per-session seen-key dedupe, that should live on session/server state and be exposed to dagql through a small explicit interface rather than through a session-cache wrapper.
 * This whole area probably wants hard-cut thinking, not incremental Stockholm-syndrome patching. We should be fully willing to replace old modeling assumptions if a cleaner system emerges.
 * From a pruning perspective, the real job of prune is to manage persistable results and whatever they keep alive, directly or transitively. Non-persistable results are ideally released naturally once nothing points at them. Persistable results are the ones that can accumulate and therefore require policy.
 * That means pruning wants to reason about a "currently removable closure" or "prunable frontier", not just "things with no incoming edges right now". If pruning one persistable root would make some of its children newly unreachable, those children should become prunable as part of the same conceptual analysis.
@@ -261,6 +261,20 @@ E-graph / term / digest knowledge remains separate from ownership/liveness. It s
 
 The ownership graph is assumed to be acyclic for now.
 
+There is no `SessionCache` in the target architecture.
+
+Instead:
+
+* the base DAGQL cache is the only cache type
+* session ownership is represented directly in the base cache's ownership graph
+* session lifecycle coordination lives in engine/session state (`daggerSession`)
+* the base cache does not infer session ownership from context
+* ownership-capable cache APIs take explicit `sessionID string` arguments
+* callers must pass a real session ID when they are creating session ownership
+* `sessionID == ""` is only for explicit non-owning internal paths
+* the base cache exposes `ReleaseSession(ctx, sessionID)` to remove all session-owned state
+* `dagql.Server` receives the base cache directly, along with whatever explicit session/telemetry state it needs for caller-facing cache operations
+
 ### Node Metadata
 
 Each `sharedResult` remains the node identity.
@@ -276,6 +290,8 @@ Each node should have metadata roughly like:
 * TTL metadata may still be stored on `sharedResult` for provenance / API clarity, even if authoritative retention semantics live on persisted edges
 * associations to e-graph / term / digest knowledge that are justified by this live materialized result
 
+Session-specific telemetry dedupe metadata is not node metadata and does not live in the cache. It lives in engine/session state and is exposed to dagql through an explicit interface.
+
 ### Source Of Truth
 
 Source of truth:
@@ -284,6 +300,7 @@ Source of truth:
 * `parentResultsByChild: map[resultID]set[resultID]`
 * `sessionEdgesBySession: map[sessionID]set[resultID]`
 * `persistedEdgesByResult: map[resultID]PersistedEdge`
+* `arbitraryResultsBySession: map[sessionID]set[arbitraryCallKey]`
 
 Derived / cached state:
 
@@ -304,6 +321,7 @@ Concrete representation can stay boring:
 * `parentResultsByChild` for dependency edges (`child -> parent`)
 * `sessionEdgesBySession` for root-owned session edges
 * `persistedEdgesByResult` for root-owned persisted edges
+* a separate arbitrary-results-by-session index for the non-graph arbitrary cache path
 
 Session edges are currently modeled as a set, not a multiset:
 
@@ -356,8 +374,32 @@ Dependency edges:
 
 Session edges:
 
-* created when a session first acquires a given result
+* created only when an ownership-capable cache API is called with a non-empty explicit `sessionID`
 * removed when the session closes
+
+That means session ownership is not attached later by a wrapper, and it is not inferred implicitly from ambient context.
+
+### Ownership-Capable Cache Entrypoints
+
+Only a small set of cache entrypoints may create session ownership:
+
+* `GetOrInitCall(ctx, sessionID, ...)`
+* `LoadResultByResultID(ctx, sessionID, ...)`
+* `AttachResult(ctx, sessionID, ...)`
+* `GetOrInitArbitrary(ctx, sessionID, ...)`
+
+Rules:
+
+* `sessionID != ""` means the call may create session ownership
+* `sessionID == ""` means the call is explicitly non-owning
+* if there is no legitimate production use case for an empty session ID on a given entrypoint, empty session ID should be an error rather than a silent fallback
+
+Pure internal cache lookup helpers should not create session ownership and should not be exported:
+
+* `lookupCacheForDigests`
+* `lookupCallRequest`
+
+Those internal helpers exist specifically for recipe replay / structural lookup / other non-owning internal paths.
 
 Persisted edges:
 
@@ -410,15 +452,17 @@ Important implementation note:
 
 Session close should be modeled as:
 
-1. Find all results in `sessionEdgesBySession[sessionID]`.
-2. Remove those session edges under the graph lock.
-3. Seed the local zero-count work queue.
-4. Run the exact graph-detachment portion of the synchronous collection cascade under the lock.
-5. Drop the session's edge index entry.
-6. Release the lock.
-7. Run collected finalizers outside the lock.
+1. Engine/session state marks the session as closing and blocks new DAGQL work.
+2. Engine/session state waits for in-flight DAGQL work for that session to drain.
+3. Engine/session teardown calls `baseCache.ReleaseSession(ctx, sessionID)`.
+4. The base cache removes all session edges for that session under the graph lock.
+5. The base cache also releases all arbitrary cached values owned by that session.
+6. The base cache seeds the local zero-count work queue.
+7. The base cache runs the exact graph-detachment portion of the synchronous collection cascade under the lock.
+8. The base cache releases the lock.
+9. The base cache runs collected finalizers outside the lock.
 
-No separate session-cache slice should be necessary once session ownership is represented in the graph.
+No separate session-cache wrapper should exist in this design.
 
 ### Persisted Edge Add
 
@@ -545,7 +589,8 @@ The point of this section is to identify, before coding, exactly where the curre
 Phase 1 should include:
 
 * the `sharedResult` ownership/liveness refactor
-* session ownership moving out of `SessionCache.results` slices and into graph edges
+* deleting `SessionCache` entirely
+* moving session ownership into the base cache ownership graph
 * persisted ownership moving out of `depOfPersistedResult` booleans and into explicit persisted edges
 * prune moving to "cut persisted edges, then exact cascade"
 * persistence export/import moving to explicit persisted-edge state
@@ -562,10 +607,10 @@ Phase 1 should explicitly not try to solve everything:
 Preferred order:
 
 1. Update the design/debug surface so the new ownership graph can be inspected while being built.
-2. Rewrite in-memory ownership state in `dagql/cache.go` and `dagql/session_cache.go`.
-3. Rewrite prune to consume the new ownership graph.
-4. Rewrite persistence export/import and schema to persist the new ownership state.
-5. Wire snapshot-retain preparation at the persisted-export boundary.
+2. Delete `SessionCache` by moving its real responsibilities either into the base cache or into engine/session state.
+3. Rewrite in-memory ownership state in `dagql/cache.go`.
+4. Rewrite prune to consume the new ownership graph.
+5. Rewrite persistence export/import and schema to persist the new ownership state.
 6. Rewrite tests and debug output around the new model.
 
 ### File Map
@@ -594,6 +639,7 @@ Current responsibilities encoded here that must change:
   * increments child `refCount`
   * marks persisted closure via `markResultAsDepOfPersistedLocked`
 * TTL merge currently lives on `sharedResult.expiresAtUnix` and keeps the earlier expiry
+* the base cache currently has no explicit session-ownership boundary in its API surface and relies on `SessionCache` for that
 
 Planned rewrite chunks:
 
@@ -609,11 +655,29 @@ Planned rewrite chunks:
   * `parentResultsByChild`
   * `sessionEdgesBySession`
   * `persistedEdgesByResult`
+  * arbitrary-results-by-session tracking
   * cached incoming ownership counts
 * Rewrite dependency creation:
   * result-call-derived parents added during `initCompletedResult`
   * `HasOwnedResults` / `AttachOwnedResults` adds explicit child->parent dependency edges
   * `AddExplicitDependency` becomes "add dependency edge" instead of "hold child ref"
+* Make ownership-capable cache entrypoints take explicit `sessionID string` arguments:
+  * `GetOrInitCall`
+  * `LoadResultByResultID`
+  * `AttachResult`
+  * `GetOrInitArbitrary`
+* Do not infer session ownership from `context.Context`
+* Lowercase pure internal lookup helpers and keep them non-owning:
+  * `lookupCacheForDigests`
+  * `lookupCallRequest`
+* Enforce explicit ownership boundaries:
+  * non-empty `sessionID` creates session ownership where the design says it should
+  * `sessionID == ""` is only for explicit non-owning internal paths
+  * if an entrypoint has no legitimate production non-owning mode, empty session ID should be an error
+* Add `ReleaseSession(ctx, sessionID)` to the base cache:
+  * remove all session edges
+  * release arbitrary values owned by that session
+  * run the exact synchronous collection cascade
 * Rewrite collection:
   * remove edge(s)
   * seed zero-count local queue
@@ -622,9 +686,8 @@ Planned rewrite chunks:
   * run finalizers after unlock
 * Rewrite `Result.Release` semantics:
   * detached results still directly run their finalizer if any
-  * cache-backed result release must stop being the primary ownership mechanism
+  * cache-backed result release must stop being a public/user-facing concept
   * eliminate public cache-backed `Result.Release()` usage entirely if possible
-  * make cache-backed `Result.Release()` non-public / non-user-facing so callers do not accidentally depend on the old model
 * Rewrite TTL handling:
   * keep node-level hit eligibility on `sharedResult`
   * move retained-root expiry semantics to `persistedEdgesByResult`
@@ -636,26 +699,20 @@ Planned rewrite chunks:
 
 ### `dagql/session_cache.go`
 
-This file currently encodes the old session-lifetime model as slices of acquired results.
+This file should be deleted entirely.
 
-Current responsibilities encoded here that must change:
+Its responsibilities split in two directions:
 
-* `results []AnyResult` is an implicit multiset of release obligations
-* `ReleaseAndClose` walks that slice and calls `Release()` repeatedly
-* duplicate tracking is implicitly meaningful because it mirrors repeated acquires
+* move real cache/lifetime behavior into `dagql/cache.go`
+* move session lifecycle coordination and telemetry seen-key storage into `engine/server/session.go`
 
 Planned rewrite chunks:
 
-* Replace `results []AnyResult` with session-edge management into the base cache ownership graph
-* `GetOrInitCall`, `LookupCacheForDigests`, `lookupCallRequest`, and `AttachResult` should add a session edge for the returned `sharedResult`
-* `ReleaseAndClose` should:
-  * stop releasing a slice of results
-  * delegate all real edge-removal / cascade logic to the base cache (see design above for session-close / collection semantics)
-  * remove all session edges for that session via the base cache
-  * then surface any finalizer errors
-* Keep `inflight` / `isClosed` / wait semantics
-* Keep arbitrary cached values separate for now:
-  * `arbitraryResults` can remain a distinct path in phase 1
+* delete `SessionCache`
+* delete `NewSessionCache`
+* delete `ReleaseAndClose`
+* move cache-call telemetry option types and helpers out of this file into a neutral dagql file if they still make sense
+* keep `WithRepeatedTelemetry` / `WithNonInternalTelemetry` only if they still serve a real purpose after the move, but do not keep them tied to a cache wrapper concept
 
 ### `dagql/cache_egraph.go`
 
@@ -674,6 +731,9 @@ Planned rewrite chunks:
   * term lookup
   * digest association
   * eq-class maintenance
+* Keep pure lookup helpers non-owning and internal-only:
+  * `lookupCacheForDigests`
+  * `lookupCallRequest`
 * Keep e-graph cleanup tied to node removal, but not to liveness decisions
 
 ### `dagql/cache_prune.go`
@@ -735,7 +795,8 @@ Planned rewrite chunks:
 * Rebuild cached incoming ownership counts from:
   * persisted edges
   * dependency edges
-* Session edges start empty on import
+* session edges start empty on import
+* arbitrary-results-by-session state starts empty on import
 * Reconstruct the exact e-graph knowledge that was exported; import does not need extra persisted-awareness beyond the imported rows themselves
 
 ### `dagql/cache_persistence_contracts.go` and `persistdb`
@@ -778,6 +839,95 @@ Planned rewrite chunks:
 * ensure finalizers are only run after graph detachment, outside coarse locks
 * delete `PreparePersistedObject`-style methods unless implementation immediately proves a real need during the cutover
 
+### `dagql/server.go`
+
+This file currently bakes `SessionCache` into the server type.
+
+Current responsibilities encoded here that must change:
+
+* `Server.Cache` is currently `*SessionCache`
+* `NewServer` and `WithCache` currently take `*SessionCache`
+* `recipeLoadState.cache` currently depends on the session-cache wrapper, including `lookupCallRequest`
+
+Planned rewrite chunks:
+
+* change `Server.Cache` to the base cache type
+* change `NewServer` and `WithCache` accordingly
+* ensure caller-facing server paths have an explicit session ID available for ownership-capable cache calls
+* keep `lookupCallRequest` on the base cache in simplified form if still needed for recipe loading
+* lowercase `LookupCacheForDigests` to `lookupCacheForDigests` and keep it internal-only
+* add a small explicit interface on `Server` for telemetry seen-key access
+  * implemented by engine/session-side state
+  * not by the cache
+
+### `engine/server/session.go`
+
+This file should become the owner of DAGQL session lifecycle state once `SessionCache` is deleted.
+
+Current responsibilities encoded here that must change:
+
+* `daggerSession` currently stores `dagqlCache *dagql.SessionCache`
+* session init constructs `dagql.NewSessionCache(...)`
+* session teardown calls `sess.dagqlCache.ReleaseAndClose(ctx)`
+
+Planned rewrite chunks:
+
+* remove `dagqlCache *dagql.SessionCache`
+* keep `srv.baseDagqlCache` as the only cache instance
+* add explicit DAGQL session lifecycle state to `daggerSession`:
+  * open/closed marker for DAGQL work
+  * in-flight request counting
+  * wait primitive for draining in-flight DAGQL requests
+  * telemetry seen-key storage
+* on session close:
+  * mark session closing
+  * reject new DAGQL work
+  * wait for in-flight DAGQL requests to drain
+  * call `srv.baseDagqlCache.ReleaseSession(ctx, sess.sessionID)`
+* `dagql.NewServer(...)` should receive the base cache directly plus the explicit telemetry/session interface it needs
+* engine/session code should pass explicit session IDs into ownership-capable cache APIs instead of expecting the cache to discover them from context
+
+### `core/query.go`
+
+This file currently leaks `SessionCache` as a type into the core/query interface surface.
+
+Planned rewrite chunks:
+
+* change `Cache(context.Context)` from `*dagql.SessionCache` to the base cache type/interface
+* change `CurrentDagqlCache(...)` accordingly or delete/rename it if the old name becomes misleading
+* update all server implementations and callers to stop depending on `SessionCache` as a type
+* update callers to pass explicit session IDs when invoking ownership-capable cache entrypoints
+
+### `dagql/cache_persistence_resolver.go`
+
+This file currently carries `SessionCache` forwarding adapters.
+
+Planned rewrite chunks:
+
+* delete the `SessionCache` forwarding methods entirely
+* keep only the base-cache implementations
+
+### Telemetry Hooks
+
+Telemetry dedupe should no longer live in the cache layer.
+
+Planned rewrite chunks:
+
+* move session-level seen-key storage to `daggerSession`
+* keep dagql telemetry callback construction in `dagql/objects.go`
+* expose seen-key access to dagql through a small explicit interface passed into `NewServer`
+* do not let cache internals own or reason about telemetry dedupe
+
+### Arbitrary Cached Values
+
+Arbitrary cached values stay separate from the ownership graph for now.
+
+Planned rewrite chunks:
+
+* keep arbitrary cached values stored in the base cache
+* add base-cache tracking of arbitrary values by session
+* make `ReleaseSession` release those arbitrary values in addition to removing session edges from the ownership graph
+
 Files to delete `PreparePersistedObject` from:
 
 * `core/directory.go`
@@ -813,7 +963,7 @@ This file should stay relatively simple, but its comments and expectations need 
 Planned rewrite chunks:
 
 * keep prune policy parsing / override resolution
-* update local-cache comments / semantics so "actively used" means session-reachable
+* update local-cache comments / semantics so "actively used" means "has a direct session edge"
 * keep translating prune reports from dagql usage entries
 
 ### `dagql/cache_debug.go`
@@ -835,12 +985,15 @@ Planned rewrite chunks:
 Tests that will likely need direct attention:
 
 * `dagql/session_cache_test.go`
-  * replace slice/refcount expectations with session-edge expectations
+  * delete this file and replace its meaningful coverage with base-cache / engine-session tests
 * `dagql/cache_persistence_worker_test.go`
 * `dagql/cache_persistence_import_test.go`
   * rewrite around explicit persisted edges and the post-session-close export model
 * `dagql/cache_test.go`
   * rewrite tests that currently exercise `UsageEntries()` or direct cache-backed `Result.Release()`
+  * add tests for `ReleaseSession`
+  * add tests for explicit `sessionID` behavior on ownership-capable cache entrypoints
+  * add tests that empty `sessionID` errors where no legitimate production non-owning mode exists
 * prune-focused tests in `dagql` and `core/integration`
   * assert session-active vs persisted-retained behavior clearly
 * cache debug / introspection tests, if any, that currently assume `depOfPersistedResult`
@@ -853,6 +1006,7 @@ These are the places most likely to bite during implementation:
 * current persistence worker mirrors `depOfPersistedResult` booleans instead of explicit persisted edges
 * `PreparePersistedObject` exists today but appears to be dead/orphaned code and should be deleted
 * current direct `Result.Release()` behavior is still embedded in some internal code paths and must be audited during the cutover
+* `SessionCache` is currently doing several unrelated jobs at once (lifetime tracking, session close gating, telemetry dedupe, forwarding), and all of those have to be split cleanly rather than recreated under a different name
 
 ### Explicit Deletions
 
@@ -870,3 +1024,6 @@ Production/runtime code to delete as part of the cutover unless implementation i
 * test-only `cache.measurePruneCandidateSizesLocked()`
 * orphan `PreparePersistedObject` methods
 * public cache-backed `Result.Release()` semantics
+* `SessionCache`
+* `NewSessionCache`
+* `ReleaseAndClose`
