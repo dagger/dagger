@@ -141,6 +141,8 @@ to dagger.
   git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
   ```
 
+- [ ] Bump [Go SDK package commit](https://github.com/dagger/dagger/blob/becc3f0a6626cf6829ef96ded00d379d3126ecd4/core/sdk/go_sdk.go#L27) to the latest commit from the [dagger-go-sdk](https://github.com/dagger/dagger-go-sdk) repository.
+
 - [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
   ```console
@@ -320,6 +322,12 @@ find .github/ -type f -exec sed -i '' -e 's/0-19-1/0-19-2/g' -e 's/0\.19\.1/0\.1
   go get github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
   cd ../..
 
+  # The following command *should* work, but it may fail during codegen with "no packages found in ." (undetermined cause).
+  # If it does running the following commands enough times seem to workaround the problem and enable recursive to work: 
+  # 1. `find toolchains/ -name go.mod -execdir dagger develop \;`
+  # 2. `find .dagger -name go.mod -execdir dagger develop \;`
+  # 3. `find toolchains/ -name go.mod -execdir go mod tidy \;`
+  # 4. `find .dagger -name go.mod -execdir go mod tidy \;`
   dagger develop --recursive -m .
 
   # update all other modules in the repo (excluding docs snippets)

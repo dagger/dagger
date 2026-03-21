@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -33,6 +33,9 @@ const plainMaxLiteralLen = 256 // same value as cloud currently
 
 type frontendPlain struct {
 	dagui.FrontendOpts
+
+	// telemetryError records errors from the OTel telemetry pipeline.
+	telemetryError atomic.Pointer[error]
 
 	// db stores info about all the spans
 	db   *dagui.DB
@@ -231,6 +234,10 @@ func (fe *frontendPlain) SetVerbosity(n int) {
 	fe.mu.Unlock()
 }
 
+func (fe *frontendPlain) SetTelemetryError(err error) {
+	fe.telemetryError.Store(&err)
+}
+
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
@@ -245,7 +252,7 @@ func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
+func (fe *frontendPlain) Background(cmd ExecCommand, raw bool) error {
 	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
@@ -423,7 +430,11 @@ func (fe *frontendPlain) finalRender() {
 		fmt.Fprintln(stderr)
 	}
 
-	handleTelemetryErrorOutput(stderr, fe.output, fe.TelemetryError)
+	var telemetryErr error
+	if p := fe.telemetryError.Load(); p != nil {
+		telemetryErr = *p
+	}
+	handleTelemetryErrorOutput(stderr, fe.output, telemetryErr)
 
 	if fe.msgPreFinalRender.Len() > 0 {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
