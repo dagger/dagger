@@ -31,7 +31,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
@@ -46,7 +46,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
@@ -61,7 +61,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 }
 

@@ -123,7 +123,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
@@ -144,7 +144,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
 	})
 
 	t.Run("specify a custom location for the main object", func(ctx context.Context, t *testctx.T) {
@@ -186,7 +186,7 @@ class HelloWorld:
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
+		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
 
 	t.Run("module name with number", func(ctx context.Context, t *testctx.T) {
@@ -243,7 +243,7 @@ class Test:
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
 
 	t.Run("fallback to main import package name", func(ctx context.Context, t *testctx.T) {
@@ -290,7 +290,7 @@ class Test:
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
 }
 
@@ -1183,7 +1183,7 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
 
 	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	dirID := gjson.Get(out, "directory.withNewFile.id").String()
+	dirID := gjson.Get(out, "withNewFile.id").String()
 
 	for _, tc := range []struct {
 		name     string
@@ -1605,7 +1605,7 @@ func (PythonSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"foo":{"message":"bar"}}}`, out)
+	require.JSONEq(t, `{"foo":{"message":"bar"}}`, out)
 }
 
 func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {

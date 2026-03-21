@@ -104,7 +104,7 @@ type DanglingIface interface {
 		With(daggerQuery(`{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
+	require.JSONEq(t, `{"hello":"hello"}`, out)
 }
 
 func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {

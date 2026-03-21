@@ -60,7 +60,7 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 		With(daggerQuery(`{testContainer, testDirectory, testFile}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"bare": {"testContainer": true, "testDirectory": true, "testFile": true}}`, out)
+	require.JSONEq(t, `{"testContainer": true, "testDirectory": true, "testFile": true}`, out)
 }
 
 func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
@@ -267,7 +267,7 @@ func (m *Test) Default(ctx context.Context) (string, error) {
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"container": "bar", "default": ""}}`, out)
+	require.JSONEq(t, `{"container": "bar", "default": ""}`, out)
 }
 
 func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
@@ -403,7 +403,7 @@ func (m *Test) NoExec(ctx context.Context) *dagger.Container {
 
 	out, err := modGen.With(daggerQuery(`{stdout stderr}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"stdout": "hello\n", "stderr": "goodbye\n"}}`, out)
+	require.JSONEq(t, `{"stdout": "hello\n", "stderr": "goodbye\n"}`, out)
 
 	_, err = modGen.With(daggerCall("no-exec", "stdout")).Stdout(ctx)
 	requireErrOut(t, err, "no command has been set")
@@ -454,7 +454,7 @@ func (m *Dep) Dummy() error {
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"test": ""}}`, out)
+	require.JSONEq(t, `{"test": ""}`, out)
 }
 
 func (LegacySuite) TestGoAlias(ctx context.Context, t *testctx.T) {
@@ -1107,7 +1107,7 @@ func (m *Bare) dir() *dagger.Directory {
 		With(daggerQuery(`{testEntries, testGlob, testName}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
+	require.JSONEq(t, `{"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}`, out)
 }
 
 func (LegacySuite) TestLegacyCustomEnum(ctx context.Context, t *testctx.T) {
@@ -1244,17 +1244,17 @@ export class Test {
 			// status property
 			out, err := modGen.With(daggerQuery(`{status}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "here", gjson.Get(out, "test.status").String())
+			require.Equal(t, "here", gjson.Get(out, "status").String())
 
 			// fromStatus
 			out, err = modGen.With(daggerQuery(`{fromStatus(status: there)}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "there", gjson.Get(out, "test.fromStatus").String())
+			require.Equal(t, "there", gjson.Get(out, "fromStatus").String())
 
 			// toStatus
 			out, err = modGen.With(daggerQuery(`{toStatus(status: "there")}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "there", gjson.Get(out, "test.toStatus").String())
+			require.Equal(t, "there", gjson.Get(out, "toStatus").String())
 		})
 	}
 }
@@ -1289,11 +1289,11 @@ export class Test {
 
 	out, err := modGen.With(daggerQuery(`{fromStatus(status: ACTIVE)}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+	require.Equal(t, "ACTIVE", gjson.Get(out, "fromStatus").String())
 
 	out, err = modGen.With(daggerQuery(`{fromStatus(status: INACTIVE)}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "INACTIVE", gjson.Get(out, "test.fromStatus").String())
+	require.Equal(t, "INACTIVE", gjson.Get(out, "fromStatus").String())
 }
 
 func (LegacySuite) TestLegacyCustomExternalEnum(ctx context.Context, t *testctx.T) {
@@ -1439,8 +1439,8 @@ export class Test {
 
 			out, err := modGen.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "here", gjson.Get(out, "test.active").String())
-			require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
+			require.Equal(t, "here", gjson.Get(out, "active").String())
+			require.Equal(t, "there", gjson.Get(out, "inactive").String())
 		})
 	}
 }

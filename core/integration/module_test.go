@@ -381,11 +381,11 @@ export class Test {
 
 			out, err := modGen.With(daggerQuery(`{set(foo: "abc", bar: "xyz"){hello}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"set":{"hello": "abcxyz"}}}`, out)
+			require.JSONEq(t, `{"set":{"hello": "abcxyz"}}`, out)
 
 			out, err = modGen.With(daggerQuery(`{set(foo: "abc", bar: "xyz"){foo}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"set":{"foo": "abc"}}}`, out)
+			require.JSONEq(t, `{"set":{"foo": "abc"}}`, out)
 
 			_, err = modGen.With(daggerQuery(`{set(foo: "abc", bar: "xyz"){bar}}`)).Stdout(ctx)
 			requireErrOut(t, err, `Cannot query field \"bar\" on type \"Test\"`)
@@ -690,7 +690,7 @@ export class Test {
 				With(daggerQuery(`{fn}`)).Stdout(ctx)
 
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"fn":"foo\n"}}`, out)
+			require.JSONEq(t, `{"fn":"foo\n"}`, out)
 		})
 	}
 }
@@ -810,7 +810,7 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 
 	out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"a":{"fn": "foo123"}}`, out)
+	require.JSONEq(t, `{"fn": "foo123"}`, out)
 
 	types := currentSchema(ctx, t, ctr).Types
 	require.NotNil(t, types.Get("A"))
@@ -857,7 +857,7 @@ func (m *Test) FnB() string {
 		With(daggerQuery(`{fnA}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"fnA": "hi from b"}}`, out)
+	require.JSONEq(t, `{"fnA": "hi from b"}`, out)
 }
 
 var useInner = `package main
@@ -937,12 +937,12 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 
 			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			// can use direct dependency directly
 			out, err = modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"dep":{"hello":"hello"}}`, out)
+			require.JSONEq(t, `{"hello":"hello"}`, out)
 		})
 	}
 }
@@ -990,7 +990,7 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 
 			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			// make back-incompatible change to dep
 			newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
@@ -1015,7 +1015,7 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 
 			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 		})
 	}
 }
@@ -1057,7 +1057,7 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 			modGen = modGen.With(daggerQuery(`{useHello}`))
 			out, err := modGen.Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"hello"}}`, out)
+			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			newInner := strings.ReplaceAll(useInner, `"hello"`, `"goodbye"`)
 			modGen = modGen.
@@ -1068,7 +1068,7 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 
 			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"useHello":"goodbye"}}`, out)
+			require.JSONEq(t, `{"useHello":"goodbye"}`, out)
 		})
 	}
 }
@@ -1164,7 +1164,7 @@ export class Test {
 
 			out, err := modGen.With(daggerQuery(`{names}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test":{"names":["foo", "bar"]}}`, out)
+			require.JSONEq(t, `{"names":["foo", "bar"]}`, out)
 		})
 	}
 }
@@ -1705,7 +1705,7 @@ func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 		With(daggerQuery(`{fn(s:"yo")}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}}`, out)
+	require.JSONEq(t, `{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}`, out)
 }
 
 func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
@@ -1788,7 +1788,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						With(daggerQuery(`{fn(id:"YES!!!!")}`)).
 						Stdout(ctx)
 					require.NoError(t, err)
-					require.JSONEq(t, `{"test":{"fn":"YES!!!!"}}`, out)
+					require.JSONEq(t, `{"fn":"YES!!!!"}`, out)
 				})
 			}
 		})
@@ -3512,7 +3512,7 @@ func (ModuleSuite) TestUnicodePath(ctx context.Context, t *testctx.T) {
 		With(daggerQuery(`{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
+	require.JSONEq(t, `{"hello":"hello"}`, out)
 }
 
 func (ModuleSuite) TestStartServices(ctx context.Context, t *testctx.T) {
@@ -6488,7 +6488,7 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 					With(daggerQuery(`{print(stringArg:"hello")}`)).
 					Stdout(ctx)
 				require.NoError(t, err)
-				require.JSONEq(t, `{"test":{"print":"hello\n"}}`, out)
+				require.JSONEq(t, `{"print":"hello\n"}`, out)
 			})
 
 			t.Run("can call with optional arguments", func(ctx context.Context, t *testctx.T) {
@@ -6496,7 +6496,7 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 					With(daggerQuery(`{printDefault}`)).
 					Stdout(ctx)
 				require.NoError(t, err)
-				require.JSONEq(t, `{"test":{"printDefault":"Hello Self Calls\n"}}`, out)
+				require.JSONEq(t, `{"printDefault":"Hello Self Calls\n"}`, out)
 			})
 		})
 	}
@@ -7522,15 +7522,15 @@ func (m *Test) ObjsWithNothing() ([]*Test, error) {
 
 	out, err := modGen.With(daggerQuery(`{nothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"nothing":null}}`, out)
+	require.JSONEq(t, `{"nothing":null}`, out)
 
 	out, err = modGen.With(daggerQuery(`{listWithNothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"listWithNothing":[null]}}`, out)
+	require.JSONEq(t, `{"listWithNothing":[null]}`, out)
 
 	out, err = modGen.With(daggerQuery(`{objsWithNothing{dirs{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"objsWithNothing":[null,{"dirs":[null]}]}}`, out)
+	require.JSONEq(t, `{"objsWithNothing":[null,{"dirs":[null]}]}`, out)
 }
 
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
