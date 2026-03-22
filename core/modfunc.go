@@ -766,6 +766,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		ParentID:  callID.Receiver(),
 		InputArgs: callInputs,
 	}
+	if wsID, ok := WorkspaceIDFromContext(ctx); ok {
+		fnCall.WorkspaceID = wsID
+	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
