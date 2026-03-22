@@ -86,32 +86,23 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 }
 
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
-	if m.env.ID() == nil {
-		return nil, fmt.Errorf("MCP has no environment configured")
+	if m.env.ID() != nil {
+		return m.env.Self().deps.Schema(ctx)
 	}
-	return m.env.Self().deps.Schema(ctx)
+	return CurrentDagqlServer(ctx)
 }
 
 func (m *MCP) LastResult() dagql.Typed {
 	return m.lastResult
 }
 
-// Input looks up an input binding by key, checking the object tracker first,
-// then falling back to the env's inputs.
+// Input looks up an input binding by key from tracked objects.
 func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	srv, err := m.Server(ctx)
 	if err != nil {
 		return nil, false, err
 	}
-	bnd, found, err := m.objs.LookupBinding(ctx, srv, m.env.ID(), key)
-	if err != nil {
-		return nil, false, err
-	}
-	if found {
-		return bnd, true, nil
-	}
-	b, ok := m.env.Self().Input(key)
-	return b, ok, nil
+	return m.objs.LookupBinding(ctx, srv, key)
 }
 
 // GetObject resolves an LLM-friendly key to a dagql object.
@@ -191,6 +182,9 @@ func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) erro
 
 // DefaultSystemPrompt assembles the system prompt from env state.
 func (m *MCP) DefaultSystemPrompt() string {
+	if m.env.ID() == nil {
+		return ""
+	}
 	env := m.env.Self()
 	var promptFiles []string
 	if len(env.inputsByName) > 0 ||
@@ -292,13 +286,13 @@ func (m *MCP) call(ctx context.Context,
 		if !ok {
 			return "", fmt.Errorf("object type %q not found", autoConstruct.Name)
 		}
-		sel, err := buildSelector(ctx, srv, schema, t, fieldDef, args, m.objs, m.env.ID())
+		sel, err := buildSelector(ctx, srv, schema, t, fieldDef, args, m.objs)
 		if err != nil {
 			return "", fmt.Errorf("build selector: %w", err)
 		}
 		sels = append(sels, sel)
 	} else {
-		sel, err := buildSelector(ctx, srv, schema, target.ObjectType(), fieldDef, args, m.objs, m.env.ID())
+		sel, err := buildSelector(ctx, srv, schema, target.ObjectType(), fieldDef, args, m.objs)
 		if err != nil {
 			return "", fmt.Errorf("build selector: %w", err)
 		}
@@ -325,29 +319,6 @@ func (m *MCP) call(ctx context.Context,
 		moduleName = autoConstruct.Name
 	}
 	return formatResult(ctx, srv, m.objs, val, moduleName)
-}
-
-func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResult[*Workspace]) error {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return fmt.Errorf("get dagql server: %w", err)
-	}
-
-	var newEnv dagql.ObjectResult[*Env]
-	if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
-		View:  srv.View,
-		Field: "withWorkspace",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "workspace",
-				Value: dagql.NewID[*Workspace](workspace.ID()),
-			},
-		},
-	}); err != nil {
-		return err
-	}
-	m.env = newEnv
-	return nil
 }
 
 // TypeCounts delegates to the object tracker.

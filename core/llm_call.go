@@ -28,7 +28,6 @@ func buildSelector(
 	fieldDef *ast.FieldDefinition,
 	args map[string]any,
 	objs *LLMObjects,
-	envID *call.ID,
 ) (dagql.Selector, error) {
 	sel := dagql.Selector{
 		View:  srv.View,
@@ -62,7 +61,7 @@ func buildSelector(
 			idStr, ok := val.(string)
 			if ok {
 				expectedType := strings.TrimSuffix(idType.TypeName(), "ID")
-				envVal, err := objs.Lookup(ctx, srv, envID, idStr, expectedType)
+				envVal, err := objs.Lookup(ctx, srv, idStr, expectedType)
 				if err != nil {
 					return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 				}

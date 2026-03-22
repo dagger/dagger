@@ -111,6 +111,10 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
+	if m.env.ID() == nil {
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
+	}
+
 	ctr := mcpCfg.Service.Self().Container
 	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
 		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
@@ -272,7 +276,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), args)
+	result, err := tool.Call(ctx, args)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}

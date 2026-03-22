@@ -74,14 +74,14 @@ func (r *LLMObjects) trackObjectLocked(id *call.ID) int {
 }
 
 // Lookup resolves an LLM-friendly key (e.g. "Container#3") to a dagql object.
-func (r *LLMObjects) Lookup(ctx context.Context, srv *dagql.Server, envID *call.ID, key string, expectedType string) (dagql.AnyObjectResult, error) {
+func (r *LLMObjects) Lookup(ctx context.Context, srv *dagql.Server, key string, expectedType string) (dagql.AnyObjectResult, error) {
 	r.mu.Lock()
 	id, exists := r.byLLMID[key]
 	r.mu.Unlock()
 	if !exists {
 		return nil, fmt.Errorf("unknown object %q", key)
 	}
-	res, err := srv.Load(EnvIDToContext(ctx, envID), id)
+	res, err := srv.Load(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -96,14 +96,14 @@ func (r *LLMObjects) Lookup(ctx context.Context, srv *dagql.Server, envID *call.
 }
 
 // LookupBinding resolves an LLM-friendly key to a Binding.
-func (r *LLMObjects) LookupBinding(ctx context.Context, srv *dagql.Server, envID *call.ID, key string) (*Binding, bool, error) {
+func (r *LLMObjects) LookupBinding(ctx context.Context, srv *dagql.Server, key string) (*Binding, bool, error) {
 	r.mu.Lock()
 	id, exists := r.byLLMID[key]
 	r.mu.Unlock()
 	if !exists {
 		return nil, false, nil
 	}
-	res, err := srv.Load(EnvIDToContext(ctx, envID), id)
+	res, err := srv.Load(ctx, id)
 	if err != nil {
 		return nil, false, err
 	}

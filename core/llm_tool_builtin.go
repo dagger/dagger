@@ -16,8 +16,9 @@ import (
 // ReadLogs, UserProvidedValues).
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSet) {
 	schema := srv.Schema()
+	hasEnv := m.env.ID() != nil
 
-	if m.env.Self().writable {
+	if hasEnv && m.env.Self().writable {
 		allTypes := map[string]dagql.Type{
 			"String": dagql.String(""),
 		}
@@ -174,11 +175,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		Call:   m.readLogsTool(srv),
 	})
 
-	if len(m.env.Self().outputsByName) > 0 {
+	if hasEnv && len(m.env.Self().outputsByName) > 0 {
 		allTools.Add(m.saveTool(srv))
 	}
 
-	if len(m.env.Self().inputsByName) > 0 {
+	if hasEnv && len(m.env.Self().inputsByName) > 0 {
 		allTools.Add(LLMTool{
 			Name:        "UserProvidedValues",
 			Description: "Read the inputs supplied by the user.",
@@ -320,6 +321,9 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 }
 
 func (m *MCP) userProvidedValues() (string, error) {
+	if m.env.ID() == nil {
+		return "", nil
+	}
 	type valueDesc struct {
 		Description string `json:"description"`
 		Value       any    `json:"value"`

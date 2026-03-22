@@ -13,6 +13,9 @@ import (
 
 // loadModuleTools loads tools from installed modules.
 func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
+	if m.env.ID() == nil {
+		return nil
+	}
 	schema := srv.Schema()
 	for _, mod := range m.env.Self().installedModules {
 		modTypeName := strcase.ToCamel(mod.Name())
@@ -46,7 +49,7 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 func (m *MCP) loadReachableObjectMethods(srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
 	typeNames := m.objs.Types()
-	if m.env.Self().IsPrivileged() {
+	if m.env.ID() != nil && m.env.Self().IsPrivileged() {
 		typeNames = append(typeNames, schema.Query.Name)
 	}
 	for _, typeName := range typeNames {
