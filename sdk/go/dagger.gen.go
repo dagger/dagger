@@ -131,145 +131,145 @@ func (e *ExecError) Unwrap() error {
 }
 
 // The `AddressID` scalar type represents an identifier for an object of type Address.
-type AddressID string
+type AddressID = ID
 
 // The `BindingID` scalar type represents an identifier for an object of type Binding.
-type BindingID string
+type BindingID = ID
 
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
-type CacheVolumeID string
+type CacheVolumeID = ID
 
 // The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
-type ChangesetID string
+type ChangesetID = ID
 
 // The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
-type CheckGroupID string
+type CheckGroupID = ID
 
 // The `CheckID` scalar type represents an identifier for an object of type Check.
-type CheckID string
+type CheckID = ID
 
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
-type CloudID string
+type CloudID = ID
 
 // The `ContainerID` scalar type represents an identifier for an object of type Container.
-type ContainerID string
+type ContainerID = ID
 
 // The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
-type CurrentModuleID string
+type CurrentModuleID = ID
 
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
-type DirectoryID string
+type DirectoryID = ID
 
 // The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
-type EngineCacheEntryID string
+type EngineCacheEntryID = ID
 
 // The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
-type EngineCacheEntrySetID string
+type EngineCacheEntrySetID = ID
 
 // The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
-type EngineCacheID string
+type EngineCacheID = ID
 
 // The `EngineID` scalar type represents an identifier for an object of type Engine.
-type EngineID string
+type EngineID = ID
 
 // The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
-type EnumTypeDefID string
+type EnumTypeDefID = ID
 
 // The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
-type EnumValueTypeDefID string
+type EnumValueTypeDefID = ID
 
 // The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
-type EnvFileID string
+type EnvFileID = ID
 
 // The `EnvID` scalar type represents an identifier for an object of type Env.
-type EnvID string
+type EnvID = ID
 
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
-type EnvVariableID string
+type EnvVariableID = ID
 
 // The `ErrorID` scalar type represents an identifier for an object of type Error.
-type ErrorID string
+type ErrorID = ID
 
 // The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
-type ErrorValueID string
+type ErrorValueID = ID
 
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
-type FieldTypeDefID string
+type FieldTypeDefID = ID
 
 // The `FileID` scalar type represents an identifier for an object of type File.
-type FileID string
+type FileID = ID
 
 // The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
-type FunctionArgID string
+type FunctionArgID = ID
 
 // The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
-type FunctionCallArgValueID string
+type FunctionCallArgValueID = ID
 
 // The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
-type FunctionCallID string
+type FunctionCallID = ID
 
 // The `FunctionID` scalar type represents an identifier for an object of type Function.
-type FunctionID string
+type FunctionID = ID
 
 // The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
-type GeneratedCodeID string
+type GeneratedCodeID = ID
 
 // The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
-type GeneratorGroupID string
+type GeneratorGroupID = ID
 
 // The `GeneratorID` scalar type represents an identifier for an object of type Generator.
-type GeneratorID string
+type GeneratorID = ID
 
 // The `GitRefID` scalar type represents an identifier for an object of type GitRef.
-type GitRefID string
+type GitRefID = ID
 
 // The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
-type GitRepositoryID string
+type GitRepositoryID = ID
 
 // The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
-type HealthcheckConfigID string
+type HealthcheckConfigID = ID
 
 // The `HostID` scalar type represents an identifier for an object of type Host.
-type HostID string
+type HostID = ID
 
 // A unique identifier for an object.
 type ID string
 
 // The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
-type InputTypeDefID string
+type InputTypeDefID = ID
 
 // The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
-type InterfaceTypeDefID string
+type InterfaceTypeDefID = ID
 
 // An arbitrary JSON-encoded value.
 type JSON string
 
 // The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
-type JSONValueID string
+type JSONValueID = ID
 
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
-type LLMID string
+type LLMID = ID
 
 // The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
-type LLMTokenUsageID string
+type LLMTokenUsageID = ID
 
 // The `LabelID` scalar type represents an identifier for an object of type Label.
-type LabelID string
+type LabelID = ID
 
 // The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
-type ListTypeDefID string
+type ListTypeDefID = ID
 
 // The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
-type ModuleConfigClientID string
+type ModuleConfigClientID = ID
 
 // The `ModuleID` scalar type represents an identifier for an object of type Module.
-type ModuleID string
+type ModuleID = ID
 
 // The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
-type ModuleSourceID string
+type ModuleSourceID = ID
 
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
-type ObjectTypeDefID string
+type ObjectTypeDefID = ID
 
 // The platform config OS and architecture in a Container.
 //
@@ -277,43 +277,43 @@ type ObjectTypeDefID string
 type Platform string
 
 // The `PortID` scalar type represents an identifier for an object of type Port.
-type PortID string
+type PortID = ID
 
 // The `QueryID` scalar type represents an identifier for an object of type Query.
 type QueryID string
 
 // The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
-type SDKConfigID string
+type SDKConfigID = ID
 
 // The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
-type ScalarTypeDefID string
+type ScalarTypeDefID = ID
 
 // The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
-type SearchResultID string
+type SearchResultID = ID
 
 // The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
-type SearchSubmatchID string
+type SearchSubmatchID = ID
 
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
-type SecretID string
+type SecretID = ID
 
 // The `ServiceID` scalar type represents an identifier for an object of type Service.
-type ServiceID string
+type ServiceID = ID
 
 // The `SocketID` scalar type represents an identifier for an object of type Socket.
-type SocketID string
+type SocketID = ID
 
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
-type SourceMapID string
+type SourceMapID = ID
 
 // The `StatID` scalar type represents an identifier for an object of type Stat.
-type StatID string
+type StatID = ID
 
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
-type TerminalID string
+type TerminalID = ID
 
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
-type TypeDefID string
+type TypeDefID = ID
 
 // The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
 type UpGroupID string
@@ -327,7 +327,7 @@ type UpID string
 type Void string
 
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
-type WorkspaceID string
+type WorkspaceID = ID
 
 // Key value object that represents a build argument.
 type BuildArg struct {
