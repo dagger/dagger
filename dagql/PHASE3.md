@@ -71,9 +71,7 @@ In every SDK language, `loadFooFromID` and any field returning an
 interface should return the **interface type**, not a concrete type.
 The caller can then duck-type against the interface. To narrow to a
 concrete type when needed, each language provides an idiomatic
-mechanism (Go: type assertion via `AsFoo`; TS: type guard +
-structural compatibility; Python: `isinstance` on the generated
-class).
+mechanism.
 
 ### Go
 
@@ -84,8 +82,10 @@ generated as a regular field method backed by a schema field.
 **Target state**: INTERFACE types generate a **Go interface** plus
 a **query-builder implementation struct** (for `loadFooFromID` and
 fields returning the interface). Concrete objects that `implements`
-the interface get an `AsFoo() Foo` method as a **client-side
-adapter** (no schema field) for covariant return narrowing.
+the interface get an `AsTestCustomIface() TestCustomIface` method
+as a **client-side adapter** (no schema field) for covariant return
+narrowing. The interface itself declares `AsImpl() (*Impl, bool)`
+methods for each possible type, enabling type-safe narrowing.
 
 #### Why `AsFoo()` is still needed in Go
 
@@ -98,136 +98,142 @@ struct whose methods return `Duck`.
 Note: `AsFoo()` is purely SDK-side. It is NOT a schema field. It does
 no GraphQL calls — it's a local type conversion.
 
-#### Generated types for interface `TestCustomIface`
+#### Generated types for interface `Duck`
+
+Suppose the interface `Duck` has two possible types: `Mallard` and
+`RubberDuck`.
 
 ```go
-// The Go interface — matches the GraphQL interface's fields.
-type TestCustomIface interface {
+// The Go interface — matches the GraphQL interface's fields,
+// plus narrowing methods for each possibleType.
+type Duck interface {
     DaggerObject
 
-    ID(ctx context.Context) (TestCustomIfaceID, error)
-    Str(ctx context.Context) (string, error)
-    WithStr(strArg string) TestCustomIface  // covariant: returns interface
-    Obj() *Directory
-    SelfIface() TestCustomIface
-    OtherIface() TestOtherIface
-    // ...
+    ID(ctx context.Context) (DuckID, error)
+    Quack(ctx context.Context) (string, error)
+    WithName(name string) Duck  // covariant: returns interface
+
+    // Narrowing — one per possibleType.
+    // Returns (concrete, true) if the underlying value IS that type,
+    // or (nil, false) if it isn't.
+    AsMallard() (*Mallard, bool)
+    AsRubberDuck() (*RubberDuck, bool)
 }
 
 // The ID scalar (unchanged).
-type TestCustomIfaceID string
+type DuckID string
 ```
 
 #### Query-builder struct for the interface
 
 When a field returns an interface type (or `loadFooFromID` is
 called), the SDK needs a concrete struct to build queries against.
-This is the same pattern already used for objects, but the struct's
-methods that return the same interface type return the **interface**
-rather than a struct pointer:
+This struct satisfies the `Duck` Go interface. Since it doesn't
+know the concrete type (it's a lazy query builder), its narrowing
+methods all return `(nil, false)`:
 
 ```go
-// testCustomIfaceClient is the query-builder for the interface.
-// Unexported — users interact via the TestCustomIface interface.
-type testCustomIfaceClient struct {
+// duckClient is the query-builder for the interface.
+// Unexported — users interact via the Duck interface.
+type duckClient struct {
     query *querybuilder.Selection
 }
 
-func (r *testCustomIfaceClient) ID(ctx context.Context) (TestCustomIfaceID, error) { ... }
-func (r *testCustomIfaceClient) Str(ctx context.Context) (string, error) { ... }
-func (r *testCustomIfaceClient) WithStr(strArg string) TestCustomIface {
-    // returns testCustomIfaceClient (satisfies TestCustomIface)
-    return &testCustomIfaceClient{query: r.query.Select("withStr").Arg("strArg", strArg)}
+func (r *duckClient) Quack(ctx context.Context) (string, error) {
+    q := r.query.Select("quack")
+    var response string
+    q = q.Bind(&response)
+    return response, q.Execute(ctx)
 }
-func (r *testCustomIfaceClient) SelfIface() TestCustomIface {
-    return &testCustomIfaceClient{query: r.query.Select("selfIface")}
+
+func (r *duckClient) WithName(name string) Duck {
+    return &duckClient{query: r.query.Select("withName").Arg("name", name)}
 }
-func (r *testCustomIfaceClient) OtherIface() TestOtherIface {
-    return &testOtherIfaceClient{query: r.query.Select("otherIface")}
-}
+
+// Narrowing — lazy client doesn't know the concrete type.
+func (r *duckClient) AsMallard() (*Mallard, bool)       { return nil, false }
+func (r *duckClient) AsRubberDuck() (*RubberDuck, bool)  { return nil, false }
 
 // DaggerObject methods
-func (r *testCustomIfaceClient) XXX_GraphQLType() string    { return "TestCustomIface" }
-func (r *testCustomIfaceClient) XXX_GraphQLIDType() string   { return "TestCustomIfaceID" }
-func (r *testCustomIfaceClient) XXX_GraphQLID(ctx context.Context) (string, error) { ... }
-func (r *testCustomIfaceClient) MarshalJSON() ([]byte, error) { ... }
+func (r *duckClient) XXX_GraphQLType() string  { return "Duck" }
+func (r *duckClient) XXX_GraphQLIDType() string { return "DuckID" }
+func (r *duckClient) XXX_GraphQLID(ctx context.Context) (string, error) { ... }
+func (r *duckClient) MarshalJSON() ([]byte, error) { ... }
 ```
 
-#### Generated `AsFoo` on implementing objects
+#### Generated `AsDuck` on implementing objects
 
-For each object `Impl` whose schema `Interfaces` includes
-`TestCustomIface`:
+For each object `Mallard` whose schema `Interfaces` includes `Duck`:
 
 ```go
-// Adapter — wraps *Impl so it satisfies the TestCustomIface Go interface.
-type implAsTestCustomIface struct {
-    *Impl
+// Adapter — wraps *Mallard so it satisfies the Duck Go interface.
+type mallardAsDuck struct {
+    *Mallard
 }
 
-// AsTestCustomIface returns this Impl as a TestCustomIface.
+// AsDuck returns this Mallard as a Duck.
 // This is a local type conversion — no GraphQL call.
-func (r *Impl) AsTestCustomIface() TestCustomIface {
-    return &implAsTestCustomIface{r}
+func (r *Mallard) AsDuck() Duck {
+    return &mallardAsDuck{r}
 }
 
-// Forwarding methods — same logic as Impl but returns the interface type.
-func (w *implAsTestCustomIface) Str(ctx context.Context) (string, error) {
-    return w.Impl.Str(ctx)
+// Forwarding methods — same logic as Mallard but returns Duck.
+func (w *mallardAsDuck) Quack(ctx context.Context) (string, error) {
+    return w.Mallard.Quack(ctx)
 }
-func (w *implAsTestCustomIface) WithStr(strArg string) TestCustomIface {
-    return &implAsTestCustomIface{w.Impl.WithStr(strArg)}
-}
-func (w *implAsTestCustomIface) SelfIface() TestCustomIface {
-    return &implAsTestCustomIface{w.Impl.SelfIface()}
-}
-func (w *implAsTestCustomIface) OtherIface() TestOtherIface {
-    return w.Impl.OtherIface().AsTestOtherIface()
+func (w *mallardAsDuck) WithName(name string) Duck {
+    return &mallardAsDuck{w.Mallard.WithName(name)}
 }
 
-// DaggerObject methods delegate to inner Impl.
-func (w *implAsTestCustomIface) XXX_GraphQLType() string { return w.Impl.XXX_GraphQLType() }
+// Narrowing — this IS a Mallard, so AsMallard succeeds.
+func (w *mallardAsDuck) AsMallard() (*Mallard, bool)      { return w.Mallard, true }
+func (w *mallardAsDuck) AsRubberDuck() (*RubberDuck, bool) { return nil, false }
+
+// DaggerObject methods delegate to inner Mallard.
+func (w *mallardAsDuck) XXX_GraphQLType() string { return w.Mallard.XXX_GraphQLType() }
 // etc.
 ```
 
-#### Going from interface back to concrete type
+#### Narrowing from interface to concrete type
 
-Given a `TestCustomIface` value, a caller may need the underlying
-concrete type. This uses standard Go type assertion:
+Given a `Duck` value, the caller narrows using the methods on the
+interface:
 
 ```go
-var duck TestCustomIface = getDuck()
-if mallard, ok := duck.(*Impl); ok {
+var duck Duck = getDuck()
+if mallard, ok := duck.AsMallard(); ok {
     // use mallard-specific fields
-}
-// or if it came through AsTestCustomIface:
-if adapter, ok := duck.(*implAsTestCustomIface); ok {
-    mallard := adapter.Impl
+    mallard.MallardOnlyField()
 }
 ```
 
-For ergonomics, we should also consider a helper on the interface's
-query-builder struct or a top-level function, but the type assertion
-pattern is standard Go and may be sufficient for v1.
+This works regardless of how the `Duck` was obtained:
+- From `AsDuck()` adapter → `AsMallard()` returns the inner `*Mallard`.
+- From `duckClient` (lazy query builder) → `AsMallard()` returns
+  `(nil, false)`. The caller must have loaded the concrete type
+  first (e.g., via `loadMallardFromID`).
 
 #### `loadFooFromID`
 
-Returns `TestCustomIface` (the Go interface). The implementation
-uses the query-builder struct:
+Returns `Duck` (the Go interface). The implementation uses the
+query-builder struct:
 
 ```go
-func (c *Client) LoadTestCustomIfaceFromID(id TestCustomIfaceID) TestCustomIface {
-    return &testCustomIfaceClient{
+func (c *Client) LoadDuckFromID(id DuckID) Duck {
+    return &duckClient{
         query: querybuilder.Query().
             Client(c.GraphQLClient()).
-            Select("loadTestCustomIfaceFromID").
+            Select("loadDuckFromID").
             Arg("id", id),
     }
 }
 ```
 
-This is clean — the caller gets a `TestCustomIface` they can call
-methods on, and the concrete type behind it is resolved lazily when
-fields are actually queried.
+The caller gets a `Duck` they can call methods on. The concrete
+type resolves lazily when fields are queried. Since the query-
+builder doesn't know the concrete type, `AsMallard()` etc. return
+false. To narrow after loading by ID, the caller should use
+`loadMallardFromID` directly instead.
 
 #### Fields returning an interface
 
@@ -235,8 +241,8 @@ Any field whose return type is an INTERFACE kind uses the
 query-builder struct:
 
 ```go
-func (r *Test) GetDuck() TestCustomIface {
-    return &testCustomIfaceClient{query: r.query.Select("getDuck")}
+func (r *Test) GetDuck() Duck {
+    return &duckClient{query: r.query.Select("getDuck")}
 }
 ```
 
@@ -261,72 +267,59 @@ interface type.
 OBJECT types. `asFoo` is generated as a method backed by a schema
 field.
 
-**Target state**: INTERFACE types generate a TypeScript `abstract
-class` (or `interface`). Concrete classes that implement the
-interface use `extends` (or `implements`). The `asFoo` methods are
-removed.
+**Target state**: INTERFACE types generate a TypeScript `interface`
+for type-checking, plus a concrete query-builder `class` (like Go's
+`duckClient`) for `loadFooFromID` and interface-typed field returns.
+The `asFoo` schema-backed methods are removed.
 
 TypeScript supports covariant return types, so concrete classes can
-directly implement the interface's method signatures. No adapter
-wrapper is needed.
+directly extend or implement the interface without adapter wrappers.
 
 #### Generated types for interface `Duck`
 
 ```typescript
-export abstract class Duck extends BaseClient {
-    abstract quack(): Promise<string>
-    abstract withName(name: string): Duck
-}
-```
-
-Or as a TypeScript interface (preferred for structural typing):
-
-```typescript
+// TypeScript interface for type-checking.
 export interface Duck {
     quack(): Promise<string>
     withName(name: string): Duck
 }
-```
 
-#### Fields returning an interface
-
-Use the query-builder class (similar to objects but typed as the
-interface):
-
-```typescript
+// Query-builder class for loadFooFromID and interface-typed returns.
 export class DuckClient extends BaseClient implements Duck {
-    quack = async (): Promise<string> => {
+    async quack(): Promise<string> {
         // query builder
     }
-    withName = (name: string): Duck => {
+    withName(name: string): Duck {
         return new DuckClient(this._ctx, ...)
     }
 }
 ```
 
-`loadDuckFromID` and interface-typed fields return `Duck` (the
-interface) via `DuckClient`.
+Concrete classes like `Mallard` already structurally satisfy `Duck`
+in TypeScript (structural typing). No adapter needed.
 
 #### Narrowing to concrete type
-
-Use `__typename` plus a type guard:
 
 ```typescript
 const duck: Duck = getDuck()
 if (duck instanceof Mallard) {
-    // mallard-specific methods
+    // narrowed to Mallard
 }
 ```
+
+For values returned through `DuckClient` (lazy query builder),
+`instanceof Mallard` returns false. The caller should load the
+concrete type directly or use `__typename` to determine the type.
 
 ### Python
 
 **Current state**: INTERFACE types generate the same `class` as
 OBJECT types. `asFoo` is generated as a method.
 
-**Target state**: INTERFACE types generate a Python class (can use
-`typing.Protocol` or a regular class). The `asFoo` methods are
-removed. Python's duck typing means concrete objects are already
-structurally compatible.
+**Target state**: INTERFACE types generate a Python class (same
+as current, but without `asFoo` methods). Python's duck typing
+means concrete objects are structurally compatible without any
+special mechanism.
 
 #### Generated types
 
@@ -341,9 +334,8 @@ class Duck(BaseClient):
         ...
 ```
 
-This is essentially the same as the current generated class, just
-without `asFoo` methods. Concrete classes like `Mallard` have the
-same method signatures and are assignable to `Duck`-typed variables.
+Concrete classes like `Mallard` have the same method signatures and
+are assignable to `Duck`-typed variables.
 
 #### Narrowing to concrete type
 
@@ -362,16 +354,18 @@ if isinstance(duck, Mallard):
 
 3. **Go codegen**: Generate Go interface + query-builder struct for
    INTERFACE kinds. Generate `AsFoo()` adapter on implementing
-   objects. Fix `loadFooFromID` and interface-returning fields to
+   objects. Generate narrowing methods (`AsMallard`, etc.) on the
+   interface. Fix `loadFooFromID` and interface-returning fields to
    return the Go interface.
 
-4. **TypeScript codegen**: Generate interface or abstract class for
-   INTERFACE kinds. Remove `asFoo` references. Fix interface-
-   returning fields.
+4. **TypeScript codegen**: Generate TS interface + query-builder
+   class for INTERFACE kinds. Remove `asFoo` references. Fix
+   interface-returning fields.
 
 5. **Python codegen**: Remove `asFoo` references. Interface classes
-   stay as regular generated classes (already structurally compatible).
+   stay as regular generated classes (already structurally
+   compatible).
 
 6. **Update integration tests**: Rewrite test modules and test
-   assertions. Go tests use `AsFoo()` adapter. TS/Python tests pass
-   concrete objects directly.
+   assertions. Go tests use `AsFoo()` adapter and narrowing methods.
+   TS/Python tests pass concrete objects directly.
