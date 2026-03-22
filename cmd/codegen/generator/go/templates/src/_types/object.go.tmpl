@@ -207,7 +207,7 @@ func (r *{{ $.Name | FormatName }}) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *{{ $.Name | FormatName }}) XXX_GraphQLIDType() string {
-	return "{{ $.Name }}ID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -234,7 +234,7 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = *dag.Load{{ $.Name | FormatName }}FromID({{$.Name | FormatName}}ID(id))
+  *r = *dag.Load{{ $.Name | FormatName }}FromID(ID(id))
   return nil
 }
 {{- end }}

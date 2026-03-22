@@ -189,7 +189,7 @@ func (r *{{ $.Name | InterfaceClientName }}) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *{{ $.Name | InterfaceClientName }}) XXX_GraphQLIDType() string {
-	return "{{ $.Name }}ID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
