@@ -1214,6 +1214,9 @@ func (llm *LLM) ToolsDoc(ctx context.Context) (string, error) {
 }
 
 func (llm *LLM) HasMissingOutputs() bool {
+	if llm.Env().ID() == nil {
+		return false
+	}
 	for _, out := range llm.Env().Self().outputsByName {
 		if out.Value == nil {
 			return false
@@ -1239,8 +1242,10 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 ) *LLM {
 	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Self().Input(key); found {
-			return binding.String()
+		if llm.mcp.env.ID() != nil {
+			if binding, found := llm.mcp.env.Self().Input(key); found {
+				return binding.String()
+			}
 		}
 		// leave unexpanded, perhaps it refers to an object var
 		return fmt.Sprintf("$%s", key)
@@ -1634,7 +1639,8 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	}
 
 	// Persist any env changes
-	if llm.Env().ID().Digest() != origEnv.ID().Digest() {
+	if llm.Env().ID() != nil && origEnv.ID() != nil &&
+		llm.Env().ID().Digest() != origEnv.ID().Digest() {
 		sels = append(sels, dagql.Selector{
 			Field: "withEnv",
 			Args: []dagql.NamedInput{
