@@ -48,7 +48,10 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 }
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
-	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
+	if refName == "ID" && input {
+		// Generic ID scalar — accept any BaseClient
+		representation += f.scope + "BaseClient"
+	} else if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
 		// map e.g. FooID to Foo
 		representation += f.scope + f.formatNameFunc(obj)
 	} else {

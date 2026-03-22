@@ -342,7 +342,12 @@ def is_id_type(
 
 def type_from_id(t: GraphQLType) -> TypeName | None:
     """Return the type name for the given id type name."""
-    return t.name.removesuffix("ID") if is_id_type(t) else None
+    if not is_id_type(t):
+        return None
+    # The generic "ID" scalar doesn't map to a specific type.
+    if t.name == "ID":
+        return None
+    return t.name.removesuffix("ID")
 
 
 def id_from_type(t: GraphQLType) -> IDName | None:
@@ -408,7 +413,11 @@ def format_input_type(t: GraphQLInputType, convert_id=True) -> str:
         return fmt % f"list[{format_input_type(t.of_type, convert_id)}]"
 
     if convert_id and is_id_type(t):
-        return fmt % type_from_id(t)
+        type_name = type_from_id(t)
+        if type_name is not None:
+            return fmt % type_name
+        # Generic ID scalar — accept any Type (Dagger object)
+        return fmt % "Type"
 
     return fmt % (Scalars.from_type(t) if is_scalar_type(t) else get_named_type(t).name)
 
