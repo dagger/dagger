@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -23,7 +24,7 @@ func newIdentityOptTestServer(t *testing.T) *Server {
 	t.Helper()
 	baseCache, err := NewCache(context.Background(), "")
 	require.NoError(t, err)
-	return NewServer(identityOptTestQuery{}, NewSessionCache(baseCache))
+	return NewServer(identityOptTestQuery{}, baseCache)
 }
 
 func TestFieldSpecResolveImplicitInputCallArgsResolvesDeterministicImplicitInputs(t *testing.T) {
@@ -124,7 +125,10 @@ func TestObjectPreselectAppliesFieldModule(t *testing.T) {
 	root, ok := srv.Root().(ObjectResult[identityOptTestQuery])
 	require.True(t, ok)
 
-	_, preselected, err := root.preselect(context.Background(), srv, Selector{Field: "field"})
+	_, preselected, err := root.preselect(engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID:  "dagql-test-client",
+		SessionID: "dagql-test-session",
+	}), srv, Selector{Field: "field"})
 	require.NoError(t, err)
 	require.NotNil(t, preselected.request.ResultCall.Module)
 	require.Equal(t, module.Name, preselected.request.ResultCall.Module.Name)

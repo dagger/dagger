@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS results (
     self_payload BLOB NOT NULL,
     output_effect_ids_json TEXT NOT NULL DEFAULT '[]',
     safe_to_persist_cache INTEGER NOT NULL DEFAULT 1,
-    dep_of_persisted_result INTEGER NOT NULL DEFAULT 0,
     expires_at_unix INTEGER NOT NULL DEFAULT 0,
     created_at_unix_nano INTEGER NOT NULL,
     last_used_at_unix_nano INTEGER NOT NULL,
@@ -64,6 +63,13 @@ CREATE TABLE IF NOT EXISTS result_deps (
     FOREIGN KEY(parent_result_id) REFERENCES results(id) ON DELETE CASCADE,
     FOREIGN KEY(dep_result_id) REFERENCES results(id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS persisted_edges (
+    result_id INTEGER PRIMARY KEY,
+    created_at_unix_nano INTEGER NOT NULL,
+    expires_at_unix INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS result_snapshot_links (
     result_id INTEGER NOT NULL,

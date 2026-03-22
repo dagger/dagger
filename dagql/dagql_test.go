@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"math/rand/v2"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -65,6 +66,24 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 	assert.ErrorContains(t, err, substring)
 }
 
+func testClientMetadata() *engine.ClientMetadata {
+	return &engine.ClientMetadata{
+		ClientID:  "dagql-test-client",
+		SessionID: "dagql-test-session",
+	}
+}
+
+func testContext() context.Context {
+	return engine.ContextWithClientMetadata(context.Background(), testClientMetadata())
+}
+
+func newTestClient(srv *dagql.Server) *client.Client {
+	h := dagql.NewDefaultHandler(srv)
+	return client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(engine.ContextWithClientMetadata(r.Context(), testClientMetadata())))
+	}))
+}
+
 func recipeIDForObject[T dagql.Typed](t *testing.T, ctx context.Context, srv *dagql.Server, obj dagql.ObjectResult[T]) string {
 	t.Helper()
 
@@ -84,10 +103,10 @@ func recipeIDForObject[T dagql.Typed](t *testing.T, ctx context.Context, srv *da
 	return enc
 }
 
-func newCache(t *testing.T) *dagql.SessionCache {
+func newCache(t *testing.T) dagql.Cache {
 	baseCache, err := dagql.NewCache(t.Context(), "")
 	assert.NilError(t, err)
-	return dagql.NewSessionCache(baseCache)
+	return baseCache
 }
 
 func TestBasic(t *testing.T) {
@@ -95,7 +114,7 @@ func TestBasic(t *testing.T) {
 
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res struct {
 		Point struct {
@@ -129,7 +148,7 @@ func TestBasic(t *testing.T) {
 			}
 		}
 	}`, &res)
-	ctx := context.Background()
+	ctx := testContext()
 
 	assert.Equal(t, 6, res.Point.X)
 	assert.Equal(t, 7, res.Point.Y)
@@ -161,7 +180,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestSelectArray(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
@@ -524,7 +543,7 @@ func TestNullableResults(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	t.Run("nullable scalars", func(t *testing.T) {
 		var res struct {
@@ -729,7 +748,7 @@ func TestListResults(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 	{
 		var res struct {
 			ListOfInts            []int
@@ -828,7 +847,7 @@ func TestLoadingFromID(t *testing.T) {
 
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res struct {
 		Point struct {
@@ -931,7 +950,7 @@ func TestLoadingFromID(t *testing.T) {
 }
 
 func TestIDsReflectQuery(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
@@ -994,7 +1013,7 @@ func TestIDsReflectQuery(t *testing.T) {
 }
 
 func TestIDsDoNotContainSensitiveValues(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
@@ -1137,7 +1156,7 @@ func TestEmptyID(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res struct {
 		LoadPointFromID struct {
@@ -1159,7 +1178,7 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	called := 0
 	dagql.Fields[*points.Point]{
@@ -1212,7 +1231,7 @@ func TestPassingObjectsAround(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res struct {
 		Point struct {
@@ -1249,7 +1268,7 @@ func TestEnums(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	t.Run("outputs", func(t *testing.T) {
 		var res struct {
@@ -1410,7 +1429,7 @@ func (BuiltinsInput) TypeName() string {
 
 func TestInputObjects(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	dagql.MustInputSpec(DefaultsInput{}).Install(srv)
 
@@ -1619,7 +1638,7 @@ func InstallDefaults(srv *dagql.Server) {
 
 func TestDefaults(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	InstallDefaults(srv)
 
@@ -1703,21 +1722,23 @@ func TestDefaults(t *testing.T) {
 
 func TestParallelism(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	pipes.Install[Query](srv)
 
 	t.Run("simple synchronous case", func(t *testing.T) {
 		var res struct {
 			Pipe struct {
-				Write any
+				Write struct {
+					Sync string
+				}
 				Read  string
 			}
 		}
 		req(t, gql, `query {
 			pipe {
 				write(message: "hello, world!") {
-					id
+					sync
 				}
 				read
 			}
@@ -1732,7 +1753,7 @@ func TestParallelism(t *testing.T) {
 			Pipe struct {
 				Write struct {
 					Write struct {
-						ID string
+						Sync string
 					}
 					Read string
 				}
@@ -1743,7 +1764,7 @@ func TestParallelism(t *testing.T) {
 			pipe {
 				write(message: "one") {
 					write(message: "two") {
-						id
+						sync
 					}
 					read
 				}
@@ -1794,7 +1815,7 @@ func TestArrayParallelism(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res struct {
 		Point struct {
@@ -1873,7 +1894,7 @@ func InstallBuiltins(srv *dagql.Server) {
 
 func TestBuiltins(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	InstallBuiltins(srv)
 
@@ -2075,7 +2096,7 @@ func TestIntrospection(t *testing.T) {
 		}).DoNotCache("Because I said so."),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res introspection.Response
 	req(t, gql, introspection.Query, &res)
@@ -2089,7 +2110,7 @@ func TestIntrospection(t *testing.T) {
 }
 
 func TestIDFormat(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	srv := dagql.NewServer(Query{}, newCache(t))
 	points.Install[Query](srv)
 
@@ -2317,7 +2338,7 @@ func InstallViewer(srv *dagql.Server) {
 
 func TestViews(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	InstallViewer(srv)
 
@@ -2418,7 +2439,7 @@ func TestViews(t *testing.T) {
 
 func TestViewsCaching(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	InstallViewer(srv)
 
@@ -2447,7 +2468,7 @@ func TestViewsCaching(t *testing.T) {
 func TestViewsIntrospection(t *testing.T) {
 	srv := dagql.NewServer(Query{}, newCache(t))
 	introspection.Install[Query](srv)
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	InstallViewer(srv)
 
@@ -2555,7 +2576,7 @@ func TestNodeFuncResultZeroValueTypeInference(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	var res struct {
 		TypedResult struct {
@@ -2578,7 +2599,7 @@ func TestNullResultCachePathDoesNotPanic(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 
 	for range 2 {
 		var res struct {
@@ -2608,7 +2629,7 @@ func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
 		),
 	}.Install(srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 	var res struct {
 		RewrittenArg int
 	}
@@ -2629,7 +2650,8 @@ func TestImplicitInputCachePerClient(t *testing.T) {
 
 	callForClient := func(clientID string) int {
 		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			ClientID: clientID,
+			ClientID:  clientID,
+			SessionID: "dagql-test-session",
 		})
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
@@ -2685,7 +2707,8 @@ func TestImplicitInputCachePerCall(t *testing.T) {
 	}.Install(srv)
 
 	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-		ClientID: "client-a",
+		ClientID:  "client-a",
+		SessionID: "dagql-test-session",
 	})
 
 	var first int
@@ -2713,7 +2736,7 @@ func TestImplicitInputCachePerSchema(t *testing.T) {
 
 	call := func() int {
 		var res int
-		err := srv.Select(context.Background(), srv.Root(), &res, dagql.Selector{
+		err := srv.Select(testContext(), srv.Root(), &res, dagql.Selector{
 			Field: "perSchemaCounter",
 		})
 		require.NoError(t, err)
@@ -2746,7 +2769,8 @@ func TestImplicitInputCachePerClientSchema(t *testing.T) {
 
 	callForClient := func(clientID string) int {
 		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			ClientID: clientID,
+			ClientID:  clientID,
+			SessionID: "dagql-test-session",
 		})
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
@@ -2786,7 +2810,8 @@ func TestImplicitInputCacheAsRequested(t *testing.T) {
 
 	call := func(clientID string, noCache bool) int {
 		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			ClientID: clientID,
+			ClientID:  clientID,
+			SessionID: "dagql-test-session",
 		})
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
@@ -2800,7 +2825,8 @@ func TestImplicitInputCacheAsRequested(t *testing.T) {
 	}
 	callDefault := func(clientID string) int {
 		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-			ClientID: clientID,
+			ClientID:  clientID,
+			SessionID: "dagql-test-session",
 		})
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
@@ -2876,7 +2902,8 @@ func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
 	}.Install(srv)
 
 	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
-		ClientID: "client-a",
+		ClientID:  "client-a",
+		SessionID: "dagql-test-session",
 	})
 
 	var result int
@@ -2895,7 +2922,7 @@ func TestServerSelect(t *testing.T) {
 	// Install test types
 	InstallTestTypes(srv)
 
-	ctx := context.Background()
+	ctx := testContext()
 
 	t.Run("basic selection", func(t *testing.T) {
 		// Create a test object and wrap it as a dagql.Object
@@ -3251,7 +3278,7 @@ func TestInstallHooks(t *testing.T) {
 	srv.AddInstallHook(&testInstallHook{srv})
 	points.Install[Query](srv)
 
-	gql := client.New(dagql.NewDefaultHandler(srv))
+	gql := newTestClient(srv)
 	var res struct {
 		Point struct {
 			X, Y  int

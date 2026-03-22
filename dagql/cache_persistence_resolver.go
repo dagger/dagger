@@ -19,25 +19,6 @@ func (c *cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uin
 	return links, nil
 }
 
-func (c *SessionCache) basePersistedCache() (*cache, error) {
-	if c == nil {
-		return nil, fmt.Errorf("persisted session cache: nil session cache")
-	}
-	base, ok := c.cache.(*cache)
-	if !ok {
-		return nil, fmt.Errorf("persisted session cache: unsupported base cache %T", c.cache)
-	}
-	return base, nil
-}
-
-func (c *SessionCache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
-	base, err := c.basePersistedCache()
-	if err != nil {
-		return nil, err
-	}
-	return base.PersistedSnapshotLinksByResultID(ctx, resultID)
-}
-
 func (c *cache) PersistedResultID(res AnyResult) (uint64, error) {
 	if res == nil {
 		return 0, fmt.Errorf("persisted result ID: nil result")
@@ -53,14 +34,6 @@ func (c *cache) PersistedResultID(res AnyResult) (uint64, error) {
 		return 0, fmt.Errorf("persisted result ID for %T: zero shared result ID", res)
 	}
 	return uint64(shared.id), nil
-}
-
-func (c *SessionCache) PersistedResultID(res AnyResult) (uint64, error) {
-	base, err := c.basePersistedCache()
-	if err != nil {
-		return 0, err
-	}
-	return base.PersistedResultID(res)
 }
 
 func (c *cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, error) {
@@ -81,7 +54,7 @@ func (c *cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, 
 	return res, nil
 }
 
-func (c *cache) LoadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
+func (c *cache) loadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
 	res, err := c.sharedResultByResultID(sharedResultID(resultID))
 	if err != nil {
 		return nil, err
@@ -90,19 +63,133 @@ func (c *cache) LoadResultByResultID(ctx context.Context, dag *Server, resultID 
 	if err != nil {
 		return nil, err
 	}
-	return c.ensurePersistedHitValueLoaded(ctx, dag, wrapped)
-}
-
-func (c *SessionCache) LoadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
-	base, err := c.basePersistedCache()
+	loaded, err := c.ensurePersistedHitValueLoaded(ctx, dag, wrapped)
 	if err != nil {
 		return nil, err
 	}
-	return base.LoadResultByResultID(ctx, dag, resultID)
+	return loaded, nil
+}
+
+func (c *cache) LoadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
+	loaded, err := c.loadResultByResultID(ctx, dag, resultID)
+	if err != nil {
+		return nil, err
+	}
+	c.trackSessionResult(ctx, sessionID, loaded, true)
+	return loaded, nil
+}
+
+func (c *cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *ResultCall, visit func(AnyResult) error) error {
+	if dag == nil {
+		return fmt.Errorf("walk result call: nil dagql server")
+	}
+	if rootCall == nil {
+		return nil
+	}
+	seenCalls := map[*ResultCall]struct{}{}
+	seenResultIDs := map[uint64]struct{}{}
+
+	var walkLiteral func(*ResultCallLiteral) error
+	var walkRef func(*ResultCallRef) error
+	var walkCall func(*ResultCall) error
+
+	walkLiteral = func(lit *ResultCallLiteral) error {
+		if lit == nil {
+			return nil
+		}
+		switch lit.Kind {
+		case ResultCallLiteralKindResultRef:
+			return walkRef(lit.ResultRef)
+		case ResultCallLiteralKindList:
+			for _, item := range lit.ListItems {
+				if err := walkLiteral(item); err != nil {
+					return err
+				}
+			}
+		case ResultCallLiteralKindObject:
+			for _, field := range lit.ObjectFields {
+				if field == nil {
+					continue
+				}
+				if err := walkLiteral(field.Value); err != nil {
+					return fmt.Errorf("field %q: %w", field.Name, err)
+				}
+			}
+		}
+		return nil
+	}
+
+	walkRef = func(ref *ResultCallRef) error {
+		if ref == nil {
+			return nil
+		}
+		if ref.Call != nil {
+			return walkCall(ref.Call)
+		}
+		if ref.ResultID == 0 {
+			return nil
+		}
+		if _, seen := seenResultIDs[ref.ResultID]; seen {
+			return nil
+		}
+		seenResultIDs[ref.ResultID] = struct{}{}
+		res, err := c.loadResultByResultID(ctx, dag, ref.ResultID)
+		if err != nil {
+			return fmt.Errorf("load result %d: %w", ref.ResultID, err)
+		}
+		if visit != nil {
+			if err := visit(res); err != nil {
+				return err
+			}
+		}
+		call, err := res.ResultCall()
+		if err != nil {
+			return fmt.Errorf("result %d call: %w", ref.ResultID, err)
+		}
+		return walkCall(call)
+	}
+
+	walkCall = func(call *ResultCall) error {
+		if call == nil {
+			return nil
+		}
+		if _, seen := seenCalls[call]; seen {
+			return nil
+		}
+		seenCalls[call] = struct{}{}
+
+		if call.Module != nil {
+			if err := walkRef(call.Module.ResultRef); err != nil {
+				return fmt.Errorf("module %q: %w", call.Module.Name, err)
+			}
+		}
+		if err := walkRef(call.Receiver); err != nil {
+			return fmt.Errorf("receiver: %w", err)
+		}
+		for _, arg := range call.Args {
+			if arg == nil {
+				continue
+			}
+			if err := walkLiteral(arg.Value); err != nil {
+				return fmt.Errorf("arg %q: %w", arg.Name, err)
+			}
+		}
+		for _, input := range call.ImplicitInputs {
+			if input == nil {
+				continue
+			}
+			if err := walkLiteral(input.Value); err != nil {
+				return fmt.Errorf("implicit input %q: %w", input.Name, err)
+			}
+		}
+		return nil
+	}
+
+	return walkCall(rootCall)
 }
 
 func (c *cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyObjectResult, error) {
-	res, err := c.LoadResultByResultID(ctx, dag, resultID)
+	res, err := c.loadResultByResultID(ctx, dag, resultID)
 	if err != nil {
 		return nil, err
 	}
@@ -111,14 +198,6 @@ func (c *cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, 
 		return nil, fmt.Errorf("load persisted object by result ID %d: result is %T", resultID, res)
 	}
 	return obj, nil
-}
-
-func (c *SessionCache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyObjectResult, error) {
-	base, err := c.basePersistedCache()
-	if err != nil {
-		return nil, err
-	}
-	return base.LoadPersistedObjectByResultID(ctx, dag, resultID)
 }
 
 func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult) (AnyResult, error) {

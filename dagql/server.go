@@ -12,6 +12,7 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -56,14 +57,14 @@ type Server struct {
 	// another *Server to inherit and share caches.
 	//
 	// TODO: copy-on-write
-	Cache *SessionCache
+	Cache Cache
 }
 
 type ServerSchema struct {
 	inner Server
 }
 
-func (s *ServerSchema) WithCache(c *SessionCache) *Server {
+func (s *ServerSchema) WithCache(c Cache) *Server {
 	inner := s.inner
 	inner.Cache = c
 	return &inner
@@ -79,7 +80,7 @@ func (s *Server) AsSchema() *ServerSchema {
 	}
 }
 
-func (s *Server) WithCache(c *SessionCache) *Server {
+func (s *Server) WithCache(c Cache) *Server {
 	return s.AsSchema().WithCache(c)
 }
 
@@ -105,7 +106,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T, c *SessionCache) *Server {
+func NewServer[T Typed](root T, c Cache) *Server {
 	srv := &Server{
 		Cache:         c,
 		objects:       map[string]ObjectType{},
@@ -687,7 +688,6 @@ func (s *Server) loadNthValue(
 	parent AnyResult,
 	nth int,
 	nullAsError bool,
-	opts ...CacheCallOpt,
 ) (AnyResult, error) {
 	if parent == nil {
 		if nullAsError {
@@ -721,8 +721,15 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
 	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: current client metadata: %w", id.Display(), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("load %s: empty session ID", id.Display())
+	}
 	if id.IsHandle() {
-		res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), s, id.EngineResultID())
+		res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), clientMetadata.SessionID, s, id.EngineResultID())
 		if err != nil {
 			return nil, err
 		}
@@ -746,10 +753,11 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	}
 
 	state := &recipeLoadState{
-		ctx:   ctx,
-		srv:   s,
-		cache: s.Cache,
-		loads: make(map[string]*recipeLoadFuture),
+		ctx:       ctx,
+		srv:       s,
+		cache:     s.Cache,
+		sessionID: clientMetadata.SessionID,
+		loads:     make(map[string]*recipeLoadFuture),
 	}
 	return state.load(id)
 }
@@ -761,9 +769,10 @@ type recipeLoadFuture struct {
 }
 
 type recipeLoadState struct {
-	ctx   context.Context
-	srv   *Server
-	cache *SessionCache
+	ctx       context.Context
+	srv       *Server
+	cache     Cache
+	sessionID string
 
 	mu    sync.Mutex
 	loads map[string]*recipeLoadFuture
@@ -795,7 +804,11 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 
 func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	callCtx := srvToContext(state.ctx, state.srv)
-	if hit, ok, err := state.cache.LookupCacheForDigests(callCtx, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
+	internalCache, ok := state.cache.(*cache)
+	if !ok {
+		return nil, fmt.Errorf("load %s: internal cache lookup requires *cache, got %T", idInputDebugString(id), state.cache)
+	}
+	if hit, ok, err := internalCache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
 		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
@@ -858,7 +871,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
 	req := &CallRequest{ResultCall: frame}
-	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.srv, req); err != nil {
+	if hit, ok, err := internalCache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
 		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
@@ -1129,7 +1142,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 			return err
 		}
 
-		if res == nil {
+		if res == nil || res.Unwrap() == nil {
 			// null result; nothing to do
 			return nil
 		}
@@ -1164,10 +1177,10 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 				if err != nil {
 					return err
 				}
-				if val == nil {
-					if err := appendAssign(destV, nil); err != nil {
-						return err
-					}
+					if val == nil || val.Unwrap() == nil {
+						if err := appendAssign(destV, nil); err != nil {
+							return err
+						}
 					continue
 				}
 				if isObj {
@@ -1421,7 +1434,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		return nil, err
 	}
 
-	if val == nil {
+	if val == nil || val.Unwrap() == nil {
 		// a nil value ignores all sub-selections
 		return nil, nil
 	}
@@ -1441,10 +1454,10 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 				if err != nil {
 					return nil, err
 				}
-				if elemVal == nil {
-					results[nth-1] = nil
-					continue
-				}
+					if elemVal == nil || elemVal.Unwrap() == nil {
+						results[nth-1] = nil
+						continue
+					}
 				results[nth-1] = elemVal.Unwrap()
 			}
 		} else {

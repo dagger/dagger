@@ -534,14 +534,30 @@ func (r ObjectResult[T]) call(
 	if field.Spec.BuiltinLoadByIDFunc != nil {
 		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
 	}
-	var opts []CacheCallOpt
+	var (
+		res AnyResult
+		err error
+	)
 	if s.telemetry != nil {
-		opts = append(opts, WithTelemetry(func(ctx context.Context, res AnyResult) (context.Context, func(AnyResult, bool, *error)) {
-			return s.telemetry(ctx, req)
-		}))
+		telemetryCtx, done := s.telemetry(ctx, req)
+		defer func() {
+			var cached bool
+			if res != nil {
+				cached = res.HitCache()
+			}
+			done(res, cached, &err)
+		}()
+		ctx = telemetryCtx
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("call %s.%s: current client metadata: %w", r.class.inner.Type().Name(), fieldName, err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("call %s.%s: empty session ID", r.class.inner.Type().Name(), fieldName)
 	}
 
-	res, err := s.Cache.GetOrInitCall(ctx, s, req, func(ctx context.Context) (AnyResult, error) {
+	res, err = s.Cache.GetOrInitCall(ctx, clientMetadata.SessionID, s, req, func(ctx context.Context) (AnyResult, error) {
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err
@@ -567,7 +583,7 @@ func (r ObjectResult[T]) call(
 		}
 
 		return val, nil
-	}, opts...)
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -78,7 +78,7 @@ func loadPersistedResultByResultID(ctx context.Context, dag *dagql.Server, resul
 	if err != nil {
 		return nil, fmt.Errorf("load persisted %s cache: %w", label, err)
 	}
-	res, err := cache.LoadResultByResultID(ctx, dag, resultID)
+	res, err := cache.LoadResultByResultID(ctx, "", dag, resultID)
 	if err != nil {
 		return nil, fmt.Errorf("load persisted %s result: %w", label, err)
 	}

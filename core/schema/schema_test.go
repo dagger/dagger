@@ -15,7 +15,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	root := &core.Query{}
 	baseCache, err := dagql.NewCache(ctx, "")
 	require.NoError(t, err)
-	dag := dagql.NewServer(root, dagql.NewSessionCache(baseCache))
+	dag := dagql.NewServer(root, baseCache)
 	coreMod := &CoreMod{Dag: dag}
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	require.NoError(t, coreMod.Install(ctx, dag))

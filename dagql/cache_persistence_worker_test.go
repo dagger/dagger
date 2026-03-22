@@ -13,7 +13,7 @@ import (
 func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
@@ -23,7 +23,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	}()
 
 	key := cacheTestIntCall("persist-worker-retained")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -35,7 +35,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	assert.Assert(t, shared != nil)
 	sharedID := shared.id
 
-	assert.NilError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 	assert.NilError(t, c.persistCurrentState(ctx))
 
 	var rowCount int
@@ -52,7 +52,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
@@ -62,14 +62,14 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 	}()
 
 	key := cacheTestIntCall("persist-runtime-no-write")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 42).WithSafeToPersistCache(true), nil
 	})
 	assert.NilError(t, err)
-	assert.NilError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 
 	var rowCount int
 	err = c.sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM results`).Scan(&rowCount)
@@ -80,7 +80,7 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
@@ -90,12 +90,12 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 	}()
 
 	key := cacheTestIntCall("persist-worker-pruned")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 99), nil
 	})
 	assert.NilError(t, err)
 
-	assert.NilError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 	assert.NilError(t, c.persistCurrentState(ctx))
 
 	var rowCount int
@@ -107,7 +107,7 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
@@ -117,7 +117,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	}()
 
 	sourceKey := cacheTestIntCall("persist-worker-source")
-	sourceRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	sourceRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    sourceKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -131,7 +131,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 		Field:    "persist-worker-root",
 		Receiver: &ResultCallRef{ResultID: uint64(sourceRes.cacheSharedResult().id)},
 	}
-	rootRes, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    rootKey,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -139,8 +139,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	assert.NilError(t, sourceRes.Release(ctx))
-	assert.NilError(t, rootRes.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 	assert.NilError(t, c.persistCurrentState(ctx))
 
 	var resultsCount int
@@ -167,7 +166,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
@@ -177,7 +176,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 	}()
 
 	key := cacheTestIntCall("persist-snapshot-self-contained")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall: key,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 42), nil
@@ -190,7 +189,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 	assert.Assert(t, snapshot.results[0].row.ID != 0)
 	snapshotResultID := snapshot.results[0].row.ID
 
-	assert.NilError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 	assert.Equal(t, 0, c.Size())
 
 	assert.NilError(t, c.applyPersistStateSnapshot(ctx, snapshot))
@@ -206,7 +205,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)

@@ -52,19 +52,19 @@ type CacheDebugSnapshot struct {
 }
 
 type EGraphDebugResult struct {
-	SharedResultID        uint64                     `json:"shared_result_id"`
-	OutputEqClassIDs      []uint64                   `json:"output_eq_class_ids,omitempty"`
-	OutputEffectIDs       []string                   `json:"output_effect_ids,omitempty"`
-	RecordType            string                     `json:"record_type,omitempty"`
-	Description           string                     `json:"description,omitempty"`
-	TypeName              string                     `json:"type_name,omitempty"`
-	RefCount              int64                      `json:"ref_count"`
-	HasValue              bool                       `json:"has_value"`
-	PayloadState          string                     `json:"payload_state"`
-	DepOfPersistedResult  bool                       `json:"dep_of_persisted_result"`
-	ExplicitDeps          []uint64                   `json:"explicit_dep_ids,omitempty"`
-	HeldDependencyResults int                        `json:"held_dependency_results_count"`
-	SnapshotLinks         []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
+	SharedResultID         uint64                     `json:"shared_result_id"`
+	OutputEqClassIDs       []uint64                   `json:"output_eq_class_ids,omitempty"`
+	OutputEffectIDs        []string                   `json:"output_effect_ids,omitempty"`
+	RecordType             string                     `json:"record_type,omitempty"`
+	Description            string                     `json:"description,omitempty"`
+	TypeName               string                     `json:"type_name,omitempty"`
+	IncomingOwnershipCount int64                      `json:"incoming_ownership_count"`
+	HasValue               bool                       `json:"has_value"`
+	PayloadState           string                     `json:"payload_state"`
+	HasPersistedEdge       bool                       `json:"has_persisted_edge"`
+	ExplicitDeps           []uint64                   `json:"explicit_dep_ids,omitempty"`
+	HeldDependencyResults  int                        `json:"held_dependency_results_count"`
+	SnapshotLinks          []PersistedSnapshotRefLink `json:"snapshot_links,omitempty"`
 }
 
 type CacheDebugResult struct {
@@ -136,13 +136,13 @@ type CacheDebugOngoingCall struct {
 }
 
 type CacheDebugArbitraryCall struct {
-	CallKey   string `json:"call_key"`
-	Waiters   int    `json:"waiters"`
-	RefCount  int    `json:"ref_count"`
-	Completed bool   `json:"completed"`
-	HasValue  bool   `json:"has_value"`
-	ValueType string `json:"value_type,omitempty"`
-	Error     string `json:"error,omitempty"`
+	CallKey           string `json:"call_key"`
+	Waiters           int    `json:"waiters"`
+	OwnerSessionCount int    `json:"owner_session_count"`
+	Completed         bool   `json:"completed"`
+	HasValue          bool   `json:"has_value"`
+	ValueType         string `json:"value_type,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 func newTraceBootID() string {
@@ -226,13 +226,13 @@ func (c *cache) tracePersistStoreWipedImportFailure(ctx context.Context, err err
 	})
 }
 
-func (c *cache) traceRefReleased(ctx context.Context, res *sharedResult, refCount int64) {
+func (c *cache) traceRefReleased(ctx context.Context, res *sharedResult, ownershipCount int64) {
 	c.traceLazy(ctx, "ref_released", func() []any {
-		return []any{"phase", "runtime", "shared_result_id", res.id, "ref_count", refCount}
+		return []any{"phase", "runtime", "shared_result_id", res.id, "incoming_ownership_count", ownershipCount}
 	})
 }
 
-func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, refCount int64) {
+func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, ownershipCount int64) {
 	c.traceLazy(ctx, "ref_underflow", func() []any {
 		state := res.loadPayloadState()
 		payloadState := "uninitialized"
@@ -249,7 +249,7 @@ func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, refCou
 		args := []any{
 			"phase", "runtime",
 			"shared_result_id", res.id,
-			"ref_count", refCount,
+			"incoming_ownership_count", ownershipCount,
 			"record_type", res.recordType,
 			"description", res.description,
 			"payload_state", payloadState,
@@ -262,18 +262,18 @@ func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, refCou
 	})
 }
 
-func (c *cache) traceRefAcquired(ctx context.Context, res *sharedResult, refCount int64) {
+func (c *cache) traceRefAcquired(ctx context.Context, res *sharedResult, ownershipCount int64) {
 	c.traceLazy(ctx, "ref_acquired", func() []any {
-		return []any{"phase", "runtime", "shared_result_id", res.id, "ref_count", refCount}
+		return []any{"phase", "runtime", "shared_result_id", res.id, "incoming_ownership_count", ownershipCount}
 	})
 }
 
-func (c *cache) traceSessionResultTracked(ctx context.Context, sessionCache *SessionCache, res AnyResult, hitCache bool, trackedCount, trackedCountForResult int) {
+func (c *cache) traceSessionResultTracked(ctx context.Context, sessionID string, res AnyResult, hitCache bool, trackedCount, trackedCountForResult int) {
 	c.traceLazy(ctx, "session_result_tracked", func() []any {
 		shared := res.cacheSharedResult()
 		args := []any{
 			"phase", "runtime",
-			"session_cache_ptr", fmt.Sprintf("%p", sessionCache),
+			"session_id", sessionID,
 			"hit_cache", hitCache,
 			"tracked_count", trackedCount,
 			"tracked_count_for_result", trackedCountForResult,
@@ -281,7 +281,7 @@ func (c *cache) traceSessionResultTracked(ctx context.Context, sessionCache *Ses
 		if shared != nil {
 			args = append(args,
 				"shared_result_id", shared.id,
-				"ref_count", atomic.LoadInt64(&shared.refCount),
+				"incoming_ownership_count", shared.incomingOwnershipCount,
 				"record_type", shared.recordType,
 				"description", shared.description,
 			)
@@ -295,13 +295,13 @@ func (c *cache) traceSessionResultTracked(ctx context.Context, sessionCache *Ses
 	})
 }
 
-func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionCache *SessionCache, res AnyResult, reason string, releaseIndex, totalTracked, trackedCountForResult, releaseOrdinalForResult int) {
+func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionID string, res AnyResult, reason string, releaseIndex, totalTracked, trackedCountForResult, releaseOrdinalForResult int) {
 	c.traceLazy(ctx, "session_result_releasing", func() []any {
 		shared := res.cacheSharedResult()
 		args := []any{
 			"phase", "runtime",
 			"reason", reason,
-			"session_cache_ptr", fmt.Sprintf("%p", sessionCache),
+			"session_id", sessionID,
 			"release_index", releaseIndex,
 			"total_tracked", totalTracked,
 			"tracked_count_for_result", trackedCountForResult,
@@ -310,7 +310,7 @@ func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionCache *S
 		if shared != nil {
 			args = append(args,
 				"shared_result_id", shared.id,
-				"ref_count", atomic.LoadInt64(&shared.refCount),
+				"incoming_ownership_count", shared.incomingOwnershipCount,
 				"record_type", shared.recordType,
 				"description", shared.description,
 			)
@@ -319,29 +319,6 @@ func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionCache *S
 					args = append(args, "result_call_field", field)
 				}
 			}
-		}
-		return args
-	})
-}
-
-func (c *cache) traceHeldDependencyReleasing(ctx context.Context, parent *sharedResult, dep AnyResult, parentRefCount int64, depIndex, depCount int) {
-	c.traceLazy(ctx, "held_dependency_releasing", func() []any {
-		args := []any{
-			"phase", "runtime",
-			"parent_shared_result_id", parent.id,
-			"parent_ref_count", parentRefCount,
-			"dep_index", depIndex,
-			"dep_count", depCount,
-		}
-		if depShared := dep.cacheSharedResult(); depShared != nil {
-			args = append(args,
-				"dep_shared_result_id", depShared.id,
-				"dep_ref_count", atomic.LoadInt64(&depShared.refCount),
-				"dep_record_type", depShared.recordType,
-				"dep_description", depShared.description,
-			)
-		} else {
-			args = append(args, "dep_type", fmt.Sprintf("%T", dep))
 		}
 		return args
 	})
@@ -736,19 +713,19 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 		}
 
 		snap.Results = append(snap.Results, EGraphDebugResult{
-			SharedResultID:        uint64(res.id),
-			OutputEqClassIDs:      outputEqIDs,
-			OutputEffectIDs:       append([]string(nil), res.outputEffectIDs...),
-			RecordType:            res.recordType,
-			Description:           res.description,
-			TypeName:              typeName,
-			RefCount:              atomic.LoadInt64(&res.refCount),
-			HasValue:              state.hasValue,
-			PayloadState:          payloadState,
-			DepOfPersistedResult:  res.depOfPersistedResult,
-			ExplicitDeps:          depIDs,
-			HeldDependencyResults: len(res.heldDependencyResults),
-			SnapshotLinks:         links,
+			SharedResultID:         uint64(res.id),
+			OutputEqClassIDs:       outputEqIDs,
+			OutputEffectIDs:        append([]string(nil), res.outputEffectIDs...),
+			RecordType:             res.recordType,
+			Description:            res.description,
+			TypeName:               typeName,
+			IncomingOwnershipCount: res.incomingOwnershipCount,
+			HasValue:               state.hasValue,
+			PayloadState:           payloadState,
+			HasPersistedEdge:       c.persistedEdgesByResult[res.id].resultID != 0,
+			ExplicitDeps:           depIDs,
+			HeldDependencyResults:  len(res.deps),
+			SnapshotLinks:          links,
 		})
 	}
 
@@ -1030,19 +1007,19 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 
 			if err := writeElem(CacheDebugResult{
 				EGraphDebugResult: EGraphDebugResult{
-					SharedResultID:        uint64(res.id),
-					OutputEqClassIDs:      outputEqIDs,
-					OutputEffectIDs:       append([]string(nil), res.outputEffectIDs...),
-					RecordType:            res.recordType,
-					Description:           res.description,
-					TypeName:              typeName,
-					RefCount:              atomic.LoadInt64(&res.refCount),
-					HasValue:              state.hasValue,
-					PayloadState:          payloadState,
-					DepOfPersistedResult:  res.depOfPersistedResult,
-					ExplicitDeps:          depIDs,
-					HeldDependencyResults: len(res.heldDependencyResults),
-					SnapshotLinks:         links,
+					SharedResultID:         uint64(res.id),
+					OutputEqClassIDs:       outputEqIDs,
+					OutputEffectIDs:        append([]string(nil), res.outputEffectIDs...),
+					RecordType:             res.recordType,
+					Description:            res.description,
+					TypeName:               typeName,
+					IncomingOwnershipCount: res.incomingOwnershipCount,
+					HasValue:               state.hasValue,
+					PayloadState:           payloadState,
+					HasPersistedEdge:       c.persistedEdgesByResult[res.id].resultID != 0,
+					ExplicitDeps:           depIDs,
+					HeldDependencyResults:  len(res.deps),
+					SnapshotLinks:          links,
 				},
 				ResultCall:                            frame,
 				ResultCallRecipeDigest:                recipeDigest,
@@ -1276,13 +1253,13 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					completed = true
 				default:
 				}
-				entry := CacheDebugArbitraryCall{
-					CallKey:   key,
-					Waiters:   call.waiters,
-					RefCount:  call.refCount,
-					Completed: completed,
-					HasValue:  call.value != nil,
-				}
+					entry := CacheDebugArbitraryCall{
+						CallKey:           key,
+						Waiters:           call.waiters,
+						OwnerSessionCount: call.ownerSessionCount,
+						Completed:         completed,
+						HasValue:          call.value != nil,
+					}
 				if call.value != nil {
 					entry.ValueType = fmt.Sprintf("%T", call.value)
 				}
@@ -1311,13 +1288,13 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				if call == nil {
 					continue
 				}
-				entry := CacheDebugArbitraryCall{
-					CallKey:   key,
-					Waiters:   call.waiters,
-					RefCount:  call.refCount,
-					Completed: true,
-					HasValue:  call.value != nil,
-				}
+					entry := CacheDebugArbitraryCall{
+						CallKey:           key,
+						Waiters:           call.waiters,
+						OwnerSessionCount: call.ownerSessionCount,
+						Completed:         true,
+						HasValue:          call.value != nil,
+					}
 				if call.value != nil {
 					entry.ValueType = fmt.Sprintf("%T", call.value)
 				}

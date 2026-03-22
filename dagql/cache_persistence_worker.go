@@ -158,19 +158,32 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			persistedEnvelope: payload.persistedEnvelope,
 			outputEffectIDs:   slices.Clone(res.outputEffectIDs),
 			row: persistdb.MirrorResult{
-				ID:                   int64(resultID),
-				SafeToPersistCache:   res.safeToPersistCache,
-				DepOfPersistedResult: res.depOfPersistedResult,
-				ExpiresAtUnix:        res.expiresAtUnix,
-				CreatedAtUnixNano:    payload.createdAtUnixNano,
-				LastUsedAtUnixNano:   payload.lastUsedAtUnixNano,
-				SizeEstimateBytes:    res.sizeEstimateBytes,
-				UsageIdentity:        res.usageIdentity,
-				RecordType:           res.recordType,
-				Description:          res.description,
+				ID:                 int64(resultID),
+				SafeToPersistCache: res.safeToPersistCache,
+				ExpiresAtUnix:      res.expiresAtUnix,
+				CreatedAtUnixNano:  payload.createdAtUnixNano,
+				LastUsedAtUnixNano: payload.lastUsedAtUnixNano,
+				SizeEstimateBytes:  res.sizeEstimateBytes,
+				UsageIdentity:      res.usageIdentity,
+				RecordType:         res.recordType,
+				Description:        res.description,
 			},
 			resultDeps:          resultDeps,
 			resultSnapshotLinks: resultSnapshotLinks,
+		})
+	}
+
+	persistedResultIDs := make([]sharedResultID, 0, len(c.persistedEdgesByResult))
+	for resultID := range c.persistedEdgesByResult {
+		persistedResultIDs = append(persistedResultIDs, resultID)
+	}
+	slices.Sort(persistedResultIDs)
+	for _, resultID := range persistedResultIDs {
+		edge := c.persistedEdgesByResult[resultID]
+		snapshot.persistedEdges = append(snapshot.persistedEdges, persistdb.MirrorPersistedEdge{
+			ResultID:          int64(resultID),
+			CreatedAtUnixNano: edge.createdAtUnixNano,
+			ExpiresAtUnix:     edge.expiresAtUnix,
 		})
 	}
 
@@ -304,6 +317,12 @@ func (c *cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		if err := q.InsertMirrorResultOutputEqClass(ctx, row); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("insert result_output_eq_class (%d,%d): %w", row.ResultID, row.EqClassID, err)
+		}
+	}
+	for _, row := range snapshot.persistedEdges {
+		if err := q.InsertMirrorPersistedEdge(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert persisted_edge (%d): %w", row.ResultID, err)
 		}
 	}
 	for _, result := range snapshot.results {

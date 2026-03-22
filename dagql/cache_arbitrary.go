@@ -14,7 +14,6 @@ func ArbitraryValueFunc(v any) func(context.Context) (any, error) {
 type ArbitraryCachedResult interface {
 	Value() any
 	HitCache() bool
-	Release(context.Context) error
 }
 
 // sharedArbitraryResult is the in-memory-only cache entry for GetOrInitArbitrary values.
@@ -32,30 +31,7 @@ type sharedArbitraryResult struct {
 	cancel  context.CancelCauseFunc
 	waiters int
 
-	refCount int
-}
-
-func (res *sharedArbitraryResult) release(ctx context.Context) error {
-	if res == nil || res.cache == nil {
-		return nil
-	}
-
-	res.cache.callsMu.Lock()
-	res.refCount--
-	var onRelease OnReleaseFunc
-	if res.refCount == 0 && res.waiters == 0 {
-		delete(res.cache.ongoingArbitraryCalls, res.callKey)
-		if existing := res.cache.completedArbitraryCalls[res.callKey]; existing == res {
-			delete(res.cache.completedArbitraryCalls, res.callKey)
-		}
-		onRelease = res.onRelease
-	}
-	res.cache.callsMu.Unlock()
-
-	if onRelease != nil {
-		return onRelease(ctx)
-	}
-	return nil
+	ownerSessionCount int
 }
 
 type arbitraryResult struct {
@@ -76,13 +52,6 @@ func (r arbitraryResult) HitCache() bool {
 	return r.hitCache
 }
 
-func (r arbitraryResult) Release(ctx context.Context) error {
-	if r.shared == nil {
-		return nil
-	}
-	return r.shared.release(ctx)
-}
-
 type arbitraryCacheContextKey struct {
 	callKey string
 	cache   *cache
@@ -90,9 +59,13 @@ type arbitraryCacheContextKey struct {
 
 func (c *cache) GetOrInitArbitrary(
 	ctx context.Context,
+	sessionID string,
 	callKey string,
 	fn func(context.Context) (any, error),
 ) (ArbitraryCachedResult, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("get or init arbitrary %q: empty session ID", callKey)
+	}
 	if callKey == "" {
 		return nil, fmt.Errorf("cache call key is empty")
 	}
@@ -110,18 +83,19 @@ func (c *cache) GetOrInitArbitrary(
 	}
 
 	if res := c.completedArbitraryCalls[callKey]; res != nil {
-		res.refCount++
 		c.callsMu.Unlock()
-		return arbitraryResult{
+		ret := arbitraryResult{
 			shared:   res,
 			hitCache: true,
-		}, nil
+		}
+		c.trackSessionArbitrary(sessionID, ret)
+		return ret, nil
 	}
 
 	if res := c.ongoingArbitraryCalls[callKey]; res != nil {
 		res.waiters++
 		c.callsMu.Unlock()
-		return c.waitArbitrary(ctx, res, false)
+		return c.waitArbitrary(ctx, sessionID, res, false)
 	}
 
 	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey, cache: c}, struct{}{})
@@ -150,10 +124,10 @@ func (c *cache) GetOrInitArbitrary(
 	}()
 
 	c.callsMu.Unlock()
-	return c.waitArbitrary(ctx, res, true)
+	return c.waitArbitrary(ctx, sessionID, res, true)
 }
 
-func (c *cache) waitArbitrary(ctx context.Context, res *sharedArbitraryResult, isFirstCaller bool) (ArbitraryCachedResult, error) {
+func (c *cache) waitArbitrary(ctx context.Context, sessionID string, res *sharedArbitraryResult, isFirstCaller bool) (ArbitraryCachedResult, error) {
 	var hitCache bool
 	var err error
 
@@ -183,19 +157,20 @@ func (c *cache) waitArbitrary(ctx context.Context, res *sharedArbitraryResult, i
 		} else {
 			c.completedArbitraryCalls[res.callKey] = res
 		}
-		res.refCount++
 		c.callsMu.Unlock()
 
 		if isFirstCaller {
 			hitCache = false
 		}
-		return arbitraryResult{
+		ret := arbitraryResult{
 			shared:   res,
 			hitCache: hitCache,
-		}, nil
+		}
+		c.trackSessionArbitrary(sessionID, ret)
+		return ret, nil
 	}
 
-	if res.refCount == 0 && res.waiters == 0 {
+	if res.ownerSessionCount == 0 && res.waiters == 0 {
 		if existing := c.ongoingArbitraryCalls[res.callKey]; existing == res {
 			delete(c.ongoingArbitraryCalls, res.callKey)
 		}

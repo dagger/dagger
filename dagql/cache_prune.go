@@ -2,20 +2,20 @@ package dagql
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"math"
 	"slices"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/engine/slog"
 )
 
 type pruneCandidate struct {
-	resultID sharedResultID
-	entry    CacheUsageEntry
+	resultID      sharedResultID
+	entry         CacheUsageEntry
+	expiresAtUnix int64
 }
 
 func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
@@ -23,143 +23,158 @@ func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 	if len(policies) == 0 {
 		return report, nil
 	}
-
-	onReleases := []OnReleaseFunc{}
-
-	c.egraphMu.Lock()
 	now := time.Now()
 	for policyIdx, policy := range policies {
-		c.measureAllResultSizesLocked(ctx)
-		entries := c.usageEntriesLocked()
-		entryByResultID := make(map[sharedResultID]CacheUsageEntry, len(entries))
-		var usedBytes int64
-		for _, ent := range entries {
-			usedBytes += ent.SizeBytes
-			resultID, ok := cacheUsageEntryResultID(ent.ID)
-			if !ok {
-				continue
-			}
-			entryByResultID[resultID] = ent
-		}
-
-		targetBytes, _ := pruneTargetBytes(policy, usedBytes)
-		if targetBytes <= 0 {
-			slog.Debug("dagql prune skip policy: no reclaim target",
-				"policyIndex", policyIdx,
-				"usedBytes", usedBytes)
-			continue
-		}
-
-		cutoffUnixNano := int64(0)
-		if policy.KeepDuration > 0 {
-			cutoffUnixNano = now.Add(-policy.KeepDuration).UnixNano()
-		}
-
-		activeClosure := c.activeDependencyClosureLocked()
-		candidates := make([]pruneCandidate, 0, len(entryByResultID))
-		for resultID, res := range c.resultsByID {
-			if res == nil {
-				continue
-			}
-			entry, ok := entryByResultID[resultID]
-			if !ok {
-				continue
-			}
-			switch {
-			case atomic.LoadInt64(&res.refCount) > 0:
-				slog.Debug("dagql prune skip candidate",
-					"policyIndex", policyIdx,
-					"entryID", entry.ID,
-					"reason", "actively-used")
-				continue
-			case res.depOfPersistedResult:
-				slog.Debug("dagql prune skip candidate",
-					"policyIndex", policyIdx,
-					"entryID", entry.ID,
-					"reason", "persistence-retained")
-				continue
-			case resultInActiveClosure(activeClosure, resultID):
-				slog.Debug("dagql prune skip candidate",
-					"policyIndex", policyIdx,
-					"entryID", entry.ID,
-					"reason", "dependency-of-active-result")
-				continue
-			case cutoffUnixNano > 0 && entryRecentlyUsed(entry, cutoffUnixNano):
-				slog.Debug("dagql prune skip candidate",
-					"policyIndex", policyIdx,
-					"entryID", entry.ID,
-					"reason", "keepDuration")
-				continue
-			case !cachePrunePolicyMatchesEntry(policy, entry):
-				slog.Debug("dagql prune skip candidate",
-					"policyIndex", policyIdx,
-					"entryID", entry.ID,
-					"reason", "filter")
-				continue
-			}
-			candidates = append(candidates, pruneCandidate{
-				resultID: resultID,
-				entry:    entry,
-			})
-		}
-
-		slices.SortFunc(candidates, func(a, b pruneCandidate) int {
-			if a.entry.MostRecentUseTimeUnixNano != b.entry.MostRecentUseTimeUnixNano {
-				if a.entry.MostRecentUseTimeUnixNano < b.entry.MostRecentUseTimeUnixNano {
-					return -1
-				}
-				return 1
-			}
-			if a.entry.CreatedTimeUnixNano != b.entry.CreatedTimeUnixNano {
-				if a.entry.CreatedTimeUnixNano < b.entry.CreatedTimeUnixNano {
-					return -1
-				}
-				return 1
-			}
-			switch {
-			case a.entry.ID < b.entry.ID:
-				return -1
-			case a.entry.ID > b.entry.ID:
-				return 1
-			default:
-				return 0
-			}
-		})
-
 		reclaimed := int64(0)
-		for _, candidate := range candidates {
-			if reclaimed >= targetBytes {
+		targetBytes := int64(-1)
+		initialUsedBytes := int64(0)
+		for reclaimed < math.MaxInt64 {
+			c.egraphMu.Lock()
+			c.measureAllResultSizesLocked(ctx)
+			entries := c.usageEntriesLocked()
+			entryByResultID := make(map[sharedResultID]CacheUsageEntry, len(entries))
+			usageOwnerByIdentity := make(map[string]sharedResultID, len(c.resultsByID))
+			resultIDsByUsageIdentity := make(map[string][]sharedResultID, len(c.resultsByID))
+			var usedBytes int64
+			for _, ent := range entries {
+				usedBytes += ent.SizeBytes
+				resultID, ok := cacheUsageEntryResultID(ent.ID)
+				if ok {
+					entryByResultID[resultID] = ent
+				}
+			}
+			for resultID, res := range c.resultsByID {
+				if res == nil {
+					continue
+				}
+				usageIdentity := res.usageIdentity
+				if usageIdentity == "" {
+					usageIdentity = fmt.Sprintf("dagql.result.%d", resultID)
+				}
+				resultIDsByUsageIdentity[usageIdentity] = append(resultIDsByUsageIdentity[usageIdentity], resultID)
+				if ownerID := usageOwnerByIdentity[usageIdentity]; ownerID == 0 || resultID < ownerID {
+					usageOwnerByIdentity[usageIdentity] = resultID
+				}
+			}
+
+			if targetBytes < 0 {
+				targetBytes, _ = pruneTargetBytes(policy, usedBytes)
+				initialUsedBytes = usedBytes
+			}
+			if targetBytes <= 0 {
+				c.egraphMu.Unlock()
+				slog.Debug("dagql prune skip policy: no reclaim target",
+					"policyIndex", policyIdx,
+					"usedBytes", initialUsedBytes)
 				break
 			}
-			res := c.resultsByID[candidate.resultID]
-			if res == nil {
-				continue
-			}
-			if atomic.LoadInt64(&res.refCount) > 0 {
-				continue
+			if reclaimed >= targetBytes {
+				c.egraphMu.Unlock()
+				break
 			}
 
-			onRelease, err := c.pruneResultLocked(ctx, candidate.resultID)
+			cutoffUnixNano := int64(0)
+			if policy.KeepDuration > 0 {
+				cutoffUnixNano = now.Add(-policy.KeepDuration).UnixNano()
+			}
+
+			activeClosure := c.sessionDependencyClosureLocked()
+			candidates := make([]pruneCandidate, 0, len(c.persistedEdgesByResult))
+			for resultID, edge := range c.persistedEdgesByResult {
+				res := c.resultsByID[resultID]
+				if res == nil {
+					continue
+				}
+				entry, ok := entryByResultID[resultID]
+				if !ok {
+					continue
+				}
+				switch {
+				case resultInActiveClosure(activeClosure, resultID):
+					continue
+				case cutoffUnixNano > 0 && entryRecentlyUsed(entry, cutoffUnixNano) && !persistedEdgeExpired(now, edge):
+					continue
+				case !cachePrunePolicyMatchesEntry(policy, entry):
+					continue
+				}
+				candidates = append(candidates, pruneCandidate{
+					resultID:      resultID,
+					entry:         entry,
+					expiresAtUnix: edge.expiresAtUnix,
+				})
+			}
+
+			slices.SortFunc(candidates, func(a, b pruneCandidate) int {
+				if aExpired, bExpired := persistedEdgeExpired(now, persistedEdge{expiresAtUnix: a.expiresAtUnix}), persistedEdgeExpired(now, persistedEdge{expiresAtUnix: b.expiresAtUnix}); aExpired != bExpired {
+					if aExpired {
+						return -1
+					}
+					return 1
+				}
+				if a.entry.MostRecentUseTimeUnixNano != b.entry.MostRecentUseTimeUnixNano {
+					if a.entry.MostRecentUseTimeUnixNano < b.entry.MostRecentUseTimeUnixNano {
+						return -1
+					}
+					return 1
+				}
+				if a.entry.CreatedTimeUnixNano != b.entry.CreatedTimeUnixNano {
+					if a.entry.CreatedTimeUnixNano < b.entry.CreatedTimeUnixNano {
+						return -1
+					}
+					return 1
+				}
+				switch {
+				case a.entry.ID < b.entry.ID:
+					return -1
+				case a.entry.ID > b.entry.ID:
+					return 1
+				default:
+					return 0
+				}
+			})
+
+			var (
+				bestCandidate pruneCandidate
+				bestReclaim   int64
+				haveBest      bool
+			)
+			for _, candidate := range candidates {
+				marginalReclaim := c.simulatePersistedEdgeRemovalLocked(candidate.resultID, usageOwnerByIdentity, resultIDsByUsageIdentity)
+				if marginalReclaim == 0 {
+					continue
+				}
+				if !haveBest || marginalReclaim > bestReclaim {
+					bestCandidate = candidate
+					bestReclaim = marginalReclaim
+					haveBest = true
+				}
+			}
+			c.egraphMu.Unlock()
+
+			if !haveBest {
+				break
+			}
+
+			err := c.removePersistedEdge(ctx, bestCandidate.resultID)
 			if err != nil {
-				c.egraphMu.Unlock()
 				return report, err
 			}
-			if onRelease != nil {
-				onReleases = append(onReleases, onRelease)
-			}
 
-			report.Entries = append(report.Entries, candidate.entry)
-			report.ReclaimedBytes += candidate.entry.SizeBytes
-			reclaimed += candidate.entry.SizeBytes
+			selectedEntry := bestCandidate.entry
+			selectedEntry.SizeBytes = bestReclaim
+			report.Entries = append(report.Entries, selectedEntry)
+			report.ReclaimedBytes += bestReclaim
+			reclaimed += bestReclaim
 
 			slog.Debug("dagql prune selected candidate",
 				"policyIndex", policyIdx,
-				"entryID", candidate.entry.ID,
-				"reclaimedBytes", candidate.entry.SizeBytes,
+				"entryID", bestCandidate.entry.ID,
+				"reclaimedBytes", bestReclaim,
 				"policyTargetBytes", targetBytes,
 				"policyReclaimedBytes", reclaimed)
 		}
 	}
+	c.egraphMu.Lock()
 	if len(report.Entries) > 0 {
 		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(); compacted {
 			slog.Debug("dagql prune compacted eq classes",
@@ -168,35 +183,7 @@ func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePr
 		}
 	}
 	c.egraphMu.Unlock()
-
-	var releaseErr error
-	for _, onRelease := range onReleases {
-		if onRelease == nil {
-			continue
-		}
-		releaseErr = errors.Join(releaseErr, onRelease(ctx))
-	}
-	return report, releaseErr
-}
-
-func (c *cache) pruneResultLocked(ctx context.Context, resultID sharedResultID) (OnReleaseFunc, error) {
-	res := c.resultsByID[resultID]
-	if res == nil {
-		return nil, nil
-	}
-	if err := c.removeResultFromEgraphLocked(ctx, res); err != nil {
-		return nil, err
-	}
-	for _, remaining := range c.resultsByID {
-		if remaining == nil || len(remaining.deps) == 0 {
-			continue
-		}
-		if _, ok := remaining.deps[resultID]; ok {
-			c.traceExplicitDepRemoved(ctx, remaining.id, resultID, "prune")
-		}
-		delete(remaining.deps, resultID)
-	}
-	return res.onRelease, nil
+	return report, nil
 }
 
 func resultInActiveClosure(activeClosure map[sharedResultID]struct{}, resultID sharedResultID) bool {
@@ -207,12 +194,99 @@ func resultInActiveClosure(activeClosure map[sharedResultID]struct{}, resultID s
 	return blocked
 }
 
+func persistedEdgeExpired(now time.Time, edge persistedEdge) bool {
+	return edge.expiresAtUnix > 0 && now.Unix() >= edge.expiresAtUnix
+}
+
 func entryRecentlyUsed(entry CacheUsageEntry, cutoffUnixNano int64) bool {
 	mostRecentUse := entry.MostRecentUseTimeUnixNano
 	if mostRecentUse == 0 {
 		mostRecentUse = entry.CreatedTimeUnixNano
 	}
 	return mostRecentUse >= cutoffUnixNano
+}
+
+func (c *cache) simulatePersistedEdgeRemovalLocked(
+	resultID sharedResultID,
+	usageOwnerByIdentity map[string]sharedResultID,
+	resultIDsByUsageIdentity map[string][]sharedResultID,
+) int64 {
+	res := c.resultsByID[resultID]
+	if res == nil {
+		return 0
+	}
+
+	simulatedCounts := map[sharedResultID]int64{
+		resultID: res.incomingOwnershipCount - 1,
+	}
+	queue := make([]sharedResultID, 0, 1)
+	if simulatedCounts[resultID] == 0 {
+		queue = append(queue, resultID)
+	}
+
+	collected := make(map[sharedResultID]struct{})
+	for len(queue) > 0 {
+		curID := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+
+		if _, seen := collected[curID]; seen {
+			continue
+		}
+		cur := c.resultsByID[curID]
+		if cur == nil {
+			continue
+		}
+		curCount, ok := simulatedCounts[curID]
+		if !ok {
+			curCount = cur.incomingOwnershipCount
+		}
+		if curCount != 0 {
+			continue
+		}
+		collected[curID] = struct{}{}
+
+		for depID := range cur.deps {
+			dep := c.resultsByID[depID]
+			if dep == nil {
+				continue
+			}
+			depCount, ok := simulatedCounts[depID]
+			if !ok {
+				depCount = dep.incomingOwnershipCount
+			}
+			depCount--
+			simulatedCounts[depID] = depCount
+			if depCount == 0 {
+				queue = append(queue, depID)
+			}
+		}
+	}
+
+	var reclaimed int64
+	for usageIdentity, ownerID := range usageOwnerByIdentity {
+		if _, collectedOwner := collected[ownerID]; !collectedOwner {
+			continue
+		}
+		allCollected := true
+		for _, id := range resultIDsByUsageIdentity[usageIdentity] {
+			if _, collectedID := collected[id]; !collectedID {
+				allCollected = false
+				break
+			}
+		}
+		if !allCollected {
+			continue
+		}
+		owner := c.resultsByID[ownerID]
+		if owner == nil {
+			continue
+		}
+		if owner.sizeEstimateBytes > 0 {
+			reclaimed += owner.sizeEstimateBytes
+		}
+	}
+
+	return reclaimed
 }
 
 func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {

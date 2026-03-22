@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -866,19 +865,11 @@ func (c *cache) lookupCacheForRequest(
 	)
 	touchSharedResultLastUsed(res, now.UnixNano())
 	if req.IsPersistable {
-		// NOTE: this is an intentional experiment behavior. If a persistable field
-		// hits a result originally produced by a non-persistable field, we
-		// "upgrade" the shared result to persisted-dependency liveness so future
-		// releases do not drop it or its dependency chain. This avoids surprising
-		// misses for persistable callsites, but should be revisited when real
-		// persistence policy is finalized.
-		c.markResultAsDepOfPersistedLocked(ctx, res)
+		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL))
 	}
 	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
 		return nil, false, err
 	}
-	newRefCount := atomic.AddInt64(&res.refCount, 1)
-	c.traceRefAcquired(ctx, res, newRefCount)
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
@@ -887,7 +878,7 @@ func (c *cache) lookupCacheForRequest(
 	return retRes, true, nil
 }
 
-func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCall, res AnyResult) error {
+func (c *cache) TeachCallEquivalentToResult(ctx context.Context, sessionID string, frame *ResultCall, res AnyResult) error {
 	if frame == nil {
 		return fmt.Errorf("teach call equivalence: nil call")
 	}
@@ -897,7 +888,10 @@ func (c *cache) TeachCallEquivalentToResult(ctx context.Context, frame *ResultCa
 
 	shared := res.cacheSharedResult()
 	if shared == nil || shared.id == 0 {
-		attached, err := c.AttachResult(ctx, CurrentDagqlServer(ctx), res)
+		if sessionID == "" {
+			return fmt.Errorf("teach call equivalence: empty session ID for detached result")
+		}
+		attached, err := c.AttachResult(ctx, sessionID, CurrentDagqlServer(ctx), res)
 		if err != nil {
 			return fmt.Errorf("teach call equivalence: attach result: %w", err)
 		}
@@ -1540,133 +1534,6 @@ func (c *cache) indexWaitResultInEgraphLocked(
 	}
 
 	return nil
-}
-
-func addPersistedCallRefDep(
-	ref *ResultCallRef,
-	stack *[]sharedResultID,
-) error {
-	if ref == nil {
-		return nil
-	}
-	if ref.Call != nil {
-		return fmt.Errorf("pending result call ref leaked into persisted mark walk")
-	}
-	depID := sharedResultID(ref.ResultID)
-	if depID == 0 {
-		return nil
-	}
-	*stack = append(*stack, depID)
-	return nil
-}
-
-func addPersistedCallLiteralDeps(
-	lit *ResultCallLiteral,
-	stack *[]sharedResultID,
-) error {
-	if lit == nil {
-		return nil
-	}
-	switch lit.Kind {
-	case ResultCallLiteralKindResultRef:
-		return addPersistedCallRefDep(lit.ResultRef, stack)
-	case ResultCallLiteralKindList:
-		for _, item := range lit.ListItems {
-			if err := addPersistedCallLiteralDeps(item, stack); err != nil {
-				return err
-			}
-		}
-	case ResultCallLiteralKindObject:
-		for _, field := range lit.ObjectFields {
-			if field == nil {
-				continue
-			}
-			if err := addPersistedCallLiteralDeps(field.Value, stack); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func addPersistedCallDeps(
-	frame *ResultCall,
-	stack *[]sharedResultID,
-) error {
-	if frame == nil {
-		return nil
-	}
-	if err := addPersistedCallRefDep(frame.Receiver, stack); err != nil {
-		return err
-	}
-	if frame.Module != nil {
-		if err := addPersistedCallRefDep(frame.Module.ResultRef, stack); err != nil {
-			return err
-		}
-	}
-	for _, arg := range frame.Args {
-		if arg == nil {
-			continue
-		}
-		if err := addPersistedCallLiteralDeps(arg.Value, stack); err != nil {
-			return err
-		}
-	}
-	for _, input := range frame.ImplicitInputs {
-		if input == nil {
-			continue
-		}
-		if err := addPersistedCallLiteralDeps(input.Value, stack); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *cache) markResultAsDepOfPersistedLocked(ctx context.Context, root *sharedResult) (bool, error) {
-	if root == nil || root.id == 0 {
-		return false, nil
-	}
-	if root.depOfPersistedResult {
-		return false, nil
-	}
-	changed := false
-	// Persisted-closure invariant: once a result is marked as dependency-of-
-	// persisted, every transitive materialized dependency reachable through
-	// exact explicit deps and resultCall refs must also be marked. Already-
-	// marked results are treated as cut points because their whole closure was
-	// already proven and marked when they first became persisted.
-	stack := []sharedResultID{root.id}
-	seen := make(map[sharedResultID]struct{})
-	for len(stack) > 0 {
-		n := len(stack) - 1
-		curID := stack[n]
-		stack = stack[:n]
-		if _, ok := seen[curID]; ok {
-			continue
-		}
-		seen[curID] = struct{}{}
-		cur := c.resultsByID[curID]
-		if cur == nil {
-			continue
-		}
-		if cur.depOfPersistedResult {
-			continue
-		}
-		changed = true
-		c.tracePersistRootMarked(ctx, cur.id, root.id, "runtime", "")
-		cur.depOfPersistedResult = true
-		for depID := range cur.deps {
-			if depID == 0 || depID == curID {
-				continue
-			}
-			stack = append(stack, depID)
-		}
-		if err := addPersistedCallDeps(cur.loadResultCall(), &stack); err != nil {
-			return false, err
-		}
-	}
-	return changed, nil
 }
 
 func (c *cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedResult) error {

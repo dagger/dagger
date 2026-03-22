@@ -126,7 +126,6 @@ type AnyResult interface {
 	WithContentDigestAny(digest.Digest) AnyResult
 
 	HitCache() bool
-	Release(context.Context) error
 	ResultCall() (*ResultCall, error)
 
 	// cacheSharedResult returns the internal cache-backed shared payload when present.

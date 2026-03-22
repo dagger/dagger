@@ -40,6 +40,10 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list mirror result_output_eq_classes: %w", err)
 	}
+	persistedEdgeRows, err := c.pdb.ListMirrorPersistedEdges(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror persisted_edges: %w", err)
+	}
 	resultDepRows, err := c.pdb.ListMirrorResultDeps(ctx)
 	if err != nil {
 		return fmt.Errorf("list mirror result_deps: %w", err)
@@ -151,20 +155,19 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			}
 
 			res := &sharedResult{
-				cache:                c,
-				id:                   resultID,
-				isObject:             env.Kind == persistedResultKindObject,
-				safeToPersistCache:   row.SafeToPersistCache,
-				depOfPersistedResult: row.DepOfPersistedResult,
-				outputEffectIDs:      outputEffects,
-				expiresAtUnix:        row.ExpiresAtUnix,
-				createdAtUnixNano:    row.CreatedAtUnixNano,
-				lastUsedAtUnixNano:   row.LastUsedAtUnixNano,
-				sizeEstimateBytes:    row.SizeEstimateBytes,
-				usageIdentity:        row.UsageIdentity,
-				description:          row.Description,
-				recordType:           row.RecordType,
-				persistedEnvelope:    &env,
+				cache:              c,
+				id:                 resultID,
+				isObject:           env.Kind == persistedResultKindObject,
+				safeToPersistCache: row.SafeToPersistCache,
+				outputEffectIDs:    outputEffects,
+				expiresAtUnix:      row.ExpiresAtUnix,
+				createdAtUnixNano:  row.CreatedAtUnixNano,
+				lastUsedAtUnixNano: row.LastUsedAtUnixNano,
+				sizeEstimateBytes:  row.SizeEstimateBytes,
+				usageIdentity:      row.UsageIdentity,
+				description:        row.Description,
+				recordType:         row.RecordType,
+				persistedEnvelope:  &env,
 			}
 			res.storeResultCall(&frame)
 			res.loadResultCall().bindCache(c)
@@ -184,6 +187,26 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 
 			c.resultsByID[resultID] = res
 			c.traceImportResultLoaded(ctx, importRunID, resultID, row.CallFrameJSON)
+		}
+
+		for _, row := range persistedEdgeRows {
+			resultID := sharedResultID(row.ResultID)
+			if resultID == 0 {
+				return fmt.Errorf("import persisted_edge: zero result ID")
+			}
+			res := c.resultsByID[resultID]
+			if res == nil {
+				return fmt.Errorf("import persisted_edge %d: missing result", resultID)
+			}
+			if c.persistedEdgesByResult == nil {
+				c.persistedEdgesByResult = make(map[sharedResultID]persistedEdge)
+			}
+			c.persistedEdgesByResult[resultID] = persistedEdge{
+				resultID:          resultID,
+				createdAtUnixNano: row.CreatedAtUnixNano,
+				expiresAtUnix:     row.ExpiresAtUnix,
+			}
+			c.incrementIncomingOwnershipLocked(ctx, res)
 		}
 
 		type importTermInput struct {
@@ -309,6 +332,7 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 				parent.deps = make(map[sharedResultID]struct{})
 			}
 			parent.deps[depID] = struct{}{}
+			c.incrementIncomingOwnershipLocked(ctx, c.resultsByID[depID])
 			c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
 			c.traceExplicitDepAdded(ctx, parentID, depID, "import")
 		}

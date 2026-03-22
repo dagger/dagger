@@ -3,19 +3,18 @@ package persistdb
 import "context"
 
 type MirrorResult struct {
-	ID                   int64
-	CallFrameJSON        string
-	SelfPayload          []byte
-	OutputEffectIDs      string
-	SafeToPersistCache   bool
-	DepOfPersistedResult bool
-	ExpiresAtUnix        int64
-	CreatedAtUnixNano    int64
-	LastUsedAtUnixNano   int64
-	SizeEstimateBytes    int64
-	UsageIdentity        string
-	RecordType           string
-	Description          string
+	ID                 int64
+	CallFrameJSON      string
+	SelfPayload        []byte
+	OutputEffectIDs    string
+	SafeToPersistCache bool
+	ExpiresAtUnix      int64
+	CreatedAtUnixNano  int64
+	LastUsedAtUnixNano int64
+	SizeEstimateBytes  int64
+	UsageIdentity      string
+	RecordType         string
+	Description        string
 }
 
 type MirrorEqClass struct {
@@ -52,6 +51,12 @@ type MirrorResultDep struct {
 	DepResultID    int64
 }
 
+type MirrorPersistedEdge struct {
+	ResultID          int64
+	CreatedAtUnixNano int64
+	ExpiresAtUnix     int64
+}
+
 type MirrorResultSnapshotLink struct {
 	ResultID int64
 	RefKey   string
@@ -60,6 +65,7 @@ type MirrorResultSnapshotLink struct {
 }
 
 const clearMirrorResultSnapshotLinks = `DELETE FROM result_snapshot_links`
+const clearMirrorPersistedEdges = `DELETE FROM persisted_edges`
 const clearMirrorResultDeps = `DELETE FROM result_deps`
 const clearMirrorResultOutputEqClasses = `DELETE FROM result_output_eq_classes`
 const clearMirrorTermInputs = `DELETE FROM term_inputs`
@@ -71,6 +77,7 @@ const clearMirrorEqClasses = `DELETE FROM eq_classes`
 func (q *Queries) ClearMirrorState(ctx context.Context) error {
 	for _, stmt := range []string{
 		clearMirrorResultSnapshotLinks,
+		clearMirrorPersistedEdges,
 		clearMirrorResultDeps,
 		clearMirrorResultOutputEqClasses,
 		clearMirrorTermInputs,
@@ -89,15 +96,15 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 const insertMirrorResult = `
 INSERT INTO results (
 	id, call_frame_json, self_payload, output_effect_ids_json, safe_to_persist_cache,
-	dep_of_persisted_result, expires_at_unix, created_at_unix_nano,
+	expires_at_unix, created_at_unix_nano,
 	last_used_at_unix_nano, size_estimate_bytes, usage_identity, record_type, description
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 func (q *Queries) InsertMirrorResult(ctx context.Context, arg MirrorResult) error {
 	_, err := q.exec(ctx, nil, insertMirrorResult,
 		arg.ID, arg.CallFrameJSON, arg.SelfPayload, arg.OutputEffectIDs,
-		arg.SafeToPersistCache, arg.DepOfPersistedResult, arg.ExpiresAtUnix,
+		arg.SafeToPersistCache, arg.ExpiresAtUnix,
 		arg.CreatedAtUnixNano, arg.LastUsedAtUnixNano, arg.SizeEstimateBytes,
 		arg.UsageIdentity, arg.RecordType, arg.Description,
 	)
@@ -156,6 +163,15 @@ func (q *Queries) InsertMirrorResultDep(ctx context.Context, arg MirrorResultDep
 	return err
 }
 
+const insertMirrorPersistedEdge = `
+INSERT INTO persisted_edges (result_id, created_at_unix_nano, expires_at_unix) VALUES (?, ?, ?)
+`
+
+func (q *Queries) InsertMirrorPersistedEdge(ctx context.Context, arg MirrorPersistedEdge) error {
+	_, err := q.exec(ctx, nil, insertMirrorPersistedEdge, arg.ResultID, arg.CreatedAtUnixNano, arg.ExpiresAtUnix)
+	return err
+}
+
 const insertMirrorResultSnapshotLink = `
 INSERT INTO result_snapshot_links (result_id, ref_key, role, slot) VALUES (?, ?, ?, ?)
 `
@@ -168,7 +184,7 @@ func (q *Queries) InsertMirrorResultSnapshotLink(ctx context.Context, arg Mirror
 const listMirrorResults = `
 SELECT
 	id, call_frame_json, self_payload, output_effect_ids_json, safe_to_persist_cache,
-	dep_of_persisted_result, expires_at_unix, created_at_unix_nano,
+	expires_at_unix, created_at_unix_nano,
 	last_used_at_unix_nano, size_estimate_bytes, usage_identity, record_type, description
 FROM results
 `
@@ -189,7 +205,6 @@ func (q *Queries) ListMirrorResults(ctx context.Context) ([]MirrorResult, error)
 			&row.SelfPayload,
 			&row.OutputEffectIDs,
 			&row.SafeToPersistCache,
-			&row.DepOfPersistedResult,
 			&row.ExpiresAtUnix,
 			&row.CreatedAtUnixNano,
 			&row.LastUsedAtUnixNano,
@@ -217,6 +232,27 @@ func (q *Queries) ListMirrorEqClasses(ctx context.Context) ([]MirrorEqClass, err
 	for rows.Next() {
 		var row MirrorEqClass
 		if err := rows.Scan(&row.ID); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorPersistedEdges = `
+SELECT result_id, created_at_unix_nano, expires_at_unix FROM persisted_edges
+`
+
+func (q *Queries) ListMirrorPersistedEdges(ctx context.Context) ([]MirrorPersistedEdge, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorPersistedEdges)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorPersistedEdge
+	for rows.Next() {
+		var row MirrorPersistedEdge
+		if err := rows.Scan(&row.ResultID, &row.CreatedAtUnixNano, &row.ExpiresAtUnix); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

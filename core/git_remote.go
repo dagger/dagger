@@ -109,8 +109,12 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		slog.Info("git remote cache unavailable; running ls-remote", "cache_key", cacheKey)
 		return repo.runLsRemote(ctx)
 	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("git remote cache session metadata: %w", err)
+	}
 
-	cacheRes, err := srv.Cache.GetOrInitArbitrary(ctx, cacheKey, func(ctx context.Context) (any, error) {
+	cacheRes, err := srv.Cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
 		remote, err := repo.runLsRemote(ctx)
 		if err != nil {
 			return nil, err

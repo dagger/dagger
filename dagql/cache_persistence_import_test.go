@@ -12,7 +12,7 @@ import (
 )
 
 func newPersistCodecImportTestServer(cache Cache) *Server {
-	srv := NewServer(&persistCodecRoot{}, NewSessionCache(cache))
+	srv := NewServer(&persistCodecRoot{}, cache)
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	Fields[*persistCodecRoot]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
@@ -25,7 +25,7 @@ func newPersistCodecImportTestServer(cache Cache) *Server {
 func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
 	cacheA, err := NewCache(ctx, dbPath)
@@ -33,7 +33,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	cA := cacheA.(*cache)
 
 	key := cacheTestIntCall("persist-import-roundtrip")
-	resA, err := cA.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	resA, err := cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -41,7 +41,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !resA.HitCache())
-	assert.NilError(t, resA.Release(ctx))
+	cacheTestReleaseSession(t, cA, ctx)
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
@@ -52,7 +52,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	resB, err := cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -61,13 +61,13 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, resB.HitCache())
 	assert.Equal(t, 123, cacheTestUnwrapInt(t, resB))
-	assert.NilError(t, resB.Release(ctx))
+	cacheTestReleaseSession(t, cB, ctx)
 }
 
 func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
 	cacheA, err := NewCache(ctx, dbPath)
@@ -85,7 +85,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
 	assert.NilError(t, err)
 	assert.Assert(t, resA != nil)
-	assert.NilError(t, resA.Release(rootCtxA))
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
@@ -111,13 +111,13 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	obj, ok := UnwrapAs[*persistCodecObj](resB.Unwrap())
 	assert.Assert(t, ok)
 	assert.Equal(t, "x", obj.Name)
-	assert.NilError(t, resB.Release(rootCtxB))
+	cacheTestReleaseSession(t, cacheB, rootCtxB)
 }
 
 func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
 	cacheA, err := NewCache(ctx, dbPath)
@@ -139,7 +139,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	reqCall, err := resA.ResultCall()
 	assert.NilError(t, err)
 
-	assert.NilError(t, resA.Release(rootCtxA))
+	cacheTestReleaseSession(t, cacheA, rootCtxA)
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
@@ -151,7 +151,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	}()
 
 	initCalls := 0
-	_, err = cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	_, err = cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		initCalls++
 		return nil, errors.New("unexpected initializer call")
 	})
@@ -163,7 +163,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
 	cacheA, err := NewCache(ctx, dbPath)
@@ -171,14 +171,14 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	cA := cacheA.(*cache)
 
 	key := cacheTestIntCall("persist-import-unclean-wipe")
-	resA, err := cA.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 7).WithSafeToPersistCache(true), nil
 	})
 	assert.NilError(t, err)
-	assert.NilError(t, resA.Release(ctx))
+	cacheTestReleaseSession(t, cA, ctx)
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
@@ -194,7 +194,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	resB, err := cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -203,13 +203,13 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !resB.HitCache())
 	assert.Equal(t, 8, cacheTestUnwrapInt(t, resB))
-	assert.NilError(t, resB.Release(ctx))
+	cacheTestReleaseSession(t, cB, ctx)
 }
 
 func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 
 	cacheA, err := NewCache(ctx, dbPath)
@@ -217,14 +217,14 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	cA := cacheA.(*cache)
 
 	key := cacheTestIntCall("persist-import-corrupt-wipe")
-	resA, err := cA.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(key, 50).WithSafeToPersistCache(true), nil
 	})
 	assert.NilError(t, err)
-	assert.NilError(t, resA.Release(ctx))
+	cacheTestReleaseSession(t, cA, ctx)
 	assert.NilError(t, cA.persistCurrentState(ctx))
 	assert.NilError(t, cA.Close(context.Background()))
 
@@ -242,7 +242,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
 
-	resB, err := cB.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{
+	resB, err := cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
 		ResultCall:    key,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
@@ -251,5 +251,5 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !resB.HitCache())
 	assert.Equal(t, 51, cacheTestUnwrapInt(t, resB))
-	assert.NilError(t, resB.Release(ctx))
+	cacheTestReleaseSession(t, cB, ctx)
 }

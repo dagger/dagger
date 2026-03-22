@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -32,37 +31,30 @@ type Cache interface {
 	// initializing it with fn when needed.
 	GetOrInitCall(
 		context.Context,
+		string,
 		TypeResolver,
 		*CallRequest,
 		func(context.Context) (AnyResult, error),
 	) (AnyResult, error)
-
-	// LookupCacheForDigests performs only the direct digest/extra-digest cache-hit
-	// check and returns an already-cached result when one exists.
-	LookupCacheForDigests(
-		context.Context,
-		TypeResolver,
-		digest.Digest,
-		[]call.ExtraDigest,
-	) (AnyResult, bool, error)
 
 	// Like GetOrInitCall, but for in-memory opaque values keyed by a plain string key.
 	// These values are not persisted and are only cached in memory.
 	GetOrInitArbitrary(
 		context.Context,
 		string,
+		string,
 		func(context.Context) (any, error),
 	) (ArbitraryCachedResult, error)
+
+	// ReleaseSession releases all cache-backed state explicitly owned by the
+	// given session.
+	ReleaseSession(context.Context, string) error
 
 	// Returns the number of entries in the cache.
 	Size() int
 
 	// Returns a breakdown of cache entries by internal index.
 	EntryStats() CacheEntryStats
-
-	// Returns a deterministic snapshot of cache usage entries used for pruning
-	// policy/accounting.
-	UsageEntries() []CacheUsageEntry
 
 	// Returns a deterministic snapshot of cache usage entries with size
 	// measurement for all cache entries (not only prune candidates). This is
@@ -86,11 +78,16 @@ type Cache interface {
 
 	// LoadResultByResultID loads a cache-backed result by its stable shared
 	// result handle.
-	LoadResultByResultID(context.Context, *Server, uint64) (AnyResult, error)
+	LoadResultByResultID(context.Context, string, *Server, uint64) (AnyResult, error)
+
+	// WalkResultCall walks a result-call graph non-owningly, loading any
+	// result-handle refs it encounters and invoking visit for each loaded
+	// result before recursing into that result's call.
+	WalkResultCall(context.Context, *Server, *ResultCall, func(AnyResult) error) error
 
 	// AttachResult promotes a detached result into the cache so subsequent
 	// selections can refer to it by stable result handle.
-	AttachResult(context.Context, TypeResolver, AnyResult) (AnyResult, error)
+	AttachResult(context.Context, string, TypeResolver, AnyResult) (AnyResult, error)
 
 	// AddExplicitDependency records that parent must retain dep until parent is
 	// released, without changing either result's structural call identity.
@@ -107,12 +104,16 @@ type Cache interface {
 	// TeachCallEquivalentToResult records that the given call is equivalent to
 	// the provided existing result, updating e-graph/cache identity state
 	// without re-executing or synthetic loading.
-	TeachCallEquivalentToResult(context.Context, *ResultCall, AnyResult) error
+	TeachCallEquivalentToResult(context.Context, string, *ResultCall, AnyResult) error
 
 	// TeachContentDigest records a content digest for an already-attached
 	// result, updating both the stored result call metadata and the e-graph's
 	// digest-equivalence knowledge without detaching or cloning the result.
 	TeachContentDigest(context.Context, AnyResult, digest.Digest) error
+
+	PersistedResultID(AnyResult) (uint64, error)
+	PersistedSnapshotLinksByResultID(context.Context, uint64) ([]PersistedSnapshotRefLink, error)
+	LoadPersistedObjectByResultID(context.Context, *Server, uint64) (AnyObjectResult, error)
 }
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
@@ -160,7 +161,13 @@ type CachePruneReport struct {
 	ReclaimedBytes int64
 }
 
-const cachePersistenceSchemaVersion = "8"
+type persistedEdge struct {
+	resultID          sharedResultID
+	createdAtUnixNano int64
+	expiresAtUnix     int64
+}
+
+const cachePersistenceSchemaVersion = "9"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
@@ -260,6 +267,336 @@ func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 	return c, nil
 }
 
+func (c *cache) trackSessionResult(ctx context.Context, sessionID string, res AnyResult, hitCache bool) {
+	if c == nil || sessionID == "" || res == nil {
+		return
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return
+	}
+
+	acquired := false
+	trackedCount := 0
+	c.sessionMu.Lock()
+	if c.sessionResultIDsBySession == nil {
+		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
+	}
+	if c.sessionResultIDsBySession[sessionID] == nil {
+		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
+	}
+	if _, found := c.sessionResultIDsBySession[sessionID][shared.id]; !found {
+		c.sessionResultIDsBySession[sessionID][shared.id] = struct{}{}
+		acquired = true
+	}
+	trackedCount = len(c.sessionResultIDsBySession[sessionID])
+	c.sessionMu.Unlock()
+
+	if acquired {
+		c.egraphMu.Lock()
+		if c.resultsByID[shared.id] == shared {
+			c.incrementIncomingOwnershipLocked(ctx, shared)
+		}
+		c.egraphMu.Unlock()
+	}
+
+	if c.traceEnabled() {
+		c.traceSessionResultTracked(ctx, sessionID, res, hitCache, trackedCount, 1)
+	}
+}
+
+func (c *cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResult) {
+	if c == nil || sessionID == "" || res == nil {
+		return
+	}
+	shared, ok := res.(arbitraryResult)
+	if !ok || shared.shared == nil {
+		return
+	}
+
+	acquired := false
+	c.sessionMu.Lock()
+	if c.sessionArbitraryCallKeysBySession == nil {
+		c.sessionArbitraryCallKeysBySession = make(map[string]map[string]struct{})
+	}
+	if c.sessionArbitraryCallKeysBySession[sessionID] == nil {
+		c.sessionArbitraryCallKeysBySession[sessionID] = make(map[string]struct{})
+	}
+	if _, found := c.sessionArbitraryCallKeysBySession[sessionID][shared.shared.callKey]; !found {
+		c.sessionArbitraryCallKeysBySession[sessionID][shared.shared.callKey] = struct{}{}
+		acquired = true
+	}
+	c.sessionMu.Unlock()
+
+	if acquired {
+		c.callsMu.Lock()
+		shared.shared.ownerSessionCount++
+		c.callsMu.Unlock()
+	}
+}
+
+func (c *cache) ReleaseSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("release session: empty session ID")
+	}
+	if c == nil {
+		return nil
+	}
+
+	c.sessionMu.Lock()
+	resultIDs := c.sessionResultIDsBySession[sessionID]
+	arbitraryCallKeys := c.sessionArbitraryCallKeysBySession[sessionID]
+	delete(c.sessionResultIDsBySession, sessionID)
+	delete(c.sessionArbitraryCallKeysBySession, sessionID)
+	c.sessionMu.Unlock()
+
+	var (
+		rerr       error
+		onReleases []OnReleaseFunc
+	)
+	c.egraphMu.Lock()
+	queue := make([]*sharedResult, 0, len(resultIDs))
+	for resultID := range resultIDs {
+		shared := c.resultsByID[resultID]
+		if shared == nil {
+			continue
+		}
+		res := Result[Typed]{shared: shared}
+		if c.traceEnabled() {
+			c.traceSessionResultReleasing(ctx, sessionID, res, "release_session", 1, len(resultIDs), 1, 1)
+		}
+		var err error
+		queue, err = c.decrementIncomingOwnershipLocked(ctx, shared, queue)
+		rerr = errors.Join(rerr, err)
+	}
+	collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+	onReleases = append(onReleases, collectReleases...)
+	rerr = errors.Join(rerr, collectErr)
+	c.egraphMu.Unlock()
+
+	rerr = errors.Join(rerr, runOnReleaseFuncs(context.WithoutCancel(ctx), onReleases))
+	for callKey := range arbitraryCallKeys {
+		var onRelease OnReleaseFunc
+		c.callsMu.Lock()
+		res := c.completedArbitraryCalls[callKey]
+		if res == nil {
+			res = c.ongoingArbitraryCalls[callKey]
+		}
+		if res != nil {
+			res.ownerSessionCount--
+			if res.ownerSessionCount < 0 {
+				res.ownerSessionCount = 0
+			}
+			if res.ownerSessionCount == 0 && res.waiters == 0 {
+				if existing := c.ongoingArbitraryCalls[callKey]; existing == res {
+					delete(c.ongoingArbitraryCalls, callKey)
+				}
+				if existing := c.completedArbitraryCalls[callKey]; existing == res {
+					delete(c.completedArbitraryCalls, callKey)
+				}
+				onRelease = res.onRelease
+			}
+		}
+		c.callsMu.Unlock()
+		if onRelease != nil {
+			rerr = errors.Join(rerr, onRelease(context.WithoutCancel(ctx)))
+		}
+	}
+	return rerr
+}
+
+func (c *cache) resultHasSessionEdge(resultID sharedResultID) bool {
+	if c == nil || resultID == 0 {
+		return false
+	}
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	for _, resultIDs := range c.sessionResultIDsBySession {
+		if _, found := resultIDs[resultID]; found {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *cache) sessionDependencyClosureLocked() map[sharedResultID]struct{} {
+	closure := make(map[sharedResultID]struct{})
+	stack := make([]sharedResultID, 0)
+
+	c.sessionMu.Lock()
+	for _, resultIDs := range c.sessionResultIDsBySession {
+		for resultID := range resultIDs {
+			stack = append(stack, resultID)
+		}
+	}
+	c.sessionMu.Unlock()
+
+	for len(stack) > 0 {
+		n := len(stack) - 1
+		curID := stack[n]
+		stack = stack[:n]
+		if _, seen := closure[curID]; seen {
+			continue
+		}
+		closure[curID] = struct{}{}
+		cur := c.resultsByID[curID]
+		if cur == nil {
+			continue
+		}
+		for depID := range cur.deps {
+			stack = append(stack, depID)
+		}
+	}
+
+	return closure
+}
+
+func (c *cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64) {
+	if c == nil || res == nil || res.id == 0 {
+		return
+	}
+	if c.persistedEdgesByResult == nil {
+		c.persistedEdgesByResult = make(map[sharedResultID]persistedEdge)
+	}
+	edge, found := c.persistedEdgesByResult[res.id]
+	if !found {
+		createdAtUnixNano := res.loadPayloadState().createdAtUnixNano
+		if createdAtUnixNano == 0 {
+			createdAtUnixNano = time.Now().UnixNano()
+		}
+		edge = persistedEdge{
+			resultID:          res.id,
+			createdAtUnixNano: createdAtUnixNano,
+		}
+		c.incrementIncomingOwnershipLocked(ctx, res)
+	}
+	edge.expiresAtUnix = mergeSharedResultExpiryUnix(edge.expiresAtUnix, expiresAtUnix)
+	c.persistedEdgesByResult[res.id] = edge
+}
+
+func (c *cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) error {
+	if c == nil || resultID == 0 {
+		return nil
+	}
+
+	var (
+		res        *sharedResult
+		queue      []*sharedResult
+		onReleases []OnReleaseFunc
+		rerr       error
+	)
+	c.egraphMu.Lock()
+	if _, found := c.persistedEdgesByResult[resultID]; !found {
+		c.egraphMu.Unlock()
+		return nil
+	}
+	delete(c.persistedEdgesByResult, resultID)
+	res = c.resultsByID[resultID]
+	if res != nil {
+		var err error
+		queue, err = c.decrementIncomingOwnershipLocked(ctx, res, queue)
+		rerr = errors.Join(rerr, err)
+	}
+	collectReleases, collectErr := c.collectUnownedResultsLocked(ctx, queue)
+	onReleases = append(onReleases, collectReleases...)
+	rerr = errors.Join(rerr, collectErr)
+	c.egraphMu.Unlock()
+
+	return errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+}
+
+func (c *cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
+	if c == nil || res == nil {
+		return
+	}
+	res.incomingOwnershipCount++
+	c.traceRefAcquired(ctx, res, res.incomingOwnershipCount)
+}
+
+func (c *cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *sharedResult) []*sharedResult {
+	if c == nil || res == nil || res.id == 0 || res.cache != c {
+		return queue
+	}
+	if c.resultsByID[res.id] != res {
+		return queue
+	}
+	if res.incomingOwnershipCount != 0 {
+		return queue
+	}
+	return append(queue, res)
+}
+
+func (c *cache) decrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult, queue []*sharedResult) ([]*sharedResult, error) {
+	if c == nil || res == nil {
+		return queue, nil
+	}
+	res.incomingOwnershipCount--
+	c.traceRefReleased(ctx, res, res.incomingOwnershipCount)
+	if res.incomingOwnershipCount < 0 {
+		c.traceRefUnderflow(ctx, res, res.incomingOwnershipCount)
+		return queue, fmt.Errorf("incoming ownership underflow for result %d", res.id)
+	}
+	return c.enqueueCollectibleResultLocked(queue, res), nil
+}
+
+func (c *cache) collectUnownedResultsLocked(ctx context.Context, queue []*sharedResult) ([]OnReleaseFunc, error) {
+	if c == nil {
+		return nil, nil
+	}
+
+	var (
+		rerr       error
+		onReleases []OnReleaseFunc
+	)
+
+	for len(queue) > 0 {
+		res := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+
+		if c.resultsByID[res.id] != res {
+			continue
+		}
+		if res.incomingOwnershipCount != 0 {
+			continue
+		}
+
+		depIDs := make([]sharedResultID, 0, len(res.deps))
+		for depID := range res.deps {
+			depIDs = append(depIDs, depID)
+		}
+		res.deps = nil
+
+		if err := c.removeResultFromEgraphLocked(ctx, res); err != nil {
+			rerr = errors.Join(rerr, err)
+		} else if res.onRelease != nil {
+			onReleases = append(onReleases, res.onRelease)
+		}
+
+		for _, depID := range depIDs {
+			depRes := c.resultsByID[depID]
+			if depRes == nil {
+				continue
+			}
+			var err error
+			queue, err = c.decrementIncomingOwnershipLocked(ctx, depRes, queue)
+			rerr = errors.Join(rerr, err)
+		}
+	}
+
+	return onReleases, rerr
+}
+
+func runOnReleaseFuncs(ctx context.Context, onReleases []OnReleaseFunc) error {
+	var rerr error
+	for _, onRelease := range onReleases {
+		if onRelease == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, onRelease(ctx))
+	}
+	return rerr
+}
+
 func prepareCacheDBs(ctx context.Context, dbPath string) (*sql.DB, *persistdb.Queries, error) {
 	connURL := &url.URL{
 		Scheme: "file",
@@ -339,6 +676,8 @@ func wipeSQLiteFiles(dbPath string) error {
 type cache struct {
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
 	callsMu sync.Mutex
+	// sessionMu protects per-session tracked cache-backed results and arbitrary values.
+	sessionMu sync.Mutex
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
 
@@ -415,6 +754,9 @@ type cache struct {
 	// This includes request recipe+extra digests and result recipe+extra digests.
 	egraphResultsByDigest map[string]map[sharedResultID]struct{}
 
+	// Explicit retained-root edges for persisted results.
+	persistedEdgesByResult map[sharedResultID]persistedEdge
+
 	// per-term input provenance indicates whether each input slot was
 	// result-backed or digest-only when the term was observed
 	termInputProvenance map[egraphTermID][]egraphInputProvenanceKind
@@ -422,6 +764,9 @@ type cache struct {
 	// in-progress and completed opaque in-memory calls, keyed by call key
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
 	completedArbitraryCalls map[string]*sharedArbitraryResult
+
+	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
+	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
@@ -497,18 +842,11 @@ type sharedResult struct {
 
 	safeToPersistCache bool
 	onRelease          OnReleaseFunc
-	// depOfPersistedResult marks results that must remain live because they are
-	// dependencies of a persisted/retained result.
-	depOfPersistedResult bool
 	// deps tracks exact materialized child-result dependencies used for
 	// release/liveness propagation and persistence closure. This includes
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
-	// heldDependencyResults are explicit owned child results whose refs are held
-	// while this result has active refs. They are released when this result's
-	// refcount drains to zero.
-	heldDependencyResults []AnyResult
 	// persistedSnapshotLinks are imported snapshot-link associations used before
 	// typed self payload is decoded/rehydrated. They are not child-result deps.
 	persistedSnapshotLinks []PersistedSnapshotRefLink
@@ -529,7 +867,9 @@ type sharedResult struct {
 	description        string
 	recordType         string
 
-	refCount int64
+	// incomingOwnershipCount is the authoritative liveness count derived from
+	// session edges, persisted edges, and result dependency edges.
+	incomingOwnershipCount int64
 }
 
 type sharedResultPayloadState struct {
@@ -785,7 +1125,17 @@ func (c *cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, l
 	return nil
 }
 
-func (c *cache) AttachResult(ctx context.Context, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+func (c *cache) AttachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+	if sessionID == "" {
+		return nil, errors.New("attach result: empty session ID")
+	}
+	return c.attachResult(ctx, sessionID, resolver, res)
+}
+
+func (c *cache) attachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+	if sessionID == "" {
+		return nil, errors.New("attach result: empty session ID")
+	}
 	if resolver == nil {
 		return nil, errors.New("attach result: type resolver is nil")
 	}
@@ -793,11 +1143,18 @@ func (c *cache) AttachResult(ctx context.Context, resolver TypeResolver, res Any
 		return nil, nil
 	}
 	shared := res.cacheSharedResult()
+	if shared == nil {
+		return nil, fmt.Errorf("attach owned result: missing shared result")
+	}
 	frame := shared.loadResultCall()
-	if shared == nil || frame == nil {
+	if frame == nil {
 		return nil, fmt.Errorf("attach owned result: missing result call frame")
 	}
 	if shared.id != 0 {
+		touchSharedResultLastUsed(shared, time.Now().UnixNano())
+		if shared.cache == c {
+			c.trackSessionResult(ctx, sessionID, res, true)
+		}
 		return res, nil
 	}
 	req := &CallRequest{
@@ -809,12 +1166,58 @@ func (c *cache) AttachResult(ctx context.Context, resolver TypeResolver, res Any
 	}
 	shared.storeResultCall(req.ResultCall)
 	req.ResultCall.bindCache(c)
-	attached, err := c.GetOrInitCall(ctx, resolver, req, ValueFunc(res))
+
+	callDigest, err := req.RecipeDigest()
+	if err != nil {
+		return nil, fmt.Errorf("attach owned result: derive request digest: %w", err)
+	}
+	requestSelf, requestInputRefs, err := req.SelfDigestAndInputRefs()
+	if err != nil {
+		return nil, fmt.Errorf("attach owned result: derive request term digests: %w", err)
+	}
+	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
+	for _, ref := range requestInputRefs {
+		dig, err := ref.InputDigest()
+		if err != nil {
+			return nil, fmt.Errorf("attach owned result: derive request term input digest: %w", err)
+		}
+		requestInputs = append(requestInputs, dig)
+	}
+
+	c.egraphMu.Lock()
+	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
+	c.egraphMu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("attach owned result: %w", err)
 	}
-	if attached == nil {
-		return nil, fmt.Errorf("attach owned result: nil result")
+	if hit {
+		loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, hitRes)
+		if err != nil {
+			return nil, fmt.Errorf("attach owned result: %w", err)
+		}
+		c.trackSessionResult(ctx, sessionID, loadedHit, true)
+		return loadedHit, nil
+	}
+
+	oc := &ongoingCall{
+		val: res,
+	}
+	if err := c.initCompletedResult(ctx, resolver, oc, req, sessionID); err != nil {
+		return nil, fmt.Errorf("attach owned result: %w", err)
+	}
+	if oc.res == nil {
+		return nil, fmt.Errorf("attach owned result: completed without initialized result")
+	}
+	c.trackSessionResult(ctx, sessionID, Result[Typed]{shared: oc.res}, false)
+	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
+
+	if !oc.res.loadPayloadState().hasValue {
+		return Result[Typed]{shared: oc.res}, nil
+	}
+
+	attached, err := wrapSharedResultWithResolver(oc.res, false, resolver)
+	if err != nil {
+		return nil, fmt.Errorf("attach owned result: %w", err)
 	}
 	attachedShared := attached.cacheSharedResult()
 	if attachedShared == nil || attachedShared.id == 0 {
@@ -874,66 +1277,11 @@ func (c *cache) addExplicitDependencyLocked(
 		return nil
 	}
 
-	atomic.AddInt64(&depRes.refCount, 1)
-	c.traceRefAcquired(ctx, depRes, atomic.LoadInt64(&depRes.refCount))
-
 	parentRes.deps[depRes.id] = struct{}{}
-	parentRes.heldDependencyResults = append(parentRes.heldDependencyResults, dep)
+	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
-	if parentRes.depOfPersistedResult {
-		if _, err := c.markResultAsDepOfPersistedLocked(ctx, depRes); err != nil {
-			return err
-		}
-	}
 
 	return nil
-}
-
-func (res *sharedResult) release(ctx context.Context) error {
-	if res == nil || res.cache == nil {
-		// wasn't cached, nothing to do
-		return nil
-	}
-
-	var onRelease OnReleaseFunc
-	var heldDependencyResults []AnyResult
-	var removeErr error
-	newRefCount := atomic.AddInt64(&res.refCount, -1)
-	if res.cache != nil {
-		res.cache.traceRefReleased(ctx, res, newRefCount)
-		if newRefCount < 0 {
-			res.cache.traceRefUnderflow(ctx, res, newRefCount)
-		}
-	}
-	if newRefCount == 0 {
-		res.cache.egraphMu.Lock()
-		heldDependencyResults = res.heldDependencyResults
-		res.heldDependencyResults = nil
-		if !res.depOfPersistedResult {
-			// Non-retained entries keep current behavior: once refs drain, drop the
-			// result from the in-memory e-graph and release associated resources.
-			removeErr = res.cache.removeResultFromEgraphLocked(ctx, res)
-			if removeErr == nil {
-				onRelease = res.onRelease
-			}
-		}
-		res.cache.egraphMu.Unlock()
-	}
-
-	rerr := removeErr
-	for i, dep := range heldDependencyResults {
-		if dep == nil {
-			continue
-		}
-		if res.cache != nil {
-			res.cache.traceHeldDependencyReleasing(ctx, res, dep, newRefCount, i+1, len(heldDependencyResults))
-		}
-		rerr = errors.Join(rerr, dep.Release(ctx))
-	}
-	if onRelease != nil {
-		rerr = errors.Join(rerr, onRelease(ctx))
-	}
-	return rerr
 }
 
 type Result[T Typed] struct {
@@ -1167,12 +1515,19 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 			shared.loadResultCall().bindCache(r.shared.cache)
 		}
 	}
-	if res, err := srv.Cache.GetOrInitCall(callCtx, srv, req, func(context.Context) (AnyResult, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: current client metadata: %w", nth, self, err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
+	}
+	if res, err := srv.Cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("cache miss")
 	}); err == nil {
 		return res, nil
 	}
-	return srv.Cache.GetOrInitCall(callCtx, srv, req, func(context.Context) (AnyResult, error) {
+	return srv.Cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
 	})
 }
@@ -1335,20 +1690,6 @@ func (r Result[T]) HitCache() bool {
 	return r.hitCache
 }
 
-func (r Result[T]) Release(ctx context.Context) error {
-	if r.shared == nil {
-		// malformed result, nothing to do
-		return nil
-	}
-	if r.shared.cache == nil {
-		if r.shared.onRelease != nil {
-			return r.shared.onRelease(ctx)
-		}
-		return nil
-	}
-	return r.shared.release(ctx)
-}
-
 func (r Result[T]) cacheSharedResult() *sharedResult {
 	return r.shared
 }
@@ -1413,7 +1754,7 @@ func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectRe
 	if call.Receiver.ResultID == 0 {
 		return nil, fmt.Errorf("receiver: result is detached")
 	}
-	res, err := srv.Cache.LoadResultByResultID(srvToContext(ctx, srv), srv, call.Receiver.ResultID)
+	res, err := srv.Cache.(*cache).loadResultByResultID(srvToContext(ctx, srv), srv, call.Receiver.ResultID)
 	if err != nil {
 		return nil, fmt.Errorf("receiver: load result %d: %w", call.Receiver.ResultID, err)
 	}
@@ -1527,27 +1868,11 @@ func (c *cache) EntryStats() CacheEntryStats {
 	var stats CacheEntryStats
 	stats.OngoingCalls = len(c.ongoingCalls)
 	stats.CompletedCalls = len(c.resultOutputEqClasses)
-	for resID := range c.resultOutputEqClasses {
-		res := c.resultsByID[resID]
-		if res != nil && res.depOfPersistedResult {
-			stats.RetainedCalls++
-		}
-	}
+	stats.RetainedCalls = len(c.persistedEdgesByResult)
 	stats.OngoingArbitrary = len(c.ongoingArbitraryCalls)
 	stats.CompletedArbitrary = len(c.completedArbitraryCalls)
 
 	return stats
-}
-
-func (c *cache) UsageEntries() []CacheUsageEntry {
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-
-	// Intentionally size only prune-relevant candidates. This avoids forcing
-	// expensive snapshot size calls for active/non-prunable results while still
-	// providing accurate byte accounting for prune policy decisions.
-	c.measurePruneCandidateSizesLocked(context.Background())
-	return c.usageEntriesLocked()
 }
 
 func (c *cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
@@ -1612,7 +1937,7 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 			SizeBytes:                 sizeBytes,
 			CreatedTimeUnixNano:       createdAt,
 			MostRecentUseTimeUnixNano: lastUsedAt,
-			ActivelyUsed:              atomic.LoadInt64(&res.refCount) > 0,
+			ActivelyUsed:              c.resultHasSessionEdge(resID),
 		})
 	}
 
@@ -1627,87 +1952,6 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 		}
 	})
 	return entries
-}
-
-func (c *cache) measurePruneCandidateSizesLocked(ctx context.Context) {
-	activeDependencyClosure := c.activeDependencyClosureLocked()
-	candidatesByIdentity := make(map[string][]sharedResultID)
-	for resID, res := range c.resultsByID {
-		if res == nil {
-			continue
-		}
-		// Gate size work to prune-relevant candidates only.
-		// TODO: Investigate whether this gate is inverted. Prune selection skips
-		// depOfPersistedResult entries, but this size pass only measures
-		// depOfPersistedResult entries.
-		if !res.depOfPersistedResult {
-			continue
-		}
-		if atomic.LoadInt64(&res.refCount) > 0 {
-			continue
-		}
-		if _, blocked := activeDependencyClosure[resID]; blocked {
-			continue
-		}
-		if res.sizeEstimateBytes != sharedResultSizeUnknown && !cacheUsageSizeMayChange(res) {
-			continue
-		}
-
-		usageIdentity, ok := cacheUsageIdentity(res)
-		if !ok || usageIdentity == "" {
-			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
-		}
-		res.usageIdentity = usageIdentity
-		candidatesByIdentity[usageIdentity] = append(candidatesByIdentity[usageIdentity], resID)
-	}
-
-	if len(candidatesByIdentity) == 0 {
-		return
-	}
-
-	usageIdentities := make([]string, 0, len(candidatesByIdentity))
-	for usageIdentity := range candidatesByIdentity {
-		usageIdentities = append(usageIdentities, usageIdentity)
-	}
-	slices.Sort(usageIdentities)
-
-	for _, usageIdentity := range usageIdentities {
-		candidateIDs := candidatesByIdentity[usageIdentity]
-		if len(candidateIDs) == 0 {
-			continue
-		}
-		// Deterministic owner tie-break for this snapshot identity.
-		slices.Sort(candidateIDs)
-		ownerID := candidateIDs[0]
-		ownerRes := c.resultsByID[ownerID]
-		if ownerRes == nil {
-			continue
-		}
-
-		sizeBytes, ok, err := cacheUsageSizeBytes(ctx, ownerRes)
-		if err != nil {
-			slog.Warn("failed to determine cache usage size",
-				"resultID", ownerID,
-				"usageIdentity", usageIdentity,
-				"err", err)
-			continue
-		}
-		if !ok {
-			continue
-		}
-		if sizeBytes < 0 {
-			sizeBytes = 0
-		}
-
-		for _, candidateID := range candidateIDs {
-			candidateRes := c.resultsByID[candidateID]
-			if candidateRes == nil {
-				continue
-			}
-			candidateRes.usageIdentity = usageIdentity
-			candidateRes.sizeEstimateBytes = sizeBytes
-		}
-	}
 }
 
 func (c *cache) measureAllResultSizesLocked(ctx context.Context) {
@@ -1776,46 +2020,31 @@ func (c *cache) measureAllResultSizesLocked(ctx context.Context) {
 	}
 }
 
-func (c *cache) activeDependencyClosureLocked() map[sharedResultID]struct{} {
-	closure := make(map[sharedResultID]struct{})
-	stack := make([]sharedResultID, 0, len(c.resultsByID))
-
-	for resID, res := range c.resultsByID {
-		if res == nil {
-			continue
-		}
-		if atomic.LoadInt64(&res.refCount) > 0 {
-			stack = append(stack, resID)
-		}
-	}
-
-	for len(stack) > 0 {
-		n := len(stack) - 1
-		curID := stack[n]
-		stack = stack[:n]
-		if _, seen := closure[curID]; seen {
-			continue
-		}
-		closure[curID] = struct{}{}
-		cur := c.resultsByID[curID]
-		if cur == nil {
-			continue
-		}
-		for depID := range cur.deps {
-			stack = append(stack, depID)
-		}
-	}
-
-	return closure
-}
-
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *cache) GetOrInitCall(
 	ctx context.Context,
+	sessionID string,
 	resolver TypeResolver,
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 ) (AnyResult, error) {
+	if sessionID == "" {
+		return nil, errors.New("get or init call: empty session ID")
+	}
+	return c.getOrInitCall(ctx, sessionID, resolver, req, fn)
+}
+
+//nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
+func (c *cache) getOrInitCall(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	req *CallRequest,
+	fn func(context.Context) (AnyResult, error),
+) (AnyResult, error) {
+	if sessionID == "" {
+		return nil, errors.New("get or init call: empty session ID")
+	}
 	if resolver == nil {
 		return nil, errors.New("get or init call: type resolver is nil")
 	}
@@ -1837,12 +2066,11 @@ func (c *cache) GetOrInitCall(
 		}
 		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 && shared.cache == c {
 			touchSharedResultLastUsed(shared, time.Now().UnixNano())
-			newRefCount := atomic.AddInt64(&shared.refCount, 1)
-			c.traceRefAcquired(ctx, shared, newRefCount)
 			normalized, err := wrapSharedResultWithResolver(shared, false, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("normalize do-not-cache attached result: %w", err)
 			}
+			c.trackSessionResult(ctx, sessionID, normalized, false)
 			return normalized, nil
 		}
 
@@ -1860,7 +2088,7 @@ func (c *cache) GetOrInitCall(
 		}
 		detached.outputEffectIDs = outputEffects
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
-			detached.onRelease = onReleaser.OnRelease
+			return nil, fmt.Errorf("do-not-cache result %T cannot implement OnReleaser", onReleaser)
 		}
 		detached.isObject, err = resultIsObject(val, resolver)
 		if err != nil {
@@ -1908,7 +2136,12 @@ func (c *cache) GetOrInitCall(
 		return nil, err
 	}
 	if hit {
-		return c.ensurePersistedHitValueLoaded(ctx, resolver, hitRes)
+		loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, hitRes)
+		if err != nil {
+			return nil, err
+		}
+		c.trackSessionResult(ctx, sessionID, loadedHit, true)
+		return loadedHit, nil
 	}
 
 	c.callsMu.Lock()
@@ -1924,7 +2157,7 @@ func (c *cache) GetOrInitCall(
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
-			return c.wait(ctx, resolver, oc, req)
+			return c.wait(ctx, sessionID, resolver, oc, req)
 		}
 	}
 
@@ -1958,14 +2191,18 @@ func (c *cache) GetOrInitCall(
 	}()
 
 	c.callsMu.Unlock()
-	return c.wait(ctx, resolver, oc, req)
+	return c.wait(ctx, sessionID, resolver, oc, req)
 }
 
 func (c *cache) lookupCallRequest(
 	ctx context.Context,
+	sessionID string,
 	resolver TypeResolver,
 	req *CallRequest,
 ) (AnyResult, bool, error) {
+	if sessionID == "" {
+		return nil, false, errors.New("lookup call request: empty session ID")
+	}
 	if resolver == nil {
 		return nil, false, errors.New("lookup call request: type resolver is nil")
 	}
@@ -2005,15 +2242,20 @@ func (c *cache) lookupCallRequest(
 	if loadErr != nil {
 		return nil, false, loadErr
 	}
+	c.trackSessionResult(ctx, sessionID, loadedHit, true)
 	return loadedHit, true, nil
 }
 
-func (c *cache) LookupCacheForDigests(
+func (c *cache) lookupCacheForDigests(
 	ctx context.Context,
+	sessionID string,
 	resolver TypeResolver,
 	recipeDigest digest.Digest,
 	extraDigests []call.ExtraDigest,
 ) (AnyResult, bool, error) {
+	if sessionID == "" {
+		return nil, false, errors.New("lookup cache for digests: empty session ID")
+	}
 	if resolver == nil {
 		return nil, false, errors.New("lookup cache for digests: type resolver is nil")
 	}
@@ -2038,8 +2280,6 @@ func (c *cache) LookupCacheForDigests(
 		candidateSharedResultExpiryUnix(nowUnix, 0),
 	)
 	touchSharedResultLastUsed(hitRes, now.UnixNano())
-	newRefCount := atomic.AddInt64(&hitRes.refCount, 1)
-	c.traceRefAcquired(ctx, hitRes, newRefCount)
 	retRes := Result[Typed]{
 		shared:   hitRes,
 		hitCache: true,
@@ -2050,20 +2290,18 @@ func (c *cache) LookupCacheForDigests(
 	if err != nil {
 		return nil, false, err
 	}
+	c.trackSessionResult(ctx, sessionID, loadedHit, true)
 	return loadedHit, true, nil
 }
 
 func (c *cache) wait(
 	ctx context.Context,
+	sessionID string,
 	resolver TypeResolver,
 	oc *ongoingCall,
 	req *CallRequest,
 ) (AnyResult, error) {
 	var waitErr error
-	sessionID := ""
-	if md, mdErr := engine.ClientMetadataFromContext(ctx); mdErr == nil {
-		sessionID = md.SessionID
-	}
 
 	// wait for completion or caller cancellation.
 	select {
@@ -2095,14 +2333,13 @@ func (c *cache) wait(
 		return nil, fmt.Errorf("cache wait completed without initialized result")
 	}
 
-	atomic.AddInt64(&oc.res.refCount, 1)
-	c.traceRefAcquired(ctx, oc.res, atomic.LoadInt64(&oc.res.refCount))
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
 
 	retRes := Result[Typed]{
 		shared:   oc.res,
 		hitCache: false,
 	}
+	c.trackSessionResult(ctx, sessionID, retRes, false)
 
 	if !retRes.shared.loadPayloadState().hasValue {
 		return retRes, nil
@@ -2398,27 +2635,22 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if _, alreadyHeld := oc.res.deps[depID]; alreadyHeld {
 			continue
 		}
-		newRefCount := atomic.AddInt64(&depRes.refCount, 1)
-		c.traceRefAcquired(ctx, depRes, newRefCount)
 		oc.res.deps[depID] = struct{}{}
-		oc.res.heldDependencyResults = append(oc.res.heldDependencyResults, Result[Typed]{shared: depRes})
+		c.incrementIncomingOwnershipLocked(ctx, depRes)
 	}
 	if oc.isPersistable {
-		if _, err := c.markResultAsDepOfPersistedLocked(ctx, oc.res); err != nil {
-			c.egraphMu.Unlock()
-			return err
-		}
+		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds))
 	}
 	c.egraphMu.Unlock()
 
-	if err := c.attachOwnedResults(ctx, resolver, oc.res, oc.val); err != nil {
+	if err := c.attachOwnedResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *cache) attachOwnedResults(ctx context.Context, resolver TypeResolver, parent *sharedResult, val AnyResult) (rerr error) {
+func (c *cache) attachOwnedResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
 	if parent == nil || val == nil {
 		return nil
 	}
@@ -2436,32 +2668,16 @@ func (c *cache) attachOwnedResults(ctx context.Context, resolver TypeResolver, p
 		}
 		attachedSelf = objSelf
 	}
-	var temporarilyAttachedDeps []AnyResult
 	deps, err := withOwned.AttachOwnedResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
-		wasDetached := false
-		if shared := child.cacheSharedResult(); shared == nil || shared.id == 0 {
-			wasDetached = true
-		}
-		attached, err := c.AttachResult(ctx, resolver, child)
+		attached, err := c.attachResult(ctx, sessionID, resolver, child)
 		if err != nil {
 			return nil, err
-		}
-		if wasDetached && attached != nil {
-			temporarilyAttachedDeps = append(temporarilyAttachedDeps, attached)
 		}
 		return attached, nil
 	})
 	if err != nil {
 		return err
 	}
-	defer func() {
-		for _, dep := range temporarilyAttachedDeps {
-			if dep == nil {
-				continue
-			}
-			rerr = errors.Join(rerr, dep.Release(ctx))
-		}
-	}()
 	if len(deps) == 0 || parent.id == 0 {
 		return nil
 	}

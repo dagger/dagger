@@ -55,7 +55,7 @@ func (ms *mockServer) CurrentModule(context.Context) (dagql.ObjectResult[*Module
 	if err != nil {
 		panic(err)
 	}
-	dag := dagql.NewServer(&Query{}, dagql.NewSessionCache(cacheIface))
+	dag := dagql.NewServer(&Query{}, cacheIface)
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 
@@ -107,8 +107,11 @@ func (ms *mockServer) SpecificClientMetadata(context.Context, string) (*engine.C
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
-func (ms *mockServer) DefaultDeps(context.Context) (*ModDeps, error)           { return nil, nil }
-func (ms *mockServer) Cache(context.Context) (*dagql.SessionCache, error)      { return nil, nil }
+func (ms *mockServer) DefaultDeps(context.Context) (*ModDeps, error) { return nil, nil }
+func (ms *mockServer) Cache(context.Context) (dagql.Cache, error)    { return nil, nil }
+func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
+	return nil, nil
+}
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
 func (ms *mockServer) Secrets(context.Context) (*SecretStore, error)           { return nil, nil }

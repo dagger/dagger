@@ -15,7 +15,7 @@ func TestDebugCacheSnapshotIncludesResultMetadata(t *testing.T) {
 	assert.NilError(t, err)
 	c := base.(*cache)
 
-	attached, err := c.AttachResult(t.Context(), noopTypeResolver{}, cacheTestDetachedResult(cacheTestIntCall("debugCache"), NewInt(123)))
+	attached, err := c.AttachResult(t.Context(), "test-session", noopTypeResolver{}, cacheTestDetachedResult(cacheTestIntCall("debugCache"), NewInt(123)))
 	assert.NilError(t, err)
 	shared := attached.cacheSharedResult()
 	assert.Assert(t, shared != nil)
@@ -49,9 +49,11 @@ func TestDebugCacheSnapshotIncludesCompletedArbitraryCalls(t *testing.T) {
 	assert.NilError(t, err)
 	c := base.(*cache)
 
-	res, err := c.GetOrInitArbitrary(t.Context(), "debug-arbitrary", ArbitraryValueFunc("hello"))
+	_, err = c.GetOrInitArbitrary(t.Context(), "debug-session", "debug-arbitrary", ArbitraryValueFunc("hello"))
 	assert.NilError(t, err)
-	defer res.Release(t.Context())
+	defer func() {
+		assert.NilError(t, c.ReleaseSession(t.Context(), "debug-session"))
+	}()
 
 	var out bytes.Buffer
 	err = c.WriteDebugCacheSnapshot(&out)
@@ -67,5 +69,5 @@ func TestDebugCacheSnapshotIncludesCompletedArbitraryCalls(t *testing.T) {
 	assert.Assert(t, call.Completed)
 	assert.Assert(t, call.HasValue)
 	assert.Equal(t, call.ValueType, "string")
-	assert.Equal(t, call.RefCount, 1)
+	assert.Equal(t, call.OwnerSessionCount, 1)
 }

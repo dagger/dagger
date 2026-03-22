@@ -97,13 +97,13 @@ func TestDetachedResultMetadataReuseAndCallMutationFork(t *testing.T) {
 func TestResultCallRefReceiverUsesSharedFastPath(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-fast-path")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 7), nil
 	})
 	require.NoError(t, err)
@@ -123,19 +123,19 @@ func TestResultCallRefReceiverUsesSharedFastPath(t *testing.T) {
 	require.NotNil(t, receiver)
 	require.Equal(t, reqCall.Field, receiver.Field)
 
-	require.NoError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 }
 
 func TestResultCallRefContentPreferredDigestUsesLatestSharedFrame(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-content-digest")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 13), nil
 	})
 	require.NoError(t, err)
@@ -152,19 +152,19 @@ func TestResultCallRefContentPreferredDigestUsesLatestSharedFrame(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, contentDigest, got)
 
-	require.NoError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 }
 
 func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-recipe-id")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 19), nil
 	})
 	require.NoError(t, err)
@@ -182,19 +182,19 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, contentDigest, id.ContentDigest())
 
-	require.NoError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 }
 
 func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-fast-path-removal")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 23), nil
 	})
 	require.NoError(t, err)
@@ -204,7 +204,7 @@ func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 	require.NotZero(t, shared.id)
 
 	ref := &ResultCallRef{ResultID: uint64(shared.id), shared: shared}
-	require.NoError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 	require.Nil(t, shared.loadResultCall())
 
 	frame := &ResultCall{
@@ -221,13 +221,13 @@ func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
 	c := cacheIface.(*cache)
 
 	reqCall := cacheTestIntCall("shared-fallback")
-	res, err := c.GetOrInitCall(ctx, noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(reqCall, 29), nil
 	})
 	require.NoError(t, err)
@@ -248,5 +248,5 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 	require.NotNil(t, receiver)
 	require.Equal(t, reqCall.Field, receiver.Field)
 
-	require.NoError(t, res.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 }

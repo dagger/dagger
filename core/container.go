@@ -199,18 +199,6 @@ func (container *Container) Sync(ctx context.Context) error {
 	return nil
 }
 
-func (container *Container) PreparePersistedObject(ctx context.Context) error {
-	if container == nil {
-		return nil
-	}
-	if container.MetaSnapshot != nil {
-		if err := retainImmutableRefChain(ctx, container.MetaSnapshot); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (container *Container) AttachOwnedResults(
 	ctx context.Context,
 	_ dagql.AnyResult,

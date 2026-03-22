@@ -117,21 +117,6 @@ func (repo *GitRepository) OnRelease(ctx context.Context) error {
 	return snapshot.Release(ctx)
 }
 
-func (repo *GitRepository) PreparePersistedObject(ctx context.Context) error {
-	if repo == nil {
-		return nil
-	}
-	remote, ok := repo.Backend.(*RemoteGitRepository)
-	if !ok {
-		return nil
-	}
-	snapshot := remote.getSnapshot()
-	if snapshot == nil {
-		return nil
-	}
-	return snapshot.SetCachePolicyRetain()
-}
-
 func (repo *GitRepository) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
 	if repo == nil {
 		return nil

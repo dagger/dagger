@@ -56,6 +56,15 @@ func AroundFunc(
 		slog.WarnContext(ctx, "failed to derive call digest", "field", spanName, "err", err)
 		return ctx, dagql.NoopDone
 	}
+	var q *Query
+	if currentQuery, currentQueryErr := CurrentQuery(ctx); currentQueryErr == nil {
+		q = currentQuery
+		if seenKeys, seenKeysErr := q.TelemetrySeenKeyStore(ctx); seenKeysErr == nil {
+			if !dagql.ShouldEmitTelemetry(ctx, seenKeys, callDigest.String(), req.DoNotCache) {
+				return ctx, dagql.NoopDone
+			}
+		}
+	}
 
 	slog.InfoContext(ctx, "start call",
 		"field", spanName,
@@ -80,7 +89,7 @@ func AroundFunc(
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls
-	if q, err := CurrentQuery(ctx); req.Module != nil && err == nil {
+	if req.Module != nil && q != nil {
 		callerRef, calleeRef := parseCallerCalleeRefs(ctx, q, req.ResultCall)
 
 		if callerRef != nil && calleeRef != nil {

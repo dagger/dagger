@@ -68,21 +68,14 @@ func TestWithImageConfigMetadataMutatesContainerConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, updated)
-	require.NotSame(t, parent, updated)
+	require.Same(t, parent, updated)
 
-	// Ensure mutation happened on the returned container and not the original.
-	require.Nil(t, parent.Config.Healthcheck)
-	require.Equal(t, []string{"RUN old"}, parent.Config.OnBuild)
-	require.Equal(t, []string{"/bin/sh", "-c"}, parent.Config.Shell)
-	require.Equal(t, map[string]struct{}{"/old": {}}, parent.Config.Volumes)
-	require.Equal(t, "", parent.Config.StopSignal)
-
-	require.NotNil(t, updated.Config.Healthcheck)
-	require.Equal(t, healthcheck, *updated.Config.Healthcheck)
-	require.Equal(t, []string{"RUN child-build"}, updated.Config.OnBuild)
-	require.Equal(t, []string{"/bin/ash", "-eo", "pipefail", "-c"}, updated.Config.Shell)
-	require.Equal(t, map[string]struct{}{"/cache": {}, "/data": {}}, updated.Config.Volumes)
-	require.Equal(t, "SIGQUIT", updated.Config.StopSignal)
+	require.NotNil(t, parent.Config.Healthcheck)
+	require.Equal(t, healthcheck, *parent.Config.Healthcheck)
+	require.Equal(t, []string{"RUN child-build"}, parent.Config.OnBuild)
+	require.Equal(t, []string{"/bin/ash", "-eo", "pipefail", "-c"}, parent.Config.Shell)
+	require.Equal(t, map[string]struct{}{"/cache": {}, "/data": {}}, parent.Config.Volumes)
+	require.Equal(t, "SIGQUIT", parent.Config.StopSignal)
 }
 
 func TestWithImageConfigMetadataRejectsInvalidHealthcheckJSON(t *testing.T) {

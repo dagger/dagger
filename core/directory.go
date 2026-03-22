@@ -31,6 +31,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/docker/docker/pkg/archive"
@@ -113,16 +114,6 @@ func (dir *Directory) Evaluate(ctx context.Context) error {
 
 func (dir *Directory) Sync(ctx context.Context) error {
 	return dir.Evaluate(ctx)
-}
-
-func (dir *Directory) PreparePersistedObject(ctx context.Context) error {
-	if dir == nil {
-		return nil
-	}
-	if dir.Snapshot != nil {
-		return retainImmutableRefChain(ctx, dir.Snapshot)
-	}
-	return nil
 }
 
 func (dir *Directory) AttachOwnedResults(
@@ -1853,7 +1844,14 @@ func (dir *Directory) Without(ctx context.Context, opCall *dagql.ResultCall, pat
 			if err != nil {
 				return fmt.Errorf("failed to get dagql cache: %w", err)
 			}
-			if err := cache.TeachCallEquivalentToResult(ctx, opCall, dir.Parent); err != nil {
+			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return fmt.Errorf("directory no-op equivalence client metadata: %w", err)
+			}
+			if clientMetadata.SessionID == "" {
+				return fmt.Errorf("directory no-op equivalence: empty session ID")
+			}
+			if err := cache.TeachCallEquivalentToResult(ctx, clientMetadata.SessionID, opCall, dir.Parent); err != nil {
 				return fmt.Errorf("teach directory without no-op equivalence: %w", err)
 			}
 		}

@@ -4,30 +4,42 @@ import (
 	"context"
 	"testing"
 
+	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
 
+type detachedLineageObject struct {
+	Value int
+}
+
+func (*detachedLineageObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "DetachedLineageObject",
+		NonNull:   true,
+	}
+}
+
 func TestDetachedReceiverSelectionStaysDetached(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	base := cacheIface.(*cache)
 	srv := cacheTestServer(t, base)
 
-	Fields[*cacheTestObject]{
-		Func("child", func(_ context.Context, self *cacheTestObject, _ struct{}) (*cacheTestObject, error) {
-			return &cacheTestObject{Value: self.Value + 1}, nil
+	Fields[*detachedLineageObject]{
+		Func("child", func(_ context.Context, self *detachedLineageObject, _ struct{}) (*detachedLineageObject, error) {
+			return &detachedLineageObject{Value: self.Value + 1}, nil
 		}),
 	}.Install(srv)
 
 	parentCall := &ResultCall{
 		Kind:  ResultCallKindField,
-		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Type:  NewResultCallType((&detachedLineageObject{}).Type()),
 		Field: "parent",
 	}
-	parent := cacheTestObjectResult(t, srv, parentCall, 1, nil)
+	parent := cacheTestDetachedObjectResult(parentCall, srv, &detachedLineageObject{Value: 1})
 
 	child, err := parent.Select(srvToContext(ctx, srv), srv, Selector{Field: "child"})
 	assert.NilError(t, err)
@@ -45,7 +57,7 @@ func TestDetachedReceiverSelectionStaysDetached(t *testing.T) {
 
 func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	base := cacheIface.(*cache)
@@ -69,7 +81,7 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	assert.Assert(t, detachedChild != nil)
 	assert.Assert(t, is.Equal(sharedResultID(0), detachedChild.cacheSharedResult().id))
 
-	attachedParent, err := srv.Cache.AttachResult(ctx, srv, detachedParent)
+	attachedParent, err := srv.Cache.AttachResult(ctx, "test-session", srv, detachedParent)
 	assert.NilError(t, err)
 	assert.Assert(t, attachedParent != nil)
 	parentShared := attachedParent.cacheSharedResult()
@@ -92,7 +104,7 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 
 func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	base := cacheIface.(*cache)
@@ -119,7 +131,7 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	_, ok = UnwrapAs[*cacheTestObject](derefDetached.Unwrap())
 	assert.Assert(t, ok)
 
-	attached, err := srv.Cache.AttachResult(ctx, srv, detached)
+	attached, err := srv.Cache.AttachResult(ctx, "test-session", srv, detached)
 	assert.NilError(t, err)
 	assert.Assert(t, attached != nil)
 	attachedShared := attached.cacheSharedResult()
@@ -150,7 +162,7 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 
 func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	base := cacheIface.(*cache)
@@ -163,7 +175,7 @@ func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 		Field: "object",
 	}
 	detached := cacheTestObjectResult(t, srv, call, 17, nil)
-	attached, err := srv.Cache.AttachResult(ctx, srv, detached)
+	attached, err := srv.Cache.AttachResult(ctx, "test-session", srv, detached)
 	assert.NilError(t, err)
 	assert.Assert(t, attached != nil)
 	attachedShared := attached.cacheSharedResult()
@@ -209,7 +221,7 @@ func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 
 func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
 	base := cacheIface.(*cache)
@@ -231,7 +243,7 @@ func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 		}
 	}
 
-	first, err := srv.Cache.GetOrInitCall(ctx, srv, newReq(), func(context.Context) (AnyResult, error) {
+	first, err := srv.Cache.GetOrInitCall(ctx, "test-session", srv, newReq(), func(context.Context) (AnyResult, error) {
 		res, err := NewResultForCall(nullable, baseCall)
 		if err != nil {
 			return nil, err
@@ -250,7 +262,7 @@ func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	assert.Assert(t, firstShared != nil)
 	assert.Assert(t, firstShared.id != 0)
 
-	second, err := srv.Cache.GetOrInitCall(ctx, srv, newReq(), func(context.Context) (AnyResult, error) {
+	second, err := srv.Cache.GetOrInitCall(ctx, "test-session", srv, newReq(), func(context.Context) (AnyResult, error) {
 		return nil, context.Canceled
 	})
 	assert.NilError(t, err)

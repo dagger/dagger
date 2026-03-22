@@ -202,7 +202,7 @@ These are brainstorming notes and opinions, not a settled design:
   * edges from that root to shared results for session ownership and persisted retention
   * ordinary sharedResult -> sharedResult dependency edges below that
   This is appealing because session close and TTL expiry both become "remove some root edges, then cascade".
-* Telemetry is adjacent to this redesign, but it should not live in the cache anymore. If we need per-session seen-key dedupe, that should live on session/server state and be exposed to dagql through a small explicit interface rather than through a session-cache wrapper.
+* Telemetry is adjacent to this redesign, but it should not live in the cache anymore. If we need per-session seen-key dedupe, that should live on session/server state and be resolved by dagql from context through engine/session-owned accessors, rather than through a session-cache wrapper.
 * This whole area probably wants hard-cut thinking, not incremental Stockholm-syndrome patching. We should be fully willing to replace old modeling assumptions if a cleaner system emerges.
 * From a pruning perspective, the real job of prune is to manage persistable results and whatever they keep alive, directly or transitively. Non-persistable results are ideally released naturally once nothing points at them. Persistable results are the ones that can accumulate and therefore require policy.
 * That means pruning wants to reason about a "currently removable closure" or "prunable frontier", not just "things with no incoming edges right now". If pruning one persistable root would make some of its children newly unreachable, those children should become prunable as part of the same conceptual analysis.
@@ -269,11 +269,15 @@ Instead:
 * session ownership is represented directly in the base cache's ownership graph
 * session lifecycle coordination lives in engine/session state (`daggerSession`)
 * the base cache does not infer session ownership from context
-* ownership-capable cache APIs take explicit `sessionID string` arguments
+* exported ownership-capable cache APIs take explicit `sessionID string` arguments
+* exported caller-facing ownership methods require non-empty `sessionID`
+* lowercase internal helpers are the normal place where explicit non-owning cache operations live
 * callers must pass a real session ID when they are creating session ownership
-* `sessionID == ""` is only for explicit non-owning internal paths
+* caller-facing non-engine tools/tests should use synthetic session IDs rather than empty ones
 * the base cache exposes `ReleaseSession(ctx, sessionID)` to remove all session-owned state
-* `dagql.Server` receives the base cache directly, along with whatever explicit session/telemetry state it needs for caller-facing cache operations
+* `dagql.Server` receives the base cache directly
+* caller-facing dagql code resolves current session/client state from context at the real request boundary and passes explicit `sessionID` into ownership-capable cache APIs
+* telemetry dedupe state remains owned by engine/session state and is resolved from context through existing-style engine/session accessors, not stored on `dagql.Server`
 
 ### Node Metadata
 
@@ -290,7 +294,7 @@ Each node should have metadata roughly like:
 * TTL metadata may still be stored on `sharedResult` for provenance / API clarity, even if authoritative retention semantics live on persisted edges
 * associations to e-graph / term / digest knowledge that are justified by this live materialized result
 
-Session-specific telemetry dedupe metadata is not node metadata and does not live in the cache. It lives in engine/session state and is exposed to dagql through an explicit interface.
+Session-specific telemetry dedupe metadata is not node metadata and does not live in the cache. It lives in engine/session state and should be resolved by dagql code from context through engine/session-owned accessors.
 
 ### Source Of Truth
 
@@ -374,14 +378,14 @@ Dependency edges:
 
 Session edges:
 
-* created only when an ownership-capable cache API is called with a non-empty explicit `sessionID`
+* created only when an exported ownership-capable cache API is called with a non-empty explicit `sessionID`
 * removed when the session closes
 
 That means session ownership is not attached later by a wrapper, and it is not inferred implicitly from ambient context.
 
 ### Ownership-Capable Cache Entrypoints
 
-Only a small set of cache entrypoints may create session ownership:
+Only a small set of exported cache entrypoints may create session ownership:
 
 * `GetOrInitCall(ctx, sessionID, ...)`
 * `LoadResultByResultID(ctx, sessionID, ...)`
@@ -390,16 +394,42 @@ Only a small set of cache entrypoints may create session ownership:
 
 Rules:
 
-* `sessionID != ""` means the call may create session ownership
-* `sessionID == ""` means the call is explicitly non-owning
-* if there is no legitimate production use case for an empty session ID on a given entrypoint, empty session ID should be an error rather than a silent fallback
+* exported caller-facing ownership methods require `sessionID != ""`
+* exported caller-facing methods should reject empty session IDs rather than silently degrading to non-owning behavior
+* caller-facing non-engine tools/tests should use synthetic session IDs rather than empty ones
+* explicit non-owning behavior normally lives behind lowercase internal helpers where we have real internal use cases for it
+* the one explicit temporary exported exception is `LoadResultByResultID`, which may still accept empty session ID for persisted decode until that layer is refactored
 
-Pure internal cache lookup helpers should not create session ownership and should not be exported:
+Caller-facing dagql paths should obtain that `sessionID` at the request boundary from the current context and pass it explicitly into these entrypoints. The cache itself should not perform that lookup.
+
+The mixed-use cache entrypoints therefore split in two where that boundary is clean:
+
+* exported ownership-enforcing methods:
+  * `GetOrInitCall`
+  * `AttachResult`
+* lowercase internal helpers that may allow explicit non-owning use when there is a real internal need:
+  * `getOrInitCall`
+  * `attachResult`
+
+Pure internal lookup helpers should also stay lowercase and non-owning:
 
 * `lookupCacheForDigests`
 * `lookupCallRequest`
 
-Those internal helpers exist specifically for recipe replay / structural lookup / other non-owning internal paths.
+Those internal helpers exist specifically for recipe replay / structural lookup / normalization / other non-owning internal paths.
+
+`LoadResultByResultID` is the remaining mixed case for now:
+
+* caller-facing ownership should normally go through `dagql.Server.Load` / `LoadType`
+* internal dagql non-owning loads should use lowercase `loadResultByResultID`
+* the exported cache method may still accept empty session ID for persisted decode until that layer is redesigned
+* this is a temporary narrow exception, not the general rule for exported cache APIs
+
+`GetOrInitArbitrary` is intentionally different for now:
+
+* keep only the exported method
+* require a non-empty session ID
+* do not add a lowercase internal variant unless a real production non-owning arbitrary-cache use case appears
 
 Persisted edges:
 
@@ -661,19 +691,25 @@ Planned rewrite chunks:
   * result-call-derived parents added during `initCompletedResult`
   * `HasOwnedResults` / `AttachOwnedResults` adds explicit child->parent dependency edges
   * `AddExplicitDependency` becomes "add dependency edge" instead of "hold child ref"
-* Make ownership-capable cache entrypoints take explicit `sessionID string` arguments:
+* Make exported ownership-capable cache entrypoints take explicit `sessionID string` arguments:
   * `GetOrInitCall`
   * `LoadResultByResultID`
   * `AttachResult`
   * `GetOrInitArbitrary`
 * Do not infer session ownership from `context.Context`
+* Split mixed-use cache entrypoints into exported ownership-enforcing methods plus lowercase internal helpers where that boundary is clean:
+  * `getOrInitCall`
+  * `attachResult`
 * Lowercase pure internal lookup helpers and keep them non-owning:
   * `lookupCacheForDigests`
   * `lookupCallRequest`
 * Enforce explicit ownership boundaries:
-  * non-empty `sessionID` creates session ownership where the design says it should
-  * `sessionID == ""` is only for explicit non-owning internal paths
-  * if an entrypoint has no legitimate production non-owning mode, empty session ID should be an error
+  * exported caller-facing ownership methods reject empty session IDs
+  * caller-facing non-engine tools/tests use synthetic session IDs rather than empty ones
+  * only lowercase internal helpers should normally allow explicit non-owning operation
+  * keep `loadResultByResultID` as the internal non-owning helper inside dagql
+  * allow exported `LoadResultByResultID(..., "")` only for the remaining persisted-decode path until that layer is refactored
+  * `GetOrInitArbitrary` remains exported-only and should reject empty session IDs unless a real internal non-owning use case appears later
 * Add `ReleaseSession(ctx, sessionID)` to the base cache:
   * remove all session edges
   * release arbitrary values owned by that session
@@ -853,12 +889,13 @@ Planned rewrite chunks:
 
 * change `Server.Cache` to the base cache type
 * change `NewServer` and `WithCache` accordingly
-* ensure caller-facing server paths have an explicit session ID available for ownership-capable cache calls
+* do not store raw session state like `SessionID` or telemetry seen-key stores on `dagql.Server`
+* ensure caller-facing dagql paths derive `sessionID` from the current request context and pass it explicitly into ownership-capable cache calls
+* ensure caller-facing non-engine dagql flows use synthetic session IDs where they need ownership rather than calling exported cache methods with empty session IDs
 * keep `lookupCallRequest` on the base cache in simplified form if still needed for recipe loading
 * lowercase `LookupCacheForDigests` to `lookupCacheForDigests` and keep it internal-only
-* add a small explicit interface on `Server` for telemetry seen-key access
-  * implemented by engine/session-side state
-  * not by the cache
+* use lowercase internal helpers for the non-owning recipe replay / structural load paths
+* keep telemetry dedupe out of `dagql.Server` state; dagql code should resolve session-owned telemetry state from context via engine/session accessors
 
 ### `engine/server/session.go`
 
@@ -884,8 +921,9 @@ Planned rewrite chunks:
   * reject new DAGQL work
   * wait for in-flight DAGQL requests to drain
   * call `srv.baseDagqlCache.ReleaseSession(ctx, sess.sessionID)`
-* `dagql.NewServer(...)` should receive the base cache directly plus the explicit telemetry/session interface it needs
-* engine/session code should pass explicit session IDs into ownership-capable cache APIs instead of expecting the cache to discover them from context
+* `dagql.NewServer(...)` should receive the base cache directly and not become a new owner of session state
+* engine/session state remains the owner of telemetry seen-key storage
+* engine/session code should continue exposing context-resolved accessors for session-owned state so caller-facing dagql code can fetch telemetry dedupe state without storing it on `dagql.Server`
 
 ### `core/query.go`
 
@@ -896,7 +934,21 @@ Planned rewrite chunks:
 * change `Cache(context.Context)` from `*dagql.SessionCache` to the base cache type/interface
 * change `CurrentDagqlCache(...)` accordingly or delete/rename it if the old name becomes misleading
 * update all server implementations and callers to stop depending on `SessionCache` as a type
-* update callers to pass explicit session IDs when invoking ownership-capable cache entrypoints
+* update caller-facing code to pass explicit real or synthetic session IDs when invoking exported ownership-capable cache entrypoints
+* move the generic result-call traversal used by `ModDepsForCall` out of `core/query.go` and onto the cache as a generic non-owning call-walk helper
+* stop having `core/query.go` perform direct non-owning `LoadResultByResultID` calls for module-dependency walking
+* switch `core/object.go` `DynamicID` loading and `core/interface.go` implementation loading to `dagql.Server.Load`, treating those as session acquisitions rather than special non-owning cache reads
+* add or adapt a context-resolved server method for telemetry seen-key access so dagql code can consult session-owned dedupe state without routing it through the cache or `dagql.Server`
+
+### `core/persisted_object.go`
+
+This is the remaining intentional exported non-owning load case for now.
+
+Planned rewrite chunks:
+
+* keep persisted decode using exported `LoadResultByResultID(..., "")` for now
+* treat that empty-session exported load as a narrow temporary exception, not a pattern to spread elsewhere
+* revisit this later only after the larger ownership/prune/persistence cut is stable
 
 ### `dagql/cache_persistence_resolver.go`
 
@@ -915,8 +967,16 @@ Planned rewrite chunks:
 
 * move session-level seen-key storage to `daggerSession`
 * keep dagql telemetry callback construction in `dagql/objects.go`
-* expose seen-key access to dagql through a small explicit interface passed into `NewServer`
+* expose seen-key access to dagql through context-resolved engine/session accessors, similar to the other session/client lookups already provided by `engine/server/session.go`
 * do not let cache internals own or reason about telemetry dedupe
+
+### `core/sdk/utils.go`
+
+Planned rewrite chunks:
+
+* when attaching a scoped SDK module result, require real client metadata / session ID
+* if client metadata cannot be resolved, return an error
+* do not silently fall back to empty session ownership
 
 ### Arbitrary Cached Values
 
@@ -992,8 +1052,10 @@ Tests that will likely need direct attention:
 * `dagql/cache_test.go`
   * rewrite tests that currently exercise `UsageEntries()` or direct cache-backed `Result.Release()`
   * add tests for `ReleaseSession`
-  * add tests for explicit `sessionID` behavior on ownership-capable cache entrypoints
-  * add tests that empty `sessionID` errors where no legitimate production non-owning mode exists
+  * add tests for explicit `sessionID` behavior on exported ownership-capable cache entrypoints
+  * add tests that exported caller-facing ownership methods reject empty session IDs
+  * add tests that lowercase internal helpers still allow explicit non-owning use where the design requires it
+  * add tests that exported `LoadResultByResultID(..., "")` remains limited to the persisted-decode exception until that path is refactored away
 * prune-focused tests in `dagql` and `core/integration`
   * assert session-active vs persisted-retained behavior clearly
 * cache debug / introspection tests, if any, that currently assume `depOfPersistedResult`

@@ -104,16 +104,6 @@ func (file *File) Sync(ctx context.Context) error {
 	return file.Evaluate(ctx)
 }
 
-func (file *File) PreparePersistedObject(ctx context.Context) error {
-	if file == nil {
-		return nil
-	}
-	if file.Snapshot != nil {
-		return retainImmutableRefChain(ctx, file.Snapshot)
-	}
-	return nil
-}
-
 func (file *File) AttachOwnedResults(
 	ctx context.Context,
 	_ dagql.AnyResult,

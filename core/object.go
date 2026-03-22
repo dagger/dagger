@@ -100,7 +100,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		if id == nil || id.EngineResultID() == 0 {
 			return nil, fmt.Errorf("load DynamicID: expected attached result ID")
 		}
-		val, err := dag.Cache.LoadResultByResultID(ctx, dag, id.EngineResultID())
+		val, err := dag.Load(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("load DynamicID: %w", err)
 		}

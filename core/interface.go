@@ -119,7 +119,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if id == nil || id.EngineResultID() == 0 {
 		return nil, fmt.Errorf("load interface implementation: expected attached result ID")
 	}
-	val, err := dag.Cache.LoadResultByResultID(ctx, dag, id.EngineResultID())
+	val, err := dag.Load(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load interface implementation: %w", err)
 	}

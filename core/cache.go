@@ -214,17 +214,6 @@ func (cache *CacheVolume) Sync(ctx context.Context) error {
 	return cache.InitializeSnapshot(ctx)
 }
 
-func (cache *CacheVolume) PreparePersistedObject(ctx context.Context) error {
-	if cache == nil {
-		return nil
-	}
-	snapshot := cache.getSnapshot()
-	if snapshot != nil {
-		return snapshot.SetCachePolicyRetain()
-	}
-	return nil
-}
-
 func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	if cache.getSnapshot() != nil {
 		return nil

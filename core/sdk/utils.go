@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -62,7 +63,11 @@ func ScopeModuleForSDKOperation(
 	}
 
 	scopedDigest := hashutil.HashStrings("sdk_scope_module", op, sourceImplementationDigest.String())
-	attached, err := dag.Cache.AttachResult(ctx, dag, scopedModInst.WithContentDigest(scopedDigest))
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("scope module for sdk operation %q: current client metadata: %w", op, err)
+	}
+	attached, err := dag.Cache.AttachResult(ctx, clientMetadata.SessionID, dag, scopedModInst.WithContentDigest(scopedDigest))
 	if err != nil {
 		return inst, err
 	}

@@ -56,7 +56,7 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 	baseCacheIface, err := NewCache(t.Context(), "")
 	assert.NilError(t, err)
 	baseCache := baseCacheIface.(*cache)
-	srv := NewServer(&persistCodecRoot{}, NewSessionCache(baseCache))
+	srv := NewServer(&persistCodecRoot{}, baseCache)
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	rootObjType, ok := srv.ObjectType("Query")
 	assert.Assert(t, ok)
@@ -68,7 +68,7 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 		}),
 	}.Install(srv)
 
-	ctx := ContextWithCall(t.Context(), &ResultCall{
+	ctx := ContextWithCall(cacheTestContext(t.Context()), &ResultCall{
 		Kind:  ResultCallKindField,
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
 		Field: "persist-codec-root",
@@ -127,10 +127,10 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
+	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	srv := NewServer(&persistCodecRoot{}, NewSessionCache(cacheIface))
+	srv := NewServer(&persistCodecRoot{}, cacheIface)
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 
 	req := &CallRequest{
@@ -141,7 +141,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 		},
 	}
 
-	first, err := cacheIface.GetOrInitCall(ctx, srv, req, func(callCtx context.Context) (AnyResult, error) {
+	first, err := cacheIface.GetOrInitCall(ctx, "test-session", srv, req, func(callCtx context.Context) (AnyResult, error) {
 		return NewObjectResultForCurrentCall(callCtx, srv, &persistCodecObj{Name: "x"})
 	})
 	assert.NilError(t, err)
@@ -150,7 +150,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	assert.Assert(t, ok)
 	assert.Assert(t, !first.HitCache())
 
-	second, err := cacheIface.GetOrInitCall(ctx, srv, req, func(context.Context) (AnyResult, error) {
+	second, err := cacheIface.GetOrInitCall(ctx, "test-session", srv, req, func(context.Context) (AnyResult, error) {
 		return nil, errors.New("unexpected initializer call")
 	})
 	assert.NilError(t, err)
@@ -159,8 +159,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	assert.Assert(t, ok)
 	assert.Assert(t, second.HitCache())
 
-	assert.NilError(t, first.Release(ctx))
-	assert.NilError(t, second.Release(ctx))
+	cacheTestReleaseSession(t, cacheIface, ctx)
 }
 
 func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {

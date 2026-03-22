@@ -223,9 +223,9 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 	if srv == nil || srv.Cache == nil {
 		return nil, fmt.Errorf("cannot resolve result ref without dagql server cache")
 	}
-	base, ok := srv.Cache.cache.(*cache)
+	base, ok := srv.Cache.(*cache)
 	if !ok {
-		return nil, fmt.Errorf("unexpected cache implementation %T", srv.Cache.cache)
+		return nil, fmt.Errorf("unexpected cache implementation %T", srv.Cache)
 	}
 	if ref.Call != nil {
 		resultID, err := base.resultIDForCall(ctx, ref.Call)

@@ -76,6 +76,7 @@ type daggerSession struct {
 
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
+	seenKeys        sync.Map
 
 	services *core.Services
 
@@ -86,7 +87,10 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache *dagql.SessionCache
+	dagqlMu       sync.Mutex
+	dagqlCond     *sync.Cond
+	dagqlInFlight int
+	dagqlClosing  bool
 
 	interactive        bool
 	interactiveCommand []string
@@ -220,6 +224,15 @@ func (client *daggerClient) getMainClientCaller() (bksession.Caller, error) {
 	return client.getClientCaller(client.daggerSession.mainClientCallerID)
 }
 
+func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
+	_, seen := sess.seenKeys.LoadOrStore(key, struct{}{})
+	return seen
+}
+
+func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
+	sess.seenKeys.Store(key, struct{}{})
+}
+
 func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	sess.clientMu.Lock()
@@ -250,7 +263,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.services = core.NewServices()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = dagql.NewSessionCache(srv.baseDagqlCache)
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -365,9 +378,16 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
+	sess.dagqlMu.Lock()
+	sess.dagqlClosing = true
+	for sess.dagqlInFlight > 0 {
+		sess.dagqlCond.Wait()
+	}
+	sess.dagqlMu.Unlock()
+
 	beforeDagqlEntries := srv.baseDagqlCache.Size()
 	beforeDagqlStats := srv.baseDagqlCache.EntryStats()
-	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
+	if err := srv.baseDagqlCache.ReleaseSession(ctx, sess.sessionID); err != nil {
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
 	}
@@ -448,7 +468,7 @@ func (srv *Server) initializeDaggerClient(
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		callID, err := client.daggerSession.dagqlCache.RecipeIDForCall(opts.Call)
+		callID, err := srv.baseDagqlCache.RecipeIDForCall(opts.Call)
 		if err != nil {
 			return fmt.Errorf("rebuild nested client recipe ID: %w", err)
 		}
@@ -549,7 +569,7 @@ func (srv *Server) initializeDaggerClient(
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
-	client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
+	client.dag = dagql.NewServer(client.dagqlRoot, srv.baseDagqlCache)
 	client.dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: client.dag}
 	if err := coreMod.Install(ctx, client.dag); err != nil {
@@ -1100,7 +1120,24 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 }
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
-	ctx := client.daggerSession.withClosingCancel(r.Context())
+	sess := client.daggerSession
+	sess.dagqlMu.Lock()
+	if sess.dagqlClosing {
+		sess.dagqlMu.Unlock()
+		return gqlErr(errSessionClosing, http.StatusServiceUnavailable)
+	}
+	sess.dagqlInFlight++
+	sess.dagqlMu.Unlock()
+	defer func() {
+		sess.dagqlMu.Lock()
+		sess.dagqlInFlight--
+		if sess.dagqlInFlight == 0 {
+			sess.dagqlCond.Broadcast()
+		}
+		sess.dagqlMu.Unlock()
+	}()
+
+	ctx := sess.withClosingCancel(r.Context())
 
 	// only record telemetry if the request is traced, otherwise
 	// we end up with orphaned spans in their own separate traces from tests etc.
@@ -1417,12 +1454,16 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 }
 
 // The DagQL query cache for the current client's session
-func (srv *Server) Cache(ctx context.Context) (*dagql.SessionCache, error) {
+func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
+	return srv.baseDagqlCache, nil
+}
+
+func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return client.daggerSession.dagqlCache, nil
+	return client.daggerSession, nil
 }
 
 // The DagQL server for the current client's session

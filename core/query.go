@@ -73,7 +73,10 @@ type Server interface {
 	DefaultDeps(context.Context) (*ModDeps, error)
 
 	// The DagQL query cache for the current client's session
-	Cache(context.Context) (*dagql.SessionCache, error)
+	Cache(context.Context) (dagql.Cache, error)
+
+	// The telemetry seen-key store for the current client's session.
+	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
 	// The DagQL server for the current client's session
 	Server(context.Context) (*dagql.Server, error)
@@ -201,7 +204,7 @@ func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
 	return srv, nil
 }
 
-func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
+func CurrentDagqlCache(ctx context.Context) (dagql.Cache, error) {
 	if srv := dagql.CurrentDagqlServer(ctx); srv != nil && srv.Cache != nil {
 		return srv.Cache, nil
 	}
@@ -262,8 +265,6 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 	}
 
 	deps := defaultDeps
-	seenCalls := map[*dagql.ResultCall]struct{}{}
-	seenResultIDs := map[uint64]struct{}{}
 	seenModuleResultIDs := map[uint64]struct{}{}
 
 	var appendModule func(dagql.ObjectResult[*Module]) error
@@ -298,103 +299,13 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		return nil
 	}
 
-	var walkLiteral func(*dagql.ResultCallLiteral) error
-	var walkRef func(*dagql.ResultCallRef) error
-	var walkCall func(*dagql.ResultCall) error
-
-	walkLiteral = func(lit *dagql.ResultCallLiteral) error {
-		if lit == nil {
+	if err := dag.Cache.WalkResultCall(ctx, dag, rootCall, func(res dagql.AnyResult) error {
+		modInst, ok := res.(dagql.ObjectResult[*Module])
+		if !ok {
 			return nil
 		}
-		switch lit.Kind {
-		case dagql.ResultCallLiteralKindResultRef:
-			return walkRef(lit.ResultRef)
-		case dagql.ResultCallLiteralKindList:
-			for _, item := range lit.ListItems {
-				if err := walkLiteral(item); err != nil {
-					return err
-				}
-			}
-		case dagql.ResultCallLiteralKindObject:
-			for _, field := range lit.ObjectFields {
-				if field == nil {
-					continue
-				}
-				if err := walkLiteral(field.Value); err != nil {
-					return fmt.Errorf("field %q: %w", field.Name, err)
-				}
-			}
-		}
-		return nil
-	}
-
-	walkRef = func(ref *dagql.ResultCallRef) error {
-		if ref == nil {
-			return nil
-		}
-		if ref.Call != nil {
-			return walkCall(ref.Call)
-		}
-		if ref.ResultID == 0 {
-			return nil
-		}
-		if _, seen := seenResultIDs[ref.ResultID]; seen {
-			return nil
-		}
-		seenResultIDs[ref.ResultID] = struct{}{}
-		res, err := dag.Cache.LoadResultByResultID(ctx, dag, ref.ResultID)
-		if err != nil {
-			return fmt.Errorf("load result %d: %w", ref.ResultID, err)
-		}
-		if modInst, ok := res.(dagql.ObjectResult[*Module]); ok {
-			if err := appendModule(modInst); err != nil {
-				return err
-			}
-		}
-		call, err := res.ResultCall()
-		if err != nil {
-			return fmt.Errorf("result %d call: %w", ref.ResultID, err)
-		}
-		return walkCall(call)
-	}
-
-	walkCall = func(call *dagql.ResultCall) error {
-		if call == nil {
-			return nil
-		}
-		if _, seen := seenCalls[call]; seen {
-			return nil
-		}
-		seenCalls[call] = struct{}{}
-
-		if call.Module != nil {
-			if err := walkRef(call.Module.ResultRef); err != nil {
-				return fmt.Errorf("module %q: %w", call.Module.Name, err)
-			}
-		}
-		if err := walkRef(call.Receiver); err != nil {
-			return fmt.Errorf("receiver: %w", err)
-		}
-		for _, arg := range call.Args {
-			if arg == nil {
-				continue
-			}
-			if err := walkLiteral(arg.Value); err != nil {
-				return fmt.Errorf("arg %q: %w", arg.Name, err)
-			}
-		}
-		for _, input := range call.ImplicitInputs {
-			if input == nil {
-				continue
-			}
-			if err := walkLiteral(input.Value); err != nil {
-				return fmt.Errorf("implicit input %q: %w", input.Name, err)
-			}
-		}
-		return nil
-	}
-
-	if err := walkCall(rootCall); err != nil {
+		return appendModule(modInst)
+	}); err != nil {
 		return nil, err
 	}
 	return deps, nil
