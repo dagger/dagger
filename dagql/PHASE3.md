@@ -82,10 +82,10 @@ generated as a regular field method backed by a schema field.
 **Target state**: INTERFACE types generate a **Go interface** plus
 a **query-builder implementation struct** (for `loadFooFromID` and
 fields returning the interface). Concrete objects that `implements`
-the interface get an `AsTestCustomIface() TestCustomIface` method
-as a **client-side adapter** (no schema field) for covariant return
-narrowing. The interface itself declares `AsImpl() (*Impl, bool)`
-methods for each possible type, enabling type-safe narrowing.
+the interface get an `AsDuck() Duck` method as a **client-side
+adapter** (no schema field) for covariant return narrowing. The
+interface declares a `Concrete(ctx) (DaggerObject, error)` method
+for narrowing to the underlying concrete type.
 
 #### Why `AsFoo()` is still needed in Go
 
@@ -105,7 +105,7 @@ Suppose the interface `Duck` has two possible types: `Mallard` and
 
 ```go
 // The Go interface — matches the GraphQL interface's fields,
-// plus narrowing methods for each possibleType.
+// plus Concrete() for narrowing.
 type Duck interface {
     DaggerObject
 
@@ -113,11 +113,10 @@ type Duck interface {
     Quack(ctx context.Context) (string, error)
     WithName(name string) Duck  // covariant: returns interface
 
-    // Narrowing — one per possibleType.
-    // Returns (concrete, true) if the underlying value IS that type,
-    // or (nil, false) if it isn't.
-    AsMallard() (*Mallard, bool)
-    AsRubberDuck() (*RubberDuck, bool)
+    // Resolve the concrete type behind this interface value.
+    // The returned DaggerObject is one of the possibleTypes
+    // (*Mallard, *RubberDuck) and can be type-switched.
+    Concrete(ctx context.Context) (DaggerObject, error)
 }
 
 // The ID scalar (unchanged).
@@ -128,9 +127,7 @@ type DuckID string
 
 When a field returns an interface type (or `loadFooFromID` is
 called), the SDK needs a concrete struct to build queries against.
-This struct satisfies the `Duck` Go interface. Since it doesn't
-know the concrete type (it's a lazy query builder), its narrowing
-methods all return `(nil, false)`:
+This struct satisfies the `Duck` Go interface:
 
 ```go
 // duckClient is the query-builder for the interface.
@@ -150,9 +147,30 @@ func (r *duckClient) WithName(name string) Duck {
     return &duckClient{query: r.query.Select("withName").Arg("name", name)}
 }
 
-// Narrowing — lazy client doesn't know the concrete type.
-func (r *duckClient) AsMallard() (*Mallard, bool)       { return nil, false }
-func (r *duckClient) AsRubberDuck() (*RubberDuck, bool)  { return nil, false }
+// Concrete resolves __typename + ID to return the actual concrete type.
+func (r *duckClient) Concrete(ctx context.Context) (DaggerObject, error) {
+    // Query __typename to determine the concrete type.
+    q := r.query.Select("__typename")
+    var typeName string
+    q = q.Bind(&typeName)
+    if err := q.Execute(ctx); err != nil {
+        return nil, err
+    }
+    // Get the ID so we can load the concrete object.
+    id, err := r.ID(ctx)
+    if err != nil {
+        return nil, err
+    }
+    // Type switch generated from possibleTypes.
+    switch typeName {
+    case "Mallard":
+        return dag.LoadMallardFromID(MallardID(id)), nil
+    case "RubberDuck":
+        return dag.LoadRubberDuckFromID(RubberDuckID(id)), nil
+    default:
+        return nil, fmt.Errorf("unknown Duck implementation: %s", typeName)
+    }
+}
 
 // DaggerObject methods
 func (r *duckClient) XXX_GraphQLType() string  { return "Duck" }
@@ -185,33 +203,40 @@ func (w *mallardAsDuck) WithName(name string) Duck {
     return &mallardAsDuck{w.Mallard.WithName(name)}
 }
 
-// Narrowing — this IS a Mallard, so AsMallard succeeds.
-func (w *mallardAsDuck) AsMallard() (*Mallard, bool)      { return w.Mallard, true }
-func (w *mallardAsDuck) AsRubberDuck() (*RubberDuck, bool) { return nil, false }
+// Concrete returns the inner *Mallard — no call needed.
+func (w *mallardAsDuck) Concrete(ctx context.Context) (DaggerObject, error) {
+    return w.Mallard, nil
+}
 
 // DaggerObject methods delegate to inner Mallard.
 func (w *mallardAsDuck) XXX_GraphQLType() string { return w.Mallard.XXX_GraphQLType() }
 // etc.
 ```
 
-#### Narrowing from interface to concrete type
-
-Given a `Duck` value, the caller narrows using the methods on the
-interface:
+#### Usage: narrowing from interface to concrete type
 
 ```go
-var duck Duck = getDuck()
-if mallard, ok := duck.AsMallard(); ok {
-    // use mallard-specific fields
-    mallard.MallardOnlyField()
+duck := test.GetDuck()
+
+// Type switch to handle each possible concrete type.
+obj, err := duck.Concrete(ctx)
+if err != nil {
+    return err
+}
+switch v := obj.(type) {
+case *Mallard:
+    v.MallardOnlyMethod()
+case *RubberDuck:
+    v.Squeak()
 }
 ```
 
 This works regardless of how the `Duck` was obtained:
-- From `AsDuck()` adapter → `AsMallard()` returns the inner `*Mallard`.
-- From `duckClient` (lazy query builder) → `AsMallard()` returns
-  `(nil, false)`. The caller must have loaded the concrete type
-  first (e.g., via `loadMallardFromID`).
+- From `AsDuck()` adapter → `Concrete()` returns immediately with
+  the inner `*Mallard`, no network call.
+- From `duckClient` (lazy query builder) → `Concrete()` queries
+  `__typename` and `id`, then loads the concrete type via
+  `loadFooFromID`.
 
 #### `loadFooFromID`
 
@@ -230,10 +255,8 @@ func (c *Client) LoadDuckFromID(id DuckID) Duck {
 ```
 
 The caller gets a `Duck` they can call methods on. The concrete
-type resolves lazily when fields are queried. Since the query-
-builder doesn't know the concrete type, `AsMallard()` etc. return
-false. To narrow after loading by ID, the caller should use
-`loadMallardFromID` directly instead.
+type resolves lazily when fields are queried. To get the concrete
+type, call `Concrete(ctx)`.
 
 #### Fields returning an interface
 
@@ -282,6 +305,9 @@ directly extend or implement the interface without adapter wrappers.
 export interface Duck {
     quack(): Promise<string>
     withName(name: string): Duck
+
+    // Resolve the concrete type.
+    concrete(): Promise<Mallard | RubberDuck>
 }
 
 // Query-builder class for loadFooFromID and interface-typed returns.
@@ -292,24 +318,31 @@ export class DuckClient extends BaseClient implements Duck {
     withName(name: string): Duck {
         return new DuckClient(this._ctx, ...)
     }
+    async concrete(): Promise<Mallard | RubberDuck> {
+        const typeName = await this.__typename()
+        const id = await this.id()
+        switch (typeName) {
+            case "Mallard": return dag.loadMallardFromID(id)
+            case "RubberDuck": return dag.loadRubberDuckFromID(id)
+            default: throw new Error(`unknown: ${typeName}`)
+        }
+    }
 }
 ```
 
 Concrete classes like `Mallard` already structurally satisfy `Duck`
-in TypeScript (structural typing). No adapter needed.
+(TypeScript structural typing). They implement `concrete()` by
+returning `this`.
 
 #### Narrowing to concrete type
 
 ```typescript
 const duck: Duck = getDuck()
-if (duck instanceof Mallard) {
-    // narrowed to Mallard
+const obj = await duck.concrete()
+if (obj instanceof Mallard) {
+    obj.mallardOnlyMethod()
 }
 ```
-
-For values returned through `DuckClient` (lazy query builder),
-`instanceof Mallard` returns false. The caller should load the
-concrete type directly or use `__typename` to determine the type.
 
 ### Python
 
@@ -317,9 +350,10 @@ concrete type directly or use `__typename` to determine the type.
 OBJECT types. `asFoo` is generated as a method.
 
 **Target state**: INTERFACE types generate a Python class (same
-as current, but without `asFoo` methods). Python's duck typing
-means concrete objects are structurally compatible without any
-special mechanism.
+as current, but without `asFoo` methods). Add a `concrete()` method
+that resolves to the underlying type. Python's duck typing means
+concrete objects are structurally compatible without any special
+mechanism.
 
 #### Generated types
 
@@ -332,17 +366,26 @@ class Duck(BaseClient):
 
     def with_name(self, name: str) -> "Duck":
         ...
-```
 
-Concrete classes like `Mallard` have the same method signatures and
-are assignable to `Duck`-typed variables.
+    async def concrete(self) -> "Mallard | RubberDuck":
+        type_name = await self.__typename()
+        id = await self.id()
+        match type_name:
+            case "Mallard":
+                return dag.load_mallard_from_id(id)
+            case "RubberDuck":
+                return dag.load_rubber_duck_from_id(id)
+            case _:
+                raise ValueError(f"unknown: {type_name}")
+```
 
 #### Narrowing to concrete type
 
 ```python
 duck: Duck = get_duck()
-if isinstance(duck, Mallard):
-    # mallard-specific methods
+obj = await duck.concrete()
+if isinstance(obj, Mallard):
+    obj.mallard_only_method()
 ```
 
 ## Implementation Order
@@ -354,18 +397,18 @@ if isinstance(duck, Mallard):
 
 3. **Go codegen**: Generate Go interface + query-builder struct for
    INTERFACE kinds. Generate `AsFoo()` adapter on implementing
-   objects. Generate narrowing methods (`AsMallard`, etc.) on the
-   interface. Fix `loadFooFromID` and interface-returning fields to
-   return the Go interface.
+   objects. Generate `Concrete()` method with type switch from
+   `PossibleTypes`. Fix `loadFooFromID` and interface-returning
+   fields to return the Go interface.
 
 4. **TypeScript codegen**: Generate TS interface + query-builder
-   class for INTERFACE kinds. Remove `asFoo` references. Fix
-   interface-returning fields.
+   class for INTERFACE kinds. Remove `asFoo` references. Generate
+   `concrete()` with type switch. Fix interface-returning fields.
 
-5. **Python codegen**: Remove `asFoo` references. Interface classes
-   stay as regular generated classes (already structurally
-   compatible).
+5. **Python codegen**: Remove `asFoo` references. Generate
+   `concrete()` with type switch. Interface classes stay as regular
+   generated classes.
 
 6. **Update integration tests**: Rewrite test modules and test
-   assertions. Go tests use `AsFoo()` adapter and narrowing methods.
-   TS/Python tests pass concrete objects directly.
+   assertions. Go tests use `AsFoo()` adapter and `Concrete()`.
+   TS/Python tests use `concrete()`.
