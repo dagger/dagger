@@ -1,6 +1,8 @@
 package dagql
 
 import (
+	"context"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -86,6 +88,59 @@ func (iface *Interface) FieldSpecs(view call.View) []FieldSpec {
 		return specs[i].Name < specs[j].Name
 	})
 	return specs
+}
+
+// FieldSpec looks up a field spec by name for the given view.
+func (iface *Interface) FieldSpec(name string, view call.View) (FieldSpec, bool) {
+	iface.fieldsL.Lock()
+	defer iface.fieldsL.Unlock()
+	versions, ok := iface.fields[name]
+	if !ok {
+		return FieldSpec{}, false
+	}
+	for i := len(versions) - 1; i >= 0; i-- {
+		f := versions[i]
+		if f.MinVersion == "" || f.MinVersion == view {
+			return f.FieldSpec, true
+		}
+	}
+	return FieldSpec{}, false
+}
+
+// ParseField parses an AST field selection against this interface's field specs.
+// This is used when a query selects fields on an interface-typed return value.
+func (iface *Interface) ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+	spec, ok := iface.FieldSpec(astField.Name, view)
+	if !ok {
+		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", iface.name, astField.Name)
+	}
+	args := make([]NamedInput, len(astField.Arguments))
+	for i, arg := range astField.Arguments {
+		argSpec, ok := spec.Args.Input(arg.Name, view)
+		if !ok {
+			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", iface.name, spec.Name, arg.Name)
+		}
+		if argSpec.Internal {
+			return Selector{}, nil, fmt.Errorf("cannot use internal argument %q in selector for %s.%s", arg.Name, iface.name, spec.Name)
+		}
+		val, err := arg.Value.Value(vars)
+		if err != nil {
+			return Selector{}, nil, err
+		}
+		input, err := argSpec.Type.Decoder().DecodeInput(val)
+		if err != nil {
+			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+		}
+		args[i] = NamedInput{
+			Name:  arg.Name,
+			Value: input,
+		}
+	}
+	return Selector{
+		Field: astField.Name,
+		Args:  args,
+		View:  view,
+	}, spec.Type.Type(), nil
 }
 
 // Definition returns the ast.Definition for this interface for the given view.

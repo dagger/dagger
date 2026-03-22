@@ -31,6 +31,9 @@ func (v *Visitor) Run() []*Type {
 			Kind: TypeKindObject,
 		},
 		{
+			Kind: TypeKindInterface,
+		},
+		{
 			Kind: TypeKindEnum,
 		},
 	}
