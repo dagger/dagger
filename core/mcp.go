@@ -73,7 +73,7 @@ func (m *MCP) setEnv(env dagql.ObjectResult[*Env]) {
 	}
 }
 
-func (m *MCP) WithObject(llmID string, id ID) *MCP {
+func (m *MCP) WithObject(llmID string, id dagql.AnyID) *MCP {
 	m = m.Clone()
 	m.objs = m.objs.WithObject(llmID, id)
 	return m

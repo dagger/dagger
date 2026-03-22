@@ -98,11 +98,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("content").Doc("The response content from the tool"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 			),
-		dagql.Func("__withObject", s.withObject).
-			Doc("Track an object by an arbitrary string tag, like Container#123, for the LLM to reference it by in arguments etc.").
+		dagql.Func("withObject", s.withObject).
+			Doc("Track an object so the LLM can reference it in subsequent tool calls. Returns the tag assigned to the object, typically in TypeName#Number format.").
 			Args(
-				dagql.Arg("tag").Doc("Arbitrary string, typically in TypeName#Number format"),
-				dagql.Arg("object").Doc("Arbitrary object ID"),
+				dagql.Arg("tag").Doc("Arbitrary string tag for the object, typically in TypeName#Number format"),
+				dagql.Arg("object").Doc("The object to track, as a generic ID"),
 			),
 		dagql.Func("withMaxTokens", s.withMaxTokens).
 			Doc("Set the maximum number of output tokens the model may generate per API call").
@@ -253,7 +253,7 @@ func (s *llmSchema) withToolResponse(ctx context.Context, llm *core.LLM, args st
 
 func (s *llmSchema) withObject(ctx context.Context, llm *core.LLM, args struct {
 	Tag    string
-	Object core.ID
+	Object dagql.AnyID
 }) (*core.LLM, error) {
 	return llm.WithObject(args.Tag, args.Object), nil
 }

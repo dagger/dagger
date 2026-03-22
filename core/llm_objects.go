@@ -264,14 +264,14 @@ func (r *LLMObjects) Clone() *LLMObjects {
 }
 
 // WithObject adds an object under a specific LLM ID.
-func (r *LLMObjects) WithObject(llmID string, id ID) *LLMObjects {
+func (r *LLMObjects) WithObject(llmID string, id dagql.AnyID) *LLMObjects {
 	cp := r.Clone()
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
-	hash := id.Inner.Digest()
-	cp.trackObjectLocked(id.Inner)
+	hash := id.ID().Digest()
+	cp.trackObjectLocked(id.ID())
 	cp.byDigest[hash] = llmID
-	cp.byLLMID[llmID] = id.Inner
+	cp.byLLMID[llmID] = id.ID()
 	return cp
 }
 

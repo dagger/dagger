@@ -1,12 +1,7 @@
 package core
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type JSONValueID = dagql.ID[*JSONValue]
@@ -52,58 +47,5 @@ type EnvID = dagql.ID[*Env]
 type EnvFileID = dagql.ID[*EnvFile]
 type WorkspaceID = dagql.ID[*Workspace]
 
-type ID struct {
-	Inner *call.ID
-}
-
-func (id ID) Load(ctx context.Context, srv *dagql.Server) (dagql.AnyResult, error) {
-	return srv.Load(ctx, id.Inner)
-}
-
-func (ID) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "ID",
-		NonNull:   true,
-	}
-}
-
-var _ dagql.Typed = ID{}
-
-func (ID) TypeName() string {
-	return "ID"
-}
-
-func (ID) TypeDescription() string {
-	return "A generic object ID"
-}
-
-var _ dagql.ScalarType = ID{}
-
-var _ dagql.Input = ID{}
-
-func (id ID) Decoder() dagql.InputDecoder {
-	return id
-}
-
-func (id ID) ToLiteral() call.Literal {
-	return call.NewLiteralID(id.Inner)
-}
-
-func (id ID) DecodeInput(val any) (res dagql.Input, err error) {
-	switch x := val.(type) {
-	case string:
-		if x == "" {
-			return nil, nil
-		}
-		newID := call.New()
-		err := newID.Decode(x)
-		if err != nil {
-			return nil, fmt.Errorf("invalid ID string: %w", err)
-		}
-		return ID{newID}, nil
-	case *call.ID:
-		return ID{x}, nil
-	default:
-		return nil, fmt.Errorf("cannot convert %T to ID", val)
-	}
-}
+// ID is an alias for dagql.AnyID — a generic object identifier.
+type ID = dagql.AnyID

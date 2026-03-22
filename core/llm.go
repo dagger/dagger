@@ -1354,7 +1354,7 @@ func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
 }
 
 // Append a tool response (user) message to the history
-func (llm *LLM) WithObject(objectID string, id ID) *LLM {
+func (llm *LLM) WithObject(objectID string, id dagql.AnyID) *LLM {
 	llm = llm.Clone()
 	llm.mcp = llm.mcp.WithObject(objectID, id)
 	return llm
@@ -1622,7 +1622,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	for _, objID := range newObjs {
 		id, _ := llm.mcp.objs.IDForLLMID(objID)
 		sels = append(sels, dagql.Selector{
-			Field: "__withObject",
+			Field: "withObject",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "tag",
@@ -1630,7 +1630,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				},
 				{
 					Name:  "object",
-					Value: ID{Inner: id},
+					Value: dagql.NewAnyID(id),
 				},
 			},
 		})
