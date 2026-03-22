@@ -775,11 +775,11 @@ func (AnyID) DecodeInput(val any) (Input, error) {
 		if x == "" {
 			return nil, nil
 		}
-		id := call.New()
+		var id call.ID
 		if err := id.Decode(x); err != nil {
 			return nil, fmt.Errorf("invalid ID string: %w", err)
 		}
-		return AnyID{id: id}, nil
+		return AnyID{id: &id}, nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to ID", val)
 	}
