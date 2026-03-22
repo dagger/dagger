@@ -915,3 +915,20 @@ class Object(ObjectHandler[GraphQLObjectType]):
                     return cb(self)
                 '''  # noqa: E501
             )
+
+        # Generate as_foo() adapter methods for each implemented interface.
+        if hasattr(t, 'interfaces') and t.interfaces:
+            for iface in t.interfaces:
+                iface_name = iface.name
+                method_name = format_name(f"as_{iface_name}")
+                iface_formatted = self.ctx.render_types(iface_name)
+                yield textwrap.dedent(
+                    f'''
+                    def {method_name}(self) -> {iface_formatted}:
+                        """Return this {t.name} as a {iface_name}.
+
+                        This is a local type conversion — no GraphQL call.
+                        """
+                        return {iface_name}(self._ctx)
+                    '''
+                )
