@@ -174,7 +174,7 @@ export type {{ $.Name | FormatName }} = {
 		{{- if eq $field.Name "id" }}
   {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatOutputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- else }}
-  {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatInputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+  {{ $field.Name }}{{ $opt }}: {{ $field | FormatArgType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 
 	{{- end }}

@@ -31,10 +31,13 @@ type typescriptTemplateFuncs struct {
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
-	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, &FormatTypeFunc{
+	formatTypeFunc := &FormatTypeFunc{
 		formatNameFunc: funcs.formatName,
-	})
+	}
+	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, formatTypeFunc)
 	return template.FuncMap{
+		"FormatArgType":             funcs.formatArgType(commonFunc, formatTypeFunc),
+		"FormatFieldReturnType":     funcs.formatFieldReturnType(commonFunc, formatTypeFunc),
 		"CommentToLines":            funcs.commentToLines,
 		"FormatDeprecation":         funcs.formatDeprecation,
 		"FormatExperimental":        funcs.formatExperimental,
@@ -69,6 +72,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ToUpperCase":               commonFunc.ToUpperCase,
 		"ToSingleType":              funcs.toSingleType,
 		"GetEnumValues":             funcs.getEnumValues,
+		"IsInterface":               funcs.isInterface,
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
@@ -76,6 +80,61 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"Dependencies":              funcs.Dependencies,
 		"HasLocalDependencies":      funcs.HasLocalDependencies,
 		"IsBundle":                  funcs.isBundle,
+	}
+}
+
+// isInterface checks if the type is a GraphQL interface.
+func (funcs typescriptTemplateFuncs) isInterface(t *introspection.Type) bool {
+	return t.Kind == introspection.TypeKindInterface
+}
+
+// formatArgType returns a function that formats an argument type,
+// using @expectedType directive for ID scalars.
+func (funcs typescriptTemplateFuncs) formatArgType(
+	commonFunc *generator.CommonFunctions,
+	ff *FormatTypeFunc,
+) func(arg introspection.InputValue, scopes ...string) (string, error) {
+	return func(arg introspection.InputValue, scopes ...string) (string, error) {
+		expectedType := arg.Directives.ExpectedType()
+		if expectedType != "" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			// Check if it's a list type by walking through the TypeRef
+			representation := ""
+			isList := false
+			for ref := arg.TypeRef; ref != nil; ref = ref.OfType {
+				if ref.Kind == introspection.TypeKindList {
+					isList = true
+				}
+			}
+			representation += scope + funcs.formatName(expectedType)
+			if isList {
+				representation += "[]"
+			}
+			return representation, nil
+		}
+		return commonFunc.FormatInputType(arg.TypeRef, scopes...)
+	}
+}
+
+// formatFieldReturnType returns a function that formats a field's return type,
+// using @expectedType directive for ID scalars (e.g. sync fields).
+func (funcs typescriptTemplateFuncs) formatFieldReturnType(
+	commonFunc *generator.CommonFunctions,
+	ff *FormatTypeFunc,
+) func(field introspection.Field, scopes ...string) (string, error) {
+	return func(field introspection.Field, scopes ...string) (string, error) {
+		expectedType := field.Directives.ExpectedType()
+		if expectedType != "" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return scope + funcs.formatName(expectedType), nil
+		}
+		return commonFunc.FormatOutputType(field.TypeRef, scopes...)
 	}
 }
 
