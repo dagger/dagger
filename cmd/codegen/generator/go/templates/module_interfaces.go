@@ -545,7 +545,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 
 					q = q.Select("id")
 					var idResults []struct {
-						Id dagger.DirectoryID
+						Id dagger.ID
 					}
 					q = q.Bind(&idResults)
 					err := q.Execute(ctx)

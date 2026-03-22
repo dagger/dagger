@@ -510,7 +510,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 	if !changed {
 		return nil
 	}
-	var envID dagger.EnvID
+	var envID dagger.ID
 	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
 		return err
 	}

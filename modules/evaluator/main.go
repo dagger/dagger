@@ -152,7 +152,7 @@ func (m *Evaluator) WithEval(
 	//
 	// fortunately the IDs are the same nonetheless, so we can just convert it
 	// with the available plumbing
-	m.Evals = append(m.Evals, dag.LoadEvalWorkspaceEvalFromID(dagger.EvalWorkspaceEvalID(id)))
+	m.Evals = append(m.Evals, dag.LoadEvalWorkspaceEvalFromID(dagger.ID(id)))
 	return m, nil
 }
 

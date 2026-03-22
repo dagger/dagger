@@ -817,7 +817,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 	switch v := item.(type) {
 	case string:
-		return dag.LoadChangesetFromID(dagger.ChangesetID(v)), nil
+		return dag.LoadChangesetFromID(dagger.ID(v)), nil
 	case map[string]interface{}:
 		if id, ok := v["id"]; ok {
 			return toChangeset(dag, id)
@@ -929,7 +929,7 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 	}
 
 	// Load the LLM from the ID and assign it as $agent
-	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	llm := dag.LoadLLMFromID(dagger.ID(llmID))
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}

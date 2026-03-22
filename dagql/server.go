@@ -344,7 +344,7 @@ var coreDirectives = []DirectiveSpec{
 	},
 	{
 		Name:        "expectedType",
-		Description: FormatDescription(`Indicates the expected object or interface type for an ID argument.`),
+		Description: FormatDescription(`Indicates the expected object or interface type for an ID value. On arguments, indicates what type of ID is expected. On fields, indicates the type of the returned ID.`),
 		Args: NewInputSpecs(
 			InputSpec{
 				Name:        "name",
@@ -354,6 +354,7 @@ var coreDirectives = []DirectiveSpec{
 		),
 		Locations: []DirectiveLocation{
 			DirectiveLocationArgumentDefinition,
+			DirectiveLocationFieldDefinition,
 		},
 	},
 	{

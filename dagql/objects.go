@@ -880,6 +880,14 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	if len(spec.Directives) > 0 {
 		def.Directives = slices.Clone(spec.Directives)
 	}
+	// When the return type is ID, add @expectedType to convey type info.
+	if spec.Type.Type().Name() == "ID" {
+		if idTyped, ok := spec.Type.(interface{ ExpectedTypeName() string }); ok {
+			if expectedName := idTyped.ExpectedTypeName(); expectedName != "" {
+				def.Directives = append(def.Directives, ExpectedTypeDirective(expectedName))
+			}
+		}
+	}
 	if spec.DeprecatedReason != nil {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
 	}
@@ -1357,6 +1365,49 @@ type reflectField[T any] struct {
 	Field reflect.StructField
 }
 
+// findExpectedTypeName walks through Input wrappers to find the expected type
+// name for ID-typed arguments. It handles Optional, DynamicOptional, and
+// ArrayInput wrappers.
+func findExpectedTypeName(input Input) string {
+	// Direct check.
+	if idTyped, ok := input.(interface{ ExpectedTypeName() string }); ok {
+		if name := idTyped.ExpectedTypeName(); name != "" {
+			return name
+		}
+	}
+	// Unwrap via reflection for generic wrappers like Optional[ID[T]]
+	// or ArrayInput[ID[T]] that we can't type-assert directly.
+	v := reflect.ValueOf(input)
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			f := v.Field(i)
+			if !f.CanInterface() {
+				continue
+			}
+			if inner, ok := f.Interface().(Input); ok {
+				if name := findExpectedTypeName(inner); name != "" {
+					return name
+				}
+			}
+		}
+	case reflect.Slice:
+		// For ArrayInput[ID[T]], check the element type.
+		elemType := v.Type().Elem()
+		if elemType.Kind() == reflect.Struct || elemType.Kind() == reflect.Interface {
+			zero := reflect.New(elemType).Elem()
+			if zero.CanInterface() {
+				if inner, ok := zero.Interface().(Input); ok {
+					if name := findExpectedTypeName(inner); name != "" {
+						return name
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
 	if err != nil {
@@ -1390,10 +1441,11 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
 		// Add @expectedType directive for ID-typed arguments.
-		if idTyped, ok := input.(interface{ ExpectedTypeName() string }); ok {
-			if expectedName := idTyped.ExpectedTypeName(); expectedName != "" {
-				spec.Directives = append(spec.Directives, ExpectedTypeDirective(expectedName))
-			}
+		// Walk through wrapper types (Optional, DynamicOptional, ArrayInput)
+		// to find the underlying type and check for ExpectedTypeName.
+		expectedTypeName := findExpectedTypeName(input)
+		if expectedTypeName != "" {
+			spec.Directives = append(spec.Directives, ExpectedTypeDirective(expectedTypeName))
 		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep

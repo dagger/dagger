@@ -214,7 +214,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 					Name        string
 					Description string
 					Source      struct {
-						ID       dagger.ModuleSourceID
+						ID       dagger.ID
 						AsString string
 						Digest   string
 					}

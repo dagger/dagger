@@ -335,19 +335,13 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			continue
 		}
 
-		// For loadFooFromID on Query, the arg is `id: ID!` with @expectedType.
-		// Format it as the ID type alias (e.g. FooID) for the expected type.
+		// For loadFooFromID on Query, keep the arg as the raw ID type.
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
-			expectedType := arg.Directives.ExpectedType()
-			if expectedType != "" {
-				args = append(args, fmt.Sprintf("%s %s", arg.Name, formatName(expectedType)+"ID"))
-			} else {
-				outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
-				if err != nil {
-					return "", err
-				}
-				args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
+			outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
+			if err != nil {
+				return "", err
 			}
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 		} else {
 			inType, err := funcs.formatArgType(arg, scopes...)
 			if err != nil {
@@ -370,9 +364,13 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	if err != nil {
 		return "", err
 	}
+	convertID := funcs.ConvertID(f)
 	switch {
 	case supportsVoid && f.TypeRef.IsVoid():
 		retType = "error"
+	case convertID:
+		// ConvertID fields return the parent object type as a pointer.
+		retType = fmt.Sprintf("(*%s, error)", retType)
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
 	case funcs.isInterfaceRef(f.TypeRef):
@@ -543,22 +541,30 @@ func (funcs goTemplateFuncs) formatArgType(arg introspection.InputValue, scopes 
 	if expectedType != "" {
 		// This is an ID arg with an @expectedType directive.
 		// Format it as the expected type (pointer for objects, value for interfaces).
-		schema := generator.GetSchema()
-		if schema != nil {
-			schemaType := schema.Types.Get(expectedType)
-			if schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
-				scope := strings.Join(scopes, "")
-				if scope != "" {
-					scope += "."
-				}
-				return scope + formatName(expectedType), nil
-			}
-		}
 		scope := strings.Join(scopes, "")
 		if scope != "" {
 			scope += "."
 		}
-		return "*" + scope + formatName(expectedType), nil
+		var baseType string
+		schema := generator.GetSchema()
+		if schema != nil {
+			schemaType := schema.Types.Get(expectedType)
+			if schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
+				baseType = scope + formatName(expectedType)
+			}
+		}
+		if baseType == "" {
+			baseType = "*" + scope + formatName(expectedType)
+		}
+		// Wrap in [] for list types.
+		ref := arg.TypeRef
+		if ref != nil && ref.Kind == introspection.TypeKindNonNull {
+			ref = ref.OfType
+		}
+		if ref != nil && ref.Kind == introspection.TypeKindList {
+			return "[]" + baseType, nil
+		}
+		return baseType, nil
 	}
 	return funcs.FormatInputType(arg.TypeRef, scopes...)
 }
