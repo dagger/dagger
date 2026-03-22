@@ -1113,6 +1113,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		return nil, fmt.Errorf("cannot resolve selector path with nth")
 	}
 
+	// __typename returns the concrete type name of the current object.
+	if sel.Selector.Field == "__typename" {
+		return self.ObjectType().TypeName(), nil
+	}
+
 	val, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err
@@ -1294,6 +1299,14 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
+			// __typename is a built-in meta-field on every object/interface type.
+			if x.Name == "__typename" {
+				sels = append(sels, Selection{
+					Alias:    x.Alias,
+					Selector: Selector{Field: "__typename"},
+				})
+				continue
+			}
 			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)

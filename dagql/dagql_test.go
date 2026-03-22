@@ -3347,6 +3347,24 @@ func TestInterfaces(t *testing.T) {
 		assert.Equal(t, 8, res.Point.Y)
 	})
 
+	t.Run("__typename", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// __typename on a concrete object
+		var res struct {
+			Point struct {
+				Typename string `json:"__typename"`
+				X        int
+			}
+		}
+		req(t, gql, `query { point(x: 1, y: 2) { __typename x } }`, &res)
+		assert.Equal(t, "Point", res.Point.Typename)
+		assert.Equal(t, 1, res.Point.X)
+	})
+
 	t.Run("duplicate InstallInterface returns existing", func(t *testing.T) {
 		srv := dagql.NewServer(Query{}, newCache(t))
 		iface1 := dagql.NewInterface("Foo", "First.")
