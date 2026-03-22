@@ -1958,6 +1958,6 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 	cleanup1()
 	require.NoError(t, c1.Close())
 
-	_, err = c2.LoadGitRefFromID(ref2ID).Tree().Sync(ctx)
+	_, err = c2.LoadGitRefFromID(dagger.GitRefID(ref2ID)).Tree().Sync(ctx)
 	require.NoError(t, err)
 }
