@@ -166,10 +166,15 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 			DeprecatedReason: arg.Deprecated,
 		}
 		// Add @expectedType directive for ID-typed arguments (objects and interfaces).
-		if argTypeDef.Kind == TypeDefKindObject && argTypeDef.AsObject.Valid {
-			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(argTypeDef.AsObject.Value.Name))
-		} else if argTypeDef.Kind == TypeDefKindInterface && argTypeDef.AsInterface.Valid {
-			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(argTypeDef.AsInterface.Value.Name))
+		// Walk through list wrappers to find the underlying object/interface type.
+		expectedTypeDef := argTypeDef
+		for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
+			expectedTypeDef = expectedTypeDef.AsList.Value.ElementTypeDef
+		}
+		if expectedTypeDef.Kind == TypeDefKindObject && expectedTypeDef.AsObject.Valid {
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Name))
+		} else if expectedTypeDef.Kind == TypeDefKindInterface && expectedTypeDef.AsInterface.Valid {
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Name))
 		}
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())

@@ -254,10 +254,15 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				DeprecatedReason: argMetadata.Deprecated,
 			}
 			// Add @expectedType directive for ID-typed arguments.
-			if argMetadata.TypeDef.Kind == TypeDefKindObject && argMetadata.TypeDef.AsObject.Valid {
-				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(argMetadata.TypeDef.AsObject.Value.Name))
-			} else if argMetadata.TypeDef.Kind == TypeDefKindInterface && argMetadata.TypeDef.AsInterface.Valid {
-				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(argMetadata.TypeDef.AsInterface.Value.Name))
+			// Walk through list wrappers to find the underlying type.
+			expectedTypeDef := argMetadata.TypeDef
+			for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
+				expectedTypeDef = expectedTypeDef.AsList.Value.ElementTypeDef
+			}
+			if expectedTypeDef.Kind == TypeDefKindObject && expectedTypeDef.AsObject.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Name))
+			} else if expectedTypeDef.Kind == TypeDefKindInterface && expectedTypeDef.AsInterface.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Name))
 			}
 			if argMetadata.SourceMap.Valid {
 				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.Value.TypeDirective())
