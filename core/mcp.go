@@ -783,61 +783,7 @@ func (m *MCP) call(ctx context.Context,
 
 	if autoConstruct != nil {
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
-			// If this object came from an auto-constructed path, we store it in
-			// "contextual" form by stripping out contextual args, thereby
-			// "un-pinning" the object from the context used for this individual call,
-			// such that future references to the object will be initialized with the
-			// freshest context.
-			unpinned, err := dagql.VisitID(obj.ID(), func(id *call.ID) (*call.ID, error) {
-				var recvType string
-				if id.Receiver() == nil {
-					recvType = "Query"
-				} else {
-					recvType = id.Receiver().Type().NamedType()
-				}
-				objType, ok := srv.ObjectType(recvType)
-				if !ok {
-					return nil, fmt.Errorf("unknown receiver type %q", recvType)
-				}
-				fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
-				if !ok {
-					return nil, fmt.Errorf("unknown field %q on type %q", id.Field(), recvType)
-				}
-				inputSpecs := fieldSpec.Args.Inputs(srv.View)
-				var updatedArgs []*call.Argument
-				var updated bool
-				for _, arg := range id.Args() {
-					var isContextual bool
-					for _, spec := range inputSpecs {
-						if spec.Name == arg.Name() {
-							for _, dir := range spec.Directives {
-								if dir.Name == dagql.DefaultPathDirective.Name {
-									isContextual = true
-								}
-							}
-							break
-						}
-					}
-					if isContextual {
-						// simply drop the arg and let it be filled in via Env in LoadContextDir
-						updated = true
-					} else {
-						updatedArgs = append(updatedArgs, arg)
-					}
-				}
-				if !updated {
-					return nil, nil
-				}
-				return id.With(
-					call.WithArgs(updatedArgs...),
-					call.WithReload(true),
-				), nil
-			})
-			if err != nil {
-				return "", err
-			}
-
-			llmID := m.IngestBy(unpinned, "", unpinned.Digest())
+			llmID := m.Ingest(obj, "")
 
 			if obj.Type().Name() == autoConstruct.Name {
 				// The returned object is the same type as the auto-constructed

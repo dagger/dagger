@@ -431,12 +431,6 @@ func WithReceiver(recv *ID) IDOpt {
 	}
 }
 
-func WithReload(reload bool) IDOpt {
-	return func(id *ID) {
-		id.pb.Reload = reload
-	}
-}
-
 func (id *ID) With(opts ...IDOpt) *ID {
 	return id.shallowClone().apply(opts...)
 }
@@ -467,13 +461,6 @@ func (id *ID) HasCustomDigest() bool {
 		return false
 	}
 	return id.pb.IsCustomDigest
-}
-
-func (id *ID) WantsReload() bool {
-	if id == nil {
-		return false
-	}
-	return id.pb.Reload
 }
 
 // WithArgument returns a new ID that's the same as before except with the
