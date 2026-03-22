@@ -216,7 +216,7 @@ func (r *{{ $.Name | InterfaceClientName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = *(dag.Load{{ $.Name | FormatName }}FromID({{ $.Name | FormatName }}ID(id)).(*{{ $.Name | InterfaceClientName }}))
+  *r = *(dag.Load{{ $.Name | FormatName }}FromID(ID(id)).(*{{ $.Name | InterfaceClientName }}))
   return nil
 }
 {{- end }}
