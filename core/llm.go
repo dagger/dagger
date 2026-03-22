@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -1595,7 +1594,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			})
 		}
 	}
-	beforeObjs := maps.Clone(llm.mcp.objsByID)
+	snapshot := llm.mcp.objs.Snapshot()
 	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
@@ -1615,16 +1614,10 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			},
 		})
 	}
-	var newObjs []string
-	for obj := range llm.mcp.objsByID {
-		if _, exists := beforeObjs[obj]; exists {
-			continue
-		}
-		newObjs = append(newObjs, obj)
-	}
+	newObjs := llm.mcp.objs.NewObjects(snapshot)
 	sort.Strings(newObjs)
 	for _, objID := range newObjs {
-		id := llm.mcp.objsByID[objID]
+		id, _ := llm.mcp.objs.IDForLLMID(objID)
 		sels = append(sels, dagql.Selector{
 			Field: "__withObject",
 			Args: []dagql.NamedInput{
