@@ -3074,3 +3074,286 @@ func TestInstallHooks(t *testing.T) {
 	require.Equal(t, 200, res.OtherPoint.Y)
 	require.Equal(t, "hello world!", res.OtherPoint.Hello)
 }
+
+func TestInterfaces(t *testing.T) {
+	t.Run("install and introspect", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+		points.Install[Query](srv)
+
+		// Create and install an interface
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		// Point should satisfy Spatial (it has x and y fields)
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok, "Point type not found")
+		assert.Assert(t, spatial.Satisfies(pointType, ""), "Point should satisfy Spatial")
+
+		// Declare that Point implements Spatial
+		pointClass := pointType.(dagql.Class[*points.Point])
+		pointClass.Implements(spatial)
+
+		// Verify the interface shows up in introspection
+		gql := client.New(dagql.NewDefaultHandler(srv))
+		var res struct {
+			Type struct {
+				Kind       string
+				Name       string
+				Fields     []struct{ Name string }
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+
+		// Check the interface itself
+		var ifaceRes struct {
+			Type struct {
+				Kind          string
+				Name          string
+				Description   string
+				Fields        []struct{ Name string }
+				PossibleTypes []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Spatial") { kind name description fields { name } possibleTypes { name } } }`, &ifaceRes)
+		assert.Equal(t, "INTERFACE", ifaceRes.Type.Kind)
+		assert.Equal(t, "Spatial", ifaceRes.Type.Name)
+		assert.Equal(t, "Something with spatial coordinates.", ifaceRes.Type.Description)
+		assert.Assert(t, len(ifaceRes.Type.Fields) == 2)
+		// Check that Point is in possibleTypes
+		foundPoint := false
+		for _, pt := range ifaceRes.Type.PossibleTypes {
+			if pt.Name == "Point" {
+				foundPoint = true
+			}
+		}
+		assert.Assert(t, foundPoint, "Point should be in Spatial possibleTypes")
+
+		// Check that Point declares Spatial in its interfaces
+		req(t, gql, `{ __type(name: "Point") { kind name interfaces { name } } }`, &res)
+		assert.Equal(t, "OBJECT", res.Type.Kind)
+		foundSpatial := false
+		for _, iface := range res.Type.Interfaces {
+			if iface.Name == "Spatial" {
+				foundSpatial = true
+			}
+		}
+		assert.Assert(t, foundSpatial, "Point should declare Spatial interface")
+	})
+
+	t.Run("Satisfies checks", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		// Interface requiring a field that Point doesn't have
+		badIface := dagql.NewInterface("HasZ", "Something with a Z coordinate.")
+		badIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "z",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(badIface)
+
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+		assert.Assert(t, !badIface.Satisfies(pointType, ""), "Point should NOT satisfy HasZ")
+
+		// Calling Implements should panic
+		assert.Assert(t, func() (panicked bool) {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+				}
+			}()
+			pointType.(dagql.Class[*points.Point]).Implements(badIface)
+			return false
+		}(), "Implements should panic for unsatisfied interface")
+	})
+
+	t.Run("auto Object interface", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+
+		// Install the "Object" interface before any objects
+		objectIface := dagql.NewInterface("Object", "An object with an identity.")
+		objectIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "id",
+				Type: dagql.AnyID{},
+			},
+		})
+		srv.InstallInterface(objectIface)
+
+		// Now install Point — it should auto-implement Object
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+		var res struct {
+			Type struct {
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &res)
+		foundObject := false
+		for _, iface := range res.Type.Interfaces {
+			if iface.Name == "Object" {
+				foundObject = true
+			}
+		}
+		assert.Assert(t, foundObject, "Point should auto-implement Object")
+
+		// Object interface should have Point in possibleTypes
+		var ifaceRes struct {
+			Type struct {
+				PossibleTypes []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Object") { possibleTypes { name } } }`, &ifaceRes)
+		foundPoint := false
+		for _, pt := range ifaceRes.Type.PossibleTypes {
+			if pt.Name == "Point" {
+				foundPoint = true
+			}
+		}
+		assert.Assert(t, foundPoint, "Object interface should include Point in possibleTypes")
+	})
+
+	t.Run("inline fragments", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// Inline fragment with matching type condition
+		var res struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 3, y: 4) {
+				... on Point {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.Equal(t, 3, res.Point.X)
+		assert.Equal(t, 4, res.Point.Y)
+
+		// Inline fragment without type condition (unconditional)
+		var res2 struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 5, y: 6) {
+				... {
+					x
+					y
+				}
+			}
+		}`, &res2)
+		assert.Equal(t, 5, res2.Point.X)
+		assert.Equal(t, 6, res2.Point.Y)
+	})
+
+	t.Run("fragment spreads with type condition", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		points.Install[Query](srv)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+
+		// Fragment spread with matching type condition
+		var res struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 10, y: 20) {
+				...PointFields
+			}
+		}
+		fragment PointFields on Point {
+			x
+			y
+		}`, &res)
+		assert.Equal(t, 10, res.Point.X)
+		assert.Equal(t, 20, res.Point.Y)
+	})
+
+	t.Run("inline fragment with interface type condition", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		introspection.Install[Query](srv)
+
+		// Install interface before objects
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		points.Install[Query](srv)
+
+		// Have Point implement Spatial — this must happen before querying
+		// so the schema includes the relationship.
+		pointType, ok := srv.ObjectType("Point")
+		assert.Assert(t, ok)
+		pointType.(dagql.Class[*points.Point]).Implements(spatial)
+
+		gql := client.New(dagql.NewDefaultHandler(srv))
+		var res struct {
+			Point struct {
+				X int
+				Y int
+			}
+		}
+		req(t, gql, `query {
+			point(x: 7, y: 8) {
+				... on Spatial {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.Equal(t, 7, res.Point.X)
+		assert.Equal(t, 8, res.Point.Y)
+	})
+
+	t.Run("duplicate InstallInterface returns existing", func(t *testing.T) {
+		srv := dagql.NewServer(Query{}, newCache(t))
+		iface1 := dagql.NewInterface("Foo", "First.")
+		iface2 := dagql.NewInterface("Foo", "Second.")
+		installed1 := srv.InstallInterface(iface1)
+		installed2 := srv.InstallInterface(iface2)
+		assert.Assert(t, installed1 == installed2, "should return same interface")
+		assert.Equal(t, "First.", installed2.TypeDescription())
+	})
+}
