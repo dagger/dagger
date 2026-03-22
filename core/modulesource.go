@@ -597,16 +597,7 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
-	// Check if there's an Env - if so, use its workspace as the context for
-	// defaultPath arguments.
-	//
-	// NOTE: this applies unilaterally, whether the module was loaded from Host,
-	// Git, or a Directory.
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		inst, err = src.loadContextFromEnv(ctx, dag, envID, path, filterInputs)
-	} else {
-		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
-	}
+	inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
 	if err != nil {
 		return inst, err
 	}
@@ -623,48 +614,6 @@ func (src *ModuleSource) LoadContextDir(
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
-	return inst, nil
-}
-
-func (src *ModuleSource) loadContextFromEnv(
-	ctx context.Context,
-	dag *dagql.Server,
-	envID *call.ID,
-	path string,
-	filterInputs []dagql.NamedInput,
-) (inst dagql.ObjectResult[*Directory], err error) {
-	// If path is not absolute, it's relative to the module root directory.
-	// If path is absolute, it's relative to the context directory.
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(src.SourceRootSubpath, path)
-	}
-	envRes, err := dag.Load(ctx, envID)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load current env: %w", err)
-	}
-	sels := []dagql.Selector{
-		{
-			Field: "workspace",
-		},
-	}
-	if path != "." {
-		sels = append(sels, dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(path)},
-			},
-		})
-	}
-	if len(filterInputs) > 0 {
-		sels = append(sels, dagql.Selector{
-			Field: "filter",
-			Args:  filterInputs,
-		})
-	}
-	err = dag.Select(ctx, envRes, &inst, sels...)
-	if err != nil {
-		return inst, fmt.Errorf("failed to select env directory: %w", err)
-	}
 	return inst, nil
 }
 

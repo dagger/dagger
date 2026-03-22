@@ -238,6 +238,15 @@ func (m *MCP) call(ctx context.Context,
 		prependLogs(ctx, &res)
 	}()
 
+	// Propagate the workspace into context so module function calls
+	// resolve workspace arguments against the caller's workspace.
+	if m.env.ID() != nil {
+		ws := m.env.Self().Workspace
+		if ws.ID() != nil {
+			ctx = WorkspaceIDToContext(ctx, ws.ID())
+		}
+	}
+
 	// 1. Resolve the target object
 	var target dagql.AnyObjectResult
 	var err error
@@ -307,13 +316,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", err
 	}
 
-	// 4. Handle Env returns
-	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
-		m.env = newEnv
-		return "", nil
-	}
-
-	// 5. Format result
+	// 4. Format result
 	moduleName := ""
 	if autoConstruct != nil {
 		moduleName = autoConstruct.Name

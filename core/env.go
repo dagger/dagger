@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -44,26 +43,6 @@ func (*Env) Type() *ast.Type {
 		NamedType: "Env",
 		NonNull:   true,
 	}
-}
-
-type envKey struct{}
-
-func EnvIDToContext(ctx context.Context, env *call.ID) context.Context {
-	return context.WithValue(ctx, envKey{}, env)
-}
-
-func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
-	// Env overidden via explicit context, i.e. from LLM to tool call
-	env, ok := ctx.Value(envKey{}).(*call.ID)
-	if !ok {
-		q, err := CurrentQuery(ctx)
-		if err == nil && q.CurrentEnv != nil {
-			// Env set on Query, i.e. propagated from LLM to module
-			return q.CurrentEnv, true
-		}
-		return res, false
-	}
-	return env, true
 }
 
 func NewEnv(workspace dagql.ObjectResult[*Workspace], deps *ModDeps) *Env {

@@ -766,9 +766,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		ParentID:  callID.Receiver(),
 		InputArgs: callInputs,
 	}
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		fnCall.EnvID = envID
-	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
@@ -1181,28 +1178,10 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
-	// Prefer the workspace from the current Env, which is the host-side
-	// workspace propagated from the original CLI client. This is critical
-	// when the function is called as an LLM tool — resolving
-	// currentWorkspace here would yield the module container's filesystem
-	// instead of the host's.
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		var ws dagql.ObjectResult[*Workspace]
-		err := dag.Select(ctx, dag.Root(), &ws,
-			dagql.Selector{
-				Field: "loadEnvFromID",
-				Args: []dagql.NamedInput{
-					{Name: "id", Value: dagql.NewID[*Env](envID)},
-				},
-			},
-			dagql.Selector{
-				Field: "workspace",
-			},
-		)
-		if err == nil {
-			return dagql.NewID[*Workspace](ws.ID()), nil
-		}
-		// fall through to currentWorkspace if env lookup fails
+	// Prefer the workspace from context, which is the host-side
+	// workspace propagated from the caller (e.g. LLM tool call).
+	if ws, ok := WorkspaceFromContext(ctx, dag); ok {
+		return dagql.NewID[*Workspace](ws.ID()), nil
 	}
 
 	var ws dagql.ObjectResult[*Workspace]

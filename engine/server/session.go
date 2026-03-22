@@ -629,18 +629,16 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create buildkit client: %w", err)
 	}
 
-	var env *call.ID
 	if opts.EncodedFunctionCall != nil {
 		var fnCall core.FunctionCall
 		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
 			return fmt.Errorf("failed to decode function call: %w", err)
 		}
 		client.fnCall = &fnCall
-		env = fnCall.EnvID
 	}
 
 	// setup the graphql server + module/function state for the client
-	client.dagqlRoot = core.NewRoot(srv, env)
+	client.dagqlRoot = core.NewRoot(srv)
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 

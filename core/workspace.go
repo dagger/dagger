@@ -1,6 +1,34 @@
 package core
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	"context"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/vektah/gqlparser/v2/ast"
+)
+
+type workspaceKey struct{}
+
+// WorkspaceIDToContext stores a workspace ID in the context, allowing
+// module function calls to resolve workspace arguments against the
+// caller's workspace rather than the module container's filesystem.
+func WorkspaceIDToContext(ctx context.Context, wsID *call.ID) context.Context {
+	return context.WithValue(ctx, workspaceKey{}, wsID)
+}
+
+// WorkspaceFromContext retrieves the workspace from context, if set.
+func WorkspaceFromContext(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Workspace], bool) {
+	wsID, ok := ctx.Value(workspaceKey{}).(*call.ID)
+	if !ok || wsID == nil {
+		return dagql.ObjectResult[*Workspace]{}, false
+	}
+	res, err := dagql.NewID[*Workspace](wsID).Load(ctx, srv)
+	if err != nil {
+		return dagql.ObjectResult[*Workspace]{}, false
+	}
+	return res, true
+}
 
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {

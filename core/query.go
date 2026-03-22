@@ -30,9 +30,6 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
-
-	// An Env value propagated to a module function call, i.e. from LLM.
-	CurrentEnv *call.ID
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -216,8 +213,8 @@ func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
 	return cache, nil
 }
 
-func NewRoot(srv Server, envID *call.ID) *Query {
-	return &Query{Server: srv, CurrentEnv: envID}
+func NewRoot(srv Server) *Query {
+	return &Query{Server: srv}
 }
 
 func (*Query) Type() *ast.Type {

@@ -1438,8 +1438,6 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 }
 
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
-	origEnv := llm.Env()
-
 	llm = llm.Clone()
 
 	b := backoff.NewExponentialBackOff()
@@ -1633,20 +1631,6 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				{
 					Name:  "object",
 					Value: ID{Inner: id},
-				},
-			},
-		})
-	}
-
-	// Persist any env changes
-	if llm.Env().ID() != nil && origEnv.ID() != nil &&
-		llm.Env().ID().Digest() != origEnv.ID().Digest() {
-		sels = append(sels, dagql.Selector{
-			Field: "withEnv",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "env",
-					Value: dagql.NewID[*Env](llm.Env().ID()),
 				},
 			},
 		})

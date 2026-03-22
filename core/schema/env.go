@@ -140,18 +140,11 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 }
 
 func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.Query, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, err
-	}
-	if query.CurrentEnv != nil {
-		return dagql.NewID[*core.Env](query.CurrentEnv).Load(ctx, s.srv)
-	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
 	}
-	mod, err := query.CurrentModule(ctx)
+	mod, err := parent.CurrentModule(ctx)
 	if err != nil {
 		return res, err
 	}

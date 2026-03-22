@@ -148,12 +148,6 @@ func formatResult(
 	val dagql.AnyResult,
 	moduleName string,
 ) (string, error) {
-	// Env return → update handled by caller, but check here for completeness
-	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
-		_ = newEnv
-		return "", nil
-	}
-
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
 		return summarizePatch(ctx, srv, changes)
 	}
