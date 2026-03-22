@@ -86,6 +86,9 @@ func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 }
 
 func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
+	if m.env.ID() == nil {
+		return nil, fmt.Errorf("MCP has no environment configured")
+	}
 	return m.env.Self().deps.Schema(ctx)
 }
 
