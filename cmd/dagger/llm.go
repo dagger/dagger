@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,7 +24,6 @@ import (
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 )
 
@@ -190,10 +188,6 @@ func (s *LLMSession) Fork() *LLMSession {
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
-	if err := s.syncVarsToLLM(); err != nil {
-		return s, err
-	}
-
 	resolvedModel, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
 		return nil, err
@@ -249,10 +243,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		if err != nil {
 			return s, fmt.Errorf("auto-compact: %w", err)
 		}
-	}
-
-	if err := s.syncVarsFromLLM(); err != nil {
-		return s, err
 	}
 
 	return s, nil
@@ -404,161 +394,6 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 	}
 
 	return s.llm, nil
-}
-
-func (s *LLMSession) syncVarsToLLM() error {
-	ctx := s.plumbingCtx
-
-	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
-	oldVars := s.syncedVars
-	s.syncedVars = make(map[string]digest.Digest)
-	maps.Copy(s.syncedVars, oldVars)
-
-	if value, ok := s.shell.runner.Vars[agentVar]; ok {
-		if key := GetStateKey(value.String()); key != "" {
-			st, err := s.shell.state.Load(key)
-			if err != nil {
-				return err
-			}
-			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
-			// from the agent var
-			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
-		}
-	}
-
-	syncedEnvQ := s.dag.QueryBuilder().
-		Select("loadEnvFromID").
-		Arg("id", s.llm.Env())
-
-	var changed bool
-	for name, value := range s.shell.runner.Vars {
-		if name == agentVar {
-			// handled separately
-			continue
-		}
-		if name == lastValueVar {
-			// don't sync the auto-last-value var back to the LLM
-			continue
-		}
-		if s.skipEnv[name] {
-			continue
-		}
-
-		if s.syncedVars[name] == hashutil.HashStrings(value.String()) {
-			continue
-		}
-
-		dbg.Printf("syncing var %q => llm env\n", name)
-
-		changed = true
-
-		if key := GetStateKey(value.String()); key != "" {
-			st, err := s.shell.state.Load(key)
-			if err != nil {
-				return err
-			}
-			q := st.QueryBuilder(s.dag)
-			modDef := s.shell.GetDef(st)
-			typeDef, err := st.GetTypeDef(modDef)
-			if err != nil {
-				return err
-			}
-			if typeDef.AsFunctionProvider() != nil {
-				var id string
-				if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
-					return err
-				}
-				digest, err := idDigest(id)
-				if err != nil {
-					return err
-				}
-				typeName := typeDef.Name()
-				syncedEnvQ = syncedEnvQ.
-					Select(fmt.Sprintf("with%sInput", typeName)).
-					Arg("name", name).
-					Arg("description", ""). // TODO
-					Arg("value", id)
-				s.syncedVars[name] = digest
-			}
-		} else {
-			s.syncedVars[name] = hashutil.HashStrings(value.String())
-			syncedEnvQ = syncedEnvQ.
-				Select("withStringInput").
-				Arg("name", name).
-				Arg("description", ""). // TODO
-				Arg("value", value.String())
-		}
-	}
-	if !changed {
-		return nil
-	}
-	var envID dagger.EnvID
-	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
-		return err
-	}
-	s.updateLLMAndAgentVar(s.llm.WithEnv(s.dag.LoadEnvFromID(envID)))
-	return nil
-}
-
-func (s *LLMSession) syncVarsFromLLM() error {
-	ctx := s.plumbingCtx
-
-	outputs, err := s.llm.Env().Outputs(ctx)
-	if err != nil {
-		return err
-	}
-
-	assign := func(bnd *dagger.Binding) error {
-		name, err := bnd.Name(ctx)
-		if err != nil {
-			return err
-		}
-		typeName, err := bnd.TypeName(ctx)
-		if err != nil {
-			return err
-		}
-		isNull, err := bnd.IsNull(ctx)
-		if err != nil {
-			return err
-		}
-		if isNull {
-			return nil
-		}
-		switch typeName {
-		case "", "Query", "Void":
-			return nil
-		case "String":
-			str, err := bnd.AsString(ctx)
-			if err != nil {
-				return err
-			}
-			s.assignShellString(ctx, name, str)
-			return nil
-		default:
-			var objID string
-			if err :=
-				s.dag.QueryBuilder().
-					Select("loadBindingFromID").
-					Arg("id", bnd).
-					Select("as" + typeName).
-					Select("id").
-					Bind(&objID).
-					Execute(ctx); err != nil {
-				return err
-			}
-			return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
-		}
-	}
-
-	// assign all outputs
-	for _, output := range outputs {
-		if err := assign(&output); err != nil {
-			return err
-		}
-	}
-
-	// assign last value
-	return assign(s.llm.BindResult(lastValueVar))
 }
 
 type dagqlObject interface {
