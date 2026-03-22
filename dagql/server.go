@@ -34,6 +34,7 @@ type Server struct {
 	root       AnyObjectResult
 	telemetry  AroundFunc
 	objects    map[string]ObjectType
+	interfaces map[string]*Interface
 	scalars    map[string]ScalarType
 	typeDefs   map[string]TypeDef
 	directives map[string]DirectiveSpec
@@ -141,6 +142,7 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 	srv := &Server{
 		Cache:         c,
 		objects:       map[string]ObjectType{},
+		interfaces:    map[string]*Interface{},
 		scalars:       map[string]ScalarType{},
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
@@ -377,6 +379,18 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
+
+	// Auto-implement the "Object" interface for any class that has IDs.
+	if _, hasID := class.IDType(); hasID {
+		if objIface, ok := s.interfaces["Object"]; ok {
+			if objIface.Satisfies(class, "") {
+				if impl, ok := class.(InterfaceImplementor); ok {
+					impl.ImplementInterface(objIface)
+				}
+			}
+		}
+	}
+
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
 
@@ -420,6 +434,30 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	}
 
 	return class
+}
+
+// InstallInterface installs the given Interface type into the schema.
+// If an interface with the same name is already installed, it is returned.
+func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	if existing, ok := s.interfaces[iface.TypeName()]; ok {
+		return existing
+	}
+	if len(directives) > 0 {
+		iface.directives = append(iface.directives, directives...)
+	}
+	s.interfaces[iface.TypeName()] = iface
+	s.invalidateSchemaCache()
+	return iface
+}
+
+// InterfaceType returns the Interface with the given name, if it exists.
+func (s *Server) InterfaceType(name string) (*Interface, bool) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	t, ok := s.interfaces[name]
+	return t, ok
 }
 
 // InstallScalar installs the given Scalar type into the schema, or returns the
@@ -518,6 +556,17 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
+
+			// Also register this object as a possible type for each interface it
+			// declares via def.Interfaces.
+			for _, ifaceName := range def.Interfaces {
+				schema.AddPossibleType(ifaceName, def)
+			}
+		})
+		// Emit interface definitions.
+		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
+			def := iface.Definition(view)
+			schema.AddTypes(def)
 		})
 		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)
@@ -1187,6 +1236,29 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 
+// typeConditionMatches returns true if the given type condition (from a
+// fragment spread or inline fragment) matches the given object type name.
+//
+// A match occurs if:
+// - The condition is empty (unconditional).
+// - The condition is the exact object type name.
+// - The condition names an interface that the object type implements.
+func (s *Server) typeConditionMatches(condition string, objectTypeName string) bool {
+	if condition == "" {
+		return true
+	}
+	if condition == objectTypeName {
+		return true
+	}
+	// Check if condition names an interface that this object implements.
+	if iface, ok := s.interfaces[condition]; ok {
+		if _, implements := iface.Implementors()[objectTypeName]; implements {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
@@ -1221,12 +1293,27 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			if fragment == nil {
 				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
 			}
-			if len(fragment.SelectionSet) > 0 {
-				subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
-				if err != nil {
-					return nil, err
+			// Check type condition: only include if the fragment's type matches
+			// the current object type (or is empty / matches an interface).
+			if s.typeConditionMatches(fragment.TypeCondition, self.Name()) {
+				if len(fragment.SelectionSet) > 0 {
+					subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
+					if err != nil {
+						return nil, err
+					}
+					sels = append(sels, subsels...)
 				}
-				sels = append(sels, subsels...)
+			}
+		case *ast.InlineFragment:
+			// If the type condition matches (or is empty), recurse into its selections.
+			if x.TypeCondition == "" || s.typeConditionMatches(x.TypeCondition, self.Name()) {
+				if len(x.SelectionSet) > 0 {
+					subsels, err := s.parseASTSelections(ctx, gqlOp, self, x.SelectionSet)
+					if err != nil {
+						return nil, err
+					}
+					sels = append(sels, subsels...)
+				}
 			}
 		default:
 			return nil, fmt.Errorf("unknown field type: %T", x)
