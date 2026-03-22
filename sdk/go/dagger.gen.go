@@ -232,6 +232,9 @@ type HealthcheckConfigID string
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
+// A unique identifier for an object.
+type ID string
+
 // The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
 type InputTypeDefID string
 
@@ -384,7 +387,7 @@ type PortForward struct {
 type Address struct {
 	query *querybuilder.Selection
 
-	id    *AddressID
+	id    *ID
 	value *string
 }
 
@@ -498,13 +501,13 @@ func (r *Address) GitRepository() *GitRepository {
 }
 
 // A unique identifier for this Address.
-func (r *Address) ID(ctx context.Context) (AddressID, error) {
+func (r *Address) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response AddressID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -582,7 +585,7 @@ type Binding struct {
 
 	asString *string
 	digest   *string
-	id       *BindingID
+	id       *ID
 	isNull   *bool
 	name     *string
 	typeName *string
@@ -882,13 +885,13 @@ func (r *Binding) Digest(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Binding.
-func (r *Binding) ID(ctx context.Context) (BindingID, error) {
+func (r *Binding) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response BindingID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -964,7 +967,7 @@ func (r *Binding) TypeName(ctx context.Context) (string, error) {
 type CacheVolume struct {
 	query *querybuilder.Selection
 
-	id *CacheVolumeID
+	id *ID
 }
 
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
@@ -974,13 +977,13 @@ func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 }
 
 // A unique identifier for this CacheVolume.
-func (r *CacheVolume) ID(ctx context.Context) (CacheVolumeID, error) {
+func (r *CacheVolume) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CacheVolumeID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1018,7 +1021,7 @@ type Changeset struct {
 	query *querybuilder.Selection
 
 	export  *string
-	id      *ChangesetID
+	id      *ID
 	isEmpty *bool
 	sync    *ChangesetID
 }
@@ -1089,13 +1092,13 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 }
 
 // A unique identifier for this Changeset.
-func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
+func (r *Changeset) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ChangesetID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1243,7 +1246,7 @@ type Check struct {
 
 	completed   *bool
 	description *string
-	id          *CheckID
+	id          *ID
 	name        *string
 	passed      *bool
 	resultEmoji *string
@@ -1299,13 +1302,13 @@ func (r *Check) Error() *Error {
 }
 
 // A unique identifier for this Check.
-func (r *Check) ID(ctx context.Context) (CheckID, error) {
+func (r *Check) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CheckID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1408,7 +1411,7 @@ func (r *Check) Run() *Check {
 type CheckGroup struct {
 	query *querybuilder.Selection
 
-	id *CheckGroupID
+	id *ID
 }
 type WithCheckGroupFunc func(r *CheckGroup) *CheckGroup
 
@@ -1426,13 +1429,13 @@ func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
 }
 
 // A unique identifier for this CheckGroup.
-func (r *CheckGroup) ID(ctx context.Context) (CheckGroupID, error) {
+func (r *CheckGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CheckGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1472,7 +1475,7 @@ func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id CheckID
+		Id ID
 	}
 
 	convert := func(fields []list) []Check {
@@ -1520,7 +1523,7 @@ func (r *CheckGroup) Run() *CheckGroup {
 type Cloud struct {
 	query *querybuilder.Selection
 
-	id       *CloudID
+	id       *ID
 	traceURL *string
 }
 
@@ -1531,13 +1534,13 @@ func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 }
 
 // A unique identifier for this Cloud.
-func (r *Cloud) ID(ctx context.Context) (CloudID, error) {
+func (r *Cloud) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CloudID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1593,7 +1596,7 @@ type Container struct {
 	exitCode       *int
 	export         *string
 	exportImage    *Void
-	id             *ContainerID
+	id             *ID
 	imageRef       *string
 	label          *string
 	platform       *Platform
@@ -1807,7 +1810,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q = q.Select("id")
 
 	type envVariables struct {
-		Id EnvVariableID
+		Id ID
 	}
 
 	convert := func(fields []envVariables) []EnvVariable {
@@ -2013,7 +2016,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q = q.Select("id")
 
 	type exposedPorts struct {
-		Id PortID
+		Id ID
 	}
 
 	convert := func(fields []exposedPorts) []Port {
@@ -2074,13 +2077,13 @@ func (r *Container) From(address string) *Container {
 }
 
 // A unique identifier for this Container.
-func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+func (r *Container) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ContainerID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2170,7 +2173,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q = q.Select("id")
 
 	type labels struct {
-		Id LabelID
+		Id ID
 	}
 
 	convert := func(fields []labels) []Label {
@@ -3530,7 +3533,7 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 type CurrentModule struct {
 	query *querybuilder.Selection
 
-	id   *CurrentModuleID
+	id   *ID
 	name *string
 }
 
@@ -3547,7 +3550,7 @@ func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []Module {
@@ -3606,13 +3609,13 @@ func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *Generat
 }
 
 // A unique identifier for this CurrentModule.
-func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
+func (r *CurrentModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CurrentModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -3719,7 +3722,7 @@ type Directory struct {
 	exists *bool
 	export *string
 	findUp *string
-	id     *DirectoryID
+	id     *ID
 	name   *string
 	sync   *DirectoryID
 }
@@ -4072,13 +4075,13 @@ func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) 
 }
 
 // A unique identifier for this Directory.
-func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+func (r *Directory) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DirectoryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4200,7 +4203,7 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
@@ -4553,7 +4556,7 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 type Engine struct {
 	query *querybuilder.Selection
 
-	id   *EngineID
+	id   *ID
 	name *string
 }
 
@@ -4574,13 +4577,13 @@ func (r *Engine) Clients(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this Engine.
-func (r *Engine) ID(ctx context.Context) (EngineID, error) {
+func (r *Engine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4639,7 +4642,7 @@ func (r *Engine) Name(ctx context.Context) (string, error) {
 type EngineCache struct {
 	query *querybuilder.Selection
 
-	id            *EngineCacheID
+	id            *ID
 	maxUsedSpace  *int
 	minFreeSpace  *int
 	prune         *Void
@@ -4674,13 +4677,13 @@ func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntr
 }
 
 // A unique identifier for this EngineCache.
-func (r *EngineCache) ID(ctx context.Context) (EngineCacheID, error) {
+func (r *EngineCache) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4819,7 +4822,7 @@ type EngineCacheEntry struct {
 	createdTimeUnixNano       *int
 	description               *string
 	diskSpaceBytes            *int
-	id                        *EngineCacheEntryID
+	id                        *ID
 	mostRecentUseTimeUnixNano *int
 	recordType                *string
 }
@@ -4883,13 +4886,13 @@ func (r *EngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this EngineCacheEntry.
-func (r *EngineCacheEntry) ID(ctx context.Context) (EngineCacheEntryID, error) {
+func (r *EngineCacheEntry) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheEntryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4954,7 +4957,7 @@ type EngineCacheEntrySet struct {
 
 	diskSpaceBytes *int
 	entryCount     *int
-	id             *EngineCacheEntrySetID
+	id             *ID
 }
 
 func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
@@ -4983,7 +4986,7 @@ func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, 
 	q = q.Select("id")
 
 	type entries struct {
-		Id EngineCacheEntryID
+		Id ID
 	}
 
 	convert := func(fields []entries) []EngineCacheEntry {
@@ -5023,13 +5026,13 @@ func (r *EngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this EngineCacheEntrySet.
-func (r *EngineCacheEntrySet) ID(ctx context.Context) (EngineCacheEntrySetID, error) {
+func (r *EngineCacheEntrySet) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheEntrySetID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5067,7 +5070,7 @@ type EnumTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *EnumTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -5092,13 +5095,13 @@ func (r *EnumTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this EnumTypeDef.
-func (r *EnumTypeDef) ID(ctx context.Context) (EnumTypeDefID, error) {
+func (r *EnumTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnumTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5138,7 +5141,7 @@ func (r *EnumTypeDef) Members(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q = q.Select("id")
 
 	type members struct {
-		Id EnumValueTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []members) []EnumValueTypeDef {
@@ -5206,7 +5209,7 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q = q.Select("id")
 
 	type values struct {
-		Id EnumValueTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []values) []EnumValueTypeDef {
@@ -5238,7 +5241,7 @@ type EnumValueTypeDef struct {
 
 	deprecated  *string
 	description *string
-	id          *EnumValueTypeDefID
+	id          *ID
 	name        *string
 	value       *string
 }
@@ -5276,13 +5279,13 @@ func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this EnumValueTypeDef.
-func (r *EnumValueTypeDef) ID(ctx context.Context) (EnumValueTypeDefID, error) {
+func (r *EnumValueTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnumValueTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5353,7 +5356,7 @@ func (r *EnumValueTypeDef) Value(ctx context.Context) (string, error) {
 type Env struct {
 	query *querybuilder.Selection
 
-	id *EnvID
+	id *ID
 }
 type WithEnvFunc func(r *Env) *Env
 
@@ -5406,13 +5409,13 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 }
 
 // A unique identifier for this Env.
-func (r *Env) ID(ctx context.Context) (EnvID, error) {
+func (r *Env) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5462,7 +5465,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	q = q.Select("id")
 
 	type inputs struct {
-		Id BindingID
+		Id ID
 	}
 
 	convert := func(fields []inputs) []Binding {
@@ -5505,7 +5508,7 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	q = q.Select("id")
 
 	type outputs struct {
-		Id BindingID
+		Id ID
 	}
 
 	convert := func(fields []outputs) []Binding {
@@ -6323,7 +6326,7 @@ type EnvFile struct {
 
 	exists *bool
 	get    *string
-	id     *EnvFileID
+	id     *ID
 }
 type WithEnvFileFunc func(r *EnvFile) *EnvFile
 
@@ -6390,13 +6393,13 @@ func (r *EnvFile) Get(ctx context.Context, name string, opts ...EnvFileGetOpts) 
 }
 
 // A unique identifier for this EnvFile.
-func (r *EnvFile) ID(ctx context.Context) (EnvFileID, error) {
+func (r *EnvFile) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvFileID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6458,7 +6461,7 @@ func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) (
 	q = q.Select("id")
 
 	type variables struct {
-		Id EnvVariableID
+		Id ID
 	}
 
 	convert := func(fields []variables) []EnvVariable {
@@ -6509,7 +6512,7 @@ func (r *EnvFile) WithoutVariable(name string) *EnvFile {
 type EnvVariable struct {
 	query *querybuilder.Selection
 
-	id    *EnvVariableID
+	id    *ID
 	name  *string
 	value *string
 }
@@ -6521,13 +6524,13 @@ func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 }
 
 // A unique identifier for this EnvVariable.
-func (r *EnvVariable) ID(ctx context.Context) (EnvVariableID, error) {
+func (r *EnvVariable) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvVariableID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6589,7 +6592,7 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 type Error struct {
 	query *querybuilder.Selection
 
-	id      *ErrorID
+	id      *ID
 	message *string
 }
 type WithErrorFunc func(r *Error) *Error
@@ -6608,13 +6611,13 @@ func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 }
 
 // A unique identifier for this Error.
-func (r *Error) ID(ctx context.Context) (ErrorID, error) {
+func (r *Error) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ErrorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6667,7 +6670,7 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 	q = q.Select("id")
 
 	type values struct {
-		Id ErrorValueID
+		Id ID
 	}
 
 	convert := func(fields []values) []ErrorValue {
@@ -6707,7 +6710,7 @@ func (r *Error) WithValue(name string, value JSON) *Error {
 type ErrorValue struct {
 	query *querybuilder.Selection
 
-	id    *ErrorValueID
+	id    *ID
 	name  *string
 	value *JSON
 }
@@ -6719,13 +6722,13 @@ func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 }
 
 // A unique identifier for this ErrorValue.
-func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+func (r *ErrorValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ErrorValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6792,7 +6795,7 @@ type FieldTypeDef struct {
 
 	deprecated  *string
 	description *string
-	id          *FieldTypeDefID
+	id          *ID
 	name        *string
 }
 
@@ -6829,13 +6832,13 @@ func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this FieldTypeDef.
-func (r *FieldTypeDef) ID(ctx context.Context) (FieldTypeDefID, error) {
+func (r *FieldTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FieldTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6906,7 +6909,7 @@ type File struct {
 	contents *string
 	digest   *string
 	export   *string
-	id       *FileID
+	id       *ID
 	name     *string
 	size     *int
 	sync     *FileID
@@ -7050,13 +7053,13 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 }
 
 // A unique identifier for this File.
-func (r *File) ID(ctx context.Context) (FileID, error) {
+func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FileID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7178,7 +7181,7 @@ func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpt
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
@@ -7304,7 +7307,7 @@ type Function struct {
 
 	deprecated  *string
 	description *string
-	id          *FunctionID
+	id          *ID
 	name        *string
 }
 type WithFunctionFunc func(r *Function) *Function
@@ -7329,7 +7332,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	q = q.Select("id")
 
 	type args struct {
-		Id FunctionArgID
+		Id ID
 	}
 
 	convert := func(fields []args) []FunctionArg {
@@ -7382,13 +7385,13 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Function.
-func (r *Function) ID(ctx context.Context) (FunctionID, error) {
+func (r *Function) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7605,7 +7608,7 @@ type FunctionArg struct {
 	defaultValue   *JSON
 	deprecated     *string
 	description    *string
-	id             *FunctionArgID
+	id             *ID
 	name           *string
 }
 
@@ -7681,13 +7684,13 @@ func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this FunctionArg.
-func (r *FunctionArg) ID(ctx context.Context) (FunctionArgID, error) {
+func (r *FunctionArg) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionArgID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7765,7 +7768,7 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 type FunctionCall struct {
 	query *querybuilder.Selection
 
-	id          *FunctionCallID
+	id          *ID
 	name        *string
 	parent      *JSON
 	parentName  *string
@@ -7780,13 +7783,13 @@ func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall
 }
 
 // A unique identifier for this FunctionCall.
-func (r *FunctionCall) ID(ctx context.Context) (FunctionCallID, error) {
+func (r *FunctionCall) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionCallID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7826,7 +7829,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 	q = q.Select("id")
 
 	type inputArgs struct {
-		Id FunctionCallArgValueID
+		Id ID
 	}
 
 	convert := func(fields []inputArgs) []FunctionCallArgValue {
@@ -7918,7 +7921,7 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 type FunctionCallArgValue struct {
 	query *querybuilder.Selection
 
-	id    *FunctionCallArgValueID
+	id    *ID
 	name  *string
 	value *JSON
 }
@@ -7930,13 +7933,13 @@ func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *Func
 }
 
 // A unique identifier for this FunctionCallArgValue.
-func (r *FunctionCallArgValue) ID(ctx context.Context) (FunctionCallArgValueID, error) {
+func (r *FunctionCallArgValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionCallArgValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7999,7 +8002,7 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 type GeneratedCode struct {
 	query *querybuilder.Selection
 
-	id *GeneratedCodeID
+	id *ID
 }
 type WithGeneratedCodeFunc func(r *GeneratedCode) *GeneratedCode
 
@@ -8026,13 +8029,13 @@ func (r *GeneratedCode) Code() *Directory {
 }
 
 // A unique identifier for this GeneratedCode.
-func (r *GeneratedCode) ID(ctx context.Context) (GeneratedCodeID, error) {
+func (r *GeneratedCode) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratedCodeID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8110,7 +8113,7 @@ type Generator struct {
 
 	completed   *bool
 	description *string
-	id          *GeneratorID
+	id          *ID
 	isEmpty     *bool
 	name        *string
 }
@@ -8165,13 +8168,13 @@ func (r *Generator) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Generator.
-func (r *Generator) ID(ctx context.Context) (GeneratorID, error) {
+func (r *Generator) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8261,7 +8264,7 @@ func (r *Generator) Run() *Generator {
 type GeneratorGroup struct {
 	query *querybuilder.Selection
 
-	id      *GeneratorGroupID
+	id      *ID
 	isEmpty *bool
 }
 type WithGeneratorGroupFunc func(r *GeneratorGroup) *GeneratorGroup
@@ -8307,13 +8310,13 @@ func (r *GeneratorGroup) Changes(opts ...GeneratorGroupChangesOpts) *Changeset {
 }
 
 // A unique identifier for this GeneratorGroup.
-func (r *GeneratorGroup) ID(ctx context.Context) (GeneratorGroupID, error) {
+func (r *GeneratorGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratorGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8366,7 +8369,7 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id GeneratorID
+		Id ID
 	}
 
 	convert := func(fields []list) []Generator {
@@ -8406,7 +8409,7 @@ type GitRef struct {
 	query *querybuilder.Selection
 
 	commit *string
-	id     *GitRefID
+	id     *ID
 	ref    *string
 }
 type WithGitRefFunc func(r *GitRef) *GitRef
@@ -8449,13 +8452,13 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 }
 
 // A unique identifier for this GitRef.
-func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
+func (r *GitRef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitRefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8540,7 +8543,7 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 type GitRepository struct {
 	query *querybuilder.Selection
 
-	id  *GitRepositoryID
+	id  *ID
 	url *string
 }
 
@@ -8602,13 +8605,13 @@ func (r *GitRepository) Head() *GitRef {
 }
 
 // A unique identifier for this GitRepository.
-func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
+func (r *GitRepository) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitRepositoryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8718,7 +8721,7 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 type HealthcheckConfig struct {
 	query *querybuilder.Selection
 
-	id            *HealthcheckConfigID
+	id            *ID
 	interval      *string
 	retries       *int
 	shell         *bool
@@ -8744,13 +8747,13 @@ func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this HealthcheckConfig.
-func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+func (r *HealthcheckConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HealthcheckConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8866,7 +8869,7 @@ type Host struct {
 	query *querybuilder.Selection
 
 	findUp *string
-	id     *HostID
+	id     *ID
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
@@ -8973,13 +8976,13 @@ func (r *Host) FindUp(ctx context.Context, name string, opts ...HostFindUpOpts) 
 }
 
 // A unique identifier for this Host.
-func (r *Host) ID(ctx context.Context) (HostID, error) {
+func (r *Host) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HostID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9090,7 +9093,7 @@ func (r *Host) UnixSocket(path string) *Socket {
 type InputTypeDef struct {
 	query *querybuilder.Selection
 
-	id   *InputTypeDefID
+	id   *ID
 	name *string
 }
 
@@ -9107,7 +9110,7 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q = q.Select("id")
 
 	type fields struct {
-		Id FieldTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
@@ -9134,13 +9137,13 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 }
 
 // A unique identifier for this InputTypeDef.
-func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
+func (r *InputTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response InputTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9191,7 +9194,7 @@ type InterfaceTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *InterfaceTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -9222,7 +9225,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q = q.Select("id")
 
 	type functions struct {
-		Id FunctionID
+		Id ID
 	}
 
 	convert := func(fields []functions) []Function {
@@ -9249,13 +9252,13 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 }
 
 // A unique identifier for this InterfaceTypeDef.
-func (r *InterfaceTypeDef) ID(ctx context.Context) (InterfaceTypeDefID, error) {
+func (r *InterfaceTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response InterfaceTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9330,7 +9333,7 @@ type JSONValue struct {
 	asInteger *int
 	asString  *string
 	contents  *JSON
-	id        *JSONValueID
+	id        *ID
 }
 type WithJSONValueFunc func(r *JSONValue) *JSONValue
 
@@ -9354,7 +9357,7 @@ func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
 	q = q.Select("id")
 
 	type asArray struct {
-		Id JSONValueID
+		Id ID
 	}
 
 	convert := func(fields []asArray) []JSONValue {
@@ -9473,13 +9476,13 @@ func (r *JSONValue) Fields(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this JSONValue.
-func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
+func (r *JSONValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response JSONValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9569,7 +9572,7 @@ type LLM struct {
 
 	hasPrompt        *bool
 	historyJSON      *JSON
-	id               *LLMID
+	id               *ID
 	lastReply        *string
 	model            *string
 	provider         *string
@@ -9661,13 +9664,13 @@ func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 }
 
 // A unique identifier for this LLM.
-func (r *LLM) ID(ctx context.Context) (LLMID, error) {
+func (r *LLM) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9741,7 +9744,7 @@ func (r *LLM) Messages(ctx context.Context) ([]LLMMessage, error) {
 	q = q.Select("id")
 
 	type messages struct {
-		Id LLMMessageID
+		Id ID
 	}
 
 	convert := func(fields []messages) []LLMMessage {
@@ -9934,6 +9937,17 @@ func (r *LLM) WithModel(model string) *LLM {
 	}
 }
 
+// Track an object so the LLM can reference it in subsequent tool calls. Returns the tag assigned to the object, typically in TypeName#Number format.
+func (r *LLM) WithObject(tag string, object Object) *LLM {
+	q := r.query.Select("withObject")
+	q = q.Arg("tag", tag)
+	q = q.Arg("object", object)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // append a prompt to the llm context
 func (r *LLM) WithPrompt(prompt string) *LLM {
 	q := r.query.Select("withPrompt")
@@ -10077,7 +10091,7 @@ type LLMContentBlock struct {
 	arguments *JSON
 	callId    *string
 	errored   *bool
-	id        *LLMContentBlockID
+	id        *ID
 	kind      *LLMContentBlockKind
 	text      *string
 	toolName  *string
@@ -10126,13 +10140,13 @@ func (r *LLMContentBlock) Errored(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this LLMContentBlock.
-func (r *LLMContentBlock) ID(ctx context.Context) (LLMContentBlockID, error) {
+func (r *LLMContentBlock) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMContentBlockID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10204,7 +10218,7 @@ func (r *LLMContentBlock) ToolName(ctx context.Context) (string, error) {
 type LLMMessage struct {
 	query *querybuilder.Selection
 
-	id   *LLMMessageID
+	id   *ID
 	role *LLMMessageRole
 }
 
@@ -10220,7 +10234,7 @@ func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
 	q = q.Select("id")
 
 	type content struct {
-		Id LLMContentBlockID
+		Id ID
 	}
 
 	convert := func(fields []content) []LLMContentBlock {
@@ -10247,13 +10261,13 @@ func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
 }
 
 // A unique identifier for this LLMMessage.
-func (r *LLMMessage) ID(ctx context.Context) (LLMMessageID, error) {
+func (r *LLMMessage) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMMessageID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10303,7 +10317,7 @@ type LLMTokenUsage struct {
 
 	cachedTokenReads  *int
 	cachedTokenWrites *int
-	id                *LLMTokenUsageID
+	id                *ID
 	inputTokens       *int
 	outputTokens      *int
 	totalTokens       *int
@@ -10340,13 +10354,13 @@ func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this LLMTokenUsage.
-func (r *LLMTokenUsage) ID(ctx context.Context) (LLMTokenUsageID, error) {
+func (r *LLMTokenUsage) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMTokenUsageID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10418,7 +10432,7 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 type LLMToolCall struct {
 	query *querybuilder.Selection
 
-	id *LLMToolCallID
+	id *ID
 }
 
 func (r *LLMToolCall) WithGraphQLQuery(q *querybuilder.Selection) *LLMToolCall {
@@ -10428,13 +10442,13 @@ func (r *LLMToolCall) WithGraphQLQuery(q *querybuilder.Selection) *LLMToolCall {
 }
 
 // A unique identifier for this LLMToolCall.
-func (r *LLMToolCall) ID(ctx context.Context) (LLMToolCallID, error) {
+func (r *LLMToolCall) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMToolCallID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10471,7 +10485,7 @@ func (r *LLMToolCall) MarshalJSON() ([]byte, error) {
 type Label struct {
 	query *querybuilder.Selection
 
-	id    *LabelID
+	id    *ID
 	name  *string
 	value *string
 }
@@ -10483,13 +10497,13 @@ func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 }
 
 // A unique identifier for this Label.
-func (r *Label) ID(ctx context.Context) (LabelID, error) {
+func (r *Label) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LabelID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10552,7 +10566,7 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 type ListTypeDef struct {
 	query *querybuilder.Selection
 
-	id *ListTypeDefID
+	id *ID
 }
 
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
@@ -10571,13 +10585,13 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 }
 
 // A unique identifier for this ListTypeDef.
-func (r *ListTypeDef) ID(ctx context.Context) (ListTypeDefID, error) {
+func (r *ListTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ListTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10615,7 +10629,7 @@ type Module struct {
 	query *querybuilder.Selection
 
 	description *string
-	id          *ModuleID
+	id          *ID
 	name        *string
 	serve       *Void
 	sync        *ModuleID
@@ -10677,7 +10691,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []Module {
@@ -10723,7 +10737,7 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type enums struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []enums) []TypeDef {
@@ -10794,13 +10808,13 @@ func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
 }
 
 // A unique identifier for this Module.
-func (r *Module) ID(ctx context.Context) (ModuleID, error) {
+func (r *Module) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10840,7 +10854,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type interfaces struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []interfaces) []TypeDef {
@@ -10899,7 +10913,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type objects struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []objects) []TypeDef {
@@ -11047,7 +11061,7 @@ type ModuleConfigClient struct {
 
 	directory *string
 	generator *string
-	id        *ModuleConfigClientID
+	id        *ID
 }
 
 func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *ModuleConfigClient {
@@ -11083,13 +11097,13 @@ func (r *ModuleConfigClient) Generator(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ModuleConfigClient.
-func (r *ModuleConfigClient) ID(ctx context.Context) (ModuleConfigClientID, error) {
+func (r *ModuleConfigClient) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleConfigClientID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11134,7 +11148,7 @@ type ModuleSource struct {
 	engineVersion             *string
 	htmlRepoURL               *string
 	htmlURL                   *string
-	id                        *ModuleSourceID
+	id                        *ID
 	kind                      *ModuleSourceKind
 	localContextDirectoryPath *string
 	moduleName                *string
@@ -11226,7 +11240,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	q = q.Select("id")
 
 	type configClients struct {
-		Id ModuleConfigClientID
+		Id ID
 	}
 
 	convert := func(fields []configClients) []ModuleConfigClient {
@@ -11281,7 +11295,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleSourceID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []ModuleSource {
@@ -11388,13 +11402,13 @@ func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ModuleSource.
-func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
+func (r *ModuleSource) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleSourceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11586,7 +11600,7 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q = q.Select("id")
 
 	type toolchains struct {
-		Id ModuleSourceID
+		Id ID
 	}
 
 	convert := func(fields []toolchains) []ModuleSource {
@@ -11830,7 +11844,7 @@ type ObjectTypeDef struct {
 
 	deprecated       *string
 	description      *string
-	id               *ObjectTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -11883,7 +11897,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q = q.Select("id")
 
 	type fields struct {
-		Id FieldTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
@@ -11916,7 +11930,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q = q.Select("id")
 
 	type functions struct {
-		Id FunctionID
+		Id ID
 	}
 
 	convert := func(fields []functions) []Function {
@@ -11943,13 +11957,13 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 }
 
 // A unique identifier for this ObjectTypeDef.
-func (r *ObjectTypeDef) ID(ctx context.Context) (ObjectTypeDefID, error) {
+func (r *ObjectTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ObjectTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12023,7 +12037,7 @@ type Port struct {
 
 	description                 *string
 	experimentalSkipHealthcheck *bool
-	id                          *PortID
+	id                          *ID
 	port                        *int
 	protocol                    *NetworkProtocol
 }
@@ -12061,13 +12075,13 @@ func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this Port.
-func (r *Port) ID(ctx context.Context) (PortID, error) {
+func (r *Port) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PortID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12194,21 +12208,6 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
-// Returns the current environment
-//
-// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-//
-// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-//
-// Experimental: Programmatic env access is speculative and might be replaced.
-func (r *Client) CurrentEnv() *Env {
-	q := r.query.Select("currentEnv")
-
-	return &Env{
-		query: q,
-	}
-}
-
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -12236,7 +12235,7 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type currentTypeDefs struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []currentTypeDefs) []TypeDef {
@@ -13298,7 +13297,7 @@ type SDKConfig struct {
 	query *querybuilder.Selection
 
 	debug  *bool
-	id     *SDKConfigID
+	id     *ID
 	source *string
 }
 
@@ -13322,13 +13321,13 @@ func (r *SDKConfig) Debug(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this SDKConfig.
-func (r *SDKConfig) ID(ctx context.Context) (SDKConfigID, error) {
+func (r *SDKConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SDKConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13379,7 +13378,7 @@ type ScalarTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *ScalarTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -13404,13 +13403,13 @@ func (r *ScalarTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ScalarTypeDef.
-func (r *ScalarTypeDef) ID(ctx context.Context) (ScalarTypeDefID, error) {
+func (r *ScalarTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ScalarTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13474,7 +13473,7 @@ type SearchResult struct {
 
 	absoluteOffset *int
 	filePath       *string
-	id             *SearchResultID
+	id             *ID
 	lineNumber     *int
 	matchedLines   *string
 }
@@ -13512,13 +13511,13 @@ func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this SearchResult.
-func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+func (r *SearchResult) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SearchResultID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13584,7 +13583,7 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 	q = q.Select("id")
 
 	type submatches struct {
-		Id SearchSubmatchID
+		Id ID
 	}
 
 	convert := func(fields []submatches) []SearchSubmatch {
@@ -13614,7 +13613,7 @@ type SearchSubmatch struct {
 	query *querybuilder.Selection
 
 	end   *int
-	id    *SearchSubmatchID
+	id    *ID
 	start *int
 	text  *string
 }
@@ -13639,13 +13638,13 @@ func (r *SearchSubmatch) End(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this SearchSubmatch.
-func (r *SearchSubmatch) ID(ctx context.Context) (SearchSubmatchID, error) {
+func (r *SearchSubmatch) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SearchSubmatchID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13708,7 +13707,7 @@ func (r *SearchSubmatch) Text(ctx context.Context) (string, error) {
 type Secret struct {
 	query *querybuilder.Selection
 
-	id        *SecretID
+	id        *ID
 	name      *string
 	plaintext *string
 	uri       *string
@@ -13721,13 +13720,13 @@ func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 }
 
 // A unique identifier for this Secret.
-func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+func (r *Secret) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SecretID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13805,7 +13804,7 @@ type Service struct {
 
 	endpoint *string
 	hostname *string
-	id       *ServiceID
+	id       *ID
 	start    *ServiceID
 	stop     *ServiceID
 	sync     *ServiceID
@@ -13875,13 +13874,13 @@ func (r *Service) Hostname(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Service.
-func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+func (r *Service) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ServiceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13921,7 +13920,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 	q = q.Select("id")
 
 	type ports struct {
-		Id PortID
+		Id ID
 	}
 
 	convert := func(fields []ports) []Port {
@@ -14063,7 +14062,7 @@ func (r *Service) WithHostname(hostname string) *Service {
 type Socket struct {
 	query *querybuilder.Selection
 
-	id *SocketID
+	id *ID
 }
 
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
@@ -14073,13 +14072,13 @@ func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 }
 
 // A unique identifier for this Socket.
-func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+func (r *Socket) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SocketID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14118,7 +14117,7 @@ type SourceMap struct {
 
 	column   *int
 	filename *string
-	id       *SourceMapID
+	id       *ID
 	line     *int
 	module   *string
 	url      *string
@@ -14157,13 +14156,13 @@ func (r *SourceMap) Filename(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this SourceMap.
-func (r *SourceMap) ID(ctx context.Context) (SourceMapID, error) {
+func (r *SourceMap) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SourceMapID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14240,7 +14239,7 @@ type Stat struct {
 	query *querybuilder.Selection
 
 	fileType    *FileType
-	id          *StatID
+	id          *ID
 	name        *string
 	permissions *int
 	size        *int
@@ -14266,13 +14265,13 @@ func (r *Stat) FileType(ctx context.Context) (FileType, error) {
 }
 
 // A unique identifier for this Stat.
-func (r *Stat) ID(ctx context.Context) (StatID, error) {
+func (r *Stat) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response StatID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14348,7 +14347,7 @@ func (r *Stat) Size(ctx context.Context) (int, error) {
 type Terminal struct {
 	query *querybuilder.Selection
 
-	id   *TerminalID
+	id   *ID
 	sync *TerminalID
 }
 
@@ -14359,13 +14358,13 @@ func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 }
 
 // A unique identifier for this Terminal.
-func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+func (r *Terminal) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TerminalID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14417,7 +14416,7 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 type TypeDef struct {
 	query *querybuilder.Selection
 
-	id       *TypeDefID
+	id       *ID
 	kind     *TypeDefKind
 	optional *bool
 }
@@ -14491,13 +14490,13 @@ func (r *TypeDef) AsScalar() *ScalarTypeDef {
 }
 
 // A unique identifier for this TypeDef.
-func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
+func (r *TypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14844,7 +14843,7 @@ type Workspace struct {
 	commit   *string
 	exists   *bool
 	findUp   *string
-	id       *WorkspaceID
+	id       *ID
 	root     *string
 	stage    *bool
 }
@@ -15052,13 +15051,13 @@ func (r *Workspace) Glob(ctx context.Context, pattern string) ([]string, error) 
 }
 
 // A unique identifier for this Workspace.
-func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
+func (r *Workspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response WorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15182,7 +15181,7 @@ func (r *Workspace) Search(ctx context.Context, pattern string, opts ...Workspac
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
