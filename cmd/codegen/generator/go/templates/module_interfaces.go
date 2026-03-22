@@ -148,7 +148,6 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
 	code := Empty().
 		Add(spec.concreteStructDefCode()).Line().Line().
-		Add(spec.idDefCode()).Line().Line().
 		Add(spec.loadFromIDMethodCode()).Line().Line().
 		Add(spec.withGraphQLQuery()).Line().Line().
 		Add(spec.graphqlTypeMethodCode()).Line().Line().
@@ -191,15 +190,11 @@ func (spec *parsedIfaceType) concreteStructName() string {
 }
 
 func (spec *parsedIfaceType) idTypeName() string {
-	return spec.name + "ID"
+	return "dagger.ID"
 }
 
 func (spec *parsedIfaceType) loadFromIDMethodName() string {
 	return fmt.Sprintf("Load%sFromID", spec.name)
-}
-
-func (spec *parsedIfaceType) idDefCode() *Statement {
-	return Type().Id(spec.idTypeName()).String()
 }
 
 func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec) string {
@@ -220,7 +215,7 @@ The struct definition for the concrete implementation of the interface. e.g.:
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	return Type().Id(spec.concreteStructName()).StructFunc(func(g *Group) {
 		g.Id("query").Op("*").Qual("querybuilder", "Selection")
-		g.Id("id").Op("*").Id(spec.idTypeName())
+		g.Id("id").Op("*").Id("dagger").Dot("ID")
 
 		for _, method := range spec.methods {
 			if method.returnSpec == nil {
@@ -250,7 +245,7 @@ The Load*FromID method attached to the top-level Client struct for this interfac
 func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 	return Func().
 		Id(spec.loadFromIDMethodName()).
-		Params(Id("r").Op("*").Id("dagger").Dot("Client"), Id("id").Id(spec.idTypeName())).
+		Params(Id("r").Op("*").Id("dagger").Dot("Client"), Id("id").Id("dagger").Dot("ID")).
 		Params(Id(spec.name)).
 		BlockFunc(func(g *Group) {
 			g.Id("q").Op(":=").Id("querybuilder").Dot("Query").Call().Dot("Client").Call(Id("r").Dot("GraphQLClient").Call())
@@ -306,7 +301,7 @@ func (spec *parsedIfaceType) graphqlIDTypeMethodCode() *Statement {
 		Id("XXX_GraphQLIDType").
 		Params().
 		Params(Id("string")).
-		Block(Return(Lit(spec.idTypeName())))
+		Block(Return(Lit("ID")))
 }
 
 /*
@@ -379,7 +374,7 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 		Params(Id("bs").Id("[]byte")).
 		Params(Id("error")).
 		BlockFunc(func(g *Group) {
-			g.Var().Id("id").Id(spec.idTypeName())
+			g.Var().Id("id").Id("dagger").Dot("ID")
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 			g.Op("*").Id("r").Op("=").Op("*").Id(spec.loadFromIDMethodName()).
@@ -563,12 +558,10 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 					return results, nil
 			*/
 
-			// TODO: if iface is from this module then it needs namespacing...
-			idScalarName := typeName(underlyingReturnType) + "ID"
 			loadFromIDQueryName := loadFromIDGQLFieldName(underlyingReturnType)
 
 			s.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("id")).Line()
-			s.Var().Id("idResults").Index().Struct(Id("Id").Id(idScalarName)).Line()
+			s.Var().Id("idResults").Index().Struct(Id("Id").Id("dagger.ID")).Line()
 			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("idResults")).Line()
 
 			s.Id("err").Op(":=").Id("q").Dot("Execute").Call(Id("ctx")).Line()
