@@ -696,6 +696,9 @@ func (m *MCP) call(ctx context.Context,
 	//
 	var target dagql.AnyObjectResult
 	var err error
+	// When using autoConstruct with an existing base, we skip the constructor
+	// and call the method directly on the base object.
+	var skipAutoConstruct bool
 	if self, ok := args["self"]; ok && self != nil {
 		recv, ok := self.(string)
 		if !ok {
@@ -705,8 +708,20 @@ func (m *MCP) call(ctx context.Context,
 		if err != nil {
 			return "", err
 		}
-	} else if selfType == srv.Root().ObjectType().TypeName() || autoConstruct != nil {
-		// no self provided; either targeting Query, or auto-constructing from it
+	} else if autoConstruct != nil {
+		if latest := m.TypeCounts()[autoConstruct.Name]; latest > 0 {
+			// Use the latest object of this type instead of auto-constructing
+			// from scratch. This preserves state from previous builder-pattern
+			// calls (e.g. withBar then withBaz both accumulate on the same object).
+			target, err = m.GetObject(ctx, fmt.Sprintf("%s#%d", autoConstruct.Name, latest), autoConstruct.Name)
+			if err != nil {
+				return "", err
+			}
+			skipAutoConstruct = true
+		} else {
+			target = srv.Root()
+		}
+	} else if selfType == srv.Root().ObjectType().TypeName() {
 		target = srv.Root()
 	} else if latest := m.TypeCounts()[selfType]; latest > 0 {
 		// default to the newest object of this type
@@ -719,7 +734,11 @@ func (m *MCP) call(ctx context.Context,
 	}
 
 	doSelect := func(ctx context.Context) (dagql.AnyResult, error) {
-		sels, err := m.toolCallToSelections(ctx, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
+		ac := autoConstruct
+		if skipAutoConstruct {
+			ac = nil
+		}
+		sels, err := m.toolCallToSelections(ctx, srv, schema, target.ObjectType(), fieldDef, args, ac)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert call inputs: %w", err)
 		}
@@ -817,7 +836,18 @@ func (m *MCP) call(ctx context.Context,
 			if err != nil {
 				return "", err
 			}
-			return m.toolObjectResponse(ctx, srv, obj, m.IngestBy(unpinned, "", unpinned.Digest()))
+
+			llmID := m.IngestBy(unpinned, "", unpinned.Digest())
+
+			if obj.Type().Name() == autoConstruct.Name {
+				// The returned object is the same type as the auto-constructed
+				// type (builder pattern). It's now tracked as the latest object
+				// of this type and will be used as the receiver for future
+				// calls, so the LLM doesn't need to know about it.
+				return "", nil
+			}
+
+			return m.toolObjectResponse(ctx, srv, obj, llmID)
 		}
 	}
 

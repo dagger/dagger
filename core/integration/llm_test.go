@@ -786,6 +786,93 @@ func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
 	//	}
 }
 
+// TestAutoConstructBuilderPattern verifies that when a module tool returns
+// the same type as the auto-constructed type (builder pattern), subsequent
+// calls chain on the returned object instead of re-constructing from scratch.
+// For example, calling withName("Alice") then withGreeting("Hi") should
+// produce an object with both values, not just the last one.
+func (LLMSuite) TestAutoConstructBuilderPattern(ctx context.Context, t *testctx.T) {
+	configPath := llmconfig.ConfigFile
+	if !llmconfig.LLMConfigured() {
+		t.Skip("no LLM config found; pass --config-file to engine-dev test")
+	}
+	c := connect(ctx, t, dagger.WithConfigPath(configPath))
+
+	base := workspaceBase(t, c).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init"}).
+		With(initDangModule("builder-test", `
+type BuilderTest {
+  pub name: String! = ""
+  pub greeting: String! = ""
+
+  """
+  Set the name and return the updated builder.
+  """
+  pub withName(
+    """
+    The name to set.
+    """
+    name: String!,
+  ): BuilderTest! {
+    self.name = name
+    self
+  }
+
+  """
+  Set the greeting and return the updated builder.
+  """
+  pub withGreeting(
+    """
+    The greeting to set.
+    """
+    greeting: String!,
+  ): BuilderTest! {
+    self.greeting = greeting
+    self
+  }
+
+  """
+  Describe the current state. Returns a string combining the greeting and name.
+  """
+  pub describe(): String! {
+    greeting + ", " + name + "!"
+  }
+
+  """
+  Run an LLM session that exercises the builder pattern.
+  """
+  pub run(source: Workspace!): LLM! {
+    llm
+      .withEnv(env.withCurrentModule.withWorkspace(source))
+      .withPrompt(
+        "Do the following in order:\n" +
+        "1. Call the BuilderTest withName tool with name 'Alice'\n" +
+        "2. Call the BuilderTest withGreeting tool with greeting 'Hello'\n" +
+        "3. Call the BuilderTest describe tool\n" +
+        "Reply with ONLY the exact string returned by describe, nothing else.",
+      )
+      .loop
+  }
+}
+`)).
+		WithMountedSecret("/root/.config/dagger/config.toml",
+			c.Secret("file://"+configPath))
+
+	reply, err := base.With(daggerCall("builder-test", "run", "last-reply")).Stdout(ctx)
+	require.NoError(t, err)
+
+	reply = strings.TrimSpace(reply)
+	t.Logf("LLM reply: %s", reply)
+
+	// If builder chaining works, both withName and withGreeting accumulate on
+	// the same object, and describe() returns "Hello, Alice!".
+	// If it's broken (re-constructing each time), describe() would return
+	// ", Alice!" or "Hello, !" depending on which call was last.
+	require.Contains(t, reply, "Hello, Alice!",
+		"describe() should reflect both withName and withGreeting calls chained together")
+}
+
 // TestToolCallLogRollup verifies that logs written by engine operations
 // (e.g. Workspace.search writing grep-like output to span stdio) appear
 // in the LLM's tool call result, not just the tool function's own return
