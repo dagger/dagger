@@ -24,12 +24,6 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 			),
-		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient).
-			Doc(
-				`Returns the current environment`,
-				`When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.`,
-				`When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.`,
-			).Experimental("Programmatic env access is speculative and might be replaced."),
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
@@ -135,51 +129,6 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	}
 	if args.Writable {
 		env = env.Writable()
-	}
-	return env, nil
-}
-
-func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.Query, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, err
-	}
-	mod, err := parent.CurrentModule(ctx)
-	if err != nil {
-		return res, err
-	}
-	// Resolve the current workspace
-	var ws dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, dag.Root(), &ws, dagql.Selector{
-		Field: "currentWorkspace",
-		Args: []dagql.NamedInput{
-			{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
-		},
-	}); err != nil {
-		return res, fmt.Errorf("failed to get current workspace: %w", err)
-	}
-
-	var env dagql.ObjectResult[*core.Env]
-	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
-		Field: "env",
-	}, dagql.Selector{
-		Field: "withMainModule",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "module",
-				Value: dagql.NewID[*core.Module](mod.ResultID),
-			},
-		},
-	}, dagql.Selector{
-		Field: "withWorkspace",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "workspace",
-				Value: dagql.NewID[*core.Workspace](ws.ID()),
-			},
-		},
-	}); err != nil {
-		return res, fmt.Errorf("failed to create env: %w", err)
 	}
 	return env, nil
 }
