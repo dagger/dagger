@@ -203,8 +203,7 @@ var coreScalars = []ScalarType{
 	Int(0),
 	Float(0),
 	String(""),
-	// instead of a single ID type, each object has its own ID type
-	// ID{},
+	AnyID{},
 }
 
 var coreDirectives = []DirectiveSpec{

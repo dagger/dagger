@@ -83,10 +83,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 				Spec: &FieldSpec{
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
-					Type:        ID[T]{inner: opts.Typed},
+					Type:        AnyID{},
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
-					id := NewDynamicID[T](self.ID(), opts.Typed)
+					id := NewAnyID(self.ID())
 					return NewResultForCurrentID(ctx, id)
 				},
 			},

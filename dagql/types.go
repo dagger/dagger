@@ -716,6 +716,92 @@ func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
 	return json.Unmarshal(p, &s.Value)
 }
 
+// AnyID is the schema type for the generic `id: ID!` field on every object.
+// It is only used as the FieldSpec.Type for the `id` field; the actual runtime
+// value returned is still the typed ID[T]. Argument positions continue to use
+// the typed ID scalars (e.g. ContainerID).
+type AnyID struct {
+	id *call.ID
+}
+
+func NewAnyID(id *call.ID) AnyID {
+	return AnyID{id: id}
+}
+
+var _ Typed = AnyID{}
+
+func (AnyID) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ID",
+		NonNull:   true,
+	}
+}
+
+func (AnyID) TypeName() string {
+	return "ID"
+}
+
+func (AnyID) TypeDescription() string {
+	return "A unique identifier for an object."
+}
+
+var _ IDable = AnyID{}
+
+func (a AnyID) ID() *call.ID {
+	return a.id
+}
+
+var _ ScalarType = AnyID{}
+
+func (a AnyID) TypeDefinition(_ call.View) *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "ID",
+		Description: "A unique identifier for an object.",
+		BuiltIn:     true,
+	}
+}
+
+func (a AnyID) Decoder() InputDecoder {
+	return a
+}
+
+func (a AnyID) ToLiteral() call.Literal {
+	if a.id == nil {
+		return call.NewLiteralString("")
+	}
+	return call.NewLiteralID(a.id)
+}
+
+func (AnyID) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case *call.ID:
+		return AnyID{id: x}, nil
+	case string:
+		if x == "" {
+			return nil, nil
+		}
+		id := call.New()
+		if err := id.Decode(x); err != nil {
+			return nil, fmt.Errorf("invalid ID string: %w", err)
+		}
+		return AnyID{id: id}, nil
+	default:
+		return nil, fmt.Errorf("cannot convert %T to ID", val)
+	}
+}
+
+func (a AnyID) MarshalJSON() ([]byte, error) {
+	if a.id == nil {
+		return json.Marshal("")
+	}
+	enc, err := a.id.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(enc)
+}
+
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
 	id    *call.ID
