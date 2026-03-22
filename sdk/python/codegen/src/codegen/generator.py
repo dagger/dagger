@@ -917,6 +917,9 @@ class Object(ObjectHandler[GraphQLObjectType]):
             )
 
         # Generate as_foo() adapter methods for each implemented interface.
+        # These return self since Python is duck-typed — the same object
+        # can be used wherever the interface type is expected. The return
+        # type annotation documents the interface conformance.
         if hasattr(t, 'interfaces') and t.interfaces:
             for iface in t.interfaces:
                 iface_name = iface.name
@@ -929,6 +932,6 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
                         This is a local type conversion — no GraphQL call.
                         """
-                        return {iface_name}(self._ctx)
+                        return self
                     '''
                 )
