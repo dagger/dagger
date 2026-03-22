@@ -77,7 +77,7 @@ func (c *CommonFunctions) ObjectName(t *introspection.TypeRef) (string, error) {
 	switch t.Kind {
 	case introspection.TypeKindNonNull:
 		return c.ObjectName(t.OfType)
-	case introspection.TypeKindObject:
+	case introspection.TypeKindObject, introspection.TypeKindInterface:
 		return t.Name, nil
 	default:
 		return "", fmt.Errorf("unexpected type kind %s", t.Kind)
@@ -101,6 +101,9 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error)
 			}
 		}
 		return false, nil
+	case introspection.TypeKindInterface:
+		// Interfaces are always IDable (they represent objects that implement them).
+		return true, nil
 	default:
 		return false, nil
 	}
@@ -228,7 +231,7 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 			default:
 				return ff.FormatKindScalarDefault(representation, ref.Name, input), nil
 			}
-		case introspection.TypeKindObject:
+		case introspection.TypeKindObject, introspection.TypeKindInterface:
 			return ff.FormatKindObject(representation, ref.Name, input), nil
 		case introspection.TypeKindInputObject:
 			return ff.FormatKindInputObject(representation, ref.Name, input), nil

@@ -45,7 +45,7 @@ type ExecError = dagger.ExecError
 {{ .Description | Comment }}
 type {{ $name }} = dagger.{{ $name }}
 
-{{ if eq .Kind "OBJECT" }}
+{{ if or (eq .Kind "OBJECT") (eq .Kind "INTERFACE") }}
 {{- if . | IsSelfChainable }}
 type With{{ $name }}Func = dagger.With{{ $name }}Func
 {{ end }}

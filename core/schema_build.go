@@ -39,16 +39,17 @@ func buildSchema(
 
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
-	for _, m := range mods {
-		if err := m.mod.Install(ctx, dag, m.opts); err != nil {
-			return nil, fmt.Errorf("failed to get schema for module %q: %w", m.mod.Name(), err)
+	for _, mod := range d.Mods {
+		err := mod.Install(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
-		if userMod, ok := m.mod.(*Module); ok {
-			defs, err := m.mod.TypeDefs(ctx, dag)
+		if userMod, ok := mod.(*Module); ok {
+			defs, err := mod.TypeDefs(ctx, dag)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get type defs for module %q: %w", m.mod.Name(), err)
+				return nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}
 			for _, def := range defs {
 				switch def.Kind {
@@ -67,8 +68,7 @@ func buildSchema(
 		}
 	}
 
-	// Wire up interface extensions: for each object that implements an
-	// interface, add an asXxx conversion field.
+	// Register interface implementations and add deprecated asFoo fields.
 	for _, objType := range objects {
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
@@ -80,21 +80,48 @@ func buildSchema(
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
+
+			// Register first-class interface implementation in dagql.
+			// Only declare the relationship when the object's fields
+			// strictly match the interface's field types (name + exact type).
+			// Core's IsSubtypeOf allows covariant return types, but
+			// GraphQL schema validation requires exact matches, so we
+			// use dagql's Satisfies check for the schema declaration.
+			dagqlIface, ok := dag.InterfaceType(iface.Name)
+			if ok {
+				if impl, ok := class.(dagql.InterfaceImplementor); ok {
+					if dagqlIface.Satisfies(class, dag.View) {
+						impl.ImplementInterfaceUnchecked(dagqlIface)
+					}
+				}
+			}
+
+			// Add deprecated asFoo field for backward compatibility.
+			// These will be removed in a future release; clients should
+			// query interface fields directly on the concrete object.
 			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
+			deprecatedReason := fmt.Sprintf(
+				"Use %s directly instead of converting via %s.",
+				obj.Name, asIfaceFieldName,
+			)
 			class.Extend(
 				dagql.FieldSpec{
-					Name:           asIfaceFieldName,
-					Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:           &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:         ifaceType.mod.IDModule(),
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
+					Name:             asIfaceFieldName,
+					Description:      fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
+					Type:             &InterfaceAnnotatedValue{TypeDef: iface},
+					Module:           ifaceType.mod.IDModule(),
+					GetCacheConfig:   ifaceType.mod.CacheConfigForCall,
+					DeprecatedReason: &deprecatedReason,
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
 					if !ok {
 						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
 					}
-					return dagql.NewObjectResultForCurrentID(ctx, dag, &InterfaceAnnotatedValue{
+					// Return an InterfaceAnnotatedValue wrapping the concrete object.
+					// toSelectable handles the InterfaceValue unwrapping to reach
+					// the concrete class for field resolution.
+					return dagql.NewResultForCurrentID(ctx, &InterfaceAnnotatedValue{
 						TypeDef:        iface,
 						Fields:         inst.Fields,
 						UnderlyingType: objType,

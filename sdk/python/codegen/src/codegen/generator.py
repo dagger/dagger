@@ -35,6 +35,7 @@ from graphql import (
     GraphQLInputFieldMap,
     GraphQLInputObjectType,
     GraphQLInputType,
+    GraphQLInterfaceType,
     GraphQLLeafType,
     GraphQLList,
     GraphQLNamedType,
@@ -298,7 +299,7 @@ def is_input_object_type(t: GraphQLType) -> TypeGuard[GraphQLInputObjectType]:
 
 
 def is_object_type(t: GraphQLType) -> TypeGuard[GraphQLObjectType]:
-    return isinstance(t, GraphQLObjectType)
+    return isinstance(t, (GraphQLObjectType, GraphQLInterfaceType))
 
 
 def is_output_leaf_type(t: GraphQLOutputType) -> TypeGuard[GraphQLLeafType]:
