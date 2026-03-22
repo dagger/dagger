@@ -635,9 +635,6 @@ func (srv *Server) initializeDaggerClient(
 			return fmt.Errorf("failed to decode function call: %w", err)
 		}
 		client.fnCall = &fnCall
-		if fnCall.WorkspaceID != nil {
-			ctx = core.WorkspaceIDToContext(ctx, fnCall.WorkspaceID)
-		}
 	}
 
 	// setup the graphql server + module/function state for the client

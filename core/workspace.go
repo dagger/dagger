@@ -17,20 +17,10 @@ func WorkspaceIDToContext(ctx context.Context, wsID *call.ID) context.Context {
 	return context.WithValue(ctx, workspaceKey{}, wsID)
 }
 
-// WorkspaceIDFromContext retrieves the raw workspace call ID from context.
-func WorkspaceIDFromContext(ctx context.Context) (*call.ID, bool) {
+// WorkspaceFromContext retrieves the workspace from context, if set.
+func WorkspaceFromContext(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Workspace], bool) {
 	wsID, ok := ctx.Value(workspaceKey{}).(*call.ID)
 	if !ok || wsID == nil {
-		return nil, false
-	}
-	return wsID, true
-}
-
-// WorkspaceFromContext retrieves the workspace from context, loading it
-// from the given server.
-func WorkspaceFromContext(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Workspace], bool) {
-	wsID, ok := WorkspaceIDFromContext(ctx)
-	if !ok {
 		return dagql.ObjectResult[*Workspace]{}, false
 	}
 	res, err := dagql.NewID[*Workspace](wsID).Load(ctx, srv)
