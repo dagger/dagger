@@ -621,6 +621,15 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 			}),
 		}, true, nil
 
+	case introspection.TypeKindInterface:
+		return &core.TypeDef{
+			Kind:     core.TypeDefKindInterface,
+			Optional: !nonNull,
+			AsInterface: dagql.NonNull(&core.InterfaceTypeDef{
+				Name: introspectionType.Name,
+			}),
+		}, true, nil
+
 	case introspection.TypeKindInputObject:
 		return &core.TypeDef{
 			Kind:     core.TypeDefKindInput,

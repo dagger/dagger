@@ -225,7 +225,7 @@ func (r TypeRef) IsObject() bool {
 	if r.Kind == TypeKindNonNull {
 		ref = *ref.OfType
 	}
-	if ref.Kind == TypeKindObject {
+	if ref.Kind == TypeKindObject || ref.Kind == TypeKindInterface {
 		return true
 	}
 	return false

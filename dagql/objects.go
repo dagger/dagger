@@ -44,6 +44,11 @@ var _ ObjectType = Class[Typed]{}
 // interface conformance. Class[T] satisfies this interface.
 type InterfaceImplementor interface {
 	ImplementInterface(iface *Interface)
+	// ImplementInterfaceUnchecked declares interface conformance without
+	// performing dagql's structural Satisfies check. This is used when a
+	// higher-level layer (e.g. core's IsSubtypeOf) has already validated
+	// conformance with richer semantics (covariance, contravariance, etc.).
+	ImplementInterfaceUnchecked(iface *Interface)
 }
 
 var _ InterfaceImplementor = Class[Typed]{}
@@ -52,6 +57,19 @@ var _ InterfaceImplementor = Class[Typed]{}
 // InterfaceImplementor interface for use via the ObjectType interface.
 func (class Class[T]) ImplementInterface(iface *Interface) {
 	class.Implements(iface)
+}
+
+// ImplementInterfaceUnchecked declares interface conformance without performing
+// the dagql structural Satisfies check. Use this when a higher-level type system
+// (e.g. core's IsSubtypeOf) has already validated conformance.
+func (class Class[T]) ImplementInterfaceUnchecked(iface *Interface) {
+	class.fieldsL.Lock()
+	class.interfaces[iface.TypeName()] = iface
+	class.fieldsL.Unlock()
+	iface.addImplementor(class.TypeName())
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
 }
 
 type ClassOpts[T Typed] struct {
