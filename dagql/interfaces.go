@@ -272,3 +272,8 @@ func (iface *Interface) ImplementInterface(other *Interface) {
 func (iface *Interface) Implementors() map[string]struct{} {
 	return iface.implementors
 }
+
+// Interfaces returns the map of interfaces that this interface implements.
+func (iface *Interface) Interfaces() map[string]*Interface {
+	return iface.interfaces
+}

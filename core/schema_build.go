@@ -141,6 +141,10 @@ func buildSchema(
 				continue
 			}
 			// Check that all fields in B exist in A with compatible types.
+			// Avoid circular references: don't declare A implements B if B already implements A.
+			if _, alreadyReverse := dagqlIfaceB.Interfaces()[dagqlIfaceA.TypeName()]; alreadyReverse {
+				continue
+			}
 			if dagqlIfaceB.SatisfiedByInterface(dagqlIfaceA, dag.View) {
 				dagqlIfaceA.ImplementInterface(dagqlIfaceB)
 			}
