@@ -9938,7 +9938,7 @@ func (r *LLM) WithModel(model string) *LLM {
 }
 
 // Track an object so the LLM can reference it in subsequent tool calls. Returns the tag assigned to the object, typically in TypeName#Number format.
-func (r *LLM) WithObject(tag string, object Object) *LLM {
+func (r *LLM) WithObject(tag string, object ID) *LLM {
 	q := r.query.Select("withObject")
 	q = q.Arg("tag", tag)
 	q = q.Arg("object", object)
