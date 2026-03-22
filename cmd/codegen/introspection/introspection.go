@@ -103,14 +103,15 @@ const (
 )
 
 type Type struct {
-	Kind        TypeKind     `json:"kind"`
-	Name        string       `json:"name"`
-	Description string       `json:"description,omitempty"`
-	Fields      []*Field     `json:"fields,omitempty"`
-	InputFields []InputValue `json:"inputFields,omitempty"`
-	EnumValues  []EnumValue  `json:"enumValues,omitempty"`
-	Interfaces  []*Type      `json:"interfaces"`
-	Directives  Directives   `json:"directives"`
+	Kind          TypeKind     `json:"kind"`
+	Name          string       `json:"name"`
+	Description   string       `json:"description,omitempty"`
+	Fields        []*Field     `json:"fields,omitempty"`
+	InputFields   []InputValue `json:"inputFields,omitempty"`
+	EnumValues    []EnumValue  `json:"enumValues,omitempty"`
+	Interfaces    []*Type      `json:"interfaces"`
+	PossibleTypes []*Type      `json:"possibleTypes"`
+	Directives    Directives   `json:"directives"`
 }
 
 // Remove all occurrences of a type from the schema, including
