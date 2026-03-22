@@ -221,7 +221,7 @@ class Context:
         ctx = element_type(self)._select("id", [])  # noqa: SLF001
         ids = await ctx.execute(list[Response])
 
-        return [element_type(ctx.select_id(element_type.__name__, v.id)) for v in ids]
+        return [element_type(ctx.select_id(element_type._graphql_name(), v.id)) for v in ids]
 
     async def execute_sync(
         self,
@@ -232,7 +232,7 @@ class Context:
         ctx = obj._select(field_name, args)  # noqa: SLF001
         id_ = await ctx.execute(Scalar)
         cls = obj.__class__
-        ctx = self.select_id(cls.__name__, id_)
+        ctx = self.select_id(cls._graphql_name(), id_)
         return cls(ctx)
 
     @overload
