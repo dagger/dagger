@@ -125,6 +125,28 @@ func buildSchema(
 		}
 	}
 
+	// Register interface-implements-interface relationships (duck typing).
+	// If interface A structurally satisfies interface B, declare A implements B.
+	for _, ifaceTypeA := range ifaces {
+		dagqlIfaceA, okA := dag.InterfaceType(ifaceTypeA.typeDef.Name)
+		if !okA {
+			continue
+		}
+		for _, ifaceTypeB := range ifaces {
+			if ifaceTypeA.typeDef.Name == ifaceTypeB.typeDef.Name {
+				continue
+			}
+			dagqlIfaceB, okB := dag.InterfaceType(ifaceTypeB.typeDef.Name)
+			if !okB {
+				continue
+			}
+			// Check that all fields in B exist in A with compatible types.
+			if dagqlIfaceB.SatisfiedByInterface(dagqlIfaceA, dag.View) {
+				dagqlIfaceA.ImplementInterface(dagqlIfaceB)
+			}
+		}
+	}
+
 	return dag, nil
 }
 

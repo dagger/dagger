@@ -567,6 +567,11 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
 			def := iface.Definition(view)
 			schema.AddTypes(def)
+			// Register this interface as a possible type for each interface
+			// it implements (interface-extends-interface).
+			for _, ifaceName := range def.Interfaces {
+				schema.AddPossibleType(ifaceName, def)
+			}
 		})
 		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)

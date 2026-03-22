@@ -26,6 +26,10 @@ type Interface struct {
 	// implementors tracks which object types implement this interface.
 	// Keys are type names.
 	implementors map[string]struct{}
+
+	// interfaces tracks which other interfaces this interface implements.
+	// Keys are interface names.
+	interfaces map[string]*Interface
 }
 
 // InterfaceFieldSpec pairs a FieldSpec with optional view gating,
@@ -43,6 +47,7 @@ func NewInterface(name, description string) *Interface {
 		fields:       make(map[string][]*InterfaceFieldSpec),
 		fieldsL:      new(sync.Mutex),
 		implementors: make(map[string]struct{}),
+		interfaces:   make(map[string]*Interface),
 	}
 }
 
@@ -155,6 +160,12 @@ func (iface *Interface) Definition(view call.View) *ast.Definition {
 		def.Fields = append(def.Fields, spec.FieldDefinition(view))
 	}
 
+	// Declare which other interfaces this interface implements.
+	for ifaceName := range iface.interfaces {
+		def.Interfaces = append(def.Interfaces, ifaceName)
+	}
+	sort.Strings(def.Interfaces)
+
 	if len(iface.directives) > 0 {
 		def.Directives = append(def.Directives, iface.directives...)
 	}
@@ -184,6 +195,22 @@ func (iface *Interface) Satisfies(obj ObjectType, view call.View, checkers ...Im
 		}
 		// Note: argument contravariance checking is intentionally omitted for
 		// Phase 1. Core can still layer on its own semantic rules.
+	}
+	return true
+}
+
+// SatisfiedByInterface returns true if the given interface structurally satisfies
+// this interface — i.e. it has all fields required by this interface with
+// compatible return types (exact name match).
+func (iface *Interface) SatisfiedByInterface(other *Interface, view call.View) bool {
+	for _, ifaceField := range iface.FieldSpecs(view) {
+		otherField, ok := other.FieldSpec(ifaceField.Name, view)
+		if !ok {
+			return false
+		}
+		if !typeCompatible(ifaceField.Type.Type(), otherField.Type.Type(), nil) {
+			return false
+		}
 	}
 	return true
 }
@@ -230,6 +257,15 @@ func typeCompatible(ifaceType, objType *ast.Type, checker ImplementsChecker) boo
 // addImplementor records that an object type implements this interface.
 func (iface *Interface) addImplementor(typeName string) {
 	iface.implementors[typeName] = struct{}{}
+}
+
+// ImplementInterface declares that this interface implements another interface.
+// This is the interface-to-interface equivalent of Class.Implements.
+func (iface *Interface) ImplementInterface(other *Interface) {
+	iface.interfaces[other.TypeName()] = other
+	// Also register this interface as an implementor of the other interface,
+	// so possibleTypes includes it.
+	other.addImplementor(iface.name)
 }
 
 // Implementors returns the set of type names that implement this interface.
