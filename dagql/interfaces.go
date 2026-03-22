@@ -165,13 +165,21 @@ func (iface *Interface) Definition(view call.View) *ast.Definition {
 // Satisfies returns true if the given object type structurally satisfies this
 // interface — i.e. it has all fields required by the interface with compatible
 // return types.
-func (iface *Interface) Satisfies(obj ObjectType, view call.View) bool {
+//
+// The optional implementsChecker allows covariant return type checking: if the
+// interface declares `foo: SomeIface` and the object has `foo: ConcreteObj`,
+// the checker verifies that ConcreteObj implements SomeIface.
+func (iface *Interface) Satisfies(obj ObjectType, view call.View, checkers ...ImplementsChecker) bool {
+	var checker ImplementsChecker
+	if len(checkers) > 0 {
+		checker = checkers[0]
+	}
 	for _, ifaceField := range iface.FieldSpecs(view) {
 		objField, ok := obj.FieldSpec(ifaceField.Name, view)
 		if !ok {
 			return false
 		}
-		if !typeCompatible(ifaceField.Type.Type(), objField.Type.Type()) {
+		if !typeCompatible(ifaceField.Type.Type(), objField.Type.Type(), checker) {
 			return false
 		}
 		// Note: argument contravariance checking is intentionally omitted for
@@ -180,10 +188,17 @@ func (iface *Interface) Satisfies(obj ObjectType, view call.View) bool {
 	return true
 }
 
+// ImplementsChecker is a function that checks whether a type (by name) implements
+// a given interface (by name). This is used for covariant return type checking.
+type ImplementsChecker func(typeName, ifaceName string) bool
+
 // typeCompatible checks whether the object's return type is compatible with
-// the interface's declared return type. For now this is a simple name check
-// that also allows non-null object types to satisfy nullable interface types.
-func typeCompatible(ifaceType, objType *ast.Type) bool {
+// the interface's declared return type.
+//
+// With a checker, covariant return types are allowed: if the interface declares
+// return type "Foo" and the object returns "Bar", the check passes if Bar
+// implements Foo.
+func typeCompatible(ifaceType, objType *ast.Type, checker ImplementsChecker) bool {
 	if ifaceType == nil || objType == nil {
 		return ifaceType == objType
 	}
@@ -192,17 +207,24 @@ func typeCompatible(ifaceType, objType *ast.Type) bool {
 		if ifaceType.Elem == nil || objType.Elem == nil {
 			return false
 		}
-		return typeCompatible(ifaceType.Elem, objType.Elem)
+		return typeCompatible(ifaceType.Elem, objType.Elem, checker)
 	}
-	// named types: names must match
-	if ifaceType.NamedType != objType.NamedType {
-		return false
+	// named types: exact match
+	if ifaceType.NamedType == objType.NamedType {
+		// obj returning NonNull satisfies iface declaring nullable (covariant)
+		if ifaceType.NonNull && !objType.NonNull {
+			return false
+		}
+		return true
 	}
-	// obj returning NonNull satisfies iface declaring nullable (covariant)
-	if ifaceType.NonNull && !objType.NonNull {
-		return false
+	// covariant return: obj returns a subtype of the interface's declared type
+	if checker != nil && checker(objType.NamedType, ifaceType.NamedType) {
+		if ifaceType.NonNull && !objType.NonNull {
+			return false
+		}
+		return true
 	}
-	return true
+	return false
 }
 
 // addImplementor records that an object type implements this interface.

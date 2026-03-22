@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
@@ -48,6 +49,14 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
 	if obj, ok := strings.CutSuffix(refName, "ID"); input && ok && obj != "" {
+		// Check if the object type is an interface. If so, the Go type
+		// is a Go interface (not a struct), so we don't add a pointer prefix.
+		if schema := generator.GetSchema(); schema != nil {
+			if schemaType := schema.Types.Get(obj); schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
+				representation += f.scope + formatName(obj)
+				return representation
+			}
+		}
 		representation += "*" + f.scope + formatName(obj)
 	} else {
 		representation += f.scope + formatName(refName)

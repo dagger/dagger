@@ -153,7 +153,7 @@ func (e *ExecError) Unwrap() error {
 {{ range .Types }}
 {{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "OBJECT" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
-{{ if eq .Kind "INTERFACE" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "INTERFACE" }}{{ template "_types/interface.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "INPUT_OBJECT" }}{{ template "_types/input.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "ENUM" }}{{ template "_types/enum.go.tmpl" . }}{{ end }}
 {{ end }}

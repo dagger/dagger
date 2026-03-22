@@ -132,12 +132,6 @@ type AnyObjectResult interface {
 	Select(context.Context, *Server, Selector) (AnyResult, error)
 }
 
-// InterfaceValue is a value that wraps some underlying object with a interface to that object's API. This type exists to support unwrapping it and getting the underlying object.
-type InterfaceValue interface {
-	// UnderlyingObject returns the underlying object of the InterfaceValue
-	UnderlyingObject() (Typed, error)
-}
-
 // PostCallable is a type that has a callback attached that needs to always run before returned to a caller
 // whether or not the type is being returned from cache or not
 type PostCallable interface {

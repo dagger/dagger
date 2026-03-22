@@ -77,6 +77,16 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ObjectName":                funcs.ObjectName,
 		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 
+		// interface support
+		"IsInterfaceType":         funcs.isInterfaceType,
+		"IsInterfaceRef":          funcs.isInterfaceRef,
+		"IsListOfInterface":       funcs.isListOfInterface,
+		"InterfaceClientName":     funcs.interfaceClientName,
+		"PossibleTypes":           funcs.possibleTypes,
+		"ImplementedInterfaces":   funcs.implementedInterfaces,
+		"InterfaceMethodSignature": funcs.interfaceMethodSignature,
+		"InterfaceClientMethod":   funcs.interfaceClientMethod,
+
 		// go specific
 		"Comment":                 funcs.comment,
 		"FormatDeprecation":       funcs.formatDeprecation,
@@ -357,12 +367,165 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 		retType = "error"
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
+	case funcs.isInterfaceRef(f.TypeRef):
+		// Interface returns are Go interfaces, not pointers to structs
+		// retType stays as-is (no * prefix)
 	default:
 		retType = "*" + retType
 	}
 	signature += " " + retType
 
 	return signature, nil
+}
+
+// isInterfaceType returns true if the given introspection type is an INTERFACE.
+func (funcs goTemplateFuncs) isInterfaceType(t introspection.Type) bool {
+	return t.Kind == introspection.TypeKindInterface
+}
+
+// isInterfaceRef returns true if the given type ref points to a single INTERFACE kind
+// type (not a list of interfaces). Only unwraps NonNull wrappers.
+func (funcs goTemplateFuncs) isInterfaceRef(t *introspection.TypeRef) bool {
+	ref := t
+	for ref != nil {
+		switch ref.Kind {
+		case introspection.TypeKindNonNull:
+			ref = ref.OfType
+		case introspection.TypeKindInterface:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// isListOfInterface returns true if the type ref is a list whose element is an interface.
+func (funcs goTemplateFuncs) isListOfInterface(t *introspection.TypeRef) bool {
+	// Unwrap NonNull -> List -> NonNull? -> Interface
+	ref := t
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindList {
+		return false
+	}
+	ref = ref.OfType
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	return ref.Kind == introspection.TypeKindInterface
+}
+
+// interfaceClientName returns the query-builder struct name for an interface.
+// e.g. "Duck" -> "DuckClient"
+func (funcs goTemplateFuncs) interfaceClientName(name string) string {
+	return formatName(name) + "Client"
+}
+
+// possibleTypes returns the possible concrete types for an interface type.
+func (funcs goTemplateFuncs) possibleTypes(t introspection.Type) []*introspection.Type {
+	return t.PossibleTypes
+}
+
+// implementedInterfaces returns the interfaces that an object type implements,
+// filtered to only include non-built-in interfaces (i.e. not "Object").
+func (funcs goTemplateFuncs) implementedInterfaces(t introspection.Type) []*introspection.Type {
+	var result []*introspection.Type
+	for _, iface := range t.Interfaces {
+		if iface.Name == "Object" {
+			continue
+		}
+		result = append(result, iface)
+	}
+	return result
+}
+
+// interfaceMethodSignature generates a Go interface method signature for a field.
+// e.g. "Quack(ctx context.Context) (string, error)"
+func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (string, error) {
+	sig := formatName(f.Name)
+
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		inType, err := funcs.FormatInputType(arg.TypeRef)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
+	}
+	sig += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
+	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		sig += " error"
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		sig += fmt.Sprintf(" (%s, error)", retType)
+	case funcs.isInterfaceRef(f.TypeRef):
+		sig += " " + retType
+	default:
+		sig += " *" + retType
+	}
+	return sig, nil
+}
+
+// interfaceClientMethod generates a method signature for the interface's
+// query-builder struct. e.g.:
+//
+//	func (r *duckClient) Quack(ctx context.Context) (string, error)
+func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspection.Field) (string, error) {
+	clientName := funcs.interfaceClientName(ifaceName)
+	sig := "func (r *" + clientName + ") " + formatName(f.Name)
+
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		inType, err := funcs.FormatInputType(arg.TypeRef)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
+	}
+	sig += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
+	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		sig += " error"
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		sig += fmt.Sprintf(" (%s, error)", retType)
+	case funcs.isInterfaceRef(f.TypeRef):
+		sig += " " + retType
+	default:
+		sig += " *" + retType
+	}
+	return sig, nil
 }
 
 // isPartial determines if we are in a first-pass or not

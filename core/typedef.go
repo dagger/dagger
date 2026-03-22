@@ -596,7 +596,7 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindObject:
 		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value}
 	case TypeDefKindInterface:
-		typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value}
+		typed = &interfaceTypedMarker{name: typeDef.AsInterface.Value.Name}
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindInput:

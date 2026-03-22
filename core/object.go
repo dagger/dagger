@@ -84,8 +84,6 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
 			return x.Self().Fields, nil
-		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-			return x.Self().Fields, nil
 		default:
 			return nil, fmt.Errorf("unexpected value type %T", x)
 		}
@@ -99,14 +97,11 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 		return content.CollectJSONable(nil)
 	}
 
-	var objFields map[string]any
-	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		objFields = obj.Fields
-	} else if iface, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		objFields = iface.Fields
-	} else {
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
+	objFields := obj.Fields
 
 	// Iterate fields in sorted order to produce a deterministic hash.
 	for _, k := range slices.Sorted(maps.Keys(objFields)) {

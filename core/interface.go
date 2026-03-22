@@ -124,34 +124,14 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		return content.CollectJSONable(nil)
 	}
 
-	if interfaceValue, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		mod, ok := interfaceValue.UnderlyingType.SourceMod().(*Module)
-		if !ok {
-			return fmt.Errorf("unexpected source mod type %T", interfaceValue.UnderlyingType.SourceMod())
-		}
-
-		obj, err := dagql.NewResultForID(&ModuleObject{
-			Module:  mod,
-			TypeDef: interfaceValue.UnderlyingType.TypeDef().AsObject.Value,
-			Fields:  interfaceValue.Fields,
-		}, value.ID())
-		if err != nil {
-			return fmt.Errorf("create module object from interface value: %w", err)
-		}
-
-		return interfaceValue.UnderlyingType.CollectContent(ctx, obj, content)
+	// Load the implementation via its ID to get the concrete type and
+	// delegate content collection to it.
+	loadedImpl, err := iface.loadImpl(ctx, value.ID())
+	if err != nil {
+		return fmt.Errorf("load interface implementation: %w", err)
 	}
 
-	if _, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		loadedImpl, err := iface.loadImpl(ctx, value.ID())
-		if err != nil {
-			return fmt.Errorf("load interface implementation: %w", err)
-		}
-
-		return loadedImpl.valType.CollectContent(ctx, loadedImpl.val, content)
-	}
-
-	return fmt.Errorf("expected *InterfaceAnnotatedValue, *ModuleObject, or nil, got %T (%s)", value, value.Type())
+	return loadedImpl.valType.CollectContent(ctx, loadedImpl.val, content)
 }
 
 func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -291,9 +271,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	}
 	dag.InstallScalar(idScalar)
 
-	// Use InterfaceAnnotatedValue as a Typed marker for the return type.
-	// Its Type() returns the interface name, which is what we need in the schema.
-	ifaceTyped := &InterfaceAnnotatedValue{TypeDef: iface.typeDef}
+	// Use a thin Typed marker for the return type of loadFooFromID.
+	// It just returns the interface name as the GraphQL type.
+	ifaceTyped := &interfaceTypedMarker{name: ifaceName}
 
 	// Install loadFooFromID to allow loading any ID that implements this interface.
 	dag.Root().ObjectType().Extend(
@@ -318,101 +298,17 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	return nil
 }
 
-func wrapIface(curID *call.ID, ifaceType *InterfaceType, underlyingType ModType, res dagql.AnyResult, srv *dagql.Server) (dagql.AnyResult, error) {
-	switch underlyingType := underlyingType.(type) {
-	case *InterfaceType, *ModuleObjectType:
-		switch wrappedRes := res.Unwrap().(type) {
-		case *ModuleObject:
-			return dagql.NewObjectResultForID(&InterfaceAnnotatedValue{
-				TypeDef:        ifaceType.typeDef,
-				IfaceType:      ifaceType,
-				Fields:         wrappedRes.Fields,
-				UnderlyingType: underlyingType,
-			}, srv, curID)
-
-		case *InterfaceAnnotatedValue:
-			return res, nil
-
-		default:
-			return nil, fmt.Errorf("unexpected return type %T for interface %s", wrappedRes, ifaceType.typeDef.Name)
-		}
-
-	case *ListType:
-		if res == nil {
-			return res, nil
-		}
-		enum, ok := res.Unwrap().(dagql.Enumerable)
-		if !ok {
-			return nil, fmt.Errorf("expected Enumerable return, got %T", res)
-		}
-		if enum.Len() == 0 {
-			return res, nil
-		}
-
-		ret := dagql.DynamicResultArrayOutput{}
-		for i := 1; i <= enum.Len(); i++ {
-			item, err := res.NthValue(i)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get item %d: %w", i, err)
-			}
-			if ret.Elem == nil { // set the return type
-				ret.Elem = item.Unwrap()
-			}
-			nthID := curID.SelectNth(i)
-			val, err := wrapIface(nthID, ifaceType, underlyingType.Underlying, item, srv)
-			if err != nil {
-				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
-			}
-			ret.Values = append(ret.Values, val)
-		}
-		return dagql.NewResultForID(&ret, curID)
-
-	default:
-		return res, nil
-	}
+// interfaceTypedMarker is a thin Typed wrapper used as the return type for
+// loadFooFromID fields. It just returns the interface name as the GraphQL type.
+type interfaceTypedMarker struct {
+	name string
 }
 
-type InterfaceAnnotatedValue struct {
-	TypeDef        *InterfaceTypeDef
-	IfaceType      *InterfaceType
-	Fields         map[string]any
-	UnderlyingType ModType
-}
+var _ dagql.Typed = (*interfaceTypedMarker)(nil)
 
-var _ dagql.InterfaceValue = (*InterfaceAnnotatedValue)(nil)
-
-func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
-	userModObjType, ok := iface.UnderlyingType.(*ModuleObjectType)
-	if !ok {
-		return nil, fmt.Errorf("unhandled underlying type %T for interface value %s", iface.UnderlyingType, iface.TypeDef.Name)
-	}
-	return &ModuleObject{
-		Module:  userModObjType.mod,
-		TypeDef: userModObjType.typeDef,
-		Fields:  iface.Fields,
-	}, nil
-}
-
-var _ dagql.Typed = (*InterfaceAnnotatedValue)(nil)
-
-func (iface *InterfaceAnnotatedValue) Type() *ast.Type {
+func (m *interfaceTypedMarker) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: iface.TypeDef.Name,
+		NamedType: m.name,
 		NonNull:   true,
 	}
-}
-
-func (iface *InterfaceAnnotatedValue) TypeDescription() string {
-	return iface.TypeDef.Description
-}
-
-func (iface *InterfaceAnnotatedValue) TypeDefinition(view call.View) *ast.Definition {
-	def := &ast.Definition{
-		Kind: ast.Object,
-		Name: iface.Type().Name(),
-	}
-	if iface.TypeDef.SourceMap.Valid {
-		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.Value.TypeDirective())
-	}
-	return def
 }

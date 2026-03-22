@@ -69,7 +69,7 @@ func buildSchema(
 		}
 	}
 
-	// Register interface implementations and add deprecated asFoo fields.
+	// Register interface implementations.
 	for _, objType := range objects {
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
@@ -82,48 +82,46 @@ func buildSchema(
 				continue
 			}
 
-			// Register first-class interface implementation in dagql.
-			// Only declare the relationship when the object's fields
-			// strictly match the interface's field types (name + exact type).
-			// Core's IsSubtypeOf allows covariant return types, but
-			// GraphQL schema validation requires exact matches, so we
-			// use dagql's Satisfies check for the schema declaration.
 			dagqlIface, ok := dag.InterfaceType(iface.Name)
 			if ok {
 				if impl, ok := class.(dagql.InterfaceImplementor); ok {
-					if dagqlIface.Satisfies(class, dag.View) {
+					checker := func(typeName, ifaceName string) bool {
+						// Check if typeName (an object) implements ifaceName (an interface).
+						for _, ot := range objects {
+							if ot.typeDef.Name == typeName {
+								for _, it := range ifaces {
+									if it.typeDef.Name == ifaceName {
+										return ot.typeDef.IsSubtypeOf(it.typeDef)
+									}
+								}
+							}
+						}
+						// Check if typeName is an interface that structurally satisfies ifaceName.
+						// This handles cases like ImplLocalOtherIface satisfying TestOtherIface.
+						typeIface, typeOK := dag.InterfaceType(typeName)
+						targetIface, targetOK := dag.InterfaceType(ifaceName)
+						if typeOK && targetOK {
+							// Check that all fields in targetIface exist in typeIface
+							// with compatible types (recursive checker).
+							for _, targetField := range targetIface.FieldSpecs(dag.View) {
+								typeField, ok := typeIface.FieldSpec(targetField.Name, dag.View)
+								if !ok {
+									return false
+								}
+								// Simple name match for now (exact types).
+								if targetField.Type.Type().Name() != typeField.Type.Type().Name() {
+									return false
+								}
+							}
+							return true
+						}
+						return false
+					}
+					if dagqlIface.Satisfies(class, dag.View, checker) {
 						impl.ImplementInterfaceUnchecked(dagqlIface)
 					}
 				}
 			}
-
-			// Add deprecated asFoo field for backward compatibility.
-			// These will be removed in a future release; clients should
-			// query interface fields directly on the concrete object.
-			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
-			deprecatedReason := fmt.Sprintf(
-				"Use %s directly instead of converting via %s.",
-				obj.Name, asIfaceFieldName,
-			)
-			class.Extend(
-				dagql.FieldSpec{
-					Name:             asIfaceFieldName,
-					Description:      fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:             &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:           ifaceType.mod.IDModule(),
-					GetCacheConfig:   ifaceType.mod.CacheConfigForCall,
-					DeprecatedReason: &deprecatedReason,
-				},
-				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-					// Return the concrete object directly. The schema declares the
-					// return type as the interface, but the runtime value is the
-					// concrete object — standard GraphQL interface semantics.
-					// The concrete object is already an AnyObjectResult, so
-					// toSelectable will recognize it without needing to look up
-					// cross-module types.
-					return self, nil
-				},
-			)
 		}
 	}
 

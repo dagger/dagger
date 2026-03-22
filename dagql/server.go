@@ -1232,26 +1232,6 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		return class.New(val)
 	}
 
-	// if this is an interface value, we may only know about the underlying object
-	// it's wrapping, check that
-	if iface, ok := UnwrapAs[InterfaceValue](val); ok {
-		obj, err := iface.UnderlyingObject()
-		if err != nil {
-			return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
-		}
-		className := obj.Type().Name()
-		class, ok = s.ObjectType(className)
-		if ok {
-			val, err = NewResultForID(obj, val.ID())
-			if err != nil {
-				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
-			}
-			return class.New(val)
-		}
-	}
-
-
-
 	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 
