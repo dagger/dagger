@@ -796,6 +796,23 @@ func (a AnyID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(enc)
 }
 
+// ExpectedTypeDirective creates an @expectedType(name: "Foo") directive
+// for annotating ID arguments with their expected type.
+func ExpectedTypeDirective(typeName string) *ast.Directive {
+	return &ast.Directive{
+		Name: "expectedType",
+		Arguments: ast.ArgumentList{
+			{
+				Name: "name",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  typeName,
+				},
+			},
+		},
+	}
+}
+
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
 	id    *call.ID
@@ -827,17 +844,25 @@ func IDTypeNameForRawType(t string) string {
 	return t + "ID"
 }
 
-// TypeName returns the name of the type with "ID" appended, e.g. `FooID`.
+// TypeName returns "ID" — all typed IDs share the same scalar in the schema.
+// The expected type is conveyed via @expectedType directives on arguments.
 func (i ID[T]) TypeName() string {
-	return IDTypeNameFor(i.inner)
+	return "ID"
+}
+
+// ExpectedTypeName returns the name of the expected type for this ID,
+// e.g. "Container" for ID[*Container]. Used for @expectedType directives
+// and runtime validation.
+func (i ID[T]) ExpectedTypeName() string {
+	return i.inner.Type().Name()
 }
 
 var _ Typed = ID[Typed]{}
 
-// Type returns the GraphQL type of the value.
+// Type returns the GraphQL type of the value — always `ID!`.
 func (i ID[T]) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: i.TypeName(),
+		NamedType: "ID",
 		NonNull:   true,
 	}
 }
@@ -851,24 +876,16 @@ func (i ID[T]) ID() *call.ID {
 
 var _ ScalarType = ID[Typed]{}
 
-// TypeDefinition returns the GraphQL definition of the type.
+// TypeDefinition returns the definition for the ID scalar.
+// Since all IDs share the same scalar type, this returns the
+// built-in ID definition.
 func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
-	typedef := &ast.Definition{
-		Kind: ast.Scalar,
-		Name: i.TypeName(),
-		Description: fmt.Sprintf(
-			"The `%s` scalar type represents an identifier for an object of type %s.",
-			i.TypeName(),
-			i.inner.Type().Name(),
-		),
-		BuiltIn: true,
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "ID",
+		Description: "A unique identifier for an object.",
+		BuiltIn:     true,
 	}
-
-	if i.sourceMap != nil {
-		typedef.Directives = append(typedef.Directives, i.sourceMap)
-	}
-
-	return typedef
 }
 
 // New creates a new ID with the given value.
@@ -929,16 +946,18 @@ func (i *ID[T]) Decode(str string) error {
 	if str == "" {
 		return fmt.Errorf("cannot decode empty string as ID")
 	}
-	expectedName := i.inner.Type().Name()
 	var idp call.ID
 	if err := idp.Decode(str); err != nil {
 		return err
 	}
-	if idp.Type() == nil {
-		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
-	}
-	if idp.Type().NamedType() != expectedName {
-		return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type().ToAST())
+	// Runtime type validation: check that the ID's embedded type matches
+	// the expected type. This catches programming errors where the wrong
+	// ID is passed.
+	expectedName := i.inner.Type().Name()
+	if expectedName != "" && idp.Type() != nil {
+		if idp.Type().NamedType() != expectedName {
+			return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type().ToAST())
+		}
 	}
 	i.id = &idp
 	return nil

@@ -65,6 +65,26 @@ func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName 
 	return representation
 }
 
+// FormatKindScalarID formats an ID argument using the @expectedType directive.
+// If expectedType is set, use the expected type name (as a pointer for objects,
+// or as-is for interfaces). Otherwise fall back to the scalar name.
+func (f *FormatTypeFunc) FormatKindScalarID(representation string, expectedType string) string {
+	if expectedType == "" {
+		// No expected type — use the raw ID type.
+		representation += f.scope + formatName("ID")
+		return representation
+	}
+	// Check if the expected type is an interface.
+	if schema := generator.GetSchema(); schema != nil {
+		if schemaType := schema.Types.Get(expectedType); schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
+			representation += f.scope + formatName(expectedType)
+			return representation
+		}
+	}
+	representation += "*" + f.scope + formatName(expectedType)
+	return representation
+}
+
 func (f *FormatTypeFunc) FormatKindObject(representation string, refName string, input bool) string {
 	representation += f.scope + formatName(refName)
 	return representation

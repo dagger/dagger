@@ -64,14 +64,14 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// serialization rather than as an ID (so that SDKs can decode them without
 	// needing to make calls to their own API).
 	switch x := value.(type) {
-	case DynamicID:
+	case dagql.AnyID:
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current query: %w", err)
 		}
 		deps, err := query.IDDeps(ctx, x.ID())
 		if err != nil {
-			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
+			return nil, fmt.Errorf("failed to get deps for ID: %w", err)
 		}
 		dag, err := deps.Server(ctx)
 		if err != nil {
@@ -79,7 +79,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 		}
 		val, err := dag.Load(ctx, x.ID())
 		if err != nil {
-			return nil, fmt.Errorf("load DynamicID: %w", err)
+			return nil, fmt.Errorf("load ID: %w", err)
 		}
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:

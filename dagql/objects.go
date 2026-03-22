@@ -1389,6 +1389,12 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
 			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
+		// Add @expectedType directive for ID-typed arguments.
+		if idTyped, ok := input.(interface{ ExpectedTypeName() string }); ok {
+			if expectedName := idTyped.ExpectedTypeName(); expectedName != "" {
+				spec.Directives = append(spec.Directives, ExpectedTypeDirective(expectedName))
+			}
+		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep
 			spec.DeprecatedReason = &reason

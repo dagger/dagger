@@ -1447,7 +1447,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 	}
 
 	switch value := value.(type) {
-	case DynamicID:
+	case dagql.AnyID:
 		return applyIgnore(value)
 	case dagql.ID[*Directory]:
 		return applyIgnore(value)
@@ -1465,7 +1465,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			return nil, nil
 		}
 		switch id := value.Value.(type) {
-		case DynamicID:
+		case dagql.AnyID:
 			return applyIgnore(id)
 		case dagql.ID[*Directory]:
 			return applyIgnore(id)

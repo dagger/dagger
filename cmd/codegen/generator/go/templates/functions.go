@@ -77,6 +77,9 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ObjectName":                funcs.ObjectName,
 		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 
+		// arg formatting with directive support
+		"FormatArgType":           funcs.formatArgType,
+
 		// interface support
 		"IsInterfaceType":         funcs.isInterfaceType,
 		"IsInterfaceRef":          funcs.isInterfaceRef,
@@ -189,7 +192,7 @@ func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error)
 	}
 
 	// Convert to a string representation to avoid code repetition.
-	representation, err := funcs.FormatInputType(t.TypeRef)
+	representation, err := funcs.formatArgType(t)
 	return strings.Index(representation, "*") == 0, err
 }
 
@@ -332,16 +335,21 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			continue
 		}
 
-		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
-		// scalar (DirectoryID) rather than an object (*Directory).
+		// For loadFooFromID on Query, the arg is `id: ID!` with @expectedType.
+		// Format it as the ID type alias (e.g. FooID) for the expected type.
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
-			outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
-			if err != nil {
-				return "", err
+			expectedType := arg.Directives.ExpectedType()
+			if expectedType != "" {
+				args = append(args, fmt.Sprintf("%s %s", arg.Name, formatName(expectedType)+"ID"))
+			} else {
+				outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
+				if err != nil {
+					return "", err
+				}
+				args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 			}
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 		} else {
-			inType, err := funcs.FormatInputType(arg.TypeRef, scopes...)
+			inType, err := funcs.formatArgType(arg, scopes...)
 			if err != nil {
 				return "", err
 			}
@@ -454,7 +462,7 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 		if funcs.isArgOptional(arg) {
 			continue
 		}
-		inType, err := funcs.FormatInputType(arg.TypeRef)
+		inType, err := funcs.formatArgType(arg)
 		if err != nil {
 			return "", err
 		}
@@ -499,7 +507,7 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 		if funcs.isArgOptional(arg) {
 			continue
 		}
-		inType, err := funcs.FormatInputType(arg.TypeRef)
+		inType, err := funcs.formatArgType(arg)
 		if err != nil {
 			return "", err
 		}
@@ -526,6 +534,33 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 		sig += " *" + retType
 	}
 	return sig, nil
+}
+
+// formatArgType formats an argument's type, using the @expectedType directive
+// when the arg is an ID scalar. This replaces the old FooID -> *Foo conversion.
+func (funcs goTemplateFuncs) formatArgType(arg introspection.InputValue, scopes ...string) (string, error) {
+	expectedType := arg.Directives.ExpectedType()
+	if expectedType != "" {
+		// This is an ID arg with an @expectedType directive.
+		// Format it as the expected type (pointer for objects, value for interfaces).
+		schema := generator.GetSchema()
+		if schema != nil {
+			schemaType := schema.Types.Get(expectedType)
+			if schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
+				scope := strings.Join(scopes, "")
+				if scope != "" {
+					scope += "."
+				}
+				return scope + formatName(expectedType), nil
+			}
+		}
+		scope := strings.Join(scopes, "")
+		if scope != "" {
+			scope += "."
+		}
+		return "*" + scope + formatName(expectedType), nil
+	}
+	return funcs.FormatInputType(arg.TypeRef, scopes...)
 }
 
 // isPartial determines if we are in a first-pass or not

@@ -139,7 +139,7 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value dagql.T
 		return nil, nil
 	}
 	switch value := value.(type) {
-	case DynamicID:
+	case dagql.AnyID:
 		return value.ID().Encode()
 	default:
 		return nil, fmt.Errorf("unexpected interface value type for conversion to sdk input %T", value)
@@ -253,6 +253,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				Type:             argMetadata.TypeDef.ToInput(),
 				DeprecatedReason: argMetadata.Deprecated,
 			}
+			// Add @expectedType directive for ID-typed arguments.
+			if argMetadata.TypeDef.Kind == TypeDefKindObject && argMetadata.TypeDef.AsObject.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(argMetadata.TypeDef.AsObject.Value.Name))
+			} else if argMetadata.TypeDef.Kind == TypeDefKindInterface && argMetadata.TypeDef.AsInterface.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, dagql.ExpectedTypeDirective(argMetadata.TypeDef.AsInterface.Value.Name))
+			}
 			if argMetadata.SourceMap.Valid {
 				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.Value.TypeDirective())
 			}
@@ -265,17 +271,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// Install the interface into the dagql server schema.
 	dag.InstallInterface(dagqlIface, installDirectives...)
 
-	// Register the DynamicID scalar so loadFooFromID args resolve correctly.
-	idScalar := DynamicID{
-		typeName: iface.typeDef.Name,
-	}
-	dag.InstallScalar(idScalar)
-
 	// Use a thin Typed marker for the return type of loadFooFromID.
 	// It just returns the interface name as the GraphQL type.
 	ifaceTyped := &interfaceTypedMarker{name: ifaceName}
 
 	// Install loadFooFromID to allow loading any ID that implements this interface.
+	// Use generic ID type with @expectedType directive.
 	dag.Root().ObjectType().Extend(
 		dagql.FieldSpec{
 			Name:        fmt.Sprintf("load%sFromID", ifaceName),
@@ -283,8 +284,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Type:        ifaceTyped,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
-					Name: "id",
-					Type: idScalar,
+					Name:       "id",
+					Type:       dagql.AnyID{},
+					Directives: []*ast.Directive{dagql.ExpectedTypeDirective(ifaceName)},
 				},
 			),
 			Module:     iface.mod.IDModule(),

@@ -369,6 +369,14 @@ func (t *Directives) SourceMap() *SourceMap {
 	}
 }
 
+func (t *Directives) ExpectedType() string {
+	d := t.Directive("expectedType")
+	if d == nil {
+		return ""
+	}
+	return fromJSON[string](d.Arg("name"))
+}
+
 func (t *Directives) EnumValue() string {
 	d := t.Directive("enumValue")
 	if d == nil {
