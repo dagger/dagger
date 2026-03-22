@@ -918,16 +918,14 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
         # Generate as_foo() adapter methods for each implemented interface.
         # These return self since Python is duck-typed — the same object
-        # can be used wherever the interface type is expected. The return
-        # type annotation documents the interface conformance.
+        # can be used wherever the interface type is expected.
         if hasattr(t, 'interfaces') and t.interfaces:
             for iface in t.interfaces:
                 iface_name = iface.name
                 method_name = format_name(f"as_{iface_name}")
-                iface_formatted = self.ctx.render_types(iface_name)
                 yield textwrap.dedent(
                     f'''
-                    def {method_name}(self) -> {iface_formatted}:
+                    def {method_name}(self) -> Self:
                         """Return this {t.name} as a {iface_name}.
 
                         This is a local type conversion — no GraphQL call.
