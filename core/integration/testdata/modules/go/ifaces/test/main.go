@@ -222,7 +222,7 @@ func (m *Test) DepWithIface(ctx context.Context, iface CustomIface) (*Test, erro
 	}
 
 	id, err := iface.(interface {
-		ID(context.Context) (CustomIfaceID, error)
+		ID(context.Context) (dagger.ID, error)
 	}).ID(ctx)
 	if err != nil {
 		return nil, err
