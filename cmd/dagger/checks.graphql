@@ -1,4 +1,4 @@
-query CheckGroupListDetails($id: CheckGroupID!) {
+query CheckGroupListDetails($id: ID!) {
   group: loadCheckGroupFromID(id: $id) {
     list {
       name
@@ -7,7 +7,7 @@ query CheckGroupListDetails($id: CheckGroupID!) {
   }
 }
 
-query CheckGroupRunStatuses($checkGroup: CheckGroupID!) {
+query CheckGroupRunStatuses($checkGroup: ID!) {
   checkGroup: loadCheckGroupFromID(id: $checkGroup) {
     run {
       list {

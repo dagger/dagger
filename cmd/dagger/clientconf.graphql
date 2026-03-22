@@ -1,4 +1,4 @@
-query ModuleClientConfig($source: ModuleSourceID!) {
+query ModuleClientConfig($source: ID!) {
   source: loadModuleSourceFromID(id: $source) {
     configClients {
       generator

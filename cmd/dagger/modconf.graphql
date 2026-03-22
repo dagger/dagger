@@ -1,4 +1,4 @@
-query ModuleConfig($source: ModuleSourceID!) {
+query ModuleConfig($source: ID!) {
   source: loadModuleSourceFromID(id: $source) {
     kind
     digest

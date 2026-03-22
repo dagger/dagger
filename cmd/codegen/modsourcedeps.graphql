@@ -1,4 +1,4 @@
-query ModuleSourceDependencies($source: ModuleSourceID!) {
+query ModuleSourceDependencies($source: ID!) {
   source: loadModuleSourceFromID(id: $source) {
     moduleOriginalName
     engineVersion
