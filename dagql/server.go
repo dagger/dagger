@@ -907,8 +907,15 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 }
 
 func (s *Server) isObjectType(typeName string) bool {
-	_, ok := s.ObjectType(typeName)
-	return ok
+	if _, ok := s.ObjectType(typeName); ok {
+		return true
+	}
+	// Interface types also need to be treated as "object-like" for selection purposes,
+	// since their values are concrete objects that support field selection.
+	if _, ok := s.interfaces[typeName]; ok {
+		return true
+	}
+	return false
 }
 
 // Attach an install hook
@@ -1202,6 +1209,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
+// ToSelectable converts an AnyResult to an AnyObjectResult if possible.
+func (s *Server) ToSelectable(val AnyResult) (AnyObjectResult, error) {
+	return s.toSelectable(val)
+}
+
 func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 	if sel, ok := val.(AnyObjectResult); ok {
 		// We always support returning something that's already Selectable, e.g. an
@@ -1233,6 +1245,8 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		}
 	}
 
+
+
 	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 }
 
@@ -1262,16 +1276,25 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
-	class := s.objects[self.Name()]
-	if class == nil {
-		return nil, fmt.Errorf("parseASTSelections: not an Object type: %q", self.Name())
+	// fieldParser is the common interface for parsing fields from objects and interfaces.
+	type fieldParser interface {
+		ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
+	}
+
+	var parser fieldParser
+	if class := s.objects[self.Name()]; class != nil {
+		parser = class
+	} else if iface, ok := s.interfaces[self.Name()]; ok {
+		parser = iface
+	} else {
+		return nil, fmt.Errorf("parseASTSelections: not an Object or Interface type: %q", self.Name())
 	}
 
 	sels := []Selection{}
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, s.View, x, vars)
+			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}

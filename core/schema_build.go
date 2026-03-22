@@ -39,8 +39,9 @@ func buildSchema(
 
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
-	for _, mod := range d.Mods {
-		err := mod.Install(ctx, dag)
+	for _, m := range mods {
+		mod := m.mod
+		err := mod.Install(ctx, dag, m.opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
@@ -114,19 +115,13 @@ func buildSchema(
 					DeprecatedReason: &deprecatedReason,
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
-					if !ok {
-						return nil, fmt.Errorf("expected %T to be a ModuleObject", self)
-					}
-					// Return an InterfaceAnnotatedValue wrapping the concrete object.
-					// toSelectable handles the InterfaceValue unwrapping to reach
-					// the concrete class for field resolution.
-					return dagql.NewResultForCurrentID(ctx, &InterfaceAnnotatedValue{
-						TypeDef:        iface,
-						Fields:         inst.Fields,
-						UnderlyingType: objType,
-						IfaceType:      ifaceType,
-					})
+					// Return the concrete object directly. The schema declares the
+					// return type as the interface, but the runtime value is the
+					// concrete object — standard GraphQL interface semantics.
+					// The concrete object is already an AnyObjectResult, so
+					// toSelectable will recognize it without needing to look up
+					// cross-module types.
+					return self, nil
 				},
 			)
 		}

@@ -621,6 +621,17 @@ func (r ObjectResult[T]) WithContentDigestAny(customDigest digest.Digest) AnyRes
 	}
 }
 
+func (r ObjectResult[T]) WithPostCall(fn PostCallFunc) AnyResult {
+	r.Result = r.Result.ResultWithPostCall(fn)
+	return r
+}
+
+func (r ObjectResult[T]) WithSafeToPersistCache(safe bool) AnyResult {
+	r.Result = r.Result.withDetachedPayload()
+	r.Result.shared.safeToPersistCache = safe
+	return r
+}
+
 func (r ObjectResult[T]) ObjectResultWithPostCall(fn PostCallFunc) ObjectResult[T] {
 	r.Result = r.Result.ResultWithPostCall(fn)
 	return r

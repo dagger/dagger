@@ -2955,11 +2955,14 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
 			}
 
-			resultInst, ok := result.(dagql.Result[*core.Module])
-			if !ok {
+			switch r := result.(type) {
+			case dagql.Result[*core.Module]:
+				initialized = r.Self()
+			case dagql.ObjectResult[*core.Module]:
+				initialized = r.Self()
+			default:
 				return fmt.Errorf("expected Module result, got %T", result)
 			}
-			initialized = resultInst.Self()
 			return nil
 		})()
 		if err != nil {
