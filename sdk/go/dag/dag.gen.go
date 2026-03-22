@@ -193,7 +193,7 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // A unique identifier for this Query.
-func ID(ctx context.Context) (dagger.QueryID, error) {
+func ID(ctx context.Context) (dagger.ID, error) {
 	client := initClient()
 	return client.ID(ctx)
 }
