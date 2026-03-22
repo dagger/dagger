@@ -22,7 +22,6 @@ func (v *Visitor) Run() []*Type {
 				"Int":      struct{}{},
 				"Boolean":  struct{}{},
 				"DateTime": struct{}{},
-				"ID":       struct{}{},
 			},
 		},
 		{
