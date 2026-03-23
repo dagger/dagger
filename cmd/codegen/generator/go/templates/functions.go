@@ -101,8 +101,16 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"Dependencies":            funcs.Dependencies,
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
 		"IsExtendableType":        funcs.isExtendableType,
+		"FullSchemaTypes":         funcs.fullSchemaTypes,
 		"json":                    funcs.json,
 	}
+}
+
+// fullSchemaTypes returns all types from the full schema, including dependency
+// types. Unlike .Types (which is bound to the filtered core schema), this
+// includes types contributed by dependency modules.
+func (funcs goTemplateFuncs) fullSchemaTypes() []*introspection.Type {
+	return funcs.fullSchema.Visit()
 }
 
 func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {

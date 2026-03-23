@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	telemetry "github.com/dagger/otel-go"
-	
+
 	"{{.PackageImport}}/internal/dagger"
 
 
@@ -39,7 +39,7 @@ type ExecError = dagger.ExecError
 
 {{/* module aliases have been removed in v0.12.0 */}}
 {{ if not (CheckVersionCompatibility "v0.12.0") }}
-{{ range .Types }}
+{{ range FullSchemaTypes }}
 {{ $name := .Name | FormatName }}
 
 {{ .Description | Comment }}
@@ -62,7 +62,7 @@ type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStru
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
 	{{ $field.Description | Comment }}
-	{{ $field.Name | FormatEnum "" }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum "" }}
+	{{ $field.Name | FormatEnum $enumName }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum $enumName }}
 	{{ end }}
 )
 {{- end }}
