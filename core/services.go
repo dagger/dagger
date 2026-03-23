@@ -383,7 +383,8 @@ func (ss *Services) stop(ctx context.Context, running *RunningService, force boo
 func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, timeout time.Duration) error {
 	// attempt to gentle stop within a timeout
 	cause := errors.New("service did not terminate")
-	ctx2, _ := context.WithTimeoutCause(ctx, timeout, cause)
+	ctx2, cancel := context.WithTimeoutCause(ctx, timeout, cause)
+	defer cancel()
 	err := running.Stop(ctx2, false)
 	if context.Cause(ctx2) == cause {
 		// service didn't terminate within timeout, so force it to stop
