@@ -63,6 +63,9 @@ const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
 	{{ $field.Description | Comment }}
 	{{ $field.Name | FormatEnum $enumName }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum $enumName }}
+	
+	{{ $field.Description | Comment }}
+	{{ $field.Name | FormatEnum "" }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum $enumName }}
 	{{ end }}
 )
 {{- end }}
