@@ -114,6 +114,14 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 
 // withMountedDirs mounts the before and after directories and calls fn with their paths.
 func (ch *Changeset) withMountedDirs(ctx context.Context, fn func(beforeDir, afterDir string) error) error {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	if err := cache.Evaluate(ctx, ch.Before, ch.After); err != nil {
+		return fmt.Errorf("evaluate changeset directories: %w", err)
+	}
+
 	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
 	if err != nil {
 		return fmt.Errorf("evaluate before: %w", err)
@@ -281,6 +289,14 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 }
 
 func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, ch.Before, ch.After); err != nil {
+		return nil, fmt.Errorf("evaluate changeset directories: %w", err)
+	}
+
 	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
 	if err != nil {
 		return nil, err
@@ -394,6 +410,13 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		},
 	); err != nil {
 		return fmt.Errorf("get changeset diff directory: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	if err := cache.Evaluate(ctx, dir); err != nil {
+		return fmt.Errorf("evaluate changeset diff directory: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
