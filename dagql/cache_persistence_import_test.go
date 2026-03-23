@@ -11,8 +11,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func newPersistCodecImportTestServer(cache Cache) *Server {
-	srv := NewServer(&persistCodecRoot{}, cache)
+func newPersistCodecImportTestServer(cache *Cache) *Server {
+	srv := NewServer(&persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	Fields[*persistCodecRoot]{
 		NodeFunc("obj", func(ctx context.Context, _ ObjectResult[*persistCodecRoot], _ struct{}) (ObjectResult[*persistCodecObj], error) {
@@ -30,7 +30,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 
 	cacheA, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cA := cacheA.(*cache)
+	cA := cacheA
 
 	key := cacheTestIntCall("persist-import-roundtrip")
 	resA, err := cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
@@ -47,7 +47,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 
 	cacheB, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cB := cacheB.(*cache)
+	cB := cacheB
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -72,7 +72,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 
 	cacheA, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cA := cacheA.(*cache)
+	cA := cacheA
 	srvA := newPersistCodecImportTestServer(cacheA)
 
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
@@ -80,6 +80,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
 		Field: "persist-import-object-root",
 	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
 	rootCtxA = srvToContext(rootCtxA, srvA)
 
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
@@ -91,7 +92,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 
 	cacheB, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cB := cacheB.(*cache)
+	cB := cacheB
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -102,6 +103,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
 		Field: "persist-import-object-root",
 	})
+	rootCtxB = ContextWithCache(rootCtxB, cacheB)
 	rootCtxB = srvToContext(rootCtxB, srvB)
 
 	resB, err := srvB.root.Select(rootCtxB, srvB, Selector{Field: "obj"})
@@ -122,7 +124,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 
 	cacheA, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cA := cacheA.(*cache)
+	cA := cacheA
 	srvA := newPersistCodecImportTestServer(cacheA)
 
 	rootCtxA := ContextWithCall(ctx, &ResultCall{
@@ -130,6 +132,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
 		Field: "persist-import-object-root",
 	})
+	rootCtxA = ContextWithCache(rootCtxA, cacheA)
 	rootCtxA = srvToContext(rootCtxA, srvA)
 
 	resA, err := srvA.root.Select(rootCtxA, srvA, Selector{Field: "obj"})
@@ -145,7 +148,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 
 	cacheB, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cB := cacheB.(*cache)
+	cB := cacheB
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -168,7 +171,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 
 	cacheA, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cA := cacheA.(*cache)
+	cA := cacheA
 
 	key := cacheTestIntCall("persist-import-unclean-wipe")
 	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
@@ -189,7 +192,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 
 	cacheB, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cB := cacheB.(*cache)
+	cB := cacheB
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -214,7 +217,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 
 	cacheA, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cA := cacheA.(*cache)
+	cA := cacheA
 
 	key := cacheTestIntCall("persist-import-corrupt-wipe")
 	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
@@ -237,7 +240,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 
 	cacheB, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	cB := cacheB.(*cache)
+	cB := cacheB
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()

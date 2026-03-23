@@ -24,7 +24,7 @@ func (srv *Server) EngineLocalCachePolicy() *dagqlCachePrunePolicy {
 
 // Return all the cache entries in the local cache. No support for filtering yet.
 func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
-	return engineCacheEntrySetFromUsage(srv.baseDagqlCache.UsageEntriesAll(ctx)), nil
+	return engineCacheEntrySetFromUsage(srv.engineCache.UsageEntriesAll(ctx)), nil
 }
 
 // Prune the local cache of releaseable entries. If UseDefaultPolicy is true,
@@ -43,7 +43,7 @@ func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context, opts core.E
 	if err != nil {
 		return nil, err
 	}
-	report, err := srv.baseDagqlCache.Prune(ctx, prunePolicies)
+	report, err := srv.engineCache.Prune(ctx, prunePolicies)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune dagql cache: %w", err)
 	}
@@ -215,7 +215,7 @@ func (srv *Server) gc() {
 		prunePolicies[i].CurrentFreeSpace = dstat.Free
 	}
 
-	report, err := srv.baseDagqlCache.Prune(context.Background(), prunePolicies)
+	report, err := srv.engineCache.Prune(context.Background(), prunePolicies)
 	if err != nil {
 		bklog.G(context.Background()).Errorf("gc error: %+v", err)
 	}

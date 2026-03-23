@@ -385,14 +385,14 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	}
 	sess.dagqlMu.Unlock()
 
-	beforeDagqlEntries := srv.baseDagqlCache.Size()
-	beforeDagqlStats := srv.baseDagqlCache.EntryStats()
-	if err := srv.baseDagqlCache.ReleaseSession(ctx, sess.sessionID); err != nil {
+	beforeDagqlEntries := srv.engineCache.Size()
+	beforeDagqlStats := srv.engineCache.EntryStats()
+	if err := srv.engineCache.ReleaseSession(ctx, sess.sessionID); err != nil {
 		slog.Error("error releasing dagql cache", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
 	}
-	afterDagqlEntries := srv.baseDagqlCache.Size()
-	afterDagqlStats := srv.baseDagqlCache.EntryStats()
+	afterDagqlEntries := srv.engineCache.Size()
+	afterDagqlStats := srv.engineCache.EntryStats()
 	if afterDagqlEntries != beforeDagqlEntries {
 		slog.Debug(
 			"released dagql cache refs for session",
@@ -468,7 +468,7 @@ func (srv *Server) initializeDaggerClient(
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		callID, err := srv.baseDagqlCache.RecipeIDForCall(opts.Call)
+		callID, err := srv.engineCache.RecipeIDForCall(opts.Call)
 		if err != nil {
 			return fmt.Errorf("rebuild nested client recipe ID: %w", err)
 		}
@@ -569,7 +569,7 @@ func (srv *Server) initializeDaggerClient(
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
-	client.dag = dagql.NewServer(client.dagqlRoot, srv.baseDagqlCache)
+	client.dag = dagql.NewServer(client.dagqlRoot)
 	client.dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: client.dag}
 	if err := coreMod.Install(ctx, client.dag); err != nil {
@@ -983,6 +983,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
 		"span", trace.SpanContextFromContext(ctx).SpanID().String(),
 	))
+	ctx = dagql.ContextWithCache(ctx, srv.engineCache)
 
 	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
 	// are checked by gqlgen's handler
@@ -1451,11 +1452,6 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 		return nil, err
 	}
 	return client.defaultDeps.Clone(), nil
-}
-
-// The DagQL query cache for the current client's session
-func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
-	return srv.baseDagqlCache, nil
 }
 
 func (srv *Server) TelemetrySeenKeyStore(ctx context.Context) (dagql.TelemetrySeenKeyStore, error) {

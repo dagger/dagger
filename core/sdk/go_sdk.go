@@ -298,7 +298,7 @@ func (sdk *goSDK) ModuleTypes(
 		Internal: true,
 	}
 	if execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest()
+		callDigest, err := execMD.Call.RecipeDigest(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
 		}
@@ -431,7 +431,11 @@ func (sdk *goSDK) ModuleTypes(
 	// generate-typedefs emits a handle-form module ID out of the withExec result.
 	// Retain that loaded module under the producing exec container so it cannot be
 	// pruned while the exec result that created it is still live.
-	if err := dag.Cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
+	}
+	if err := cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
 		return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
 	}
 

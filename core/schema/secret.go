@@ -137,7 +137,7 @@ func (s *secretSchema) secret(
 		i = i.WithContentDigest(digest.Digest("argon2:" + b64Key))
 	}
 
-	if err := secretStore.AddSecret(i); err != nil {
+	if err := secretStore.AddSecret(ctx, i); err != nil {
 		return i, fmt.Errorf("failed to add secret: %w", err)
 	}
 
@@ -205,7 +205,7 @@ func (s *secretSchema) setSecret(
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}
 	secret = secret.WithContentDigest(dgst)
-	if err := secretStore.AddSecret(secret); err != nil {
+	if err := secretStore.AddSecret(ctx, secret); err != nil {
 		return i, fmt.Errorf("failed to add secret: %w", err)
 	}
 
@@ -221,7 +221,7 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	secretDigest := core.SecretDigest(secret)
+	secretDigest := core.SecretDigest(ctx, secret)
 	if secretDigest == "" {
 		return "", fmt.Errorf("secret must have a digest")
 	}
@@ -242,7 +242,7 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	secretDigest := core.SecretDigest(secret)
+	secretDigest := core.SecretDigest(ctx, secret)
 	if secretDigest == "" {
 		return "", fmt.Errorf("secret must have a digest")
 	}
@@ -263,7 +263,7 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	secretDigest := core.SecretDigest(secret)
+	secretDigest := core.SecretDigest(ctx, secret)
 	if secretDigest == "" {
 		return "", fmt.Errorf("secret must have a digest")
 	}

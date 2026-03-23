@@ -43,7 +43,7 @@ func TestLlmConfig(t *testing.T) {
 
 	baseCache, err := dagql.NewCache(context.Background(), "")
 	assert.NoError(t, err)
-	srv := dagql.NewServer(q, baseCache)
+	srv := dagql.NewServer(q)
 
 	vars := map[string]string{
 		"file://.env":                    "",
@@ -77,7 +77,7 @@ func TestLlmConfig(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	ctx := llmTestContext()
+	ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
@@ -135,7 +135,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 
 			baseCache, err := dagql.NewCache(context.Background(), "")
 			assert.NoError(t, err)
-			srv := dagql.NewServer(q, baseCache)
+			srv := dagql.NewServer(q)
 			dagql.Fields[LLMTestQuery]{
 				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 					URI string
@@ -153,7 +153,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 				}),
 			}.Install(srv)
 
-			ctx := llmTestContext()
+			ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
 			r, err := NewLLMRouter(ctx, srv)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expected, r.OpenAIDisableStreaming)
@@ -166,7 +166,7 @@ func TestLlmConfigEnvFile(t *testing.T) {
 
 	baseCache, err := dagql.NewCache(context.Background(), "")
 	assert.NoError(t, err)
-	srv := dagql.NewServer(q, baseCache)
+	srv := dagql.NewServer(q)
 	dagql.Fields[LLMTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string
@@ -195,7 +195,7 @@ GEMINI_MODEL=gemini-model`, nil
 		}),
 	}.Install(srv)
 
-	ctx := llmTestContext()
+	ctx := dagql.ContextWithCache(llmTestContext(), baseCache)
 	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)

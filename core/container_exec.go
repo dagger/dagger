@@ -111,7 +111,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		execMD.Call = dagql.CurrentCall(ctx)
 	}
 	if execMD.CallDigest == "" && execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest()
+		callDigest, err := execMD.Call.RecipeDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("compute exec call digest: %w", err)
 		}
@@ -147,7 +147,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		if err != nil {
 			return nil, fmt.Errorf("failed to load content-scoped module from encoded module ID: %w", err)
 		}
-		callerModDigest, err = callerMod.ContentPreferredDigest()
+		callerModDigest, err = callerMod.ContentPreferredDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get content-scoped module digest: %w", err)
 		}
@@ -164,7 +164,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		if err != nil {
 			return nil, fmt.Errorf("failed to get implementation-scoped module from encoded module ID: %w", err)
 		}
-		callerModDigest, err = implementationScopedMod.ContentPreferredDigest()
+		callerModDigest, err = implementationScopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get implementation-scoped module digest from encoded module ID: %w", err)
 		}
@@ -173,7 +173,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		if err != nil {
 			return nil, fmt.Errorf("failed to get caller implementation-scoped module: %w", err)
 		}
-		callerModDigest, err = implementationScopedMod.ContentPreferredDigest()
+		callerModDigest, err = implementationScopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get caller implementation-scoped module digest: %w", err)
 		}
@@ -275,10 +275,10 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 	return pb.NetMode_UNSET, nil
 }
 
-func (container *Container) secretEnvs() (secretEnvs []*pb.SecretEnv, err error) {
+func (container *Container) secretEnvs(ctx context.Context) (secretEnvs []*pb.SecretEnv, err error) {
 	for _, secret := range container.Secrets {
 		if secret.EnvName != "" {
-			secretDigest := SecretDigest(secret.Secret)
+			secretDigest := SecretDigest(ctx, secret.Secret)
 			if secretDigest == "" {
 				return nil, fmt.Errorf("secret env %q digest: secret must have a digest", secret.EnvName)
 			}
@@ -591,7 +591,7 @@ func prepareMounts(
 		if secret.Owner != nil {
 			uid, gid = secret.Owner.UID, secret.Owner.GID
 		}
-		secretDigest := SecretDigest(secret.Secret)
+		secretDigest := SecretDigest(ctx, secret.Secret)
 		if secretDigest == "" {
 			return materialized, fmt.Errorf("secret mount %q digest: secret must have a digest", secret.MountPath)
 		}
@@ -1041,7 +1041,7 @@ func (container *Container) WithExec(
 			return fmt.Errorf("get current query: %w", err)
 		}
 
-		secretEnvs, err := container.secretEnvs()
+		secretEnvs, err := container.secretEnvs(ctx)
 		if err != nil {
 			return err
 		}
@@ -1350,7 +1350,7 @@ func (container *Container) WithExec(
 			if secret.Owner != nil {
 				uid, gid = secret.Owner.UID, secret.Owner.GID
 			}
-			secretDigest := SecretDigest(secret.Secret)
+			secretDigest := SecretDigest(ctx, secret.Secret)
 			if secretDigest == "" {
 				return failPrepare(fmt.Errorf("secret mount %q digest: secret must have a digest", secret.MountPath))
 			}
@@ -1522,7 +1522,7 @@ func (container *Container) WithExec(
 				var callID *call.ID
 				var callDig digest.Digest
 				if execMD.Call != nil {
-					dagqlCache, err := query.Cache(ctx)
+					dagqlCache, err := dagql.EngineCache(ctx)
 					if err != nil {
 						rerr = fmt.Errorf("get dagql cache for terminal exec error: %w", err)
 						return

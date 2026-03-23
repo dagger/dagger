@@ -380,7 +380,7 @@ func (svc *Service) startContainer(
 		if err != nil {
 			return nil, fmt.Errorf("failed to get implementation-scoped module: %w", err)
 		}
-		modDigest, err := implementationScopedMod.ContentPreferredDigest()
+		modDigest, err := implementationScopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get implementation-scoped module digest: %w", err)
 		}
@@ -488,7 +488,7 @@ func (svc *Service) startContainer(
 		resize = convertResizeChannel(ctx, sio.ResizeCh)
 	}
 
-	secretEnvs, err := ctr.secretEnvs()
+	secretEnvs, err := ctr.secretEnvs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -763,7 +763,7 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstreamDig, err := svc.TunnelUpstream.ContentPreferredDigest()
+	upstreamDig, err := svc.TunnelUpstream.ContentPreferredDigest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("upstream service digest: %w", err)
 	}

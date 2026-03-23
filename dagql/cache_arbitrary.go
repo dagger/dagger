@@ -18,8 +18,6 @@ type ArbitraryCachedResult interface {
 
 // sharedArbitraryResult is the in-memory-only cache entry for GetOrInitArbitrary values.
 type sharedArbitraryResult struct {
-	cache *cache
-
 	callKey string
 
 	value any
@@ -54,10 +52,9 @@ func (r arbitraryResult) HitCache() bool {
 
 type arbitraryCacheContextKey struct {
 	callKey string
-	cache   *cache
 }
 
-func (c *cache) GetOrInitArbitrary(
+func (c *Cache) GetOrInitArbitrary(
 	ctx context.Context,
 	sessionID string,
 	callKey string,
@@ -70,7 +67,7 @@ func (c *cache) GetOrInitArbitrary(
 		return nil, fmt.Errorf("cache call key is empty")
 	}
 
-	if ctx.Value(arbitraryCacheContextKey{callKey: callKey, cache: c}) != nil {
+	if ctx.Value(arbitraryCacheContextKey{callKey: callKey}) != nil {
 		return nil, ErrCacheRecursiveCall
 	}
 
@@ -98,11 +95,9 @@ func (c *cache) GetOrInitArbitrary(
 		return c.waitArbitrary(ctx, sessionID, res, false)
 	}
 
-	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey, cache: c}, struct{}{})
+	callCtx := context.WithValue(ctx, arbitraryCacheContextKey{callKey: callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	res := &sharedArbitraryResult{
-		cache: c,
-
 		callKey: callKey,
 
 		waitCh:  make(chan struct{}),
@@ -127,7 +122,7 @@ func (c *cache) GetOrInitArbitrary(
 	return c.waitArbitrary(ctx, sessionID, res, true)
 }
 
-func (c *cache) waitArbitrary(ctx context.Context, sessionID string, res *sharedArbitraryResult, isFirstCaller bool) (ArbitraryCachedResult, error) {
+func (c *Cache) waitArbitrary(ctx context.Context, sessionID string, res *sharedArbitraryResult, isFirstCaller bool) (ArbitraryCachedResult, error) {
 	var hitCache bool
 	var err error
 

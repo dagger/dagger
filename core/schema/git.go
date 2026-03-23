@@ -359,7 +359,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		if err != nil {
 			return inst, err
 		}
-		svcDig, err := svc.ContentPreferredDigest()
+		svcDig, err := svc.ContentPreferredDigest(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("experimental service host digest: %w", err)
 		}

@@ -765,11 +765,11 @@ func (container *Container) Build(
 	secretIDsByLLBID := make(map[string]*call.ID, len(secrets))
 	returnedSecretMounts := make([]ContainerSecret, 0, len(secrets))
 	for _, secret := range secrets {
-		secretRecipeID, err := secret.RecipeID()
+		secretRecipeID, err := secret.RecipeID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("get dockerBuild secret recipe ID: %w", err)
 		}
-		secretDgst := SecretDigest(secret)
+		secretDgst := SecretDigest(ctx, secret)
 		if secretDgst == "" {
 			return nil, fmt.Errorf("get dockerBuild secret digest: missing secret digest")
 		}
@@ -800,7 +800,7 @@ func (container *Container) Build(
 			if err != nil {
 				return nil, fmt.Errorf("get dockerBuild ssh socket: %w", err)
 			}
-			sshSocketRecipeID, err = socketRes.RecipeID()
+			sshSocketRecipeID, err = socketRes.RecipeID(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("get dockerBuild ssh socket recipe ID: %w", err)
 			}
@@ -2392,7 +2392,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
-	svcDig, err := svc.ContentPreferredDigest()
+	svcDig, err := svc.ContentPreferredDigest(ctx)
 	if err != nil {
 		return nil, err
 	}

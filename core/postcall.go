@@ -116,7 +116,7 @@ func ResourceTransferPostCall(
 		if !isNamed {
 			continue
 		}
-		secretDigest := SecretDigest(secret)
+		secretDigest := SecretDigest(ctx, secret)
 		plaintext, err := srcSecretStore.GetSecretPlaintext(ctx, secretDigest)
 		if err != nil {
 			// It's possible to hit secrets not found in the store when there's a cross-session cache hit
@@ -182,7 +182,7 @@ func ResourceTransferPostCall(
 				return fmt.Errorf("failed to get destination client secret store: %w", err)
 			}
 			for _, secret := range namedSecrets {
-				if err := destClientSecretStore.AddSecret(secret.inst); err != nil {
+				if err := destClientSecretStore.AddSecret(ctx, secret.inst); err != nil {
 					return fmt.Errorf("failed to add secret: %w", err)
 				}
 				// Ensure this secret is in the cache. This is necessary for now because of a corner case like:
@@ -193,8 +193,12 @@ func ResourceTransferPostCall(
 				// The longer term fix for this type of issue is to have more dagql awareness of edges between
 				// cache results such that a function call return value result inherently results in any referenced
 				// secrets also staying in cache.
-				secretDigest := SecretDigest(secret.inst)
-				_, err = destDag.Cache.AttachResult(ctx, clientMetadata.SessionID, destDag, secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall))
+				secretDigest := SecretDigest(ctx, secret.inst)
+				cache, err := dagql.EngineCache(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get engine cache for secret post-call: %w", err)
+				}
+				_, err = cache.AttachResult(ctx, callerClientMD.SessionID, destDag, secret.inst.WithContentDigest(secretDigest).ObjectResultWithPostCall(postCall))
 				if err != nil {
 					return fmt.Errorf("failed to cache secret: %w", err)
 				}

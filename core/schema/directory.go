@@ -1539,12 +1539,12 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		if sshSocketResult.Self() == nil {
 			return nil, fmt.Errorf("failed to load SSH socket: nil socket")
 		}
-		sshSocketID, err = sshSocketResult.RecipeID()
+		sshSocketID, err = sshSocketResult.RecipeID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get SSH socket recipe ID: %w", err)
 		}
 	}
-	buildctxDirID, err := buildctxDir.RecipeID()
+	buildctxDirID, err := buildctxDir.RecipeID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get build context recipe ID: %w", err)
 	}
@@ -1592,7 +1592,7 @@ func (s *directorySchema) terminal(
 		ctr = inst.Self()
 	}
 
-	dirDig, err := dir.ContentPreferredDigest()
+	dirDig, err := dir.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, err
 	}

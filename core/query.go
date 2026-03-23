@@ -72,9 +72,6 @@ type Server interface {
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*ModDeps, error)
 
-	// The DagQL query cache for the current client's session
-	Cache(context.Context) (dagql.Cache, error)
-
 	// The telemetry seen-key store for the current client's session.
 	TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error)
 
@@ -204,22 +201,6 @@ func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
 	return srv, nil
 }
 
-func CurrentDagqlCache(ctx context.Context) (dagql.Cache, error) {
-	if srv := dagql.CurrentDagqlServer(ctx); srv != nil && srv.Cache != nil {
-		return srv.Cache, nil
-	}
-
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("current query: %w", err)
-	}
-	cache, err := q.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query cache: %w", err)
-	}
-	return cache, nil
-}
-
 func NewRoot(srv Server, envID *call.ID) *Query {
 	return &Query{Server: srv, CurrentEnv: envID}
 }
@@ -299,7 +280,11 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		return nil
 	}
 
-	if err := dag.Cache.WalkResultCall(ctx, dag, rootCall, func(res dagql.AnyResult) error {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("engine cache: %w", err)
+	}
+	if err := cache.WalkResultCall(ctx, dag, rootCall, func(res dagql.AnyResult) error {
 		modInst, ok := res.(dagql.ObjectResult[*Module])
 		if !ok {
 			return nil

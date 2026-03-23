@@ -25,7 +25,7 @@ func Syncer[T core.Syncable]() dagql.Field[T] {
 		}
 		var selfID *call.ID
 		if args.Recipe {
-			selfID, err = self.RecipeID()
+			selfID, err = self.RecipeID(ctx)
 		} else {
 			selfID, err = self.ID()
 		}

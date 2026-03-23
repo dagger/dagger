@@ -7,7 +7,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func (c *cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
+func (c *Cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
 	res, err := c.sharedResultByResultID(sharedResultID(resultID))
 	if err != nil {
 		return nil, err
@@ -19,7 +19,7 @@ func (c *cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uin
 	return links, nil
 }
 
-func (c *cache) PersistedResultID(res AnyResult) (uint64, error) {
+func (c *Cache) PersistedResultID(res AnyResult) (uint64, error) {
 	if res == nil {
 		return 0, fmt.Errorf("persisted result ID: nil result")
 	}
@@ -36,7 +36,7 @@ func (c *cache) PersistedResultID(res AnyResult) (uint64, error) {
 	return uint64(shared.id), nil
 }
 
-func (c *cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, error) {
+func (c *Cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, error) {
 	if c == nil {
 		return nil, fmt.Errorf("resolve result %d: nil cache", resultID)
 	}
@@ -54,7 +54,7 @@ func (c *cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, 
 	return res, nil
 }
 
-func (c *cache) loadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
+func (c *Cache) loadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
 	res, err := c.sharedResultByResultID(sharedResultID(resultID))
 	if err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ func (c *cache) loadResultByResultID(ctx context.Context, dag *Server, resultID 
 	return loaded, nil
 }
 
-func (c *cache) LoadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
+func (c *Cache) LoadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
 	loaded, err := c.loadResultByResultID(ctx, dag, resultID)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (c *cache) LoadResultByResultID(ctx context.Context, sessionID string, dag 
 	return loaded, nil
 }
 
-func (c *cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *ResultCall, visit func(AnyResult) error) error {
+func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *ResultCall, visit func(AnyResult) error) error {
 	if dag == nil {
 		return fmt.Errorf("walk result call: nil dagql server")
 	}
@@ -188,7 +188,7 @@ func (c *cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *Resul
 	return walkCall(rootCall)
 }
 
-func (c *cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyObjectResult, error) {
+func (c *Cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyObjectResult, error) {
 	res, err := c.loadResultByResultID(ctx, dag, resultID)
 	if err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func (c *cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, 
 	return obj, nil
 }
 
-func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult) (AnyResult, error) {
+func (c *Cache) persistedResultForShared(ctx context.Context, res *sharedResult) (AnyResult, error) {
 	if res == nil {
 		return nil, fmt.Errorf("wrap persisted shared result: nil result")
 	}
@@ -208,17 +208,17 @@ func (c *cache) persistedResultForShared(ctx context.Context, res *sharedResult)
 	if requestedFrame == nil {
 		return nil, fmt.Errorf("derive persisted requested frame for result %d: missing result call frame", res.id)
 	}
-	requestDigest, err := requestedFrame.RecipeDigest()
+	requestDigest, err := requestedFrame.deriveRecipeDigest(c)
 	if err != nil {
 		return nil, fmt.Errorf("derive persisted requested digest for result %d: %w", res.id, err)
 	}
-	requestSelf, requestInputRefs, err := requestedFrame.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := requestedFrame.selfDigestAndInputRefs(c)
 	if err != nil {
 		return nil, fmt.Errorf("derive persisted requested term digests for result %d: %w", res.id, err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
-		dig, err := ref.InputDigest()
+		dig, err := ref.inputDigest(c)
 		if err != nil {
 			return nil, fmt.Errorf("derive persisted requested term input digest for result %d: %w", res.id, err)
 		}

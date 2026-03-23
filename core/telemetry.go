@@ -37,7 +37,7 @@ func AroundFunc(
 	if introspection {
 		return dagql.WithSkip(ctx), dagql.NoopDone
 	}
-	if isMeta(req.ResultCall) {
+	if isMeta(ctx, req.ResultCall) {
 		// introspection+meta are very uninteresting spans
 		// dagops are all self calls, no need to emit additional spans here
 		return ctx, dagql.NoopDone
@@ -51,7 +51,7 @@ func AroundFunc(
 	}
 	spanName := fmt.Sprintf("%s.%s", base, req.Field)
 
-	callDigest, err := req.RecipeDigest()
+	callDigest, err := req.RecipeDigest(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to derive call digest", "field", spanName, "err", err)
 		return ctx, dagql.NoopDone
@@ -71,7 +71,7 @@ func AroundFunc(
 		"digest", callDigest.String(),
 	)
 
-	callPB, err := req.ResultCall.CallPB()
+	callPB, err := req.ResultCall.CallPB(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to build call payload", "field", spanName, "err", err)
 		return ctx, dagql.NoopDone
@@ -117,7 +117,7 @@ func AroundFunc(
 		}
 	}
 
-	if callInputs, err := req.ResultCall.Inputs(); err != nil {
+	if callInputs, err := req.ResultCall.Inputs(ctx); err != nil {
 		slog.WarnContext(ctx, "failed to compute inputs(call)", "field", spanName, "err", err)
 	} else {
 		inputs := make([]string, len(callInputs))
@@ -142,7 +142,7 @@ func AroundFunc(
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, req.ResultCall)
 		logResult(ctx, res, req.ResultCall)
-		collectEffects(res, span, req.ResultCall)
+		collectEffects(ctx, res, span, req.ResultCall)
 	}
 }
 
@@ -201,7 +201,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, frame *dagql.ResultCal
 	calleeRef.ref = normalizeRef(frame.Module.Ref)
 
 	var voidType Void
-	if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+	if receiver, err := frame.ReceiverCall(ctx); err == nil && receiver != nil && receiver.Type != nil {
 		calleeRef.typeName = receiver.Type.NamedType
 	} else if frame.Type != nil && frame.Type.NamedType == voidType.TypeName() {
 		// it's a top level module function call so set the ParentName as the callee type
@@ -281,7 +281,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 		}
 		isLoader := strings.HasPrefix(field, "load") && strings.HasSuffix(field, "FromID")
 		if !isLoader {
-			if objDig, err := objectRecipeDigest(obj); err == nil && objDig != "" {
+			if objDig, err := objectRecipeDigest(ctx, obj); err == nil && objDig != "" {
 				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDig.String()))
 			}
 		}
@@ -316,7 +316,7 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 	}
 
 	parentTypeName := srv.Root().Type().Name()
-	if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil && receiver.Type != nil {
+	if receiver, err := frame.ReceiverCall(ctx); err == nil && receiver != nil && receiver.Type != nil {
 		parentTypeName = receiver.Type.NamedType
 	}
 
@@ -332,10 +332,10 @@ func fieldSpecForCall(ctx context.Context, frame *dagql.ResultCall) (dagql.Field
 //
 // Effects will become complete as spans appear from Buildkit with a
 // corresponding effect ID.
-func collectEffects(res dagql.AnyResult, span trace.Span, frame *dagql.ResultCall) {
+func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, frame *dagql.ResultCall) {
 	var parentEffects []string
 	if frame != nil {
-		if receiver, err := frame.ReceiverCall(); err == nil && receiver != nil {
+		if receiver, err := frame.ReceiverCall(ctx); err == nil && receiver != nil {
 			parentEffects, _ = receiver.AllEffectIDs()
 		}
 	}
@@ -347,7 +347,7 @@ func collectEffects(res dagql.AnyResult, span trace.Span, frame *dagql.ResultCal
 		return
 	}
 
-	allEffects, err := resultEffectIDs(res)
+	allEffects, err := resultEffectIDs(ctx, res)
 	if err != nil {
 		if len(parentEffects) > 0 {
 			span.SetAttributes(attribute.StringSlice(telemetry.EffectsCompletedAttr, parentEffects))
@@ -413,7 +413,7 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 			}
 		}
 
-		receiver, err := cur.ReceiverCall()
+		receiver, err := cur.ReceiverCall(ctx)
 		if err != nil || receiver == nil {
 			return false, immediateReceiver
 		}
@@ -444,11 +444,11 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
 // for example span and error APIs.
-func isMeta(frame *dagql.ResultCall) bool {
+func isMeta(ctx context.Context, frame *dagql.ResultCall) bool {
 	if frame == nil {
 		return false
 	}
-	if anyReturns(frame, "Error") {
+	if anyReturns(ctx, frame, "Error") {
 		return true
 	}
 	typeName := ""
@@ -476,7 +476,7 @@ func isMeta(frame *dagql.ResultCall) bool {
 
 // anyReturns returns true if the call or any of its ancestors return any of
 // the given types.
-func anyReturns(frame *dagql.ResultCall, types ...string) bool {
+func anyReturns(ctx context.Context, frame *dagql.ResultCall, types ...string) bool {
 	if frame == nil || frame.Type == nil {
 		return false
 	}
@@ -484,35 +484,35 @@ func anyReturns(frame *dagql.ResultCall, types ...string) bool {
 	if slices.Contains(types, ret) {
 		return true
 	}
-	receiver, err := frame.ReceiverCall()
+	receiver, err := frame.ReceiverCall(ctx)
 	if err != nil || receiver == nil {
 		return false
 	}
-	return anyReturns(receiver, types...)
+	return anyReturns(ctx, receiver, types...)
 }
 
-func objectRecipeDigest(obj dagql.AnyResult) (digest.Digest, error) {
+func objectRecipeDigest(ctx context.Context, obj dagql.AnyResult) (digest.Digest, error) {
 	type recipeDigester interface {
-		RecipeDigest() (digest.Digest, error)
+		RecipeDigest(context.Context) (digest.Digest, error)
 	}
 	if digester, ok := any(obj).(recipeDigester); ok {
-		return digester.RecipeDigest()
+		return digester.RecipeDigest(ctx)
 	}
-	id, err := obj.RecipeID()
+	id, err := obj.RecipeID(ctx)
 	if err != nil || id == nil {
 		return "", err
 	}
 	return id.Digest(), nil
 }
 
-func resultEffectIDs(res dagql.AnyResult) ([]string, error) {
+func resultEffectIDs(ctx context.Context, res dagql.AnyResult) ([]string, error) {
 	type effecter interface {
-		AllEffectIDs() ([]string, error)
+		AllEffectIDs(context.Context) ([]string, error)
 	}
 	if eff, ok := any(res).(effecter); ok {
-		return eff.AllEffectIDs()
+		return eff.AllEffectIDs(ctx)
 	}
-	id, err := res.RecipeID()
+	id, err := res.RecipeID(ctx)
 	if err != nil || id == nil {
 		return nil, err
 	}

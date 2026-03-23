@@ -101,7 +101,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 						err    error
 					)
 					if bool(recipe) {
-						selfID, err = self.RecipeID()
+						selfID, err = self.RecipeID(ctx)
 					} else {
 						selfID, err = self.ID()
 					}
@@ -406,12 +406,6 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		view = ""
 	}
 	ctx = srvToContext(ctx, s)
-	receiverDetached := false
-	if typ := r.Type(); typ != nil && typ.Name() != "Query" {
-		shared := r.cacheSharedResult()
-		receiverDetached = shared == nil || shared.id == 0
-	}
-
 	inputArgs := make(map[string]Input, len(sel.Args))
 	frameArgs := make([]*ResultCallArg, 0, len(sel.Args))
 	for _, argSpec := range field.Spec.Args.Inputs(view) {
@@ -479,7 +473,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			ImplicitInputs: implicitInputs,
 		},
 		TTL:           field.Spec.TTL,
-		DoNotCache:    receiverDetached || field.Spec.DoNotCache != "",
+		DoNotCache:    field.Spec.DoNotCache != "",
 		IsPersistable: field.Spec.IsPersistable,
 	}
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
@@ -556,8 +550,12 @@ func (r ObjectResult[T]) call(
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("call %s.%s: empty session ID", r.class.inner.Type().Name(), fieldName)
 	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("call %s.%s: current dagql cache: %w", r.class.inner.Type().Name(), fieldName, err)
+	}
 
-	res, err = s.Cache.GetOrInitCall(ctx, clientMetadata.SessionID, s, req, func(ctx context.Context) (AnyResult, error) {
+	res, err = cache.GetOrInitCall(ctx, clientMetadata.SessionID, s, req, func(ctx context.Context) (AnyResult, error) {
 		val, err := field.Func(ctx, r, inputArgs, view)
 		if err != nil {
 			return nil, err

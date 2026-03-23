@@ -67,11 +67,11 @@ func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) 
 }
 
 func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, error) {
-	beforeDigest, err := ch.Before.ContentPreferredDigest()
+	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("before content-preferred digest: %w", err)
 	}
-	afterDigest, err := ch.After.ContentPreferredDigest()
+	afterDigest, err := ch.After.ContentPreferredDigest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("after content-preferred digest: %w", err)
 	}
@@ -253,11 +253,11 @@ func (ch *Changeset) Sync(ctx context.Context) error {
 const ChangesetPatchFilename = "diff.patch"
 
 func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
-	beforeDigest, err := ch.Before.ContentPreferredDigest()
+	beforeDigest, err := ch.Before.ContentPreferredDigest(ctx)
 	if err != nil {
 		return false, fmt.Errorf("before content-preferred digest: %w", err)
 	}
-	afterDigest, err := ch.After.ContentPreferredDigest()
+	afterDigest, err := ch.After.ContentPreferredDigest(ctx)
 	if err != nil {
 		return false, fmt.Errorf("after content-preferred digest: %w", err)
 	}

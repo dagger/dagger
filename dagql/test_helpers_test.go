@@ -23,7 +23,7 @@ func cacheTestCallDigest(frame *ResultCall) digest.Digest {
 	if frame == nil {
 		return ""
 	}
-	dig, err := frame.RecipeDigest()
+	dig, err := frame.deriveRecipeDigest(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -123,9 +123,9 @@ func cacheTestMustID(t testing.TB, idable IDable) *call.ID {
 	return id
 }
 
-func cacheTestMustRecipeID(t testing.TB, idable RecipeIDable) *call.ID {
+func cacheTestMustRecipeID(t testing.TB, ctx context.Context, idable RecipeIDable) *call.ID {
 	t.Helper()
-	id, err := idable.RecipeID()
+	id, err := idable.RecipeID(ctx)
 	if err != nil {
 		t.Fatalf("RecipeID(): %v", err)
 	}

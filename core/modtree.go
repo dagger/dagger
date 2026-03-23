@@ -338,11 +338,7 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 	if err != nil {
 		return nil, err
 	}
-	cache, err := q.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%q: get dagql cache: %w", main.Name(), err)
-	}
-	srv := dagql.NewServer(q, cache)
+	srv := dagql.NewServer(q)
 	srv.Around(AroundFunc)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)

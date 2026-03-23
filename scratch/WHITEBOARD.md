@@ -35,6 +35,11 @@
    * Probably time now or in near future to do eager parallel loading of IDs in DAG during ID load and such
 
 ## Notes
+* **THE DAGQL CACHE IS A SINGLETON CREATED ONCE AT ENGINE START AND IT LIVES FOR THE ENTIRE LIFETIME OF THE ENGINE.**
+  * There is not a second DAGQL cache.
+  * There is not a per-session DAGQL cache.
+  * Result-call planning/runtime code should not be written as if cache identity were ambiguous.
+  * If a code path needs the DAGQL cache, it should explicitly use or fetch the singleton cache rather than storing mutable cache backpointers on frame/helper structs.
 * For persistence, it's basically like an export. Don't try to store in-engine numeric ids or something, it's the whole DAG persisted in single-engine-agnostic manner. When loading from persisted disk, you are importing it (including e-graph union and stuff)
   * But also for now, let's be biased towards keeping everything in memory rather than trying to do fancy page out to disk
 
@@ -266,6 +271,7 @@ There is no `SessionCache` in the target architecture.
 Instead:
 
 * the base DAGQL cache is the only cache type
+* the base DAGQL cache is a singleton for the lifetime of the engine
 * session ownership is represented directly in the base cache's ownership graph
 * session lifecycle coordination lives in engine/session state (`daggerSession`)
 * the base cache does not infer session ownership from context
@@ -638,12 +644,74 @@ Preferred order:
 
 1. Update the design/debug surface so the new ownership graph can be inspected while being built.
 2. Delete `SessionCache` by moving its real responsibilities either into the base cache or into engine/session state.
-3. Rewrite in-memory ownership state in `dagql/cache.go`.
-4. Rewrite prune to consume the new ownership graph.
-5. Rewrite persistence export/import and schema to persist the new ownership state.
-6. Rewrite tests and debug output around the new model.
+3. Hard-cut away frame/helper cache backpointers and `bindCache(...)` scaffolding from dagql result-call code.
+4. Rewrite in-memory ownership state in `dagql/cache.go`.
+5. Rewrite prune to consume the new ownership graph.
+6. Rewrite persistence export/import and schema to persist the new ownership state.
+7. Rewrite tests and debug output around the new model.
 
 ### File Map
+
+### `dagql/result_call_frame.go`
+
+This file currently stores cache identity directly on result-call planning/runtime structs and mutates that state through `bindCache(...)`.
+
+Current state to delete:
+
+* `ResultCall.cache`
+* `ResultCallStructuralInputRef.cache`
+* `bindCache(...)`
+* any identity / digest / recipe / structural-input logic that only works after a frame has been imperatively "bound" to a cache
+
+Target state:
+
+* do not store DAGQL cache identity on `ResultCall` or related helper structs
+* the singleton base cache is passed explicitly into dagql frame/digest helpers that need it
+* only boundary code that already has `context.Context` but not the cache directly should resolve the singleton cache from context
+
+Concrete rewrite:
+
+* remove `cache *cache` from `ResultCall`
+* remove `cache *cache` from `ResultCallStructuralInputRef`
+* delete `bindCache(...)`
+* change `ResultCall` methods that currently read `frame.cache` to take explicit `*cache` arguments instead:
+  * `RecipeDigest`
+  * `RecipeID`
+  * `ContentPreferredDigest`
+  * `Inputs`
+  * `CallPB`
+  * `ReceiverCall` / internal ref-resolution helpers
+  * `SelfDigestAndInputRefs`
+* change `ResultCallStructuralInputRef.InputDigest` to take explicit `*cache`
+* update all call sites in dagql/core/engine code to fetch or already hold the singleton base cache and pass it explicitly
+* remove all `bindCache(...)` call sites in dagql
+
+### `dagql/cache.go` and `dagql/cache_arbitrary.go` singleton cleanup
+
+These files still store `*cache` on several runtime structs and context keys even though the DAGQL cache is a singleton.
+
+Current singleton-hostile state to delete:
+
+* `sharedResult.cache`
+* `sharedArbitraryResult.cache`
+* `cacheContextKey.cache`
+* `arbitraryCacheContextKey.cache`
+* equality / identity checks whose only purpose is to defend against a second dagql cache that does not actually exist
+
+Target state:
+
+* do not store the singleton dagql cache on runtime entry structs just to re-discover it later
+* do not key recursion guards by `(callKey, cache)` when `callKey` alone is sufficient because there is one dagql cache
+* runtime helpers that need the singleton cache should receive it explicitly or fetch it once at the outer boundary
+
+Concrete rewrite:
+
+* remove `cache *cache` from `sharedResult`
+* remove `cache *cache` from `sharedArbitraryResult`
+* simplify `cacheContextKey` to only the recursion/disambiguation data actually needed under a singleton cache model
+* simplify `arbitraryCacheContextKey` the same way
+* delete code branches that compare a runtime struct's stored cache pointer against some caller-supplied cache just to guard against multiple dagql caches
+* update any remaining logic that currently uses stored cache pointers only as a lazy route back to the singleton cache
 
 ### `dagql/cache.go`
 
@@ -697,6 +765,9 @@ Planned rewrite chunks:
   * `AttachResult`
   * `GetOrInitArbitrary`
 * Do not infer session ownership from `context.Context`
+* Stop modeling request/result digest derivation as something that first needs a mutable `ResultCall.cache` backpointer.
+  * request-planning and cache-entry code should pass the singleton base cache explicitly into `ResultCall` helpers
+  * do not keep "bind cache onto the frame and hope the next helper sees it" as a runtime pattern
 * Split mixed-use cache entrypoints into exported ownership-enforcing methods plus lowercase internal helpers where that boundary is clean:
   * `getOrInitCall`
   * `attachResult`

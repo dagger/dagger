@@ -86,11 +86,7 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	dagqlCache, err := d.root.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache: %w", err)
-	}
-	return schema.WithCache(dagqlCache), nil
+	return schema, nil
 }
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
@@ -168,11 +164,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		d.loadSchemaErr = rerr
 	}()
 
-	dagqlCache, err := d.root.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache: %w", err)
-	}
-	dag := dagql.NewServer(d.root, dagqlCache)
+	dag := dagql.NewServer(d.root)
 	for _, mod := range d.mods {
 		if version, ok := mod.View(); ok {
 			dag.View = version

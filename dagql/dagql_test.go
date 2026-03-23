@@ -78,9 +78,19 @@ func testContext() context.Context {
 }
 
 func newTestClient(srv *dagql.Server) *client.Client {
+	cache, err := dagql.NewCache(context.Background(), "")
+	if err != nil {
+		panic(err)
+	}
+	return newTestClientWithCache(srv, cache)
+}
+
+func newTestClientWithCache(srv *dagql.Server, cache *dagql.Cache) *client.Client {
 	h := dagql.NewDefaultHandler(srv)
 	return client.New(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(w, r.WithContext(engine.ContextWithClientMetadata(r.Context(), testClientMetadata())))
+		ctx := engine.ContextWithClientMetadata(r.Context(), testClientMetadata())
+		ctx = dagql.ContextWithCache(ctx, cache)
+		h.ServeHTTP(w, r.WithContext(ctx))
 	}))
 }
 
@@ -103,18 +113,19 @@ func recipeIDForObject[T dagql.Typed](t *testing.T, ctx context.Context, srv *da
 	return enc
 }
 
-func newCache(t *testing.T) dagql.Cache {
+func newCache(t *testing.T) *dagql.Cache {
 	baseCache, err := dagql.NewCache(t.Context(), "")
 	assert.NilError(t, err)
 	return baseCache
 }
 
 func TestBasic(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	cache := newCache(t)
+	srv := dagql.NewServer(Query{})
 
 	points.Install[Query](srv)
 
-	gql := newTestClient(srv)
+	gql := newTestClientWithCache(srv, cache)
 
 	var res struct {
 		Point struct {
@@ -148,7 +159,7 @@ func TestBasic(t *testing.T) {
 			}
 		}
 	}`, &res)
-	ctx := testContext()
+	ctx := dagql.ContextWithCache(testContext(), cache)
 
 	assert.Equal(t, 6, res.Point.X)
 	assert.Equal(t, 7, res.Point.Y)
@@ -181,7 +192,9 @@ func TestBasic(t *testing.T) {
 
 func TestSelectArray(t *testing.T) {
 	ctx := testContext()
-	srv := dagql.NewServer(Query{}, newCache(t))
+	cache := newCache(t)
+	srv := dagql.NewServer(Query{})
+	ctx = dagql.ContextWithCache(ctx, cache)
 	points.Install[Query](srv)
 
 	dagql.Fields[Query]{
@@ -328,14 +341,14 @@ func TestSelectArray(t *testing.T) {
 
 		assert.Equal(t, points[0].Self().X, 5)
 		assert.Equal(t, points[0].Self().Y, 7)
-		id0 := mustRecipeID(t, points[0])
+		id0 := mustRecipeID(t, ctx, points[0])
 		assert.Equal(t, id0.Type().NamedType(), "Point")
 		assert.Equal(t, id0.Type().ToAST().Elem, (*ast.Type)(nil))
 		assert.Equal(t, int(id0.Nth()), 1)
 
 		assert.Equal(t, points[1].Self().X, 7)
 		assert.Equal(t, points[1].Self().Y, 7)
-		id1 := mustRecipeID(t, points[1])
+		id1 := mustRecipeID(t, ctx, points[1])
 		assert.Equal(t, id1.Type().NamedType(), "Point")
 		assert.Equal(t, id1.Type().ToAST().Elem, (*ast.Type)(nil))
 		assert.Equal(t, int(id1.Nth()), 2)
@@ -355,14 +368,14 @@ func TestSelectArray(t *testing.T) {
 
 		assert.Equal(t, points[0].Self().X, 5)
 		assert.Equal(t, points[0].Self().Y, 7)
-		id0 := mustRecipeID(t, points[0])
+		id0 := mustRecipeID(t, ctx, points[0])
 		assert.Equal(t, id0.Type().NamedType(), "Point")
 		assert.Equal(t, id0.Type().ToAST().Elem, (*ast.Type)(nil))
 		assert.Equal(t, int(id0.Nth()), 0)
 
 		assert.Equal(t, points[1].Self().X, 7)
 		assert.Equal(t, points[1].Self().Y, 7)
-		id1 := mustRecipeID(t, points[1])
+		id1 := mustRecipeID(t, ctx, points[1])
 		assert.Equal(t, id1.Type().NamedType(), "Point")
 		assert.Equal(t, id1.Type().ToAST().Elem, (*ast.Type)(nil))
 		assert.Equal(t, int(id1.Nth()), 0)
@@ -488,7 +501,7 @@ func TestSelectArray(t *testing.T) {
 }
 
 func TestNullableResults(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 
 	points.Install[Query](srv)
 
@@ -699,7 +712,7 @@ func TestNullableResults(t *testing.T) {
 }
 
 func TestListResults(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	dagql.Fields[Query]{
@@ -843,7 +856,7 @@ func ptr[T any](v T) *T {
 }
 
 func TestLoadingFromID(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 
 	points.Install[Query](srv)
 
@@ -951,7 +964,9 @@ func TestLoadingFromID(t *testing.T) {
 
 func TestIDsReflectQuery(t *testing.T) {
 	ctx := testContext()
-	srv := dagql.NewServer(Query{}, newCache(t))
+	cache := newCache(t)
+	srv := dagql.NewServer(Query{})
+	ctx = dagql.ContextWithCache(ctx, cache)
 	points.Install[Query](srv)
 
 	var point dagql.ObjectResult[*points.Point]
@@ -1013,8 +1028,9 @@ func TestIDsReflectQuery(t *testing.T) {
 }
 
 func TestIDsDoNotContainSensitiveValues(t *testing.T) {
-	ctx := testContext()
-	srv := dagql.NewServer(Query{}, newCache(t))
+	cache := newCache(t)
+	ctx := dagql.ContextWithCache(testContext(), cache)
+	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	dagql.Fields[*points.Point]{
@@ -1153,7 +1169,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 }
 
 func TestEmptyID(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	gql := newTestClient(srv)
@@ -1175,7 +1191,7 @@ func TestEmptyID(t *testing.T) {
 }
 
 func TestPureIDsDoNotReEvaluate(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	gql := newTestClient(srv)
@@ -1228,7 +1244,7 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 }
 
 func TestPassingObjectsAround(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	gql := newTestClient(srv)
@@ -1265,7 +1281,7 @@ func TestPassingObjectsAround(t *testing.T) {
 }
 
 func TestEnums(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	gql := newTestClient(srv)
@@ -1428,7 +1444,7 @@ func (BuiltinsInput) TypeName() string {
 }
 
 func TestInputObjects(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	gql := newTestClient(srv)
 
 	dagql.MustInputSpec(DefaultsInput{}).Install(srv)
@@ -1637,7 +1653,7 @@ func InstallDefaults(srv *dagql.Server) {
 }
 
 func TestDefaults(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	gql := newTestClient(srv)
 
 	InstallDefaults(srv)
@@ -1721,7 +1737,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestParallelism(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	gql := newTestClient(srv)
 
 	pipes.Install[Query](srv)
@@ -1732,7 +1748,7 @@ func TestParallelism(t *testing.T) {
 				Write struct {
 					Sync string
 				}
-				Read  string
+				Read string
 			}
 		}
 		req(t, gql, `query {
@@ -1778,7 +1794,7 @@ func TestParallelism(t *testing.T) {
 }
 
 func TestArrayParallelism(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 
 	points.Install[Query](srv)
 
@@ -1893,7 +1909,7 @@ func InstallBuiltins(srv *dagql.Server) {
 }
 
 func TestBuiltins(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	gql := newTestClient(srv)
 
 	InstallBuiltins(srv)
@@ -2044,7 +2060,7 @@ func (IntrospectTest) Type() *ast.Type {
 }
 
 func TestIntrospection(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	introspection.Install[Query](srv)
 
 	// just a quick way to get more coverage
@@ -2111,7 +2127,9 @@ func TestIntrospection(t *testing.T) {
 
 func TestIDFormat(t *testing.T) {
 	ctx := testContext()
-	srv := dagql.NewServer(Query{}, newCache(t))
+	cache := newCache(t)
+	srv := dagql.NewServer(Query{})
+	ctx = dagql.ContextWithCache(ctx, cache)
 	points.Install[Query](srv)
 
 	var pointAInst dagql.ObjectResult[*points.Point]
@@ -2124,7 +2142,7 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	pointADgst := mustRecipeID(t, pointAInst).Digest()
+	pointADgst := mustRecipeID(t, ctx, pointAInst).Digest()
 
 	var pointBInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, srv.Root(), &pointBInst,
@@ -2136,7 +2154,7 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	pointBDgst := mustRecipeID(t, pointBInst).Digest()
+	pointBDgst := mustRecipeID(t, ctx, pointBInst).Digest()
 
 	var lineAInst dagql.ObjectResult[*points.Line]
 	assert.NilError(t, srv.Select(ctx, pointBInst, &lineAInst,
@@ -2147,13 +2165,13 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	lineADgst := mustRecipeID(t, lineAInst).Digest()
+	lineADgst := mustRecipeID(t, ctx, lineAInst).Digest()
 
 	var pointBFromInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, lineAInst, &pointBFromInst,
 		dagql.Selector{Field: "from"},
 	))
-	pointBFromDgst := mustRecipeID(t, pointBFromInst).Digest()
+	pointBFromDgst := mustRecipeID(t, ctx, pointBFromInst).Digest()
 
 	var lineBInst dagql.ObjectResult[*points.Line]
 	assert.NilError(t, srv.Select(ctx, pointAInst, &lineBInst,
@@ -2164,15 +2182,15 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	lineBDgst := mustRecipeID(t, lineBInst).Digest()
+	lineBDgst := mustRecipeID(t, ctx, lineBInst).Digest()
 
 	var pointAFromInst dagql.ObjectResult[*points.Point]
 	assert.NilError(t, srv.Select(ctx, lineBInst, &pointAFromInst,
 		dagql.Selector{Field: "from"},
 	))
-	pointAFromDgst := mustRecipeID(t, pointAFromInst).Digest()
+	pointAFromDgst := mustRecipeID(t, ctx, pointAFromInst).Digest()
 
-	pbDag, err := mustRecipeID(t, pointAFromInst).ToProto()
+	pbDag, err := mustRecipeID(t, ctx, pointAFromInst).ToProto()
 	assert.NilError(t, err)
 	recipe := pbDag.GetRecipe()
 	require.NotNil(t, recipe)
@@ -2337,7 +2355,7 @@ func InstallViewer(srv *dagql.Server) {
 }
 
 func TestViews(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	gql := newTestClient(srv)
 
 	InstallViewer(srv)
@@ -2438,7 +2456,7 @@ func TestViews(t *testing.T) {
 }
 
 func TestViewsCaching(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	gql := newTestClient(srv)
 
 	InstallViewer(srv)
@@ -2466,7 +2484,7 @@ func TestViewsCaching(t *testing.T) {
 }
 
 func TestViewsIntrospection(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	introspection.Install[Query](srv)
 	gql := newTestClient(srv)
 
@@ -2565,7 +2583,7 @@ func (*CoolInt) TypeDescription() string {
 }
 
 func TestNodeFuncResultZeroValueTypeInference(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 
 	dagql.Fields[*CoolInt]{}.Install(srv)
 	dagql.Fields[Query]{
@@ -2592,7 +2610,7 @@ func TestNodeFuncResultZeroValueTypeInference(t *testing.T) {
 }
 
 func TestNullResultCachePathDoesNotPanic(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	dagql.Fields[Query]{
 		dagql.Func("alwaysNull", func(context.Context, Query, struct{}) (dagql.Nullable[dagql.String], error) {
 			return dagql.Null[dagql.String](), nil
@@ -2613,7 +2631,7 @@ func TestNullResultCachePathDoesNotPanic(t *testing.T) {
 }
 
 func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 
 	calls := []int{}
 	dagql.Fields[Query]{
@@ -2639,7 +2657,8 @@ func TestCacheConfigReturnedIDRewritesExecutionArgs(t *testing.T) {
 }
 
 func TestImplicitInputCachePerClient(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	dagql.Fields[Query]{
@@ -2653,6 +2672,7 @@ func TestImplicitInputCachePerClient(t *testing.T) {
 			ClientID:  clientID,
 			SessionID: "dagql-test-session",
 		})
+		ctx = dagql.ContextWithCache(ctx, cache)
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
 			Field: "perClientCounter",
@@ -2668,7 +2688,8 @@ func TestImplicitInputCachePerClient(t *testing.T) {
 }
 
 func TestImplicitInputCachePerSession(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	dagql.Fields[Query]{
@@ -2682,6 +2703,7 @@ func TestImplicitInputCachePerSession(t *testing.T) {
 			ClientID:  "same-client",
 			SessionID: sessionID,
 		})
+		ctx = dagql.ContextWithCache(ctx, cache)
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
 			Field: "perSessionCounter",
@@ -2697,7 +2719,8 @@ func TestImplicitInputCachePerSession(t *testing.T) {
 }
 
 func TestImplicitInputCachePerCall(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	dagql.Fields[Query]{
@@ -2710,6 +2733,7 @@ func TestImplicitInputCachePerCall(t *testing.T) {
 		ClientID:  "client-a",
 		SessionID: "dagql-test-session",
 	})
+	ctx = dagql.ContextWithCache(ctx, cache)
 
 	var first int
 	require.NoError(t, srv.Select(ctx, srv.Root(), &first, dagql.Selector{Field: "perCallCounter"}))
@@ -2725,7 +2749,8 @@ func TestImplicitInputCachePerCall(t *testing.T) {
 }
 
 func TestImplicitInputCachePerSchema(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	dagql.Fields[Query]{
@@ -2736,7 +2761,7 @@ func TestImplicitInputCachePerSchema(t *testing.T) {
 
 	call := func() int {
 		var res int
-		err := srv.Select(testContext(), srv.Root(), &res, dagql.Selector{
+		err := srv.Select(dagql.ContextWithCache(testContext(), cache), srv.Root(), &res, dagql.Selector{
 			Field: "perSchemaCounter",
 		})
 		require.NoError(t, err)
@@ -2758,7 +2783,8 @@ func TestImplicitInputCachePerSchema(t *testing.T) {
 }
 
 func TestImplicitInputCachePerClientSchema(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	dagql.Fields[Query]{
@@ -2772,6 +2798,7 @@ func TestImplicitInputCachePerClientSchema(t *testing.T) {
 			ClientID:  clientID,
 			SessionID: "dagql-test-session",
 		})
+		ctx = dagql.ContextWithCache(ctx, cache)
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
 			Field: "perClientSchemaCounter",
@@ -2797,7 +2824,8 @@ func TestImplicitInputCachePerClientSchema(t *testing.T) {
 }
 
 func TestImplicitInputCacheAsRequested(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	dagql.Fields[Query]{
@@ -2813,6 +2841,7 @@ func TestImplicitInputCacheAsRequested(t *testing.T) {
 			ClientID:  clientID,
 			SessionID: "dagql-test-session",
 		})
+		ctx = dagql.ContextWithCache(ctx, cache)
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
 			Field: "asRequestedCounter",
@@ -2828,6 +2857,7 @@ func TestImplicitInputCacheAsRequested(t *testing.T) {
 			ClientID:  clientID,
 			SessionID: "dagql-test-session",
 		})
+		ctx = dagql.ContextWithCache(ctx, cache)
 		var res int
 		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
 			Field: "asRequestedCounter",
@@ -2852,7 +2882,8 @@ func TestImplicitInputCacheAsRequested(t *testing.T) {
 }
 
 func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
+	cache := newCache(t)
 
 	var calls atomic.Int64
 	var observed []bool
@@ -2905,6 +2936,7 @@ func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
 		ClientID:  "client-a",
 		SessionID: "dagql-test-session",
 	})
+	ctx = dagql.ContextWithCache(ctx, cache)
 
 	var result int
 	require.NoError(t, srv.Select(ctx, srv.Root(), &result, dagql.Selector{Field: "updatedArgCounter"}))
@@ -2917,12 +2949,12 @@ func TestImplicitInputRecomputedAfterCacheConfigIDRewrite(t *testing.T) {
 
 func TestServerSelect(t *testing.T) {
 	// Create a new server with a simple object hierarchy for testing
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 
 	// Install test types
 	InstallTestTypes(srv)
 
-	ctx := testContext()
+	ctx := dagql.ContextWithCache(testContext(), newCache(t))
 
 	t.Run("basic selection", func(t *testing.T) {
 		// Create a test object and wrap it as a dagql.Object
@@ -3274,7 +3306,7 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType, _ ...*ast.Dir
 }
 
 func TestInstallHooks(t *testing.T) {
-	srv := dagql.NewServer(Query{}, newCache(t))
+	srv := dagql.NewServer(Query{})
 	srv.AddInstallHook(&testInstallHook{srv})
 	points.Install[Query](srv)
 

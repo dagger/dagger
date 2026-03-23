@@ -239,7 +239,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			serviceDig, err := bnd.Service.ContentPreferredDigest()
+			serviceDig, err := bnd.Service.ContentPreferredDigest(ctx)
 			if err != nil {
 				return fmt.Errorf("service %s content-preferred digest: %w", bnd.Hostname, err)
 			}

@@ -90,7 +90,7 @@ func (idWalker *IDWalker) normalizeID(id *call.ID) (*call.ID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load handle-form ID: %w", err)
 	}
-	recipeID, err := res.RecipeID()
+	recipeID, err := res.RecipeID(idWalker.ctx)
 	if err != nil {
 		return nil, fmt.Errorf("rebuild recipe ID from handle-form ID: %w", err)
 	}

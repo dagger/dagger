@@ -67,7 +67,11 @@ func ScopeModuleForSDKOperation(
 	if err != nil {
 		return inst, fmt.Errorf("scope module for sdk operation %q: current client metadata: %w", op, err)
 	}
-	attached, err := dag.Cache.AttachResult(ctx, clientMetadata.SessionID, dag, scopedModInst.WithContentDigest(scopedDigest))
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("scope module for sdk operation %q: engine cache: %w", op, err)
+	}
+	attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, dag, scopedModInst.WithContentDigest(scopedDigest))
 	if err != nil {
 		return inst, err
 	}

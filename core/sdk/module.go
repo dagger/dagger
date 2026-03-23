@@ -18,7 +18,7 @@ type module struct {
 	sdk dagql.AnyObjectResult
 
 	// A server that the SDK module has been installed to.
-	serverSchema *dagql.ServerSchema
+	server *dagql.Server
 
 	funcs map[string]*core.Function
 }
@@ -30,11 +30,7 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
-	dagqlCache, err := root.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
-	}
-	dag := dagql.NewServer(root, dagqlCache)
+	dag := dagql.NewServer(root)
 	dag.Around(core.AroundFunc)
 
 	if err := core.NewUserMod(sdkModMeta).Install(ctx, dag); err != nil {
@@ -73,23 +69,15 @@ func newModuleSDK(
 	}
 
 	return (&module{
-		mod:          sdkModMeta,
-		serverSchema: dag.AsSchema(),
-		sdk:          sdk,
-		funcs:        listImplementedFunctions(sdkModMeta.Self()),
+		mod:    sdkModMeta,
+		server: dag,
+		sdk:    sdk,
+		funcs:  listImplementedFunctions(sdkModMeta.Self()),
 	}).withConfig(ctx, rawConfig)
 }
 
 func (sdk *module) dag(ctx context.Context) (*dagql.Server, error) {
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dagqlCache, err := query.Cache(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return sdk.serverSchema.WithCache(dagqlCache), nil
+	return sdk.server, nil
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -117,7 +105,7 @@ func (sdk *module) withConfig(
 		return nil, err
 	}
 
-	inputs := fieldspec.Args.Inputs(sdk.serverSchema.View())
+	inputs := fieldspec.Args.Inputs(sdk.server.View)
 
 	// check if there are any unknown config keys provided
 	var unusedKeys = []string{}

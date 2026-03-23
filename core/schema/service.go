@@ -326,7 +326,7 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectR
 }
 
 func (s *serviceSchema) hostname(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[dagql.String], _ error) {
-	parentDig, err := parent.ContentPreferredDigest()
+	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("service digest: %w", err)
 	}
@@ -345,7 +345,7 @@ func (s *serviceSchema) withHostname(ctx context.Context, parent *core.Service, 
 }
 
 func (s *serviceSchema) ports(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.Result[dagql.Array[core.Port]], _ error) {
-	parentDig, err := parent.ContentPreferredDigest()
+	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("service digest: %w", err)
 	}
@@ -362,7 +362,7 @@ type serviceEndpointArgs struct {
 }
 
 func (s *serviceSchema) endpoint(ctx context.Context, parent dagql.ObjectResult[*core.Service], args serviceEndpointArgs) (res dagql.Result[dagql.String], _ error) {
-	parentDig, err := parent.ContentPreferredDigest()
+	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("service digest: %w", err)
 	}
@@ -381,7 +381,7 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*co
 		}
 	}()
 
-	parentDig, err := parent.ContentPreferredDigest()
+	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("service digest: %w", err)
 	}
@@ -402,7 +402,7 @@ type serviceStopArgs struct {
 }
 
 func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*core.Service], args serviceStopArgs) (res dagql.Result[core.ServiceID], _ error) {
-	parentDig, err := parent.ContentPreferredDigest()
+	parentDig, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("service digest: %w", err)
 	}
@@ -480,7 +480,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	if err != nil {
 		return res, fmt.Errorf("failed to select host service: %w", err)
 	}
-	hostSvcDig, err := hostSvc.ContentPreferredDigest()
+	hostSvcDig, err := hostSvc.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, fmt.Errorf("host service digest: %w", err)
 	}

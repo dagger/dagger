@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sync"
@@ -184,13 +185,6 @@ type ResultCall struct {
 	Args           []*ResultCallArg   `json:"args,omitempty"`
 	ImplicitInputs []*ResultCallArg   `json:"implicitInputs,omitempty"`
 
-	// cache is a runtime-only backpointer used for recursive digest resolution
-	// through ResultCallRef.ResultID. It is not persisted.
-	//
-	// Cache-owned frames are treated as immutable once attached. Read-only
-	// identity paths borrow them directly; mutation paths must fork first.
-	cache *cache
-
 	// recipeDigest is memoized once the frame has reached its finalized
 	// semantic shape. Do not mutate the frame after calling RecipeDigest.
 	recipeDigestOnce sync.Once
@@ -208,8 +202,6 @@ type ResultCall struct {
 type ResultCallStructuralInputRef struct {
 	Result *ResultCallRef
 	Digest digest.Digest
-
-	cache *cache
 }
 
 func (frame *ResultCall) clone() *ResultCall {
@@ -227,7 +219,6 @@ func (frame *ResultCall) clone() *ResultCall {
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
 		Receiver:     frame.Receiver.clone(),
 		Module:       frame.Module.clone(),
-		cache:        frame.cache,
 	}
 	if len(frame.Args) > 0 {
 		cp.Args = make([]*ResultCallArg, 0, len(frame.Args))
@@ -261,12 +252,19 @@ func (frame *ResultCall) fork() *ResultCall {
 		Module:         frame.Module,
 		Args:           slices.Clone(frame.Args),
 		ImplicitInputs: slices.Clone(frame.ImplicitInputs),
-		cache:          frame.cache,
 	}
 }
 
-func (frame *ResultCall) RecipeDigest() (digest.Digest, error) {
-	return frame.recipeDigestWithVisiting(map[sharedResultID]struct{}{})
+func (frame *ResultCall) RecipeDigest(ctx context.Context) (digest.Digest, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	return frame.deriveRecipeDigest(c)
+}
+
+func (frame *ResultCall) deriveRecipeDigest(c *Cache) (digest.Digest, error) {
+	return frame.recipeDigestWithVisiting(c, map[sharedResultID]struct{}{})
 }
 
 func (frame *ResultCall) ContentDigest() digest.Digest {
@@ -283,11 +281,27 @@ func (frame *ResultCall) ContentDigest() digest.Digest {
 	return last
 }
 
-func (frame *ResultCall) ContentPreferredDigest() (digest.Digest, error) {
-	return frame.contentPreferredDigestWithVisiting(map[sharedResultID]struct{}{})
+func (frame *ResultCall) ContentPreferredDigest(ctx context.Context) (digest.Digest, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	return frame.deriveContentPreferredDigest(c)
 }
 
-func (frame *ResultCall) Inputs() ([]digest.Digest, error) {
+func (frame *ResultCall) deriveContentPreferredDigest(c *Cache) (digest.Digest, error) {
+	return frame.contentPreferredDigestWithVisiting(c, map[sharedResultID]struct{}{})
+}
+
+func (frame *ResultCall) Inputs(ctx context.Context) ([]digest.Digest, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return frame.inputs(c)
+}
+
+func (frame *ResultCall) inputs(c *Cache) ([]digest.Digest, error) {
 	if frame == nil {
 		return nil, nil
 	}
@@ -306,7 +320,7 @@ func (frame *ResultCall) Inputs() ([]digest.Digest, error) {
 	}
 
 	if frame.Receiver != nil {
-		receiverDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Receiver, map[sharedResultID]struct{}{})
+		receiverDigest, err := recipeDigestForResultCallRef(c, frame.Receiver, map[sharedResultID]struct{}{})
 		if err != nil {
 			return nil, fmt.Errorf("receiver: %w", err)
 		}
@@ -320,7 +334,7 @@ func (frame *ResultCall) Inputs() ([]digest.Digest, error) {
 		}
 		switch lit.Kind {
 		case ResultCallLiteralKindResultRef:
-			dig, err := recipeDigestForResultCallRef(frame.cache, lit.ResultRef, map[sharedResultID]struct{}{})
+			dig, err := recipeDigestForResultCallRef(c, lit.ResultRef, map[sharedResultID]struct{}{})
 			if err != nil {
 				return err
 			}
@@ -366,11 +380,27 @@ func (frame *ResultCall) Inputs() ([]digest.Digest, error) {
 	return inputs, nil
 }
 
-func (frame *ResultCall) RecipeID() (*call.ID, error) {
-	return frame.recipeIDWithVisiting(map[sharedResultID]struct{}{})
+func (frame *ResultCall) RecipeID(ctx context.Context) (*call.ID, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return frame.recipeID(c)
 }
 
-func (frame *ResultCall) CallPB() (*callpbv1.Call, error) {
+func (frame *ResultCall) recipeID(c *Cache) (*call.ID, error) {
+	return frame.recipeIDWithVisiting(c, map[sharedResultID]struct{}{})
+}
+
+func (frame *ResultCall) CallPB(ctx context.Context) (*callpbv1.Call, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return frame.callPB(c)
+}
+
+func (frame *ResultCall) callPB(c *Cache) (*callpbv1.Call, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("nil result call")
 	}
@@ -381,7 +411,7 @@ func (frame *ResultCall) CallPB() (*callpbv1.Call, error) {
 	if frame.Type == nil {
 		return nil, fmt.Errorf("missing call type")
 	}
-	callDigest, err := frame.RecipeDigest()
+	callDigest, err := frame.deriveRecipeDigest(c)
 	if err != nil {
 		return nil, fmt.Errorf("call digest: %w", err)
 	}
@@ -395,14 +425,14 @@ func (frame *ResultCall) CallPB() (*callpbv1.Call, error) {
 		EffectIds: slices.Clone(frame.EffectIDs),
 	}
 	if frame.Receiver != nil {
-		receiverDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Receiver, map[sharedResultID]struct{}{})
+		receiverDigest, err := recipeDigestForResultCallRef(c, frame.Receiver, map[sharedResultID]struct{}{})
 		if err != nil {
 			return nil, fmt.Errorf("receiver digest: %w", err)
 		}
 		pbCall.ReceiverDigest = receiverDigest.String()
 	}
 	if frame.Module != nil && frame.Module.ResultRef != nil {
-		moduleDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Module.ResultRef, map[sharedResultID]struct{}{})
+		moduleDigest, err := recipeDigestForResultCallRef(c, frame.Module.ResultRef, map[sharedResultID]struct{}{})
 		if err != nil {
 			return nil, fmt.Errorf("module digest: %w", err)
 		}
@@ -426,7 +456,7 @@ func (frame *ResultCall) CallPB() (*callpbv1.Call, error) {
 		if arg == nil {
 			continue
 		}
-		pbArg, err := resultCallArgPB(frame.cache, arg)
+		pbArg, err := resultCallArgPB(c, arg)
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", arg.Name, err)
 		}
@@ -436,7 +466,7 @@ func (frame *ResultCall) CallPB() (*callpbv1.Call, error) {
 		if input == nil {
 			continue
 		}
-		pbArg, err := resultCallArgPB(frame.cache, input)
+		pbArg, err := resultCallArgPB(c, input)
 		if err != nil {
 			return nil, fmt.Errorf("implicit input %q: %w", input.Name, err)
 		}
@@ -456,7 +486,7 @@ func resultCallTypePB(typ *ResultCallType) *callpbv1.Type {
 	}
 }
 
-func resultCallArgPB(c *cache, arg *ResultCallArg) (*callpbv1.Argument, error) {
+func resultCallArgPB(c *Cache, arg *ResultCallArg) (*callpbv1.Argument, error) {
 	if arg == nil {
 		return nil, nil
 	}
@@ -470,7 +500,7 @@ func resultCallArgPB(c *cache, arg *ResultCallArg) (*callpbv1.Argument, error) {
 	}, nil
 }
 
-func resultCallLiteralPB(c *cache, lit *ResultCallLiteral) (*callpbv1.Literal, error) {
+func resultCallLiteralPB(c *Cache, lit *ResultCallLiteral) (*callpbv1.Literal, error) {
 	if lit == nil {
 		return &callpbv1.Literal{Value: &callpbv1.Literal_Null{Null: true}}, nil
 	}
@@ -532,39 +562,42 @@ func resultCallLiteralPB(c *cache, lit *ResultCallLiteral) (*callpbv1.Literal, e
 	}
 }
 
-func (frame *ResultCall) ReceiverCall() (*ResultCall, error) {
+func (frame *ResultCall) ReceiverCall(ctx context.Context) (*ResultCall, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return frame.receiverCall(c)
+}
+
+func (frame *ResultCall) receiverCall(c *Cache) (*ResultCall, error) {
 	if frame == nil || frame.Receiver == nil {
 		return nil, nil
 	}
-	return frame.refCall(frame.Receiver)
+	return frame.refCall(c, frame.Receiver)
 }
 
-func (frame *ResultCall) refCall(ref *ResultCallRef) (*ResultCall, error) {
+func (frame *ResultCall) refCall(c *Cache, ref *ResultCallRef) (*ResultCall, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
 	if ref.Call != nil {
-		ref.Call.bindCache(frame.cache)
 		return ref.Call, nil
 	}
-	if target := ref.loadSharedCall(frame.cache); target != nil {
-		if frame.cache != nil {
-			target.bindCache(frame.cache)
-		}
+	if target := ref.loadSharedCall(); target != nil {
 		return target, nil
 	}
-	if frame.cache == nil {
+	if c == nil {
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
 	}
-	target := frame.cache.resultCallByResultID(sharedResultID(ref.ResultID))
+	target := c.resultCallByResultID(sharedResultID(ref.ResultID))
 	if target == nil {
 		return nil, fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
 	}
-	target.bindCache(frame.cache)
 	return target, nil
 }
 
-func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+func (frame *ResultCall) recipeDigestWithVisiting(c *Cache, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
 	if frame == nil {
 		return "", nil
 	}
@@ -583,7 +616,7 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 		h := hashutil.NewHasher()
 
 		if frame.Receiver != nil {
-			receiverDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Receiver, visiting)
+			receiverDigest, err := recipeDigestForResultCallRef(c, frame.Receiver, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -606,7 +639,7 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 			if arg == nil {
 				continue
 			}
-			nextH, err := appendResultCallArgBytes(frame.cache, arg, h, visiting)
+			nextH, err := appendResultCallArgBytes(c, arg, h, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -624,7 +657,7 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 			if input == nil {
 				continue
 			}
-			nextH, err := appendResultCallArgBytes(frame.cache, input, h, visiting)
+			nextH, err := appendResultCallArgBytes(c, input, h, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -638,7 +671,7 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 		h = h.WithDelim()
 
 		if frame.Module != nil && frame.Module.ResultRef != nil {
-			moduleDigest, err := recipeDigestForResultCallRef(frame.cache, frame.Module.ResultRef, visiting)
+			moduleDigest, err := recipeDigestForResultCallRef(c, frame.Module.ResultRef, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -661,7 +694,7 @@ func (frame *ResultCall) recipeDigestWithVisiting(visiting map[sharedResultID]st
 	return frame.recipeDigest, frame.recipeDigestErr
 }
 
-func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+func (frame *ResultCall) contentPreferredDigestWithVisiting(c *Cache, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
 	if frame == nil {
 		return "", nil
 	}
@@ -685,7 +718,7 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 		h := hashutil.NewHasher()
 
 		if frame.Receiver != nil {
-			receiverDigest, err := contentPreferredDigestForResultCallRef(frame.cache, frame.Receiver, visiting)
+			receiverDigest, err := contentPreferredDigestForResultCallRef(c, frame.Receiver, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -708,7 +741,7 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 			if arg == nil {
 				continue
 			}
-			nextH, err := appendResultCallArgContentPreferredBytes(frame.cache, arg, h, visiting)
+			nextH, err := appendResultCallArgContentPreferredBytes(c, arg, h, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -726,7 +759,7 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 			if input == nil {
 				continue
 			}
-			nextH, err := appendResultCallArgContentPreferredBytes(frame.cache, input, h, visiting)
+			nextH, err := appendResultCallArgContentPreferredBytes(c, input, h, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -739,7 +772,7 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 		}
 
 		if frame.Module != nil && frame.Module.ResultRef != nil {
-			moduleDigest, err := contentPreferredDigestForResultCallRef(frame.cache, frame.Module.ResultRef, visiting)
+			moduleDigest, err := contentPreferredDigestForResultCallRef(c, frame.Module.ResultRef, visiting)
 			if err != nil {
 				if h != nil {
 					h.Close()
@@ -762,7 +795,15 @@ func (frame *ResultCall) contentPreferredDigestWithVisiting(visiting map[sharedR
 	return frame.contentPreferredDigest, frame.contentPreferredDigestErr
 }
 
-func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallStructuralInputRef, error) {
+func (frame *ResultCall) SelfDigestAndInputRefs(ctx context.Context) (digest.Digest, []ResultCallStructuralInputRef, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	return frame.selfDigestAndInputRefs(c)
+}
+
+func (frame *ResultCall) selfDigestAndInputRefs(c *Cache) (digest.Digest, []ResultCallStructuralInputRef, error) {
 	if frame == nil {
 		return "", nil, nil
 	}
@@ -781,7 +822,6 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 	if frame.Receiver != nil {
 		inputRefs = append(inputRefs, ResultCallStructuralInputRef{
 			Result: frame.Receiver,
-			cache:  frame.cache,
 		})
 	}
 	h = h.WithDelim()
@@ -797,7 +837,7 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		if arg == nil {
 			continue
 		}
-		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(frame.cache, arg, h, inputRefs)
+		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(c, arg, h, inputRefs)
 		if err != nil {
 			if h != nil {
 				h.Close()
@@ -815,7 +855,7 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		if input == nil {
 			continue
 		}
-		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(frame.cache, input, h, inputRefs)
+		nextH, nextInputRefs, err := appendResultCallArgSelfRefs(c, input, h, inputRefs)
 		if err != nil {
 			if h != nil {
 				h.Close()
@@ -836,7 +876,6 @@ func (frame *ResultCall) SelfDigestAndInputRefs() (digest.Digest, []ResultCallSt
 		}
 		inputRefs = append(inputRefs, ResultCallStructuralInputRef{
 			Result: frame.Module.ResultRef,
-			cache:  frame.cache,
 		})
 	}
 	h = h.WithDelim()
@@ -866,13 +905,6 @@ func (frame *ResultCall) AllEffectIDs() ([]string, error) {
 	return []string{}, nil
 }
 
-func (frame *ResultCall) bindCache(c *cache) {
-	if frame == nil {
-		return
-	}
-	frame.cache = c
-}
-
 func (ref ResultCallStructuralInputRef) Validate() error {
 	switch {
 	case ref.Result != nil && ref.Digest != "":
@@ -886,12 +918,20 @@ func (ref ResultCallStructuralInputRef) Validate() error {
 	}
 }
 
-func (ref ResultCallStructuralInputRef) InputDigest() (digest.Digest, error) {
+func (ref ResultCallStructuralInputRef) InputDigest(ctx context.Context) (digest.Digest, error) {
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	return ref.inputDigest(c)
+}
+
+func (ref ResultCallStructuralInputRef) inputDigest(c *Cache) (digest.Digest, error) {
 	switch {
 	case ref.Result != nil && ref.Digest != "":
 		return "", fmt.Errorf("structural input ref cannot have both result and digest")
 	case ref.Result != nil:
-		return recipeDigestForResultCallRef(ref.cache, ref.Result, map[sharedResultID]struct{}{})
+		return recipeDigestForResultCallRef(c, ref.Result, map[sharedResultID]struct{}{})
 	case ref.Digest != "":
 		return ref.Digest, nil
 	default:
@@ -910,11 +950,8 @@ func (ref *ResultCallRef) clone() *ResultCallRef {
 	}
 }
 
-func (ref *ResultCallRef) loadSharedCall(c *cache) *ResultCall {
+func (ref *ResultCallRef) loadSharedCall() *ResultCall {
 	if ref == nil || ref.shared == nil {
-		return nil
-	}
-	if c != nil && ref.shared.cache != nil && ref.shared.cache != c {
 		return nil
 	}
 	return ref.shared.loadResultCall()
@@ -952,7 +989,7 @@ func resultCallIdentityField(frame *ResultCall) (string, error) {
 	}
 }
 
-func recipeDigestForCachedResult(c *cache, resultID sharedResultID, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+func recipeDigestForCachedResult(c *Cache, resultID sharedResultID, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
 	if resultID == 0 {
 		return "", fmt.Errorf("missing result ref")
 	}
@@ -970,27 +1007,23 @@ func recipeDigestForCachedResult(c *cache, resultID sharedResultID, visiting map
 	visiting[resultID] = struct{}{}
 	defer delete(visiting, resultID)
 
-	return frame.recipeDigestWithVisiting(visiting)
+	return frame.recipeDigestWithVisiting(c, visiting)
 }
 
-func recipeDigestForResultCallRef(c *cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+func recipeDigestForResultCallRef(c *Cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
 	if err := ref.Validate(); err != nil {
 		return "", err
 	}
 	if ref.Call != nil {
-		ref.Call.bindCache(c)
-		return ref.Call.recipeDigestWithVisiting(visiting)
+		return ref.Call.recipeDigestWithVisiting(c, visiting)
 	}
-	if frame := ref.loadSharedCall(c); frame != nil {
-		if c != nil {
-			frame.bindCache(c)
-		}
-		return frame.recipeDigestWithVisiting(visiting)
+	if frame := ref.loadSharedCall(); frame != nil {
+		return frame.recipeDigestWithVisiting(c, visiting)
 	}
 	return recipeDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
 }
 
-func contentPreferredDigestForCachedResult(c *cache, resultID sharedResultID, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+func contentPreferredDigestForCachedResult(c *Cache, resultID sharedResultID, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
 	if resultID == 0 {
 		return "", fmt.Errorf("missing result ref")
 	}
@@ -1008,22 +1041,18 @@ func contentPreferredDigestForCachedResult(c *cache, resultID sharedResultID, vi
 	visiting[resultID] = struct{}{}
 	defer delete(visiting, resultID)
 
-	return frame.contentPreferredDigestWithVisiting(visiting)
+	return frame.contentPreferredDigestWithVisiting(c, visiting)
 }
 
-func contentPreferredDigestForResultCallRef(c *cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
+func contentPreferredDigestForResultCallRef(c *Cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (digest.Digest, error) {
 	if err := ref.Validate(); err != nil {
 		return "", err
 	}
 	if ref.Call != nil {
-		ref.Call.bindCache(c)
-		return ref.Call.contentPreferredDigestWithVisiting(visiting)
+		return ref.Call.contentPreferredDigestWithVisiting(c, visiting)
 	}
-	if frame := ref.loadSharedCall(c); frame != nil {
-		if c != nil {
-			frame.bindCache(c)
-		}
-		return frame.contentPreferredDigestWithVisiting(visiting)
+	if frame := ref.loadSharedCall(); frame != nil {
+		return frame.contentPreferredDigestWithVisiting(c, visiting)
 	}
 	return contentPreferredDigestForCachedResult(c, sharedResultID(ref.ResultID), visiting)
 }
@@ -1055,7 +1084,7 @@ func redactedCallArgForDigest(arg *ResultCallArg) *ResultCallArg {
 }
 
 func appendResultCallArgBytes(
-	c *cache,
+	c *Cache,
 	arg *ResultCallArg,
 	h *hashutil.Hasher,
 	visiting map[sharedResultID]struct{},
@@ -1069,7 +1098,7 @@ func appendResultCallArgBytes(
 }
 
 func appendResultCallArgContentPreferredBytes(
-	c *cache,
+	c *Cache,
 	arg *ResultCallArg,
 	h *hashutil.Hasher,
 	visiting map[sharedResultID]struct{},
@@ -1083,7 +1112,7 @@ func appendResultCallArgContentPreferredBytes(
 }
 
 func appendResultCallArgSelfRefs(
-	c *cache,
+	c *Cache,
 	arg *ResultCallArg,
 	h *hashutil.Hasher,
 	inputs []ResultCallStructuralInputRef,
@@ -1097,7 +1126,7 @@ func appendResultCallArgSelfRefs(
 }
 
 func appendResultCallLiteralBytes(
-	c *cache,
+	c *Cache,
 	lit *ResultCallLiteral,
 	h *hashutil.Hasher,
 	visiting map[sharedResultID]struct{},
@@ -1167,7 +1196,7 @@ func appendResultCallLiteralBytes(
 }
 
 func appendResultCallLiteralContentPreferredBytes(
-	c *cache,
+	c *Cache,
 	lit *ResultCallLiteral,
 	h *hashutil.Hasher,
 	visiting map[sharedResultID]struct{},
@@ -1237,7 +1266,7 @@ func appendResultCallLiteralContentPreferredBytes(
 }
 
 func appendResultCallLiteralSelfRefs(
-	c *cache,
+	c *Cache,
 	lit *ResultCallLiteral,
 	h *hashutil.Hasher,
 	inputs []ResultCallStructuralInputRef,
@@ -1252,7 +1281,6 @@ func appendResultCallLiteralSelfRefs(
 		h = h.WithByte(prefix)
 		inputs = append(inputs, ResultCallStructuralInputRef{
 			Result: lit.ResultRef,
-			cache:  c,
 		})
 	case lit.Kind == ResultCallLiteralKindBool:
 		const prefix = '2'
@@ -1306,25 +1334,23 @@ func appendResultCallLiteralSelfRefs(
 	return h, inputs, nil
 }
 
-func (c *cache) RecipeIDForCall(frame *ResultCall) (*call.ID, error) {
+func (c *Cache) RecipeIDForCall(frame *ResultCall) (*call.ID, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil call")
 	}
-	frame.bindCache(c)
-	return frame.RecipeID()
+	return frame.recipeID(c)
 }
 
-func (c *cache) RecipeDigestForCall(frame *ResultCall) (digest.Digest, error) {
+func (c *Cache) RecipeDigestForCall(frame *ResultCall) (digest.Digest, error) {
 	if frame == nil {
 		return "", fmt.Errorf("derive recipe digest: nil call")
 	}
-	frame.bindCache(c)
-	return frame.RecipeDigest()
+	return frame.deriveRecipeDigest(c)
 }
 
 // resultCallByResultID returns the cache-owned immutable result-call frame for
 // the given shared result. Callers must treat the returned frame as read-only.
-func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
+func (c *Cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	if resultID == 0 {
 		return nil
 	}
@@ -1337,7 +1363,7 @@ func (c *cache) resultCallByResultID(resultID sharedResultID) *ResultCall {
 	return res.loadResultCall()
 }
 
-func (frame *ResultCall) recipeIDWithVisiting(visiting map[sharedResultID]struct{}) (*call.ID, error) {
+func (frame *ResultCall) recipeIDWithVisiting(c *Cache, visiting map[sharedResultID]struct{}) (*call.ID, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil frame")
 	}
@@ -1354,7 +1380,7 @@ func (frame *ResultCall) recipeIDWithVisiting(visiting map[sharedResultID]struct
 		mod        *call.Module
 	)
 	if frame.Receiver != nil {
-		id, err := frame.resolveRefRecipeID(frame.Receiver, visiting)
+		id, err := frame.resolveRefRecipeID(c, frame.Receiver, visiting)
 		if err != nil {
 			return nil, fmt.Errorf("receiver: %w", err)
 		}
@@ -1364,18 +1390,18 @@ func (frame *ResultCall) recipeIDWithVisiting(visiting map[sharedResultID]struct
 		if frame.Module.ResultRef == nil {
 			return nil, fmt.Errorf("module: missing result ref")
 		}
-		modID, err := frame.resolveRefRecipeID(frame.Module.ResultRef, visiting)
+		modID, err := frame.resolveRefRecipeID(c, frame.Module.ResultRef, visiting)
 		if err != nil {
 			return nil, fmt.Errorf("module: %w", err)
 		}
 		mod = call.NewModule(modID, frame.Module.Name, frame.Module.Ref, frame.Module.Pin)
 	}
 
-	args, err := frame.callArgs(frame.Args, visiting)
+	args, err := frame.callArgs(c, frame.Args, visiting)
 	if err != nil {
 		return nil, fmt.Errorf("args: %w", err)
 	}
-	implicitInputs, err := frame.callArgs(frame.ImplicitInputs, visiting)
+	implicitInputs, err := frame.callArgs(c, frame.ImplicitInputs, visiting)
 	if err != nil {
 		return nil, fmt.Errorf("implicit inputs: %w", err)
 	}
@@ -1403,21 +1429,20 @@ func (frame *ResultCall) recipeIDWithVisiting(visiting map[sharedResultID]struct
 	return rebuilt, nil
 }
 
-func (frame *ResultCall) resolveRefRecipeID(ref *ResultCallRef, visiting map[sharedResultID]struct{}) (*call.ID, error) {
+func (frame *ResultCall) resolveRefRecipeID(c *Cache, ref *ResultCallRef, visiting map[sharedResultID]struct{}) (*call.ID, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
 	if ref.Call != nil {
-		ref.Call.bindCache(frame.cache)
-		return ref.Call.recipeIDWithVisiting(visiting)
+		return ref.Call.recipeIDWithVisiting(c, visiting)
 	}
-	if frame == nil || frame.cache == nil {
+	if c == nil {
 		return nil, fmt.Errorf("cannot resolve result ref %d without cache", ref.ResultID)
 	}
 	refID := sharedResultID(ref.ResultID)
-	refFrame := ref.loadSharedCall(frame.cache)
+	refFrame := ref.loadSharedCall()
 	if refFrame == nil {
-		refFrame = frame.cache.resultCallByResultID(refID)
+		refFrame = c.resultCallByResultID(refID)
 	}
 	if refFrame == nil {
 		return nil, fmt.Errorf("missing result call frame for shared result %d", ref.ResultID)
@@ -1427,10 +1452,11 @@ func (frame *ResultCall) resolveRefRecipeID(ref *ResultCallRef, visiting map[sha
 	}
 	visiting[refID] = struct{}{}
 	defer delete(visiting, refID)
-	return refFrame.recipeIDWithVisiting(visiting)
+	return refFrame.recipeIDWithVisiting(c, visiting)
 }
 
 func (frame *ResultCall) callArgs(
+	c *Cache,
 	frameArgs []*ResultCallArg,
 	visiting map[sharedResultID]struct{},
 ) ([]*call.Argument, error) {
@@ -1442,7 +1468,7 @@ func (frame *ResultCall) callArgs(
 		if frameArg == nil || frameArg.Value == nil {
 			continue
 		}
-		lit, err := frame.callLiteral(frameArg.Value, visiting)
+		lit, err := frame.callLiteral(c, frameArg.Value, visiting)
 		if err != nil {
 			return nil, err
 		}
@@ -1452,6 +1478,7 @@ func (frame *ResultCall) callArgs(
 }
 
 func (frame *ResultCall) callLiteral(
+	c *Cache,
 	frameLit *ResultCallLiteral,
 	visiting map[sharedResultID]struct{},
 ) (call.Literal, error) {
@@ -1474,7 +1501,7 @@ func (frame *ResultCall) callLiteral(
 	case ResultCallLiteralKindDigestedString:
 		return call.NewLiteralDigestedString(frameLit.DigestedStringValue, frameLit.DigestedStringDigest), nil
 	case ResultCallLiteralKindResultRef:
-		id, err := frame.resolveRefRecipeID(frameLit.ResultRef, visiting)
+		id, err := frame.resolveRefRecipeID(c, frameLit.ResultRef, visiting)
 		if err != nil {
 			return nil, err
 		}
@@ -1482,7 +1509,7 @@ func (frame *ResultCall) callLiteral(
 	case ResultCallLiteralKindList:
 		items := make([]call.Literal, 0, len(frameLit.ListItems))
 		for _, item := range frameLit.ListItems {
-			lit, err := frame.callLiteral(item, visiting)
+			lit, err := frame.callLiteral(c, item, visiting)
 			if err != nil {
 				return nil, err
 			}
@@ -1495,7 +1522,7 @@ func (frame *ResultCall) callLiteral(
 			if field == nil || field.Value == nil {
 				continue
 			}
-			lit, err := frame.callLiteral(field.Value, visiting)
+			lit, err := frame.callLiteral(c, field.Value, visiting)
 			if err != nil {
 				return nil, err
 			}

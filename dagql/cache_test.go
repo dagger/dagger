@@ -148,7 +148,8 @@ func TestCacheRejectsNilTypeResolver(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	key := cacheTestIntCall("nil-type-resolver")
 
@@ -173,7 +174,7 @@ func TestCacheRejectsEmptySessionIDForOwningEntrypoints(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := cacheTestIntCall("empty-session-id")
 
@@ -208,9 +209,9 @@ func (obj *cacheTestObject) OnRelease(ctx context.Context) error {
 	return obj.onRelease(ctx)
 }
 
-func cacheTestServer(t *testing.T, base Cache) *Server {
+func cacheTestServer(t *testing.T, base *Cache) *Server {
 	t.Helper()
-	srv := NewServer(cacheTestQuery{}, base)
+	srv := NewServer(cacheTestQuery{})
 	Fields[*cacheTestObject]{
 		Func("value", func(_ context.Context, self *cacheTestObject, _ struct{}) (Int, error) {
 			return NewInt(self.Value), nil
@@ -234,12 +235,12 @@ func cacheTestSessionID(t *testing.T, ctx context.Context) string {
 	return clientMetadata.SessionID
 }
 
-func cacheTestReleaseSession(t *testing.T, cache Cache, ctx context.Context) {
+func cacheTestReleaseSession(t *testing.T, cache *Cache, ctx context.Context) {
 	t.Helper()
 	assert.NilError(t, cache.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
 }
 
-func cacheTestObjectResolverServer(t *testing.T, base Cache, marker int) *Server {
+func cacheTestObjectResolverServer(t *testing.T, base *Cache, marker int) *Server {
 	t.Helper()
 	srv := cacheTestServer(t, base)
 	Fields[cacheTestQuery]{
@@ -276,7 +277,7 @@ func TestCacheConcurrent(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	keyCall := cacheTestIntCall("42")
 	initialized := map[int]bool{}
@@ -445,21 +446,6 @@ func TestCacheRecursiveCall(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 12, cacheTestUnwrapInt(t, v))
 
-	// verify other cache instances can be called with same keys
-	cacheIface2, err := NewCache(ctx, "")
-	assert.NilError(t, err)
-	key100Call := cacheTestIntCall("100")
-	v, err = cacheIface.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: key100Call}, func(ctx context.Context) (AnyResult, error) {
-		res, err := cacheIface2.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: key100Call}, func(context.Context) (AnyResult, error) {
-			return cacheTestIntResult(key100Call, 101), nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		return cacheTestIntResult(key100Call, cacheTestUnwrapInt(t, res)), nil
-	})
-	assert.NilError(t, err)
-	assert.Equal(t, 101, cacheTestUnwrapInt(t, v))
 }
 
 func TestCacheContextCancel(t *testing.T) {
@@ -822,7 +808,7 @@ func TestCacheNilResultIsCached(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	keyCall := cacheTestIntCall("nil-result")
 	initCalls := 0
@@ -855,7 +841,8 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		ctx = ContextWithCache(ctx, cacheIface)
+		c := cacheIface
 
 		sharedEq := call.ExtraDigest{
 			Digest: digest.FromString("shared-eq-basic"),
@@ -889,7 +876,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !f2Res.HitCache())
 		assert.Equal(t, 2, fInitCalls)
-		assert.Assert(t, cacheTestMustRecipeID(t, f1Res).Digest() != cacheTestMustRecipeID(t, f2Res).Digest())
+		assert.Assert(t, cacheTestMustRecipeID(t, ctx, f1Res).Digest() != cacheTestMustRecipeID(t, ctx, f2Res).Digest())
 
 		g1Res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 			Kind:     ResultCallKindField,
@@ -928,7 +915,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		sharedEq := call.ExtraDigest{
 			Digest: digest.FromString("deep-shared-eq"),
@@ -1054,7 +1041,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		f1Only := call.ExtraDigest{Digest: digest.FromString("late-f1-only"), Label: "f1-only"}
 		f2Only := call.ExtraDigest{Digest: digest.FromString("late-f2-only"), Label: "f2-only"}
@@ -1194,7 +1181,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		xShared := call.ExtraDigest{Digest: digest.FromString("multi-x-shared"), Label: "x-shared"}
 		xNoise1 := call.ExtraDigest{Digest: digest.FromString("multi-x-noise-1"), Label: "x-noise-1"}
@@ -1277,7 +1264,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		xShared := call.ExtraDigest{Digest: digest.FromString("multi-partial-x-shared"), Label: "x-shared"}
 		xNoise1 := call.ExtraDigest{Digest: digest.FromString("multi-partial-x-noise-1"), Label: "x-noise-1"}
@@ -1361,7 +1348,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		bridgeA := call.ExtraDigest{Digest: digest.FromString("bridge-a"), Label: "bridge-a"}
 		bridgeB := call.ExtraDigest{Digest: digest.FromString("bridge-b"), Label: "bridge-b"}
@@ -1432,7 +1419,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		bridgeA := call.ExtraDigest{Digest: digest.FromString("nobridge-a"), Label: "bridge-a"}
 		bridgeB := call.ExtraDigest{Digest: digest.FromString("nobridge-b"), Label: "bridge-b"}
@@ -1531,7 +1518,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		shared := call.ExtraDigest{Digest: digest.FromString("fanout-shared"), Label: "fanout-shared"}
 		noise1 := call.ExtraDigest{Digest: digest.FromString("fanout-noise-1"), Label: "noise-1"}
@@ -1661,7 +1648,7 @@ func TestEquivalencySetCacheHits(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		shared := call.ExtraDigest{Digest: digest.FromString("fanout-late-shared"), Label: "fanout-shared"}
 		noise1 := call.ExtraDigest{Digest: digest.FromString("fanout-late-noise-1"), Label: "noise-1"}
@@ -1808,7 +1795,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		requestID := call.New().Append(Int(0).Type(), "direct-recipe-request")
 		requestCall := cacheTestIntCall("direct-recipe-request")
@@ -1850,7 +1837,7 @@ func TestDirectDigestLookupHitsWithoutTermIndex(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		shared := call.ExtraDigest{
 			Digest: digest.FromString("direct-extra-hit-shared"),
@@ -1899,7 +1886,7 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	requestExtra := call.ExtraDigest{
 		Digest: digest.FromString("index-explicit-request-extra"),
@@ -1933,9 +1920,9 @@ func TestIndexResultDigestsUsesExplicitRequestAndResponseIDs(t *testing.T) {
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
 
-	requestDigest, err := requestCall.RecipeDigest()
+	requestDigest, err := requestCall.deriveRecipeDigest(c)
 	assert.NilError(t, err)
-	responseDigest, err := responseCall.RecipeDigest()
+	responseDigest, err := responseCall.deriveRecipeDigest(c)
 	assert.NilError(t, err)
 	for _, dig := range []digest.Digest{
 		requestDigest,
@@ -1955,7 +1942,7 @@ func TestStructuralHitCanReuseResultFromSameOutputEqClass(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	shared := call.ExtraDigest{
 		Digest: digest.FromString("shared-output-eq-class"),
@@ -2004,7 +1991,7 @@ func TestTeachCallEquivalentToResult(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	parentCall := cacheTestIntCall("teach-parent")
 	parentRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: parentCall}, func(context.Context) (AnyResult, error) {
@@ -2053,12 +2040,9 @@ func TestPendingResultCallRefRecipeID(t *testing.T) {
 		},
 	}
 
-	childRes, err := NewResultForCall(NewInt(2), childCall)
+	parentRecipeID, err := parentCall.recipeID(nil)
 	assert.NilError(t, err)
-
-	parentRecipeID, err := parentCall.RecipeID()
-	assert.NilError(t, err)
-	childRecipeID, err := childRes.RecipeID()
+	childRecipeID, err := childCall.recipeID(nil)
 	assert.NilError(t, err)
 	assert.Assert(t, childRecipeID.Receiver() != nil)
 	assert.Equal(t, parentRecipeID.Digest(), childRecipeID.Receiver().Digest())
@@ -2070,7 +2054,7 @@ func TestAttachResultNormalizesPendingResultCallRef(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	parentCall := cacheTestIntCall("normalize-parent")
 	parentRes, err := NewResultForCall(NewInt(1), parentCall)
@@ -2109,6 +2093,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
 	srv := cacheTestServer(t, cacheIface)
 
 	objType := (&cacheTestObject{}).Type()
@@ -2119,15 +2104,15 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		Type:  NewResultCallType(objType),
 	}
 	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
-	attachedParentAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, parentRes)
+	attachedParentAny, err := cacheIface.AttachResult(ctx, "test-session", srv, parentRes)
 	assert.NilError(t, err)
 	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
 
 	parentID, err := attachedParent.ID()
 	assert.NilError(t, err)
-	parentDig, err := attachedParent.ContentPreferredDigest()
+	parentDig, err := attachedParent.ContentPreferredDigest(ctx)
 	assert.NilError(t, err)
-	parentRecipeID, err := attachedParent.RecipeID()
+	parentRecipeID, err := attachedParent.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, parentRecipeID.ContentPreferredDigest().String(), parentDig.String())
 
@@ -2143,12 +2128,12 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		},
 	}
 	argOnlyRes := cacheTestObjectResult(t, srv, argOnlyFrame, 12, nil)
-	attachedArgOnlyAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, argOnlyRes)
+	attachedArgOnlyAny, err := cacheIface.AttachResult(ctx, "test-session", srv, argOnlyRes)
 	assert.NilError(t, err)
 	attachedArgOnly := attachedArgOnlyAny.(ObjectResult[*cacheTestObject])
-	argOnlyDig, err := attachedArgOnly.ContentPreferredDigest()
+	argOnlyDig, err := attachedArgOnly.ContentPreferredDigest(ctx)
 	assert.NilError(t, err)
-	argOnlyRecipeID, err := attachedArgOnly.RecipeID()
+	argOnlyRecipeID, err := attachedArgOnly.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, argOnlyRecipeID.ContentPreferredDigest().String(), argOnlyDig.String())
 
@@ -2161,12 +2146,12 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		},
 	}
 	receiverOnlyRes := cacheTestObjectResult(t, srv, receiverOnlyFrame, 13, nil)
-	attachedReceiverOnlyAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, receiverOnlyRes)
+	attachedReceiverOnlyAny, err := cacheIface.AttachResult(ctx, "test-session", srv, receiverOnlyRes)
 	assert.NilError(t, err)
 	attachedReceiverOnly := attachedReceiverOnlyAny.(ObjectResult[*cacheTestObject])
-	receiverOnlyDig, err := attachedReceiverOnly.ContentPreferredDigest()
+	receiverOnlyDig, err := attachedReceiverOnly.ContentPreferredDigest(ctx)
 	assert.NilError(t, err)
-	receiverOnlyRecipeID, err := attachedReceiverOnly.RecipeID()
+	receiverOnlyRecipeID, err := attachedReceiverOnly.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, receiverOnlyRecipeID.ContentPreferredDigest().String(), receiverOnlyDig.String())
 
@@ -2179,7 +2164,7 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 		},
 	}
 	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
-	attachedChildAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, childRes)
+	attachedChildAny, err := cacheIface.AttachResult(ctx, "test-session", srv, childRes)
 	assert.NilError(t, err)
 	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
 
@@ -2205,6 +2190,7 @@ func TestCacheHitRewrapsObjectResultForCurrentServer(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
 
 	srvA := cacheTestObjectResolverServer(t, cacheIface, 1)
 	srvB := cacheTestObjectResolverServer(t, cacheIface, 2)
@@ -2259,6 +2245,7 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
 	srv := cacheTestServer(t, cacheIface)
 
 	objType := (&cacheTestObject{}).Type()
@@ -2269,7 +2256,7 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 		Type:  NewResultCallType(objType),
 	}
 	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
-	attachedParentAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, parentRes)
+	attachedParentAny, err := cacheIface.AttachResult(ctx, "test-session", srv, parentRes)
 	assert.NilError(t, err)
 	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
 
@@ -2291,13 +2278,13 @@ func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
 		},
 	}
 	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
-	attachedChildAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, childRes)
+	attachedChildAny, err := cacheIface.AttachResult(ctx, "test-session", srv, childRes)
 	assert.NilError(t, err)
 	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
 
-	got, err := attachedChild.ContentPreferredDigest()
+	got, err := attachedChild.ContentPreferredDigest(ctx)
 	assert.NilError(t, err)
-	recipeID, err := attachedChild.RecipeID()
+	recipeID, err := attachedChild.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, recipeID.ContentPreferredDigest().String(), got.String())
 }
@@ -2307,6 +2294,7 @@ func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
 	srv := cacheTestServer(t, cacheIface)
 
 	contentDig := digest.FromString("service-content")
@@ -2318,15 +2306,15 @@ func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 		ExtraDigests: []call.ExtraDigest{{Label: call.ExtraDigestLabelContent, Digest: contentDig}},
 	}
 	res := cacheTestObjectResult(t, srv, frame, 33, nil)
-	attachedAny, err := srv.Cache.AttachResult(ctx, "test-session", srv, res)
+	attachedAny, err := cacheIface.AttachResult(ctx, "test-session", srv, res)
 	assert.NilError(t, err)
 	attached := attachedAny.(ObjectResult[*cacheTestObject])
 
-	got, err := attached.ContentPreferredDigest()
+	got, err := attached.ContentPreferredDigest(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, contentDig.String(), got.String())
 
-	recipeID, err := attached.RecipeID()
+	recipeID, err := attached.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, contentDig.String(), recipeID.ContentPreferredDigest().String())
 }
@@ -2338,7 +2326,8 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		ctx = ContextWithCache(ctx, cacheIface)
+		c := cacheIface
 
 		shared := call.ExtraDigest{
 			Digest: digest.FromString("fallback-extra-shared"),
@@ -2384,7 +2373,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		assert.Equal(t, 71, cacheTestUnwrapInt(t, requestRes))
 		assert.Equal(t, cacheTestMustEncodeID(t, sourceRes), cacheTestMustEncodeID(t, requestRes))
 		foundShared := false
-		for _, extra := range cacheTestMustRecipeID(t, requestRes).ExtraDigests() {
+		for _, extra := range cacheTestMustRecipeID(t, ctx, requestRes).ExtraDigests() {
 			if extra.Digest == shared.Digest && extra.Label == shared.Label {
 				foundShared = true
 				break
@@ -2400,7 +2389,7 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		ctx := cacheTestContext(t.Context())
 		cacheIface, err := NewCache(ctx, "")
 		assert.NilError(t, err)
-		c := cacheIface.(*cache)
+		c := cacheIface
 
 		sourceExtra := call.ExtraDigest{
 			Digest: digest.FromString("fallback-extra-source"),
@@ -2440,7 +2429,8 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	shared := call.ExtraDigest{
 		Digest: digest.FromString("teach-hit-request-id-shared"),
@@ -2510,7 +2500,8 @@ func TestExtraDigestLabelIsolation(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	sharedBytes := digest.FromString("label-isolation-shared-bytes")
 	sharedA := call.ExtraDigest{Digest: sharedBytes, Label: "label-a"}
@@ -2640,7 +2631,8 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	contentDigest := digest.FromString("hit-return-id-content-digest")
 	requestCall := cacheTestIntCall("hit-return-id-request")
@@ -2650,7 +2642,7 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 		return cacheTestIntResult(outputCall, 77).(Result[Int]).WithContentDigest(contentDigest), nil
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, res1).ContentDigest().String())
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, ctx, res1).ContentDigest().String())
 
 	shared := res1.cacheSharedResult()
 	assert.Assert(t, shared != nil)
@@ -2662,7 +2654,7 @@ func TestCacheHitReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, 0, initCalls)
 	assert.Assert(t, res2.HitCache())
-	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, res2).ContentDigest().String())
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, ctx, res2).ContentDigest().String())
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.Size())
@@ -2674,7 +2666,8 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	contentDigest := digest.FromString("fresh-return-id-content-digest")
 	sourceCall := cacheTestIntCall("fresh-return-id-source")
@@ -2695,7 +2688,7 @@ func TestCacheFreshReturnIDGetsContentDigestFromEqClassMetadata(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	assert.Assert(t, !wrappedRes.HitCache())
-	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, wrappedRes).ContentDigest().String())
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, ctx, wrappedRes).ContentDigest().String())
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.Size())
@@ -2707,7 +2700,8 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	reqCall := cacheTestIntCall("teach-content-digest")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
@@ -2721,7 +2715,7 @@ func TestCacheTeachContentDigestPreservesAttachment(t *testing.T) {
 
 	afterID := cacheTestMustID(t, res)
 	assert.Equal(t, beforeID.EngineResultID(), afterID.EngineResultID())
-	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, res).ContentDigest().String())
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, ctx, res).ContentDigest().String())
 
 	shared := res.cacheSharedResult()
 	assert.Assert(t, shared != nil)
@@ -2740,7 +2734,8 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	depCall := cacheTestIntCall("teach-content-digest-dep")
 	depRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
@@ -2771,7 +2766,7 @@ func TestCacheTeachContentDigestWithResultRefs(t *testing.T) {
 
 	contentDigest := digest.FromString("teach-content-digest-with-result-refs")
 	assert.NilError(t, c.TeachContentDigest(ctx, rootRes, contentDigest))
-	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, rootRes).ContentDigest().String())
+	assert.Equal(t, contentDigest.String(), cacheTestMustRecipeID(t, ctx, rootRes).ContentDigest().String())
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.Size())
@@ -2782,7 +2777,7 @@ func TestCachePostCallAndSafeToPersistMetadataPreserved(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	keyCall := cacheTestIntCall("metadata")
 	postCallCount := 0
@@ -2818,7 +2813,7 @@ func TestCacheWrapperPostCallMergedOntoCacheBackedResult(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	childCall := cacheTestIntCall("child-postcall")
 	wrapperCallA := cacheTestIntCall("wrapper-postcall", call.ExtraDigest{
@@ -2920,7 +2915,7 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	innerCall := cacheTestIntCall("inner")
 	innerRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: innerCall}, func(context.Context) (AnyResult, error) {
@@ -2954,7 +2949,7 @@ func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	srv := cacheTestServer(t, c)
 
 	objectCall := &ResultCall{
@@ -2999,7 +2994,7 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	storageID := call.New().Append(Int(0).Type(), "storage-key")
 	storageCall := cacheTestIntCall("storage-key")
@@ -3046,7 +3041,7 @@ func TestCacheReleaseRemovesDigestPostingsFromEntireOutputEqClass(t *testing.T) 
 	})
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	requestCall := cacheTestIntCall("release-eq-class-request")
 	outputCall := cacheTestIntCall("release-eq-class-output")
@@ -3108,7 +3103,7 @@ func TestCacheArrayResultRoundTrip(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	keyCall := cacheTestIntCall("array-result")
 	res1, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: keyCall}, func(context.Context) (AnyResult, error) {
@@ -3146,7 +3141,7 @@ func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	srv := cacheTestServer(t, c)
 
 	keyCall := &ResultCall{
@@ -3192,7 +3187,7 @@ func TestCacheTTLWithDBUsesStorageAndCallIndexes(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	keyCall := cacheTestIntCall("ttl-key")
 	initCalls := 0
@@ -3231,7 +3226,7 @@ func TestCachePersistableRetainedAcrossSessionClose(t *testing.T) {
 	baseCtx := t.Context()
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	base := cacheIface.(*cache)
+	base := cacheIface
 
 	key := cacheTestIntCall("persistable-across-session-close")
 	ctxSessionA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -3283,7 +3278,7 @@ func TestCacheNonPersistableDropsWhenRefsDrain(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := cacheTestIntCall("non-persistable-drops")
 	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
@@ -3307,7 +3302,7 @@ func TestCachePersistableHitUpgradesExistingResultToRetained(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := cacheTestIntCall("persistable-hit-upgrade")
 	initCalls := 0
@@ -3360,7 +3355,7 @@ func TestCacheUsageEntriesAllReportsSessionAndRetainedState(t *testing.T) {
 	baseCtx := t.Context()
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	ctxSession := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
 		ClientID:  "usage-retained-client",
@@ -3399,7 +3394,7 @@ func TestCacheUsageEntriesAllDedupesByUsageIdentity(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	sizeCalls := &atomic.Int32{}
 	const dedupeIdentity = "snapshot://shared-identity"
@@ -3443,7 +3438,7 @@ func TestCacheUsageEntriesAllMutableUsageRemeasuresAfterSizeChange(t *testing.T)
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	sizeCalls := &atomic.Int32{}
 	sizeSource := &atomic.Int64{}
@@ -3478,7 +3473,7 @@ func TestCachePruneKeepDuration(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	oldKey := cacheTestIntCall("prune-keep-duration-old")
 	oldRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
@@ -3535,7 +3530,7 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	keys := []*ResultCall{
 		cacheTestIntCall("prune-threshold-1"),
@@ -3588,7 +3583,7 @@ func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {
 	baseCtx := t.Context()
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	ctxInUse := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
 		ClientID:  "prune-in-use-client",
@@ -3637,7 +3632,7 @@ func TestCacheDoNotCacheRejectsOnReleaser(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := cacheTestIntCall("do-not-cache-onrelease")
 	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
@@ -3657,7 +3652,7 @@ func TestCachePrunePrefersHigherMarginalReclaim(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	childCall := cacheTestIntCall("prune-marginal-child")
 	childRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
@@ -3717,7 +3712,7 @@ func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	c.egraphMu.Lock()
 	c.initEgraphLocked()
@@ -3727,9 +3722,9 @@ func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
 	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-1")
 	_ = c.ensureEqClassForDigestLocked(ctx, "compact-threshold-dead-2")
 	c.resultsByID = map[sharedResultID]*sharedResult{
-		1: {cache: c, id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-a")},
-		2: {cache: c, id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
-		3: {cache: c, id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
+		1: {id: 1, self: Int(1), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-a")},
+		2: {id: 2, self: Int(2), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-b")},
+		3: {id: 3, self: Int(3), hasValue: true, resultCall: cacheTestIntCall("compact-threshold-c")},
 	}
 	c.resultOutputEqClasses[1] = map[eqClassID]struct{}{a: {}}
 	c.resultOutputEqClasses[2] = map[eqClassID]struct{}{b: {}}
@@ -3756,7 +3751,7 @@ func TestCachePruneCompactsEqClassesAndPreservesLookup(t *testing.T) {
 	})
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	activeKey := cacheTestIntCall("prune-compact-active")
 	activeRes, err := c.GetOrInitCall(ctxActive, "prune-compact-active", noopTypeResolver{}, &CallRequest{
@@ -3830,7 +3825,7 @@ func TestCachePruneProtectsExactDependencyOfActiveResult(t *testing.T) {
 	})
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	activeCall := cacheTestIntCall("prune-exact-active-root")
 	depCall := cacheTestIntCall("prune-exact-active-dep")
@@ -3878,13 +3873,12 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 	baseCtx := t.Context()
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	root := &sharedResult{
-		cache:    c,
-		id:       1,
-		self:     cacheTestSizedInt{Int: Int(1), sizeBytes: 10, usageIdentity: "snapshot://prune-structural-root"},
-		hasValue: true,
+		id:                1,
+		self:              cacheTestSizedInt{Int: Int(1), sizeBytes: 10, usageIdentity: "snapshot://prune-structural-root"},
+		hasValue:          true,
 		sizeEstimateBytes: sharedResultSizeUnknown,
 		resultCall: &ResultCall{
 			Kind:        ResultCallKindSynthetic,
@@ -3894,10 +3888,9 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 		incomingOwnershipCount: 1,
 	}
 	provenanceOnly := &sharedResult{
-		cache:    c,
-		id:       2,
-		self:     cacheTestSizedInt{Int: Int(2), sizeBytes: 20, usageIdentity: "snapshot://prune-structural-provenance-only"},
-		hasValue: true,
+		id:                2,
+		self:              cacheTestSizedInt{Int: Int(2), sizeBytes: 20, usageIdentity: "snapshot://prune-structural-provenance-only"},
+		hasValue:          true,
 		sizeEstimateBytes: sharedResultSizeUnknown,
 		resultCall: &ResultCall{
 			Kind:        ResultCallKindSynthetic,
@@ -3962,7 +3955,7 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	})
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	parentCall := cacheTestIntCall("parent-with-additional-output")
 	childCall := cacheTestIntCall("child-additional-output")
@@ -3978,19 +3971,18 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 			128,
 			"snapshot://cache-additional-output",
 			nil,
-			).WithPostCall(func(context.Context) error {
-				childPostCallCount.Add(1)
-				return nil
-			})
-			return cacheTestDetachedResult(parentCall, &cacheTestOwnedDepsInt{
-				Int:          NewInt(1),
-				ownedResults: []AnyResult{child},
+		).WithPostCall(func(context.Context) error {
+			childPostCallCount.Add(1)
+			return nil
+		})
+		return cacheTestDetachedResult(parentCall, &cacheTestOwnedDepsInt{
+			Int:          NewInt(1),
+			ownedResults: []AnyResult{child},
 		}), nil
 	})
 	assert.NilError(t, err)
 	parentShared := parentRes.cacheSharedResult()
 	assert.Assert(t, parentShared != nil)
-	assert.Assert(t, parentShared.cache == c)
 
 	childInitCalls := 0
 	childRes, err := c.GetOrInitCall(ctxParent, "attach-owned-parent", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
@@ -4009,7 +4001,6 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 
 	childShared := childRes.cacheSharedResult()
 	assert.Assert(t, childShared != nil)
-	assert.Assert(t, childShared.cache == c)
 
 	c.egraphMu.RLock()
 	cachedParent := c.resultsByID[parentShared.id]
@@ -4059,7 +4050,7 @@ func TestCacheAttachOwnedResultsAlreadyAttachedChild(t *testing.T) {
 	})
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	childCall := cacheTestIntCall("child-already-attached")
 	attachedChild, err := c.GetOrInitCall(ctxChild, "attached-child-owner", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, ValueFunc(cacheTestIntResult(childCall, 2)))
@@ -4115,7 +4106,7 @@ func TestCacheAddExplicitDependency(t *testing.T) {
 	})
 	cacheIface, err := NewCache(baseCtx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	parentCall := cacheTestIntCall("parent-explicit-dependency")
 	childCall := cacheTestIntCall("child-explicit-dependency")
@@ -4169,7 +4160,7 @@ func TestCacheResultCallDerivedFromRequestID(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	childCall := cacheTestIntCall("frameChild")
 	childRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
@@ -4220,7 +4211,7 @@ func TestCacheResultCallFirstWriterWins(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	id := cacheTestIntCall("frame-first-writer")
 	firstFrame := &ResultCall{
@@ -4261,7 +4252,7 @@ func TestCacheArbitraryRoundTripAndRelease(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := "arbitrary-round-trip"
 	var releaseCalls atomic.Int32
@@ -4308,7 +4299,7 @@ func TestCacheArbitraryConcurrent(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := "arbitrary-concurrent"
 	initialized := map[int]bool{}
@@ -4408,7 +4399,7 @@ func TestCacheArbitraryRecursiveCall(t *testing.T) {
 
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	key := "arbitrary-recursive"
 	_, err = c.GetOrInitArbitrary(ctx, "test-session", key, func(ctx context.Context) (any, error) {

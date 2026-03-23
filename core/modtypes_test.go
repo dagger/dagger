@@ -15,8 +15,9 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 	ctx := t.Context()
 	cacheIface, err := dagql.NewCache(ctx, "")
 	assert.NilError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cacheIface)
 	sc := cacheIface
-	dag := dagql.NewServer(&Query{}, sc)
+	dag := dagql.NewServer(&Query{})
 
 	resCall := &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
@@ -27,7 +28,7 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 	assert.NilError(t, err)
 	res, err := sc.AttachResult(ctx, "test-session", dag, detached)
 	assert.NilError(t, err)
-	recipeID, err := res.RecipeID()
+	recipeID, err := res.RecipeID(ctx)
 	assert.NilError(t, err)
 
 	content := NewCollectedContent()

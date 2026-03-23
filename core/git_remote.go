@@ -96,16 +96,13 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query server: %w", err)
-	}
 	cacheKey, err := repo.remoteCacheKey(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("remote git repository %q: %w", repo.URL.Remote(), err)
 	}
 
-	if srv == nil || srv.Cache == nil {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
 		slog.Info("git remote cache unavailable; running ls-remote", "cache_key", cacheKey)
 		return repo.runLsRemote(ctx)
 	}
@@ -114,7 +111,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		return nil, fmt.Errorf("git remote cache session metadata: %w", err)
 	}
 
-	cacheRes, err := srv.Cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
+	cacheRes, err := cache.GetOrInitArbitrary(ctx, clientMetadata.SessionID, cacheKey, func(ctx context.Context) (any, error) {
 		remote, err := repo.runLsRemote(ctx)
 		if err != nil {
 			return nil, err
@@ -170,21 +167,21 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 		return "", err
 	}
 	inputs := []string{clientMetadata.SessionID, repo.URL.Remote()}
-	inputs = append(inputs, repo.remoteCacheScope()...)
+	inputs = append(inputs, repo.remoteCacheScope(ctx)...)
 	return hashutil.HashStrings(inputs...).String(), nil
 }
 
 // Pipelines could query the same remote with different creds (e.g. a pipeline checking that creds were properly rotated)
 // instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
-func (repo *RemoteGitRepository) remoteCacheScope() []string {
+func (repo *RemoteGitRepository) remoteCacheScope(ctx context.Context) []string {
 	scope := make([]string, 0, 4)
 	if token := repo.AuthToken; token.Self() != nil {
-		if tokenDigest := SecretDigest(token); tokenDigest != "" {
+		if tokenDigest := SecretDigest(ctx, token); tokenDigest != "" {
 			scope = append(scope, "token:"+tokenDigest.String())
 		}
 	}
 	if header := repo.AuthHeader; header.Self() != nil {
-		if headerDigest := SecretDigest(header); headerDigest != "" {
+		if headerDigest := SecretDigest(ctx, header); headerDigest != "" {
 			scope = append(scope, "header:"+headerDigest.String())
 		}
 	}
@@ -296,7 +293,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		tokenDigest := SecretDigest(repo.AuthToken)
+		tokenDigest := SecretDigest(ctx, repo.AuthToken)
 		if tokenDigest == "" {
 			return nil, nil, fmt.Errorf("get auth token digest: secret must have a digest")
 		}
@@ -310,7 +307,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		headerDigest := SecretDigest(repo.AuthHeader)
+		headerDigest := SecretDigest(ctx, repo.AuthHeader)
 		if headerDigest == "" {
 			return nil, nil, fmt.Errorf("get auth header digest: secret must have a digest")
 		}
@@ -606,7 +603,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if curCall == nil {
 		return nil, fmt.Errorf("current call is nil")
 	}
-	cacheKeyDigest, err := curCall.RecipeDigest()
+	cacheKeyDigest, err := curCall.RecipeDigest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("tree cache key: %w", err)
 	}

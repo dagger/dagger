@@ -159,23 +159,23 @@ func debugInputProvenance(inputs []egraphInputProvenanceKind) []map[string]any {
 	return out
 }
 
-func (c *cache) nextTraceSeq() uint64 {
+func (c *Cache) nextTraceSeq() uint64 {
 	return atomic.AddUint64(&c.traceSeq, 1)
 }
 
-func (c *cache) nextPersistBatchID() string {
+func (c *Cache) nextPersistBatchID() string {
 	return fmt.Sprintf("persist-batch-%d", atomic.AddUint64(&c.tracePersistBatch, 1))
 }
 
-func (c *cache) nextImportRunID() string {
+func (c *Cache) nextImportRunID() string {
 	return fmt.Sprintf("import-run-%d", atomic.AddUint64(&c.traceImportRuns, 1))
 }
 
-func (c *cache) traceEnabled() bool {
+func (c *Cache) traceEnabled() bool {
 	return debugEGraphTrace && c != nil
 }
 
-func (c *cache) trace(ctx context.Context, event string, args ...any) {
+func (c *Cache) trace(ctx context.Context, event string, args ...any) {
 	if !c.traceEnabled() {
 		return
 	}
@@ -201,38 +201,38 @@ func (c *cache) trace(ctx context.Context, event string, args ...any) {
 	slog.InfoContext(ctx, egraphTraceMessageName, base...)
 }
 
-func (c *cache) traceLazy(ctx context.Context, event string, build func() []any) {
+func (c *Cache) traceLazy(ctx context.Context, event string, build func() []any) {
 	if !c.traceEnabled() {
 		return
 	}
 	c.trace(ctx, event, build()...)
 }
 
-func (c *cache) tracePersistStoreWipedSchemaMismatch(ctx context.Context, expected, actual string) {
+func (c *Cache) tracePersistStoreWipedSchemaMismatch(ctx context.Context, expected, actual string) {
 	c.traceLazy(ctx, "persist_store_wiped_schema_mismatch", func() []any {
 		return []any{"phase", "startup", "expected_schema_version", expected, "actual_schema_version", actual}
 	})
 }
 
-func (c *cache) tracePersistStoreWipedUncleanShutdown(ctx context.Context, cleanShutdown string) {
+func (c *Cache) tracePersistStoreWipedUncleanShutdown(ctx context.Context, cleanShutdown string) {
 	c.traceLazy(ctx, "persist_store_wiped_unclean_shutdown", func() []any {
 		return []any{"phase", "startup", "clean_shutdown", cleanShutdown}
 	})
 }
 
-func (c *cache) tracePersistStoreWipedImportFailure(ctx context.Context, err error) {
+func (c *Cache) tracePersistStoreWipedImportFailure(ctx context.Context, err error) {
 	c.traceLazy(ctx, "persist_store_wiped_import_failure", func() []any {
 		return []any{"phase", "startup", "error", err.Error()}
 	})
 }
 
-func (c *cache) traceRefReleased(ctx context.Context, res *sharedResult, ownershipCount int64) {
+func (c *Cache) traceRefReleased(ctx context.Context, res *sharedResult, ownershipCount int64) {
 	c.traceLazy(ctx, "ref_released", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id, "incoming_ownership_count", ownershipCount}
 	})
 }
 
-func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, ownershipCount int64) {
+func (c *Cache) traceRefUnderflow(ctx context.Context, res *sharedResult, ownershipCount int64) {
 	c.traceLazy(ctx, "ref_underflow", func() []any {
 		state := res.loadPayloadState()
 		payloadState := "uninitialized"
@@ -262,13 +262,13 @@ func (c *cache) traceRefUnderflow(ctx context.Context, res *sharedResult, owners
 	})
 }
 
-func (c *cache) traceRefAcquired(ctx context.Context, res *sharedResult, ownershipCount int64) {
+func (c *Cache) traceRefAcquired(ctx context.Context, res *sharedResult, ownershipCount int64) {
 	c.traceLazy(ctx, "ref_acquired", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id, "incoming_ownership_count", ownershipCount}
 	})
 }
 
-func (c *cache) traceSessionResultTracked(ctx context.Context, sessionID string, res AnyResult, hitCache bool, trackedCount, trackedCountForResult int) {
+func (c *Cache) traceSessionResultTracked(ctx context.Context, sessionID string, res AnyResult, hitCache bool, trackedCount, trackedCountForResult int) {
 	c.traceLazy(ctx, "session_result_tracked", func() []any {
 		shared := res.cacheSharedResult()
 		args := []any{
@@ -295,7 +295,7 @@ func (c *cache) traceSessionResultTracked(ctx context.Context, sessionID string,
 	})
 }
 
-func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionID string, res AnyResult, reason string, releaseIndex, totalTracked, trackedCountForResult, releaseOrdinalForResult int) {
+func (c *Cache) traceSessionResultReleasing(ctx context.Context, sessionID string, res AnyResult, reason string, releaseIndex, totalTracked, trackedCountForResult, releaseOrdinalForResult int) {
 	c.traceLazy(ctx, "session_result_releasing", func() []any {
 		shared := res.cacheSharedResult()
 		args := []any{
@@ -324,7 +324,7 @@ func (c *cache) traceSessionResultReleasing(ctx context.Context, sessionID strin
 	})
 }
 
-func (c *cache) traceResultDigestSeeded(ctx context.Context, requestDigest string, outputDigest string, extras []call.ExtraDigest) {
+func (c *Cache) traceResultDigestSeeded(ctx context.Context, requestDigest string, outputDigest string, extras []call.ExtraDigest) {
 	c.traceLazy(ctx, "result_digest_seeded", func() []any {
 		out := make([]string, 0, len(extras))
 		for _, extra := range extras {
@@ -336,67 +336,67 @@ func (c *cache) traceResultDigestSeeded(ctx context.Context, requestDigest strin
 	})
 }
 
-func (c *cache) traceExplicitDepAdded(ctx context.Context, resID, depID sharedResultID, reason string) {
+func (c *Cache) traceExplicitDepAdded(ctx context.Context, resID, depID sharedResultID, reason string) {
 	c.traceLazy(ctx, "explicit_dep_added", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resID, "dep_shared_result_id", depID, "reason", reason}
 	})
 }
 
-func (c *cache) traceExplicitDepRemoved(ctx context.Context, resID, depID sharedResultID, phase string) {
+func (c *Cache) traceExplicitDepRemoved(ctx context.Context, resID, depID sharedResultID, phase string) {
 	c.traceLazy(ctx, "explicit_dep_removed", func() []any {
 		return []any{"phase", phase, "shared_result_id", resID, "dep_shared_result_id", depID}
 	})
 }
 
-func (c *cache) traceEqClassCreated(ctx context.Context, classID eqClassID, dig string) {
+func (c *Cache) traceEqClassCreated(ctx context.Context, classID eqClassID, dig string) {
 	c.traceLazy(ctx, "eq_class_created", func() []any {
 		return []any{"phase", "runtime", "eq_class_id", classID, "digest", dig}
 	})
 }
 
-func (c *cache) traceEqClassMerged(ctx context.Context, ids []eqClassID, root eqClassID) {
+func (c *Cache) traceEqClassMerged(ctx context.Context, ids []eqClassID, root eqClassID) {
 	c.traceLazy(ctx, "eq_class_merged", func() []any {
 		return []any{"phase", "runtime", "merge_ids", ids, "root_eq_class_id", root}
 	})
 }
 
-func (c *cache) traceTermInputsRepaired(ctx context.Context, termID egraphTermID, oldInputs, newInputs []eqClassID) {
+func (c *Cache) traceTermInputsRepaired(ctx context.Context, termID egraphTermID, oldInputs, newInputs []eqClassID) {
 	c.traceLazy(ctx, "term_inputs_repaired", func() []any {
 		return []any{"phase", "runtime", "term_id", termID, "old_input_eq_ids", oldInputs, "new_input_eq_ids", newInputs}
 	})
 }
 
-func (c *cache) traceTermRehomedUnderEqClasses(ctx context.Context, termID egraphTermID, inputEqIDs []eqClassID) {
+func (c *Cache) traceTermRehomedUnderEqClasses(ctx context.Context, termID egraphTermID, inputEqIDs []eqClassID) {
 	c.traceLazy(ctx, "term_rehomed_under_eq_classes", func() []any {
 		return []any{"phase", "runtime", "term_id", termID, "input_eq_ids", inputEqIDs}
 	})
 }
 
-func (c *cache) traceTermDigestRecomputed(ctx context.Context, termID egraphTermID, oldTermDigest, newTermDigest string) {
+func (c *Cache) traceTermDigestRecomputed(ctx context.Context, termID egraphTermID, oldTermDigest, newTermDigest string) {
 	c.traceLazy(ctx, "term_digest_recomputed", func() []any {
 		return []any{"phase", "runtime", "term_id", termID, "old_term_digest", oldTermDigest, "new_term_digest", newTermDigest}
 	})
 }
 
-func (c *cache) traceTermOutputsMerged(ctx context.Context, termID, otherTermID egraphTermID, lhs, rhs eqClassID) {
+func (c *Cache) traceTermOutputsMerged(ctx context.Context, termID, otherTermID egraphTermID, lhs, rhs eqClassID) {
 	c.traceLazy(ctx, "term_outputs_merged", func() []any {
 		return []any{"phase", "runtime", "term_id", termID, "other_term_id", otherTermID, "lhs_output_eq_id", lhs, "rhs_output_eq_id", rhs}
 	})
 }
 
-func (c *cache) traceLookupAttempt(ctx context.Context, requestDigest, selfDigest string, inputDigests []digest.Digest, persistable bool) {
+func (c *Cache) traceLookupAttempt(ctx context.Context, requestDigest, selfDigest string, inputDigests []digest.Digest, persistable bool) {
 	c.traceLazy(ctx, "lookup_attempt", func() []any {
 		return []any{"phase", "runtime", "request_digest", requestDigest, "self_digest", selfDigest, "input_digests", inputDigests, "persistable", persistable}
 	})
 }
 
-func (c *cache) traceLookupMissNoMatch(ctx context.Context, requestDigest string, primaryLookupPossible bool, missingInputIndex int, termDigest string, termSetSize int) {
+func (c *Cache) traceLookupMissNoMatch(ctx context.Context, requestDigest string, primaryLookupPossible bool, missingInputIndex int, termDigest string, termSetSize int) {
 	c.traceLazy(ctx, "lookup_miss_reason", func() []any {
 		return []any{"phase", "runtime", "request_digest", requestDigest, "reason", "no_matching_result", "primary_lookup_possible", primaryLookupPossible, "missing_input_index", missingInputIndex, "term_digest", termDigest, "term_set_size", termSetSize}
 	})
 }
 
-func (c *cache) traceLookupHit(ctx context.Context, requestDigest string, res *sharedResult, hitTerm *egraphTerm, termDigest string) {
+func (c *Cache) traceLookupHit(ctx context.Context, requestDigest string, res *sharedResult, hitTerm *egraphTerm, termDigest string) {
 	c.traceLazy(ctx, "lookup_hit", func() []any {
 		termID := egraphTermID(0)
 		if hitTerm != nil {
@@ -406,13 +406,13 @@ func (c *cache) traceLookupHit(ctx context.Context, requestDigest string, res *s
 	})
 }
 
-func (c *cache) traceResultCreated(ctx context.Context, res *sharedResult) {
+func (c *Cache) traceResultCreated(ctx context.Context, res *sharedResult) {
 	c.traceLazy(ctx, "result_created", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id, "record_type", res.recordType, "description", res.description}
 	})
 }
 
-func (c *cache) tracePersistKeyIndexAdded(ctx context.Context, resID sharedResultID, resultKey string, phase string, importRunID string) {
+func (c *Cache) tracePersistKeyIndexAdded(ctx context.Context, resID sharedResultID, resultKey string, phase string, importRunID string) {
 	c.traceLazy(ctx, "persist_key_index_added", func() []any {
 		args := []any{"phase", phase, "shared_result_id", resID, "result_key", resultKey}
 		if importRunID != "" {
@@ -422,31 +422,31 @@ func (c *cache) tracePersistKeyIndexAdded(ctx context.Context, resID sharedResul
 	})
 }
 
-func (c *cache) tracePersistKeyIndexRemoved(ctx context.Context, resID sharedResultID, resultKey string) {
+func (c *Cache) tracePersistKeyIndexRemoved(ctx context.Context, resID sharedResultID, resultKey string) {
 	c.traceLazy(ctx, "persist_key_index_removed", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resID, "result_key", resultKey}
 	})
 }
 
-func (c *cache) traceResultTermAssocUpdated(ctx context.Context, resID sharedResultID, termID egraphTermID, inputProvenance []egraphInputProvenanceKind) {
+func (c *Cache) traceResultTermAssocUpdated(ctx context.Context, resID sharedResultID, termID egraphTermID, inputProvenance []egraphInputProvenanceKind) {
 	c.traceLazy(ctx, "result_term_assoc_updated", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resID, "term_id", termID, "input_provenance", debugInputProvenance(inputProvenance)}
 	})
 }
 
-func (c *cache) traceResultTermAssocAdded(ctx context.Context, resID sharedResultID, termID egraphTermID, inputProvenance []egraphInputProvenanceKind) {
+func (c *Cache) traceResultTermAssocAdded(ctx context.Context, resID sharedResultID, termID egraphTermID, inputProvenance []egraphInputProvenanceKind) {
 	c.traceLazy(ctx, "result_term_assoc_added", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resID, "term_id", termID, "input_provenance", debugInputProvenance(inputProvenance)}
 	})
 }
 
-func (c *cache) traceResultTermAssocRemoved(ctx context.Context, resID sharedResultID, termID egraphTermID) {
+func (c *Cache) traceResultTermAssocRemoved(ctx context.Context, resID sharedResultID, termID egraphTermID) {
 	c.traceLazy(ctx, "result_term_assoc_removed", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resID, "term_id", termID}
 	})
 }
 
-func (c *cache) traceTermCreated(ctx context.Context, phase string, importRunID string, term *egraphTerm) {
+func (c *Cache) traceTermCreated(ctx context.Context, phase string, importRunID string, term *egraphTerm) {
 	c.traceLazy(ctx, "term_created", func() []any {
 		args := []any{"phase", phase, "term_id", term.id, "self_digest", term.selfDigest.String(), "term_digest", term.termDigest, "output_eq_id", term.outputEqID}
 		if importRunID != "" {
@@ -456,13 +456,13 @@ func (c *cache) traceTermCreated(ctx context.Context, phase string, importRunID 
 	})
 }
 
-func (c *cache) traceTermRemoved(ctx context.Context, termID egraphTermID) {
+func (c *Cache) traceTermRemoved(ctx context.Context, termID egraphTermID) {
 	c.traceLazy(ctx, "term_removed", func() []any {
 		return []any{"phase", "runtime", "term_id", termID}
 	})
 }
 
-func (c *cache) tracePersistRootMarked(ctx context.Context, resID sharedResultID, rootID sharedResultID, phase, importRunID string) {
+func (c *Cache) tracePersistRootMarked(ctx context.Context, resID sharedResultID, rootID sharedResultID, phase, importRunID string) {
 	c.traceLazy(ctx, "persist_root_marked", func() []any {
 		args := []any{"phase", phase, "shared_result_id", resID, "root_shared_result_id", rootID}
 		if importRunID != "" {
@@ -472,43 +472,43 @@ func (c *cache) tracePersistRootMarked(ctx context.Context, resID sharedResultID
 	})
 }
 
-func (c *cache) traceResultRemoved(ctx context.Context, res *sharedResult) {
+func (c *Cache) traceResultRemoved(ctx context.Context, res *sharedResult) {
 	c.traceLazy(ctx, "result_removed", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id}
 	})
 }
 
-func (c *cache) tracePersistBatchAppliedSkip(ctx context.Context, batchID, resultKey, reason string) {
+func (c *Cache) tracePersistBatchAppliedSkip(ctx context.Context, batchID, resultKey, reason string) {
 	c.traceLazy(ctx, "persist_batch_applied", func() []any {
 		return []any{"phase", "persist-apply", "batch_id", batchID, "result_key", resultKey, "reason", reason}
 	})
 }
 
-func (c *cache) tracePersistRootMemberRemoved(ctx context.Context, batchID, rootResultKey, resultKey string) {
+func (c *Cache) tracePersistRootMemberRemoved(ctx context.Context, batchID, rootResultKey, resultKey string) {
 	c.traceLazy(ctx, "persist_root_member_removed", func() []any {
 		return []any{"phase", "persist-apply", "batch_id", batchID, "root_result_key", rootResultKey, "result_key", resultKey}
 	})
 }
 
-func (c *cache) tracePersistRootDeleted(ctx context.Context, batchID, resultKey string) {
+func (c *Cache) tracePersistRootDeleted(ctx context.Context, batchID, resultKey string) {
 	c.traceLazy(ctx, "persist_root_deleted", func() []any {
 		return []any{"phase", "persist-apply", "batch_id", batchID, "result_key", resultKey}
 	})
 }
 
-func (c *cache) tracePersistOrphanGCDeleted(ctx context.Context, batchID, resultKey string) {
+func (c *Cache) tracePersistOrphanGCDeleted(ctx context.Context, batchID, resultKey string) {
 	c.traceLazy(ctx, "persist_orphan_gc_deleted", func() []any {
 		return []any{"phase", "persist-apply", "batch_id", batchID, "result_key", resultKey}
 	})
 }
 
-func (c *cache) tracePersistBatchApplied(ctx context.Context, batchID, resultKey string) {
+func (c *Cache) tracePersistBatchApplied(ctx context.Context, batchID, resultKey string) {
 	c.traceLazy(ctx, "persist_batch_applied", func() []any {
 		return []any{"phase", "persist-apply", "batch_id", batchID, "result_key", resultKey}
 	})
 }
 
-func (c *cache) tracePersistRootAdded(ctx context.Context, batchID, resultKey, phase string, importRunID string) {
+func (c *Cache) tracePersistRootAdded(ctx context.Context, batchID, resultKey, phase string, importRunID string) {
 	c.traceLazy(ctx, "persist_root_added", func() []any {
 		args := []any{"phase", phase, "result_key", resultKey}
 		if batchID != "" {
@@ -521,7 +521,7 @@ func (c *cache) tracePersistRootAdded(ctx context.Context, batchID, resultKey, p
 	})
 }
 
-func (c *cache) tracePersistRootMemberAdded(ctx context.Context, batchID, rootResultKey, resultKey, phase, importRunID string, resID sharedResultID) {
+func (c *Cache) tracePersistRootMemberAdded(ctx context.Context, batchID, rootResultKey, resultKey, phase, importRunID string, resID sharedResultID) {
 	c.traceLazy(ctx, "persist_root_member_added", func() []any {
 		args := []any{"phase", phase, "root_result_key", rootResultKey, "result_key", resultKey}
 		if resID != 0 {
@@ -537,115 +537,115 @@ func (c *cache) tracePersistRootMemberAdded(ctx context.Context, batchID, rootRe
 	})
 }
 
-func (c *cache) tracePersistBatchBuildFailed(ctx context.Context, resultKey string, err error) {
+func (c *Cache) tracePersistBatchBuildFailed(ctx context.Context, resultKey string, err error) {
 	c.traceLazy(ctx, "persist_batch_build_failed", func() []any {
 		return []any{"phase", "persist-export", "result_key", resultKey, "error", err.Error()}
 	})
 }
 
-func (c *cache) tracePersistBatchBuilt(ctx context.Context, batchID, resultKey string, deleteRoot bool) {
+func (c *Cache) tracePersistBatchBuilt(ctx context.Context, batchID, resultKey string, deleteRoot bool) {
 	c.traceLazy(ctx, "persist_batch_built", func() []any {
 		return []any{"phase", "persist-export", "batch_id", batchID, "result_key", resultKey, "delete_root", deleteRoot}
 	})
 }
 
-func (c *cache) tracePersistWatchCleared(ctx context.Context, rootID, memberID sharedResultID) {
+func (c *Cache) tracePersistWatchCleared(ctx context.Context, rootID, memberID sharedResultID) {
 	c.traceLazy(ctx, "persist_watch_cleared", func() []any {
 		return []any{"phase", "persist-export", "shared_result_id", rootID, "watched_member_shared_result_id", memberID}
 	})
 }
 
-func (c *cache) tracePersistRootDeferred(ctx context.Context, root *sharedResult, memberCount int) {
+func (c *Cache) tracePersistRootDeferred(ctx context.Context, root *sharedResult, memberCount int) {
 	c.traceLazy(ctx, "persist_root_deferred", func() []any {
 		return []any{"phase", "persist-export", "shared_result_id", root.id, "member_count", memberCount}
 	})
 }
 
-func (c *cache) tracePersistMemberNotReady(ctx context.Context, rootID, memberID sharedResultID) {
+func (c *Cache) tracePersistMemberNotReady(ctx context.Context, rootID, memberID sharedResultID) {
 	c.traceLazy(ctx, "persist_member_not_ready", func() []any {
 		return []any{"phase", "persist-export", "shared_result_id", memberID, "root_shared_result_id", rootID}
 	})
 }
 
-func (c *cache) traceLazyRealized(ctx context.Context, memberID, rootID sharedResultID) {
+func (c *Cache) traceLazyRealized(ctx context.Context, memberID, rootID sharedResultID) {
 	c.traceLazy(ctx, "lazy_realized", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", memberID, "root_shared_result_id", rootID}
 	})
 }
 
-func (c *cache) tracePersistRetryTriggered(ctx context.Context, resultID sharedResultID) {
+func (c *Cache) tracePersistRetryTriggered(ctx context.Context, resultID sharedResultID) {
 	c.traceLazy(ctx, "persist_root_retry_triggered", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resultID}
 	})
 }
 
-func (c *cache) tracePersistRetryRegistered(ctx context.Context, resultID sharedResultID) {
+func (c *Cache) tracePersistRetryRegistered(ctx context.Context, resultID sharedResultID) {
 	c.traceLazy(ctx, "persist_retry_registered", func() []any {
 		return []any{"phase", "persist-export", "shared_result_id", resultID}
 	})
 }
 
-func (c *cache) tracePersistRetryNoop(ctx context.Context, rootID sharedResultID) {
+func (c *Cache) tracePersistRetryNoop(ctx context.Context, rootID sharedResultID) {
 	c.traceLazy(ctx, "persist_retry_noop", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", rootID}
 	})
 }
 
-func (c *cache) tracePersistRetrySucceeded(ctx context.Context, resultID sharedResultID) {
+func (c *Cache) tracePersistRetrySucceeded(ctx context.Context, resultID sharedResultID) {
 	c.traceLazy(ctx, "persist_retry_succeeded", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", resultID}
 	})
 }
 
-func (c *cache) tracePersistedPayloadImportedEager(ctx context.Context, importRunID string, resID sharedResultID, resultKey, payloadState string) {
+func (c *Cache) tracePersistedPayloadImportedEager(ctx context.Context, importRunID string, resID sharedResultID, resultKey, payloadState string) {
 	c.traceLazy(ctx, "persisted_payload_imported_eager", func() []any {
 		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "result_key", resultKey, "payload_state", payloadState}
 	})
 }
 
-func (c *cache) tracePersistedPayloadImportedLazy(ctx context.Context, importRunID string, resID sharedResultID, resultKey, payloadKind, typeName string) {
+func (c *Cache) tracePersistedPayloadImportedLazy(ctx context.Context, importRunID string, resID sharedResultID, resultKey, payloadKind, typeName string) {
 	c.traceLazy(ctx, "persisted_payload_imported_lazy", func() []any {
 		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "result_key", resultKey, "payload_kind", payloadKind, "type_name", typeName}
 	})
 }
 
-func (c *cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, callFrameJSON string) {
+func (c *Cache) traceImportResultLoaded(ctx context.Context, importRunID string, resID sharedResultID, callFrameJSON string) {
 	c.traceLazy(ctx, "import_result_loaded", func() []any {
 		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "call_frame_json", callFrameJSON}
 	})
 }
 
-func (c *cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role, slot string) {
+func (c *Cache) traceImportResultSnapshotLinkLoaded(ctx context.Context, importRunID string, resID sharedResultID, refKey, role, slot string) {
 	c.traceLazy(ctx, "import_result_snapshot_link_loaded", func() []any {
 		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "ref_key", refKey, "role", role, "slot", slot}
 	})
 }
 
-func (c *cache) traceImportResultTermLoaded(ctx context.Context, importRunID string, resID sharedResultID, resultKey string, termID egraphTermID, selfDigest string, inputProvenance []egraphInputProvenanceKind) {
+func (c *Cache) traceImportResultTermLoaded(ctx context.Context, importRunID string, resID sharedResultID, resultKey string, termID egraphTermID, selfDigest string, inputProvenance []egraphInputProvenanceKind) {
 	c.traceLazy(ctx, "import_result_term_loaded", func() []any {
 		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", resID, "result_key", resultKey, "term_id", termID, "self_digest", selfDigest, "input_provenance", debugInputProvenance(inputProvenance)}
 	})
 }
 
-func (c *cache) traceImportResultDepLoaded(ctx context.Context, importRunID string, parentID sharedResultID, depID sharedResultID) {
+func (c *Cache) traceImportResultDepLoaded(ctx context.Context, importRunID string, parentID sharedResultID, depID sharedResultID) {
 	c.traceLazy(ctx, "import_result_dep_loaded", func() []any {
 		return []any{"phase", "import", "import_run_id", importRunID, "shared_result_id", parentID, "dep_shared_result_id", depID}
 	})
 }
 
-func (c *cache) tracePersistedPayloadDecodeFailed(ctx context.Context, res *sharedResult, env *PersistedResultEnvelope, err error) {
+func (c *Cache) tracePersistedPayloadDecodeFailed(ctx context.Context, res *sharedResult, env *PersistedResultEnvelope, err error) {
 	c.traceLazy(ctx, "persisted_payload_decode_failed", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id, "payload_kind", env.Kind, "type_name", env.TypeName, "error", err.Error()}
 	})
 }
 
-func (c *cache) tracePersistedPayloadDecoded(ctx context.Context, res *sharedResult, env *PersistedResultEnvelope) {
+func (c *Cache) tracePersistedPayloadDecoded(ctx context.Context, res *sharedResult, env *PersistedResultEnvelope) {
 	c.traceLazy(ctx, "persisted_payload_decoded", func() []any {
 		return []any{"phase", "runtime", "shared_result_id", res.id, "payload_kind", env.Kind, "type_name", env.TypeName}
 	})
 }
 
-func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
+func (c *Cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
 
@@ -807,7 +807,7 @@ func (c *cache) DebugEGraphSnapshot() *EGraphDebugSnapshot {
 	return snap
 }
 
-func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
+func (c *Cache) WriteDebugCacheSnapshot(w io.Writer) error {
 	c.callsMu.Lock()
 	c.egraphMu.RLock()
 	defer c.egraphMu.RUnlock()
@@ -971,18 +971,17 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 			var inputDigestsErr string
 			frame := res.loadResultCall()
 			if frame != nil {
-				frame.bindCache(c)
-				if dig, err := frame.RecipeDigest(); err == nil {
+				if dig, err := frame.deriveRecipeDigest(c); err == nil {
 					recipeDigest = dig.String()
 				} else {
 					recipeDigestErr = err.Error()
 				}
-				if dig, err := frame.ContentPreferredDigest(); err == nil {
+				if dig, err := frame.deriveContentPreferredDigest(c); err == nil {
 					contentPreferredDigest = dig.String()
 				} else {
 					contentPreferredDigestErr = err.Error()
 				}
-				if digs, err := frame.Inputs(); err == nil {
+				if digs, err := frame.inputs(c); err == nil {
 					inputDigests = make([]string, 0, len(digs))
 					for _, dig := range digs {
 						inputDigests = append(inputDigests, dig.String())
@@ -1253,13 +1252,13 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 					completed = true
 				default:
 				}
-					entry := CacheDebugArbitraryCall{
-						CallKey:           key,
-						Waiters:           call.waiters,
-						OwnerSessionCount: call.ownerSessionCount,
-						Completed:         completed,
-						HasValue:          call.value != nil,
-					}
+				entry := CacheDebugArbitraryCall{
+					CallKey:           key,
+					Waiters:           call.waiters,
+					OwnerSessionCount: call.ownerSessionCount,
+					Completed:         completed,
+					HasValue:          call.value != nil,
+				}
 				if call.value != nil {
 					entry.ValueType = fmt.Sprintf("%T", call.value)
 				}
@@ -1288,13 +1287,13 @@ func (c *cache) WriteDebugCacheSnapshot(w io.Writer) error {
 				if call == nil {
 					continue
 				}
-					entry := CacheDebugArbitraryCall{
-						CallKey:           key,
-						Waiters:           call.waiters,
-						OwnerSessionCount: call.ownerSessionCount,
-						Completed:         true,
-						HasValue:          call.value != nil,
-					}
+				entry := CacheDebugArbitraryCall{
+					CallKey:           key,
+					Waiters:           call.waiters,
+					OwnerSessionCount: call.ownerSessionCount,
+					Completed:         true,
+					HasValue:          call.value != nil,
+				}
 				if call.value != nil {
 					entry.ValueType = fmt.Sprintf("%T", call.value)
 				}

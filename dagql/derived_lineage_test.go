@@ -20,12 +20,13 @@ func (*detachedLineageObject) Type() *ast.Type {
 	}
 }
 
-func TestDetachedReceiverSelectionStaysDetached(t *testing.T) {
+func TestDetachedReceiverSelectionPreservesReceiverLineage(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	base := cacheIface.(*cache)
+	base := cacheIface
+	ctx = ContextWithCache(ctx, base)
 	srv := cacheTestServer(t, base)
 
 	Fields[*detachedLineageObject]{
@@ -44,8 +45,7 @@ func TestDetachedReceiverSelectionStaysDetached(t *testing.T) {
 	child, err := parent.Select(srvToContext(ctx, srv), srv, Selector{Field: "child"})
 	assert.NilError(t, err)
 	assert.Assert(t, child != nil)
-	assert.Assert(t, is.Equal(sharedResultID(0), child.cacheSharedResult().id))
-	assert.Equal(t, 0, base.Size())
+	assert.Assert(t, child.cacheSharedResult().id != 0)
 
 	call, err := child.ResultCall()
 	assert.NilError(t, err)
@@ -60,7 +60,8 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	base := cacheIface.(*cache)
+	base := cacheIface
+	ctx = ContextWithCache(ctx, base)
 	srv := cacheTestServer(t, base)
 	ctx = srvToContext(ctx, srv)
 
@@ -81,7 +82,7 @@ func TestNthValuePreservesAttachmentLineage(t *testing.T) {
 	assert.Assert(t, detachedChild != nil)
 	assert.Assert(t, is.Equal(sharedResultID(0), detachedChild.cacheSharedResult().id))
 
-	attachedParent, err := srv.Cache.AttachResult(ctx, "test-session", srv, detachedParent)
+	attachedParent, err := base.AttachResult(ctx, "test-session", srv, detachedParent)
 	assert.NilError(t, err)
 	assert.Assert(t, attachedParent != nil)
 	parentShared := attachedParent.cacheSharedResult()
@@ -107,7 +108,8 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	base := cacheIface.(*cache)
+	base := cacheIface
+	ctx = ContextWithCache(ctx, base)
 	srv := cacheTestServer(t, base)
 	ctx = srvToContext(ctx, srv)
 
@@ -131,7 +133,7 @@ func TestNullableDerefUsesSameSharedResult(t *testing.T) {
 	_, ok = UnwrapAs[*cacheTestObject](derefDetached.Unwrap())
 	assert.Assert(t, ok)
 
-	attached, err := srv.Cache.AttachResult(ctx, "test-session", srv, detached)
+	attached, err := base.AttachResult(ctx, "test-session", srv, detached)
 	assert.NilError(t, err)
 	assert.Assert(t, attached != nil)
 	attachedShared := attached.cacheSharedResult()
@@ -165,7 +167,8 @@ func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	base := cacheIface.(*cache)
+	base := cacheIface
+	ctx = ContextWithCache(ctx, base)
 	srv := cacheTestServer(t, base)
 	ctx = srvToContext(ctx, srv)
 
@@ -175,7 +178,7 @@ func TestNullableWrappedUsesSameSharedResult(t *testing.T) {
 		Field: "object",
 	}
 	detached := cacheTestObjectResult(t, srv, call, 17, nil)
-	attached, err := srv.Cache.AttachResult(ctx, "test-session", srv, detached)
+	attached, err := base.AttachResult(ctx, "test-session", srv, detached)
 	assert.NilError(t, err)
 	assert.Assert(t, attached != nil)
 	attachedShared := attached.cacheSharedResult()
@@ -224,7 +227,7 @@ func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	base := cacheIface.(*cache)
+	base := cacheIface
 	srv := cacheTestServer(t, base)
 	ctx = srvToContext(ctx, srv)
 
@@ -243,7 +246,7 @@ func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 		}
 	}
 
-	first, err := srv.Cache.GetOrInitCall(ctx, "test-session", srv, newReq(), func(context.Context) (AnyResult, error) {
+	first, err := base.GetOrInitCall(ctx, "test-session", srv, newReq(), func(context.Context) (AnyResult, error) {
 		res, err := NewResultForCall(nullable, baseCall)
 		if err != nil {
 			return nil, err
@@ -262,7 +265,7 @@ func TestNullableDerefCacheHitsReconstructObjectView(t *testing.T) {
 	assert.Assert(t, firstShared != nil)
 	assert.Assert(t, firstShared.id != 0)
 
-	second, err := srv.Cache.GetOrInitCall(ctx, "test-session", srv, newReq(), func(context.Context) (AnyResult, error) {
+	second, err := base.GetOrInitCall(ctx, "test-session", srv, newReq(), func(context.Context) (AnyResult, error) {
 		return nil, context.Canceled
 	})
 	assert.NilError(t, err)

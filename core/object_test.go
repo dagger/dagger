@@ -16,7 +16,7 @@ import (
 
 type moduleObjectTestServer struct {
 	*mockServer
-	cache       dagql.Cache
+	cache       *dagql.Cache
 	dag         *dagql.Server
 	root        *Query
 	defaultDeps *ModDeps
@@ -92,7 +92,7 @@ func installModuleObjectTestModuleClass(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 }
 
-func (s *moduleObjectTestServer) Cache(context.Context) (dagql.Cache, error) {
+func (s *moduleObjectTestServer) Cache(context.Context) (*dagql.Cache, error) {
 	return s.cache, nil
 }
 
@@ -109,6 +109,10 @@ func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*ModDeps, error) 
 
 func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
+	cacheIface, err := dagql.NewCache(ctx, "")
+	assert.NilError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cacheIface)
 
 	direct, err := dagql.NewResultForCall(dagql.String("direct"), moduleObjectTestSyntheticCall("moduleObjectDirect", dagql.String("")))
 	assert.NilError(t, err)
@@ -128,24 +132,24 @@ func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
 
 	attachedByDigest := map[string]dagql.AnyResult{}
 	attach := func(res dagql.AnyResult) (dagql.AnyResult, error) {
-		recipeID, err := res.RecipeID()
+		recipeID, err := res.RecipeID(ctx)
 		assert.NilError(t, err)
 		attached := res.WithContentDigestAny(digest.FromString(recipeID.Digest().String())).(dagql.AnyResult)
 		attachedByDigest[recipeID.Digest().String()] = attached
 		return attached, nil
 	}
 
-	deps, err := obj.AttachOwnedResults(context.Background(), nil, attach)
+	deps, err := obj.AttachOwnedResults(ctx, nil, attach)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, len(deps))
 
 	directField, ok := obj.Fields["direct"].(dagql.AnyResult)
 	assert.Assert(t, ok)
-	directRecipeID, err := direct.RecipeID()
+	directRecipeID, err := direct.RecipeID(ctx)
 	assert.NilError(t, err)
-	expectedDirectID, err := attachedByDigest[directRecipeID.Digest().String()].RecipeID()
+	expectedDirectID, err := attachedByDigest[directRecipeID.Digest().String()].RecipeID(ctx)
 	assert.NilError(t, err)
-	actualDirectID, err := directField.RecipeID()
+	actualDirectID, err := directField.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, expectedDirectID.Digest(), actualDirectID.Digest())
 
@@ -153,11 +157,11 @@ func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
 	assert.Assert(t, ok)
 	listRes, ok := listField[0].(dagql.AnyResult)
 	assert.Assert(t, ok)
-	listRecipeID, err := listItem.RecipeID()
+	listRecipeID, err := listItem.RecipeID(ctx)
 	assert.NilError(t, err)
-	expectedListID, err := attachedByDigest[listRecipeID.Digest().String()].RecipeID()
+	expectedListID, err := attachedByDigest[listRecipeID.Digest().String()].RecipeID(ctx)
 	assert.NilError(t, err)
-	actualListID, err := listRes.RecipeID()
+	actualListID, err := listRes.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, expectedListID.Digest(), actualListID.Digest())
 
@@ -165,11 +169,11 @@ func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
 	assert.Assert(t, ok)
 	nestedRes, ok := nestedField["child"].(dagql.AnyResult)
 	assert.Assert(t, ok)
-	nestedRecipeID, err := nested.RecipeID()
+	nestedRecipeID, err := nested.RecipeID(ctx)
 	assert.NilError(t, err)
-	expectedNestedID, err := attachedByDigest[nestedRecipeID.Digest().String()].RecipeID()
+	expectedNestedID, err := attachedByDigest[nestedRecipeID.Digest().String()].RecipeID(ctx)
 	assert.NilError(t, err)
-	actualNestedID, err := nestedRes.RecipeID()
+	actualNestedID, err := nestedRes.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, expectedNestedID.Digest(), actualNestedID.Digest())
 
@@ -182,6 +186,7 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	ctx := t.Context()
 	cacheIface, err := dagql.NewCache(ctx, "")
 	assert.NilError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cacheIface)
 	sc := cacheIface
 
 	root := &Query{}
@@ -191,7 +196,7 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root, sc)
+	dag := dagql.NewServer(root)
 	testSrv.dag = dag
 
 	ctx = ContextWithQuery(ctx, root)
@@ -212,9 +217,9 @@ func TestDecodePersistedModuleObjectValueResultRefLoadsResult(t *testing.T) {
 	decodedRes, ok := decoded.(dagql.AnyResult)
 	assert.Assert(t, ok)
 	assert.Assert(t, decodedRes != nil)
-	expectedID, err := initial.RecipeID()
+	expectedID, err := initial.RecipeID(ctx)
 	assert.NilError(t, err)
-	actualID, err := decodedRes.RecipeID()
+	actualID, err := decodedRes.RecipeID(ctx)
 	assert.NilError(t, err)
 	assert.Equal(t, expectedID.Digest(), actualID.Digest())
 }
@@ -234,7 +239,7 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root, sc)
+	dag := dagql.NewServer(root)
 	testSrv.dag = dag
 	ctx = ContextWithQuery(ctx, root)
 
@@ -337,8 +342,9 @@ func TestModuleObjectConvertToSDKInputUsesCurrentFieldID(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root, sc)
+	dag := dagql.NewServer(root)
 	testSrv.dag = dag
+	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
 	installModuleObjectTestModuleClass(dag)
 
@@ -417,8 +423,9 @@ func TestModuleObjectConvertToSDKInputRewritesStoredResults(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root, sc)
+	dag := dagql.NewServer(root)
 	testSrv.dag = dag
+	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
 	installModuleObjectTestModuleClass(dag)
 
@@ -497,8 +504,9 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 		root:       root,
 	}
 	root.Server = testSrv
-	dag := dagql.NewServer(root, sc)
+	dag := dagql.NewServer(root)
 	testSrv.dag = dag
+	ctx = dagql.ContextWithCache(ctx, sc)
 	ctx = ContextWithQuery(ctx, root)
 	installModuleObjectTestModuleClass(dag)
 
@@ -647,13 +655,14 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 		root:       producerRoot,
 	}
 	producerRoot.Server = producerSrv
-	producerDag := dagql.NewServer(producerRoot, producerCache)
+	producerDag := dagql.NewServer(producerRoot)
 	producerSrv.dag = producerDag
 	installModuleObjectHandleTestObjClass(producerDag)
 	producerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, producerRoot), &engine.ClientMetadata{
 		ClientID:  "module-object-producer-client",
 		SessionID: "module-object-producer-session",
 	})
+	producerCtx = dagql.ContextWithCache(producerCtx, producerCache)
 
 	childDetached, err := dagql.NewObjectResultForCall(
 		&moduleObjectHandleTestObj{Value: "hello"},
@@ -699,13 +708,14 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 		root:       consumerRoot,
 	}
 	consumerRoot.Server = consumerSrv
-	consumerDag := dagql.NewServer(consumerRoot, consumerCache)
+	consumerDag := dagql.NewServer(consumerRoot)
 	consumerSrv.dag = consumerDag
 	installModuleObjectHandleTestObjClass(consumerDag)
 	consumerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, consumerRoot), &engine.ClientMetadata{
 		ClientID:  "module-object-consumer-client",
 		SessionID: "module-object-consumer-session",
 	})
+	consumerCtx = dagql.ContextWithCache(consumerCtx, consumerCache)
 
 	var staleID call.ID
 	assert.NilError(t, staleID.Decode(childEnc))
@@ -754,12 +764,13 @@ func TestModuleObjectAttachOwnedResultsRetainsSemanticInterfaceHandleField(t *te
 		root:       producerRoot,
 	}
 	producerRoot.Server = producerSrv
-	producerDag := dagql.NewServer(producerRoot, producerCache)
+	producerDag := dagql.NewServer(producerRoot)
 	producerSrv.dag = producerDag
 	producerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, producerRoot), &engine.ClientMetadata{
 		ClientID:  "semantic-producer-client",
 		SessionID: "semantic-producer-session",
 	})
+	producerCtx = dagql.ContextWithCache(producerCtx, producerCache)
 	mod.Deps = NewModDeps(producerRoot, nil)
 	installModuleObjectTestModuleClass(producerDag)
 	installModuleObjectSemanticIfaceChildClass(producerDag)
@@ -814,12 +825,13 @@ func TestModuleObjectAttachOwnedResultsRetainsSemanticInterfaceHandleField(t *te
 		root:       consumerRoot,
 	}
 	consumerRoot.Server = consumerSrv
-	consumerDag := dagql.NewServer(consumerRoot, consumerCache)
+	consumerDag := dagql.NewServer(consumerRoot)
 	consumerSrv.dag = consumerDag
 	consumerCtx := engine.ContextWithClientMetadata(ContextWithQuery(ctx, consumerRoot), &engine.ClientMetadata{
 		ClientID:  "semantic-consumer-client",
 		SessionID: "semantic-consumer-session",
 	})
+	consumerCtx = dagql.ContextWithCache(consumerCtx, consumerCache)
 	installModuleObjectTestModuleClass(consumerDag)
 	installModuleObjectSemanticIfaceChildClass(consumerDag)
 	consumerModRes, err := dagql.NewObjectResultForCall(mod, consumerDag, moduleObjectTestSyntheticCall("semanticHandleConsumerModule", mod))

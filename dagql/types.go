@@ -87,7 +87,7 @@ type IDable interface {
 
 type RecipeIDable interface {
 	// RecipeID returns the semantic recipe ID of the value.
-	RecipeID() (*call.ID, error)
+	RecipeID(context.Context) (*call.ID, error)
 }
 
 // AnyResult is a Typed value wrapped with an ID constructor. The wrapped value may

@@ -24,13 +24,13 @@ func TestResultCallDigestErrorsDoNotPanic(t *testing.T) {
 		}},
 	}
 
-	_, err := frame.RecipeDigest()
+	_, err := frame.deriveRecipeDigest(nil)
 	require.ErrorContains(t, err, `args: failed to write argument "bad" to hash`)
 
-	_, err = frame.ContentPreferredDigest()
+	_, err = frame.deriveContentPreferredDigest(nil)
 	require.ErrorContains(t, err, `args: failed to write argument "bad" to hash`)
 
-	_, _, err = frame.SelfDigestAndInputRefs()
+	_, _, err = frame.selfDigestAndInputRefs(nil)
 	require.ErrorContains(t, err, `result call frame "broken" args: failed to write argument "bad" to hash`)
 }
 
@@ -68,7 +68,7 @@ func TestResultCallForkClonesTopLevelMutableState(t *testing.T) {
 func TestCacheRecipeDigestForCallMemoizesOnOriginalFrame(t *testing.T) {
 	t.Parallel()
 
-	c := &cache{}
+	c := &Cache{}
 	frame := &ResultCall{
 		Kind:  ResultCallKindField,
 		Type:  NewResultCallType(Int(0).Type()),
@@ -100,7 +100,8 @@ func TestResultCallRefReceiverUsesSharedFastPath(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	reqCall := cacheTestIntCall("shared-fast-path")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
@@ -118,7 +119,7 @@ func TestResultCallRefReceiverUsesSharedFastPath(t *testing.T) {
 		Field:    "child",
 		Receiver: &ResultCallRef{ResultID: uint64(shared.id), shared: shared},
 	}
-	receiver, err := frame.ReceiverCall()
+	receiver, err := frame.ReceiverCall(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, receiver)
 	require.Equal(t, reqCall.Field, receiver.Field)
@@ -132,7 +133,8 @@ func TestResultCallRefContentPreferredDigestUsesLatestSharedFrame(t *testing.T) 
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	reqCall := cacheTestIntCall("shared-content-digest")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
@@ -161,7 +163,8 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	reqCall := cacheTestIntCall("shared-recipe-id")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
@@ -177,8 +180,8 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 	require.NoError(t, c.TeachContentDigest(ctx, res, contentDigest))
 
 	ref := &ResultCallRef{ResultID: uint64(shared.id), shared: shared}
-	caller := &ResultCall{cache: c}
-	id, err := caller.resolveRefRecipeID(ref, map[sharedResultID]struct{}{})
+	caller := &ResultCall{}
+	id, err := caller.resolveRefRecipeID(c, ref, map[sharedResultID]struct{}{})
 	require.NoError(t, err)
 	require.Equal(t, contentDigest, id.ContentDigest())
 
@@ -191,7 +194,8 @@ func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	reqCall := cacheTestIntCall("shared-fast-path-removal")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
@@ -212,9 +216,8 @@ func TestResultCallRefSharedFastPathDoesNotSurviveRemoval(t *testing.T) {
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "child",
 		Receiver: ref,
-		cache:    c,
 	}
-	_, err = frame.ReceiverCall()
+	_, err = frame.ReceiverCall(ctx)
 	require.ErrorContains(t, err, "missing result call frame")
 }
 
@@ -224,7 +227,8 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	require.NoError(t, err)
-	c := cacheIface.(*cache)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
 
 	reqCall := cacheTestIntCall("shared-fallback")
 	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: reqCall}, func(context.Context) (AnyResult, error) {
@@ -241,9 +245,8 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "child",
 		Receiver: &ResultCallRef{ResultID: uint64(shared.id)},
-		cache:    c,
 	}
-	receiver, err := frame.ReceiverCall()
+	receiver, err := frame.ReceiverCall(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, receiver)
 	require.Equal(t, reqCall.Field, receiver.Field)

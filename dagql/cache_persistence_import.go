@@ -10,7 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func (c *cache) importPersistedState(ctx context.Context) error {
+func (c *Cache) importPersistedState(ctx context.Context) error {
 	if c.pdb == nil {
 		return nil
 	}
@@ -155,7 +155,6 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 			}
 
 			res := &sharedResult{
-				cache:              c,
 				id:                 resultID,
 				isObject:           env.Kind == persistedResultKindObject,
 				safeToPersistCache: row.SafeToPersistCache,
@@ -170,7 +169,6 @@ func (c *cache) importPersistedState(ctx context.Context) error {
 				persistedEnvelope:  &env,
 			}
 			res.storeResultCall(&frame)
-			res.loadResultCall().bindCache(c)
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true
@@ -439,7 +437,7 @@ func resolverServer(resolver TypeResolver) *Server {
 	return dag
 }
 
-func (c *cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
+func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("ensure persisted hit value loaded: type resolver is nil")
 	}

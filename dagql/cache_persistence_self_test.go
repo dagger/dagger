@@ -55,8 +55,8 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 	t.Helper()
 	baseCacheIface, err := NewCache(t.Context(), "")
 	assert.NilError(t, err)
-	baseCache := baseCacheIface.(*cache)
-	srv := NewServer(&persistCodecRoot{}, baseCache)
+	baseCache := baseCacheIface
+	srv := NewServer(&persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 	rootObjType, ok := srv.ObjectType("Query")
 	assert.Assert(t, ok)
@@ -73,6 +73,7 @@ func setupPersistCodecTest(t *testing.T) context.Context {
 		Type:  NewResultCallType((&persistCodecRoot{}).Type()),
 		Field: "persist-codec-root",
 	})
+	ctx = ContextWithCache(ctx, baseCache)
 	ctx = srvToContext(ctx, srv)
 	return ctx
 }
@@ -92,9 +93,9 @@ func TestPersistedSelfCodecScalarRoundTrip(t *testing.T) {
 	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, original.cacheSharedResult().resultCall.clone(), env)
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decoded.Unwrap(), Typed(String("hello"))))
-	decodedRecipeEnc, err := cacheTestMustRecipeID(t, decoded).Encode()
+	decodedRecipeEnc, err := cacheTestMustRecipeID(t, ctx, decoded).Encode()
 	assert.NilError(t, err)
-	originalRecipeEnc, err := cacheTestMustRecipeID(t, original).Encode()
+	originalRecipeEnc, err := cacheTestMustRecipeID(t, ctx, original).Encode()
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
 }
@@ -117,9 +118,9 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, srv, 0, original.cacheSharedResult().resultCall.clone(), env)
 	assert.NilError(t, err)
 	assert.Assert(t, decoded != nil)
-	decodedRecipeEnc, err := cacheTestMustRecipeID(t, decoded).Encode()
+	decodedRecipeEnc, err := cacheTestMustRecipeID(t, ctx, decoded).Encode()
 	assert.NilError(t, err)
-	originalRecipeEnc, err := cacheTestMustRecipeID(t, original).Encode()
+	originalRecipeEnc, err := cacheTestMustRecipeID(t, ctx, original).Encode()
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
 }
@@ -130,7 +131,7 @@ func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	ctx := cacheTestContext(t.Context())
 	cacheIface, err := NewCache(ctx, "")
 	assert.NilError(t, err)
-	srv := NewServer(&persistCodecRoot{}, cacheIface)
+	srv := NewServer(&persistCodecRoot{})
 	srv.InstallObject(NewClass(srv, ClassOpts[*persistCodecObj]{}))
 
 	req := &CallRequest{
@@ -212,9 +213,9 @@ func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {
 	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, outer.cacheSharedResult().resultCall.clone(), env)
 	assert.NilError(t, err)
 	assert.Assert(t, decoded != nil)
-	decodedRecipeEnc, err := cacheTestMustRecipeID(t, decoded).Encode()
+	decodedRecipeEnc, err := cacheTestMustRecipeID(t, ctx, decoded).Encode()
 	assert.NilError(t, err)
-	outerRecipeEnc, err := cacheTestMustRecipeID(t, outer).Encode()
+	outerRecipeEnc, err := cacheTestMustRecipeID(t, ctx, outer).Encode()
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decodedRecipeEnc, outerRecipeEnc))
 

@@ -389,7 +389,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		if err := secretStore.AddSecret(secret); err != nil {
+		if err := secretStore.AddSecret(ctx, secret); err != nil {
 			return nil, fmt.Errorf("failed to add secret: %w", err)
 		}
 	}
@@ -668,7 +668,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 	if curCall != nil {
-		callDigest, err := curCall.RecipeDigest()
+		callDigest, err := curCall.RecipeDigest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("compute function exec call digest: %w", err)
 		}

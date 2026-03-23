@@ -52,36 +52,6 @@ type Server struct {
 	// WARNING: this is *not* the view of the current query (for that, inspect
 	// the current id)
 	View call.View
-
-	// Cache is the inner cache used by the server. It can be replicated to
-	// another *Server to inherit and share caches.
-	//
-	// TODO: copy-on-write
-	Cache Cache
-}
-
-type ServerSchema struct {
-	inner Server
-}
-
-func (s *ServerSchema) WithCache(c Cache) *Server {
-	inner := s.inner
-	inner.Cache = c
-	return &inner
-}
-
-func (s *ServerSchema) View() call.View {
-	return s.inner.View
-}
-
-func (s *Server) AsSchema() *ServerSchema {
-	return &ServerSchema{
-		inner: *s,
-	}
-}
-
-func (s *Server) WithCache(c Cache) *Server {
-	return s.AsSchema().WithCache(c)
 }
 
 type InstallHook interface {
@@ -106,9 +76,8 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T, c Cache) *Server {
+func NewServer[T Typed](root T) *Server {
 	srv := &Server{
-		Cache:         c,
 		objects:       map[string]ObjectType{},
 		scalars:       map[string]ScalarType{},
 		typeDefs:      map[string]TypeDef{},
@@ -728,8 +697,12 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("load %s: empty session ID", id.Display())
 	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: current dagql cache: %w", id.Display(), err)
+	}
 	if id.IsHandle() {
-		res, err := s.Cache.LoadResultByResultID(srvToContext(ctx, s), clientMetadata.SessionID, s, id.EngineResultID())
+		res, err := cache.LoadResultByResultID(srvToContext(ctx, s), clientMetadata.SessionID, s, id.EngineResultID())
 		if err != nil {
 			return nil, err
 		}
@@ -755,7 +728,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	state := &recipeLoadState{
 		ctx:       ctx,
 		srv:       s,
-		cache:     s.Cache,
+		cache:     cache,
 		sessionID: clientMetadata.SessionID,
 		loads:     make(map[string]*recipeLoadFuture),
 	}
@@ -771,7 +744,7 @@ type recipeLoadFuture struct {
 type recipeLoadState struct {
 	ctx       context.Context
 	srv       *Server
-	cache     Cache
+	cache     *Cache
 	sessionID string
 
 	mu    sync.Mutex
@@ -804,11 +777,7 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 
 func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 	callCtx := srvToContext(state.ctx, state.srv)
-	internalCache, ok := state.cache.(*cache)
-	if !ok {
-		return nil, fmt.Errorf("load %s: internal cache lookup requires *cache, got %T", idInputDebugString(id), state.cache)
-	}
-	if hit, ok, err := internalCache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
+	if hit, ok, err := state.cache.lookupCacheForDigests(callCtx, state.sessionID, state.srv, id.Digest(), id.ExtraDigests()); err != nil {
 		return nil, fmt.Errorf("load %s: fast cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
@@ -871,7 +840,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("load %s: %w", idInputDebugString(id), err)
 	}
 	req := &CallRequest{ResultCall: frame}
-	if hit, ok, err := internalCache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
+	if hit, ok, err := state.cache.lookupCallRequest(callCtx, state.sessionID, state.srv, req); err != nil {
 		return nil, fmt.Errorf("load %s: structural cache lookup: %w", idInputDebugString(id), err)
 	} else if ok {
 		return hit, nil
@@ -1177,10 +1146,10 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 				if err != nil {
 					return err
 				}
-					if val == nil || val.Unwrap() == nil {
-						if err := appendAssign(destV, nil); err != nil {
-							return err
-						}
+				if val == nil || val.Unwrap() == nil {
+					if err := appendAssign(destV, nil); err != nil {
+						return err
+					}
 					continue
 				}
 				if isObj {
@@ -1293,6 +1262,20 @@ func ChildFieldCall(parent *ResultCall, field string, fieldType *ast.Type) *Resu
 }
 
 type srvCtx struct{}
+
+type cacheCtx struct{}
+
+func ContextWithCache(ctx context.Context, cache *Cache) context.Context {
+	return context.WithValue(ctx, cacheCtx{}, cache)
+}
+
+func EngineCache(ctx context.Context) (*Cache, error) {
+	val := ctx.Value(cacheCtx{})
+	if val == nil {
+		return nil, fmt.Errorf("no dagql cache in context")
+	}
+	return val.(*Cache), nil
+}
 
 func srvToContext(ctx context.Context, srv *Server) context.Context {
 	return context.WithValue(ctx, srvCtx{}, srv)
@@ -1413,7 +1396,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 
 		if rerr != nil {
 			var queryPath ast.Path
-			if recipeID, err := self.RecipeID(); err == nil {
+			if recipeID, err := self.RecipeID(ctx); err == nil {
 				queryPath = append(idToPath(recipeID), ast.PathName(sel.Name()))
 			} else {
 				queryPath = ast.Path{ast.PathName(sel.Name())}
@@ -1454,10 +1437,10 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 				if err != nil {
 					return nil, err
 				}
-					if elemVal == nil || elemVal.Unwrap() == nil {
-						results[nth-1] = nil
-						continue
-					}
+				if elemVal == nil || elemVal.Unwrap() == nil {
+					results[nth-1] = nil
+					continue
+				}
 				results[nth-1] = elemVal.Unwrap()
 			}
 		} else {

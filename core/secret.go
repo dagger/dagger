@@ -82,7 +82,7 @@ func SecretIDDigest(id *call.ID) (digest.Digest, error) {
 	return id.Digest(), nil
 }
 
-func SecretDigest(secret dagql.ObjectResult[*Secret]) digest.Digest {
+func SecretDigest(ctx context.Context, secret dagql.ObjectResult[*Secret]) digest.Digest {
 	call, err := secret.ResultCall()
 	if err != nil {
 		return ""
@@ -90,14 +90,14 @@ func SecretDigest(secret dagql.ObjectResult[*Secret]) digest.Digest {
 	if contentDigest := call.ContentDigest(); contentDigest != "" {
 		return contentDigest
 	}
-	recipeDigest, err := call.RecipeDigest()
+	recipeDigest, err := call.RecipeDigest(ctx)
 	if err != nil {
 		return ""
 	}
 	return recipeDigest
 }
 
-func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
+func (store *SecretStore) AddSecret(ctx context.Context, secret dagql.ObjectResult[*Secret]) error {
 	if secret.Self() == nil {
 		return fmt.Errorf("secret must not be nil")
 	}
@@ -113,11 +113,11 @@ func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
 	if err != nil {
 		return fmt.Errorf("derive secret call: %w", err)
 	}
-	recipeDigest, err := secretCall.RecipeDigest()
+	recipeDigest, err := secretCall.RecipeDigest(ctx)
 	if err != nil {
 		return fmt.Errorf("derive secret recipe digest: %w", err)
 	}
-	canonicalDigest := SecretDigest(secret)
+	canonicalDigest := SecretDigest(ctx, secret)
 	if canonicalDigest == "" {
 		return fmt.Errorf("secret must have a digest")
 	}
@@ -132,8 +132,8 @@ func (store *SecretStore) AddSecret(secret dagql.ObjectResult[*Secret]) error {
 	return nil
 }
 
-func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret dagql.ObjectResult[*Secret]) error {
-	secretDgst := SecretDigest(secret)
+func (store *SecretStore) AddSecretFromOtherStore(ctx context.Context, srcStore *SecretStore, secret dagql.ObjectResult[*Secret]) error {
+	secretDgst := SecretDigest(ctx, secret)
 	if secretDgst == "" {
 		return fmt.Errorf("secret must have a digest")
 	}
@@ -141,7 +141,7 @@ func (store *SecretStore) AddSecretFromOtherStore(srcStore *SecretStore, secret 
 	if !ok {
 		return fmt.Errorf("secret %s not found in source store", secretDgst)
 	}
-	return store.AddSecret(srcSecret)
+	return store.AddSecret(ctx, srcSecret)
 }
 
 func (store *SecretStore) secretByDigest(idDgst digest.Digest) (dagql.ObjectResult[*Secret], bool) {

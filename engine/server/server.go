@@ -150,7 +150,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache dagql.Cache
+	engineCache *dagql.Cache
 
 	//
 	// session+client state
@@ -504,7 +504,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup dagql caching
 	//
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
+	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
 	if err != nil {
 		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
 		// db and trying again.
@@ -512,7 +512,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
 			slog.Error("failed to remove existing dagql cache db", "error", err)
 		}
-		srv.baseDagqlCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
+		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
 		}
@@ -649,7 +649,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	daggerSessions := srv.daggerSessions
 	srv.daggerSessionsMu.Unlock()
 
-	if srv.baseDagqlCache != nil {
+	if srv.engineCache != nil {
 		srv.gcmu.Lock()
 		defer srv.gcmu.Unlock()
 	}
@@ -660,7 +660,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		s.stateMu.Unlock()
 	}
 
-	if srv.baseDagqlCache != nil && len(srv.workerGCPolicies) > 0 {
+	if srv.engineCache != nil && len(srv.workerGCPolicies) > 0 {
 		dstat, statErr := disk.GetDiskStat(srv.rootDir)
 		if statErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to get disk stats for graceful shutdown prune: %w", statErr))
@@ -669,15 +669,15 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 			for i := range prunePolicies {
 				prunePolicies[i].CurrentFreeSpace = dstat.Free
 			}
-			_, pruneErr := srv.baseDagqlCache.Prune(ctx, prunePolicies)
+			_, pruneErr := srv.engineCache.Prune(ctx, prunePolicies)
 			if pruneErr != nil {
 				err = errors.Join(err, fmt.Errorf("failed to prune dagql cache during graceful shutdown: %w", pruneErr))
 			}
 		}
 	}
 
-	if srv.baseDagqlCache != nil {
-		if closeErr := srv.baseDagqlCache.Close(ctx); closeErr != nil {
+	if srv.engineCache != nil {
+		if closeErr := srv.engineCache.Close(ctx); closeErr != nil {
 			slog.Error("failed to close base dagql cache", "error", closeErr)
 			err = errors.Join(err, closeErr)
 		}
@@ -782,7 +782,7 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	l = l.WithField("dagger-session-count", len(srv.daggerSessions))
-	l = l.WithField("dagql-cache-size", srv.baseDagqlCache.Size())
+	l = l.WithField("dagql-cache-size", srv.engineCache.Size())
 	return l
 }
 
@@ -791,31 +791,31 @@ func (srv *Server) Register(server *grpc.Server) {
 }
 
 func (srv *Server) DagqlCacheEntries() int {
-	if srv.baseDagqlCache == nil {
+	if srv.engineCache == nil {
 		return 0
 	}
-	return srv.baseDagqlCache.Size()
+	return srv.engineCache.Size()
 }
 
 func (srv *Server) DagqlCacheEntryStats() dagql.CacheEntryStats {
-	if srv.baseDagqlCache == nil {
+	if srv.engineCache == nil {
 		return dagql.CacheEntryStats{}
 	}
-	return srv.baseDagqlCache.EntryStats()
+	return srv.engineCache.EntryStats()
 }
 
 func (srv *Server) DagqlDebugSnapshot() *dagql.EGraphDebugSnapshot {
-	if srv.baseDagqlCache == nil {
+	if srv.engineCache == nil {
 		return nil
 	}
-	return srv.baseDagqlCache.DebugEGraphSnapshot()
+	return srv.engineCache.DebugEGraphSnapshot()
 }
 
 func (srv *Server) WriteDagqlCacheDebugSnapshot(w io.Writer) error {
-	if srv.baseDagqlCache == nil {
+	if srv.engineCache == nil {
 		return fmt.Errorf("dagql cache not available")
 	}
-	return srv.baseDagqlCache.WriteDebugCacheSnapshot(w)
+	return srv.engineCache.WriteDebugCacheSnapshot(w)
 }
 
 // ConnectedClients returns the number of currently connected clients

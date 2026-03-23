@@ -31,11 +31,11 @@ func MakeDirectoryContentHashed(
 	}
 
 	if _, err := dirInst.ID(); err == nil {
-		dag, err := CurrentDagqlServer(ctx)
+		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return retInst, err
 		}
-		if err := dag.Cache.TeachContentDigest(ctx, dirInst, dgst); err != nil {
+		if err := cache.TeachContentDigest(ctx, dirInst, dgst); err != nil {
 			return retInst, fmt.Errorf("teach directory content digest: %w", err)
 		}
 		return dirInst, nil

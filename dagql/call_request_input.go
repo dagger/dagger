@@ -44,9 +44,6 @@ func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
 	}
 	if shared.id == 0 {
 		call := frame.clone()
-		if shared.cache != nil {
-			call.bindCache(shared.cache)
-		}
 		return &ResultCallRef{Call: call}, nil
 	}
 	if shared == nil {
@@ -219,22 +216,18 @@ func handleIDFromResultCallRef(ctx context.Context, ref *ResultCallRef) (*call.I
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
-	srv := CurrentDagqlServer(ctx)
-	if srv == nil || srv.Cache == nil {
-		return nil, fmt.Errorf("cannot resolve result ref without dagql server cache")
-	}
-	base, ok := srv.Cache.(*cache)
-	if !ok {
-		return nil, fmt.Errorf("unexpected cache implementation %T", srv.Cache)
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve result ref: %w", err)
 	}
 	if ref.Call != nil {
-		resultID, err := base.resultIDForCall(ctx, ref.Call)
+		resultID, err := cache.resultIDForCall(ctx, ref.Call)
 		if err != nil {
 			return nil, err
 		}
 		ref = &ResultCallRef{ResultID: uint64(resultID)}
 	}
-	res, err := base.sharedResultByResultID(sharedResultID(ref.ResultID))
+	res, err := cache.sharedResultByResultID(sharedResultID(ref.ResultID))
 	if err != nil {
 		return nil, err
 	}

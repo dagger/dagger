@@ -42,7 +42,8 @@ func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	dag := dagql.NewServer(root, baseCache)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	dag := dagql.NewServer(root)
 	dag.View = call.View(version)
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {

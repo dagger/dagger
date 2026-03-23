@@ -10,7 +10,7 @@ import (
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 )
 
-func (c *cache) persistCurrentState(ctx context.Context) error {
+func (c *Cache) persistCurrentState(ctx context.Context) error {
 	if c.sqlDB == nil || c.pdb == nil {
 		return nil
 	}
@@ -22,7 +22,7 @@ func (c *cache) persistCurrentState(ctx context.Context) error {
 	return c.applyPersistStateSnapshot(ctx, snapshot)
 }
 
-func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
+func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot, error) {
 	var snapshot persistStateSnapshot
 
 	c.egraphMu.RLock()
@@ -268,7 +268,7 @@ func (c *cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 	return snapshot, nil
 }
 
-func (c *cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) error {
+func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistStateSnapshot) error {
 	if c.sqlDB == nil || c.pdb == nil {
 		return nil
 	}
@@ -345,7 +345,7 @@ func (c *cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	return nil
 }
 
-func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (PersistedResultEnvelope, error) {
+func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (PersistedResultEnvelope, error) {
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
 		return *snapshot.persistedEnvelope, nil
 	}
@@ -369,7 +369,7 @@ func (c *cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	return DefaultPersistedSelfCodec.EncodeResult(persistCtx, c, Result[Typed]{shared: shared})
 }
 
-func (c *cache) persistedSnapshotLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {
+func (c *Cache) persistedSnapshotLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {
 	if res == nil {
 		return nil
 	}

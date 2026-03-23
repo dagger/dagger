@@ -46,7 +46,7 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*M
 	return nil
 }
 
-func (ms *mockServer) CurrentModule(context.Context) (dagql.ObjectResult[*Module], error) {
+func (ms *mockServer) CurrentModule(ctx context.Context) (dagql.ObjectResult[*Module], error) {
 	var zero dagql.ObjectResult[*Module]
 	if ms.moduleSource == nil {
 		return zero, nil
@@ -55,7 +55,8 @@ func (ms *mockServer) CurrentModule(context.Context) (dagql.ObjectResult[*Module
 	if err != nil {
 		panic(err)
 	}
-	dag := dagql.NewServer(&Query{}, cacheIface)
+	ctx = dagql.ContextWithCache(ctx, cacheIface)
+	dag := dagql.NewServer(&Query{})
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
 	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 
@@ -108,7 +109,7 @@ func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.Cl
 	return nil, nil
 }
 func (ms *mockServer) DefaultDeps(context.Context) (*ModDeps, error) { return nil, nil }
-func (ms *mockServer) Cache(context.Context) (dagql.Cache, error)    { return nil, nil }
+func (ms *mockServer) Cache(context.Context) (*dagql.Cache, error)   { return nil, nil }
 func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySeenKeyStore, error) {
 	return nil, nil
 }
@@ -222,6 +223,10 @@ func TestAroundFuncSkipsIntrospectionDescendantsViaContext(t *testing.T) {
 }
 
 func TestIsIntrospectionPreservesClassification(t *testing.T) {
+	cache, err := dagql.NewCache(t.Context(), "")
+	require.NoError(t, err)
+	ctx := dagql.ContextWithCache(t.Context(), cache)
+
 	functionFrame := testResultCall("function", dagql.String(""), nil)
 	functionFrame.Type = dagql.NewResultCallType((&Function{}).Type())
 
@@ -259,7 +264,7 @@ func TestIsIntrospectionPreservesClassification(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, isIntrospection(t.Context(), tc.frame))
+			require.Equal(t, tc.want, isIntrospection(ctx, tc.frame))
 		})
 	}
 }

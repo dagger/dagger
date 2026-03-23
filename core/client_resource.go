@@ -23,7 +23,7 @@ func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName 
 		if err != nil {
 			return "", err
 		}
-		scopeDigest, err = scopedMod.ContentPreferredDigest()
+		scopeDigest, err = scopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -60,7 +60,7 @@ var CachePerCallerModule = dagql.ImplicitInput{
 		if err != nil {
 			return nil, err
 		}
-		scopeDigest, err := scopedMod.ContentPreferredDigest()
+		scopeDigest, err := scopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
 			return nil, err
 		}

@@ -283,12 +283,12 @@ func prepTerminal(ctx context.Context, svcID *call.ID, execErr error) (*buildkit
 			return nil, nil, fmt.Errorf("failed to load service from handle ID: %w", err)
 		}
 		recipeIDable, ok := res.(interface {
-			RecipeID() (*call.ID, error)
+			RecipeID(context.Context) (*call.ID, error)
 		})
 		if !ok {
 			return nil, nil, fmt.Errorf("loaded service %T does not expose a recipe ID", res)
 		}
-		dumpID, err = recipeIDable.RecipeID()
+		dumpID, err = recipeIDable.RecipeID(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to derive service recipe ID: %w", err)
 		}

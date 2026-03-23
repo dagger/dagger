@@ -1036,7 +1036,7 @@ func (s *containerSchema) build(ctx context.Context, parent dagql.ObjectResult[*
 		return nil, err
 	}
 
-	buildctxDirID, err := buildctxDir.RecipeID()
+	buildctxDirID, err := buildctxDir.RecipeID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get build context ID: %w", err)
 	}
@@ -2948,7 +2948,7 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 	if err != nil {
 		return nil, err
 	}
-	secretDigest := core.SecretDigest(secret)
+	secretDigest := core.SecretDigest(ctx, secret)
 	if secretDigest == "" {
 		return nil, fmt.Errorf("failed to get secret digest: secret must have a digest")
 	}
@@ -3112,7 +3112,7 @@ func (s *containerSchema) terminal(
 		args.Cmd = []string{"sh"}
 	}
 
-	ctrDig, err := ctr.ContentPreferredDigest()
+	ctrDig, err := ctr.ContentPreferredDigest(ctx)
 	if err != nil {
 		return res, err
 	}

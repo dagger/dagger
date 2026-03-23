@@ -18,7 +18,7 @@ type pruneCandidate struct {
 	expiresAtUnix int64
 }
 
-func (c *cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
+func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
 	report := CachePruneReport{}
 	if len(policies) == 0 {
 		return report, nil
@@ -206,7 +206,7 @@ func entryRecentlyUsed(entry CacheUsageEntry, cutoffUnixNano int64) bool {
 	return mostRecentUse >= cutoffUnixNano
 }
 
-func (c *cache) simulatePersistedEdgeRemovalLocked(
+func (c *Cache) simulatePersistedEdgeRemovalLocked(
 	resultID sharedResultID,
 	usageOwnerByIdentity map[string]sharedResultID,
 	resultIDsByUsageIdentity map[string][]sharedResultID,

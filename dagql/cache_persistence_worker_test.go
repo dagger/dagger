@@ -17,7 +17,7 @@ func TestCachePersistenceWorkerMirrorsRetainedPersistableResult(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	defer func() {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
@@ -56,7 +56,7 @@ func TestCachePersistenceDoesNotWriteDuringRuntime(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	defer func() {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
@@ -84,7 +84,7 @@ func TestCachePersistenceWorkerMirrorsPrunedStateAfterRelease(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	defer func() {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
@@ -111,7 +111,7 @@ func TestCachePersistenceWorkerMirrorsAuthoritativeEgraphState(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	defer func() {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
@@ -170,7 +170,7 @@ func TestCachePersistenceSnapshotRemainsValidAfterLiveResultRemoval(t *testing.T
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 	defer func() {
 		assert.NilError(t, c.Close(context.Background()))
 	}()
@@ -209,7 +209,7 @@ func TestCachePersistenceCleanShutdownToggleOnClose(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	cacheIface, err := NewCache(ctx, dbPath)
 	assert.NilError(t, err)
-	c := cacheIface.(*cache)
+	c := cacheIface
 
 	val, found, err := c.pdb.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
 	assert.NilError(t, err)

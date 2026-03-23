@@ -22,9 +22,7 @@ func (identityOptTestQuery) Type() *ast.Type {
 
 func newIdentityOptTestServer(t *testing.T) *Server {
 	t.Helper()
-	baseCache, err := NewCache(context.Background(), "")
-	require.NoError(t, err)
-	return NewServer(identityOptTestQuery{}, baseCache)
+	return NewServer(identityOptTestQuery{})
 }
 
 func TestFieldSpecResolveImplicitInputCallArgsResolvesDeterministicImplicitInputs(t *testing.T) {

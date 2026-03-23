@@ -1840,7 +1840,7 @@ func (dir *Directory) Without(ctx context.Context, opCall *dagql.ResultCall, pat
 		dir.Snapshot = snapshot
 
 		if !anyPathsRemoved && opCall != nil && dir.Parent.Self() != nil {
-			cache, err := query.Cache(ctx)
+			cache, err := dagql.EngineCache(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get dagql cache: %w", err)
 			}

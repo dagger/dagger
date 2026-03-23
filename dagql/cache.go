@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -24,97 +23,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
-
-type Cache interface {
-	// GetOrInitCall caches dagql call results keyed by the request's canonical
-	// recipe identity. It returns the call result for that request,
-	// initializing it with fn when needed.
-	GetOrInitCall(
-		context.Context,
-		string,
-		TypeResolver,
-		*CallRequest,
-		func(context.Context) (AnyResult, error),
-	) (AnyResult, error)
-
-	// Like GetOrInitCall, but for in-memory opaque values keyed by a plain string key.
-	// These values are not persisted and are only cached in memory.
-	GetOrInitArbitrary(
-		context.Context,
-		string,
-		string,
-		func(context.Context) (any, error),
-	) (ArbitraryCachedResult, error)
-
-	// ReleaseSession releases all cache-backed state explicitly owned by the
-	// given session.
-	ReleaseSession(context.Context, string) error
-
-	// Returns the number of entries in the cache.
-	Size() int
-
-	// Returns a breakdown of cache entries by internal index.
-	EntryStats() CacheEntryStats
-
-	// Returns a deterministic snapshot of cache usage entries with size
-	// measurement for all cache entries (not only prune candidates). This is
-	// intended for global cache reporting and policy threshold evaluation.
-	UsageEntriesAll(context.Context) []CacheUsageEntry
-
-	// Applies ordered prune policies and returns the set of pruned entries.
-	Prune(context.Context, []CachePrunePolicy) (CachePruneReport, error)
-
-	// Close flushes and closes cache-owned persistence resources.
-	Close(context.Context) error
-
-	// DebugEGraphSnapshot returns a deterministic point-in-time dump of the
-	// current in-memory e-graph/cache state for debugging.
-	DebugEGraphSnapshot() *EGraphDebugSnapshot
-
-	// WriteDebugCacheSnapshot streams a broader deterministic point-in-time dump
-	// of in-memory cache state, including cache entry metadata and call-frame
-	// provenance, for debugging retained-memory and liveness issues.
-	WriteDebugCacheSnapshot(io.Writer) error
-
-	// LoadResultByResultID loads a cache-backed result by its stable shared
-	// result handle.
-	LoadResultByResultID(context.Context, string, *Server, uint64) (AnyResult, error)
-
-	// WalkResultCall walks a result-call graph non-owningly, loading any
-	// result-handle refs it encounters and invoking visit for each loaded
-	// result before recursing into that result's call.
-	WalkResultCall(context.Context, *Server, *ResultCall, func(AnyResult) error) error
-
-	// AttachResult promotes a detached result into the cache so subsequent
-	// selections can refer to it by stable result handle.
-	AttachResult(context.Context, string, TypeResolver, AnyResult) (AnyResult, error)
-
-	// AddExplicitDependency records that parent must retain dep until parent is
-	// released, without changing either result's structural call identity.
-	AddExplicitDependency(context.Context, AnyResult, AnyResult, string) error
-
-	// RecipeIDForCall derives the semantic recipe ID for a result call using
-	// the cache to resolve any cached result refs it depends on.
-	RecipeIDForCall(*ResultCall) (*call.ID, error)
-
-	// RecipeDigestForCall derives the semantic recipe digest for a result call
-	// using the cache to resolve any cached result refs it depends on.
-	RecipeDigestForCall(*ResultCall) (digest.Digest, error)
-
-	// TeachCallEquivalentToResult records that the given call is equivalent to
-	// the provided existing result, updating e-graph/cache identity state
-	// without re-executing or synthetic loading.
-	TeachCallEquivalentToResult(context.Context, string, *ResultCall, AnyResult) error
-
-	// TeachContentDigest records a content digest for an already-attached
-	// result, updating both the stored result call metadata and the e-graph's
-	// digest-equivalence knowledge without detaching or cloning the result.
-	TeachContentDigest(context.Context, AnyResult, digest.Digest) error
-
-	PersistedResultID(AnyResult) (uint64, error)
-	PersistedSnapshotLinksByResultID(context.Context, uint64) ([]PersistedSnapshotRefLink, error)
-	LoadPersistedObjectByResultID(context.Context, *Server, uint64) (AnyObjectResult, error)
-}
 
 func ValueFunc(v AnyResult) func(context.Context) (AnyResult, error) {
 	return func(context.Context) (AnyResult, error) {
@@ -172,8 +80,8 @@ const cachePersistenceSchemaVersion = "9"
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
-func NewCache(ctx context.Context, dbPath string) (Cache, error) {
-	c := &cache{traceBootID: newTraceBootID()}
+func NewCache(ctx context.Context, dbPath string) (*Cache, error) {
+	c := &Cache{traceBootID: newTraceBootID()}
 
 	if dbPath == "" {
 		return c, nil
@@ -267,7 +175,7 @@ func NewCache(ctx context.Context, dbPath string) (Cache, error) {
 	return c, nil
 }
 
-func (c *cache) trackSessionResult(ctx context.Context, sessionID string, res AnyResult, hitCache bool) {
+func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res AnyResult, hitCache bool) {
 	if c == nil || sessionID == "" || res == nil {
 		return
 	}
@@ -305,7 +213,7 @@ func (c *cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	}
 }
 
-func (c *cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResult) {
+func (c *Cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResult) {
 	if c == nil || sessionID == "" || res == nil {
 		return
 	}
@@ -335,7 +243,7 @@ func (c *cache) trackSessionArbitrary(sessionID string, res ArbitraryCachedResul
 	}
 }
 
-func (c *cache) ReleaseSession(ctx context.Context, sessionID string) error {
+func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("release session: empty session ID")
 	}
@@ -405,7 +313,7 @@ func (c *cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	return rerr
 }
 
-func (c *cache) resultHasSessionEdge(resultID sharedResultID) bool {
+func (c *Cache) resultHasSessionEdge(resultID sharedResultID) bool {
 	if c == nil || resultID == 0 {
 		return false
 	}
@@ -419,7 +327,7 @@ func (c *cache) resultHasSessionEdge(resultID sharedResultID) bool {
 	return false
 }
 
-func (c *cache) sessionDependencyClosureLocked() map[sharedResultID]struct{} {
+func (c *Cache) sessionDependencyClosureLocked() map[sharedResultID]struct{} {
 	closure := make(map[sharedResultID]struct{})
 	stack := make([]sharedResultID, 0)
 
@@ -451,7 +359,7 @@ func (c *cache) sessionDependencyClosureLocked() map[sharedResultID]struct{} {
 	return closure
 }
 
-func (c *cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64) {
+func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64) {
 	if c == nil || res == nil || res.id == 0 {
 		return
 	}
@@ -474,7 +382,7 @@ func (c *cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 	c.persistedEdgesByResult[res.id] = edge
 }
 
-func (c *cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) error {
+func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) error {
 	if c == nil || resultID == 0 {
 		return nil
 	}
@@ -505,7 +413,7 @@ func (c *cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	return errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 }
 
-func (c *cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
+func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
 	if c == nil || res == nil {
 		return
 	}
@@ -513,8 +421,8 @@ func (c *cache) incrementIncomingOwnershipLocked(ctx context.Context, res *share
 	c.traceRefAcquired(ctx, res, res.incomingOwnershipCount)
 }
 
-func (c *cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *sharedResult) []*sharedResult {
-	if c == nil || res == nil || res.id == 0 || res.cache != c {
+func (c *Cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *sharedResult) []*sharedResult {
+	if c == nil || res == nil || res.id == 0 {
 		return queue
 	}
 	if c.resultsByID[res.id] != res {
@@ -526,7 +434,7 @@ func (c *cache) enqueueCollectibleResultLocked(queue []*sharedResult, res *share
 	return append(queue, res)
 }
 
-func (c *cache) decrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult, queue []*sharedResult) ([]*sharedResult, error) {
+func (c *Cache) decrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult, queue []*sharedResult) ([]*sharedResult, error) {
 	if c == nil || res == nil {
 		return queue, nil
 	}
@@ -539,7 +447,7 @@ func (c *cache) decrementIncomingOwnershipLocked(ctx context.Context, res *share
 	return c.enqueueCollectibleResultLocked(queue, res), nil
 }
 
-func (c *cache) collectUnownedResultsLocked(ctx context.Context, queue []*sharedResult) ([]OnReleaseFunc, error) {
+func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*sharedResult) ([]OnReleaseFunc, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -673,7 +581,7 @@ func wipeSQLiteFiles(dbPath string) error {
 	return nil
 }
 
-type cache struct {
+type Cache struct {
 	// callsMu protects in-flight call bookkeeping and arbitrary in-memory call maps.
 	callsMu sync.Mutex
 	// sessionMu protects per-session tracked cache-backed results and arbitrary values.
@@ -786,8 +694,6 @@ type callConcurrencyKeys struct {
 	concurrencyKey string
 }
 
-var _ Cache = &cache{}
-
 type PostCallFunc = func(context.Context) error
 
 type OnReleaseFunc = func(context.Context) error
@@ -816,8 +722,6 @@ type cacheUsageMayChange interface {
 
 // sharedResult holds cache-entry state and shared payload published to per-call Result values.
 type sharedResult struct {
-	cache *cache
-
 	// id is the stable cache-local identity for this materialized result.
 	id sharedResultID
 
@@ -1032,11 +936,11 @@ func setTypedPersistedResultID(val Typed, resultID sharedResultID) {
 	setter.SetPersistedResultID(uint64(resultID))
 }
 
-func (c *cache) normalizePendingResultCallRefs(ctx context.Context, frame *ResultCall) error {
+func (c *Cache) normalizePendingResultCallRefs(ctx context.Context, frame *ResultCall) error {
 	return c.normalizePendingResultCallRefsWithSeen(ctx, frame, map[*ResultCall]struct{}{})
 }
 
-func (c *cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, frame *ResultCall, seen map[*ResultCall]struct{}) error {
+func (c *Cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, frame *ResultCall, seen map[*ResultCall]struct{}) error {
 	if frame == nil {
 		return nil
 	}
@@ -1046,7 +950,6 @@ func (c *cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, fram
 	seen[frame] = struct{}{}
 	defer delete(seen, frame)
 
-	frame.bindCache(c)
 	if err := c.normalizePendingResultCallRefWithSeen(ctx, frame.Receiver, seen); err != nil {
 		return fmt.Errorf("receiver: %w", err)
 	}
@@ -1074,7 +977,7 @@ func (c *cache) normalizePendingResultCallRefsWithSeen(ctx context.Context, fram
 	return nil
 }
 
-func (c *cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *ResultCallRef, seen map[*ResultCall]struct{}) error {
+func (c *Cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *ResultCallRef, seen map[*ResultCall]struct{}) error {
 	if ref == nil {
 		return nil
 	}
@@ -1099,7 +1002,7 @@ func (c *cache) normalizePendingResultCallRefWithSeen(ctx context.Context, ref *
 	return nil
 }
 
-func (c *cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, lit *ResultCallLiteral, seen map[*ResultCall]struct{}) error {
+func (c *Cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, lit *ResultCallLiteral, seen map[*ResultCall]struct{}) error {
 	if lit == nil {
 		return nil
 	}
@@ -1125,14 +1028,14 @@ func (c *cache) normalizePendingResultCallLiteralWithSeen(ctx context.Context, l
 	return nil
 }
 
-func (c *cache) AttachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+func (c *Cache) AttachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
 	if sessionID == "" {
 		return nil, errors.New("attach result: empty session ID")
 	}
 	return c.attachResult(ctx, sessionID, resolver, res)
 }
 
-func (c *cache) attachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
+func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver TypeResolver, res AnyResult) (AnyResult, error) {
 	if sessionID == "" {
 		return nil, errors.New("attach result: empty session ID")
 	}
@@ -1152,32 +1055,28 @@ func (c *cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	}
 	if shared.id != 0 {
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
-		if shared.cache == c {
-			c.trackSessionResult(ctx, sessionID, res, true)
-		}
+		c.trackSessionResult(ctx, sessionID, res, true)
 		return res, nil
 	}
 	req := &CallRequest{
 		ResultCall: frame.clone(),
 	}
-	req.ResultCall.bindCache(c)
 	if err := c.normalizePendingResultCallRefs(ctx, req.ResultCall); err != nil {
 		return nil, fmt.Errorf("attach owned result: normalize pending result call refs: %w", err)
 	}
 	shared.storeResultCall(req.ResultCall)
-	req.ResultCall.bindCache(c)
 
-	callDigest, err := req.RecipeDigest()
+	callDigest, err := req.deriveRecipeDigest(c)
 	if err != nil {
 		return nil, fmt.Errorf("attach owned result: derive request digest: %w", err)
 	}
-	requestSelf, requestInputRefs, err := req.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := req.selfDigestAndInputRefs(c)
 	if err != nil {
 		return nil, fmt.Errorf("attach owned result: derive request term digests: %w", err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
-		dig, err := ref.InputDigest()
+		dig, err := ref.inputDigest(c)
 		if err != nil {
 			return nil, fmt.Errorf("attach owned result: derive request term input digest: %w", err)
 		}
@@ -1226,17 +1125,17 @@ func (c *cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	return attached, nil
 }
 
-func (c *cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
+func (c *Cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep AnyResult, reason string) error {
 	if parent == nil || dep == nil {
 		return nil
 	}
 
 	parentShared := parent.cacheSharedResult()
-	if parentShared == nil || parentShared.id == 0 || parentShared.cache != c {
+	if parentShared == nil || parentShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: parent %T is not an attached result in this cache", parent)
 	}
 	depShared := dep.cacheSharedResult()
-	if depShared == nil || depShared.id == 0 || depShared.cache != c {
+	if depShared == nil || depShared.id == 0 {
 		return fmt.Errorf("add explicit dependency: dep %T is not an attached result in this cache", dep)
 	}
 	if parentShared.id == depShared.id {
@@ -1257,7 +1156,7 @@ func (c *cache) AddExplicitDependency(ctx context.Context, parent AnyResult, dep
 	return c.addExplicitDependencyLocked(ctx, parentRes, depRes, dep, reason)
 }
 
-func (c *cache) addExplicitDependencyLocked(
+func (c *Cache) addExplicitDependencyLocked(
 	ctx context.Context,
 	parentRes *sharedResult,
 	depRes *sharedResult,
@@ -1348,48 +1247,49 @@ func (r Result[T]) ID() (*call.ID, error) {
 	return call.NewEngineResultID(uint64(r.shared.id), call.NewType(typ)), nil
 }
 
-func (r Result[T]) RecipeID() (*call.ID, error) {
+func (r Result[T]) RecipeID(ctx context.Context) (*call.ID, error) {
 	call := r.shared.loadResultCall()
 	if r.shared == nil || call == nil {
 		return nil, fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	if r.shared.cache != nil {
-		call.bindCache(r.shared.cache)
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return call.RecipeID()
+	return call.recipeID(c)
 }
 
-func (r Result[T]) RecipeDigest() (digest.Digest, error) {
+func (r Result[T]) RecipeDigest(ctx context.Context) (digest.Digest, error) {
 	call := r.shared.loadResultCall()
 	if r.shared == nil || call == nil {
 		return "", fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	if r.shared.cache != nil {
-		call.bindCache(r.shared.cache)
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return "", err
 	}
-	return call.RecipeDigest()
+	return call.deriveRecipeDigest(c)
 }
 
-func (r Result[T]) AllEffectIDs() ([]string, error) {
+func (r Result[T]) AllEffectIDs(ctx context.Context) ([]string, error) {
 	call := r.shared.loadResultCall()
 	if r.shared == nil || call == nil {
 		return nil, fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	if r.shared.cache != nil {
-		call.bindCache(r.shared.cache)
-	}
+	_ = ctx
 	return call.AllEffectIDs()
 }
 
-func (r Result[T]) ContentPreferredDigest() (digest.Digest, error) {
+func (r Result[T]) ContentPreferredDigest(ctx context.Context) (digest.Digest, error) {
 	call := r.shared.loadResultCall()
 	if r.shared == nil || call == nil {
 		return "", fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	if r.shared.cache != nil {
-		call.bindCache(r.shared.cache)
+	c, err := EngineCache(ctx)
+	if err != nil {
+		return "", err
 	}
-	return call.ContentPreferredDigest()
+	return call.deriveContentPreferredDigest(c)
 }
 
 func (r Result[T]) ResultCall() (*ResultCall, error) {
@@ -1397,11 +1297,7 @@ func (r Result[T]) ResultCall() (*ResultCall, error) {
 	if r.shared == nil || call == nil {
 		return nil, fmt.Errorf("result %T has no call frame", r.Self())
 	}
-	call = call.clone()
-	if r.shared.cache != nil {
-		call.bindCache(r.shared.cache)
-	}
-	return call, nil
+	return call.clone(), nil
 }
 
 func (r Result[T]) Self() T {
@@ -1511,9 +1407,6 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	callCtx := srvToContext(ctx, srv)
 	if shared := detached.cacheSharedResult(); shared != nil && shared.id == 0 {
 		shared.storeResultCall(req.ResultCall.clone())
-		if r.shared.cache != nil {
-			shared.loadResultCall().bindCache(r.shared.cache)
-		}
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -1522,12 +1415,16 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 	if clientMetadata.SessionID == "" {
 		return nil, fmt.Errorf("load %dth value from %T: empty session ID", nth, self)
 	}
-	if res, err := srv.Cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
+	cache, err := EngineCache(callCtx)
+	if err != nil {
+		return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
+	}
+	if res, err := cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return nil, fmt.Errorf("cache miss")
 	}); err == nil {
 		return res, nil
 	}
-	return srv.Cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
+	return cache.GetOrInitCall(callCtx, clientMetadata.SessionID, srv, req, func(context.Context) (AnyResult, error) {
 		return detached, nil
 	})
 }
@@ -1754,7 +1651,11 @@ func (r ObjectResult[T]) Receiver(ctx context.Context, srv *Server) (AnyObjectRe
 	if call.Receiver.ResultID == 0 {
 		return nil, fmt.Errorf("receiver: result is detached")
 	}
-	res, err := srv.Cache.(*cache).loadResultByResultID(srvToContext(ctx, srv), srv, call.Receiver.ResultID)
+	cache, err := EngineCache(srvToContext(ctx, srv))
+	if err != nil {
+		return nil, fmt.Errorf("receiver: current dagql cache: %w", err)
+	}
+	res, err := cache.loadResultByResultID(srvToContext(ctx, srv), srv, call.Receiver.ResultID)
 	if err != nil {
 		return nil, fmt.Errorf("receiver: load result %d: %w", call.Receiver.ResultID, err)
 	}
@@ -1809,11 +1710,10 @@ func (r ObjectResult[T]) cacheSharedResult() *sharedResult {
 }
 
 type cacheContextKey struct {
-	key   string
-	cache *cache
+	key string
 }
 
-func (c *cache) Close(ctx context.Context) error {
+func (c *Cache) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
 		if err := c.persistCurrentState(ctx); err != nil {
 			slog.Error("failed to persist dagql cache during close", "err", err)
@@ -1844,7 +1744,7 @@ func (c *cache) Close(ctx context.Context) error {
 	return c.closeErr
 }
 
-func (c *cache) Size() int {
+func (c *Cache) Size() int {
 	c.callsMu.Lock()
 	defer c.callsMu.Unlock()
 	c.egraphMu.RLock()
@@ -1859,7 +1759,7 @@ func (c *cache) Size() int {
 	return total
 }
 
-func (c *cache) EntryStats() CacheEntryStats {
+func (c *Cache) EntryStats() CacheEntryStats {
 	c.callsMu.Lock()
 	defer c.callsMu.Unlock()
 	c.egraphMu.RLock()
@@ -1875,7 +1775,7 @@ func (c *cache) EntryStats() CacheEntryStats {
 	return stats
 }
 
-func (c *cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
+func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 
@@ -1883,7 +1783,7 @@ func (c *cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
 	return c.usageEntriesLocked()
 }
 
-func (c *cache) usageEntriesLocked() []CacheUsageEntry {
+func (c *Cache) usageEntriesLocked() []CacheUsageEntry {
 	// Snapshot-identity dedupe accounting: a single physical snapshot can be
 	// referenced by multiple logical results. We deterministically assign bytes
 	// to one owner (smallest sharedResultID) and report zero for siblings.
@@ -1954,7 +1854,7 @@ func (c *cache) usageEntriesLocked() []CacheUsageEntry {
 	return entries
 }
 
-func (c *cache) measureAllResultSizesLocked(ctx context.Context) {
+func (c *Cache) measureAllResultSizesLocked(ctx context.Context) {
 	candidatesByIdentity := make(map[string][]sharedResultID)
 	for resID, res := range c.resultsByID {
 		if res == nil {
@@ -2021,7 +1921,7 @@ func (c *cache) measureAllResultSizesLocked(ctx context.Context) {
 }
 
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
-func (c *cache) GetOrInitCall(
+func (c *Cache) GetOrInitCall(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
@@ -2035,7 +1935,7 @@ func (c *cache) GetOrInitCall(
 }
 
 //nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
-func (c *cache) getOrInitCall(
+func (c *Cache) getOrInitCall(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
@@ -2051,7 +1951,6 @@ func (c *cache) getOrInitCall(
 	if req == nil || req.ResultCall == nil {
 		return nil, fmt.Errorf("call request is nil")
 	}
-	req.ResultCall.bindCache(c)
 	ctx = ContextWithCall(ctx, req.ResultCall)
 
 	if req.DoNotCache {
@@ -2064,7 +1963,7 @@ func (c *cache) getOrInitCall(
 		if val == nil {
 			return nil, nil
 		}
-		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 && shared.cache == c {
+		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 {
 			touchSharedResultLastUsed(shared, time.Now().UnixNano())
 			normalized, err := wrapSharedResultWithResolver(shared, false, resolver)
 			if err != nil {
@@ -2081,7 +1980,6 @@ func (c *cache) getOrInitCall(
 			postCall:           val.PostCall,
 			safeToPersistCache: val.IsSafeToPersistCache(),
 		}
-		detached.resultCall.bindCache(c)
 		outputEffects, err := detached.resultCall.AllEffectIDs()
 		if err != nil {
 			return nil, fmt.Errorf("derive do-not-cache output effects: %w", err)
@@ -2104,24 +2002,24 @@ func (c *cache) getOrInitCall(
 		return Result[Typed]{shared: detached}, nil
 	}
 
-	callDigest, err := req.RecipeDigest()
+	callDigest, err := req.deriveRecipeDigest(c)
 	if err != nil {
 		return nil, fmt.Errorf("derive request digest: %w", err)
 	}
-	requestSelf, requestInputRefs, err := req.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := req.selfDigestAndInputRefs(c)
 	if err != nil {
 		return nil, fmt.Errorf("derive request term digests: %w", err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
-		dig, err := ref.InputDigest()
+		dig, err := ref.inputDigest(c)
 		if err != nil {
 			return nil, fmt.Errorf("derive request term input digest: %w", err)
 		}
 		requestInputs = append(requestInputs, dig)
 	}
 	callKey := callDigest.String()
-	if ctx.Value(cacheContextKey{callKey, c}) != nil {
+	if ctx.Value(cacheContextKey{callKey}) != nil {
 		return nil, ErrCacheRecursiveCall
 	}
 	callConcKeys := callConcurrencyKeys{
@@ -2168,7 +2066,7 @@ func (c *cache) getOrInitCall(
 	// that waste to avoid paying an extra lookup on this miss path.
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
-	callCtx := context.WithValue(ctx, cacheContextKey{callKey, c}, struct{}{})
+	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	oc := &ongoingCall{
 		callConcurrencyKeys: callConcKeys,
@@ -2194,7 +2092,7 @@ func (c *cache) getOrInitCall(
 	return c.wait(ctx, sessionID, resolver, oc, req)
 }
 
-func (c *cache) lookupCallRequest(
+func (c *Cache) lookupCallRequest(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
@@ -2209,19 +2107,18 @@ func (c *cache) lookupCallRequest(
 	if req == nil || req.ResultCall == nil {
 		return nil, false, fmt.Errorf("call request is nil")
 	}
-	req.ResultCall.bindCache(c)
 
-	callDigest, err := req.RecipeDigest()
+	callDigest, err := req.deriveRecipeDigest(c)
 	if err != nil {
 		return nil, false, fmt.Errorf("derive request digest: %w", err)
 	}
-	requestSelf, requestInputRefs, err := req.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := req.selfDigestAndInputRefs(c)
 	if err != nil {
 		return nil, false, fmt.Errorf("derive request term digests: %w", err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
-		dig, err := ref.InputDigest()
+		dig, err := ref.inputDigest(c)
 		if err != nil {
 			return nil, false, fmt.Errorf("derive request term input digest: %w", err)
 		}
@@ -2246,7 +2143,7 @@ func (c *cache) lookupCallRequest(
 	return loadedHit, true, nil
 }
 
-func (c *cache) lookupCacheForDigests(
+func (c *Cache) lookupCacheForDigests(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
@@ -2294,7 +2191,7 @@ func (c *cache) lookupCacheForDigests(
 	return loadedHit, true, nil
 }
 
-func (c *cache) wait(
+func (c *Cache) wait(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
@@ -2351,7 +2248,7 @@ func (c *cache) wait(
 	return retResAny, nil
 }
 
-func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
+func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, oc *ongoingCall, req *CallRequest, sessionID string) error {
 	resWasCacheBacked := false
 	now := time.Now()
 	var (
@@ -2363,15 +2260,13 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if req == nil || req.ResultCall == nil {
 		return fmt.Errorf("call request is nil")
 	}
-	req.ResultCall.bindCache(c)
 
 	// Materialize shared result for this completed call.
 	oc.res = &sharedResult{
-		cache:             c,
 		sizeEstimateBytes: sharedResultSizeUnknown,
 	}
 	if oc.val != nil {
-		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.cache != nil {
+		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
 			oc.res = existingRes
 			resWasCacheBacked = true
 		} else {
@@ -2379,12 +2274,10 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
 					oc.res.storeResultCall(frame.clone())
-					oc.res.loadResultCall().bindCache(c)
 				}
 			}
 			if oc.res.loadResultCall() == nil {
 				oc.res.storeResultCall(req.ResultCall.clone())
-				oc.res.loadResultCall().bindCache(c)
 			}
 			oc.res.hasValue = true
 			oc.res.postCall = oc.val.PostCall
@@ -2418,7 +2311,6 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			},
 		})
 	}
-	requestForIndex.ResultCall.bindCache(c)
 
 	if oc.res.createdAtUnixNano == 0 {
 		oc.res.createdAtUnixNano = now.UnixNano()
@@ -2434,7 +2326,7 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.description = requestForIndex.Field
 	}
 	if oc.res.description == "" {
-		if reqDig, err := requestForIndex.RecipeDigest(); err == nil {
+		if reqDig, err := requestForIndex.deriveRecipeDigest(c); err == nil {
 			oc.res.description = reqDig.String()
 		}
 	}
@@ -2460,13 +2352,13 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			}
 			oc.res.outputEffectIDs = outputEffects
 
-			selfDigest, inputRefs, deriveErr := resultCall.SelfDigestAndInputRefs()
+			selfDigest, inputRefs, deriveErr := resultCall.selfDigestAndInputRefs(c)
 			if deriveErr != nil {
 				return fmt.Errorf("derive result term digests: %w", deriveErr)
 			}
 			inputDigests := make([]digest.Digest, 0, len(inputRefs))
 			for _, ref := range inputRefs {
-				dig, err := ref.InputDigest()
+				dig, err := ref.inputDigest(c)
 				if err != nil {
 					return fmt.Errorf("derive result term input digest: %w", err)
 				}
@@ -2479,17 +2371,17 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 	}
 
-	requestDigest, err := requestForIndex.RecipeDigest()
+	requestDigest, err := requestForIndex.deriveRecipeDigest(c)
 	if err != nil {
 		return fmt.Errorf("derive request digest: %w", err)
 	}
-	requestSelf, requestInputRefs, err := requestForIndex.SelfDigestAndInputRefs()
+	requestSelf, requestInputRefs, err := requestForIndex.selfDigestAndInputRefs(c)
 	if err != nil {
 		return fmt.Errorf("derive request term digests: %w", err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
-		dig, err := ref.InputDigest()
+		dig, err := ref.inputDigest(c)
 		if err != nil {
 			return fmt.Errorf("derive request term input digest: %w", err)
 		}
@@ -2497,7 +2389,7 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	var responseDigest digest.Digest
 	if resultCall := oc.res.loadResultCall(); resultCall != nil {
-		responseDigest, err = resultCall.RecipeDigest()
+		responseDigest, err = resultCall.deriveRecipeDigest(c)
 		if err != nil {
 			return fmt.Errorf("derive result digest: %w", err)
 		}
@@ -2650,7 +2542,7 @@ func (c *cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	return nil
 }
 
-func (c *cache) attachOwnedResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
+func (c *Cache) attachOwnedResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
 	if parent == nil || val == nil {
 		return nil
 	}

@@ -100,7 +100,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			}
 			// try to add the secret, if it's not found continue on as worst case an error will just
 			// be hit later if/when the secret is attempted to be used
-			if err := destClient.secretStore.AddSecretFromOtherStore(srcClient.secretStore, secret); err != nil {
+			if err := destClient.secretStore.AddSecretFromOtherStore(ctx, srcClient.secretStore, secret); err != nil {
 				slog.Error("failed to add secret from other store", "err", err, "srcClientID", srcClient.clientID)
 				continue
 			}

@@ -70,11 +70,10 @@ func loadPersistedResultByResultID(ctx context.Context, dag *dagql.Server, resul
 	if resultID == 0 {
 		return nil, nil
 	}
-	query, err := persistedDecodeQuery(dag)
-	if err != nil {
+	if _, err := persistedDecodeQuery(dag); err != nil {
 		return nil, fmt.Errorf("load persisted %s query: %w", label, err)
 	}
-	cache, err := query.Cache(ctx)
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load persisted %s cache: %w", label, err)
 	}
@@ -89,11 +88,10 @@ func loadPersistedObjectResultByResultID[T dagql.Typed](ctx context.Context, dag
 	if resultID == 0 {
 		return dagql.ObjectResult[T]{}, nil
 	}
-	query, err := persistedDecodeQuery(dag)
-	if err != nil {
+	if _, err := persistedDecodeQuery(dag); err != nil {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("load persisted %s query: %w", label, err)
 	}
-	cache, err := query.Cache(ctx)
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return dagql.ObjectResult[T]{}, fmt.Errorf("load persisted %s cache: %w", label, err)
 	}
@@ -112,11 +110,10 @@ func loadPersistedSnapshotLinkByResultID(ctx context.Context, dag *dagql.Server,
 	if resultID == 0 {
 		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link: zero result ID", label)
 	}
-	query, err := persistedDecodeQuery(dag)
-	if err != nil {
+	if _, err := persistedDecodeQuery(dag); err != nil {
 		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link query: %w", label, err)
 	}
-	cache, err := query.Cache(ctx)
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return dagql.PersistedSnapshotRefLink{}, fmt.Errorf("load persisted %s snapshot link cache: %w", label, err)
 	}
@@ -136,11 +133,10 @@ func loadPersistedSnapshotLinksByResultID(ctx context.Context, dag *dagql.Server
 	if resultID == 0 {
 		return nil, fmt.Errorf("load persisted %s snapshot links: zero result ID", label)
 	}
-	query, err := persistedDecodeQuery(dag)
-	if err != nil {
+	if _, err := persistedDecodeQuery(dag); err != nil {
 		return nil, fmt.Errorf("load persisted %s snapshot links query: %w", label, err)
 	}
-	cache, err := query.Cache(ctx)
+	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load persisted %s snapshot links cache: %w", label, err)
 	}

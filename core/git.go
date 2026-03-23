@@ -526,11 +526,11 @@ func doGitCheckout(
 }
 
 func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
-	ref1RepoDgst, err1 := ref1.Repo.RecipeDigest()
+	ref1RepoDgst, err1 := ref1.Repo.RecipeDigest(ctx)
 	if err1 != nil {
 		return nil, fmt.Errorf("merge-base ref1 repo ID: %w", err1)
 	}
-	ref2RepoDgst, err2 := ref2.Repo.RecipeDigest()
+	ref2RepoDgst, err2 := ref2.Repo.RecipeDigest(ctx)
 	if err2 != nil {
 		return nil, fmt.Errorf("merge-base ref2 repo ID: %w", err2)
 	}

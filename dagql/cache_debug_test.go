@@ -13,7 +13,7 @@ import (
 func TestDebugCacheSnapshotIncludesResultMetadata(t *testing.T) {
 	base, err := NewCache(t.Context(), "")
 	assert.NilError(t, err)
-	c := base.(*cache)
+	c := base
 
 	attached, err := c.AttachResult(t.Context(), "test-session", noopTypeResolver{}, cacheTestDetachedResult(cacheTestIntCall("debugCache"), NewInt(123)))
 	assert.NilError(t, err)
@@ -47,7 +47,7 @@ func TestDebugCacheSnapshotIncludesResultMetadata(t *testing.T) {
 func TestDebugCacheSnapshotIncludesCompletedArbitraryCalls(t *testing.T) {
 	base, err := NewCache(t.Context(), "")
 	assert.NilError(t, err)
-	c := base.(*cache)
+	c := base
 
 	_, err = c.GetOrInitArbitrary(t.Context(), "debug-session", "debug-arbitrary", ArbitraryValueFunc("hello"))
 	assert.NilError(t, err)

@@ -100,7 +100,7 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 		if err != nil {
 			return fmt.Errorf("result call: %w", err)
 		}
-		dgst, err = call.ContentPreferredDigest()
+		dgst, err = call.ContentPreferredDigest(ctx)
 		if err != nil {
 			return fmt.Errorf("content preferred digest: %w", err)
 		}
