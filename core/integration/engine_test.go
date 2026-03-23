@@ -32,7 +32,6 @@ type EngineSuite struct{}
 
 func TestEngine(t *testing.T) {
 	ctx := context.Background()
-	ensureEngineTar(ctx)
 	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(EngineSuite{})
 }
@@ -51,7 +50,7 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 	// engines.
 	tarPath := os.Getenv("_DAGGER_TESTS_ENGINE_TAR")
 	if tarPath == "" {
-		panic("_DAGGER_TESTS_ENGINE_TAR not set — call ensureEngineTar before ensureEngine")
+		panic("_DAGGER_TESTS_ENGINE_TAR not set")
 	}
 	devEngineTar := c.Host().File(tarPath)
 

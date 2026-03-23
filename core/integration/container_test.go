@@ -44,7 +44,6 @@ type ContainerSuite struct{}
 func TestContainer(t *testing.T) {
 	ctx := context.Background()
 	ensureRegistries(ctx)
-	ensureEngineTar(ctx)
 	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ContainerSuite{})
 }

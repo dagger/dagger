@@ -119,9 +119,6 @@ func ensureRegistries(ctx context.Context) {
 // additional dev engines. Must be called BEFORE ensureEngine.
 func ensureEngineTar(ctx context.Context) {
 	engineTarOnce.Do(func() {
-		if engineStarted {
-			panic("ensureEngineTar must be called before ensureEngine")
-		}
 		ensureBase(ctx)
 
 		engineDev := dag.EngineDev()
@@ -148,6 +145,7 @@ func ensureEngineTar(ctx context.Context) {
 // need dag.* must be called before this.
 func ensureEngine(ctx context.Context) {
 	engineOnce.Do(func() {
+		ensureEngineTar(ctx)
 		ensureBase(ctx)
 
 		engineRunVol := dag.CacheVolume("integ-test-engine-run")

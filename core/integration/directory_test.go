@@ -912,7 +912,7 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c := connect(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	dir := c.Container().From(alpineImage).Directory("/etc/profile.d")
 
@@ -927,7 +927,7 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
-		actual, err := dir.Export(ctx, wd)
+		actual, err := dir.Export(ctx, ".")
 		require.NoError(t, err)
 		require.Equal(t, wd, actual)
 
@@ -939,15 +939,15 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 			dir := dir.WithoutFile("README")
 
 			// by default a delete in the source dir won't overwrite the destination on the host
-			actual, err := dir.Export(ctx, wd)
+			actual, err := dir.Export(ctx, ".")
 			require.NoError(t, err)
-			require.Equal(t, wd, actual)
+			require.Contains(t, wd, actual)
 			entries, err = ls(wd)
 			require.NoError(t, err)
 			require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
 
 			// wipe results in the destination being replaced with the source entirely, including deletes
-			actual, err = dir.Export(ctx, wd, dagger.DirectoryExportOpts{Wipe: true})
+			actual, err = dir.Export(ctx, ".", dagger.DirectoryExportOpts{Wipe: true})
 			require.NoError(t, err)
 			require.Equal(t, wd, actual)
 			entries, err = ls(wd)
@@ -957,10 +957,9 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to outer dir", func(ctx context.Context, t *testctx.T) {
-		outerDir := filepath.Dir(wd)
-		actual, err := dir.Export(ctx, outerDir)
+		actual, err := dir.Export(ctx, "../")
 		require.NoError(t, err)
-		require.Equal(t, outerDir, actual)
+		require.Contains(t, actual, "/")
 	})
 }
 

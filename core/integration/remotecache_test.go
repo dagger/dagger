@@ -34,7 +34,6 @@ type RemoteCacheSuite struct{}
 
 func TestRemoteCache(t *testing.T) {
 	ctx := context.Background()
-	ensureEngineTar(ctx)
 	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(RemoteCacheSuite{})
 }

@@ -48,7 +48,6 @@ type ServiceSuite struct{}
 func TestServices(t *testing.T) {
 	ctx := context.Background()
 	ensureRegistries(ctx)
-	ensureEngineTar(ctx)
 	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ServiceSuite{})
 }

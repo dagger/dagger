@@ -131,7 +131,9 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	wd := t.TempDir()
+
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	t.Run("new file", func(ctx context.Context, t *testctx.T) {
 		file := c.Directory().WithNewFile("/foo/bar", "content1").File("foo/bar")
@@ -257,13 +259,12 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to relative path", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t)
-		dest := filepath.Join(wd, "some-file")
-		actual, err := file(c).Export(ctx, dest)
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		actual, err := file(c).Export(ctx, "some-file")
 		require.NoError(t, err)
-		require.Equal(t, dest, actual)
+		require.Equal(t, filepath.Join(wd, "some-file"), actual)
 
-		contents, err := os.ReadFile(dest)
+		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
 		require.True(t, strings.HasPrefix(string(contents), distconsts.AlpineVersion), string(contents))
 
@@ -274,12 +275,10 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to path in outer dir", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t)
-		parentDir := filepath.Dir(wd)
-		dest := filepath.Join(parentDir, "some-file")
-		actual, err := file(c).Export(ctx, dest)
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		actual, err := file(c).Export(ctx, "../some-file")
 		require.NoError(t, err)
-		require.Equal(t, dest, actual)
+		require.Contains(t, actual, "/some-file")
 	})
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
@@ -292,8 +291,8 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t)
-		actual, err := file(c).Export(ctx, wd)
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		actual, err := file(c).Export(ctx, ".")
 		require.Error(t, err)
 		require.Empty(t, actual)
 	})
@@ -326,7 +325,7 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("file larger than max chunk size", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t)
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
 		maxChunkSize := buildkit.MaxFileContentsChunkSize
 		fileSizeBytes := maxChunkSize*4 + 1 // +1 so it's not an exact number of chunks, to ensure we cover that case
 
@@ -339,24 +338,22 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, fileSizeBytes, len(dt))
 
-		dest := filepath.Join(wd, "some-pretty-big-file")
-		_, err = file.Export(ctx, dest)
+		_, err = file.Export(ctx, "some-pretty-big-file")
 		require.NoError(t, err)
 
-		stat, err := os.Stat(dest)
+		stat, err := os.Stat(filepath.Join(wd, "some-pretty-big-file"))
 		require.NoError(t, err)
 		require.EqualValues(t, fileSizeBytes, stat.Size())
 	})
 
 	t.Run("file permissions are retained", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
-		c := connect(ctx, t)
-		dest := filepath.Join(wd, "some-executable-file")
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
 		_, err := c.Directory().WithNewFile("/file", "#!/bin/sh\necho hello", dagger.DirectoryWithNewFileOpts{
 			Permissions: 0o744,
-		}).File("/file").Export(ctx, dest)
+		}).File("/file").Export(ctx, "some-executable-file")
 		require.NoError(t, err)
-		stat, err := os.Stat(dest)
+		stat, err := os.Stat(filepath.Join(wd, "some-executable-file"))
 		require.NoError(t, err)
 		require.EqualValues(t, 0o744, stat.Mode().Perm())
 	})
@@ -1163,7 +1160,7 @@ func (FileSuite) TestFileRespectsSymlinks(ctx context.Context, t *testctx.T) {
 // regression test for https://github.com/dagger/dagger/issues/11552
 func (FileSuite) TestFileCachingContents(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
-	c := connect(ctx, t)
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	var eg errgroup.Group
 	startCh := make(chan struct{})

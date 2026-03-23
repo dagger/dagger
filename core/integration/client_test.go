@@ -23,7 +23,6 @@ type ClientSuite struct{}
 
 func TestClient(t *testing.T) {
 	ctx := context.Background()
-	ensureEngineTar(ctx)
 	ensureEngine(ctx)
 	testctx.New(t, Middleware()...).RunTests(ClientSuite{})
 }
