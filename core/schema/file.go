@@ -27,19 +27,19 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
-		dagql.Func("contents", s.contents).
+		dagql.NodeFunc("contents", s.contents).
 			Doc(`Retrieves the contents of the file.`).
 			Args(
 				dagql.Arg("offsetLines").Doc(`Start reading after this line`),
 				dagql.Arg("limitLines").Doc(`Maximum number of lines to read`),
 			),
-		dagql.Func("size", s.size).
+		dagql.NodeFunc("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
 			Doc(`Retrieves the name of the file.`),
-		dagql.Func("stat", s.stat).
+		dagql.NodeFunc("stat", s.stat).
 			Doc(`Return file status`),
-		dagql.Func("digest", s.digest).
+		dagql.NodeFunc("digest", s.digest).
 			Doc(
 				`Return the file's digest.
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
@@ -107,7 +107,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.Func("asJSON", s.asJSON).
+		dagql.NodeFunc("asJSON", s.asJSON).
 			Doc(`Parse the file contents as JSON.`),
 	}.Install(srv)
 }
@@ -149,11 +149,18 @@ func (s *fileSchema) file(
 	return inst, nil
 }
 
-func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
+func (s *fileSchema) contents(ctx context.Context, file dagql.ObjectResult[*core.File], args struct {
 	OffsetLines *int
 	LimitLines  *int
 }) (dagql.String, error) {
-	content, err := file.Contents(ctx, args.OffsetLines, args.LimitLines)
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return "", err
+	}
+	content, err := file.Self().Contents(ctx, args.OffsetLines, args.LimitLines)
 	if err != nil {
 		return "", err
 	}
@@ -161,8 +168,15 @@ func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct 
 	return dagql.NewString(string(content)), nil
 }
 
-func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (dagql.Int, error) {
-	info, err := file.Stat(ctx)
+func (s *fileSchema) size(ctx context.Context, file dagql.ObjectResult[*core.File], args struct{}) (dagql.Int, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return 0, err
+	}
+	info, err := file.Self().Stat(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -174,16 +188,30 @@ func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (
 	return dagql.NewString(filepath.Base(file.File)), nil
 }
 
-func (s *fileSchema) stat(ctx context.Context, parent *core.File, args struct{}) (*core.Stat, error) {
-	return parent.Stat(ctx)
+func (s *fileSchema) stat(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.Stat, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return nil, err
+	}
+	return parent.Self().Stat(ctx)
 }
 
 type fileDigestArgs struct {
 	ExcludeMetadata bool `default:"false"`
 }
 
-func (s *fileSchema) digest(ctx context.Context, file *core.File, args fileDigestArgs) (dagql.String, error) {
-	digest, err := file.Digest(ctx, args.ExcludeMetadata)
+func (s *fileSchema) digest(ctx context.Context, file dagql.ObjectResult[*core.File], args fileDigestArgs) (dagql.String, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return "", err
+	}
+	digest, err := file.Self().Digest(ctx, args.ExcludeMetadata)
 	if err != nil {
 		return "", err
 	}
@@ -216,6 +244,13 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return nil, err
+	}
 	return parent.Self().Search(ctx, args.SearchOpts, true)
 }
 
@@ -242,7 +277,14 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 }
 
 func (s *fileSchema) export(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, args.Path, args.AllowParentDirPath)
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return "", err
+	}
+	err = parent.Self().Export(ctx, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return "", err
 	}
@@ -309,8 +351,15 @@ func (s *fileSchema) chown(
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
-func (s *fileSchema) asJSON(ctx context.Context, parent *core.File, args struct{}) (*core.JSONValue, error) {
-	json, err := parent.AsJSON(ctx)
+func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.JSONValue, error) {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return nil, err
+	}
+	json, err := parent.Self().AsJSON(ctx)
 	if err != nil {
 		return nil, err
 	}

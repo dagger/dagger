@@ -15,15 +15,29 @@ type SchemaResolvers interface {
 	Install(*dagql.Server)
 }
 
-func Syncer[T core.Syncable]() dagql.Field[T] {
+func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
 		Recipe bool `default:"false" internal:"true"`
 	}) (res dagql.Result[dagql.ID[T]], _ error) {
-		err := self.Self().Sync(ctx)
-		if err != nil {
-			return res, err
+		if selfVal, ok := any(self.Self()).(dagql.HasLazyEvaluation); ok && selfVal.LazyEvalFunc() != nil {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return res, err
+			}
+			if err := cache.Evaluate(ctx, self); err != nil {
+				return res, err
+			}
+		} else {
+			syncable, ok := any(self.Self()).(core.Syncable)
+			if !ok {
+				return res, fmt.Errorf("internal error: %T does not support sync", self.Self())
+			}
+			if err := syncable.Sync(ctx); err != nil {
+				return res, err
+			}
 		}
 		var selfID *call.ID
+		var err error
 		if args.Recipe {
 			selfID, err = self.RecipeID(ctx)
 		} else {

@@ -263,7 +263,7 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		if sourceSelector == "" {
 			sourceSelector = "/"
 		}
-		sourceRef, err = source.Self().getSnapshot(ctx)
+		sourceRef, err = source.Self().getSnapshot()
 		if err != nil {
 			return fmt.Errorf("failed to get cache source snapshot: %w", err)
 		}

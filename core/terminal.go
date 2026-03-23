@@ -63,39 +63,47 @@ func (container *Container) Terminal(
 	ctx context.Context,
 	selectedID *call.ID,
 	selectedDigest digest.Digest,
+	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 ) error {
-	return container.terminal(ctx, selectedID, selectedDigest, args, nil, nil, nil)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, args, nil, nil, nil)
 }
 
 func (container *Container) TerminalExecError(
 	ctx context.Context,
 	selectedID *call.ID,
 	selectedDigest digest.Digest,
+	containerRes dagql.ObjectResult[*Container],
 	execMD *buildkit.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
 ) error {
-	return container.terminal(ctx, selectedID, selectedDigest, nil, execMD, execMeta, execErr)
+	return container.terminal(ctx, selectedID, selectedDigest, containerRes, nil, execMD, execMeta, execErr)
 }
 
 func (container *Container) terminal(
 	ctx context.Context,
 	selectedID *call.ID,
 	selectedDigest digest.Digest,
+	containerRes dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 	execMD *buildkit.ExecutionMetadata,
 	execMeta *executor.Meta,
 	execErr error,
 ) error {
-	container = cloneContainerForTerminal(container)
-
+	if containerRes.Self() == nil {
+		return fmt.Errorf("terminal container result is nil")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
 	// HACK: ensure that container is entirely built before interrupting nice
 	// progress output with the terminal
-	err := container.Evaluate(ctx)
-	if err != nil {
+	if err := cache.Evaluate(ctx, containerRes); err != nil {
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
+	container = cloneContainerForTerminal(containerRes.Self())
 
 	term, output, err := prepTerminal(ctx, selectedID, execErr)
 	if err != nil {
@@ -104,9 +112,18 @@ func (container *Container) terminal(
 	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
 	container.Config.Env = prepTerminalEnv(output, container.Config.Env)
 
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	containerRes, err = dagql.NewObjectResultForCurrentCall(ctx, srv, container)
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal container: %w", err)
+	}
+
 	var svc *Service
 	if execMD == nil && execMeta == nil {
-		svc, err = container.AsService(ctx, ContainerAsServiceArgs{
+		svc, err = container.AsService(ctx, containerRes, ContainerAsServiceArgs{
 			Args:                          args.Cmd,
 			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
 			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
@@ -114,7 +131,7 @@ func (container *Container) terminal(
 	} else {
 		svc = &Service{
 			Creator:   trace.SpanContextFromContext(ctx),
-			Container: container,
+			Container: containerRes,
 			ExecMD:    execMD,
 			ExecMeta:  execMeta,
 		}
@@ -176,27 +193,40 @@ func (dir *Directory) Terminal(
 	ctx context.Context,
 	selectedID *call.ID,
 	selectedDigest digest.Digest,
-	ctr *Container,
+	ctr dagql.ObjectResult[*Container],
 	args *TerminalArgs,
 	parent dagql.ObjectResult[*Directory],
 ) error {
 	var err error
 
-	if ctr == nil {
-		ctr = NewContainer(dir.Platform)
-		ctr, err = ctr.FromRefString(ctx, defaultTerminalImage)
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	if ctr.Self() == nil {
+		defaultCtr := NewContainer(dir.Platform)
+		defaultCtr, err = defaultCtr.FromRefString(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
+		ctr, err = dagql.NewObjectResultForCurrentCall(ctx, srv, defaultCtr)
+		if err != nil {
+			return fmt.Errorf("failed to attach terminal container: %w", err)
+		}
 	}
 
-	ctr = cloneContainerForTerminal(ctr)
-	ctr.Config.WorkingDir = "/src"
-	ctr, err = ctr.WithMountedDirectory(ctx, "/src", parent, "", true)
+	termCtr := cloneContainerForTerminal(ctr.Self())
+	termCtr.Config.WorkingDir = "/src"
+	termCtr, err = termCtr.WithMountedDirectory(ctx, ctr, "/src", parent, "", true)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
-	return ctr.Terminal(ctx, selectedID, selectedDigest, args)
+	termCtrRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, termCtr)
+	if err != nil {
+		return fmt.Errorf("failed to attach terminal container: %w", err)
+	}
+	return termCtr.Terminal(ctx, selectedID, selectedDigest, termCtrRes, args)
 }
 
 func (*Service) Terminal(

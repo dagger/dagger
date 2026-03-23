@@ -228,7 +228,7 @@ func (src *ModuleSource) SetPersistedResultID(resultID uint64) {
 	}
 }
 
-var _ dagql.HasOwnedResults = (*ModuleSource)(nil)
+var _ dagql.HasDependencyResults = (*ModuleSource)(nil)
 var _ dagql.PersistedObject = (*ModuleSource)(nil)
 var _ dagql.PersistedObjectDecoder = (*ModuleSource)(nil)
 
@@ -285,7 +285,7 @@ func (src *ModuleSource) Sync(ctx context.Context) error {
 	return src.Evaluate(ctx)
 }
 
-func (src *ModuleSource) AttachOwnedResults(
+func (src *ModuleSource) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

@@ -160,11 +160,10 @@ func (s *querySchema) schemaJSONFile(
 	file := &core.File{
 		File:      schemaJSONFilename,
 		Platform:  parent.Self().Platform(),
-		Parent:    dirInst,
 		LazyState: core.NewLazyState(),
 	}
 
-	initFn, err := file.WithContents(ctx, moduleSchemaJSON, perm, nil)
+	initFn, err := file.WithContents(ctx, dirInst, moduleSchemaJSON, perm, nil)
 	if err != nil {
 		return inst, err
 	}
@@ -173,7 +172,6 @@ func (s *querySchema) schemaJSONFile(
 			return inst, err
 		}
 	}
-	file.LazyInitComplete = true
 
 	return dagql.NewObjectResultForCurrentCall(ctx, dag, file)
 }

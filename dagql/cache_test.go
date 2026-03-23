@@ -80,7 +80,7 @@ type cacheTestOwnedDepsInt struct {
 	ownedResults []AnyResult
 }
 
-func (v *cacheTestOwnedDepsInt) AttachOwnedResults(
+func (v *cacheTestOwnedDepsInt) AttachDependencyResults(
 	ctx context.Context,
 	_ AnyResult,
 	attach func(AnyResult) (AnyResult, error),
@@ -128,8 +128,10 @@ func (cacheTestQuery) Type() *ast.Type {
 }
 
 type cacheTestObject struct {
-	Value     int
-	onRelease func(context.Context) error
+	Value             int
+	onRelease         func(context.Context) error
+	lazyEval          LazyEvalFunc
+	dependencyResults []AnyResult
 }
 
 type noopTypeResolver struct{}
@@ -209,6 +211,36 @@ func (obj *cacheTestObject) OnRelease(ctx context.Context) error {
 	return obj.onRelease(ctx)
 }
 
+func (obj *cacheTestObject) LazyEvalFunc() LazyEvalFunc {
+	if obj == nil {
+		return nil
+	}
+	return obj.lazyEval
+}
+
+func (obj *cacheTestObject) AttachDependencyResults(
+	_ context.Context,
+	_ AnyResult,
+	attach func(AnyResult) (AnyResult, error),
+) ([]AnyResult, error) {
+	if obj == nil {
+		return nil, nil
+	}
+	deps := make([]AnyResult, 0, len(obj.dependencyResults))
+	for i, dep := range obj.dependencyResults {
+		if dep == nil {
+			continue
+		}
+		attachedDep, err := attach(dep)
+		if err != nil {
+			return nil, err
+		}
+		obj.dependencyResults[i] = attachedDep
+		deps = append(deps, attachedDep)
+	}
+	return deps, nil
+}
+
 func cacheTestServer(t *testing.T, base *Cache) *Server {
 	t.Helper()
 	srv := NewServer(cacheTestQuery{})
@@ -268,6 +300,18 @@ func cacheTestObjectResult(
 		Value:     value,
 		onRelease: onRelease,
 	}, srv, frame)
+	assert.NilError(t, err)
+	return res
+}
+
+func cacheTestObjectResultWithValue(
+	t *testing.T,
+	srv *Server,
+	frame *ResultCall,
+	obj *cacheTestObject,
+) ObjectResult[*cacheTestObject] {
+	t.Helper()
+	res, err := NewObjectResultForCall(obj, srv, frame)
 	assert.NilError(t, err)
 	return res
 }
@@ -379,6 +423,273 @@ func TestCacheConcurrent(t *testing.T) {
 	assert.Assert(t, is.Len(initialized, 1))
 	assert.Assert(t, initialized[0])
 	assert.Equal(t, 1, cacheIface.Size())
+}
+
+func TestCacheEvaluate(t *testing.T) {
+	t.Parallel()
+
+	newEvalEnv := func(t *testing.T) (context.Context, *Cache, *Server) {
+		t.Helper()
+		ctx := cacheTestContext(t.Context())
+		cacheIface, err := NewCache(ctx, "")
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, cacheIface)
+		srv := cacheTestServer(t, cacheIface)
+		return ctx, cacheIface, srv
+	}
+
+	t.Run("singleflight", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-singleflight",
+		}
+
+		var evalCalls atomic.Int32
+		started := make(chan struct{})
+		release := make(chan struct{})
+		var startOnce sync.Once
+
+		resAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(context.Context) error {
+					evalCalls.Add(1)
+					startOnce.Do(func() {
+						close(started)
+					})
+					<-release
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+		res := resAny.(ObjectResult[*cacheTestObject])
+
+		group := new(errgroup.Group)
+		for range 8 {
+			group.Go(func() error {
+				return c.Evaluate(ctx, res)
+			})
+		}
+
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for lazy evaluation to start")
+		}
+		close(release)
+		assert.NilError(t, group.Wait())
+		assert.Equal(t, int32(1), evalCalls.Load())
+
+		assert.NilError(t, c.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("declared dependency", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		childFrame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-child",
+		}
+		var childCalls atomic.Int32
+		childAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: childFrame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, childFrame, &cacheTestObject{
+				Value: 2,
+				lazyEval: func(context.Context) error {
+					childCalls.Add(1)
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+		child := childAny.(ObjectResult[*cacheTestObject])
+
+		parentFrame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-parent",
+		}
+		parentAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: parentFrame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, parentFrame, &cacheTestObject{
+				Value:             1,
+				dependencyResults: []AnyResult{child},
+				lazyEval: func(ctx context.Context) error {
+					cache, err := EngineCache(ctx)
+					assert.NilError(t, err)
+					return cache.Evaluate(ctx, child)
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+		parent := parentAny.(ObjectResult[*cacheTestObject])
+
+		assert.NilError(t, c.Evaluate(ctx, parent))
+		assert.Equal(t, int32(1), childCalls.Load())
+
+		assert.NilError(t, c.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("parallel multi-result", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		var running atomic.Int32
+		started := make(chan struct{}, 2)
+		release := make(chan struct{})
+		newLazy := func(field string) ObjectResult[*cacheTestObject] {
+			frame := &ResultCall{
+				Kind:  ResultCallKindField,
+				Type:  NewResultCallType((&cacheTestObject{}).Type()),
+				Field: field,
+			}
+			resAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+				return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+					Value: 1,
+					lazyEval: func(context.Context) error {
+						if running.Add(1) == 2 {
+							started <- struct{}{}
+						}
+						started <- struct{}{}
+						<-release
+						running.Add(-1)
+						return nil
+					},
+				}), nil
+			})
+			assert.NilError(t, err)
+			return resAny.(ObjectResult[*cacheTestObject])
+		}
+
+		a := newLazy("lazy-parallel-a")
+		b := newLazy("lazy-parallel-b")
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- c.Evaluate(ctx, a, b)
+		}()
+
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for first parallel lazy callback")
+		}
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for second parallel lazy callback")
+		}
+
+		close(release)
+		assert.NilError(t, <-errCh)
+		assert.NilError(t, c.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("non dependency allowed while attached", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		childFrame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-undeclared-child",
+		}
+		var childCalls atomic.Int32
+		childAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: childFrame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, childFrame, &cacheTestObject{
+				Value: 2,
+				lazyEval: func(context.Context) error {
+					childCalls.Add(1)
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+		child := childAny.(ObjectResult[*cacheTestObject])
+
+		parentFrame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-undeclared-parent",
+		}
+		parentAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: parentFrame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, parentFrame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(ctx context.Context) error {
+					cache, err := EngineCache(ctx)
+					assert.NilError(t, err)
+					return cache.Evaluate(ctx, child)
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+		parent := parentAny.(ObjectResult[*cacheTestObject])
+
+		assert.NilError(t, c.Evaluate(ctx, parent))
+		assert.Equal(t, int32(1), childCalls.Load())
+
+		assert.NilError(t, c.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("recursive", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-recursive",
+		}
+		var self AnyResult
+		resAny, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(ctx context.Context) error {
+					cache, err := EngineCache(ctx)
+					assert.NilError(t, err)
+					return cache.Evaluate(ctx, self)
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+		self = resAny
+
+		err = c.Evaluate(ctx, resAny)
+		assert.Assert(t, err != nil)
+		assert.ErrorContains(t, err, "recursive lazy evaluation detected")
+
+		assert.NilError(t, c.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("rejects do-not-cache lazy result", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-do-not-cache",
+		}
+
+		_, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{
+			ResultCall: frame,
+			DoNotCache: true,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(context.Context) error {
+					return nil
+				},
+			}), nil
+		})
+		assert.Assert(t, err != nil)
+		assert.ErrorContains(t, err, "cannot be lazy")
+	})
 }
 
 func TestCacheErrors(t *testing.T) {
@@ -4059,7 +4370,7 @@ func TestCachePruneDoesNotProtectTermProvenanceOnlyResultFromActiveResult(t *tes
 	assert.Assert(t, !provenancePresent)
 }
 
-func TestCacheAttachOwnedResults(t *testing.T) {
+func TestCacheAttachDependencyResults(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxParent := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
@@ -4154,7 +4465,7 @@ func TestCacheAttachOwnedResults(t *testing.T) {
 	assert.Assert(t, childRes.HitCache())
 }
 
-func TestCacheAttachOwnedResultsAlreadyAttachedChild(t *testing.T) {
+func TestCacheAttachDependencyResultsAlreadyAttachedChild(t *testing.T) {
 	t.Parallel()
 	baseCtx := t.Context()
 	ctxChild := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{

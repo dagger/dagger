@@ -424,7 +424,7 @@ type ModuleObject struct {
 	persistedResultID uint64
 }
 
-var _ dagql.HasOwnedResults = (*ModuleObject)(nil)
+var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
 
 const (
 	persistedModuleObjectValueKindNull      = "null"
@@ -461,7 +461,7 @@ func (obj *ModuleObject) SetPersistedResultID(resultID uint64) {
 	}
 }
 
-func (obj *ModuleObject) AttachOwnedResults(
+func (obj *ModuleObject) AttachDependencyResults(
 	ctx context.Context,
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

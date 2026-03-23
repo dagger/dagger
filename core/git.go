@@ -57,10 +57,10 @@ type GitRefBackend interface {
 var _ dagql.PersistedObject = (*GitRepository)(nil)
 var _ dagql.PersistedObjectDecoder = (*GitRepository)(nil)
 var _ dagql.OnReleaser = (*GitRepository)(nil)
-var _ dagql.HasOwnedResults = (*GitRepository)(nil)
+var _ dagql.HasDependencyResults = (*GitRepository)(nil)
 var _ dagql.PersistedObject = (*GitRef)(nil)
 var _ dagql.PersistedObjectDecoder = (*GitRef)(nil)
-var _ dagql.HasOwnedResults = (*GitRef)(nil)
+var _ dagql.HasDependencyResults = (*GitRef)(nil)
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
 	repo := &GitRepository{
@@ -135,7 +135,7 @@ func (repo *GitRepository) PersistedSnapshotRefLinks() []dagql.PersistedSnapshot
 	}}
 }
 
-func (repo *GitRepository) AttachOwnedResults(
+func (repo *GitRepository) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
@@ -216,7 +216,7 @@ func (repo *GitRepository) AttachOwnedResults(
 	return owned, nil
 }
 
-func (ref *GitRef) AttachOwnedResults(
+func (ref *GitRef) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

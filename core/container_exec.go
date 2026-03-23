@@ -303,7 +303,7 @@ type execMountState struct {
 	SecretOpt *pb.SecretOpt
 	SSHOpt    *pb.SSHOpt
 
-	ApplyOutput func(bkcache.ImmutableRef)
+	ApplyOutput func(bkcache.ImmutableRef) error
 
 	ActiveRef bkcache.MutableRef
 	OutputRef bkcache.Ref
@@ -345,9 +345,9 @@ type makeExecMutable func(dest string, ref bkcache.ImmutableRef) (bkcache.Mutabl
 func prepareMounts(
 	ctx context.Context,
 	container *Container,
-	rootOutput func(bkcache.ImmutableRef),
-	metaOutput func(bkcache.ImmutableRef),
-	mountOutputs []func(bkcache.ImmutableRef),
+	rootOutput func(bkcache.ImmutableRef) error,
+	metaOutput func(bkcache.ImmutableRef) error,
+	mountOutputs []func(bkcache.ImmutableRef) error,
 	cache bkcache.SnapshotManager,
 	session *bksession.Manager,
 	g bksession.Group,
@@ -488,12 +488,12 @@ func prepareMounts(
 		MountType:   pb.MountType_BIND,
 		ApplyOutput: rootOutput,
 	}
-	if container.FS != nil && container.FS.Self() != nil {
-		rootState.Selector = container.FS.Self().Dir
+	if container.FS != nil && container.FS.self() != nil {
+		rootState.Selector = container.FS.self().Dir
 		if rootState.Selector == "" {
 			rootState.Selector = "/"
 		}
-		ref, err := container.FS.Self().getSnapshot(ctx)
+		ref, err := container.FS.self().getSnapshot()
 		if err != nil {
 			return materialized, fmt.Errorf("failed to get rootfs snapshot: %w", err)
 		}
@@ -525,22 +525,22 @@ func prepareMounts(
 
 		switch {
 		case ctrMount.DirectorySource != nil:
-			if ctrMount.DirectorySource.Self() == nil {
+			if ctrMount.DirectorySource.self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil directory source", i)
 			}
-			mountState.Selector = ctrMount.DirectorySource.Self().Dir
-			ref, err := ctrMount.DirectorySource.Self().getSnapshot(ctx)
+			mountState.Selector = ctrMount.DirectorySource.self().Dir
+			ref, err := ctrMount.DirectorySource.self().getSnapshot()
 			if err != nil {
 				return materialized, fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err)
 			}
 			mountState.SourceRef = ref
 
 		case ctrMount.FileSource != nil:
-			if ctrMount.FileSource.Self() == nil {
+			if ctrMount.FileSource.self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil file source", i)
 			}
-			mountState.Selector = ctrMount.FileSource.Self().File
-			ref, err := ctrMount.FileSource.Self().getSnapshot(ctx)
+			mountState.Selector = ctrMount.FileSource.self().File
+			ref, err := ctrMount.FileSource.self().getSnapshot()
 			if err != nil {
 				return materialized, fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err)
 			}
@@ -960,26 +960,23 @@ func (container *Container) WithExec(
 		LazyState: NewLazyState(),
 	}
 	rootfsOutput.LazyInit = gateRun
-	if inputRootFS != nil && inputRootFS.Self() != nil {
-		rootfsOutput.Dir = inputRootFS.Self().Dir
-		rootfsOutput.Platform = inputRootFS.Self().Platform
-		rootfsOutput.Services = inputRootFS.Self().Services
+	if inputRootFS != nil && inputRootFS.self() != nil {
+		rootfsOutput.Dir = inputRootFS.self().Dir
+		rootfsOutput.Platform = inputRootFS.self().Platform
+		rootfsOutput.Services = inputRootFS.self().Services
 	}
-	updatedRootFS, err := UpdatedRootFS(ctx, container, rootfsOutput)
-	if err != nil {
-		return fmt.Errorf("failed to initialize rootfs output: %w", err)
-	}
-	container.FS = updatedRootFS
+	container.FS = newContainerDirectoryValueSource(rootfsOutput)
 
 	container.MetaSnapshot = nil
 
-	rootOutputBinding := func(ref bkcache.ImmutableRef) {
-		rootfsOutput.setSnapshot(ref)
+	rootOutputBinding := func(ref bkcache.ImmutableRef) error {
+		return rootfsOutput.setSnapshot(ref)
 	}
-	metaOutputBinding := func(ref bkcache.ImmutableRef) {
+	metaOutputBinding := func(ref bkcache.ImmutableRef) error {
 		container.MetaSnapshot = ref
+		return nil
 	}
-	mountOutputBindings := make([]func(bkcache.ImmutableRef), len(container.Mounts))
+	mountOutputBindings := make([]func(bkcache.ImmutableRef) error, len(container.Mounts))
 
 	for i, ctrMount := range container.Mounts {
 		if ctrMount.Readonly {
@@ -988,10 +985,10 @@ func (container *Container) WithExec(
 
 		switch {
 		case ctrMount.DirectorySource != nil:
-			if ctrMount.DirectorySource.Self() == nil {
+			if ctrMount.DirectorySource.self() == nil {
 				return fmt.Errorf("mount %d has nil directory source", i)
 			}
-			dirMnt := ctrMount.DirectorySource.Self()
+			dirMnt := ctrMount.DirectorySource.self()
 			outputDir := &Directory{
 				Dir:       dirMnt.Dir,
 				Platform:  dirMnt.Platform,
@@ -999,22 +996,18 @@ func (container *Container) WithExec(
 				LazyState: NewLazyState(),
 			}
 			outputDir.LazyInit = gateRun
-			updatedMnt, err := updatedDirMount(ctx, container, outputDir, ctrMount.Target)
-			if err != nil {
-				return fmt.Errorf("failed to initialize directory mount output %d: %w", i, err)
-			}
-			ctrMount.DirectorySource = updatedMnt
+			ctrMount.DirectorySource = newContainerDirectoryValueSource(outputDir)
 			container.Mounts[i] = ctrMount
 			dirOutput := outputDir
-			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) {
-				dirOutput.setSnapshot(ref)
+			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
+				return dirOutput.setSnapshot(ref)
 			}
 
 		case ctrMount.FileSource != nil:
-			if ctrMount.FileSource.Self() == nil {
+			if ctrMount.FileSource.self() == nil {
 				return fmt.Errorf("mount %d has nil file source", i)
 			}
-			fileMnt := ctrMount.FileSource.Self()
+			fileMnt := ctrMount.FileSource.self()
 			outputFile := &File{
 				File:      fileMnt.File,
 				Platform:  fileMnt.Platform,
@@ -1022,15 +1015,11 @@ func (container *Container) WithExec(
 				LazyState: NewLazyState(),
 			}
 			outputFile.LazyInit = gateRun
-			updatedMnt, err := updatedFileMount(ctx, container, outputFile, ctrMount.Target)
-			if err != nil {
-				return fmt.Errorf("failed to initialize file mount output %d: %w", i, err)
-			}
-			ctrMount.FileSource = updatedMnt
+			ctrMount.FileSource = newContainerFileValueSource(outputFile)
 			container.Mounts[i] = ctrMount
 			fileOutput := outputFile
-			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) {
-				fileOutput.setSnapshot(ref)
+			mountOutputBindings[i] = func(ref bkcache.ImmutableRef) error {
+				return fileOutput.setSnapshot(ref)
 			}
 		}
 	}
@@ -1062,6 +1051,23 @@ func (container *Container) WithExec(
 		bkClient, err := query.Buildkit(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+		if inputRootFS != nil && inputRootFS.Value != nil && inputRootFS.Value.LazyEvalFunc() != nil {
+			if err := inputRootFS.Value.LazyState.Evaluate(ctx, "Directory"); err != nil {
+				return err
+			}
+		}
+		for _, ctrMount := range inputMounts {
+			if ctrMount.DirectorySource != nil && ctrMount.DirectorySource.Value != nil && ctrMount.DirectorySource.Value.LazyEvalFunc() != nil {
+				if err := ctrMount.DirectorySource.Value.LazyState.Evaluate(ctx, "Directory"); err != nil {
+					return err
+				}
+			}
+			if ctrMount.FileSource != nil && ctrMount.FileSource.Value != nil && ctrMount.FileSource.Value.LazyEvalFunc() != nil {
+				if err := ctrMount.FileSource.Value.LazyState.Evaluate(ctx, "File"); err != nil {
+					return err
+				}
+			}
 		}
 		bkSessionGroup := NewSessionGroup(bkClient.ID())
 		opWorker := bkClient.Worker
@@ -1111,7 +1117,9 @@ func (container *Container) WithExec(
 				} else {
 					out = state.OutputRef.(bkcache.ImmutableRef)
 				}
-				state.ApplyOutput(out)
+				if err := state.ApplyOutput(out); err != nil {
+					return err
+				}
 				state.OutputRef = nil
 			}
 			return nil
@@ -1252,12 +1260,12 @@ func (container *Container) WithExec(
 			MountType:   pb.MountType_BIND,
 			ApplyOutput: rootOutputBinding,
 		}
-		if inputRootFS != nil && inputRootFS.Self() != nil {
-			rootState.Selector = inputRootFS.Self().Dir
+		if inputRootFS != nil && inputRootFS.self() != nil {
+			rootState.Selector = inputRootFS.self().Dir
 			if rootState.Selector == "" {
 				rootState.Selector = "/"
 			}
-			ref, err := inputRootFS.Self().getSnapshot(ctx)
+			ref, err := inputRootFS.self().getSnapshot()
 			if err != nil {
 				return failPrepare(fmt.Errorf("failed to get rootfs snapshot: %w", err))
 			}
@@ -1286,22 +1294,22 @@ func (container *Container) WithExec(
 
 			switch {
 			case ctrMount.DirectorySource != nil:
-				if ctrMount.DirectorySource.Self() == nil {
+				if ctrMount.DirectorySource.self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil directory source", i))
 				}
-				mountState.Selector = ctrMount.DirectorySource.Self().Dir
-				ref, err := ctrMount.DirectorySource.Self().getSnapshot(ctx)
+				mountState.Selector = ctrMount.DirectorySource.self().Dir
+				ref, err := ctrMount.DirectorySource.self().getSnapshot()
 				if err != nil {
 					return failPrepare(fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err))
 				}
 				mountState.SourceRef = ref
 
 			case ctrMount.FileSource != nil:
-				if ctrMount.FileSource.Self() == nil {
+				if ctrMount.FileSource.self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil file source", i))
 				}
-				mountState.Selector = ctrMount.FileSource.Self().File
-				ref, err := ctrMount.FileSource.Self().getSnapshot(ctx)
+				mountState.Selector = ctrMount.FileSource.self().File
+				ref, err := ctrMount.FileSource.self().getSnapshot()
 				if err != nil {
 					return failPrepare(fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err))
 				}
@@ -1557,17 +1565,16 @@ func (container *Container) WithExec(
 							Services:  terminalContainer.Services,
 							LazyState: NewLazyState(),
 						}
-						if inputRootFS != nil && inputRootFS.Self() != nil {
-							rootDir.Dir = inputRootFS.Self().Dir
-							rootDir.Platform = inputRootFS.Self().Platform
-							rootDir.Services = inputRootFS.Self().Services
+						if inputRootFS != nil && inputRootFS.self() != nil {
+							rootDir.Dir = inputRootFS.self().Dir
+							rootDir.Platform = inputRootFS.self().Platform
+							rootDir.Services = inputRootFS.self().Services
 						}
-						rootDir.setSnapshot(rootRef)
-						terminalContainer.FS, err = UpdatedRootFS(ctx, terminalContainer, rootDir)
-						if err != nil {
+						if err := rootDir.setSnapshot(rootRef); err != nil {
 							rerr = fmt.Errorf("rebuild failed rootfs for terminal: %w", err)
 							return
 						}
+						terminalContainer.setBareRootFS(rootDir)
 					}
 				}
 				for i, ctrMount := range inputMounts {
@@ -1584,39 +1591,45 @@ func (container *Container) WithExec(
 						continue
 					}
 					switch {
-					case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.Self() != nil && !ctrMount.Readonly:
+					case ctrMount.DirectorySource != nil && ctrMount.DirectorySource.self() != nil && !ctrMount.Readonly:
 						outputDir := &Directory{
-							Dir:       ctrMount.DirectorySource.Self().Dir,
-							Platform:  ctrMount.DirectorySource.Self().Platform,
-							Services:  ctrMount.DirectorySource.Self().Services,
+							Dir:       ctrMount.DirectorySource.self().Dir,
+							Platform:  ctrMount.DirectorySource.self().Platform,
+							Services:  ctrMount.DirectorySource.self().Services,
 							LazyState: NewLazyState(),
 						}
-						outputDir.setSnapshot(mountRef)
-						updatedMnt, err := updatedDirMount(ctx, terminalContainer, outputDir, ctrMount.Target)
-						if err != nil {
+						if err := outputDir.setSnapshot(mountRef); err != nil {
 							rerr = fmt.Errorf("rebuild failed directory mount %d for terminal: %w", i, err)
 							return
 						}
-						ctrMount.DirectorySource = updatedMnt
+						ctrMount.DirectorySource = newContainerDirectoryValueSource(outputDir)
 						terminalContainer.Mounts[i] = ctrMount
-					case ctrMount.FileSource != nil && ctrMount.FileSource.Self() != nil && !ctrMount.Readonly:
+					case ctrMount.FileSource != nil && ctrMount.FileSource.self() != nil && !ctrMount.Readonly:
 						outputFile := &File{
-							File:      ctrMount.FileSource.Self().File,
-							Platform:  ctrMount.FileSource.Self().Platform,
-							Services:  ctrMount.FileSource.Self().Services,
+							File:      ctrMount.FileSource.self().File,
+							Platform:  ctrMount.FileSource.self().Platform,
+							Services:  ctrMount.FileSource.self().Services,
 							LazyState: NewLazyState(),
 						}
-						outputFile.setSnapshot(mountRef)
-						updatedMnt, err := updatedFileMount(ctx, terminalContainer, outputFile, ctrMount.Target)
-						if err != nil {
+						if err := outputFile.setSnapshot(mountRef); err != nil {
 							rerr = fmt.Errorf("rebuild failed file mount %d for terminal: %w", i, err)
 							return
 						}
-						ctrMount.FileSource = updatedMnt
+						ctrMount.FileSource = newContainerFileValueSource(outputFile)
 						terminalContainer.Mounts[i] = ctrMount
 					}
 				}
-				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, execMD, &meta, rerr); err != nil {
+				srv, err := CurrentDagqlServer(ctx)
+				if err != nil {
+					rerr = err
+					return
+				}
+				terminalContainerRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, terminalContainer)
+				if err != nil {
+					rerr = err
+					return
+				}
+				if err := terminalContainer.TerminalExecError(ctx, callID, callDig, terminalContainerRes, execMD, &meta, rerr); err != nil {
 					rerr = err
 					return
 				}
@@ -1755,11 +1768,9 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 		return "", ErrNoCommand
 	}
 
-	file := &File{
-		File:     filePath,
-		Platform: container.Platform,
-		Services: container.Services,
-		Snapshot: container.MetaSnapshot,
+	file, err := NewFileWithSnapshot(filePath, container.Platform, container.Services, container.MetaSnapshot)
+	if err != nil {
+		return "", err
 	}
 
 	content, err := file.Contents(ctx, nil, nil)

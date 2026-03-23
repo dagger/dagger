@@ -2418,10 +2418,12 @@ func (s *moduleSourceSchema) runCodegen(
 			},
 		})
 		if err == nil {
-			gitAttrsContents, err = gitAttrsFile.Self().Contents(ctx, nil, nil)
+			var contents dagql.String
+			err = dag.Select(ctx, gitAttrsFile, &contents, dagql.Selector{Field: "contents"})
 			if err != nil {
 				return res, fmt.Errorf("failed to get git attributes file contents: %w", err)
 			}
+			gitAttrsContents = []byte(contents)
 			if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
 				gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
 			}
@@ -2470,10 +2472,12 @@ func (s *moduleSourceSchema) runCodegen(
 			},
 		})
 		if err == nil {
-			gitIgnoreContents, err = gitIgnoreFile.Self().Contents(ctx, nil, nil)
+			var contents dagql.String
+			err = dag.Select(ctx, gitIgnoreFile, &contents, dagql.Selector{Field: "contents"})
 			if err != nil {
 				return res, fmt.Errorf("failed to get .gitignore file contents: %w", err)
 			}
+			gitIgnoreContents = []byte(contents)
 			if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
 				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
 			}
@@ -2877,7 +2881,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 			// This eager runtime path happens before the final asModule result exists,
 			// so we localize the self-call special case to just this runtime load by
 			// using a temporary attached synthetic self module. The final returned
-			// module gets its real attached self dep later during AttachOwnedResults.
+			// module gets its real attached self dep later during AttachDependencyResults.
 			selfInst, err := sdk.ScopeModuleForSDKOperation(ctx, mod, "eagerRuntimeSelfDeps", dag)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create temporary self module for eager runtime: %w", err)

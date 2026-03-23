@@ -15,6 +15,7 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
@@ -774,6 +775,14 @@ type sharedResult struct {
 	// incomingOwnershipCount is the authoritative liveness count derived from
 	// session edges, persisted edges, and result dependency edges.
 	incomingOwnershipCount int64
+
+	lazyMu           sync.Mutex
+	lazyEval         LazyEvalFunc
+	lazyEvalComplete bool
+	lazyEvalWaitCh   chan struct{}
+	lazyEvalCancel   context.CancelCauseFunc
+	lazyEvalWaiters  int
+	lazyEvalErr      error
 }
 
 type sharedResultPayloadState struct {
@@ -1047,13 +1056,14 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	}
 	shared := res.cacheSharedResult()
 	if shared == nil {
-		return nil, fmt.Errorf("attach owned result: missing shared result")
+		return nil, fmt.Errorf("attach dependency result: missing shared result")
 	}
 	frame := shared.loadResultCall()
 	if frame == nil {
-		return nil, fmt.Errorf("attach owned result: missing result call frame")
+		return nil, fmt.Errorf("attach dependency result: missing result call frame")
 	}
 	if shared.id != 0 {
+		c.registerLazyEvaluation(shared, res)
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
 		c.trackSessionResult(ctx, sessionID, res, true)
 		return res, nil
@@ -1062,23 +1072,23 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		ResultCall: frame.clone(),
 	}
 	if err := c.normalizePendingResultCallRefs(ctx, req.ResultCall); err != nil {
-		return nil, fmt.Errorf("attach owned result: normalize pending result call refs: %w", err)
+		return nil, fmt.Errorf("attach dependency result: normalize pending result call refs: %w", err)
 	}
 	shared.storeResultCall(req.ResultCall)
 
 	callDigest, err := req.deriveRecipeDigest(c)
 	if err != nil {
-		return nil, fmt.Errorf("attach owned result: derive request digest: %w", err)
+		return nil, fmt.Errorf("attach dependency result: derive request digest: %w", err)
 	}
 	requestSelf, requestInputRefs, err := req.selfDigestAndInputRefs(c)
 	if err != nil {
-		return nil, fmt.Errorf("attach owned result: derive request term digests: %w", err)
+		return nil, fmt.Errorf("attach dependency result: derive request term digests: %w", err)
 	}
 	requestInputs := make([]digest.Digest, 0, len(requestInputRefs))
 	for _, ref := range requestInputRefs {
 		dig, err := ref.inputDigest(c)
 		if err != nil {
-			return nil, fmt.Errorf("attach owned result: derive request term input digest: %w", err)
+			return nil, fmt.Errorf("attach dependency result: derive request term input digest: %w", err)
 		}
 		requestInputs = append(requestInputs, dig)
 	}
@@ -1087,13 +1097,14 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	c.egraphMu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("attach owned result: %w", err)
+		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	if hit {
 		loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, hitRes)
 		if err != nil {
-			return nil, fmt.Errorf("attach owned result: %w", err)
+			return nil, fmt.Errorf("attach dependency result: %w", err)
 		}
+		c.registerLazyEvaluation(loadedHit.cacheSharedResult(), loadedHit)
 		c.trackSessionResult(ctx, sessionID, loadedHit, true)
 		return loadedHit, nil
 	}
@@ -1102,10 +1113,10 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		val: res,
 	}
 	if err := c.initCompletedResult(ctx, resolver, oc, req, sessionID); err != nil {
-		return nil, fmt.Errorf("attach owned result: %w", err)
+		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	if oc.res == nil {
-		return nil, fmt.Errorf("attach owned result: completed without initialized result")
+		return nil, fmt.Errorf("attach dependency result: completed without initialized result")
 	}
 	c.trackSessionResult(ctx, sessionID, Result[Typed]{shared: oc.res}, false)
 	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
@@ -1116,11 +1127,11 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 
 	attached, err := wrapSharedResultWithResolver(oc.res, false, resolver)
 	if err != nil {
-		return nil, fmt.Errorf("attach owned result: %w", err)
+		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
 	attachedShared := attached.cacheSharedResult()
 	if attachedShared == nil || attachedShared.id == 0 {
-		return nil, fmt.Errorf("attach owned result: attached result missing shared result ID")
+		return nil, fmt.Errorf("attach dependency result: attached result missing shared result ID")
 	}
 	return attached, nil
 }
@@ -1713,6 +1724,166 @@ type cacheContextKey struct {
 	key string
 }
 
+type lazyEvalStackCtxKey struct{}
+type lazyEvalStackNode struct {
+	id     sharedResultID
+	parent *lazyEvalStackNode
+}
+
+func lazyEvalFuncOfResult(val AnyResult) LazyEvalFunc {
+	if val == nil {
+		return nil
+	}
+	lazy, ok := UnwrapAs[HasLazyEvaluation](val)
+	if !ok {
+		return nil
+	}
+	return lazy.LazyEvalFunc()
+}
+
+func (c *Cache) registerLazyEvaluation(shared *sharedResult, val AnyResult) {
+	if shared == nil || val == nil {
+		return
+	}
+	lazyEval := lazyEvalFuncOfResult(val)
+	if lazyEval == nil {
+		return
+	}
+
+	shared.lazyMu.Lock()
+	if shared.lazyEval == nil && !shared.lazyEvalComplete {
+		shared.lazyEval = lazyEval
+	}
+	shared.lazyMu.Unlock()
+}
+
+func lazyEvalStackFromContext(ctx context.Context) *lazyEvalStackNode {
+	stack, _ := ctx.Value(lazyEvalStackCtxKey{}).(*lazyEvalStackNode)
+	return stack
+}
+
+func lazyEvalStackContains(stack *lazyEvalStackNode, id sharedResultID) bool {
+	for cur := stack; cur != nil; cur = cur.parent {
+		if cur.id == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult, waitCh chan struct{}) error {
+	var waitErr error
+	select {
+	case <-waitCh:
+		shared.lazyMu.Lock()
+		waitErr = shared.lazyEvalErr
+		shared.lazyEvalWaiters--
+		if shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh {
+			shared.lazyEvalWaitCh = nil
+			shared.lazyEvalCancel = nil
+			shared.lazyEvalErr = nil
+		}
+		shared.lazyMu.Unlock()
+	case <-ctx.Done():
+		waitErr = context.Cause(ctx)
+		shared.lazyMu.Lock()
+		shared.lazyEvalWaiters--
+		lastWaiter := shared.lazyEvalWaiters == 0
+		cancel := shared.lazyEvalCancel
+		shared.lazyMu.Unlock()
+		if lastWaiter && cancel != nil {
+			cancel(waitErr)
+		}
+	}
+	return waitErr
+}
+
+func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
+	switch len(results) {
+	case 0:
+		return nil
+	case 1:
+		return c.evaluateOne(ctx, results[0])
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	for _, res := range results {
+		res := res
+		eg.Go(func() error {
+			return c.evaluateOne(egCtx, res)
+		})
+	}
+	return eg.Wait()
+}
+
+func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
+	if c == nil {
+		return errors.New("evaluate: nil cache")
+	}
+	if res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return fmt.Errorf("evaluate %T: detached result", res)
+	}
+
+	stack := lazyEvalStackFromContext(ctx)
+	if stack != nil {
+		if lazyEvalStackContains(stack, shared.id) {
+			return fmt.Errorf("recursive lazy evaluation detected")
+		}
+	}
+
+	stackCtx := context.WithValue(ctx, lazyEvalStackCtxKey{}, &lazyEvalStackNode{
+		id:     shared.id,
+		parent: stack,
+	})
+
+	shared.lazyMu.Lock()
+	if shared.lazyEval == nil || shared.lazyEvalComplete {
+		shared.lazyMu.Unlock()
+		return nil
+	}
+	if shared.lazyEvalWaitCh != nil {
+		waitCh := shared.lazyEvalWaitCh
+		shared.lazyEvalWaiters++
+		shared.lazyMu.Unlock()
+		return c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+	}
+
+	waitCh := make(chan struct{})
+	evalCtx, cancel := context.WithCancelCause(context.WithoutCancel(stackCtx))
+	lazyEval := shared.lazyEval
+	shared.lazyEvalWaitCh = waitCh
+	shared.lazyEvalCancel = cancel
+	shared.lazyEvalWaiters = 1
+	shared.lazyEvalErr = nil
+	shared.lazyMu.Unlock()
+
+	go func() {
+		err := lazyEval(evalCtx)
+
+		shared.lazyMu.Lock()
+		shared.lazyEvalErr = err
+		if err == nil {
+			shared.lazyEvalComplete = true
+			shared.lazyEval = nil
+		}
+		clearState := shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh
+		if clearState {
+			shared.lazyEvalWaitCh = nil
+			shared.lazyEvalCancel = nil
+			shared.lazyEvalErr = nil
+		}
+		shared.lazyMu.Unlock()
+
+		close(waitCh)
+	}()
+
+	return c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+}
+
 func (c *Cache) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
 		if err := c.persistCurrentState(ctx); err != nil {
@@ -1962,6 +2133,9 @@ func (c *Cache) getOrInitCall(
 		}
 		if val == nil {
 			return nil, nil
+		}
+		if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
+			return nil, fmt.Errorf("do-not-cache result %T cannot be lazy", val.Unwrap())
 		}
 		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 {
 			touchSharedResultLastUsed(shared, time.Now().UnixNano())
@@ -2535,18 +2709,19 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	}
 	c.egraphMu.Unlock()
 
-	if err := c.attachOwnedResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
+	if err := c.attachDependencyResults(ctx, sessionID, resolver, oc.res, oc.val); err != nil {
 		return err
 	}
+	c.registerLazyEvaluation(oc.res, oc.val)
 
 	return nil
 }
 
-func (c *Cache) attachOwnedResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
+func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, resolver TypeResolver, parent *sharedResult, val AnyResult) error {
 	if parent == nil || val == nil {
 		return nil
 	}
-	withOwned, ok := UnwrapAs[HasOwnedResults](val)
+	withDeps, ok := UnwrapAs[HasDependencyResults](val)
 	if !ok {
 		return nil
 	}
@@ -2556,11 +2731,11 @@ func (c *Cache) attachOwnedResults(ctx context.Context, sessionID string, resolv
 	if parentState.hasValue && parentState.isObject {
 		objSelf, err := wrapSharedResultWithResolver(parent, false, resolver)
 		if err != nil {
-			return fmt.Errorf("attach owned results: reconstruct attached self: %w", err)
+			return fmt.Errorf("attach dependency results: reconstruct attached self: %w", err)
 		}
 		attachedSelf = objSelf
 	}
-	deps, err := withOwned.AttachOwnedResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
+	deps, err := withDeps.AttachDependencyResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
 		attached, err := c.attachResult(ctx, sessionID, resolver, child)
 		if err != nil {
 			return nil, err
@@ -2581,7 +2756,7 @@ func (c *Cache) attachOwnedResults(ctx context.Context, sessionID string, resolv
 		}
 		attachedDepRes := dep.cacheSharedResult()
 		if attachedDepRes == nil || attachedDepRes.id == 0 {
-			return fmt.Errorf("attach owned result %T: unexpected detached result", dep)
+			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep)
 		}
 		if attachedDepRes.id == parent.id {
 			continue
@@ -2590,7 +2765,7 @@ func (c *Cache) attachOwnedResults(ctx context.Context, sessionID string, resolv
 			continue
 		}
 		seen[attachedDepRes.id] = struct{}{}
-		if err := c.AddExplicitDependency(ctx, attachedSelf, dep, "attached_owned_result"); err != nil {
+		if err := c.AddExplicitDependency(ctx, attachedSelf, dep, "attached_dependency_result"); err != nil {
 			return err
 		}
 	}

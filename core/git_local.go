@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/continuity/fs"
@@ -87,7 +86,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	}
 	cache := query.BuildkitCache()
 
-	parent, err := repo.Directory.Self().getSnapshot(ctx)
+	parent, err := repo.Directory.Self().getSnapshot()
 	if err != nil {
 		return inst, fmt.Errorf("get git directory snapshot: %w", err)
 	}
@@ -181,12 +180,9 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 		return inst, err
 	}
 	bkref = nil
-	dir := &Directory{
-		Dir:       repo.Directory.Self().Dir,
-		Platform:  query.Platform(),
-		Services:  slices.Clone(repo.Directory.Self().Services),
-		LazyState: NewLazyState(),
-		Snapshot:  snap,
+	dir, err := NewDirectoryWithSnapshot(repo.Directory.Self().Dir, query.Platform(), repo.Directory.Self().Services, snap)
+	if err != nil {
+		return inst, err
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -207,7 +203,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, includeTag
 	}
 	defer detach()
 
-	ref, err := repo.Directory.Self().getSnapshot(ctx)
+	ref, err := repo.Directory.Self().getSnapshot()
 	if err != nil {
 		return err
 	}
@@ -275,11 +271,5 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		return nil, err
 	}
 	bkref = nil
-	dir := &Directory{
-		Dir:       "/",
-		Platform:  query.Platform(),
-		LazyState: NewLazyState(),
-		Snapshot:  snap,
-	}
-	return dir, nil
+	return NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
 }

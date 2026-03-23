@@ -52,7 +52,7 @@ type Service struct {
 	CustomHostname string
 
 	// Container is the container to run as a service.
-	Container                     *Container
+	Container                     dagql.ObjectResult[*Container]
 	Args                          []string
 	ExperimentalPrivilegedNesting bool
 	InsecureRootCapabilities      bool
@@ -88,9 +88,6 @@ func (*Service) TypeDescription() string {
 func (svc *Service) Clone() *Service {
 	cp := *svc
 	cp.Args = slices.Clone(cp.Args)
-	if cp.Container != nil {
-		cp.Container = cloneContainerForTerminal(cp.Container)
-	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
 	return &cp
@@ -132,7 +129,7 @@ func (svc *Service) Hostname(ctx context.Context, dig digest.Digest) (string, er
 		}
 
 		return upstream.Host, nil
-	case svc.Container != nil, // container=>container
+	case svc.Container.Self() != nil, // container=>container
 		len(svc.HostSockets) > 0: // container=>host
 		if dig == "" {
 			return "", errors.New("service digest is empty")
@@ -161,8 +158,8 @@ func (svc *Service) Ports(ctx context.Context, dig digest.Digest) ([]Port, error
 		}
 
 		return running.Ports, nil
-	case svc.Container != nil:
-		return svc.Container.Ports, nil
+	case svc.Container.Self() != nil:
+		return svc.Container.Self().Ports, nil
 	default:
 		return nil, errors.New("unknown service type")
 	}
@@ -177,18 +174,18 @@ func (svc *Service) Endpoint(ctx context.Context, dig digest.Digest, port int, s
 	}
 
 	switch {
-	case svc.Container != nil:
+	case svc.Container.Self() != nil:
 		host, err = svc.Hostname(ctx, dig)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			if len(svc.Container.Ports) == 0 {
+			if len(svc.Container.Self().Ports) == 0 {
 				return "", fmt.Errorf("no ports exposed")
 			}
 
-			port = svc.Container.Ports[0].Port
+			port = svc.Container.Self().Ports[0].Port
 		}
 	case svc.TunnelUpstream.Self() != nil:
 		svcs, err := query.Services(ctx)
@@ -301,7 +298,7 @@ func (svc *Service) Start(
 	sio *ServiceIO,
 ) (running *RunningService, err error) {
 	switch {
-	case svc.Container != nil:
+	case svc.Container.Self() != nil:
 		return svc.startContainer(ctx, dig, sio)
 	case svc.TunnelUpstream.Self() != nil:
 		return svc.startTunnel(ctx)
@@ -337,7 +334,18 @@ func (svc *Service) startContainer(
 		return nil, err
 	}
 
-	ctr := svc.Container
+	ctr := svc.Container.Self()
+	if ctr == nil {
+		return nil, fmt.Errorf("service container is nil")
+	}
+
+	cacheCtr, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cacheCtr.Evaluate(ctx, svc.Container); err != nil {
+		return nil, err
+	}
 
 	execMD := svc.ExecMD
 	if execMD == nil {
@@ -1063,14 +1071,10 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("get dagql server: %w", err)
 	}
 
-	snapshot := &Directory{
-		Dir:       source.Dir,
-		Platform:  source.Platform,
-		Services:  slices.Clone(source.Services),
-		LazyState: NewLazyState(),
-		Snapshot:  immutableRef.Clone(),
+	snapshot, err := NewDirectoryWithSnapshot(source.Dir, source.Platform, source.Services, immutableRef)
+	if err != nil {
+		return res, false, err
 	}
-	snapshot.LazyInitComplete = true
 
 	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
 	if err != nil {

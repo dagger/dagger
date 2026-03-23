@@ -155,13 +155,10 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 		resp.Header.Get("Last-Modified"),
 		expectedChecksum.String(),
 	)
-	file := &core.File{
-		File:      filename,
-		Platform:  parent.Self().Platform(),
-		LazyState: core.NewLazyState(),
-		Snapshot:  snap.Clone(),
+	file, err := core.NewFileWithSnapshot(filename, parent.Self().Platform(), nil, snap)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create http file: %w", err)
 	}
-	file.LazyInitComplete = true
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, file)
 	if err != nil {

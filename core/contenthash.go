@@ -51,8 +51,17 @@ func GetContentHashFromDirectory(
 	if dirInst.Self() == nil {
 		return "", fmt.Errorf("directory instance is nil")
 	}
+	if _, err := dirInst.ID(); err == nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := cache.Evaluate(ctx, dirInst); err != nil {
+			return "", err
+		}
+	}
 
-	snapshot, err := dirInst.Self().getSnapshot(ctx)
+	snapshot, err := dirInst.Self().getSnapshot()
 	if err != nil {
 		return "", fmt.Errorf("failed to get directory snapshot: %w", err)
 	}
@@ -80,8 +89,17 @@ func GetContentHashFromFile(
 	if fileInst.Self() == nil {
 		return "", fmt.Errorf("file instance is nil")
 	}
+	if _, err := fileInst.ID(); err == nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := cache.Evaluate(ctx, fileInst); err != nil {
+			return "", err
+		}
+	}
 
-	snapshot, err := fileInst.Self().getSnapshot(ctx)
+	snapshot, err := fileInst.Self().getSnapshot()
 	if err != nil {
 		return "", fmt.Errorf("failed to get file snapshot: %w", err)
 	}

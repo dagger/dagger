@@ -21,7 +21,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`),
 
-		dagql.Func("asService", s.containerAsService).
+		dagql.NodeFunc("asService", s.containerAsService).
 			View(AfterVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`).
@@ -170,7 +170,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	}
 	if withExecCall == nil {
 		// no withExec found, so just rely on the entrypoint!
-		svc, err := parent.Self().AsService(ctx, core.ContainerAsServiceArgs{
+		svc, err := parent.Self().AsService(ctx, parent, core.ContainerAsServiceArgs{
 			UseEntrypoint: true,
 		})
 		if err != nil {
@@ -208,7 +208,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	}
 
 	// create a service based on that withExec
-	svc, err := ctr.Self().AsService(ctx, core.ContainerAsServiceArgs{
+	svc, err := ctr.Self().AsService(ctx, ctr, core.ContainerAsServiceArgs{
 		Args:                          withExecArgs.Args,
 		UseEntrypoint:                 withExecArgs.UseEntrypoint,
 		ExperimentalPrivilegedNesting: withExecArgs.ExperimentalPrivilegedNesting,
@@ -221,10 +221,10 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 }
 
-func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
+func (s *serviceSchema) containerAsService(ctx context.Context, parent dagql.ObjectResult[*core.Container], args core.ContainerAsServiceArgs) (*core.Service, error) {
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
-		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)
+		expandedArg, err := expandEnvVar(ctx, parent.Self(), arg, args.Expand)
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +233,7 @@ func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Con
 	}
 	args.Args = expandedArgs
 
-	return parent.AsService(ctx, args)
+	return parent.Self().AsService(ctx, parent, args)
 }
 
 func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args struct {
@@ -423,12 +423,12 @@ type serviceTerminalArgs struct {
 
 func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[*core.Service], args serviceTerminalArgs) (res dagql.ObjectResult[*core.Service], _ error) {
 	ctr := parent.Self().Container
-	if ctr == nil {
+	if ctr.Self() == nil {
 		return res, fmt.Errorf("terminal not supported on non-container services")
 	}
 
 	if len(args.Cmd) == 0 {
-		args.Cmd = ctr.DefaultTerminalCmd.Args
+		args.Cmd = ctr.Self().DefaultTerminalCmd.Args
 	}
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}

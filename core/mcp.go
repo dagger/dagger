@@ -1214,7 +1214,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	}
 
 	ctr := mcpSrv.Service.Self().Container
-	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
+	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
@@ -1224,7 +1224,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		sess.ID(),
-		ctr.Config.WorkingDir,
+		ctr.Self().Config.WorkingDir,
 		m.env.Self().Workspace.Self(),
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context

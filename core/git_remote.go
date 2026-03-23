@@ -621,12 +621,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		if err != nil {
 			return nil, err
 		}
-		return &Directory{
-			Dir:       "/",
-			Platform:  query.Platform(),
-			LazyState: NewLazyState(),
-			Snapshot:  snap,
-		}, nil
+		return NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
 	}
 
 	var checkoutRef bkcache.MutableRef
@@ -684,13 +679,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		return nil, err
 	}
 
-	checkout := &Directory{
-		Dir:       "/",
-		Platform:  query.Platform(),
-		LazyState: NewLazyState(),
-		Snapshot:  snap,
-	}
-	return checkout, nil
+	return NewDirectoryWithSnapshot("/", query.Platform(), nil, snap)
 }
 
 func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {

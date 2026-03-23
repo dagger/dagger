@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 // TODO: use a more proper implementation here; this is a simple one to get
 // started. In particular, we need to handle context cancellation from one
 // caller without necessarily breaking all other callers. One option is to use
 // the implementation of ChangesCache in the filesync package.
-type LazyInitFunc func(context.Context) error
+type LazyEvalFunc = dagql.LazyEvalFunc
+type LazyInitFunc = LazyEvalFunc
 
 // LazyState holds lazy initialization configuration and completion state.
 // It is embedded by core objects that support deferred evaluation.
@@ -30,6 +33,10 @@ func NewLazyState() LazyState {
 	return LazyState{
 		LazyMu: new(sync.Mutex),
 	}
+}
+
+func (lazy LazyState) LazyEvalFunc() dagql.LazyEvalFunc {
+	return lazy.LazyInit
 }
 
 func (lazy *LazyState) Evaluate(ctx context.Context, typeName string) error {

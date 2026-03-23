@@ -146,7 +146,7 @@ type DynamicResultArrayOutput struct {
 }
 
 var _ Typed = DynamicResultArrayOutput{}
-var _ HasOwnedResults = DynamicResultArrayOutput{}
+var _ HasDependencyResults = DynamicResultArrayOutput{}
 
 func (d DynamicResultArrayOutput) Type() *ast.Type {
 	return &ast.Type{
@@ -183,7 +183,7 @@ func (d DynamicResultArrayOutput) NthValue(i int, _ *ResultCall) (AnyResult, err
 	return d.Values[i-1], nil
 }
 
-func (d DynamicResultArrayOutput) AttachOwnedResults(
+func (d DynamicResultArrayOutput) AttachDependencyResults(
 	_ context.Context,
 	_ AnyResult,
 	attach func(AnyResult) (AnyResult, error),

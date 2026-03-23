@@ -276,11 +276,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get snapshot: %w", err)
 	}
 
-	dir := &core.Directory{
-		Dir:       "/",
-		Platform:  query.Platform(),
-		LazyState: core.NewLazyState(),
-		Snapshot:  ref,
+	dir, err := core.NewDirectoryWithSnapshot("/", query.Platform(), nil, ref)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create host directory: %w", err)
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
@@ -572,14 +570,14 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 
 	svc := inst.Self()
 
-	if svc.Container == nil {
+	if svc.Container.Self() == nil {
 		return nil, errors.New("tunneling to non-Container services is not supported")
 	}
 
 	ports := []core.PortForward{}
 
 	if args.Native {
-		for _, port := range svc.Container.Ports {
+		for _, port := range svc.Container.Self().Ports {
 			frontend := port.Port
 			ports = append(ports, core.PortForward{
 				Frontend: &frontend,
@@ -594,7 +592,7 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 	}
 
 	if len(ports) == 0 {
-		for _, port := range svc.Container.Ports {
+		for _, port := range svc.Container.Self().Ports {
 			ports = append(ports, core.PortForward{
 				Frontend: nil, // pick a random port on the host
 				Backend:  port.Port,

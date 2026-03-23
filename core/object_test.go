@@ -107,7 +107,7 @@ func (s *moduleObjectTestServer) DefaultDeps(context.Context) (*ModDeps, error) 
 	return NewModDeps(s.root, nil), nil
 }
 
-func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
+func TestModuleObjectAttachDependencyResultsRecurses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cacheIface, err := dagql.NewCache(ctx, "")
@@ -139,7 +139,7 @@ func TestModuleObjectAttachOwnedResultsRecurses(t *testing.T) {
 		return attached, nil
 	}
 
-	deps, err := obj.AttachOwnedResults(ctx, nil, attach)
+	deps, err := obj.AttachDependencyResults(ctx, nil, attach)
 	assert.NilError(t, err)
 	assert.Equal(t, 3, len(deps))
 
@@ -689,7 +689,7 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 			"child": childEnc,
 		},
 	}
-	deps, err := obj.AttachOwnedResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+	deps, err := obj.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
 		t.Fatalf("unexpected attach of %T", res)
 		return nil, nil
 	})
@@ -723,7 +723,7 @@ func TestModuleObjectRawHandleFieldBecomesStaleAfterProducerSessionClose(t *test
 	assert.ErrorContains(t, err, "missing shared result")
 }
 
-func TestModuleObjectAttachOwnedResultsRetainsSemanticInterfaceHandleField(t *testing.T) {
+func TestModuleObjectAttachDependencyResultsRetainsSemanticInterfaceHandleField(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()

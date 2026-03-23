@@ -367,12 +367,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &File{
-		File:      ChangesetPatchFilename,
-		Platform:  query.Platform(),
-		LazyState: NewLazyState(),
-		Snapshot:  snap,
-	}, nil
+	return NewFileWithSnapshot(ChangesetPatchFilename, query.Platform(), nil, snap)
 }
 
 func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
@@ -715,7 +710,7 @@ func newChangesetFromMerge(ctx context.Context, before dagql.ObjectResult[*Direc
 		return nil, err
 	}
 
-	afterRef, err := afterDir.getSnapshot(ctx)
+	afterRef, err := afterDir.getSnapshot()
 	if err != nil {
 		return nil, fmt.Errorf("evaluate merged directory snapshot: %w", err)
 	}
@@ -808,13 +803,7 @@ func withGitMergeWorkspace(ctx context.Context, base *Directory, description str
 		return nil, err
 	}
 
-	return &Directory{
-		Dir:       base.Dir,
-		Platform:  query.Platform(),
-		Services:  slices.Clone(base.Services),
-		LazyState: NewLazyState(),
-		Snapshot:  snap,
-	}, nil
+	return NewDirectoryWithSnapshot(base.Dir, query.Platform(), base.Services, snap)
 }
 
 func gitMergeWithPatches(

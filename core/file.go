@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,11 +43,17 @@ type File struct {
 	// Services necessary to provision the file.
 	Services ServiceBindings
 
-	Parent dagql.ObjectResult[*Directory]
 	LazyState
-	// Below is lazily initialized and shoud not be accessed directly
+	snapshotMu        sync.RWMutex
+	snapshotReady     bool
+	snapshotSource    FileSnapshotSource
 	Snapshot          bkcache.ImmutableRef
 	persistedResultID uint64
+}
+
+type FileSnapshotSource struct {
+	Directory dagql.ObjectResult[*Directory]
+	File      dagql.ObjectResult[*File]
 }
 
 func (*File) Type() *ast.Type {
@@ -74,7 +81,7 @@ func (file *File) SetPersistedResultID(resultID uint64) {
 }
 
 var _ dagql.OnReleaser = (*File)(nil)
-var _ dagql.HasOwnedResults = (*File)(nil)
+var _ dagql.HasDependencyResults = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
 	if file.Snapshot != nil {
@@ -91,61 +98,138 @@ func NewFileChild(parent dagql.ObjectResult[*File]) *File {
 	cp := *parent.Self()
 	cp.Services = slices.Clone(cp.Services)
 	cp.LazyState = NewLazyState()
+	cp.snapshotMu = sync.RWMutex{}
+	cp.snapshotReady = false
+	cp.snapshotSource = FileSnapshotSource{}
 	cp.Snapshot = nil
 
 	return &cp
 }
 
-func (file *File) Evaluate(ctx context.Context) error {
-	return file.LazyState.Evaluate(ctx, "File")
+func NewFileWithSnapshot(filePath string, platform Platform, services ServiceBindings, snapshot bkcache.ImmutableRef) (*File, error) {
+	if snapshot == nil {
+		return nil, fmt.Errorf("new file with snapshot: nil snapshot")
+	}
+	cloned := snapshot.Clone()
+	file := &File{
+		File:      filePath,
+		Platform:  platform,
+		Services:  slices.Clone(services),
+		LazyState: NewLazyState(),
+	}
+	if err := file.setSnapshot(cloned); err != nil {
+		_ = cloned.Release(context.Background())
+		return nil, err
+	}
+	return file, nil
 }
 
-func (file *File) Sync(ctx context.Context) error {
-	return file.Evaluate(ctx)
-}
-
-func (file *File) AttachOwnedResults(
+func (file *File) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if file == nil || file.Parent.Self() == nil {
+	if file == nil {
 		return nil, nil
 	}
-	attached, err := attach(file.Parent)
-	if err != nil {
-		return nil, fmt.Errorf("attach file parent: %w", err)
+	file.snapshotMu.RLock()
+	source := file.snapshotSource
+	file.snapshotMu.RUnlock()
+
+	var deps []dagql.AnyResult
+	if source.Directory.Self() != nil {
+		attached, err := attach(source.Directory)
+		if err != nil {
+			return nil, fmt.Errorf("attach file directory snapshot source: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach file directory snapshot source: unexpected result %T", attached)
+		}
+		file.snapshotMu.Lock()
+		file.snapshotSource.Directory = typed
+		file.snapshotMu.Unlock()
+		deps = append(deps, typed)
 	}
-	typed, ok := attached.(dagql.ObjectResult[*Directory])
-	if !ok {
-		return nil, fmt.Errorf("attach file parent: unexpected result %T", attached)
+	if source.File.Self() != nil {
+		attached, err := attach(source.File)
+		if err != nil {
+			return nil, fmt.Errorf("attach file snapshot source: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*File])
+		if !ok {
+			return nil, fmt.Errorf("attach file snapshot source: unexpected result %T", attached)
+		}
+		file.snapshotMu.Lock()
+		file.snapshotSource.File = typed
+		file.snapshotMu.Unlock()
+		deps = append(deps, typed)
 	}
-	file.Parent = typed
-	return []dagql.AnyResult{typed}, nil
+	return deps, nil
 }
 
-func (file *File) getSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
-	if err := file.Evaluate(ctx); err != nil {
-		return nil, err
+func (file *File) getSnapshot() (bkcache.ImmutableRef, error) {
+	file.snapshotMu.RLock()
+	ready := file.snapshotReady
+	snapshot := file.Snapshot
+	source := file.snapshotSource
+	file.snapshotMu.RUnlock()
+
+	if !ready {
+		return nil, fmt.Errorf("file snapshot not evaluated")
 	}
-	if file.Snapshot != nil {
-		return file.Snapshot, nil
+	if snapshot != nil {
+		return snapshot, nil
 	}
-	if file.Parent.Self() != nil {
-		return file.Parent.Self().getSnapshot(ctx)
+	if source.File.Self() != nil {
+		return source.File.Self().getSnapshot()
 	}
-	return nil, nil
+	if source.Directory.Self() != nil {
+		return source.Directory.Self().getSnapshot()
+	}
+	return nil, fmt.Errorf("file snapshot ready without snapshot or source")
 }
 
-func (file *File) setSnapshot(ref bkcache.ImmutableRef) {
+func (file *File) setSnapshot(ref bkcache.ImmutableRef) error {
+	file.snapshotMu.Lock()
+	defer file.snapshotMu.Unlock()
+	if file.snapshotReady {
+		return fmt.Errorf("file snapshot already set")
+	}
 	file.Snapshot = ref
+	file.snapshotSource = FileSnapshotSource{}
+	file.snapshotReady = true
+	file.LazyInit = nil
+	return nil
+}
+
+func (file *File) setSnapshotSource(src FileSnapshotSource) error {
+	if src.Directory.Self() != nil && src.File.Self() != nil {
+		return fmt.Errorf("file snapshot source has both directory and file set")
+	}
+	if src.Directory.Self() == nil && src.File.Self() == nil {
+		return fmt.Errorf("file snapshot source is empty")
+	}
+	file.snapshotMu.Lock()
+	defer file.snapshotMu.Unlock()
+	if file.snapshotReady {
+		return fmt.Errorf("file snapshot already set")
+	}
+	file.Snapshot = nil
+	file.snapshotSource = src
+	file.snapshotReady = true
+	file.LazyInit = nil
+	return nil
 }
 
 func (file *File) CacheUsageSize(ctx context.Context) (int64, bool, error) {
-	if file == nil || file.Snapshot == nil {
+	file.snapshotMu.RLock()
+	snapshot := file.Snapshot
+	file.snapshotMu.RUnlock()
+	if file == nil || snapshot == nil {
 		return 0, false, nil
 	}
-	size, err := file.Snapshot.Size(ctx)
+	size, err := snapshot.Size(ctx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -153,34 +237,41 @@ func (file *File) CacheUsageSize(ctx context.Context) (int64, bool, error) {
 }
 
 func (file *File) CacheUsageIdentity() (string, bool) {
-	if file == nil || file.Snapshot == nil {
+	file.snapshotMu.RLock()
+	snapshot := file.Snapshot
+	file.snapshotMu.RUnlock()
+	if file == nil || snapshot == nil {
 		return "", false
 	}
-	return file.Snapshot.ID(), true
+	return snapshot.ID(), true
 }
 
 func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
-	if file == nil || file.Snapshot == nil {
+	file.snapshotMu.RLock()
+	snapshot := file.Snapshot
+	file.snapshotMu.RUnlock()
+	if file == nil || snapshot == nil {
 		return nil
 	}
 	return []dagql.PersistedSnapshotRefLink{
 		{
-			RefKey: file.Snapshot.SnapshotID(),
+			RefKey: snapshot.SnapshotID(),
 			Role:   "snapshot",
 		},
 	}
 }
 
 const (
-	persistedFileFormSnapshot   = "snapshot"
-	persistedFileFormParentLazy = "parent_lazy"
+	persistedFileFormSnapshot = "snapshot"
+	persistedFileFormSource   = "source"
 )
 
 type persistedFilePayload struct {
-	Form           string   `json:"form"`
-	File           string   `json:"file,omitempty"`
-	Platform       Platform `json:"platform"`
-	ParentResultID uint64   `json:"parentResultID,omitempty"`
+	Form                    string   `json:"form"`
+	File                    string   `json:"file,omitempty"`
+	Platform                Platform `json:"platform"`
+	DirectorySourceResultID uint64   `json:"directorySourceResultID,omitempty"`
+	FileSourceResultID      uint64   `json:"fileSourceResultID,omitempty"`
 }
 
 func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -191,18 +282,33 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 		File:     file.File,
 		Platform: file.Platform,
 	}
+	file.snapshotMu.RLock()
+	ready := file.snapshotReady
+	snapshot := file.Snapshot
+	source := file.snapshotSource
+	file.snapshotMu.RUnlock()
+	if !ready {
+		return nil, fmt.Errorf("%w: encode persisted file: snapshot not ready", dagql.ErrPersistStateNotReady)
+	}
 	switch {
-	case file.Snapshot != nil:
+	case snapshot != nil:
 		payload.Form = persistedFileFormSnapshot
-	case file.Parent.Self() != nil:
-		parentID, err := encodePersistedObjectRef(cache, file.Parent, "file parent")
+	case source.Directory.Self() != nil:
+		sourceID, err := encodePersistedObjectRef(cache, source.Directory, "file directory snapshot source")
 		if err != nil {
 			return nil, err
 		}
-		payload.Form = persistedFileFormParentLazy
-		payload.ParentResultID = parentID
+		payload.Form = persistedFileFormSource
+		payload.DirectorySourceResultID = sourceID
+	case source.File.Self() != nil:
+		sourceID, err := encodePersistedObjectRef(cache, source.File, "file snapshot source")
+		if err != nil {
+			return nil, err
+		}
+		payload.Form = persistedFileFormSource
+		payload.FileSourceResultID = sourceID
 	default:
-		return nil, fmt.Errorf("%w: encode persisted file: unsupported lazy file state", dagql.ErrPersistStateNotReady)
+		return nil, fmt.Errorf("%w: encode persisted file: invalid snapshot state", dagql.ErrPersistStateNotReady)
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -228,16 +334,38 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resul
 		if err != nil {
 			return nil, err
 		}
-		file.setSnapshot(snapshot)
-		return file, nil
-	case persistedFileFormParentLazy:
-		parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ParentResultID, "file parent")
-		if err != nil {
+		if err := file.setSnapshot(snapshot); err != nil {
 			return nil, err
 		}
-		file.Parent = parent
-		if parent.Self() != nil {
-			file.Services = slices.Clone(parent.Self().Services)
+		return file, nil
+	case persistedFileFormSource:
+		switch {
+		case persisted.DirectorySourceResultID != 0 && persisted.FileSourceResultID != 0:
+			return nil, fmt.Errorf("decode persisted file payload: both source result IDs set")
+		case persisted.DirectorySourceResultID != 0:
+			source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.DirectorySourceResultID, "file directory snapshot source")
+			if err != nil {
+				return nil, err
+			}
+			if err := file.setSnapshotSource(FileSnapshotSource{Directory: source}); err != nil {
+				return nil, err
+			}
+			if source.Self() != nil {
+				file.Services = slices.Clone(source.Self().Services)
+			}
+		case persisted.FileSourceResultID != 0:
+			source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.FileSourceResultID, "file snapshot source")
+			if err != nil {
+				return nil, err
+			}
+			if err := file.setSnapshotSource(FileSnapshotSource{File: source}); err != nil {
+				return nil, err
+			}
+			if source.Self() != nil {
+				file.Services = slices.Clone(source.Self().Services)
+			}
+		default:
+			return nil, fmt.Errorf("decode persisted file payload: missing source result ID")
 		}
 		return file, nil
 	default:
@@ -245,14 +373,7 @@ func (*File) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resul
 	}
 }
 
-func (file *File) getParentSnapshot(ctx context.Context) (bkcache.ImmutableRef, error) {
-	if file.Parent.Self() == nil {
-		return nil, nil
-	}
-	return file.Parent.Self().getSnapshot(ctx)
-}
-
-func (file *File) WithContents(ctx context.Context, content []byte, permissions fs.FileMode, ownership *Ownership) (LazyInitFunc, error) {
+func (file *File) WithContents(ctx context.Context, parent dagql.ObjectResult[*Directory], content []byte, permissions fs.FileMode, ownership *Ownership) (LazyInitFunc, error) {
 	if dir, _ := filepath.Split(file.File); dir != "" {
 		return nil, fmt.Errorf("file name %q must not contain a directory", file.File)
 	}
@@ -266,7 +387,14 @@ func (file *File) WithContents(ctx context.Context, content []byte, permissions 
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := file.getParentSnapshot(ctx)
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, parent); err != nil {
+			return err
+		}
+		parentSnapshot, err := parent.Self().getSnapshot()
 		if err != nil {
 			return err
 		}
@@ -324,8 +452,7 @@ func (file *File) WithContents(ctx context.Context, content []byte, permissions 
 		if err != nil {
 			return err
 		}
-		file.Snapshot = snapshot
-		return nil
+		return file.setSnapshot(snapshot)
 	}, nil
 }
 
@@ -342,7 +469,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		Writer: &buf,
 	}
 
-	snapshot, err := file.getSnapshot(ctx)
+	snapshot, err := file.getSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +546,7 @@ func (cw *limitedWriter) Write(p []byte) (int, error) {
 }
 
 func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]*SearchResult, error) {
-	ref, err := file.getSnapshot(ctx)
+	ref, err := file.getSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -458,20 +585,22 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 			return err
 		}
 
-		parentSnapshot, err := parent.Self().getSnapshot(ctx)
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, parent); err != nil {
+			return err
+		}
+		parentSnapshot, err := parent.Self().getSnapshot()
 		if err != nil {
 			return err
 		}
 
-		sourceFile := &File{
-			File:      file.File,
-			Platform:  file.Platform,
-			Services:  slices.Clone(file.Services),
-			Parent:    file.Parent,
-			LazyState: NewLazyState(),
-			Snapshot:  parentSnapshot,
+		sourceFile, err := NewFileWithSnapshot(file.File, file.Platform, file.Services, parentSnapshot)
+		if err != nil {
+			return err
 		}
-		sourceFile.LazyInit = func(context.Context) error { return nil }
 
 		// reuse Search internally so we get convenient line numbers for an error if
 		// there are multiple matches
@@ -501,7 +630,7 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 				// If we're replacing all, it's not an error if there are no matches
 				// (just a no-op)
 				if parentSnapshot != nil {
-					file.Snapshot = parentSnapshot.Clone()
+					return file.setSnapshot(parentSnapshot.Clone())
 				}
 				return nil
 			}
@@ -582,15 +711,14 @@ func (file *File) WithReplaced(ctx context.Context, parent dagql.ObjectResult[*F
 		if err != nil {
 			return err
 		}
-		file.Snapshot = snap
-		return nil
+		return file.setSnapshot(snap)
 	}, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
 	// If metadata are included, directly compute the digest of the file
 	if !excludeMetadata {
-		snapshot, err := file.getSnapshot(ctx)
+		snapshot, err := file.getSnapshot()
 		if err != nil {
 			return "", fmt.Errorf("failed to evaluate file: %w", err)
 		}
@@ -629,7 +757,7 @@ func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, err
 }
 
 func (file *File) Stat(ctx context.Context) (*Stat, error) {
-	immutableRef, err := file.getSnapshot(ctx)
+	immutableRef, err := file.getSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -681,7 +809,14 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := parent.Self().getSnapshot(ctx)
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, parent); err != nil {
+			return err
+		}
+		parentSnapshot, err := parent.Self().getSnapshot()
 		if err != nil {
 			return err
 		}
@@ -718,8 +853,7 @@ func (file *File) WithName(ctx context.Context, parent dagql.ObjectResult[*File]
 		if err != nil {
 			return err
 		}
-		file.Snapshot = snapshot
-		return nil
+		return file.setSnapshot(snapshot)
 	}, nil
 }
 
@@ -729,7 +863,14 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := parent.Self().getSnapshot(ctx)
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, parent); err != nil {
+			return err
+		}
+		parentSnapshot, err := parent.Self().getSnapshot()
 		if err != nil {
 			return err
 		}
@@ -763,8 +904,7 @@ func (file *File) WithTimestamps(ctx context.Context, parent dagql.ObjectResult[
 		if err != nil {
 			return err
 		}
-		file.Snapshot = snapshot
-		return nil
+		return file.setSnapshot(snapshot)
 	}, nil
 }
 
@@ -784,7 +924,7 @@ func (frc fileReadCloser) Close() error {
 var _ io.ReadCloser = fileReadCloser{}
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
-	snapshot, err := file.getSnapshot(ctx)
+	snapshot, err := file.getSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +983,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(file.File), dest))
 	defer telemetry.EndWithCause(vtx, &rerr)
 
-	snapshot, err := file.getSnapshot(ctx)
+	snapshot, err := file.getSnapshot()
 	if err != nil {
 		return fmt.Errorf("failed to evaluate file: %w", err)
 	}
@@ -861,7 +1001,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {
-	snapshot, err := file.getSnapshot(ctx)
+	snapshot, err := file.getSnapshot()
 	if err != nil {
 		return err
 	}
@@ -914,7 +1054,14 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 		if err != nil {
 			return err
 		}
-		parentSnapshot, err := parent.Self().getSnapshot(ctx)
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, parent); err != nil {
+			return err
+		}
+		parentSnapshot, err := parent.Self().getSnapshot()
 		if err != nil {
 			return err
 		}
@@ -957,7 +1104,6 @@ func (file *File) Chown(ctx context.Context, parent dagql.ObjectResult[*File], o
 		if err != nil {
 			return err
 		}
-		file.Snapshot = snapshot
-		return nil
+		return file.setSnapshot(snapshot)
 	}, nil
 }

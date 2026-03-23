@@ -372,8 +372,8 @@ func withSavedSnapshot(format string, a ...any) mountObjOptFn {
 
 type fileOrDirectory interface {
 	*File | *Directory
-	getSnapshot(context.Context) (bkcache.ImmutableRef, error)
-	setSnapshot(bkcache.ImmutableRef)
+	getSnapshot() (bkcache.ImmutableRef, error)
+	setSnapshot(bkcache.ImmutableRef) error
 }
 
 // mountObj evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
@@ -389,7 +389,7 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 	var parentRef bkcache.ImmutableRef
 	if obj != nil {
 		var err error
-		parentRef, err = getRefOrEvaluate(ctx, obj)
+		parentRef, err = obj.getSnapshot()
 		if err != nil {
 			return "", nil, err
 		}
@@ -438,7 +438,10 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 				if err != nil {
 					return nil, err
 				}
-				obj.setSnapshot(snap)
+				if err := obj.setSnapshot(snap); err != nil {
+					_ = snap.Release(context.WithoutCancel(ctx))
+					return nil, err
+				}
 			}
 			return obj, nil
 		}, nil
@@ -486,8 +489,8 @@ func TrimErrPathPrefix(err error, prefix string) error {
 	return err
 }
 
-func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
-	return t.getSnapshot(ctx)
+func getRefOrEvaluate[T fileOrDirectory](_ context.Context, t T) (bkcache.ImmutableRef, error) {
+	return t.getSnapshot()
 }
 
 func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {

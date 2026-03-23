@@ -83,7 +83,7 @@ func (*Module) TypeDescription() string {
 
 var _ dagql.PersistedObject = (*Module)(nil)
 var _ dagql.PersistedObjectDecoder = (*Module)(nil)
-var _ dagql.HasOwnedResults = (*Module)(nil)
+var _ dagql.HasDependencyResults = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
@@ -221,7 +221,7 @@ func (mod *Module) Sync(ctx context.Context) error {
 	return mod.Evaluate(ctx)
 }
 
-func (mod *Module) AttachOwnedResults(
+func (mod *Module) AttachDependencyResults(
 	ctx context.Context,
 	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

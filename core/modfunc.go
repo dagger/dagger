@@ -825,24 +825,30 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
-	ctrOutputDir, err := execCtr.Directory(ctx, modMetaDirPath)
+	ctrOutputDir, err := execCtr.Directory(ctx, ctr, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
 
-	modMetaFile, err := ctrOutputDir.Self().Subfile(ctx, ctrOutputDir, modMetaOutputPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get mod meta file: %w", err)
+	if srv == nil {
+		return nil, fmt.Errorf("failed to get dagql server")
 	}
-
-	// Read the output of the function
-	outputBytes, err := modMetaFile.Contents(ctx, nil, nil)
+	var output dagql.String
+	err = srv.Select(ctx, ctrOutputDir, &output,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modMetaOutputPath)},
+			},
+		},
+		dagql.Selector{Field: "contents"},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("read function output file: %w", err)
 	}
 
 	var returnValueAny any
-	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
+	dec := json.NewDecoder(strings.NewReader(string(output)))
 	dec.UseNumber()
 	if err := dec.Decode(&returnValueAny); err != nil {
 		return nil, fmt.Errorf("unmarshal result: %w", err)

@@ -220,7 +220,18 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPromptFile(ctx, file.Self())
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, file); err != nil {
+		return nil, err
+	}
+	prompt, err := file.Self().Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithPrompt(string(prompt)), nil
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {

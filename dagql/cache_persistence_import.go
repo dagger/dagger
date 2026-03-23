@@ -452,12 +452,14 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 	state := res.loadPayloadState()
 	if state.hasValue || state.persistedEnvelope == nil {
 		if !state.isObject {
+			c.registerLazyEvaluation(res, hit)
 			return hit, nil
 		}
 		objRes, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
 		if err != nil {
 			return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
 		}
+		c.registerLazyEvaluation(res, objRes)
 		return objRes, nil
 	}
 
@@ -485,5 +487,10 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		c.tracePersistedPayloadDecoded(ctx, res, state.persistedEnvelope)
 	}
 	res.payloadMu.Unlock()
-	return wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
+	wrapped, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
+	if err != nil {
+		return nil, err
+	}
+	c.registerLazyEvaluation(res, wrapped)
+	return wrapped, nil
 }

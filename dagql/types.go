@@ -171,9 +171,15 @@ type OnReleaser interface {
 	OnRelease(context.Context) error
 }
 
-// HasOwnedResults is implemented by resolver-returned values that embed child
-// results which must be normalized onto attached/cache-backed results before
-// lifecycle bookkeeping or persistence.
+type LazyEvalFunc func(context.Context) error
+
+type HasLazyEvaluation interface {
+	LazyEvalFunc() LazyEvalFunc
+}
+
+// HasDependencyResults is implemented by resolver-returned values that embed
+// dependency results which must be normalized onto attached/cache-backed
+// results before lifecycle bookkeeping or persistence.
 //
 // Implementations must:
 //   - use self when they need to rewrite internal references to the attached
@@ -182,8 +188,8 @@ type OnReleaser interface {
 //   - rewrite themselves in place to point at the attached result returned by attach
 //   - return only the subset of attached child results that should become
 //     explicit non-structural cache dependency edges
-type HasOwnedResults interface {
-	AttachOwnedResults(context.Context, AnyResult, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
+type HasDependencyResults interface {
+	AttachDependencyResults(context.Context, AnyResult, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.
@@ -1307,7 +1313,7 @@ type ObjectResultArray[T Typed] []ObjectResult[T]
 
 var _ Typed = ObjectResultArray[Typed]{}
 var _ Enumerable = ObjectResultArray[Typed]{}
-var _ HasOwnedResults = ObjectResultArray[Typed]{}
+var _ HasDependencyResults = ObjectResultArray[Typed]{}
 
 func (i ObjectResultArray[T]) Type() *ast.Type {
 	var t T
@@ -1350,7 +1356,7 @@ func (arr ObjectResultArray[T]) NthValue(i int, _ *ResultCall) (AnyResult, error
 	return inst, nil
 }
 
-func (arr ObjectResultArray[T]) AttachOwnedResults(
+func (arr ObjectResultArray[T]) AttachDependencyResults(
 	_ context.Context,
 	_ AnyResult,
 	attach func(AnyResult) (AnyResult, error),

@@ -642,7 +642,7 @@ type InterfaceAnnotatedValue struct {
 }
 
 var _ dagql.InterfaceValue = (*InterfaceAnnotatedValue)(nil)
-var _ dagql.HasOwnedResults = (*InterfaceAnnotatedValue)(nil)
+var _ dagql.HasDependencyResults = (*InterfaceAnnotatedValue)(nil)
 
 func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
 	userModObjType, ok := iface.UnderlyingType.(*ModuleObjectType)
@@ -656,7 +656,7 @@ func (iface *InterfaceAnnotatedValue) UnderlyingObject() (dagql.Typed, error) {
 	}, nil
 }
 
-func (iface *InterfaceAnnotatedValue) AttachOwnedResults(
+func (iface *InterfaceAnnotatedValue) AttachDependencyResults(
 	ctx context.Context,
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

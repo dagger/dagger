@@ -566,17 +566,22 @@ That means:
 ### Cache-driven evaluation
 
 The cache should expose one central evaluation path, conceptually
-`cache.Evaluate(ctx, res)`.
+`cache.Evaluate(ctx, results...)`.
 
 The expected behavior is:
 
-* if the result is not lazy, `Evaluate` is a no-op
-* if the result is lazy and already evaluated, `Evaluate` is a no-op
-* if the result is lazy and currently being evaluated, `Evaluate` waits on the
+* if a result is not lazy, `Evaluate` is a no-op for that result
+* if a result is lazy and already evaluated, `Evaluate` is a no-op for that result
+* if a result is lazy and currently being evaluated, `Evaluate` waits on the
   in-progress evaluation rather than re-running it
-* if the result is lazy and not yet evaluated, cache runs the object's callback
+* if a result is lazy and not yet evaluated, cache runs the object's callback
+* if multiple results are provided, cache evaluates them in parallel
 * cache does not report the evaluation complete until all realized state has
   been published back onto the relevant objects
+* cache must not implement nested evaluation ancestry by repeatedly cloning a
+  full stack slice per recursive call
+  * that is quadratic in space for deep dependency chains
+  * use a linked stack / parent-pointer context representation instead
 
 ### Dependency model
 
@@ -587,25 +592,30 @@ The intended rule is:
 
 * we do not store a separate evaluation graph
 * we do not blindly evaluate the full dependency graph
-* instead, the existing dependency graph is the legal universe of what a lazy
-  callback may request evaluation for
+* instead, lazy callbacks choose the specific attached results they need to
+  evaluate in that codepath
 * at runtime, the callback chooses the specific subset of dependencies it
   actually needs in that codepath
 
 That means:
 
-* if a lazy callback needs some other result to be evaluated, that result must
-  already be represented as a dependency
-  * via ordinary result-call dependencies
-  * or explicit attached/owned-result dependencies
-* if a lazy callback reaches for something not represented as a dependency, that
-  is a bug
+* the dependency graph remains the ownership/liveness model, not an enforced
+  evaluation-eligibility model
+* `HasDependencyResults` is for retaining embedded result refs that really live
+  in object state or persisted payloads
+* cache does not reject a callback merely because the result it evaluates is
+  not present in `deps`
+* if a callback needs something to still exist later, it must either:
+  * already be retained by ordinary result-call structure
+  * be reconstructible from that retained structure at evaluation time
+  * or be explicitly attached as a dependency because it is genuinely embedded state
 
 So:
 
-* "all dependencies that keep me alive" and "the dependencies I actually
-  evaluate in this codepath" are not identical sets
-* but they still live inside one stored graph model
+* "all dependencies that keep me alive" and "the results I actually evaluate in
+  this codepath" are not identical sets
+* the dependency graph still matters for lifetime and persistence
+* but evaluation legality is not enforced by cache
 
 ### Returned lazy results
 
@@ -721,7 +731,34 @@ That means for directory/file-style snapshot ancestry:
 * keep only narrow explicit `snapshotSource` result dependencies on evaluated
   pass-through objects
 * rely on existing result-call / explicit dependency machinery for ownership
-  and evaluation legality, rather than object-level hidden parent pointers
+  and lifetime, rather than object-level hidden parent pointers
+
+### Attached-result boundaries for runtime operations
+
+Some runtime operations do not merely read realized state; they must evaluate
+lazy container state immediately before using it.
+
+For those paths:
+
+* preserve the attached `dagql.ObjectResult[*Container]` boundary all the way
+  to the point where evaluation happens
+* do not drop to a bare `*Container` and expect runtime helpers to recover the
+  missing dagql/cache context later
+
+This specifically applies to:
+
+* container-backed `Service` startup
+* terminal paths that spin up a service from a container
+
+So:
+
+* `Service` must retain the attached container result it was created from
+* `AsService` must accept an attached container result, not only a bare
+  container
+* service start paths must evaluate that attached result through dagql cache
+  before calling `prepareMounts(...)`
+* terminal paths that construct a container-backed service must preserve or
+  reconstruct an attached container result before converting it to a service
 
 ### Dependency attachment terminology
 
@@ -853,6 +890,9 @@ For this phase:
   * do not build fancy cycle pretty-printing unless it falls out trivially from
     the existing stack tracking
   * if any cycle detail is included, cap it at 32 stack entries
+* nested evaluation ancestry tracking must stay linear-space in the depth of
+  the active chain
+  * do not clone whole ancestry slices on each recursive `Evaluate`
 * telemetry/observability changes are explicitly deferred
   * do not design or implement telemetry-specific evaluation wrappers in this phase
 * snapshot/ref ownership cleanup is also explicitly deferred to the next phase
@@ -917,7 +957,7 @@ Concrete intended fields:
 
 ##### `Cache.Evaluate`
 
-Add the central `Cache.Evaluate(ctx, res)` entrypoint.
+Add the central `Cache.Evaluate(ctx, results...)` entrypoint.
 
 Expected behavior:
 
@@ -925,20 +965,29 @@ Expected behavior:
 * no-op for non-lazy / already-realized results
 * singleflights in-progress evaluation
 * owns cycle/error handling
+* evaluates multiple independent results in parallel when more than one result
+  is provided
 * does not mark completion until publication is finished
 
 Specific change:
 
-* `Cache.Evaluate(ctx, res AnyResult) error` requires an attached cache-backed result
+* `Cache.Evaluate(ctx, results ...AnyResult) error` requires attached
+  cache-backed results
   * detached results should return an error
+  * zero results returns `nil`
+  * one result follows the single-result flow below
+  * multiple results run through an `errgroup` and evaluate in parallel
 * nested evaluation ancestry should be tracked in `ctx` with a private cache
-  context key storing the current stack of `sharedResultID`s
+  context key storing a linked stack of `sharedResultID`s
+  * each node stores its current result ID and a parent pointer to the next
+    outer active evaluation
+  * do not clone an ever-growing slice for each nested call
 * when evaluating result `B` while `A` is already on the stack:
-  * if `B` is not listed in `A.deps`, return an error for undeclared lazy dependency access
   * if `sharedResultID(B) == sharedResultID(A)` or `sharedResultID(B)` already
     exists in the evaluation stack, return a cycle error
   * equality here must be by attached result ID only, not by object pointer,
     wrapper value, or callback identity
+  * cycle membership is checked by walking the linked ancestry chain
 * singleflight flow:
   * lock `shared.lazyMu`
   * if `lazyEval == nil` or `lazyEvalComplete`, unlock and return nil
@@ -967,12 +1016,11 @@ Specific change:
   * cache closes `lazyEvalWaitCh`
   * cache clears the in-progress channel/cancel/waiter bookkeeping
   * cache leaves `lazyEval` installed so a later caller can retry
-* undeclared-dependency and recursive-evaluation failures are plain errors in
-  this phase; do not add typed error taxonomy just for them yet
+* recursive-evaluation failures are plain errors in this phase; do not add
+  typed error taxonomy just for them yet
 
 The callback itself is expected to call `cache.Evaluate(ctx, dep)` for any lazy
-dependency it needs; the dependency legality check above is how cache enforces
-the "only declared deps may be evaluated" rule.
+dependency it needs; cache only enforces recursion safety, not dependency legality.
 
 ##### Lazy registration ownership
 
@@ -1028,18 +1076,16 @@ Specific change:
 
 Keep using this to make non-call implicit deps explicit.
 
-This remains important because lazy callbacks may only evaluate declared dependencies.
-
 Specific change:
 
 * rename `HasOwnedResults` to `HasDependencyResults`
 * rename `AttachOwnedResults(...)` to `AttachDependencyResults(...)`
 * rename cache-side `attachOwnedResults(...)` to `attachDependencyResults(...)`
 * do not change the overall role of this mechanism
-* rely on it as the generic mechanism that makes lazy dependency legality enforceable
-* if a lazy callback needs some dependency that is not already represented via
-  result-call structure, the owning object must expose that dependency through
-  `HasDependencyResults` so `attachDependencyResults` can make it explicit
+* rely on it as the generic mechanism that retains embedded result refs
+* if an object embeds a result ref in its state and that ref must survive for
+  later reads/evaluation, the owning object must expose that dependency through
+  `HasDependencyResults` so `attachDependencyResults` can retain it
 
 That means:
 
@@ -1063,15 +1109,22 @@ Specific tests to add:
   increments a counter
   * assert `Cache.Evaluate` runs it once
   * assert concurrent `Cache.Evaluate` calls still increment once
+* one fake pair of independent lazy objects passed to `Cache.Evaluate(ctx, a, b)`
+  * assert both callbacks run
+  * assert they can run in parallel rather than serializing behind a shared
+    orchestration path
 * one fake lazy parent whose callback calls `Cache.Evaluate` on an attached child
   that is declared via ordinary or explicit deps
   * assert nested dependency evaluation succeeds
 * one fake lazy parent whose callback calls `Cache.Evaluate` on a child that is
   not in `deps`
-  * assert `Cache.Evaluate` returns an undeclared-dependency error
+  * assert `Cache.Evaluate` allows it while the child result is still attached/live
 * one fake lazy object whose callback calls `Cache.Evaluate` on itself or on an
   already-active ancestor
   * assert cycle error
+* one deep fake dependency chain
+  * assert recursive evaluation works without cloning an O(n^2) ancestry slice
+  * the implementation should use a linked ancestry context representation
 * one attachment/materialization test that returns a lazy object from a
   `DoNotCache` field/request
   * assert the attach/materialize path rejects it before publication
@@ -1514,8 +1567,18 @@ Concrete targets:
 Specific change:
 
 * terminal code must stop using bare-object `container.Evaluate(ctx)`
+* `Container.terminal` / `Container.TerminalExecError` must take an attached
+  `dagql.ObjectResult[*Container]`
 * where the terminal path needs the container built first, it must evaluate the
   attached container result through dagql cache before continuing
+* when terminal creates a service from a container, it must pass the attached
+  container result into `AsService(...)`
+* the exec-error terminal path that constructs `Service{...}` directly must
+  also store the attached container result on the service
+* `Directory.Terminal` must preserve an attached container result when the user
+  passes an override container
+  * when it synthesizes a default terminal container, it must attach that
+    container for the current call before turning it into a service
 * terminal rebuild paths that currently manufacture synthetic updated rootfs/mount
   result objects must follow the same bare rootfs+mount model as `WithExec`
 
@@ -2138,6 +2201,52 @@ Specific change:
   corresponding attached result before the helper is called
 * snapshot directory objects constructed here from concrete refs should use
   `NewDirectoryWithSnapshot(...)`
+
+##### Container-backed services
+
+Concrete targets:
+
+* `Service`
+* `Clone`
+* `Hostname`
+* `Ports`
+* `Endpoint`
+* `startContainer`
+
+Specific change:
+
+* replace the bare `*Container` field on `Service` with an attached
+  `dagql.ObjectResult[*Container]`
+* all container-backed service logic should read the container through
+  `svc.Container.Self()`
+* `Clone` should preserve the attached container result wrapper
+* `startContainer` must:
+  * evaluate `svc.Container` through dagql cache before touching rootfs or
+    mounts
+  * then pass `svc.Container.Self()` into `prepareMounts(...)`
+* this is the hard cut that makes service start compatible with lazy bare
+  rootfs/mount container state
+
+#### `core/schema/service.go`
+
+##### Container-to-service conversion
+
+Concrete targets:
+
+* `containerAsServiceLegacy`
+* `containerAsService`
+* any helper that constructs a container-backed `Service`
+
+Specific change:
+
+* stop dropping from attached container results to bare containers at the
+  schema boundary
+* `containerAsServiceLegacy` must pass the attached `ctr` result into
+  `AsService(...)`
+* `containerAsService` must take `dagql.ObjectResult[*core.Container]` rather
+  than `*core.Container`
+* argument expansion can still read `parent.Self()`, but the returned service
+  must retain the attached `parent` result
 
 #### `core/git_local.go`
 
