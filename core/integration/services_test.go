@@ -816,7 +816,7 @@ func (ServiceSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
 	cid, err := withPorts.ID(ctx)
 	require.NoError(t, err)
 
-	getPorts := `query Test($id: ContainerID!) {
+	getPorts := `query Test($id: ID!) {
 		loadContainerFromID(id: $id) {
 			exposedPorts {
 				port

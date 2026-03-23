@@ -378,7 +378,7 @@ EXPOSE 8080
 			ExposedPorts []core.Port
 		} `json:"loadContainerFromID"`
 	}](c, t, `
-        query Test($id: ContainerID!) {
+        query Test($id: ID!) {
             loadContainerFromID(id: $id) {
                 exposedPorts {
                     port
@@ -467,7 +467,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 					}
 				}
 			} `json:"loadDirectoryFromID"`
-		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
+		}](c, t, `query Test($dir: ID!, $sock: ID!) {
 			loadDirectoryFromID(id: $dir) {
 				dockerBuild(ssh: $sock) {
 					file(path: "/result") {
@@ -498,7 +498,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 					}
 				}
 			} `json:"loadDirectoryFromID"`
-		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
+		}](c, t, `query Test($dir: ID!, $sock: ID!) {
 			loadDirectoryFromID(id: $dir) {
 				dockerBuild(ssh: $sock) {
 					file(path: "/result") {

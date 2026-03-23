@@ -1387,7 +1387,7 @@ func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
 	t.Run("no implicit host access", func(ctx context.Context, t *testctx.T) {
 		// verify that a sneaky module can't use raw gql queries to access host sockets that they weren't passed
 
-		runContainerQuery := `query Run($sockID: SocketID!) {
+		runContainerQuery := `query Run($sockID: ID!) {
 	container {
 		from(address: "` + alpineImage + `") {
 			withExec(args: ["apk", "add", "netcat-openbsd"]) {

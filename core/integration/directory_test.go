@@ -800,7 +800,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		aID := newDirWithFile(t, "a-file", "a-content")
 		bID := newDirWithFile(t, "b-file", "b-content")
 
-		diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
+		diff := `query Diff($id: ID!, $other: ID!) {
 			loadDirectoryFromID(id: $id) {
 				diff(other: $other) {
 					entries
