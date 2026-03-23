@@ -148,7 +148,6 @@ func ensureEngine(ctx context.Context) {
 		ensureEngineTar(ctx)
 		ensureBase(ctx)
 
-		engineRunVol := dag.CacheVolume("integ-test-engine-run")
 		engineDev := dag.EngineDev()
 		if registryHost != "" {
 			engineDev = engineDev.
@@ -158,7 +157,6 @@ func ensureEngine(ctx context.Context) {
 		engineSvc, err := engineDev.TestEngine(dagger.EngineDevTestEngineOpts{
 			RegistrySvc:        startedRegistry,
 			PrivateRegistrySvc: startedPrivateRegistry,
-			EngineRunVol:       engineRunVol,
 			Version:            engine.Version,
 			Tag:                engine.Tag,
 		}).Start(ctx)
