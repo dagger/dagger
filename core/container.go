@@ -1417,6 +1417,15 @@ func (container *Container) WithDirectory(
 		return container.WithDirectory(ctx, parent, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
 	}
 
+	resolvedOwner := owner
+	if owner != "" {
+		ownership, err := container.ownership(ctx, parent, owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+		}
+		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
+	}
+
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
 	}
@@ -1434,14 +1443,8 @@ func (container *Container) WithDirectory(
 	if filter.Gitignore {
 		args = append(args, dagql.NamedInput{Name: "gitignore", Value: dagql.Boolean(true)})
 	}
-	if owner != "" {
-		// directories only handle int uid/gid, so make sure we resolve names if needed
-		ownership, err := container.ownership(ctx, parent, owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
-		}
-		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	if resolvedOwner != "" {
+		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(resolvedOwner)})
 	}
 	if permissions != nil {
 		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
@@ -1479,7 +1482,7 @@ func (container *Container) WithDirectory(
 					return nil, err
 				}
 			}
-			next, err := container.FS.Value.WithDirectory(ctx, rootfsParent, mntSubpath, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
+			next, err := container.FS.Value.WithDirectory(ctx, rootfsParent, mntSubpath, src, filter, resolvedOwner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
 			if err != nil {
 				return nil, err
 			}
@@ -1510,7 +1513,7 @@ func (container *Container) WithDirectory(
 					return nil, err
 				}
 			}
-			next, err := mnt.DirectorySource.Value.WithDirectory(ctx, parentDir, mntSubpath, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
+			next, err := mnt.DirectorySource.Value.WithDirectory(ctx, parentDir, mntSubpath, src, filter, resolvedOwner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
 			if err != nil {
 				return nil, err
 			}
@@ -1566,6 +1569,15 @@ func (container *Container) WithFile(
 		return container.WithFile(ctx, parent, srv, destPath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
 	}
 
+	resolvedOwner := owner
+	if owner != "" {
+		ownership, err := container.ownership(ctx, parent, owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+		}
+		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
+	}
+
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
 	}
@@ -1577,14 +1589,8 @@ func (container *Container) WithFile(
 	if permissions != nil {
 		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
 	}
-	if owner != "" {
-		// files only handle int uid/gid, so make sure we resolve names if needed
-		ownership, err := container.ownership(ctx, parent, owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
-		}
-		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
+	if resolvedOwner != "" {
+		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(resolvedOwner)})
 	}
 	if doNotCreateDestPath {
 		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
@@ -1608,7 +1614,7 @@ func (container *Container) WithFile(
 			if err := cache.Evaluate(ctx, rootfsParent, src); err != nil {
 				return nil, err
 			}
-			next, err := container.FS.Value.WithFile(ctx, rootfsParent, mntSubpath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
+			next, err := container.FS.Value.WithFile(ctx, rootfsParent, mntSubpath, src, permissions, resolvedOwner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
 			if err != nil {
 				return nil, err
 			}
@@ -1641,7 +1647,7 @@ func (container *Container) WithFile(
 			if err := cache.Evaluate(ctx, parentDir, src); err != nil {
 				return nil, err
 			}
-			next, err := mnt.DirectorySource.Value.WithFile(ctx, parentDir, mntSubpath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
+			next, err := mnt.DirectorySource.Value.WithFile(ctx, parentDir, mntSubpath, src, permissions, resolvedOwner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
 			if err != nil {
 				return nil, err
 			}
