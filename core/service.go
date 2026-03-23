@@ -334,17 +334,29 @@ func (svc *Service) startContainer(
 		return nil, err
 	}
 
-	ctr := svc.Container.Self()
-	if ctr == nil {
-		return nil, fmt.Errorf("service container is nil")
-	}
-
 	cacheCtr, err := dagql.EngineCache(ctx)
 	if err != nil {
 		return nil, err
 	}
+	srv := dagql.CurrentDagqlServer(ctx)
+	if srv == nil {
+		return nil, fmt.Errorf("failed to get dagql server")
+	}
+	attachedAny, err := cacheCtr.AttachResult(ctx, clientMetadata.SessionID, srv, svc.Container)
+	if err != nil {
+		return nil, fmt.Errorf("attach service container: %w", err)
+	}
+	attached, ok := attachedAny.(dagql.ObjectResult[*Container])
+	if !ok {
+		return nil, fmt.Errorf("attach service container: expected %T, got %T", svc.Container, attachedAny)
+	}
+	svc.Container = attached
 	if err := cacheCtr.Evaluate(ctx, svc.Container); err != nil {
 		return nil, err
+	}
+	ctr := svc.Container.Self()
+	if ctr == nil {
+		return nil, fmt.Errorf("service container is nil")
 	}
 
 	execMD := svc.ExecMD
