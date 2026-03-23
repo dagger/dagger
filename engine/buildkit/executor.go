@@ -181,6 +181,7 @@ func (w *Worker) Run(
 	return nil, w.run(ctx, state,
 		w.setupNetwork,
 		w.injectInit,
+		w.setupVolumes,
 		w.generateBaseSpec,
 		w.filterEnvs,
 		w.setupRootfs,
