@@ -259,6 +259,13 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	sourceSelector := "/"
 	var sourceRef bkcache.ImmutableRef
 	if source.Self() != nil {
+		dagCache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := dagCache.Evaluate(ctx, source); err != nil {
+			return fmt.Errorf("evaluate cache source directory: %w", err)
+		}
 		sourceSelector = source.Self().Dir
 		if sourceSelector == "" {
 			sourceSelector = "/"
