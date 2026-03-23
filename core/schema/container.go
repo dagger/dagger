@@ -328,6 +328,20 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
+		dagql.Func("withMountedHostDirectory", s.withMountedHostDirectory).
+			Doc(`Retrieves this container plus a host directory mounted at the given path.`).
+			Args(
+				dagql.Arg("source").Doc(`Source path of the host directory to mount (e.g., "/home/user/directory").`),
+				dagql.Arg("path").Doc(`Location of the mounted directory (e.g., "/mnt/directory").`),
+			),
+
+		dagql.Func("withVolumeMount", s.withVolumeMount).
+			Doc(`Retrieves this container plus an engine-managed volume mounted at the given path.`).
+			Args(
+				dagql.Arg("path").Doc(`Location where the volume will be mounted (e.g., "/mnt/volume").`),
+				dagql.Arg("volume").Doc(`Identifier of the volume to mount.`),
+			),
+
 		dagql.Func("withUnixSocket", s.withUnixSocket).
 			Doc(`Retrieves this container plus a socket forwarded to the given Unix socket path.`).
 			Args(
@@ -2045,6 +2059,34 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Co
 	}
 
 	return parent.WithMountedSecret(ctx, path, secret, args.Owner, fs.FileMode(args.Mode))
+}
+
+type containerWithMountedHostDirectoryArgs struct {
+	Path   string
+	Source string
+}
+
+func (s *containerSchema) withMountedHostDirectory(ctx context.Context, parent *core.Container, args containerWithMountedHostDirectoryArgs) (*core.Container, error) {
+	return parent.WithMountedHostDirectory(ctx, args.Path, args.Source)
+}
+
+type containerWithVolumeMountArgs struct {
+	Path   string
+	Volume core.VolumeID
+}
+
+func (s *containerSchema) withVolumeMount(ctx context.Context, parent *core.Container, args containerWithVolumeMountArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	volume, err := args.Volume.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithVolumeMount(ctx, args.Path, volume), nil
 }
 
 type containerWithDirectoryArgs struct {

@@ -71,7 +71,10 @@ type Container struct {
 	EnabledGPUs []string
 
 	// Mount points configured for the container.
-	Mounts ContainerMounts
+	Mounts     ContainerMounts
+	HostMounts []buildkit.HostMount
+
+	VolumeMounts []VolumeMount
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *Directory
@@ -137,6 +140,8 @@ func (container *Container) Clone() *Container {
 	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
 	cp.Mounts = slices.Clone(cp.Mounts)
+	cp.HostMounts = slices.Clone(cp.HostMounts)
+	cp.VolumeMounts = slices.Clone(cp.VolumeMounts)
 	cp.Secrets = slices.Clone(cp.Secrets)
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
@@ -283,6 +288,12 @@ type ContainerMount struct {
 	CacheSource *CacheMountSource
 	// The mounted tmpfs
 	TmpfsSource *TmpfsMountSource
+}
+
+type VolumeMount struct {
+	Target   string
+	Volume   dagql.ObjectResult[*Volume]
+	Readonly bool
 }
 
 type CacheMountSource struct {
@@ -1345,6 +1356,32 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 	// set image ref to empty string
 	container.ImageRef = ""
 
+	return container, nil
+}
+
+func (container *Container) WithVolumeMount(ctx context.Context, target string, vol dagql.ObjectResult[*Volume]) *Container {
+	container = container.Clone()
+	target = absPath(container.Config.WorkingDir, target)
+	container.VolumeMounts = append(container.VolumeMounts, VolumeMount{
+		Target: target,
+		Volume: vol,
+	})
+	container.ImageRef = ""
+	return container
+}
+
+func (container *Container) WithMountedHostDirectory(ctx context.Context, target string, source string) (*Container, error) {
+	container = container.Clone()
+	target = absPath(container.Config.WorkingDir, target)
+	source, err := filepath.Abs(source)
+	if err != nil {
+		return nil, fmt.Errorf("get absolute path of host mount source: %w", err)
+	}
+	container.HostMounts = append(container.HostMounts, buildkit.HostMount{
+		Target: target,
+		Source: source,
+	})
+	container.ImageRef = ""
 	return container, nil
 }
 

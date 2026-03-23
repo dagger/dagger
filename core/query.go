@@ -13,6 +13,7 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
@@ -132,6 +133,11 @@ type Server interface {
 	// use the engine-wide default pruning policy, otherwise prune the whole cache
 	// of any releasable entries.
 	PruneEngineLocalCacheEntries(context.Context, EngineCachePruneOptions) (*EngineCacheEntrySet, error)
+
+	// RegisterSSHFSVolume instructs the engine to ensure an sshfs-backed volume is mounted and
+	// returns a Volume instance describing it. privateKey and publicKey are the digest identifiers
+	// of secrets stored in the client's secret store.
+	RegisterSSHFSVolume(ctx context.Context, endpoint string, privateKey digest.Digest, publicKey digest.Digest) (*Volume, error)
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
