@@ -1058,15 +1058,15 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	if shared == nil {
 		return nil, fmt.Errorf("attach dependency result: missing shared result")
 	}
-	frame := shared.loadResultCall()
-	if frame == nil {
-		return nil, fmt.Errorf("attach dependency result: missing result call frame")
-	}
 	if shared.id != 0 {
 		c.registerLazyEvaluation(shared, res)
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
 		c.trackSessionResult(ctx, sessionID, res, true)
 		return res, nil
+	}
+	frame := shared.loadResultCall()
+	if frame == nil {
+		return nil, fmt.Errorf("attach dependency result: missing result call frame")
 	}
 	req := &CallRequest{
 		ResultCall: frame.clone(),

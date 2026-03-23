@@ -197,6 +197,33 @@ func TestCacheRejectsEmptySessionIDForOwningEntrypoints(t *testing.T) {
 	assert.ErrorContains(t, err, "empty session ID")
 }
 
+func TestAttachResultAllowsAlreadyAttachedResultWithoutFrame(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "")
+	assert.NilError(t, err)
+	ctx = ContextWithCache(ctx, cacheIface)
+	c := cacheIface
+
+	key := cacheTestIntCall("attached-without-frame")
+
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: key}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 42), nil
+	})
+	assert.NilError(t, err)
+
+	shared := res.cacheSharedResult()
+	assert.Assert(t, shared != nil)
+	assert.Assert(t, shared.id != 0)
+
+	shared.storeResultCall(nil)
+
+	attached, err := c.AttachResult(ctx, "test-session", noopTypeResolver{}, res)
+	assert.NilError(t, err)
+	assert.Equal(t, attached, res)
+}
+
 func (*cacheTestObject) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "CacheTestObject",
