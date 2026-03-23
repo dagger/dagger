@@ -184,18 +184,6 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	// Some tests (e.g., TestSystemProxies) compile and re-invoke the test binary
-	// inside a container with its own dev engine. In that case, the infrastructure
-	// setup below must be skipped — the re-invoked binary only runs a single test
-	// and doesn't need registries, inner engines, etc.
-	if os.Getenv("_DAGGER_TESTS_SKIP_SETUP") != "" {
-		res := oteltest.Main(m)
-		if origAuthSock != "" {
-			os.Setenv("SSH_AUTH_SOCK", origAuthSock)
-		}
-		os.Exit(res)
-	}
-
 	res := oteltest.Main(m)
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
