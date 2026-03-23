@@ -142,7 +142,7 @@ func (m *Evaluator) WithEval(
 	eval Eval,
 ) (*Evaluator, error) {
 	id, err := eval.(interface {
-		ID(context.Context) (EvalID, error)
+		ID(context.Context) (dagger.ID, error)
 	}).ID(ctx)
 	if err != nil {
 		return nil, err
