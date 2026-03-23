@@ -9,17 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/distribution/reference"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/filesync"
-	"github.com/dagger/dagger/util/ctrns"
 	"github.com/dagger/dagger/util/hashutil"
 )
 
@@ -638,24 +639,44 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	if imageReader.ContentStore != nil && imageReader.ImagesStore != nil {
-		// create and use a lease to write to our content store, prevents
-		// content being cleaned up while we're writing
-		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageReader.LeaseManager, leaseutil.MakeTemporary)
-		if err != nil {
-			return inst, err
-		}
-		defer leaseDone(context.WithoutCancel(leaseCtx))
-		leaseID, _ := leases.FromContext(leaseCtx)
-
-		contentStore := ctrns.ContentStoreWithLease(imageReader.ContentStore, leaseID)
-
 		img, err := imageReader.ImagesStore.Get(ctx, refName.String())
 		if err != nil {
 			return inst, fmt.Errorf("failed to get image from host store: %w", err)
 		}
-		target, err := core.ResolveIndex(ctx, contentStore, img.Target, query.Platform().Spec(), "")
+		target, err := core.ResolveIndex(ctx, imageReader.ContentStore, img.Target, query.Platform().Spec(), "")
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image index: %w", err)
+		}
+		if _, infoErr := imageReader.ContentStore.Info(ctx, target.Digest); infoErr != nil &&
+			(img.Target.MediaType == ocispec.MediaTypeImageIndex || img.Target.MediaType == images.MediaTypeDockerSchema2ManifestList) {
+			matcher := platforms.Only(query.Platform().Spec())
+			manifests, childErr := images.Children(ctx, imageReader.ContentStore, img.Target)
+			if childErr != nil {
+				return inst, fmt.Errorf("failed to inspect host image index: %w", childErr)
+			}
+			var fallback *ocispec.Descriptor
+			for i := range manifests {
+				desc := manifests[i]
+				switch desc.MediaType {
+				case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest:
+				default:
+					continue
+				}
+				if _, presentErr := imageReader.ContentStore.Info(ctx, desc.Digest); presentErr != nil {
+					continue
+				}
+				if fallback == nil {
+					fallback = &manifests[i]
+				}
+				if desc.Platform != nil && matcher.Match(*desc.Platform) {
+					target = &manifests[i]
+					fallback = nil
+					break
+				}
+			}
+			if fallback != nil {
+				target = fallback
+			}
 		}
 
 		ctx, release, err := leaseutil.WithLease(ctx, query.LeaseManager(), leaseutil.MakeTemporary)
@@ -663,7 +684,7 @@ func (s *hostSchema) containerImage(ctx context.Context, parent dagql.ObjectResu
 			return inst, err
 		}
 		defer release(context.WithoutCancel(ctx))
-		err = contentutil.CopyChain(ctx, query.OCIStore(), contentStore, *target)
+		err = contentutil.CopyChain(ctx, query.OCIStore(), imageReader.ContentStore, *target)
 		if err != nil {
 			return inst, fmt.Errorf("failed to copy image content: %w", err)
 		}

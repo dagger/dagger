@@ -3086,6 +3086,9 @@ func (container *Container) FromInternal(
 		}
 		return rootfsDir.setSnapshot(ref)
 	}
+	container.setLazyInit(func(ctx context.Context) error {
+		return rootfsDir.LazyState.Evaluate(ctx, "Directory")
+	})
 
 	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
 	if err != nil {
