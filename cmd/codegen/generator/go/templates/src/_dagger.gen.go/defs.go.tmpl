@@ -57,6 +57,14 @@ func assertNotNil(argName string, value any) {
 
 type DaggerObject = querybuilder.GraphQLMarshaller
 
+// Node is the interface implemented by all types with an ID.
+// It can be used with a type switch to narrow from an interface
+// to a concrete type.
+type Node interface {
+	DaggerObject
+}
+
+
 type gqlExtendedError struct {
 	inner *gqlerror.Error
 }
