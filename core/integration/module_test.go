@@ -3309,7 +3309,7 @@ import (
 type Leaker struct {}
 
 func (l *Leaker) Leak(ctx context.Context, target string) string {
-	secret, _ := dag.LoadSecretFromID(dagger.SecretID(target)).Plaintext(ctx)
+	secret, _ := dag.LoadSecretFromID(dagger.ID(target)).Plaintext(ctx)
 	return secret
 }
 `,
@@ -4895,7 +4895,7 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+	return dag.LoadDirectoryFromID(dagger.ID(directoryIDRes.Dep.GetSource.ID)), nil
 }
 
 func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
@@ -4924,7 +4924,7 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetRelSource.ID)), nil
+	return dag.LoadDirectoryFromID(dagger.ID(directoryIDRes.Dep.GetRelSource.ID)), nil
 }
 			`,
 			)

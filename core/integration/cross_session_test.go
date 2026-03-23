@@ -771,7 +771,7 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		res1, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn struct {
-					ID dagger.ContainerID
+					ID dagger.ID
 				}
 			}
 		}](c1, t, `{test{fn(secret:"`+string(secretID1)+`"){id}}}`, nil)
@@ -794,7 +794,7 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		res2, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn struct {
-					ID dagger.ContainerID
+					ID dagger.ID
 				}
 			}
 		}](c2, t, `{test{fn(secret:"`+string(secretID2)+`"){id}}}`, nil)
@@ -1960,6 +1960,6 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 	cleanup1()
 	require.NoError(t, c1.Close())
 
-	_, err = c2.LoadGitRefFromID(dagger.GitRefID(ref2ID)).Tree().Sync(ctx)
+	_, err = c2.LoadGitRefFromID(dagger.ID(ref2ID)).Tree().Sync(ctx)
 	require.NoError(t, err)
 }
