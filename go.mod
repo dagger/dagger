@@ -62,6 +62,7 @@ require (
 	github.com/containernetworking/plugins v1.8.0
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/creack/pty v1.1.24
+	github.com/dagger/dagger/internal/testutil/dagger v0.0.0
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/dagger/testctx v0.1.1
 	github.com/dagger/testctx/oteltest v0.1.1
@@ -261,7 +262,6 @@ require (
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
-	github.com/dagger/dagger/internal/testutil/dagger v0.0.0 // indirect
 	github.com/danielgatis/go-ansicode v1.0.7 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
 	github.com/danielgatis/go-utf8 v1.0.0 // indirect

@@ -37,6 +37,7 @@
           "argument": "source",
           "ignore": [
             "bin",
+            ".git",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
@@ -64,6 +65,8 @@
           "argument": "source",
           "ignore": [
             "bin",
+            ".git",
+            ".dagger",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
@@ -77,7 +80,12 @@
             "docs/**",
             "dagql/idtui/viztest/broken/**",
             "modules/evals/**",
-            "**/broken*/**"
+            "**/broken*/**",
+            "core/integration/testdata/checks/hello-with-checks/",
+            "core/integration/testdata/generators/hello-with-generators/",
+            "modules/evaluator/examples/go",
+            "core/integration/testdata/modules/typescript/ifaces",
+            "toolchains/release/testdata/module/"
           ]
         }
       ]
