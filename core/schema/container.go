@@ -941,7 +941,11 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 		ctr.LazyInit = func(ctx context.Context) error {
-			return rootfsDir.LazyState.Evaluate(ctx, "Directory")
+			if err := rootfsDir.LazyState.Evaluate(ctx, "Directory"); err != nil {
+				return err
+			}
+			ctr.LazyInit = nil
+			return nil
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)

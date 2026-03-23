@@ -796,7 +796,7 @@ func (dir *Directory) Subfile(ctx context.Context, parent dagql.ObjectResult[*Di
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return nil, err
 	}
-	stat, err := dir.Stat(ctx, srv, file, false)
+	stat, err := parent.Self().Stat(ctx, srv, file, false)
 	if err != nil {
 		return nil, err
 	}

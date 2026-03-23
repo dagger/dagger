@@ -482,6 +482,11 @@ func prepareMounts(
 		return nil
 	}
 
+	dagCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return materialized, err
+	}
+
 	rootState := &execMountState{
 		Dest:        pb.RootMount,
 		Selector:    "/",
@@ -489,6 +494,11 @@ func prepareMounts(
 		ApplyOutput: rootOutput,
 	}
 	if container.FS != nil && container.FS.self() != nil {
+		if container.FS.isResultBacked() {
+			if err := dagCache.Evaluate(ctx, *container.FS.Result); err != nil {
+				return materialized, fmt.Errorf("evaluate rootfs source: %w", err)
+			}
+		}
 		rootState.Selector = container.FS.self().Dir
 		if rootState.Selector == "" {
 			rootState.Selector = "/"
@@ -528,6 +538,11 @@ func prepareMounts(
 			if ctrMount.DirectorySource.self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil directory source", i)
 			}
+			if ctrMount.DirectorySource.isResultBacked() {
+				if err := dagCache.Evaluate(ctx, *ctrMount.DirectorySource.Result); err != nil {
+					return materialized, fmt.Errorf("evaluate directory source for mount %d: %w", i, err)
+				}
+			}
 			mountState.Selector = ctrMount.DirectorySource.self().Dir
 			ref, err := ctrMount.DirectorySource.self().getSnapshot()
 			if err != nil {
@@ -538,6 +553,11 @@ func prepareMounts(
 		case ctrMount.FileSource != nil:
 			if ctrMount.FileSource.self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil file source", i)
+			}
+			if ctrMount.FileSource.isResultBacked() {
+				if err := dagCache.Evaluate(ctx, *ctrMount.FileSource.Result); err != nil {
+					return materialized, fmt.Errorf("evaluate file source for mount %d: %w", i, err)
+				}
 			}
 			mountState.Selector = ctrMount.FileSource.self().File
 			ref, err := ctrMount.FileSource.self().getSnapshot()
@@ -946,6 +966,7 @@ func (container *Container) WithExec(
 	gateRun := func(ctx context.Context) error {
 		return gate.Evaluate(ctx, "container exec")
 	}
+	inputContainerLazyInit := container.LazyInit
 	container.LazyInit = gateRun
 
 	inputRootFS := container.FS
@@ -1052,21 +1073,9 @@ func (container *Container) WithExec(
 		if err != nil {
 			return fmt.Errorf("failed to get buildkit client: %w", err)
 		}
-		if inputRootFS != nil && inputRootFS.Value != nil && inputRootFS.Value.LazyEvalFunc() != nil {
-			if err := inputRootFS.Value.LazyState.Evaluate(ctx, "Directory"); err != nil {
+		if inputContainerLazyInit != nil {
+			if err := inputContainerLazyInit(ctx); err != nil {
 				return err
-			}
-		}
-		for _, ctrMount := range inputMounts {
-			if ctrMount.DirectorySource != nil && ctrMount.DirectorySource.Value != nil && ctrMount.DirectorySource.Value.LazyEvalFunc() != nil {
-				if err := ctrMount.DirectorySource.Value.LazyState.Evaluate(ctx, "Directory"); err != nil {
-					return err
-				}
-			}
-			if ctrMount.FileSource != nil && ctrMount.FileSource.Value != nil && ctrMount.FileSource.Value.LazyEvalFunc() != nil {
-				if err := ctrMount.FileSource.Value.LazyState.Evaluate(ctx, "File"); err != nil {
-					return err
-				}
 			}
 		}
 		bkSessionGroup := NewSessionGroup(bkClient.ID())
@@ -1254,6 +1263,11 @@ func (container *Container) WithExec(
 			return fmt.Errorf("failed to prepare mounts: %w", err)
 		}
 
+		dagCache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return failPrepare(err)
+		}
+
 		rootState := &execMountState{
 			Dest:        pb.RootMount,
 			Selector:    "/",
@@ -1261,6 +1275,11 @@ func (container *Container) WithExec(
 			ApplyOutput: rootOutputBinding,
 		}
 		if inputRootFS != nil && inputRootFS.self() != nil {
+			if inputRootFS.isResultBacked() {
+				if err := dagCache.Evaluate(ctx, *inputRootFS.Result); err != nil {
+					return failPrepare(fmt.Errorf("evaluate rootfs source: %w", err))
+				}
+			}
 			rootState.Selector = inputRootFS.self().Dir
 			if rootState.Selector == "" {
 				rootState.Selector = "/"
@@ -1297,6 +1316,11 @@ func (container *Container) WithExec(
 				if ctrMount.DirectorySource.self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil directory source", i))
 				}
+				if ctrMount.DirectorySource.isResultBacked() {
+					if err := dagCache.Evaluate(ctx, *ctrMount.DirectorySource.Result); err != nil {
+						return failPrepare(fmt.Errorf("evaluate directory source for mount %d: %w", i, err))
+					}
+				}
 				mountState.Selector = ctrMount.DirectorySource.self().Dir
 				ref, err := ctrMount.DirectorySource.self().getSnapshot()
 				if err != nil {
@@ -1307,6 +1331,11 @@ func (container *Container) WithExec(
 			case ctrMount.FileSource != nil:
 				if ctrMount.FileSource.self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil file source", i))
+				}
+				if ctrMount.FileSource.isResultBacked() {
+					if err := dagCache.Evaluate(ctx, *ctrMount.FileSource.Result); err != nil {
+						return failPrepare(fmt.Errorf("evaluate file source for mount %d: %w", i, err))
+					}
 				}
 				mountState.Selector = ctrMount.FileSource.self().File
 				ref, err := ctrMount.FileSource.self().getSnapshot()
@@ -1717,6 +1746,7 @@ func (container *Container) WithExec(
 			return err
 		}
 
+		container.LazyInit = nil
 		return nil
 	}
 

@@ -19,7 +19,7 @@ func Syncer[T dagql.Typed]() dagql.Field[T] {
 	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], args struct {
 		Recipe bool `default:"false" internal:"true"`
 	}) (res dagql.Result[dagql.ID[T]], _ error) {
-		if selfVal, ok := any(self.Self()).(dagql.HasLazyEvaluation); ok && selfVal.LazyEvalFunc() != nil {
+		if _, ok := any(self.Self()).(dagql.HasLazyEvaluation); ok {
 			cache, err := dagql.EngineCache(ctx)
 			if err != nil {
 				return res, err

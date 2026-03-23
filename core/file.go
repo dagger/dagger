@@ -33,8 +33,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// fjkdlasfjdkl
-
 // File is a content-addressed file.
 type File struct {
 	File     string
