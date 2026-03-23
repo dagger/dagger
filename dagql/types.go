@@ -1307,6 +1307,7 @@ type ObjectResultArray[T Typed] []ObjectResult[T]
 
 var _ Typed = ObjectResultArray[Typed]{}
 var _ Enumerable = ObjectResultArray[Typed]{}
+var _ HasOwnedResults = ObjectResultArray[Typed]{}
 
 func (i ObjectResultArray[T]) Type() *ast.Type {
 	var t T
@@ -1347,6 +1348,31 @@ func (arr ObjectResultArray[T]) NthValue(i int, _ *ResultCall) (AnyResult, error
 	}
 
 	return inst, nil
+}
+
+func (arr ObjectResultArray[T]) AttachOwnedResults(
+	_ context.Context,
+	_ AnyResult,
+	attach func(AnyResult) (AnyResult, error),
+) ([]AnyResult, error) {
+	owned := make([]AnyResult, 0, len(arr))
+	for i, child := range arr {
+		attached, err := attach(child)
+		if err != nil {
+			return nil, err
+		}
+		if attached == nil {
+			arr[i] = ObjectResult[T]{}
+			continue
+		}
+		typed, ok := attached.(ObjectResult[T])
+		if !ok {
+			return nil, fmt.Errorf("attach object result array child %d: unexpected result %T", i, attached)
+		}
+		arr[i] = typed
+		owned = append(owned, typed)
+	}
+	return owned, nil
 }
 
 type enumValue interface {

@@ -3136,6 +3136,123 @@ func TestCacheArrayResultRoundTrip(t *testing.T) {
 	assert.Equal(t, 0, c.Size())
 }
 
+func TestCacheArrayResultsRetainChildResultsAcrossProducerSessionRelease(t *testing.T) {
+	t.Parallel()
+
+	run := func(t *testing.T, field string, arrayType Typed, initParent func(*ResultCall, ObjectResult[*cacheTestObject], ObjectResult[*cacheTestObject]) AnyResult) {
+		t.Helper()
+
+		baseCtx := t.Context()
+		ctxA := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+			ClientID:  field + "-owner-client",
+			SessionID: field + "-owner-session",
+		})
+		ctxB := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+			ClientID:  field + "-consumer-client",
+			SessionID: field + "-consumer-session",
+		})
+
+		cacheIface, err := NewCache(ctxA, "")
+		assert.NilError(t, err)
+		c := cacheIface
+		ctxA = ContextWithCache(ctxA, c)
+		ctxB = ContextWithCache(ctxB, c)
+		srv := cacheTestServer(t, c)
+
+		child1Call := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: field + "-child-1",
+		}
+		child2Call := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: field + "-child-2",
+		}
+		arrayCall := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(arrayType.Type()),
+			Field: field,
+		}
+
+		child1Any, err := c.GetOrInitCall(ctxA, field+"-owner-session", srv, &CallRequest{ResultCall: child1Call}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResult(t, srv, child1Call, 1, nil), nil
+		})
+		assert.NilError(t, err)
+		child1 := child1Any.(ObjectResult[*cacheTestObject])
+		child1Shared := child1.cacheSharedResult()
+		assert.Assert(t, child1Shared != nil)
+		assert.Assert(t, child1Shared.id != 0)
+
+		child2Any, err := c.GetOrInitCall(ctxA, field+"-owner-session", srv, &CallRequest{ResultCall: child2Call}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResult(t, srv, child2Call, 2, nil), nil
+		})
+		assert.NilError(t, err)
+		child2 := child2Any.(ObjectResult[*cacheTestObject])
+
+		parentAny, err := c.GetOrInitCall(ctxA, field+"-owner-session", srv, &CallRequest{ResultCall: arrayCall}, func(context.Context) (AnyResult, error) {
+			return initParent(arrayCall, child1, child2), nil
+		})
+		assert.NilError(t, err)
+		parentShared := parentAny.cacheSharedResult()
+		assert.Assert(t, parentShared != nil)
+		assert.Assert(t, parentShared.id != 0)
+
+		hitAny, err := c.GetOrInitCall(ctxB, field+"-consumer-session", srv, &CallRequest{ResultCall: arrayCall}, func(context.Context) (AnyResult, error) {
+			return nil, fmt.Errorf("unexpected initializer call")
+		})
+		assert.NilError(t, err)
+		assert.Assert(t, hitAny.HitCache())
+
+		enum, ok := hitAny.Unwrap().(Enumerable)
+		assert.Assert(t, ok)
+		firstAny, err := enum.NthValue(1, nil)
+		assert.NilError(t, err)
+		firstChild := firstAny.(ObjectResult[*cacheTestObject])
+		_, err = firstChild.ResultCall()
+		assert.NilError(t, err)
+
+		assert.NilError(t, c.ReleaseSession(ctxA, field+"-owner-session"))
+
+		c.egraphMu.RLock()
+		parentStillLive := c.resultsByID[parentShared.id] != nil
+		childStillLive := c.resultsByID[child1Shared.id] != nil
+		c.egraphMu.RUnlock()
+		assert.Assert(t, parentStillLive)
+		assert.Assert(t, childStillLive)
+
+		childCall, err := firstChild.ResultCall()
+		assert.NilError(t, err)
+		assert.Assert(t, childCall != nil)
+
+		firstID, err := firstChild.ID()
+		assert.NilError(t, err)
+		reloadedAny, err := srv.Load(ctxB, firstID)
+		assert.NilError(t, err)
+		reloaded, ok := reloadedAny.(ObjectResult[*cacheTestObject])
+		assert.Assert(t, ok)
+		assert.Equal(t, 1, reloaded.Self().Value)
+
+		assert.NilError(t, c.ReleaseSession(ctxB, field+"-consumer-session"))
+		assert.Equal(t, 0, c.Size())
+	}
+
+	t.Run("ObjectResultArray", func(t *testing.T) {
+		run(t, "object-array-result", ObjectResultArray[*cacheTestObject]{}, func(arrayCall *ResultCall, child1, child2 ObjectResult[*cacheTestObject]) AnyResult {
+			return cacheTestDetachedResult(arrayCall, ObjectResultArray[*cacheTestObject]{child1, child2})
+		})
+	})
+
+	t.Run("DynamicResultArrayOutput", func(t *testing.T) {
+		run(t, "dynamic-result-array", DynamicResultArrayOutput{Elem: &cacheTestObject{}}, func(arrayCall *ResultCall, child1, child2 ObjectResult[*cacheTestObject]) AnyResult {
+			return cacheTestDetachedResult(arrayCall, DynamicResultArrayOutput{
+				Elem:   &cacheTestObject{},
+				Values: []AnyResult{child1, child2},
+			})
+		})
+	})
+}
+
 func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())

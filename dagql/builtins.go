@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -140,16 +141,12 @@ func (d DynamicArrayOutput) SetField(val reflect.Value) error {
 }
 
 type DynamicResultArrayOutput struct {
-	// TODO: Implement HasOwnedResults here so list-valued results retain any
-	// attached child results they contain. Today explicit owned-result retention
-	// covers objects like ModuleObject/Directory/File/Container, but a function
-	// result that is just a DynamicResultArrayOutput of attached results does not
-	// recurse through this wrapper to add parent->child cache deps.
 	Elem   Typed
 	Values []AnyResult
 }
 
 var _ Typed = DynamicResultArrayOutput{}
+var _ HasOwnedResults = DynamicResultArrayOutput{}
 
 func (d DynamicResultArrayOutput) Type() *ast.Type {
 	return &ast.Type{
@@ -184,6 +181,28 @@ func (d DynamicResultArrayOutput) NthValue(i int, _ *ResultCall) (AnyResult, err
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return d.Values[i-1], nil
+}
+
+func (d DynamicResultArrayOutput) AttachOwnedResults(
+	_ context.Context,
+	_ AnyResult,
+	attach func(AnyResult) (AnyResult, error),
+) ([]AnyResult, error) {
+	owned := make([]AnyResult, 0, len(d.Values))
+	for i, child := range d.Values {
+		if child == nil {
+			continue
+		}
+		attached, err := attach(child)
+		if err != nil {
+			return nil, err
+		}
+		d.Values[i] = attached
+		if attached != nil {
+			owned = append(owned, attached)
+		}
+	}
+	return owned, nil
 }
 
 func (d DynamicResultArrayOutput) MarshalJSON() ([]byte, error) {
