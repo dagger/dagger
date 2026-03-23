@@ -341,8 +341,12 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, includ
 		m.MainObject = rootType
 	}
 
+	// When entrypoint proxying is active, the module's named constructor is
+	// not on Query — its methods are promoted directly and constructor args
+	// go through Query.with. Treat Query as the main object, same as
+	// initializeWorkspace does for `dagger call`.
 	if m.Name != "" && m.MainObject == nil {
-		return fmt.Errorf("main object not found, check that your module's name and main object match")
+		m.MainObject = rootType
 	}
 
 	return nil

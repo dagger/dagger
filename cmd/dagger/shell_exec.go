@@ -391,6 +391,12 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 	if md, _ := h.GetModuleDef(st); md != nil {
 		// Command is a function in current context
 		if h.isCurrentContextFunction(cmd) {
+			// When entrypoint proxying is active, MainObject is Query
+			// and functions are already on Query — no constructor needed.
+			if md.MainObject.AsObject != nil && md.MainObject.AsObject.Name == "Query" {
+				newSt := h.NewState()
+				return h.functionCall(ctx, &newSt, cmd, args)
+			}
 			// We need to assume a constructor call without arguments
 			st, err := h.constructorCall(ctx, md, st, nil)
 			if err != nil {
