@@ -860,9 +860,9 @@ func (m *Minimal) ReadOptional(
 			`,
 		)
 
-	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	dirID := gjson.Get(out, "withNewFile.id").String()
+	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("func Read(ctx, Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
@@ -1504,7 +1504,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
-			With(daggerQuery(`{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}`)).
+			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -1524,7 +1524,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
 			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
-			With(daggerQuery(`{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}`)).
+			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -1757,9 +1757,9 @@ func (m *Minimal) Bar(dir *dagger.Directory) (*dagger.Directory) {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{id}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{directory{id}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	dirID := gjson.Get(out, "id").String()
+	dirID := gjson.Get(out, "directory.id").String()
 
 	out, err = modGen.With(daggerQuery(`{foo(dir: "%s"){file(path: "foo"){contents}}}`, dirID)).Stdout(ctx)
 	require.NoError(t, err)
