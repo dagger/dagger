@@ -4,10 +4,9 @@ query ModuleSourceDependencies($source: ModuleSourceID!) {
     engineVersion
     dependencies {
       kind
-      moduleName
+      moduleOriginalName
       pin
       asString
-      sourceRootSubpath
     }
   }
 }
