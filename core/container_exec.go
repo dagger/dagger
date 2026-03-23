@@ -1262,6 +1262,26 @@ func (container *Container) WithExec(
 			_ = releaseOutputRefs()
 			return fmt.Errorf("failed to prepare mounts: %w", err)
 		}
+		retryBareDirectorySnapshot := func(dir *Directory) (bkcache.ImmutableRef, error) {
+			ref, err := dir.getSnapshot()
+			if err != nil && dir.LazyInit != nil {
+				if evalErr := dir.LazyState.Evaluate(ctx, "Directory"); evalErr != nil {
+					return nil, evalErr
+				}
+				ref, err = dir.getSnapshot()
+			}
+			return ref, err
+		}
+		retryBareFileSnapshot := func(file *File) (bkcache.ImmutableRef, error) {
+			ref, err := file.getSnapshot()
+			if err != nil && file.LazyInit != nil {
+				if evalErr := file.LazyState.Evaluate(ctx, "File"); evalErr != nil {
+					return nil, evalErr
+				}
+				ref, err = file.getSnapshot()
+			}
+			return ref, err
+		}
 
 		dagCache, err := dagql.EngineCache(ctx)
 		if err != nil {
@@ -1284,7 +1304,7 @@ func (container *Container) WithExec(
 			if rootState.Selector == "" {
 				rootState.Selector = "/"
 			}
-			ref, err := inputRootFS.self().getSnapshot()
+			ref, err := retryBareDirectorySnapshot(inputRootFS.self())
 			if err != nil {
 				return failPrepare(fmt.Errorf("failed to get rootfs snapshot: %w", err))
 			}
@@ -1322,7 +1342,7 @@ func (container *Container) WithExec(
 					}
 				}
 				mountState.Selector = ctrMount.DirectorySource.self().Dir
-				ref, err := ctrMount.DirectorySource.self().getSnapshot()
+				ref, err := retryBareDirectorySnapshot(ctrMount.DirectorySource.self())
 				if err != nil {
 					return failPrepare(fmt.Errorf("failed to get directory snapshot for mount %d: %w", i, err))
 				}
@@ -1338,7 +1358,7 @@ func (container *Container) WithExec(
 					}
 				}
 				mountState.Selector = ctrMount.FileSource.self().File
-				ref, err := ctrMount.FileSource.self().getSnapshot()
+				ref, err := retryBareFileSnapshot(ctrMount.FileSource.self())
 				if err != nil {
 					return failPrepare(fmt.Errorf("failed to get file snapshot for mount %d: %w", i, err))
 				}

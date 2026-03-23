@@ -2146,9 +2146,6 @@ func (c *Cache) getOrInitCall(
 		if val == nil {
 			return nil, nil
 		}
-		if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
-			return nil, fmt.Errorf("do-not-cache result %T cannot be lazy", val.Unwrap())
-		}
 		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 {
 			touchSharedResultLastUsed(shared, time.Now().UnixNano())
 			normalized, err := wrapSharedResultWithResolver(shared, false, resolver)
@@ -2157,6 +2154,9 @@ func (c *Cache) getOrInitCall(
 			}
 			c.trackSessionResult(ctx, sessionID, normalized, false)
 			return normalized, nil
+		}
+		if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
+			return nil, fmt.Errorf("do-not-cache result %T cannot be lazy", val.Unwrap())
 		}
 
 		detached := &sharedResult{

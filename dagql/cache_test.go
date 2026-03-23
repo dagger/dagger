@@ -717,6 +717,42 @@ func TestCacheEvaluate(t *testing.T) {
 		assert.Assert(t, err != nil)
 		assert.ErrorContains(t, err, "cannot be lazy")
 	})
+
+	t.Run("allows already attached lazy result from do-not-cache field", func(t *testing.T) {
+		t.Parallel()
+		ctx, c, srv := newEvalEnv(t)
+
+		lazyFrame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-parent",
+		}
+		attachedLazy, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{
+			ResultCall: lazyFrame,
+		}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, lazyFrame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(context.Context) error {
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "do-not-cache-parent",
+		}
+		res, err := c.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{
+			ResultCall: frame,
+			DoNotCache: true,
+		}, func(context.Context) (AnyResult, error) {
+			return attachedLazy, nil
+		})
+		assert.NilError(t, err)
+		assert.Equal(t, res.cacheSharedResult().id, attachedLazy.cacheSharedResult().id)
+	})
 }
 
 func TestCacheErrors(t *testing.T) {
