@@ -107,6 +107,13 @@ type ExecutionMetadata struct {
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
+
+	HostMounts []HostMount
+}
+
+type HostMount struct {
+	Source string
+	Target string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -174,6 +181,7 @@ func (w *Worker) Run(
 	return nil, w.run(ctx, state,
 		w.setupNetwork,
 		w.injectInit,
+		w.setupVolumes,
 		w.generateBaseSpec,
 		w.filterEnvs,
 		w.setupRootfs,
@@ -524,8 +532,9 @@ func (k procKiller) Kill(ctx context.Context) (err error) {
 	// this timeout is generally a no-op, the Kill ctx should already have a
 	// shorter timeout but here as a fail-safe for future refactoring.
 	ctx, cancel := context.WithCancelCause(ctx)
-	ctx, _ = context.WithTimeoutCause(ctx, 10*time.Second, context.DeadlineExceeded)
+	ctx, timeoutCancel := context.WithTimeoutCause(ctx, 10*time.Second, context.DeadlineExceeded)
 	defer cancel(nil)
+	defer timeoutCancel()
 
 	if k.pidfile == "" {
 		// for `runc run` process we use `runc kill` to terminate the process
@@ -608,24 +617,27 @@ func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, con
 			select {
 			case <-ctx.Done():
 				killCtx, timeout := context.WithCancelCause(context.Background())
-				killCtx, _ = context.WithTimeoutCause(killCtx, 7*time.Second, context.DeadlineExceeded)
+				killCtx, timeoutCancel := context.WithTimeoutCause(killCtx, 7*time.Second, context.DeadlineExceeded)
 				if err := p.killer.Kill(killCtx); err != nil {
 					// If kill fails with "container not running", the container is already dead
 					// Short-circuit to prevent infinite loop
 					if strings.Contains(err.Error(), "container not running") {
 						bklog.G(ctx).Debug("container already dead, stopping kill loop")
 						cancel(context.Cause(ctx))
+						timeoutCancel()
 						timeout(context.Canceled)
 						return
 					}
 					select {
 					case <-killCtx.Done():
 						cancel(context.Cause(ctx))
+						timeoutCancel()
 						timeout(context.Canceled)
 						return
 					default:
 					}
 				}
+				timeoutCancel()
 				timeout(context.Canceled)
 				select {
 				case <-time.After(50 * time.Millisecond):
@@ -675,8 +687,9 @@ func (p *procHandle) WaitForReady(ctx context.Context) error {
 // callback is non-nil it will be called after receiving the pid.
 func (p *procHandle) WaitForStart(ctx context.Context, startedCh <-chan int, started func()) error {
 	ctx, cancel := context.WithCancelCause(ctx)
-	ctx, _ = context.WithTimeoutCause(ctx, 10*time.Second, context.DeadlineExceeded)
+	ctx, timeoutCancel := context.WithTimeoutCause(ctx, 10*time.Second, context.DeadlineExceeded)
 	defer cancel(context.Canceled)
+	defer timeoutCancel()
 	select {
 	case <-ctx.Done():
 		return errors.New("go-runc started message never received")
