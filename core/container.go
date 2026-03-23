@@ -524,17 +524,26 @@ func (container *Container) AttachDependencyResults(
 	}
 
 	owned := make([]dagql.AnyResult, 0, 1+len(container.Mounts))
-	if container.FS != nil && container.FS.isResultBacked() {
-		attached, err := attach(*container.FS.Result)
-		if err != nil {
-			return nil, fmt.Errorf("attach container rootfs: %w", err)
+	if container.FS != nil {
+		switch {
+		case container.FS.isResultBacked():
+			attached, err := attach(*container.FS.Result)
+			if err != nil {
+				return nil, fmt.Errorf("attach container rootfs: %w", err)
+			}
+			typed, ok := attached.(dagql.ObjectResult[*Directory])
+			if !ok {
+				return nil, fmt.Errorf("attach container rootfs: unexpected result %T", attached)
+			}
+			container.FS = newContainerDirectoryResultSource(typed)
+			owned = append(owned, typed)
+		case container.FS.Value != nil:
+			deps, err := container.FS.Value.AttachDependencyResults(ctx, nil, attach)
+			if err != nil {
+				return nil, fmt.Errorf("attach bare container rootfs: %w", err)
+			}
+			owned = append(owned, deps...)
 		}
-		typed, ok := attached.(dagql.ObjectResult[*Directory])
-		if !ok {
-			return nil, fmt.Errorf("attach container rootfs: unexpected result %T", attached)
-		}
-		container.FS = newContainerDirectoryResultSource(typed)
-		owned = append(owned, typed)
 	}
 
 	for i := range container.Mounts {
@@ -551,6 +560,12 @@ func (container *Container) AttachDependencyResults(
 			}
 			mnt.DirectorySource = newContainerDirectoryResultSource(typed)
 			owned = append(owned, typed)
+		case mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil:
+			deps, err := mnt.DirectorySource.Value.AttachDependencyResults(ctx, nil, attach)
+			if err != nil {
+				return nil, fmt.Errorf("attach bare container directory mount %q: %w", mnt.Target, err)
+			}
+			owned = append(owned, deps...)
 		case mnt.FileSource != nil && mnt.FileSource.isResultBacked():
 			attached, err := attach(*mnt.FileSource.Result)
 			if err != nil {
@@ -562,6 +577,12 @@ func (container *Container) AttachDependencyResults(
 			}
 			mnt.FileSource = newContainerFileResultSource(typed)
 			owned = append(owned, typed)
+		case mnt.FileSource != nil && mnt.FileSource.Value != nil:
+			deps, err := mnt.FileSource.Value.AttachDependencyResults(ctx, nil, attach)
+			if err != nil {
+				return nil, fmt.Errorf("attach bare container file mount %q: %w", mnt.Target, err)
+			}
+			owned = append(owned, deps...)
 		case mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil:
 			attached, err := attach(mnt.CacheSource.Volume)
 			if err != nil {
