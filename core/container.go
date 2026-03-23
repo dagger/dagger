@@ -682,21 +682,17 @@ func (container *Container) OnRelease(ctx context.Context) error {
 	var rerr error
 	if container.MetaSnapshot != nil {
 		rerr = stderrors.Join(rerr, container.MetaSnapshot.Release(ctx))
-		container.MetaSnapshot = nil
 	}
 	if container.FS != nil && container.FS.Value != nil {
 		rerr = stderrors.Join(rerr, container.FS.Value.OnRelease(ctx))
-		container.FS.Value = nil
 	}
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
 		if mnt.DirectorySource != nil && mnt.DirectorySource.Value != nil {
 			rerr = stderrors.Join(rerr, mnt.DirectorySource.Value.OnRelease(ctx))
-			mnt.DirectorySource.Value = nil
 		}
 		if mnt.FileSource != nil && mnt.FileSource.Value != nil {
 			rerr = stderrors.Join(rerr, mnt.FileSource.Value.OnRelease(ctx))
-			mnt.FileSource.Value = nil
 		}
 	}
 	return rerr
