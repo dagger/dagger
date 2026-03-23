@@ -213,7 +213,25 @@ func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResu
 	cp.snapshotReady = false
 	cp.snapshotSource = source
 	cp.Snapshot = nil
-	return &cp
+	child := &cp
+	child.LazyInit = func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, source); err != nil {
+			return err
+		}
+		child.snapshotMu.Lock()
+		defer child.snapshotMu.Unlock()
+		if child.snapshotReady {
+			return nil
+		}
+		child.snapshotReady = true
+		child.LazyInit = nil
+		return nil
+	}
+	return child
 }
 
 func cloneBareFileForContainerChild(src *File, source FileSnapshotSource) *File {
@@ -227,7 +245,34 @@ func cloneBareFileForContainerChild(src *File, source FileSnapshotSource) *File 
 	cp.snapshotReady = false
 	cp.snapshotSource = source
 	cp.Snapshot = nil
-	return &cp
+	child := &cp
+	child.LazyInit = func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		switch {
+		case source.File.Self() != nil:
+			if err := cache.Evaluate(ctx, source.File); err != nil {
+				return err
+			}
+		case source.Directory.Self() != nil:
+			if err := cache.Evaluate(ctx, source.Directory); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("file snapshot source is empty")
+		}
+		child.snapshotMu.Lock()
+		defer child.snapshotMu.Unlock()
+		if child.snapshotReady {
+			return nil
+		}
+		child.snapshotReady = true
+		child.LazyInit = nil
+		return nil
+	}
+	return child
 }
 
 func NewContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container]) (*Container, error) {
@@ -258,6 +303,7 @@ func newContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	cp.LazyState = NewLazyState()
+	cp.LazyInit = nil
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dagql server: %w", err)
