@@ -221,10 +221,13 @@ func (file *File) setSnapshotSource(src FileSnapshotSource) error {
 }
 
 func (file *File) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+	if file == nil {
+		return 0, false, nil
+	}
 	file.snapshotMu.RLock()
 	snapshot := file.Snapshot
 	file.snapshotMu.RUnlock()
-	if file == nil || snapshot == nil {
+	if snapshot == nil {
 		return 0, false, nil
 	}
 	size, err := snapshot.Size(ctx)
@@ -235,20 +238,26 @@ func (file *File) CacheUsageSize(ctx context.Context) (int64, bool, error) {
 }
 
 func (file *File) CacheUsageIdentity() (string, bool) {
+	if file == nil {
+		return "", false
+	}
 	file.snapshotMu.RLock()
 	snapshot := file.Snapshot
 	file.snapshotMu.RUnlock()
-	if file == nil || snapshot == nil {
+	if snapshot == nil {
 		return "", false
 	}
 	return snapshot.ID(), true
 }
 
 func (file *File) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if file == nil {
+		return nil
+	}
 	file.snapshotMu.RLock()
 	snapshot := file.Snapshot
 	file.snapshotMu.RUnlock()
-	if file == nil || snapshot == nil {
+	if snapshot == nil {
 		return nil
 	}
 	return []dagql.PersistedSnapshotRefLink{

@@ -204,10 +204,13 @@ func (dir *Directory) setSnapshotSource(src dagql.ObjectResult[*Directory]) erro
 }
 
 func (dir *Directory) CacheUsageSize(ctx context.Context) (int64, bool, error) {
+	if dir == nil {
+		return 0, false, nil
+	}
 	dir.snapshotMu.RLock()
 	snapshot := dir.Snapshot
 	dir.snapshotMu.RUnlock()
-	if dir == nil || snapshot == nil {
+	if snapshot == nil {
 		return 0, false, nil
 	}
 	size, err := snapshot.Size(ctx)
@@ -218,20 +221,26 @@ func (dir *Directory) CacheUsageSize(ctx context.Context) (int64, bool, error) {
 }
 
 func (dir *Directory) CacheUsageIdentity() (string, bool) {
+	if dir == nil {
+		return "", false
+	}
 	dir.snapshotMu.RLock()
 	snapshot := dir.Snapshot
 	dir.snapshotMu.RUnlock()
-	if dir == nil || snapshot == nil {
+	if snapshot == nil {
 		return "", false
 	}
 	return snapshot.ID(), true
 }
 
 func (dir *Directory) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
+	if dir == nil {
+		return nil
+	}
 	dir.snapshotMu.RLock()
 	snapshot := dir.Snapshot
 	dir.snapshotMu.RUnlock()
-	if dir == nil || snapshot == nil {
+	if snapshot == nil {
 		return nil
 	}
 	return []dagql.PersistedSnapshotRefLink{
