@@ -1841,7 +1841,19 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	})
 
 	shared.lazyMu.Lock()
-	if shared.lazyEval == nil || shared.lazyEvalComplete {
+	currentLazyEval := lazyEvalFuncOfResult(res)
+	if currentLazyEval == nil {
+		shared.lazyEval = nil
+		shared.lazyEvalComplete = true
+		shared.lazyMu.Unlock()
+		return nil
+	}
+	if shared.lazyEvalComplete {
+		shared.lazyMu.Unlock()
+		return nil
+	}
+	shared.lazyEval = currentLazyEval
+	if shared.lazyEval == nil {
 		shared.lazyMu.Unlock()
 		return nil
 	}

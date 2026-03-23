@@ -363,39 +363,8 @@ func (container *Container) configureBareSourceLazyInit(parent dagql.ObjectResul
 		if err != nil {
 			return err
 		}
-		evalResults := []dagql.AnyResult{parent}
-		if pendingRootFS != nil {
-			pendingRootFS.snapshotMu.RLock()
-			source := pendingRootFS.snapshotSource
-			pendingRootFS.snapshotMu.RUnlock()
-			if source.Self() != nil {
-				evalResults = append(evalResults, source)
-			}
-		}
-		for _, pending := range pendingDirs {
-			if pending.dir != nil && !pending.dir.snapshotReady {
-				pending.dir.snapshotMu.RLock()
-				source := pending.dir.snapshotSource
-				pending.dir.snapshotMu.RUnlock()
-				if source.Self() != nil {
-					evalResults = append(evalResults, source)
-				}
-			}
-		}
-		for _, pending := range pendingFiles {
-			if pending.file != nil && !pending.file.snapshotReady {
-				pending.file.snapshotMu.RLock()
-				source := pending.file.snapshotSource
-				pending.file.snapshotMu.RUnlock()
-				if source.File.Self() != nil {
-					evalResults = append(evalResults, source.File)
-				}
-			}
-		}
-		if len(evalResults) > 0 {
-			if err := cache.Evaluate(ctx, evalResults...); err != nil {
-				return err
-			}
+		if err := cache.Evaluate(ctx, parent); err != nil {
+			return err
 		}
 		if pendingRootFS != nil && !pendingRootFS.snapshotReady {
 			pendingRootFS.snapshotMu.RLock()

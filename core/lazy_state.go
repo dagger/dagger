@@ -35,8 +35,13 @@ func NewLazyState() LazyState {
 	}
 }
 
-func (lazy LazyState) LazyEvalFunc() dagql.LazyEvalFunc {
-	return lazy.LazyInit
+func (lazy *LazyState) LazyEvalFunc() dagql.LazyEvalFunc {
+	if lazy == nil || lazy.LazyInit == nil {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		return lazy.Evaluate(ctx, "lazy state")
+	}
 }
 
 func (lazy *LazyState) Evaluate(ctx context.Context, typeName string) error {
