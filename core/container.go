@@ -2600,6 +2600,7 @@ func (container *Container) ImageConfig(ctx context.Context) (dockerspec.DockerO
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func(dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig) (*Container, error) {
 	container.Config = updateFn(container.Config)
+	container.ImageRef = ""
 	return container, nil
 }
 
