@@ -18,172 +18,390 @@ type pruneCandidate struct {
 	expiresAtUnix int64
 }
 
+type pruneUsageIdentityState struct {
+	sizeBytes    int64
+	aliveMembers int
+	ownerID      sharedResultID
+}
+
+type pruneSnapshotResult struct {
+	resultID         sharedResultID
+	incomingCount    int64
+	deps             []sharedResultID
+	usageIdentity    string
+	entry            CacheUsageEntry
+	hasPersistedEdge bool
+	expiresAtUnix    int64
+}
+
+type pruneSnapshot struct {
+	results         map[sharedResultID]pruneSnapshotResult
+	usageIdentities map[string]pruneUsageIdentityState
+	usedBytes       int64
+}
+
+type prunePlanEntry struct {
+	candidate    pruneCandidate
+	reclaimBytes int64
+}
+
+type pruneSimulationState struct {
+	remainingIncomingCount    map[sharedResultID]int64
+	aliveCountByUsageIdentity map[string]int
+	sizeBytesByUsageIdentity  map[string]int64
+	collected                 map[sharedResultID]struct{}
+}
+
 func (c *Cache) Prune(ctx context.Context, policies []CachePrunePolicy) (CachePruneReport, error) {
 	report := CachePruneReport{}
 	if len(policies) == 0 {
 		return report, nil
 	}
+
 	now := time.Now()
+	compactedNeeded := false
 	for policyIdx, policy := range policies {
-		reclaimed := int64(0)
-		targetBytes := int64(-1)
-		initialUsedBytes := int64(0)
-		for reclaimed < math.MaxInt64 {
-			c.egraphMu.Lock()
-			c.measureAllResultSizesLocked(ctx)
-			entries := c.usageEntriesLocked()
-			entryByResultID := make(map[sharedResultID]CacheUsageEntry, len(entries))
-			usageOwnerByIdentity := make(map[string]sharedResultID, len(c.resultsByID))
-			resultIDsByUsageIdentity := make(map[string][]sharedResultID, len(c.resultsByID))
-			var usedBytes int64
-			for _, ent := range entries {
-				usedBytes += ent.SizeBytes
-				resultID, ok := cacheUsageEntryResultID(ent.ID)
-				if ok {
-					entryByResultID[resultID] = ent
-				}
-			}
-			for resultID, res := range c.resultsByID {
-				if res == nil {
-					continue
-				}
-				usageIdentity := res.usageIdentity
-				if usageIdentity == "" {
-					usageIdentity = fmt.Sprintf("dagql.result.%d", resultID)
-				}
-				resultIDsByUsageIdentity[usageIdentity] = append(resultIDsByUsageIdentity[usageIdentity], resultID)
-				if ownerID := usageOwnerByIdentity[usageIdentity]; ownerID == 0 || resultID < ownerID {
-					usageOwnerByIdentity[usageIdentity] = resultID
-				}
-			}
+		activeRoots := c.snapshotSessionResultIDs()
+		c.measureAllResultSizes(ctx)
+		snapshot := c.snapshotPruneState(activeRoots)
 
-			if targetBytes < 0 {
-				targetBytes, _ = pruneTargetBytes(policy, usedBytes)
-				initialUsedBytes = usedBytes
-			}
-			if targetBytes <= 0 {
-				c.egraphMu.Unlock()
-				slog.Debug("dagql prune skip policy: no reclaim target",
-					"policyIndex", policyIdx,
-					"usedBytes", initialUsedBytes)
-				break
-			}
-			if reclaimed >= targetBytes {
-				c.egraphMu.Unlock()
-				break
-			}
+		targetBytes, _ := pruneTargetBytes(policy, snapshot.usedBytes)
+		if targetBytes <= 0 {
+			slog.Debug("dagql prune skip policy: no reclaim target",
+				"policyIndex", policyIdx,
+				"usedBytes", snapshot.usedBytes)
+			continue
+		}
 
-			cutoffUnixNano := int64(0)
-			if policy.KeepDuration > 0 {
-				cutoffUnixNano = now.Add(-policy.KeepDuration).UnixNano()
-			}
+		activeClosure := pruneActiveClosure(snapshot, activeRoots)
+		candidates := collectPruneCandidates(snapshot, activeClosure, policy, now)
+		if len(candidates) == 0 {
+			continue
+		}
 
-			activeClosure := c.sessionDependencyClosureLocked()
-			candidates := make([]pruneCandidate, 0, len(c.persistedEdgesByResult))
-			for resultID, edge := range c.persistedEdgesByResult {
-				res := c.resultsByID[resultID]
-				if res == nil {
-					continue
-				}
-				entry, ok := entryByResultID[resultID]
-				if !ok {
-					continue
-				}
-				switch {
-				case resultInActiveClosure(activeClosure, resultID):
-					continue
-				case cutoffUnixNano > 0 && entryRecentlyUsed(entry, cutoffUnixNano) && !persistedEdgeExpired(now, edge):
-					continue
-				case !cachePrunePolicyMatchesEntry(policy, entry):
-					continue
-				}
-				candidates = append(candidates, pruneCandidate{
-					resultID:      resultID,
-					entry:         entry,
-					expiresAtUnix: edge.expiresAtUnix,
-				})
-			}
+		plan, plannedReclaim := buildPrunePlan(snapshot, candidates, targetBytes)
+		if len(plan) == 0 {
+			continue
+		}
 
-			slices.SortFunc(candidates, func(a, b pruneCandidate) int {
-				if aExpired, bExpired := persistedEdgeExpired(now, persistedEdge{expiresAtUnix: a.expiresAtUnix}), persistedEdgeExpired(now, persistedEdge{expiresAtUnix: b.expiresAtUnix}); aExpired != bExpired {
-					if aExpired {
-						return -1
-					}
-					return 1
-				}
-				if a.entry.MostRecentUseTimeUnixNano != b.entry.MostRecentUseTimeUnixNano {
-					if a.entry.MostRecentUseTimeUnixNano < b.entry.MostRecentUseTimeUnixNano {
-						return -1
-					}
-					return 1
-				}
-				if a.entry.CreatedTimeUnixNano != b.entry.CreatedTimeUnixNano {
-					if a.entry.CreatedTimeUnixNano < b.entry.CreatedTimeUnixNano {
-						return -1
-					}
-					return 1
-				}
-				switch {
-				case a.entry.ID < b.entry.ID:
-					return -1
-				case a.entry.ID > b.entry.ID:
-					return 1
-				default:
-					return 0
-				}
-			})
-
-			var (
-				bestCandidate pruneCandidate
-				bestReclaim   int64
-				haveBest      bool
-			)
-			for _, candidate := range candidates {
-				marginalReclaim := c.simulatePersistedEdgeRemovalLocked(candidate.resultID, usageOwnerByIdentity, resultIDsByUsageIdentity)
-				if marginalReclaim == 0 {
-					continue
-				}
-				if !haveBest || marginalReclaim > bestReclaim {
-					bestCandidate = candidate
-					bestReclaim = marginalReclaim
-					haveBest = true
-				}
-			}
-			c.egraphMu.Unlock()
-
-			if !haveBest {
-				break
-			}
-
-			err := c.removePersistedEdge(ctx, bestCandidate.resultID)
+		policyReclaimed := int64(0)
+		policyApplied := 0
+		for _, planEntry := range plan {
+			removed, err := c.removePersistedEdge(ctx, planEntry.candidate.resultID)
 			if err != nil {
 				return report, err
 			}
-
-			selectedEntry := bestCandidate.entry
-			selectedEntry.SizeBytes = bestReclaim
+			if !removed {
+				continue
+			}
+			compactedNeeded = true
+			policyApplied++
+			selectedEntry := planEntry.candidate.entry
+			selectedEntry.SizeBytes = planEntry.reclaimBytes
 			report.Entries = append(report.Entries, selectedEntry)
-			report.ReclaimedBytes += bestReclaim
-			reclaimed += bestReclaim
+			report.ReclaimedBytes += planEntry.reclaimBytes
+			policyReclaimed += planEntry.reclaimBytes
+		}
 
-			slog.Debug("dagql prune selected candidate",
+		if policyApplied > 0 {
+			slog.Debug("dagql prune applied plan",
 				"policyIndex", policyIdx,
-				"entryID", bestCandidate.entry.ID,
-				"reclaimedBytes", bestReclaim,
-				"policyTargetBytes", targetBytes,
-				"policyReclaimedBytes", reclaimed)
+				"plannedCandidates", len(plan),
+				"appliedCandidates", policyApplied,
+				"plannedReclaimedBytes", plannedReclaim,
+				"appliedReclaimedBytes", policyReclaimed,
+				"policyTargetBytes", targetBytes)
 		}
 	}
-	c.egraphMu.Lock()
-	if len(report.Entries) > 0 {
+
+	if compactedNeeded {
+		c.egraphMu.Lock()
 		if compacted, oldSlots, newSlots := c.compactEqClassesLocked(); compacted {
 			slog.Debug("dagql prune compacted eq classes",
 				"oldSlots", oldSlots,
 				"newSlots", newSlots)
 		}
+		c.egraphMu.Unlock()
 	}
-	c.egraphMu.Unlock()
+
 	return report, nil
+}
+
+func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) pruneSnapshot {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+
+	snapshot := pruneSnapshot{
+		results:         make(map[sharedResultID]pruneSnapshotResult, len(c.resultsByID)),
+		usageIdentities: make(map[string]pruneUsageIdentityState),
+	}
+	if len(c.resultsByID) == 0 {
+		return snapshot
+	}
+
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		usageIdentity := res.usageIdentity
+		if usageIdentity == "" {
+			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
+		}
+		identityState := snapshot.usageIdentities[usageIdentity]
+		if identityState.ownerID == 0 || resID < identityState.ownerID {
+			identityState.ownerID = resID
+		}
+		if res.sizeEstimateBytes > identityState.sizeBytes {
+			identityState.sizeBytes = res.sizeEstimateBytes
+		}
+		identityState.aliveMembers++
+		snapshot.usageIdentities[usageIdentity] = identityState
+	}
+
+	for resID, res := range c.resultsByID {
+		if res == nil {
+			continue
+		}
+		usageIdentity := res.usageIdentity
+		if usageIdentity == "" {
+			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
+		}
+		identityState := snapshot.usageIdentities[usageIdentity]
+		sizeBytes := int64(0)
+		if identityState.ownerID == resID && identityState.sizeBytes > 0 {
+			sizeBytes = identityState.sizeBytes
+		}
+
+		state := res.loadPayloadState()
+		createdAt := state.createdAtUnixNano
+		lastUsedAt := state.lastUsedAtUnixNano
+		if createdAt == 0 {
+			createdAt = lastUsedAt
+		}
+		if lastUsedAt == 0 {
+			lastUsedAt = createdAt
+		}
+		recordType := res.recordType
+		if recordType == "" {
+			recordType = "dagql.unknown"
+		}
+		description := res.description
+		if description == "" {
+			description = fmt.Sprintf("dagql cache result %d", resID)
+		}
+		_, activelyUsed := activeRoots[resID]
+
+		deps := make([]sharedResultID, 0, len(res.deps))
+		for depID := range res.deps {
+			deps = append(deps, depID)
+		}
+		slices.Sort(deps)
+
+		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
+		snapshot.results[resID] = pruneSnapshotResult{
+			resultID:      resID,
+			incomingCount: res.incomingOwnershipCount,
+			deps:          deps,
+			usageIdentity: usageIdentity,
+			entry: CacheUsageEntry{
+				ID:                        fmt.Sprintf("dagql.result.%d", resID),
+				Description:               description,
+				RecordType:                recordType,
+				SizeBytes:                 sizeBytes,
+				CreatedTimeUnixNano:       createdAt,
+				MostRecentUseTimeUnixNano: lastUsedAt,
+				ActivelyUsed:              activelyUsed,
+			},
+			hasPersistedEdge: hasPersistedEdge,
+			expiresAtUnix:    edge.expiresAtUnix,
+		}
+		snapshot.usedBytes += sizeBytes
+	}
+
+	return snapshot
+}
+
+func pruneActiveClosure(snapshot pruneSnapshot, activeRoots map[sharedResultID]struct{}) map[sharedResultID]struct{} {
+	if len(activeRoots) == 0 {
+		return nil
+	}
+	closure := make(map[sharedResultID]struct{}, len(activeRoots))
+	stack := make([]sharedResultID, 0, len(activeRoots))
+	for resultID := range activeRoots {
+		stack = append(stack, resultID)
+	}
+
+	for len(stack) > 0 {
+		n := len(stack) - 1
+		curID := stack[n]
+		stack = stack[:n]
+		if _, seen := closure[curID]; seen {
+			continue
+		}
+		closure[curID] = struct{}{}
+		cur, ok := snapshot.results[curID]
+		if !ok {
+			continue
+		}
+		stack = append(stack, cur.deps...)
+	}
+
+	return closure
+}
+
+func collectPruneCandidates(snapshot pruneSnapshot, activeClosure map[sharedResultID]struct{}, policy CachePrunePolicy, now time.Time) []pruneCandidate {
+	cutoffUnixNano := int64(0)
+	if policy.KeepDuration > 0 {
+		cutoffUnixNano = now.Add(-policy.KeepDuration).UnixNano()
+	}
+
+	candidates := make([]pruneCandidate, 0, len(snapshot.results))
+	for resultID, res := range snapshot.results {
+		if !res.hasPersistedEdge {
+			continue
+		}
+		switch {
+		case resultInActiveClosure(activeClosure, resultID):
+			continue
+		case cutoffUnixNano > 0 && entryRecentlyUsed(res.entry, cutoffUnixNano) && !persistedEdgeExpired(now, persistedEdge{expiresAtUnix: res.expiresAtUnix}):
+			continue
+		case !cachePrunePolicyMatchesEntry(policy, res.entry):
+			continue
+		}
+		candidates = append(candidates, pruneCandidate{
+			resultID:      resultID,
+			entry:         res.entry,
+			expiresAtUnix: res.expiresAtUnix,
+		})
+	}
+
+	slices.SortFunc(candidates, func(a, b pruneCandidate) int {
+		if aExpired, bExpired := persistedEdgeExpired(now, persistedEdge{expiresAtUnix: a.expiresAtUnix}), persistedEdgeExpired(now, persistedEdge{expiresAtUnix: b.expiresAtUnix}); aExpired != bExpired {
+			if aExpired {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.MostRecentUseTimeUnixNano != b.entry.MostRecentUseTimeUnixNano {
+			if a.entry.MostRecentUseTimeUnixNano < b.entry.MostRecentUseTimeUnixNano {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.CreatedTimeUnixNano != b.entry.CreatedTimeUnixNano {
+			if a.entry.CreatedTimeUnixNano < b.entry.CreatedTimeUnixNano {
+				return -1
+			}
+			return 1
+		}
+		if a.entry.SizeBytes != b.entry.SizeBytes {
+			if a.entry.SizeBytes > b.entry.SizeBytes {
+				return -1
+			}
+			return 1
+		}
+		switch {
+		case a.entry.ID < b.entry.ID:
+			return -1
+		case a.entry.ID > b.entry.ID:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	return candidates
+}
+
+func buildPrunePlan(snapshot pruneSnapshot, candidates []pruneCandidate, targetBytes int64) ([]prunePlanEntry, int64) {
+	if len(candidates) == 0 {
+		return nil, 0
+	}
+	sim := newPruneSimulationState(snapshot)
+	plan := make([]prunePlanEntry, 0, len(candidates))
+	var reclaimed int64
+	for _, candidate := range candidates {
+		immediateReclaim := sim.applyCandidate(snapshot, candidate.resultID)
+		plan = append(plan, prunePlanEntry{
+			candidate:    candidate,
+			reclaimBytes: immediateReclaim,
+		})
+		reclaimed += immediateReclaim
+		if reclaimed >= targetBytes {
+			break
+		}
+	}
+	return plan, reclaimed
+}
+
+func newPruneSimulationState(snapshot pruneSnapshot) pruneSimulationState {
+	state := pruneSimulationState{
+		remainingIncomingCount:    make(map[sharedResultID]int64, len(snapshot.results)),
+		aliveCountByUsageIdentity: make(map[string]int, len(snapshot.usageIdentities)),
+		sizeBytesByUsageIdentity:  make(map[string]int64, len(snapshot.usageIdentities)),
+		collected:                 make(map[sharedResultID]struct{}),
+	}
+	for resultID, res := range snapshot.results {
+		state.remainingIncomingCount[resultID] = res.incomingCount
+	}
+	for identity, identityState := range snapshot.usageIdentities {
+		state.aliveCountByUsageIdentity[identity] = identityState.aliveMembers
+		state.sizeBytesByUsageIdentity[identity] = identityState.sizeBytes
+	}
+	return state
+}
+
+func (s *pruneSimulationState) applyCandidate(snapshot pruneSnapshot, resultID sharedResultID) int64 {
+	curCount, ok := s.remainingIncomingCount[resultID]
+	if !ok {
+		return 0
+	}
+	s.remainingIncomingCount[resultID] = curCount - 1
+
+	queue := make([]sharedResultID, 0, 1)
+	if curCount-1 == 0 {
+		queue = append(queue, resultID)
+	}
+
+	var reclaimed int64
+	for len(queue) > 0 {
+		curID := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+
+		if _, seen := s.collected[curID]; seen {
+			continue
+		}
+		if s.remainingIncomingCount[curID] != 0 {
+			continue
+		}
+		s.collected[curID] = struct{}{}
+
+		cur, ok := snapshot.results[curID]
+		if !ok {
+			continue
+		}
+		if cur.usageIdentity != "" {
+			alive := s.aliveCountByUsageIdentity[cur.usageIdentity] - 1
+			s.aliveCountByUsageIdentity[cur.usageIdentity] = alive
+			if alive == 0 {
+				reclaimed += s.sizeBytesByUsageIdentity[cur.usageIdentity]
+			}
+		}
+
+		for _, depID := range cur.deps {
+			depCount, ok := s.remainingIncomingCount[depID]
+			if !ok {
+				continue
+			}
+			depCount--
+			s.remainingIncomingCount[depID] = depCount
+			if depCount == 0 {
+				queue = append(queue, depID)
+			}
+		}
+	}
+
+	return reclaimed
 }
 
 func resultInActiveClosure(activeClosure map[sharedResultID]struct{}, resultID sharedResultID) bool {
@@ -204,89 +422,6 @@ func entryRecentlyUsed(entry CacheUsageEntry, cutoffUnixNano int64) bool {
 		mostRecentUse = entry.CreatedTimeUnixNano
 	}
 	return mostRecentUse >= cutoffUnixNano
-}
-
-func (c *Cache) simulatePersistedEdgeRemovalLocked(
-	resultID sharedResultID,
-	usageOwnerByIdentity map[string]sharedResultID,
-	resultIDsByUsageIdentity map[string][]sharedResultID,
-) int64 {
-	res := c.resultsByID[resultID]
-	if res == nil {
-		return 0
-	}
-
-	simulatedCounts := map[sharedResultID]int64{
-		resultID: res.incomingOwnershipCount - 1,
-	}
-	queue := make([]sharedResultID, 0, 1)
-	if simulatedCounts[resultID] == 0 {
-		queue = append(queue, resultID)
-	}
-
-	collected := make(map[sharedResultID]struct{})
-	for len(queue) > 0 {
-		curID := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-
-		if _, seen := collected[curID]; seen {
-			continue
-		}
-		cur := c.resultsByID[curID]
-		if cur == nil {
-			continue
-		}
-		curCount, ok := simulatedCounts[curID]
-		if !ok {
-			curCount = cur.incomingOwnershipCount
-		}
-		if curCount != 0 {
-			continue
-		}
-		collected[curID] = struct{}{}
-
-		for depID := range cur.deps {
-			dep := c.resultsByID[depID]
-			if dep == nil {
-				continue
-			}
-			depCount, ok := simulatedCounts[depID]
-			if !ok {
-				depCount = dep.incomingOwnershipCount
-			}
-			depCount--
-			simulatedCounts[depID] = depCount
-			if depCount == 0 {
-				queue = append(queue, depID)
-			}
-		}
-	}
-
-	var reclaimed int64
-	for usageIdentity, ownerID := range usageOwnerByIdentity {
-		if _, collectedOwner := collected[ownerID]; !collectedOwner {
-			continue
-		}
-		allCollected := true
-		for _, id := range resultIDsByUsageIdentity[usageIdentity] {
-			if _, collectedID := collected[id]; !collectedID {
-				allCollected = false
-				break
-			}
-		}
-		if !allCollected {
-			continue
-		}
-		owner := c.resultsByID[ownerID]
-		if owner == nil {
-			continue
-		}
-		if owner.sizeEstimateBytes > 0 {
-			reclaimed += owner.sizeEstimateBytes
-		}
-	}
-
-	return reclaimed
 }
 
 func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {
@@ -310,8 +445,6 @@ func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {
 	}
 	if policy.MaxUsedSpace > 0 && usedBytes > policy.MaxUsedSpace {
 		thresholdTriggered = true
-		// reservedSpace is a hard floor; never drive used bytes below it when
-		// pruning against maxUsedSpace.
 		addKeepTarget(max(policy.MaxUsedSpace, policy.ReservedSpace))
 	}
 	if policy.ReservedSpace > 0 && usedBytes > policy.ReservedSpace {
@@ -326,8 +459,6 @@ func pruneTargetBytes(policy CachePrunePolicy, usedBytes int64) (int64, bool) {
 		target = max(target, usedBytes-keepTargetBytes)
 	}
 	if thresholdTriggered && policy.TargetSpace > 0 && usedBytes > policy.TargetSpace {
-		// targetSpace is a sweep target applied once pruning is triggered. It is
-		// still bounded by reservedSpace floor.
 		target = max(target, usedBytes-max(policy.TargetSpace, policy.ReservedSpace))
 	}
 	if !thresholdTriggered && !thresholdConfigured && (policy.All || len(policy.Filters) > 0) {
@@ -374,22 +505,6 @@ func cachePrunePolicyMatchesEntry(policy CachePrunePolicy, entry CacheUsageEntry
 		}
 	}
 	return true
-}
-
-func cacheUsageEntryResultID(entryID string) (sharedResultID, bool) {
-	const prefix = "dagql.result."
-	if !strings.HasPrefix(entryID, prefix) {
-		return 0, false
-	}
-	rawID := strings.TrimPrefix(entryID, prefix)
-	parsed, err := strconv.ParseUint(rawID, 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	if parsed == 0 {
-		return 0, false
-	}
-	return sharedResultID(parsed), true
 }
 
 func max(a, b int64) int64 {

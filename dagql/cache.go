@@ -314,50 +314,22 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	return rerr
 }
 
-func (c *Cache) resultHasSessionEdge(resultID sharedResultID) bool {
-	if c == nil || resultID == 0 {
-		return false
+func (c *Cache) snapshotSessionResultIDs() map[sharedResultID]struct{} {
+	if c == nil {
+		return nil
 	}
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
-	for _, resultIDs := range c.sessionResultIDsBySession {
-		if _, found := resultIDs[resultID]; found {
-			return true
-		}
+	if len(c.sessionResultIDsBySession) == 0 {
+		return nil
 	}
-	return false
-}
-
-func (c *Cache) sessionDependencyClosureLocked() map[sharedResultID]struct{} {
-	closure := make(map[sharedResultID]struct{})
-	stack := make([]sharedResultID, 0)
-
-	c.sessionMu.Lock()
+	roots := make(map[sharedResultID]struct{})
 	for _, resultIDs := range c.sessionResultIDsBySession {
 		for resultID := range resultIDs {
-			stack = append(stack, resultID)
+			roots[resultID] = struct{}{}
 		}
 	}
-	c.sessionMu.Unlock()
-
-	for len(stack) > 0 {
-		n := len(stack) - 1
-		curID := stack[n]
-		stack = stack[:n]
-		if _, seen := closure[curID]; seen {
-			continue
-		}
-		closure[curID] = struct{}{}
-		cur := c.resultsByID[curID]
-		if cur == nil {
-			continue
-		}
-		for depID := range cur.deps {
-			stack = append(stack, depID)
-		}
-	}
-
-	return closure
+	return roots
 }
 
 func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult, expiresAtUnix int64) {
@@ -383,9 +355,9 @@ func (c *Cache) upsertPersistedEdgeLocked(ctx context.Context, res *sharedResult
 	c.persistedEdgesByResult[res.id] = edge
 }
 
-func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) error {
+func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID) (bool, error) {
 	if c == nil || resultID == 0 {
-		return nil
+		return false, nil
 	}
 
 	var (
@@ -397,7 +369,7 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	c.egraphMu.Lock()
 	if _, found := c.persistedEdgesByResult[resultID]; !found {
 		c.egraphMu.Unlock()
-		return nil
+		return false, nil
 	}
 	delete(c.persistedEdgesByResult, resultID)
 	res = c.resultsByID[resultID]
@@ -411,7 +383,7 @@ func (c *Cache) removePersistedEdge(ctx context.Context, resultID sharedResultID
 	rerr = errors.Join(rerr, collectErr)
 	c.egraphMu.Unlock()
 
-	return errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
+	return true, errors.Join(rerr, runOnReleaseFuncs(ctx, onReleases))
 }
 
 func (c *Cache) incrementIncomingOwnershipLocked(ctx context.Context, res *sharedResult) {
@@ -1959,14 +1931,14 @@ func (c *Cache) EntryStats() CacheEntryStats {
 }
 
 func (c *Cache) UsageEntriesAll(ctx context.Context) []CacheUsageEntry {
-	c.egraphMu.Lock()
-	defer c.egraphMu.Unlock()
-
-	c.measureAllResultSizesLocked(ctx)
-	return c.usageEntriesLocked()
+	activeRoots := c.snapshotSessionResultIDs()
+	c.measureAllResultSizes(ctx)
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	return c.usageEntriesLocked(activeRoots)
 }
 
-func (c *Cache) usageEntriesLocked() []CacheUsageEntry {
+func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []CacheUsageEntry {
 	// Snapshot-identity dedupe accounting: a single physical snapshot can be
 	// referenced by multiple logical results. We deterministically assign bytes
 	// to one owner (smallest sharedResultID) and report zero for siblings.
@@ -1989,6 +1961,7 @@ func (c *Cache) usageEntriesLocked() []CacheUsageEntry {
 		if res == nil {
 			continue
 		}
+		_, activelyUsed := activeRoots[resID]
 		state := res.loadPayloadState()
 		createdAt := state.createdAtUnixNano
 		lastUsedAt := state.lastUsedAtUnixNano
@@ -2020,7 +1993,7 @@ func (c *Cache) usageEntriesLocked() []CacheUsageEntry {
 			SizeBytes:                 sizeBytes,
 			CreatedTimeUnixNano:       createdAt,
 			MostRecentUseTimeUnixNano: lastUsedAt,
-			ActivelyUsed:              c.resultHasSessionEdge(resID),
+			ActivelyUsed:              activelyUsed,
 		})
 	}
 
@@ -2037,68 +2010,166 @@ func (c *Cache) usageEntriesLocked() []CacheUsageEntry {
 	return entries
 }
 
-func (c *Cache) measureAllResultSizesLocked(ctx context.Context) {
-	candidatesByIdentity := make(map[string][]sharedResultID)
+type cacheUsageMeasurementInput struct {
+	resultID          sharedResultID
+	self              Typed
+	existingIdentity  string
+	existingSizeBytes int64
+}
+
+type cacheUsageMeasurementRecord struct {
+	resultID          sharedResultID
+	self              Typed
+	existingSizeBytes int64
+	sizeMayChange     bool
+}
+
+type cacheUsageMeasurementGroup struct {
+	identity  string
+	resultIDs []sharedResultID
+	sizeBytes int64
+	hasSize   bool
+}
+
+func (c *Cache) measureAllResultSizes(ctx context.Context) {
+	inputs := c.collectUsageMeasurementInputs()
+	if len(inputs) == 0 {
+		return
+	}
+	groups := buildCacheUsageMeasurementGroups(ctx, inputs)
+	c.publishUsageMeasurementGroups(groups)
+}
+
+func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
+	c.egraphMu.RLock()
+	defer c.egraphMu.RUnlock()
+	inputs := make([]cacheUsageMeasurementInput, 0, len(c.resultsByID))
 	for resID, res := range c.resultsByID {
 		if res == nil {
 			continue
 		}
-		if res.sizeEstimateBytes != sharedResultSizeUnknown && !cacheUsageSizeMayChange(res) {
+		state := res.loadPayloadState()
+		if !state.hasValue || state.self == nil {
 			continue
 		}
+		inputs = append(inputs, cacheUsageMeasurementInput{
+			resultID:          resID,
+			self:              state.self,
+			existingIdentity:  res.usageIdentity,
+			existingSizeBytes: res.sizeEstimateBytes,
+		})
+	}
+	return inputs
+}
 
-		usageIdentity, ok := cacheUsageIdentity(res)
-		if !ok || usageIdentity == "" {
-			usageIdentity = fmt.Sprintf("dagql.result.%d", resID)
+func buildCacheUsageMeasurementGroups(ctx context.Context, inputs []cacheUsageMeasurementInput) []cacheUsageMeasurementGroup {
+	if len(inputs) == 0 {
+		return nil
+	}
+	recordsByIdentity := make(map[string][]cacheUsageMeasurementRecord)
+	for _, input := range inputs {
+		identity, ok := cacheUsageIdentityFromSelf(input.self)
+		if !ok || identity == "" {
+			identity = input.existingIdentity
 		}
-		res.usageIdentity = usageIdentity
-		candidatesByIdentity[usageIdentity] = append(candidatesByIdentity[usageIdentity], resID)
+		if identity == "" {
+			identity = fmt.Sprintf("dagql.result.%d", input.resultID)
+		}
+		recordsByIdentity[identity] = append(recordsByIdentity[identity], cacheUsageMeasurementRecord{
+			resultID:          input.resultID,
+			self:              input.self,
+			existingSizeBytes: input.existingSizeBytes,
+			sizeMayChange:     cacheUsageSizeMayChangeFromSelf(input.self),
+		})
 	}
 
-	if len(candidatesByIdentity) == 0 {
-		return
-	}
-
-	usageIdentities := make([]string, 0, len(candidatesByIdentity))
-	for usageIdentity := range candidatesByIdentity {
+	usageIdentities := make([]string, 0, len(recordsByIdentity))
+	for usageIdentity := range recordsByIdentity {
 		usageIdentities = append(usageIdentities, usageIdentity)
 	}
 	slices.Sort(usageIdentities)
 
+	groups := make([]cacheUsageMeasurementGroup, 0, len(usageIdentities))
 	for _, usageIdentity := range usageIdentities {
-		candidateIDs := candidatesByIdentity[usageIdentity]
-		if len(candidateIDs) == 0 {
+		records := recordsByIdentity[usageIdentity]
+		if len(records) == 0 {
 			continue
 		}
-		slices.Sort(candidateIDs)
-		ownerID := candidateIDs[0]
-		ownerRes := c.resultsByID[ownerID]
-		if ownerRes == nil {
+		slices.SortFunc(records, func(a, b cacheUsageMeasurementRecord) int {
+			switch {
+			case a.resultID < b.resultID:
+				return -1
+			case a.resultID > b.resultID:
+				return 1
+			default:
+				return 0
+			}
+		})
+		group := cacheUsageMeasurementGroup{
+			identity:  usageIdentity,
+			resultIDs: make([]sharedResultID, 0, len(records)),
+		}
+		needsFreshSize := false
+		for _, record := range records {
+			group.resultIDs = append(group.resultIDs, record.resultID)
+			if record.existingSizeBytes == sharedResultSizeUnknown || record.sizeMayChange {
+				needsFreshSize = true
+			}
+		}
+
+		if !needsFreshSize {
+			for _, record := range records {
+				if record.existingSizeBytes != sharedResultSizeUnknown {
+					group.sizeBytes = record.existingSizeBytes
+					group.hasSize = true
+					break
+				}
+			}
+			groups = append(groups, group)
 			continue
 		}
 
-		sizeBytes, ok, err := cacheUsageSizeBytes(ctx, ownerRes)
-		if err != nil {
-			slog.Warn("failed to determine cache usage size",
-				"resultID", ownerID,
-				"usageIdentity", usageIdentity,
-				"err", err)
-			continue
-		}
-		if !ok {
-			continue
-		}
-		if sizeBytes < 0 {
-			sizeBytes = 0
-		}
-
-		for _, candidateID := range candidateIDs {
-			candidateRes := c.resultsByID[candidateID]
-			if candidateRes == nil {
+		for _, record := range records {
+			sizeBytes, ok, err := cacheUsageSizeBytesFromSelf(ctx, record.self)
+			if err != nil {
+				slog.Warn("failed to determine cache usage size",
+					"resultID", record.resultID,
+					"usageIdentity", usageIdentity,
+					"err", err)
+				break
+			}
+			if !ok {
 				continue
 			}
-			candidateRes.usageIdentity = usageIdentity
-			candidateRes.sizeEstimateBytes = sizeBytes
+			if sizeBytes < 0 {
+				sizeBytes = 0
+			}
+			group.sizeBytes = sizeBytes
+			group.hasSize = true
+			break
+		}
+		groups = append(groups, group)
+	}
+
+	return groups
+}
+
+func (c *Cache) publishUsageMeasurementGroups(groups []cacheUsageMeasurementGroup) {
+	if len(groups) == 0 {
+		return
+	}
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	for _, group := range groups {
+		for _, resultID := range group.resultIDs {
+			res := c.resultsByID[resultID]
+			if res == nil {
+				continue
+			}
+			res.usageIdentity = group.identity
+			if group.hasSize {
+				res.sizeEstimateBytes = group.sizeBytes
+			}
 		}
 	}
 }
@@ -2807,16 +2878,34 @@ func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix i
 	}
 }
 
+func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed) (int64, bool, error) {
+	if self == nil {
+		return 0, false, nil
+	}
+	sizer, ok := any(self).(cacheUsageSizer)
+	if !ok {
+		return 0, false, nil
+	}
+	return sizer.CacheUsageSize(ctx)
+}
+
 func cacheUsageSizeBytes(ctx context.Context, res *sharedResult) (int64, bool, error) {
 	state := res.loadPayloadState()
 	if res == nil || !state.hasValue || state.self == nil {
 		return 0, false, nil
 	}
-	sizer, ok := any(state.self).(cacheUsageSizer)
-	if !ok {
-		return 0, false, nil
+	return cacheUsageSizeBytesFromSelf(ctx, state.self)
+}
+
+func cacheUsageIdentityFromSelf(self Typed) (string, bool) {
+	if self == nil {
+		return "", false
 	}
-	return sizer.CacheUsageSize(ctx)
+	identityer, ok := any(self).(hasCacheUsageIdentity)
+	if !ok {
+		return "", false
+	}
+	return identityer.CacheUsageIdentity()
 }
 
 func cacheUsageIdentity(res *sharedResult) (string, bool) {
@@ -2824,11 +2913,18 @@ func cacheUsageIdentity(res *sharedResult) (string, bool) {
 	if res == nil || !state.hasValue || state.self == nil {
 		return "", false
 	}
-	identityer, ok := any(state.self).(hasCacheUsageIdentity)
-	if !ok {
-		return "", false
+	return cacheUsageIdentityFromSelf(state.self)
+}
+
+func cacheUsageSizeMayChangeFromSelf(self Typed) bool {
+	if self == nil {
+		return false
 	}
-	return identityer.CacheUsageIdentity()
+	mutableSizer, ok := any(self).(cacheUsageMayChange)
+	if !ok {
+		return false
+	}
+	return mutableSizer.CacheUsageMayChange()
 }
 
 func cacheUsageSizeMayChange(res *sharedResult) bool {
@@ -2836,9 +2932,5 @@ func cacheUsageSizeMayChange(res *sharedResult) bool {
 	if res == nil || !state.hasValue || state.self == nil {
 		return false
 	}
-	mutableSizer, ok := any(state.self).(cacheUsageMayChange)
-	if !ok {
-		return false
-	}
-	return mutableSizer.CacheUsageMayChange()
+	return cacheUsageSizeMayChangeFromSelf(state.self)
 }

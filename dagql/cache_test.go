@@ -4137,7 +4137,7 @@ func TestCacheDoNotCacheRejectsOnReleaser(t *testing.T) {
 	assert.ErrorContains(t, err, "cannot implement OnReleaser")
 }
 
-func TestCachePrunePrefersHigherMarginalReclaim(t *testing.T) {
+func TestCachePruneOrderedSimulationKeepsZeroDeltaPrerequisites(t *testing.T) {
 	t.Parallel()
 
 	ctx := cacheTestContext(t.Context())
@@ -4145,57 +4145,57 @@ func TestCachePrunePrefersHigherMarginalReclaim(t *testing.T) {
 	assert.NilError(t, err)
 	c := cacheIface
 
-	childCall := cacheTestIntCall("prune-marginal-child")
-	childRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: childCall}, func(context.Context) (AnyResult, error) {
-		return cacheTestSizedIntResult(childCall, 1, 100, "snapshot://prune-marginal-child", nil), nil
+	baseCall := cacheTestIntCall("prune-ordered-base")
+	baseRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    baseCall,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestSizedIntResult(baseCall, 1, 100, "snapshot://prune-ordered-base", nil), nil
 	})
 	assert.NilError(t, err)
 
-	rootLargeCall := &ResultCall{
-		Kind:     ResultCallKindField,
-		Type:     NewResultCallType(Int(0).Type()),
-		Field:    "prune-marginal-root-large",
-		Receiver: &ResultCallRef{ResultID: uint64(childRes.cacheSharedResult().id)},
-	}
-	rootLargeRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
-		ResultCall:    rootLargeCall,
+	rootACall := cacheTestIntCall("prune-ordered-root-a")
+	rootARes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    rootACall,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestSizedIntResult(cacheTestIntCall("prune-marginal-root-large"), 2, 10, "snapshot://prune-marginal-root-large", nil), nil
+		return cacheTestSizedIntResult(rootACall, 2, 10, "snapshot://prune-ordered-root-a", nil), nil
 	})
 	assert.NilError(t, err)
-	assert.NilError(t, c.AddExplicitDependency(ctx, rootLargeRes, childRes, "test_prune_marginal_reclaim"))
+	assert.NilError(t, c.AddExplicitDependency(ctx, rootARes, baseRes, "test_prune_ordered_root_a"))
 
-	rootSmallCall := cacheTestIntCall("prune-marginal-root-small")
-	rootSmallRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
-		ResultCall:    rootSmallCall,
+	rootBCall := cacheTestIntCall("prune-ordered-root-b")
+	rootBRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    rootBCall,
 		IsPersistable: true,
 	}, func(context.Context) (AnyResult, error) {
-		return cacheTestSizedIntResult(rootSmallCall, 3, 50, "snapshot://prune-marginal-root-small", nil), nil
+		return cacheTestSizedIntResult(rootBCall, 3, 10, "snapshot://prune-ordered-root-b", nil), nil
 	})
 	assert.NilError(t, err)
+	assert.NilError(t, c.AddExplicitDependency(ctx, rootBRes, baseRes, "test_prune_ordered_root_b"))
 
 	cacheTestReleaseSession(t, c, ctx)
 
 	now := time.Now().Add(-2 * time.Hour).UnixNano()
 	c.egraphMu.Lock()
-	rootLargeRes.cacheSharedResult().lastUsedAtUnixNano = now
-	rootLargeRes.cacheSharedResult().createdAtUnixNano = now
-	rootSmallRes.cacheSharedResult().lastUsedAtUnixNano = now
-	rootSmallRes.cacheSharedResult().createdAtUnixNano = now
-	childRes.cacheSharedResult().lastUsedAtUnixNano = now
-	childRes.cacheSharedResult().createdAtUnixNano = now
+	baseRes.cacheSharedResult().lastUsedAtUnixNano = now
+	baseRes.cacheSharedResult().createdAtUnixNano = now
+	rootARes.cacheSharedResult().lastUsedAtUnixNano = now
+	rootARes.cacheSharedResult().createdAtUnixNano = now
+	rootBRes.cacheSharedResult().lastUsedAtUnixNano = now
+	rootBRes.cacheSharedResult().createdAtUnixNano = now
 	c.egraphMu.Unlock()
 
-	report, err := c.Prune(ctx, []CachePrunePolicy{{
-		All:          true,
-		MaxUsedSpace: 120,
-		TargetSpace:  50,
-	}})
+	report, err := c.Prune(ctx, []CachePrunePolicy{{All: true}})
 	assert.NilError(t, err)
-	assert.Equal(t, 1, len(report.Entries))
-	assert.Equal(t, cacheTestSharedResultEntryID(rootLargeRes), report.Entries[0].ID)
-	assert.Equal(t, int64(110), report.ReclaimedBytes)
+	assert.Equal(t, 3, len(report.Entries))
+	assert.Equal(t, cacheTestSharedResultEntryID(baseRes), report.Entries[0].ID)
+	assert.Equal(t, int64(0), report.Entries[0].SizeBytes)
+	assert.Equal(t, cacheTestSharedResultEntryID(rootARes), report.Entries[1].ID)
+	assert.Equal(t, int64(10), report.Entries[1].SizeBytes)
+	assert.Equal(t, cacheTestSharedResultEntryID(rootBRes), report.Entries[2].ID)
+	assert.Equal(t, int64(110), report.Entries[2].SizeBytes)
+	assert.Equal(t, int64(120), report.ReclaimedBytes)
 }
 
 func TestCompactEqClassesSkipsWhenBelowThreshold(t *testing.T) {
