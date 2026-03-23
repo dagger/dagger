@@ -44,7 +44,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=typescript", "child"))
 
 		out, err := modGen.
-			With(daggerQueryAt("child", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQueryAt("child", `{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
@@ -421,7 +421,7 @@ func (TypescriptSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 //go:embed testdata/modules/typescript/minimal/builtin.ts
 var tsSignaturesBuiltin string
 
-func (TypescriptSuite) TestSignaturesBuildinTypes(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -430,32 +430,32 @@ func (TypescriptSuite) TestSignaturesBuildinTypes(ctx context.Context, t *testct
 		With(daggerExec("init", "--name=minimal", "--sdk=typescript")).
 		With(sdkSource("typescript", tsSignaturesBuiltin))
 
-	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	dirID := gjson.Get(out, "withNewFile.id").String()
+	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("async read(dir: Directory): Promise<string>", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{read(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"read":"bar"}`, out)
 	})
 
 	t.Run("async readSlice(dir: Directory[]): Promise<string>", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readSlice(dir: ["%s"])}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
+		require.JSONEq(t, `{"readSlice":"bar"}`, out)
 	})
 
 	t.Run("async readVariadic(...dir: Directory[]): Promise<string>", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readVariadic(dir: ["%s"])}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
+		require.JSONEq(t, `{"readVariadic":"bar"}`, out)
 	})
 
 	t.Run("async readOptional(dir?: Directory): Promise<string>", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readOptional(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
+		require.JSONEq(t, `{"readOptional":"bar"}`, out)
 		out, err = modGen.With(daggerQuery(`{readOptional}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"readOptional":""}`, out)
@@ -1382,7 +1382,7 @@ func (TypescriptSuite) TestModuleSubPathLoading(ctx context.Context, t *testctx.
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			WithWorkdir("/work")
 
-		_, err := modGen.With(daggerQuery(`{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{host{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
 	})
 }
