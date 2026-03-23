@@ -1762,13 +1762,17 @@ main()`, defaultGenDir))
 func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// Install a dependency at a pinned tag, generate the client (which bakes
+	// in that pin), then manually switch dagger.json to @main (a different
+	// commit). The generated client will try to serve the old pin while the
+	// workspace loads the new one — the engine should detect the conflict.
 	moduleSrc := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(daggerNonNestedExec("init")).
-		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+		With(daggerNonNestedExec("install", "github.com/dagger/dagger-test-modules@v1.2.3")).
 		With(withGoSetup(`package main
 
 		import (
@@ -1783,12 +1787,12 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 			ctx := context.Background()
 
 			dag, err := dagger.Connect(ctx)
-      if err != nil {
-			  fmt.Println(err)
+			if err != nil {
+				fmt.Println(err)
 				os.Exit(0)
-      }
+			}
 
-			res, err := dag.Hello().Hello(ctx)
+			res, err := dag.RootMod().Fn(ctx)
 			if err != nil {
 				panic(err)
 			}
@@ -1803,14 +1807,15 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 				WithExec([]string{"go", "mod", "tidy"})
 		}).
 		WithExec([]string{"apk", "add", "jq"}).
-		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
-		// on execute
-		WithExec([]string{"sh", "-c", `sh -c 'cat dagger.json | jq '\''(.dependencies[] | select(.name == "hello") | .source) = "github.com/shykes/hello@main" | (.dependencies[] | select(.name == "hello") | .pin) = "2d789671a44c4d559be506a9bc4b71b0ba6e23c9"'\'' > dagger.tmp && mv dagger.tmp dagger.json'`})
+		// Switch the dependency to @main and clear the pin so the engine
+		// resolves HEAD (a different commit than v1.2.3). The generated
+		// client still has the v1.2.3 pin baked in, causing a mismatch.
+		WithExec([]string{"sh", "-c", `jq '(.dependencies[] | select(.name == "root-mod") | .source) = "github.com/dagger/dagger-test-modules@main" | (.dependencies[] | select(.name == "root-mod") | .pin) = ""' dagger.json > dagger.tmp && mv dagger.tmp dagger.json`})
 
 	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 
 	require.NoError(t, err)
-	require.Contains(t, out, "error serving dependency hello: module hello")
+	require.Contains(t, out, "already exists with different source")
 }
 
 func (ClientGeneratorTest) TestNoGoProjectSetup(ctx context.Context, t *testctx.T) {
