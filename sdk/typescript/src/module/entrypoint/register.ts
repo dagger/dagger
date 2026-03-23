@@ -2,7 +2,7 @@ import {
   dag,
   Function_,
   FunctionWithArgOpts,
-  ModuleID,
+  ID,
   TypeDef,
   TypeDefKind,
   TypeDefWithEnumMemberOpts,
@@ -36,7 +36,7 @@ export class Register {
   /**
    * Register the module in the engine and returns its ID
    */
-  async run(): Promise<ModuleID> {
+  async run(): Promise<ID> {
     // Get a new module that we will fill in with all the types
     let mod = dag.module_()
 
