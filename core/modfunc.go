@@ -828,13 +828,21 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 	}
 
-	ctrOutputDir, err := execCtr.Directory(ctx, ctr, modMetaDirPath)
-	if err != nil {
-		return nil, fmt.Errorf("get function output directory: %w", err)
-	}
-
 	if srv == nil {
 		return nil, fmt.Errorf("failed to get dagql server")
+	}
+	execCtrResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, execCtr)
+	if err != nil {
+		return nil, fmt.Errorf("create function output container result: %w", err)
+	}
+	var ctrOutputDir dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, execCtrResult, &ctrOutputDir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(modMetaDirPath)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
 	var output dagql.String
 	err = srv.Select(ctx, ctrOutputDir, &output,
