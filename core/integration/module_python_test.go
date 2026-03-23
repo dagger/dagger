@@ -88,11 +88,11 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
                     def message(self) -> str:
                         return f"Hello, {self.my_name}!"
             `)).
-			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
+			With(daggerQuery(`{with(myName: "Monde"){message}}`)).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"helloWorld":{"message":"Hello, Monde!"}}`, out)
+		require.JSONEq(t, `{"with":{"message":"Hello, Monde!"}}`, out)
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -1087,68 +1087,68 @@ func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 	}{
 		{
 			name:     "def () -> str",
-			query:    `{test{hello}}`,
-			expected: `{"test":{"hello":"hello"}}`,
+			query:    `{hello}`,
+			expected: `{"hello":"hello"}`,
 		},
 		{
 			name:     "def () -> None",
-			query:    `{test{helloNone}}`,
-			expected: `{"test":{"helloNone":null}}`,
+			query:    `{helloNone}`,
+			expected: `{"helloNone":null}`,
 		},
 		{
 			name:     "def ()",
-			query:    `{test{helloVoid}}`,
-			expected: `{"test":{"helloVoid":null}}`,
+			query:    `{helloVoid}`,
+			expected: `{"helloVoid":null}`,
 		},
 		{
 			name:     "def (str) -> str",
-			query:    `{test{echo(msg:"world")}}`,
-			expected: `{"test":{"echo":"world"}}`,
+			query:    `{echo(msg:"world")}`,
+			expected: `{"echo":"world"}`,
 		},
 		{
 			name:     "def (str = 'hello') -> str",
-			query:    `{test{echoDefault}}`,
-			expected: `{"test":{"echoDefault":"hello"}}`,
+			query:    `{echoDefault}`,
+			expected: `{"echoDefault":"hello"}`,
 		},
 		{
 			name:     "def (str = 'hello') -> str: (bonjour)",
-			query:    `{test{echoDefault(msg:"bonjour")}}`,
-			expected: `{"test":{"echoDefault":"bonjour"}}`,
+			query:    `{echoDefault(msg:"bonjour")}`,
+			expected: `{"echoDefault":"bonjour"}`,
 		},
 		{
 			name:     "def (str | None = None) -> str",
-			query:    `{test{echoOptional}}`,
-			expected: `{"test":{"echoOptional":"hello"}}`,
+			query:    `{echoOptional}`,
+			expected: `{"echoOptional":"hello"}`,
 		},
 		{
 			name:     "def (Optional[str] = None) -> str",
-			query:    `{test{echoOldOptional}}`,
-			expected: `{"test":{"echoOldOptional":"hello"}}`,
+			query:    `{echoOldOptional}`,
+			expected: `{"echoOldOptional":"hello"}`,
 		},
 		{
 			name:     "def (str | None = None) -> str: (bonjour)",
-			query:    `{test{echoOptional(msg:"bonjour")}}`,
-			expected: `{"test":{"echoOptional":"bonjour"}}`,
+			query:    `{echoOptional(msg:"bonjour")}`,
+			expected: `{"echoOptional":"bonjour"}`,
 		},
 		{
 			name:     "sequence abc",
-			query:    `{test{echoSequence(msg:["a", "b", "c"])}}`,
-			expected: `{"test":{"echoSequence":"a+b+c"}}`,
+			query:    `{echoSequence(msg:["a", "b", "c"])}`,
+			expected: `{"echoSequence":"a+b+c"}`,
 		},
 		{
 			name:     "tuple",
-			query:    `{test{echoTuple(msg:["a", "b", "c"])}}`,
-			expected: `{"test":{"echoTuple":"a+b+c"}}`,
+			query:    `{echoTuple(msg:["a", "b", "c"])}`,
+			expected: `{"echoTuple":"a+b+c"}`,
 		},
 		{
 			name:     "list",
-			query:    `{test{echoList(msg:["a", "b", "c"])}}`,
-			expected: `{"test":{"echoList":"a+b+c"}}`,
+			query:    `{echoList(msg:["a", "b", "c"])}`,
+			expected: `{"echoList":"a+b+c"}`,
 		},
 		{
 			name:     "def (str, str, int) -> str",
-			query:    `{test{echoOpts(msg:"hello", suffix:"!", times:3)}}`,
-			expected: `{"test":{"echoOpts":"hello!hello!hello!"}}`,
+			query:    `{echoOpts(msg:"hello", suffix:"!", times:3)}`,
+			expected: `{"echoOpts":"hello!hello!hello!"}`,
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -1181,9 +1181,9 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
                 return "" if dir is None else await dir.file("foo").contents()
     `)
 
-	out, err := modGen.With(daggerQuery(`{withNewFile(path: "foo", contents: "bar"){id}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	dirID := gjson.Get(out, "withNewFile.id").String()
+	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	for _, tc := range []struct {
 		name     string
@@ -1192,23 +1192,23 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
 	}{
 		{
 			name:     "read",
-			query:    fmt.Sprintf(`{test{read(dir: %q)}}`, dirID),
-			expected: `{"test":{"read":"bar"}}`,
+			query:    fmt.Sprintf(`{read(dir: %q)}`, dirID),
+			expected: `{"read":"bar"}`,
 		},
 		{
 			name:     "read list",
-			query:    fmt.Sprintf(`{test{readList(dir: [%q])}}`, dirID),
-			expected: `{"test":{"readList":"bar"}}`,
+			query:    fmt.Sprintf(`{readList(dir: [%q])}`, dirID),
+			expected: `{"readList":"bar"}`,
 		},
 		{
 			name:     "read optional",
-			query:    fmt.Sprintf(`{test{readOptional(dir: %q)}}`, dirID),
-			expected: `{"test":{"readOptional":"bar"}}`,
+			query:    fmt.Sprintf(`{readOptional(dir: %q)}`, dirID),
+			expected: `{"readOptional":"bar"}`,
 		},
 		{
 			name:     "read optional (default)",
-			query:    `{test{readOptional}}`,
-			expected: `{"test":{"readOptional":""}}`,
+			query:    `{readOptional}`,
+			expected: `{"readOptional":""}`,
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
