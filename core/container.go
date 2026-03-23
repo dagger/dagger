@@ -446,7 +446,6 @@ func (container *Container) configureBareSourceLazyInit(parent dagql.ObjectResul
 				pending.file.snapshotMu.Unlock()
 			}
 		}
-		container.LazyInit = nil
 		return nil
 	}
 }
@@ -461,7 +460,6 @@ func (container *Container) setLazyInit(next LazyInitFunc) {
 			if err := next(ctx); err != nil {
 				return err
 			}
-			container.LazyInit = nil
 			return nil
 		}
 		return
@@ -473,7 +471,6 @@ func (container *Container) setLazyInit(next LazyInitFunc) {
 		if err := next(ctx); err != nil {
 			return err
 		}
-		container.LazyInit = nil
 		return nil
 	}
 }
@@ -2946,7 +2943,15 @@ func getVariantRefs(ctx context.Context, variants []*Container) (map[string]buil
 		eg.Go(func() error {
 			fsRef, err := rootFS.getSnapshot()
 			if err != nil {
-				return err
+				if rootFS.LazyInit != nil {
+					if evalErr := rootFS.LazyState.Evaluate(ctx, "Directory"); evalErr != nil {
+						return fmt.Errorf("evaluate variant rootfs for platform %s: %w", platformString, evalErr)
+					}
+					fsRef, err = rootFS.getSnapshot()
+				}
+				if err != nil {
+					return fmt.Errorf("get variant rootfs snapshot for platform %s: %w", platformString, err)
+				}
 			}
 
 			mu.Lock()

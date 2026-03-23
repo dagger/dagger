@@ -973,7 +973,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err := rootfsDir.LazyState.Evaluate(ctx, "Directory"); err != nil {
 				return err
 			}
-			ctr.LazyInit = nil
 			return nil
 		}
 

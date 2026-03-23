@@ -1746,7 +1746,6 @@ func (container *Container) WithExec(
 			return err
 		}
 
-		container.LazyInit = nil
 		return nil
 	}
 
