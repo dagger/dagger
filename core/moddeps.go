@@ -88,6 +88,26 @@ func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes [
 	return schemaJSONFile, nil
 }
 
+// SchemaIntrospectionJSONFileWithEntrypoint builds the schema with the last
+// module installed as an entrypoint (methods promoted to Query, constructor
+// replaced by 'with'). This reflects the external-facing schema that clients
+// see when the module is loaded as a workspace entrypoint.
+func (d *ModDeps) SchemaIntrospectionJSONFileWithEntrypoint(ctx context.Context) (inst dagql.Result[*File], _ error) {
+	mods := make([]modInstall, len(d.Mods))
+	for i, mod := range d.Mods {
+		mods[i] = modInstall{mod: mod}
+	}
+	// The last module is the primary one — install it as entrypoint.
+	if len(mods) > 0 {
+		mods[len(mods)-1].opts.Entrypoint = true
+	}
+	_, schemaJSONFile, err := buildSchema(ctx, d.root, mods, nil)
+	if err != nil {
+		return inst, err
+	}
+	return schemaJSONFile, nil
+}
+
 // The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
 // Some APIs are automatically hidden as they should not be exposed to modules.
 func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {

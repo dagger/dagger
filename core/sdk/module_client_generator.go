@@ -51,7 +51,7 @@ func (sdk *clientGeneratorModule) GenerateClient(
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileWithEntrypoint(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}

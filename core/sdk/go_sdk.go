@@ -81,7 +81,7 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileWithEntrypoint(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
