@@ -43,7 +43,7 @@ func (sdk *dangSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Arra
 func (sdk *dangSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
-	deps *core.ModDeps,
+	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	return inst, fmt.Errorf("dang SDK does not have a client to generate")

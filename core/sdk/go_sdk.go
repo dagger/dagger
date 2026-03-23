@@ -73,17 +73,12 @@ func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[
 func (sdk *goSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.ObjectResult[*core.ModuleSource],
-	deps *core.ModDeps,
+	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
-	}
-
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileWithEntrypoint(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
 	ctr, err := sdk.base(ctx)

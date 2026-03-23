@@ -688,7 +688,7 @@ main()
 					panic(err)
 				}
 
-				res, err := dag.Test().Hello(ctx)
+				res, err := dag.Hello(ctx)
 				if err != nil {
 					panic(err)
 				}
@@ -721,7 +721,7 @@ export class Test {
 
 async function main() {
   await connection(async () => {
-    const res = await dag.test().hello()
+    const res = await dag.hello()
 
     console.log("result:", res)
   })

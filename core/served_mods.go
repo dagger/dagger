@@ -109,6 +109,12 @@ func (s *ServedMods) Schema(ctx context.Context) (*dagql.Server, error) {
 	return srv, err
 }
 
+// SchemaJSONFile returns the introspection JSON file for the schema.
+func (s *ServedMods) SchemaJSONFile(ctx context.Context) (dagql.Result[*File], error) {
+	_, schemaJSONFile, err := s.lazilyLoadSchema(ctx)
+	return schemaJSONFile, err
+}
+
 // Server returns the inner (canonical) server used for ID loading. This server
 // has no entrypoint proxies, so IDs are always evaluated against a clean schema
 // where no proxy can shadow a core field. When no module has Entrypoint set,

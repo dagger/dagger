@@ -2688,6 +2688,14 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
 
+	// Build a ServedMods to produce the client-facing schema. Dependencies
+	// get normal installation; the self module (when present) is installed
+	// as an entrypoint so its methods are promoted to Query.
+	served := core.NewServedMods(query)
+	for _, dep := range deps.Mods {
+		served.Add(dep, core.InstallOpts{})
+	}
+
 	// If the current module source has sources and its SDK implements the `Runtime` interface,
 	// we can transform it into a module to generate self bindings.
 	if srcInst.Self().SDK != nil {
@@ -2701,14 +2709,19 @@ func (s *moduleSourceSchema) runClientGenerator(
 				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
 			}
 
-			deps = mod.Self().Deps.Append(mod.Self())
+			served.Add(mod.Self(), core.InstallOpts{Entrypoint: true})
 		}
+	}
+
+	schemaJSONFile, err := served.SchemaJSONFile(ctx)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
 
 	generatedClientDir, err := clientGeneratorImpl.GenerateClient(
 		ctx,
 		source,
-		deps,
+		schemaJSONFile,
 		clientGeneratorConfig.Directory,
 	)
 	if err != nil {

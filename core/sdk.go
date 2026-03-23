@@ -76,8 +76,8 @@ type ClientGenerator interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 
-		// Current module dependencies.
-		*ModDeps,
+		// Introspection JSON file for the schema visible to the client.
+		dagql.Result[*File],
 
 		// Output directory of the generated client.
 		string,
