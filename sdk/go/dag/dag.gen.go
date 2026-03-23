@@ -213,349 +213,349 @@ func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 }
 
 // Load a Address from its ID.
-func LoadAddressFromID(id dagger.AddressID) *dagger.Address {
+func LoadAddressFromID(id dagger.ID) *dagger.Address {
 	client := initClient()
 	return client.LoadAddressFromID(id)
 }
 
 // Load a Binding from its ID.
-func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
+func LoadBindingFromID(id dagger.ID) *dagger.Binding {
 	client := initClient()
 	return client.LoadBindingFromID(id)
 }
 
 // Load a CacheVolume from its ID.
-func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
+func LoadCacheVolumeFromID(id dagger.ID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
 }
 
 // Load a Changeset from its ID.
-func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
+func LoadChangesetFromID(id dagger.ID) *dagger.Changeset {
 	client := initClient()
 	return client.LoadChangesetFromID(id)
 }
 
 // Load a Check from its ID.
-func LoadCheckFromID(id dagger.CheckID) *dagger.Check {
+func LoadCheckFromID(id dagger.ID) *dagger.Check {
 	client := initClient()
 	return client.LoadCheckFromID(id)
 }
 
 // Load a CheckGroup from its ID.
-func LoadCheckGroupFromID(id dagger.CheckGroupID) *dagger.CheckGroup {
+func LoadCheckGroupFromID(id dagger.ID) *dagger.CheckGroup {
 	client := initClient()
 	return client.LoadCheckGroupFromID(id)
 }
 
 // Load a Cloud from its ID.
-func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
+func LoadCloudFromID(id dagger.ID) *dagger.Cloud {
 	client := initClient()
 	return client.LoadCloudFromID(id)
 }
 
 // Load a Container from its ID.
-func LoadContainerFromID(id dagger.ContainerID) *dagger.Container {
+func LoadContainerFromID(id dagger.ID) *dagger.Container {
 	client := initClient()
 	return client.LoadContainerFromID(id)
 }
 
 // Load a CurrentModule from its ID.
-func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
+func LoadCurrentModuleFromID(id dagger.ID) *dagger.CurrentModule {
 	client := initClient()
 	return client.LoadCurrentModuleFromID(id)
 }
 
 // Load a Directory from its ID.
-func LoadDirectoryFromID(id dagger.DirectoryID) *dagger.Directory {
+func LoadDirectoryFromID(id dagger.ID) *dagger.Directory {
 	client := initClient()
 	return client.LoadDirectoryFromID(id)
 }
 
 // Load a EngineCacheEntry from its ID.
-func LoadEngineCacheEntryFromID(id dagger.EngineCacheEntryID) *dagger.EngineCacheEntry {
+func LoadEngineCacheEntryFromID(id dagger.ID) *dagger.EngineCacheEntry {
 	client := initClient()
 	return client.LoadEngineCacheEntryFromID(id)
 }
 
 // Load a EngineCacheEntrySet from its ID.
-func LoadEngineCacheEntrySetFromID(id dagger.EngineCacheEntrySetID) *dagger.EngineCacheEntrySet {
+func LoadEngineCacheEntrySetFromID(id dagger.ID) *dagger.EngineCacheEntrySet {
 	client := initClient()
 	return client.LoadEngineCacheEntrySetFromID(id)
 }
 
 // Load a EngineCache from its ID.
-func LoadEngineCacheFromID(id dagger.EngineCacheID) *dagger.EngineCache {
+func LoadEngineCacheFromID(id dagger.ID) *dagger.EngineCache {
 	client := initClient()
 	return client.LoadEngineCacheFromID(id)
 }
 
 // Load a Engine from its ID.
-func LoadEngineFromID(id dagger.EngineID) *dagger.Engine {
+func LoadEngineFromID(id dagger.ID) *dagger.Engine {
 	client := initClient()
 	return client.LoadEngineFromID(id)
 }
 
 // Load a EnumTypeDef from its ID.
-func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
+func LoadEnumTypeDefFromID(id dagger.ID) *dagger.EnumTypeDef {
 	client := initClient()
 	return client.LoadEnumTypeDefFromID(id)
 }
 
 // Load a EnumValueTypeDef from its ID.
-func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
+func LoadEnumValueTypeDefFromID(id dagger.ID) *dagger.EnumValueTypeDef {
 	client := initClient()
 	return client.LoadEnumValueTypeDefFromID(id)
 }
 
 // Load a EnvFile from its ID.
-func LoadEnvFileFromID(id dagger.EnvFileID) *dagger.EnvFile {
+func LoadEnvFileFromID(id dagger.ID) *dagger.EnvFile {
 	client := initClient()
 	return client.LoadEnvFileFromID(id)
 }
 
 // Load a Env from its ID.
-func LoadEnvFromID(id dagger.EnvID) *dagger.Env {
+func LoadEnvFromID(id dagger.ID) *dagger.Env {
 	client := initClient()
 	return client.LoadEnvFromID(id)
 }
 
 // Load a EnvVariable from its ID.
-func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
+func LoadEnvVariableFromID(id dagger.ID) *dagger.EnvVariable {
 	client := initClient()
 	return client.LoadEnvVariableFromID(id)
 }
 
 // Load a Error from its ID.
-func LoadErrorFromID(id dagger.ErrorID) *dagger.Error {
+func LoadErrorFromID(id dagger.ID) *dagger.Error {
 	client := initClient()
 	return client.LoadErrorFromID(id)
 }
 
 // Load a ErrorValue from its ID.
-func LoadErrorValueFromID(id dagger.ErrorValueID) *dagger.ErrorValue {
+func LoadErrorValueFromID(id dagger.ID) *dagger.ErrorValue {
 	client := initClient()
 	return client.LoadErrorValueFromID(id)
 }
 
 // Load a FieldTypeDef from its ID.
-func LoadFieldTypeDefFromID(id dagger.FieldTypeDefID) *dagger.FieldTypeDef {
+func LoadFieldTypeDefFromID(id dagger.ID) *dagger.FieldTypeDef {
 	client := initClient()
 	return client.LoadFieldTypeDefFromID(id)
 }
 
 // Load a File from its ID.
-func LoadFileFromID(id dagger.FileID) *dagger.File {
+func LoadFileFromID(id dagger.ID) *dagger.File {
 	client := initClient()
 	return client.LoadFileFromID(id)
 }
 
 // Load a FunctionArg from its ID.
-func LoadFunctionArgFromID(id dagger.FunctionArgID) *dagger.FunctionArg {
+func LoadFunctionArgFromID(id dagger.ID) *dagger.FunctionArg {
 	client := initClient()
 	return client.LoadFunctionArgFromID(id)
 }
 
 // Load a FunctionCallArgValue from its ID.
-func LoadFunctionCallArgValueFromID(id dagger.FunctionCallArgValueID) *dagger.FunctionCallArgValue {
+func LoadFunctionCallArgValueFromID(id dagger.ID) *dagger.FunctionCallArgValue {
 	client := initClient()
 	return client.LoadFunctionCallArgValueFromID(id)
 }
 
 // Load a FunctionCall from its ID.
-func LoadFunctionCallFromID(id dagger.FunctionCallID) *dagger.FunctionCall {
+func LoadFunctionCallFromID(id dagger.ID) *dagger.FunctionCall {
 	client := initClient()
 	return client.LoadFunctionCallFromID(id)
 }
 
 // Load a Function from its ID.
-func LoadFunctionFromID(id dagger.FunctionID) *dagger.Function {
+func LoadFunctionFromID(id dagger.ID) *dagger.Function {
 	client := initClient()
 	return client.LoadFunctionFromID(id)
 }
 
 // Load a GeneratedCode from its ID.
-func LoadGeneratedCodeFromID(id dagger.GeneratedCodeID) *dagger.GeneratedCode {
+func LoadGeneratedCodeFromID(id dagger.ID) *dagger.GeneratedCode {
 	client := initClient()
 	return client.LoadGeneratedCodeFromID(id)
 }
 
 // Load a Generator from its ID.
-func LoadGeneratorFromID(id dagger.GeneratorID) *dagger.Generator {
+func LoadGeneratorFromID(id dagger.ID) *dagger.Generator {
 	client := initClient()
 	return client.LoadGeneratorFromID(id)
 }
 
 // Load a GeneratorGroup from its ID.
-func LoadGeneratorGroupFromID(id dagger.GeneratorGroupID) *dagger.GeneratorGroup {
+func LoadGeneratorGroupFromID(id dagger.ID) *dagger.GeneratorGroup {
 	client := initClient()
 	return client.LoadGeneratorGroupFromID(id)
 }
 
 // Load a GitRef from its ID.
-func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
+func LoadGitRefFromID(id dagger.ID) *dagger.GitRef {
 	client := initClient()
 	return client.LoadGitRefFromID(id)
 }
 
 // Load a GitRepository from its ID.
-func LoadGitRepositoryFromID(id dagger.GitRepositoryID) *dagger.GitRepository {
+func LoadGitRepositoryFromID(id dagger.ID) *dagger.GitRepository {
 	client := initClient()
 	return client.LoadGitRepositoryFromID(id)
 }
 
 // Load a HealthcheckConfig from its ID.
-func LoadHealthcheckConfigFromID(id dagger.HealthcheckConfigID) *dagger.HealthcheckConfig {
+func LoadHealthcheckConfigFromID(id dagger.ID) *dagger.HealthcheckConfig {
 	client := initClient()
 	return client.LoadHealthcheckConfigFromID(id)
 }
 
 // Load a Host from its ID.
-func LoadHostFromID(id dagger.HostID) *dagger.Host {
+func LoadHostFromID(id dagger.ID) *dagger.Host {
 	client := initClient()
 	return client.LoadHostFromID(id)
 }
 
 // Load a InputTypeDef from its ID.
-func LoadInputTypeDefFromID(id dagger.InputTypeDefID) *dagger.InputTypeDef {
+func LoadInputTypeDefFromID(id dagger.ID) *dagger.InputTypeDef {
 	client := initClient()
 	return client.LoadInputTypeDefFromID(id)
 }
 
 // Load a InterfaceTypeDef from its ID.
-func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceTypeDef {
+func LoadInterfaceTypeDefFromID(id dagger.ID) *dagger.InterfaceTypeDef {
 	client := initClient()
 	return client.LoadInterfaceTypeDefFromID(id)
 }
 
 // Load a JSONValue from its ID.
-func LoadJSONValueFromID(id dagger.JSONValueID) *dagger.JSONValue {
+func LoadJSONValueFromID(id dagger.ID) *dagger.JSONValue {
 	client := initClient()
 	return client.LoadJSONValueFromID(id)
 }
 
 // Load a LLM from its ID.
-func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
+func LoadLLMFromID(id dagger.ID) *dagger.LLM {
 	client := initClient()
 	return client.LoadLLMFromID(id)
 }
 
 // Load a LLMTokenUsage from its ID.
-func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
+func LoadLLMTokenUsageFromID(id dagger.ID) *dagger.LLMTokenUsage {
 	client := initClient()
 	return client.LoadLLMTokenUsageFromID(id)
 }
 
 // Load a Label from its ID.
-func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
+func LoadLabelFromID(id dagger.ID) *dagger.Label {
 	client := initClient()
 	return client.LoadLabelFromID(id)
 }
 
 // Load a ListTypeDef from its ID.
-func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
+func LoadListTypeDefFromID(id dagger.ID) *dagger.ListTypeDef {
 	client := initClient()
 	return client.LoadListTypeDefFromID(id)
 }
 
 // Load a ModuleConfigClient from its ID.
-func LoadModuleConfigClientFromID(id dagger.ModuleConfigClientID) *dagger.ModuleConfigClient {
+func LoadModuleConfigClientFromID(id dagger.ID) *dagger.ModuleConfigClient {
 	client := initClient()
 	return client.LoadModuleConfigClientFromID(id)
 }
 
 // Load a Module from its ID.
-func LoadModuleFromID(id dagger.ModuleID) *dagger.Module {
+func LoadModuleFromID(id dagger.ID) *dagger.Module {
 	client := initClient()
 	return client.LoadModuleFromID(id)
 }
 
 // Load a ModuleSource from its ID.
-func LoadModuleSourceFromID(id dagger.ModuleSourceID) *dagger.ModuleSource {
+func LoadModuleSourceFromID(id dagger.ID) *dagger.ModuleSource {
 	client := initClient()
 	return client.LoadModuleSourceFromID(id)
 }
 
 // Load a ObjectTypeDef from its ID.
-func LoadObjectTypeDefFromID(id dagger.ObjectTypeDefID) *dagger.ObjectTypeDef {
+func LoadObjectTypeDefFromID(id dagger.ID) *dagger.ObjectTypeDef {
 	client := initClient()
 	return client.LoadObjectTypeDefFromID(id)
 }
 
 // Load a Port from its ID.
-func LoadPortFromID(id dagger.PortID) *dagger.Port {
+func LoadPortFromID(id dagger.ID) *dagger.Port {
 	client := initClient()
 	return client.LoadPortFromID(id)
 }
 
 // Load a Query from its ID.
-func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
+func LoadQueryFromID(id dagger.ID) *dagger.Query {
 	client := initClient()
 	return client.LoadQueryFromID(id)
 }
 
 // Load a SDKConfig from its ID.
-func LoadSDKConfigFromID(id dagger.SDKConfigID) *dagger.SDKConfig {
+func LoadSDKConfigFromID(id dagger.ID) *dagger.SDKConfig {
 	client := initClient()
 	return client.LoadSDKConfigFromID(id)
 }
 
 // Load a ScalarTypeDef from its ID.
-func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
+func LoadScalarTypeDefFromID(id dagger.ID) *dagger.ScalarTypeDef {
 	client := initClient()
 	return client.LoadScalarTypeDefFromID(id)
 }
 
 // Load a SearchResult from its ID.
-func LoadSearchResultFromID(id dagger.SearchResultID) *dagger.SearchResult {
+func LoadSearchResultFromID(id dagger.ID) *dagger.SearchResult {
 	client := initClient()
 	return client.LoadSearchResultFromID(id)
 }
 
 // Load a SearchSubmatch from its ID.
-func LoadSearchSubmatchFromID(id dagger.SearchSubmatchID) *dagger.SearchSubmatch {
+func LoadSearchSubmatchFromID(id dagger.ID) *dagger.SearchSubmatch {
 	client := initClient()
 	return client.LoadSearchSubmatchFromID(id)
 }
 
 // Load a Secret from its ID.
-func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
+func LoadSecretFromID(id dagger.ID) *dagger.Secret {
 	client := initClient()
 	return client.LoadSecretFromID(id)
 }
 
 // Load a Service from its ID.
-func LoadServiceFromID(id dagger.ServiceID) *dagger.Service {
+func LoadServiceFromID(id dagger.ID) *dagger.Service {
 	client := initClient()
 	return client.LoadServiceFromID(id)
 }
 
 // Load a Socket from its ID.
-func LoadSocketFromID(id dagger.SocketID) *dagger.Socket {
+func LoadSocketFromID(id dagger.ID) *dagger.Socket {
 	client := initClient()
 	return client.LoadSocketFromID(id)
 }
 
 // Load a SourceMap from its ID.
-func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
+func LoadSourceMapFromID(id dagger.ID) *dagger.SourceMap {
 	client := initClient()
 	return client.LoadSourceMapFromID(id)
 }
 
 // Load a Stat from its ID.
-func LoadStatFromID(id dagger.StatID) *dagger.Stat {
+func LoadStatFromID(id dagger.ID) *dagger.Stat {
 	client := initClient()
 	return client.LoadStatFromID(id)
 }
 
 // Load a Terminal from its ID.
-func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
+func LoadTerminalFromID(id dagger.ID) *dagger.Terminal {
 	client := initClient()
 	return client.LoadTerminalFromID(id)
 }
 
 // Load a TypeDef from its ID.
-func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
+func LoadTypeDefFromID(id dagger.ID) *dagger.TypeDef {
 	client := initClient()
 	return client.LoadTypeDefFromID(id)
 }
@@ -573,7 +573,7 @@ func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
 }
 
 // Load a Workspace from its ID.
-func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
+func LoadWorkspaceFromID(id dagger.ID) *dagger.Workspace {
 	client := initClient()
 	return client.LoadWorkspaceFromID(id)
 }
