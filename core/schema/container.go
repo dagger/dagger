@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -2601,15 +2602,33 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
-	ctr, err := core.NewContainerChild(ctx, parent)
-	if err != nil {
-		return inst, err
+	current := parent
+	for _, file := range files {
+		fileID, err := file.ID()
+		if err != nil {
+			return inst, err
+		}
+		filePath := filepath.Join(path, filepath.Base(file.Self().File))
+		selectArgs := []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(filePath)},
+			{Name: "source", Value: dagql.NewID[*core.File](fileID)},
+		}
+		if perms != nil {
+			selectArgs = append(selectArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*perms))})
+		}
+		if args.Owner != "" {
+			selectArgs = append(selectArgs, dagql.NamedInput{Name: "owner", Value: dagql.String(args.Owner)})
+		}
+		var next dagql.ObjectResult[*core.Container]
+		if err := srv.Select(ctx, current, &next, dagql.Selector{
+			Field: "withFile",
+			Args:  selectArgs,
+		}); err != nil {
+			return inst, err
+		}
+		current = next
 	}
-	ctr, err = ctr.WithFiles(ctx, parent, srv, path, files, perms, args.Owner)
-	if err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	return current, nil
 }
 
 type containerWithoutDirectoryArgs struct {
@@ -2685,15 +2704,20 @@ func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		}
 	}
 
-	ctr, err := core.NewContainerChild(ctx, parent)
-	if err != nil {
-		return inst, err
+	current := parent
+	for _, path := range paths {
+		var next dagql.ObjectResult[*core.Container]
+		if err := srv.Select(ctx, current, &next, dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		}); err != nil {
+			return inst, err
+		}
+		current = next
 	}
-	ctr, err = ctr.WithoutPaths(ctx, parent, srv, paths...)
-	if err != nil {
-		return inst, err
-	}
-	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	return current, nil
 }
 
 type containerWithNewFileArgs struct {
