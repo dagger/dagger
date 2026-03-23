@@ -153,13 +153,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			return
 		}
 
-		// since this runs in the client, we're reading the token from
-		// the creds file instead of using the passed argument
-		tokenRefresh := func(ctx context.Context) (*oauth2.Token, error) {
-			return auth.Token(ctx)
-		}
-
-		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, tokenRefresh)
+		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, auth.Token)
 		if err != nil {
 			slog.Warn("failed to configure cloud exporters", "error", err)
 			return

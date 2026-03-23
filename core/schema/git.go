@@ -189,6 +189,39 @@ type gitArgs struct {
 	SSHAuthSocketScoped bool `name:"sshAuthSocketScoped" default:"false" internal:"true"`
 }
 
+func loadGitAuthSecretIfAvailable(
+	ctx context.Context,
+	query *core.Query,
+	srv *dagql.Server,
+	secretID dagql.Optional[core.SecretID],
+) (dagql.ObjectResult[*core.Secret], error) {
+	var secret dagql.ObjectResult[*core.Secret]
+	if !secretID.Valid {
+		return secret, nil
+	}
+
+	secretDigest := core.SecretIDDigest(secretID.Value.ID())
+	if secretDigest == "" {
+		return secretID.Value.Load(ctx, srv)
+	}
+
+	secretStore, err := query.Secrets(ctx)
+	if err != nil {
+		return secret, fmt.Errorf("failed to get secret store: %w", err)
+	}
+
+	// Cached ID loads can reach git with a setSecret-derived auth ID that was
+	// never materialized into this client's secret store. Treat that as unset so
+	// we fall back to the existing git credential helper path instead of failing
+	// later when the secret is dereferenced.
+	if !secretStore.HasSecret(secretDigest) {
+		slog.Debug("git auth secret missing from current client store; treating as unset", "secret", secretDigest)
+		return secret, nil
+	}
+
+	return secretID.Value.Load(ctx, srv)
+}
+
 //nolint:gocyclo
 func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Query], args gitArgs) (inst dagql.ObjectResult[*core.GitRepository], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -491,17 +524,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
-		if args.HTTPAuthToken.Valid {
-			httpAuthToken, err = args.HTTPAuthToken.Value.Load(ctx, srv)
-			if err != nil {
-				return inst, err
-			}
+		httpAuthToken, err = loadGitAuthSecretIfAvailable(ctx, parent.Self(), srv, args.HTTPAuthToken)
+		if err != nil {
+			return inst, err
 		}
-		if args.HTTPAuthHeader.Valid {
-			httpAuthHeader, err = args.HTTPAuthHeader.Value.Load(ctx, srv)
-			if err != nil {
-				return inst, err
-			}
+		httpAuthHeader, err = loadGitAuthSecretIfAvailable(ctx, parent.Self(), srv, args.HTTPAuthHeader)
+		if err != nil {
+			return inst, err
 		}
 		if httpAuthToken.Self() == nil && httpAuthHeader.Self() == nil {
 			// For HTTP refs, try to load client credentials from the git helper

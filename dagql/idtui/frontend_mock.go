@@ -6,7 +6,6 @@ package idtui
 import (
 	"context"
 	"dagger.io/dagger"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/util/cleanups"
@@ -26,7 +25,7 @@ var _ Frontend = &FrontendMock{}
 //
 //		// make and configure a mocked Frontend
 //		mockedFrontend := &FrontendMock{
-//			BackgroundFunc: func(cmd tea.ExecCommand, raw bool) error {
+//			BackgroundFunc: func(cmd ExecCommand, raw bool) error {
 //				panic("mock out the Background method")
 //			},
 //			HandleFormFunc: func(ctx context.Context, form *huh.Form) error {
@@ -62,6 +61,9 @@ var _ Frontend = &FrontendMock{}
 //			SetSidebarContentFunc: func(sidebarSection SidebarSection)  {
 //				panic("mock out the SetSidebarContent method")
 //			},
+//			SetTelemetryErrorFunc: func(err error)  {
+//				panic("mock out the SetTelemetryError method")
+//			},
 //			SetVerbosityFunc: func(n int)  {
 //				panic("mock out the SetVerbosity method")
 //			},
@@ -79,7 +81,7 @@ var _ Frontend = &FrontendMock{}
 //	}
 type FrontendMock struct {
 	// BackgroundFunc mocks the Background method.
-	BackgroundFunc func(cmd tea.ExecCommand, raw bool) error
+	BackgroundFunc func(cmd ExecCommand, raw bool) error
 
 	// HandleFormFunc mocks the HandleForm method.
 	HandleFormFunc func(ctx context.Context, form *huh.Form) error
@@ -114,6 +116,9 @@ type FrontendMock struct {
 	// SetSidebarContentFunc mocks the SetSidebarContent method.
 	SetSidebarContentFunc func(sidebarSection SidebarSection)
 
+	// SetTelemetryErrorFunc mocks the SetTelemetryError method.
+	SetTelemetryErrorFunc func(err error)
+
 	// SetVerbosityFunc mocks the SetVerbosity method.
 	SetVerbosityFunc func(n int)
 
@@ -128,7 +133,7 @@ type FrontendMock struct {
 		// Background holds details about calls to the Background method.
 		Background []struct {
 			// Cmd is the cmd argument value.
-			Cmd tea.ExecCommand
+			Cmd ExecCommand
 			// Raw is the raw argument value.
 			Raw bool
 		}
@@ -197,6 +202,11 @@ type FrontendMock struct {
 			// SidebarSection is the sidebarSection argument value.
 			SidebarSection SidebarSection
 		}
+		// SetTelemetryError holds details about calls to the SetTelemetryError method.
+		SetTelemetryError []struct {
+			// Err is the err argument value.
+			Err error
+		}
 		// SetVerbosity holds details about calls to the SetVerbosity method.
 		SetVerbosity []struct {
 			// N is the n argument value.
@@ -225,18 +235,19 @@ type FrontendMock struct {
 	lockSetCloudURL       sync.RWMutex
 	lockSetPrimary        sync.RWMutex
 	lockSetSidebarContent sync.RWMutex
+	lockSetTelemetryError sync.RWMutex
 	lockSetVerbosity      sync.RWMutex
 	lockShell             sync.RWMutex
 	lockSpanExporter      sync.RWMutex
 }
 
 // Background calls BackgroundFunc.
-func (mock *FrontendMock) Background(cmd tea.ExecCommand, raw bool) error {
+func (mock *FrontendMock) Background(cmd ExecCommand, raw bool) error {
 	if mock.BackgroundFunc == nil {
 		panic("FrontendMock.BackgroundFunc: method is nil but Frontend.Background was just called")
 	}
 	callInfo := struct {
-		Cmd tea.ExecCommand
+		Cmd ExecCommand
 		Raw bool
 	}{
 		Cmd: cmd,
@@ -253,11 +264,11 @@ func (mock *FrontendMock) Background(cmd tea.ExecCommand, raw bool) error {
 //
 //	len(mockedFrontend.BackgroundCalls())
 func (mock *FrontendMock) BackgroundCalls() []struct {
-	Cmd tea.ExecCommand
+	Cmd ExecCommand
 	Raw bool
 } {
 	var calls []struct {
-		Cmd tea.ExecCommand
+		Cmd ExecCommand
 		Raw bool
 	}
 	mock.lockBackground.RLock()
@@ -631,6 +642,38 @@ func (mock *FrontendMock) SetSidebarContentCalls() []struct {
 	mock.lockSetSidebarContent.RLock()
 	calls = mock.calls.SetSidebarContent
 	mock.lockSetSidebarContent.RUnlock()
+	return calls
+}
+
+// SetTelemetryError calls SetTelemetryErrorFunc.
+func (mock *FrontendMock) SetTelemetryError(err error) {
+	if mock.SetTelemetryErrorFunc == nil {
+		panic("FrontendMock.SetTelemetryErrorFunc: method is nil but Frontend.SetTelemetryError was just called")
+	}
+	callInfo := struct {
+		Err error
+	}{
+		Err: err,
+	}
+	mock.lockSetTelemetryError.Lock()
+	mock.calls.SetTelemetryError = append(mock.calls.SetTelemetryError, callInfo)
+	mock.lockSetTelemetryError.Unlock()
+	mock.SetTelemetryErrorFunc(err)
+}
+
+// SetTelemetryErrorCalls gets all the calls that were made to SetTelemetryError.
+// Check the length with:
+//
+//	len(mockedFrontend.SetTelemetryErrorCalls())
+func (mock *FrontendMock) SetTelemetryErrorCalls() []struct {
+	Err error
+} {
+	var calls []struct {
+		Err error
+	}
+	mock.lockSetTelemetryError.RLock()
+	calls = mock.calls.SetTelemetryError
+	mock.lockSetTelemetryError.RUnlock()
 	return calls
 }
 
