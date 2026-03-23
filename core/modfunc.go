@@ -798,7 +798,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// Intentionally bypass the GraphQL withExec selector here. Module function
 	// execution is an internal flow with bespoke metadata plumbing; using the
 	// schema-level selector adds indirection and identity machinery we don't need.
-	execCtr := NewContainerChild(ctr)
+	execCtr, err := NewContainerChild(hideCtx, ctr)
+	if err != nil {
+		return nil, fmt.Errorf("clone exec container: %w", err)
+	}
 	err = execCtr.WithExec(hideCtx, ContainerExecOpts{
 		Args:                          []string{},
 		UseEntrypoint:                 true,

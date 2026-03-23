@@ -202,7 +202,7 @@ func NewContainer(platform Platform) *Container {
 	}
 }
 
-func cloneBareDirectoryForContainerChild(_ dagql.ObjectResult[*Container], src *Directory, _ dagql.Selector) *Directory {
+func cloneBareDirectoryForContainerChild(src *Directory, source dagql.ObjectResult[*Directory]) *Directory {
 	if src == nil {
 		return nil
 	}
@@ -211,12 +211,12 @@ func cloneBareDirectoryForContainerChild(_ dagql.ObjectResult[*Container], src *
 	cp.LazyState = NewLazyState()
 	cp.snapshotMu = sync.RWMutex{}
 	cp.snapshotReady = false
-	cp.snapshotSource = dagql.ObjectResult[*Directory]{}
+	cp.snapshotSource = source
 	cp.Snapshot = nil
 	return &cp
 }
 
-func cloneBareFileForContainerChild(_ dagql.ObjectResult[*Container], src *File, _ dagql.Selector) *File {
+func cloneBareFileForContainerChild(src *File, source FileSnapshotSource) *File {
 	if src == nil {
 		return nil
 	}
@@ -225,16 +225,24 @@ func cloneBareFileForContainerChild(_ dagql.ObjectResult[*Container], src *File,
 	cp.LazyState = NewLazyState()
 	cp.snapshotMu = sync.RWMutex{}
 	cp.snapshotReady = false
-	cp.snapshotSource = FileSnapshotSource{}
+	cp.snapshotSource = source
 	cp.Snapshot = nil
 	return &cp
 }
 
-func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
+func NewContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container]) (*Container, error) {
+	return newContainerChild(ctx, parent, true)
+}
+
+func NewContainerChildWithoutFS(ctx context.Context, parent dagql.ObjectResult[*Container]) (*Container, error) {
+	return newContainerChild(ctx, parent, false)
+}
+
+func newContainerChild(ctx context.Context, parent dagql.ObjectResult[*Container], cloneFS bool) (*Container, error) {
 	if parent.Self() == nil {
 		return &Container{
 			LazyState: NewLazyState(),
-		}
+		}, nil
 	}
 
 	cp := *parent.Self()
@@ -250,12 +258,22 @@ func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	cp.LazyState = NewLazyState()
-	if cp.FS != nil {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+	if cloneFS && cp.FS != nil {
 		if cp.FS.isResultBacked() {
 			cp.FS = &ContainerDirectorySource{Result: cp.FS.Result}
 		} else {
-			cp.FS = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(parent, cp.FS.Value, dagql.Selector{Field: "rootfs"}))
+			var source dagql.ObjectResult[*Directory]
+			if err := srv.Select(ctx, parent, &source, dagql.Selector{Field: "rootfs"}); err != nil {
+				return nil, err
+			}
+			cp.FS = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(cp.FS.Value, source))
 		}
+	} else {
+		cp.FS = nil
 	}
 	cp.Mounts = make(ContainerMounts, len(parent.Self().Mounts))
 	for i, mnt := range parent.Self().Mounts {
@@ -264,32 +282,42 @@ func NewContainerChild(parent dagql.ObjectResult[*Container]) *Container {
 			if mnt.DirectorySource.isResultBacked() {
 				cp.Mounts[i].DirectorySource = &ContainerDirectorySource{Result: mnt.DirectorySource.Result}
 			} else {
-				cp.Mounts[i].DirectorySource = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(parent, mnt.DirectorySource.Value, dagql.Selector{
+				var source dagql.ObjectResult[*Directory]
+				if err := srv.Select(ctx, parent, &source, dagql.Selector{
 					Field: "directory",
 					Args: []dagql.NamedInput{
 						{Name: "path", Value: dagql.String(mnt.Target)},
 					},
-				}))
+				}); err != nil {
+					return nil, err
+				}
+				cp.Mounts[i].DirectorySource = newContainerDirectoryValueSource(cloneBareDirectoryForContainerChild(mnt.DirectorySource.Value, source))
 			}
 		}
 		if mnt.FileSource != nil {
 			if mnt.FileSource.isResultBacked() {
 				cp.Mounts[i].FileSource = &ContainerFileSource{Result: mnt.FileSource.Result}
 			} else {
-				cp.Mounts[i].FileSource = newContainerFileValueSource(cloneBareFileForContainerChild(parent, mnt.FileSource.Value, dagql.Selector{
+				var source dagql.ObjectResult[*File]
+				if err := srv.Select(ctx, parent, &source, dagql.Selector{
 					Field: "file",
 					Args: []dagql.NamedInput{
 						{Name: "path", Value: dagql.String(mnt.Target)},
 					},
-				}))
+				}); err != nil {
+					return nil, err
+				}
+				cp.Mounts[i].FileSource = newContainerFileValueSource(cloneBareFileForContainerChild(mnt.FileSource.Value, FileSnapshotSource{File: source}))
 			}
 		}
 	}
-	if cp.MetaSnapshot != nil {
+	if cloneFS && cp.MetaSnapshot != nil {
 		cp.MetaSnapshot = cp.MetaSnapshot.Clone()
+	} else {
+		cp.MetaSnapshot = nil
 	}
 	cp.configureBareSourceLazyInit(parent)
-	return &cp
+	return &cp, nil
 }
 
 func (container *Container) configureBareSourceLazyInit(parent dagql.ObjectResult[*Container]) {
@@ -331,65 +359,67 @@ func (container *Container) configureBareSourceLazyInit(parent dagql.ObjectResul
 		return
 	}
 	container.LazyInit = func(ctx context.Context) error {
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, parent); err != nil {
-			return err
-		}
-		if pendingRootFS != nil && !pendingRootFS.snapshotReady {
-			var selected dagql.ObjectResult[*Directory]
-			if err := srv.Select(ctx, parent, &selected, dagql.Selector{Field: "rootfs"}); err != nil {
-				return err
+		var evalResults []dagql.AnyResult
+		if pendingRootFS != nil {
+			pendingRootFS.snapshotMu.RLock()
+			source := pendingRootFS.snapshotSource
+			pendingRootFS.snapshotMu.RUnlock()
+			if source.Self() == nil {
+				return fmt.Errorf("missing preserved rootfs snapshot source")
 			}
-			if err := cache.Evaluate(ctx, selected); err != nil {
-				return err
-			}
-			if err := pendingRootFS.setSnapshotSource(selected); err != nil {
-				return err
-			}
+			evalResults = append(evalResults, source)
 		}
 		for _, pending := range pendingDirs {
 			if pending.dir != nil && !pending.dir.snapshotReady {
-				var selected dagql.ObjectResult[*Directory]
-				if err := srv.Select(ctx, parent, &selected, dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(pending.target)},
-					},
-				}); err != nil {
-					return err
+				pending.dir.snapshotMu.RLock()
+				source := pending.dir.snapshotSource
+				pending.dir.snapshotMu.RUnlock()
+				if source.Self() == nil {
+					return fmt.Errorf("missing preserved directory mount snapshot source for %s", pending.target)
 				}
-				if err := cache.Evaluate(ctx, selected); err != nil {
-					return err
-				}
-				if err := pending.dir.setSnapshotSource(selected); err != nil {
-					return err
-				}
+				evalResults = append(evalResults, source)
 			}
 		}
 		for _, pending := range pendingFiles {
 			if pending.file != nil && !pending.file.snapshotReady {
-				var selected dagql.ObjectResult[*File]
-				if err := srv.Select(ctx, parent, &selected, dagql.Selector{
-					Field: "file",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(pending.target)},
-					},
-				}); err != nil {
-					return err
+				pending.file.snapshotMu.RLock()
+				source := pending.file.snapshotSource
+				pending.file.snapshotMu.RUnlock()
+				if source.File.Self() == nil {
+					return fmt.Errorf("missing preserved file mount snapshot source for %s", pending.target)
 				}
-				if err := cache.Evaluate(ctx, selected); err != nil {
-					return err
-				}
-				if err := pending.file.setSnapshotSource(FileSnapshotSource{File: selected}); err != nil {
-					return err
-				}
+				evalResults = append(evalResults, source.File)
+			}
+		}
+		if len(evalResults) > 0 {
+			if err := cache.Evaluate(ctx, evalResults...); err != nil {
+				return err
+			}
+		}
+		if pendingRootFS != nil && !pendingRootFS.snapshotReady {
+			pendingRootFS.snapshotMu.Lock()
+			pendingRootFS.snapshotReady = true
+			pendingRootFS.LazyInit = nil
+			pendingRootFS.snapshotMu.Unlock()
+		}
+		for _, pending := range pendingDirs {
+			if pending.dir != nil && !pending.dir.snapshotReady {
+				pending.dir.snapshotMu.Lock()
+				pending.dir.snapshotReady = true
+				pending.dir.LazyInit = nil
+				pending.dir.snapshotMu.Unlock()
+			}
+		}
+		for _, pending := range pendingFiles {
+			if pending.file != nil && !pending.file.snapshotReady {
+				pending.file.snapshotMu.Lock()
+				pending.file.snapshotReady = true
+				pending.file.LazyInit = nil
+				pending.file.snapshotMu.Unlock()
 			}
 		}
 		container.LazyInit = nil
@@ -2109,6 +2139,20 @@ func (container *Container) Directory(ctx context.Context, parent dagql.ObjectRe
 
 	switch {
 	case mnt == nil: // rootfs
+		if container.FS != nil && container.FS.Value != nil {
+			if subpath == "" || subpath == "." {
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, container.FS.Value)
+			}
+			rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
+			if err != nil {
+				return dir, err
+			}
+			bareDir, err := container.FS.Value.Subdirectory(ctx, rootfs, subpath)
+			if err != nil {
+				return dir, err
+			}
+			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareDir)
+		}
 		rootfs, err := containerRootFSSelection(ctx, srv, parent, container.FS)
 		if err != nil {
 			return dir, err
@@ -2116,22 +2160,15 @@ func (container *Container) Directory(ctx context.Context, parent dagql.ObjectRe
 		if subpath == "" || subpath == "." {
 			return rootfs, nil
 		}
-		if container.FS != nil && container.FS.Value != nil {
-			bareDir, err := container.FS.Value.Subdirectory(ctx, rootfs, subpath)
-			if err != nil {
-				return dir, err
-			}
-			return dagql.NewObjectResultForCurrentCall(ctx, srv, bareDir)
-		}
 		err = srv.Select(ctx, rootfs, &dir, directorySelector)
 	case mnt.DirectorySource != nil: // mounted directory
 		if mnt.DirectorySource.Value != nil {
+			if subpath == "" || subpath == "." {
+				return dagql.NewObjectResultForCurrentCall(ctx, srv, mnt.DirectorySource.Value)
+			}
 			parentDir, err := containerDirectoryMountSelection(ctx, srv, parent, mnt.DirectorySource, mnt.Target)
 			if err != nil {
 				return dir, err
-			}
-			if subpath == "" || subpath == "." {
-				return dagql.NewObjectResultForCurrentCall(ctx, srv, mnt.DirectorySource.Value)
 			}
 			bareDir, err := mnt.DirectorySource.Value.Subdirectory(ctx, parentDir, subpath)
 			if err != nil {
@@ -2267,6 +2304,12 @@ func containerRootFSSelection(ctx context.Context, srv *dagql.Server, parent dag
 	case src != nil && src.isResultBacked():
 		return *src.Result, nil
 	case src != nil && src.Value != nil:
+		src.Value.snapshotMu.RLock()
+		source := src.Value.snapshotSource
+		src.Value.snapshotMu.RUnlock()
+		if source.Self() != nil {
+			return source, nil
+		}
 		if err := srv.Select(ctx, parent, &dir, dagql.Selector{Field: "rootfs"}); err != nil {
 			return dir, err
 		}
@@ -2285,6 +2328,12 @@ func containerDirectoryMountSelection(ctx context.Context, srv *dagql.Server, pa
 	case src != nil && src.isResultBacked():
 		return *src.Result, nil
 	case src != nil && src.Value != nil:
+		src.Value.snapshotMu.RLock()
+		source := src.Value.snapshotSource
+		src.Value.snapshotMu.RUnlock()
+		if source.Self() != nil {
+			return source, nil
+		}
 		err := srv.Select(ctx, parent, &dir, dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
@@ -2303,6 +2352,12 @@ func containerFileMountSelection(ctx context.Context, srv *dagql.Server, parent 
 	case src != nil && src.isResultBacked():
 		return *src.Result, nil
 	case src != nil && src.Value != nil:
+		src.Value.snapshotMu.RLock()
+		source := src.Value.snapshotSource
+		src.Value.snapshotMu.RUnlock()
+		if source.File.Self() != nil {
+			return source.File, nil
+		}
 		err := srv.Select(ctx, parent, &file, dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{

@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"golang.org/x/sync/errgroup"
+	_ "modernc.org/sqlite"
 
 	"github.com/dagger/dagger/dagql/call"
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
