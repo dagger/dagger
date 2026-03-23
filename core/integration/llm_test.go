@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/testutil/dagger/dag"
-	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/golden"

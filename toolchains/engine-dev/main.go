@@ -96,10 +96,6 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	return dev
 }
 
-func (dev *EngineDev) sourceWithEbpfObjects() *dagger.Directory {
-	return dev.Source.With(build.EbpfGenerate)
-}
-
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
 func (dev *EngineDev) Playground(
 	ctx context.Context,

@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )

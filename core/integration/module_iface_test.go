@@ -10,7 +10,6 @@ import (
 	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
 )
 
 type InterfaceSuite struct{}

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/core"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )

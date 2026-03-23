@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"

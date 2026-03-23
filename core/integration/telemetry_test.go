@@ -1,15 +1,14 @@
 package core
 
 import (
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
 )
 
 type TelemetrySuite struct{}

@@ -82,7 +82,7 @@ func ensureRegistries(ctx context.Context) {
 			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 			AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
-		const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
+		const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
 		privateRegistrySvc := dag.Container().
 			From("registry:2").
 			WithNewFile("/auth/htpasswd", htpasswd).
