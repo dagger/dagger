@@ -2679,7 +2679,7 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 	}
 
 	ctr := core.NewContainerChild(parent)
-	return ctr.WithUnixSocket(ctx, path, socket.Self(), args.Owner)
+	return ctr.WithUnixSocketFromParent(ctx, parent, path, socket.Self(), args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {
