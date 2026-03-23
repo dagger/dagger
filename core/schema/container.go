@@ -187,7 +187,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		// NOTE: this is internal-only (hidden from codegen via the __ prefix). It exists so
 		// llbtodagger can faithfully apply Docker image config metadata fields that do not yet
 		// have public SDK methods.
-		dagql.Func("__withImageConfigMetadata", s.withImageConfigMetadata).
+		dagql.NodeFunc("__withImageConfigMetadata", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithImageConfigMetadataArgs) (*core.Container, error) {
+			ctr, err := core.NewContainerChild(ctx, parent)
+			if err != nil {
+				return nil, err
+			}
+			return s.withImageConfigMetadata(ctx, ctr, args)
+		}).
 			Doc(`(Internal-only) Set Docker image config metadata fields not yet exposed as public container APIs.`).
 			Args(
 				dagql.Arg("healthcheck").Doc(`JSON-encoded Docker HealthcheckConfig.`),
@@ -238,7 +244,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the label to remove (e.g., "org.opencontainers.artifact.created").`),
 			),
 
-		dagql.Func("withDockerHealthcheck", s.withHealthcheck).
+		dagql.NodeFunc("withDockerHealthcheck", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args WithHealthcheckArgs) (*core.Container, error) {
+			ctr, err := core.NewContainerChild(ctx, parent)
+			if err != nil {
+				return nil, err
+			}
+			return s.withHealthcheck(ctx, ctr, args)
+		}).
 			Doc(`Retrieves this container with the specificed docker healtcheck command set.`).
 			Args(
 				dagql.Arg("args").Doc(`Healthcheck command to execute. Example: ["go", "run", "main.go"].`),
@@ -250,7 +262,13 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("retries").Doc(`The maximum number of consecutive failures before the container is marked as unhealthy. Example: "3"`),
 			),
 
-		dagql.Func("withoutDockerHealthcheck", s.withoutHealthcheck).
+		dagql.NodeFunc("withoutDockerHealthcheck", func(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{}) (*core.Container, error) {
+			ctr, err := core.NewContainerChild(ctx, parent)
+			if err != nil {
+				return nil, err
+			}
+			return s.withoutHealthcheck(ctx, ctr, args)
+		}).
 			Doc(`Retrieves this container without a configured docker healtcheck command.`),
 
 		dagql.Func("dockerHealthcheck", s.healthcheck).
