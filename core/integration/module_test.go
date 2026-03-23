@@ -940,9 +940,9 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
 			// can use direct dependency directly
-			out, err = modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"hello":"hello"}`, out)
+			require.JSONEq(t, `{"dep":{"hello":"hello"}}`, out)
 		})
 	}
 }
@@ -1678,13 +1678,13 @@ export class Test {
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
 				With(daggerQuery(
-					fmt.Sprintf(`{test{container{echo(msg:%q){unwrap{stdout}}}}}`, id),
+					fmt.Sprintf(`{container{echo(msg:%q){unwrap{stdout}}}}`, id),
 				)).
 				Stdout(ctx)
 
 			require.NoError(t, err)
 			require.JSONEq(t,
-				fmt.Sprintf(`{"test":{"container":{"echo":{"unwrap":{"stdout":%q}}}}}`, id),
+				fmt.Sprintf(`{"container":{"echo":{"unwrap":{"stdout":%q}}}}`, id),
 				out)
 		})
 	}
@@ -3072,9 +3072,9 @@ func (m *Test) impl(ctx context.Context, name string) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerQuery("{test{foo,bar}}")).Stdout(ctx)
+			out, err := ctr.With(daggerQuery("{foo,bar}")).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"test": {"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}}`, out)
+			require.JSONEq(t, `{"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}`, out)
 		})
 	})
 
@@ -3678,11 +3678,11 @@ type Test struct {
 }
 
 `)).
-			With(daggerQuery("{test{a,b}}")).
+			With(daggerQuery("{a,b}")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test": {"a": "", "b": 0}}`, out)
+		require.JSONEq(t, `{"a": "", "b": 0}`, out)
 		// NOTE:
 		// - trying to get C will try and decode an empty ID
 		// - trying to get D will fail to instantiate an empty enum
@@ -3712,11 +3712,11 @@ func New() *Test {
 	return &Test{}
 }
 `)).
-			With(daggerQuery("{test{a,b}}")).
+			With(daggerQuery("{a,b}")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test": {"a": "", "b": 0}}`, out)
+		require.JSONEq(t, `{"a": "", "b": 0}`, out)
 		// NOTE:
 		// - trying to get C will try and decode an empty ID
 		// ...but, we should be able to get the other values (important for backwards-compat)
@@ -3800,10 +3800,10 @@ func schemaVersion(ctx context.Context) (string, error) {
 `,
 			)
 		out, err := work.
-			With(daggerQuery("{foo{getVersion}}")).
+			With(daggerQuery("{getVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion": "v0.11.0"}}`, out)
+		require.JSONEq(t, `{"getVersion": "v0.11.0"}`, out)
 
 		out, err = work.
 			With(daggerCall("get-version")).
@@ -3884,10 +3884,10 @@ func schemaVersion(ctx context.Context) (string, error) {
 			)
 
 		out, err := work.
-			With(daggerQuery("{foo{getVersion}}")).
+			With(daggerQuery("{getVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion": "v0.10.0 v0.11.0"}}`, out)
+		require.JSONEq(t, `{"getVersion": "v0.10.0 v0.11.0"}`, out)
 
 		out, err = work.
 			With(daggerCall("get-version")).
