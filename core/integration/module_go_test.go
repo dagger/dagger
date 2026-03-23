@@ -865,33 +865,33 @@ func (m *Minimal) ReadOptional(
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("func Read(ctx, Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{read(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
+		require.JSONEq(t, `{"read":"bar"}`, out)
 	})
 
 	t.Run("func ReadPointer(ctx, *dagger.Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readPointer(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readPointer":"bar"}}`, out)
+		require.JSONEq(t, `{"readPointer":"bar"}`, out)
 	})
 
 	t.Run("func ReadSlice(ctx, []Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readSlice(dir: ["%s"])}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
+		require.JSONEq(t, `{"readSlice":"bar"}`, out)
 	})
 
 	t.Run("func ReadVariadic(ctx, ...Directory) (string, error)", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readVariadic(dir: ["%s"])}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
+		require.JSONEq(t, `{"readVariadic":"bar"}`, out)
 	})
 
 	t.Run("func ReadOptional(ctx, Optional[Directory]) (string, error)", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{readOptional(dir: "%s")}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
+		require.JSONEq(t, `{"readOptional":"bar"}`, out)
 		out, err = modGen.With(daggerQuery(`{readOptional}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"readOptional":""}`, out)
