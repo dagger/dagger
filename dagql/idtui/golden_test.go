@@ -30,10 +30,10 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 
-	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
+	dagger "github.com/dagger/dagger/internal/testutil/dagger"
 	"github.com/dagger/dagger/internal/testutil/dagger/dag"
 	"github.com/dagger/dagger/util/scrub"
 	"github.com/dagger/testctx"
