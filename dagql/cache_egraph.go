@@ -2,6 +2,7 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -617,6 +618,7 @@ type lookupMatch struct {
 	inputEqIDs            []eqClassID
 	primaryLookupPossible bool
 	missingInputIndex     int
+	hitRecipeDigest       bool
 	hitTerm               *egraphTerm
 	hitRes                *sharedResult
 	termDigest            string
@@ -636,6 +638,7 @@ func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDig
 	resultSet := c.egraphResultsByDigest[recipeDigest.String()]
 	match.hitRes = c.firstResultDeterministicallyAtLocked(resultSet, nowUnix)
 	if match.hitRes != nil {
+		match.hitRecipeDigest = true
 		match.hitTerm = c.firstTermForResultLocked(match.hitRes.id)
 		return match
 	}
@@ -856,6 +859,18 @@ func (c *Cache) lookupCacheForRequestLocked(
 		return nil, false, nil
 	}
 
+	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
+	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable && match.hitRecipeDigest {
+		now := time.Now()
+		touchSharedResultLastUsed(hitRes, now.UnixNano())
+		retRes := Result[Typed]{
+			shared:   hitRes,
+			hitCache: true,
+		}
+		c.traceLookupHit(ctx, requestDigest.String(), hitRes, hitTerm, match.termDigest)
+		return retRes, true, nil
+	}
+
 	// We have a cache hit. Teach this request identity onto the existing shared
 	// result so any raw ID we hand back is itself resolvable by the cache later.
 	res := hitRes
@@ -884,46 +899,81 @@ func (c *Cache) lookupCacheForRequestLocked(
 
 func (c *Cache) lookupCacheForRequest(
 	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
 	req *CallRequest,
 	requestDigest digest.Digest,
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
 ) (AnyResult, bool, error) {
+	if sessionID == "" {
+		return nil, false, errors.New("lookup cache for request: empty session ID")
+	}
+	if resolver == nil {
+		return nil, false, errors.New("lookup cache for request: type resolver is nil")
+	}
 	if req == nil || req.ResultCall == nil {
 		return nil, false, nil
 	}
 
-	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable {
-		c.egraphMu.RLock()
-		match := c.lookupMatchForDigestsLocked(requestDigest, nil)
-		c.egraphMu.RUnlock()
-		if hitRes := match.hitRes; hitRes != nil {
-			c.egraphMu.Lock()
-			match = c.lookupMatchForDigestsLocked(requestDigest, nil)
-			if hitRes = match.hitRes; hitRes != nil {
-				now := time.Now()
-				touchSharedResultLastUsed(hitRes, now.UnixNano())
-				retRes := Result[Typed]{
-					shared:   hitRes,
-					hitCache: true,
-				}
-				c.traceLookupAttempt(ctx, requestDigest.String(), requestSelf.String(), requestInputs, req.IsPersistable)
-				c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.hitTerm, match.termDigest)
-				c.egraphMu.Unlock()
-				return retRes, true, nil
-			}
-
-			retRes, hit, err := c.lookupCacheForRequestLocked(ctx, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
-			c.egraphMu.Unlock()
-			return retRes, hit, err
-		}
-	}
-
 	c.egraphMu.Lock()
 	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	if err != nil || !hit {
+		c.egraphMu.Unlock()
+		return retRes, hit, err
+	}
+
+	hitShared := retRes.cacheSharedResult()
+	if hitShared == nil || hitShared.id == 0 {
+		c.egraphMu.Unlock()
+		return nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
+	}
+
+	trackedCount := 0
+	alreadyTracked := false
+	c.sessionMu.Lock()
+	if c.sessionResultIDsBySession == nil {
+		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
+	}
+	if c.sessionResultIDsBySession[sessionID] == nil {
+		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
+	}
+	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
+		alreadyTracked = true
+	} else {
+		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
+		c.incrementIncomingOwnershipLocked(ctx, hitShared)
+	}
+	trackedCount = len(c.sessionResultIDsBySession[sessionID])
+	c.sessionMu.Unlock()
 	c.egraphMu.Unlock()
-	return retRes, hit, err
+
+	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+	if err != nil {
+		c.egraphMu.Lock()
+		c.sessionMu.Lock()
+		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
+			delete(resultIDs, hitShared.id)
+			if len(resultIDs) == 0 {
+				delete(c.sessionResultIDsBySession, sessionID)
+			}
+		}
+		c.sessionMu.Unlock()
+		queue := []*sharedResult(nil)
+		var decErr error
+		if !alreadyTracked {
+			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
+		}
+		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+		c.egraphMu.Unlock()
+		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+	}
+
+	if c.traceEnabled() {
+		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
+	}
+	return loadedHit, true, nil
 }
 
 func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID string, frame *ResultCall, res AnyResult) error {

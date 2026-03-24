@@ -2,11 +2,17 @@ package dagql
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"github.com/dagger/dagger/engine"
 )
 
-func (c *Cache) PersistedSnapshotLinksByResultID(_ context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
-	res, err := c.sharedResultByResultID(sharedResultID(resultID))
+func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID uint64) ([]PersistedSnapshotRefLink, error) {
+	// Startup/import paths intentionally inspect persisted entries without adding
+	// session ownership. These results are retained by persisted edges directly
+	// or by dependency closure from another persisted result.
+	res, _, _, err := c.sharedResultByResultID(ctx, "", sharedResultID(resultID))
 	if err != nil {
 		return nil, err
 	}
@@ -34,26 +40,54 @@ func (c *Cache) PersistedResultID(res AnyResult) (uint64, error) {
 	return uint64(shared.id), nil
 }
 
-func (c *Cache) sharedResultByResultID(resultID sharedResultID) (*sharedResult, error) {
+func (c *Cache) sharedResultByResultID(ctx context.Context, sessionID string, resultID sharedResultID) (*sharedResult, bool, int, error) {
 	if c == nil {
-		return nil, fmt.Errorf("resolve result %d: nil cache", resultID)
+		return nil, false, 0, fmt.Errorf("resolve result %d: nil cache", resultID)
 	}
 	if resultID == 0 {
-		return nil, fmt.Errorf("resolve result: zero result ID")
+		return nil, false, 0, fmt.Errorf("resolve result: zero result ID")
+	}
+	if sessionID == "" {
+		c.egraphMu.RLock()
+		res := c.resultsByID[resultID]
+		c.egraphMu.RUnlock()
+		if res == nil {
+			return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
+		}
+		return res, false, 0, nil
 	}
 
-	c.egraphMu.RLock()
+	c.egraphMu.Lock()
 	res := c.resultsByID[resultID]
-	c.egraphMu.RUnlock()
-
 	if res == nil {
-		return nil, fmt.Errorf("resolve result %d: missing shared result", resultID)
+		c.egraphMu.Unlock()
+		return nil, false, 0, fmt.Errorf("resolve result %d: missing shared result", resultID)
 	}
-	return res, nil
+
+	trackedCount := 0
+	alreadyTracked := false
+	c.sessionMu.Lock()
+	if c.sessionResultIDsBySession == nil {
+		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
+	}
+	if c.sessionResultIDsBySession[sessionID] == nil {
+		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
+	}
+	if _, found := c.sessionResultIDsBySession[sessionID][resultID]; found {
+		alreadyTracked = true
+	} else {
+		c.sessionResultIDsBySession[sessionID][resultID] = struct{}{}
+		c.incrementIncomingOwnershipLocked(ctx, res)
+	}
+	trackedCount = len(c.sessionResultIDsBySession[sessionID])
+	c.sessionMu.Unlock()
+	c.egraphMu.Unlock()
+
+	return res, alreadyTracked, trackedCount, nil
 }
 
-func (c *Cache) loadResultByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyResult, error) {
-	res, err := c.sharedResultByResultID(sharedResultID(resultID))
+func (c *Cache) loadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
+	res, alreadyTracked, trackedCount, err := c.sharedResultByResultID(ctx, sessionID, sharedResultID(resultID))
 	if err != nil {
 		return nil, err
 	}
@@ -63,18 +97,35 @@ func (c *Cache) loadResultByResultID(ctx context.Context, dag *Server, resultID 
 	}
 	loaded, err := c.ensurePersistedHitValueLoaded(ctx, dag, wrapped)
 	if err != nil {
+		if sessionID != "" {
+			c.egraphMu.Lock()
+			c.sessionMu.Lock()
+			if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
+				delete(resultIDs, res.id)
+				if len(resultIDs) == 0 {
+					delete(c.sessionResultIDsBySession, sessionID)
+				}
+			}
+			c.sessionMu.Unlock()
+			queue := []*sharedResult(nil)
+			var decErr error
+			if !alreadyTracked {
+				queue, decErr = c.decrementIncomingOwnershipLocked(ctx, res, nil)
+			}
+			collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+			c.egraphMu.Unlock()
+			return nil, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+		}
 		return nil, err
+	}
+	if sessionID != "" && c.traceEnabled() {
+		c.traceSessionResultTracked(ctx, sessionID, loaded, true, trackedCount)
 	}
 	return loaded, nil
 }
 
 func (c *Cache) LoadResultByResultID(ctx context.Context, sessionID string, dag *Server, resultID uint64) (AnyResult, error) {
-	loaded, err := c.loadResultByResultID(ctx, dag, resultID)
-	if err != nil {
-		return nil, err
-	}
-	c.trackSessionResult(ctx, sessionID, loaded, true)
-	return loaded, nil
+	return c.loadResultByResultID(ctx, sessionID, dag, resultID)
 }
 
 func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *ResultCall, visit func(AnyResult) error) error {
@@ -84,6 +135,14 @@ func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *Resul
 	if rootCall == nil {
 		return nil
 	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("walk result call: current client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return fmt.Errorf("walk result call: empty session ID")
+	}
+	sessionID := clientMetadata.SessionID
 	seenCalls := map[*ResultCall]struct{}{}
 	seenResultIDs := map[uint64]struct{}{}
 
@@ -131,7 +190,7 @@ func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *Resul
 			return nil
 		}
 		seenResultIDs[ref.ResultID] = struct{}{}
-		res, err := c.loadResultByResultID(ctx, dag, ref.ResultID)
+		res, err := c.loadResultByResultID(ctx, sessionID, dag, ref.ResultID)
 		if err != nil {
 			return fmt.Errorf("load result %d: %w", ref.ResultID, err)
 		}
@@ -187,7 +246,10 @@ func (c *Cache) WalkResultCall(ctx context.Context, dag *Server, rootCall *Resul
 }
 
 func (c *Cache) LoadPersistedObjectByResultID(ctx context.Context, dag *Server, resultID uint64) (AnyObjectResult, error) {
-	res, err := c.loadResultByResultID(ctx, dag, resultID)
+	// Startup/import paths intentionally reload persisted objects without adding
+	// session ownership. These results are retained by persisted edges directly
+	// or by dependency closure from another persisted result.
+	res, err := c.loadResultByResultID(ctx, "", dag, resultID)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -3625,6 +3626,781 @@ func TestCacheArrayResultsRetainChildResultsAcrossProducerSessionRelease(t *test
 			})
 		})
 	})
+}
+
+func TestCacheArrayResultStressDoesNotReturnHitWithoutCallFrame(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t, c)
+
+	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "stress-array-seed-client",
+		SessionID: "stress-array-seed-session",
+	})
+	seedCtx = ContextWithCache(seedCtx, c)
+	seedCtx = srvToContext(seedCtx, srv)
+
+	child1Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-array-child-1",
+	}
+	child2Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-array-child-2",
+	}
+	arrayCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(ObjectResultArray[*cacheTestObject]{}.Type()),
+		Field: "stress-array-parent",
+	}
+
+	child1Any, err := c.GetOrInitCall(seedCtx, "stress-array-seed-session", srv, &CallRequest{ResultCall: child1Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child1Call, 1, nil), nil
+	})
+	assert.NilError(t, err)
+	child1 := child1Any.(ObjectResult[*cacheTestObject])
+
+	child2Any, err := c.GetOrInitCall(seedCtx, "stress-array-seed-session", srv, &CallRequest{ResultCall: child2Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child2Call, 2, nil), nil
+	})
+	assert.NilError(t, err)
+	child2 := child2Any.(ObjectResult[*cacheTestObject])
+
+	newSessionCtx := func(worker, iter int) context.Context {
+		ctx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+			ClientID:  fmt.Sprintf("stress-array-client-%d-%d", worker, iter),
+			SessionID: fmt.Sprintf("stress-array-session-%d-%d", worker, iter),
+		})
+		ctx = ContextWithCache(ctx, c)
+		ctx = srvToContext(ctx, srv)
+		return ctx
+	}
+
+	buildArray := func(ctx context.Context, sessionID string) (AnyResult, error) {
+		return c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: arrayCall}, func(context.Context) (AnyResult, error) {
+			return cacheTestDetachedResult(arrayCall, ObjectResultArray[*cacheTestObject]{child1, child2}), nil
+		})
+	}
+
+	const (
+		workers           = 24
+		attemptsPerWorker = 1000
+	)
+	isTargetFailure := func(err error) bool {
+		if err == nil {
+			return false
+		}
+		return strings.Contains(err.Error(), "without call frame") ||
+			strings.Contains(err.Error(), "has no call frame")
+	}
+
+	const ownerSessionID = "stress-array-owner-session"
+	errConsumerInit := errors.New("stress consumer should only hit cache")
+
+	ownerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "stress-array-owner-client",
+		SessionID: ownerSessionID,
+	})
+	ownerCtx = ContextWithCache(ownerCtx, c)
+	ownerCtx = srvToContext(ownerCtx, srv)
+
+	_, err = buildArray(ownerCtx, ownerSessionID)
+	assert.NilError(t, err)
+
+	start := make(chan struct{})
+	stopProducer := make(chan struct{})
+	producerDone := make(chan struct{})
+	producerErrCh := make(chan error, 1)
+	var attempts atomic.Int64
+	var hitCount atomic.Int64
+	var failure atomic.Pointer[string]
+
+	go func() {
+		defer close(producerDone)
+		<-start
+		for iter := 0; ; iter++ {
+			select {
+			case <-stopProducer:
+				return
+			default:
+			}
+
+			if _, err := buildArray(ownerCtx, ownerSessionID); err != nil {
+				producerErrCh <- err
+				return
+			}
+			time.Sleep(50 * time.Microsecond)
+			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+				producerErrCh <- err
+				return
+			}
+		}
+	}()
+
+	eg, egCtx := errgroup.WithContext(baseCtx)
+	for worker := 0; worker < workers; worker++ {
+		worker := worker
+		eg.Go(func() error {
+			<-start
+			for iter := 0; iter < attemptsPerWorker; iter++ {
+				if egCtx.Err() != nil {
+					return egCtx.Err()
+				}
+
+				ctx := newSessionCtx(worker, iter)
+				clientMD, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+
+				res, err := c.GetOrInitCall(ctx, clientMD.SessionID, srv, &CallRequest{ResultCall: arrayCall}, func(context.Context) (AnyResult, error) {
+					return nil, errConsumerInit
+				})
+				attempts.Add(1)
+				if err != nil {
+					if errors.Is(err, errConsumerInit) {
+						continue
+					}
+					return err
+				}
+				if res.HitCache() {
+					hitCount.Add(1)
+				}
+
+				if _, err := res.ResultCall(); err != nil {
+					if isTargetFailure(err) {
+						msg := fmt.Sprintf("result call failure on worker=%d iter=%d hit=%v: %v", worker, iter, res.HitCache(), err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+
+				nth, err := res.NthValue(ctx, 1)
+				if err != nil {
+					if isTargetFailure(err) {
+						msg := fmt.Sprintf("nth failure on worker=%d iter=%d hit=%v: %v", worker, iter, res.HitCache(), err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+				if nth == nil {
+					return fmt.Errorf("worker=%d iter=%d: nil nth result", worker, iter)
+				}
+				if _, err := nth.ResultCall(); err != nil {
+					if isTargetFailure(err) {
+						msg := fmt.Sprintf("nth result call failure on worker=%d iter=%d hit=%v: %v", worker, iter, res.HitCache(), err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+
+				if err := c.ReleaseSession(ctx, clientMD.SessionID); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	close(start)
+
+	err = eg.Wait()
+	close(stopProducer)
+	<-producerDone
+	select {
+	case producerErr := <-producerErrCh:
+		err = errors.Join(err, producerErr)
+	default:
+	}
+	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-array-seed-session"))
+	if msg := failure.Load(); msg != nil {
+		t.Fatalf("reproduced array hit call-frame race after %d attempts and %d hits: %s", attempts.Load(), hitCount.Load(), *msg)
+	}
+	assert.NilError(t, err)
+	t.Logf("completed %d attempts and %d cache hits without reproducing the array hit call-frame race", attempts.Load(), hitCount.Load())
+}
+
+func TestCacheArrayResultStressDoesNotRaceExplicitDependencyAttachment(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t, c)
+
+	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "stress-attach-seed-client",
+		SessionID: "stress-attach-seed-session",
+	})
+	seedCtx = ContextWithCache(seedCtx, c)
+	seedCtx = srvToContext(seedCtx, srv)
+
+	child1Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-attach-child-1",
+	}
+	child2Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-attach-child-2",
+	}
+	arrayCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(ObjectResultArray[*cacheTestObject]{}.Type()),
+		Field: "stress-attach-parent",
+	}
+
+	child1Any, err := c.GetOrInitCall(seedCtx, "stress-attach-seed-session", srv, &CallRequest{ResultCall: child1Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child1Call, 1, nil), nil
+	})
+	assert.NilError(t, err)
+	child1 := child1Any.(ObjectResult[*cacheTestObject])
+
+	child2Any, err := c.GetOrInitCall(seedCtx, "stress-attach-seed-session", srv, &CallRequest{ResultCall: child2Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child2Call, 2, nil), nil
+	})
+	assert.NilError(t, err)
+	child2 := child2Any.(ObjectResult[*cacheTestObject])
+
+	buildArray := func(ctx context.Context, sessionID string) (AnyResult, error) {
+		return c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: arrayCall}, func(context.Context) (AnyResult, error) {
+			return cacheTestDetachedResult(arrayCall, ObjectResultArray[*cacheTestObject]{child1, child2}), nil
+		})
+	}
+
+	const (
+		workers             = 24
+		attemptsPerWorker   = 400
+		targetFailureSubstr = "add explicit dependency: parent result"
+	)
+
+	newSessionCtx := func(worker, iter int) context.Context {
+		ctx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+			ClientID:  fmt.Sprintf("stress-attach-client-%d-%d", worker, iter),
+			SessionID: fmt.Sprintf("stress-attach-session-%d-%d", worker, iter),
+		})
+		ctx = ContextWithCache(ctx, c)
+		ctx = srvToContext(ctx, srv)
+		return ctx
+	}
+
+	start := make(chan struct{})
+	var attempts atomic.Int64
+	var hitCount atomic.Int64
+	var failure atomic.Pointer[string]
+
+	eg, egCtx := errgroup.WithContext(baseCtx)
+	for worker := 0; worker < workers; worker++ {
+		worker := worker
+		eg.Go(func() error {
+			<-start
+			for iter := 0; iter < attemptsPerWorker; iter++ {
+				if egCtx.Err() != nil {
+					return egCtx.Err()
+				}
+
+				ctx := newSessionCtx(worker, iter)
+				clientMD, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+
+				res, err := buildArray(ctx, clientMD.SessionID)
+				attempts.Add(1)
+				if err != nil {
+					if strings.Contains(err.Error(), targetFailureSubstr) {
+						msg := fmt.Sprintf("explicit dependency attachment failure on worker=%d iter=%d: %v", worker, iter, err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+				if res.HitCache() {
+					hitCount.Add(1)
+				}
+
+				if err := c.ReleaseSession(ctx, clientMD.SessionID); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	close(start)
+
+	err = eg.Wait()
+	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-attach-seed-session"))
+	if msg := failure.Load(); msg != nil {
+		t.Fatalf("reproduced explicit dependency attachment race after %d attempts and %d cache hits: %s", attempts.Load(), hitCount.Load(), *msg)
+	}
+	assert.NilError(t, err)
+	t.Logf("completed %d attempts and %d cache hits without reproducing the explicit dependency attachment race", attempts.Load(), hitCount.Load())
+}
+
+func TestCacheMixedSessionWaitersCancelDoNotLeak(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t, c)
+
+	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "stress-mixed-seed-client",
+		SessionID: "stress-mixed-seed-session",
+	})
+	seedCtx = ContextWithCache(seedCtx, c)
+	seedCtx = srvToContext(seedCtx, srv)
+
+	child1Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-mixed-child-1",
+	}
+	child2Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-mixed-child-2",
+	}
+
+	child1Any, err := c.GetOrInitCall(seedCtx, "stress-mixed-seed-session", srv, &CallRequest{ResultCall: child1Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child1Call, 1, nil), nil
+	})
+	assert.NilError(t, err)
+	child1 := child1Any.(ObjectResult[*cacheTestObject])
+
+	child2Any, err := c.GetOrInitCall(seedCtx, "stress-mixed-seed-session", srv, &CallRequest{ResultCall: child2Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child2Call, 2, nil), nil
+	})
+	assert.NilError(t, err)
+	child2 := child2Any.(ObjectResult[*cacheTestObject])
+
+	child1Shared := child1.cacheSharedResult()
+	child2Shared := child2.cacheSharedResult()
+	assert.Assert(t, child1Shared != nil && child1Shared.id != 0)
+	assert.Assert(t, child2Shared != nil && child2Shared.id != 0)
+
+	const (
+		attempts          = 100
+		waitersPerAttempt = 18
+		earlyCanceled     = 6
+		racingCanceled    = 6
+		concurrencyKey    = "stress-mixed-shared"
+	)
+
+	type waiterSpec struct {
+		waitCtx    context.Context
+		releaseCtx context.Context
+		cancel     context.CancelFunc
+		sessionID  string
+	}
+
+	type waiterOutcome struct {
+		res AnyResult
+		err error
+	}
+
+	for attempt := 0; attempt < attempts; attempt++ {
+		parentCall := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(ObjectResultArray[*cacheTestObject]{}.Type()),
+			Field: fmt.Sprintf("stress-mixed-parent-%d", attempt),
+		}
+		callConcKeys := callConcurrencyKeys{
+			callKey:        cacheTestCallDigest(parentCall).String(),
+			concurrencyKey: concurrencyKey,
+		}
+
+		waiterSpecs := make([]waiterSpec, waitersPerAttempt)
+		waiterOutcomes := make([]waiterOutcome, waitersPerAttempt)
+		initStarted := make(chan struct{})
+		unblockInit := make(chan struct{})
+		var initStartedOnce sync.Once
+		var initCalls atomic.Int32
+		var wg sync.WaitGroup
+
+		for i := 0; i < waitersPerAttempt; i++ {
+			sessionID := fmt.Sprintf("stress-mixed-session-%d-%d", attempt, i)
+			sessionCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+				ClientID:  fmt.Sprintf("stress-mixed-client-%d-%d", attempt, i),
+				SessionID: sessionID,
+			})
+			sessionCtx = ContextWithCache(sessionCtx, c)
+			sessionCtx = srvToContext(sessionCtx, srv)
+			waitCtx, cancel := context.WithCancel(sessionCtx)
+			waiterSpecs[i] = waiterSpec{
+				waitCtx:    waitCtx,
+				releaseCtx: sessionCtx,
+				cancel:     cancel,
+				sessionID:  sessionID,
+			}
+
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				res, err := c.GetOrInitCall(waiterSpecs[i].waitCtx, waiterSpecs[i].sessionID, srv, &CallRequest{
+					ResultCall:     parentCall,
+					ConcurrencyKey: concurrencyKey,
+				}, func(context.Context) (AnyResult, error) {
+					initCalls.Add(1)
+					initStartedOnce.Do(func() { close(initStarted) })
+					<-unblockInit
+					return cacheTestDetachedResult(parentCall, ObjectResultArray[*cacheTestObject]{child1, child2}), nil
+				})
+				waiterOutcomes[i] = waiterOutcome{
+					res: res,
+					err: err,
+				}
+			}(i)
+		}
+
+		select {
+		case <-initStarted:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("attempt %d: timed out waiting for init start", attempt)
+		}
+
+		waiterCountReached := false
+		waiterPollDeadline := time.Now().Add(5 * time.Second)
+		lastObservedWaiters := -1
+		for time.Now().Before(waiterPollDeadline) {
+			c.callsMu.Lock()
+			oc := c.ongoingCalls[callConcKeys]
+			if oc != nil {
+				lastObservedWaiters = oc.waiters
+			}
+			c.callsMu.Unlock()
+
+			if oc != nil && lastObservedWaiters == waitersPerAttempt {
+				waiterCountReached = true
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		assert.Assert(t, waiterCountReached, "attempt %d: expected %d waiters, last observed %d", attempt, waitersPerAttempt, lastObservedWaiters)
+
+		for i := 0; i < earlyCanceled; i++ {
+			waiterSpecs[i].cancel()
+		}
+		time.Sleep(1 * time.Millisecond)
+		for i := earlyCanceled; i < earlyCanceled+racingCanceled; i++ {
+			go waiterSpecs[i].cancel()
+		}
+		close(unblockInit)
+
+		wg.Wait()
+		assert.Equal(t, int32(1), initCalls.Load(), "attempt %d: expected exactly one initializer", attempt)
+
+		earlyCanceledCount := 0
+		racingCanceledCount := 0
+		successCount := 0
+		for i, outcome := range waiterOutcomes {
+			switch {
+			case i < earlyCanceled:
+				assert.Assert(t, is.ErrorIs(outcome.err, context.Canceled), "attempt %d waiter %d: expected context canceled, got %v", attempt, i, outcome.err)
+				earlyCanceledCount++
+			case i < earlyCanceled+racingCanceled:
+				if outcome.err != nil {
+					assert.Assert(t, is.ErrorIs(outcome.err, context.Canceled), "attempt %d waiter %d: expected nil or context canceled, got %v", attempt, i, outcome.err)
+					racingCanceledCount++
+					continue
+				}
+				assert.Assert(t, outcome.res != nil, "attempt %d waiter %d: expected result on success", attempt, i)
+				_, err := outcome.res.ResultCall()
+				assert.NilError(t, err, "attempt %d waiter %d: result call", attempt, i)
+				nth, err := outcome.res.NthValue(waiterSpecs[i].releaseCtx, 1)
+				assert.NilError(t, err, "attempt %d waiter %d: nth value", attempt, i)
+				assert.Assert(t, nth != nil, "attempt %d waiter %d: nil nth result", attempt, i)
+				_, err = nth.ResultCall()
+				assert.NilError(t, err, "attempt %d waiter %d: nth result call", attempt, i)
+				successCount++
+			default:
+				assert.NilError(t, outcome.err, "attempt %d waiter %d: expected success", attempt, i)
+				assert.Assert(t, outcome.res != nil, "attempt %d waiter %d: expected result on success", attempt, i)
+				_, err := outcome.res.ResultCall()
+				assert.NilError(t, err, "attempt %d waiter %d: result call", attempt, i)
+				nth, err := outcome.res.NthValue(waiterSpecs[i].releaseCtx, 1)
+				assert.NilError(t, err, "attempt %d waiter %d: nth value", attempt, i)
+				assert.Assert(t, nth != nil, "attempt %d waiter %d: nil nth result", attempt, i)
+				_, err = nth.ResultCall()
+				assert.NilError(t, err, "attempt %d waiter %d: nth result call", attempt, i)
+				successCount++
+			}
+		}
+		assert.Equal(t, earlyCanceled, earlyCanceledCount, "attempt %d: expected all early canceled waiters to return canceled", attempt)
+		assert.Assert(t, successCount >= waitersPerAttempt-earlyCanceled-racingCanceled, "attempt %d: expected at least uncanceled waiters to succeed, got %d", attempt, successCount)
+
+		for _, spec := range waiterSpecs {
+			assert.NilError(t, c.ReleaseSession(spec.releaseCtx, spec.sessionID), "attempt %d release session %s", attempt, spec.sessionID)
+			spec.cancel()
+		}
+
+		c.callsMu.Lock()
+		_, ongoingStillPresent := c.ongoingCalls[callConcKeys]
+		ongoingCallsCount := len(c.ongoingCalls)
+		c.callsMu.Unlock()
+		assert.Assert(t, !ongoingStillPresent, "attempt %d: ongoing call still present", attempt)
+		assert.Equal(t, 0, ongoingCallsCount, "attempt %d: unexpected ongoing call count", attempt)
+
+		c.sessionMu.Lock()
+		remainingSessionCount := len(c.sessionResultIDsBySession)
+		seedResults := c.sessionResultIDsBySession["stress-mixed-seed-session"]
+		c.sessionMu.Unlock()
+		assert.Equal(t, 1, remainingSessionCount, "attempt %d: expected only seed session to remain", attempt)
+		assert.Assert(t, seedResults != nil)
+		assert.Equal(t, 2, len(seedResults), "attempt %d: expected seed session to retain only child results", attempt)
+
+		c.egraphMu.RLock()
+		resultCount := len(c.resultsByID)
+		child1StillPresent := c.resultsByID[child1Shared.id] != nil
+		child2StillPresent := c.resultsByID[child2Shared.id] != nil
+		c.egraphMu.RUnlock()
+		assert.Equal(t, 2, resultCount, "attempt %d: expected only child results to remain", attempt)
+		assert.Assert(t, child1StillPresent, "attempt %d: child1 missing after waiter releases", attempt)
+		assert.Assert(t, child2StillPresent, "attempt %d: child2 missing after waiter releases", attempt)
+	}
+
+	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-mixed-seed-session"))
+
+	c.callsMu.Lock()
+	remainingOngoingCalls := len(c.ongoingCalls)
+	c.callsMu.Unlock()
+	c.sessionMu.Lock()
+	remainingSessionCount := len(c.sessionResultIDsBySession)
+	c.sessionMu.Unlock()
+	c.egraphMu.RLock()
+	remainingResults := len(c.resultsByID)
+	c.egraphMu.RUnlock()
+
+	assert.Equal(t, 0, remainingOngoingCalls)
+	assert.Equal(t, 0, remainingSessionCount)
+	assert.Equal(t, 0, remainingResults)
+	assert.Equal(t, 0, c.Size())
+}
+
+func TestCacheLoadResultByResultIDDoesNotReturnHitWithoutCallFrame(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := t.Context()
+	cacheIface, err := NewCache(baseCtx, "")
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t, c)
+
+	seedCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "stress-load-by-id-seed-client",
+		SessionID: "stress-load-by-id-seed-session",
+	})
+	seedCtx = ContextWithCache(seedCtx, c)
+	seedCtx = srvToContext(seedCtx, srv)
+
+	child1Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-load-by-id-child-1",
+	}
+	child2Call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "stress-load-by-id-child-2",
+	}
+	arrayCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(ObjectResultArray[*cacheTestObject]{}.Type()),
+		Field: "stress-load-by-id-parent",
+	}
+
+	child1Any, err := c.GetOrInitCall(seedCtx, "stress-load-by-id-seed-session", srv, &CallRequest{ResultCall: child1Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child1Call, 1, nil), nil
+	})
+	assert.NilError(t, err)
+	child1 := child1Any.(ObjectResult[*cacheTestObject])
+
+	child2Any, err := c.GetOrInitCall(seedCtx, "stress-load-by-id-seed-session", srv, &CallRequest{ResultCall: child2Call}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, child2Call, 2, nil), nil
+	})
+	assert.NilError(t, err)
+	child2 := child2Any.(ObjectResult[*cacheTestObject])
+
+	newSessionCtx := func(worker, iter int) context.Context {
+		ctx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+			ClientID:  fmt.Sprintf("stress-load-by-id-client-%d-%d", worker, iter),
+			SessionID: fmt.Sprintf("stress-load-by-id-session-%d-%d", worker, iter),
+		})
+		ctx = ContextWithCache(ctx, c)
+		ctx = srvToContext(ctx, srv)
+		return ctx
+	}
+
+	buildArray := func(ctx context.Context, sessionID string) (AnyResult, error) {
+		return c.GetOrInitCall(ctx, sessionID, srv, &CallRequest{ResultCall: arrayCall}, func(context.Context) (AnyResult, error) {
+			return cacheTestDetachedResult(arrayCall, ObjectResultArray[*cacheTestObject]{child1, child2}), nil
+		})
+	}
+
+	const (
+		workers           = 24
+		attemptsPerWorker = 1000
+	)
+	isTargetFailure := func(err error) bool {
+		if err == nil {
+			return false
+		}
+		return strings.Contains(err.Error(), "without call frame") ||
+			strings.Contains(err.Error(), "has no call frame")
+	}
+
+	const ownerSessionID = "stress-load-by-id-owner-session"
+	ownerCtx := engine.ContextWithClientMetadata(baseCtx, &engine.ClientMetadata{
+		ClientID:  "stress-load-by-id-owner-client",
+		SessionID: ownerSessionID,
+	})
+	ownerCtx = ContextWithCache(ownerCtx, c)
+	ownerCtx = srvToContext(ownerCtx, srv)
+
+	ownerRes, err := buildArray(ownerCtx, ownerSessionID)
+	assert.NilError(t, err)
+	ownerShared := ownerRes.cacheSharedResult()
+	assert.Assert(t, ownerShared != nil && ownerShared.id != 0)
+
+	var currentResultID atomic.Uint64
+	currentResultID.Store(uint64(ownerShared.id))
+
+	start := make(chan struct{})
+	stopOwner := make(chan struct{})
+	ownerDone := make(chan struct{})
+	ownerErrCh := make(chan error, 1)
+	var attempts atomic.Int64
+	var loadCount atomic.Int64
+	var failure atomic.Pointer[string]
+
+	go func() {
+		defer close(ownerDone)
+		<-start
+		for {
+			select {
+			case <-stopOwner:
+				return
+			default:
+			}
+
+			res, err := buildArray(ownerCtx, ownerSessionID)
+			if err != nil {
+				ownerErrCh <- err
+				return
+			}
+			shared := res.cacheSharedResult()
+			if shared == nil || shared.id == 0 {
+				ownerErrCh <- fmt.Errorf("owner result missing shared result id")
+				return
+			}
+			currentResultID.Store(uint64(shared.id))
+
+			time.Sleep(50 * time.Microsecond)
+
+			if err := c.ReleaseSession(ownerCtx, ownerSessionID); err != nil {
+				ownerErrCh <- err
+				return
+			}
+		}
+	}()
+
+	eg, egCtx := errgroup.WithContext(baseCtx)
+	for worker := 0; worker < workers; worker++ {
+		worker := worker
+		eg.Go(func() error {
+			<-start
+			for iter := 0; iter < attemptsPerWorker; iter++ {
+				if egCtx.Err() != nil {
+					return egCtx.Err()
+				}
+
+				resultID := currentResultID.Load()
+				if resultID == 0 {
+					continue
+				}
+
+				ctx := newSessionCtx(worker, iter)
+				clientMD, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+
+				res, err := c.LoadResultByResultID(ctx, clientMD.SessionID, srv, resultID)
+				attempts.Add(1)
+				if err != nil {
+					if strings.Contains(err.Error(), "missing shared result") {
+						continue
+					}
+					return err
+				}
+				loadCount.Add(1)
+
+				if _, err := res.ResultCall(); err != nil {
+					if isTargetFailure(err) {
+						msg := fmt.Sprintf("result call failure on worker=%d iter=%d resultID=%d: %v", worker, iter, resultID, err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+
+				nth, err := res.NthValue(ctx, 1)
+				if err != nil {
+					if isTargetFailure(err) {
+						msg := fmt.Sprintf("nth failure on worker=%d iter=%d resultID=%d: %v", worker, iter, resultID, err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+				if nth == nil {
+					return fmt.Errorf("worker=%d iter=%d: nil nth result", worker, iter)
+				}
+				if _, err := nth.ResultCall(); err != nil {
+					if isTargetFailure(err) {
+						msg := fmt.Sprintf("nth result call failure on worker=%d iter=%d resultID=%d: %v", worker, iter, resultID, err)
+						failure.Store(&msg)
+						return fmt.Errorf("%s", msg)
+					}
+					return err
+				}
+
+				if err := c.ReleaseSession(ctx, clientMD.SessionID); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+	close(start)
+
+	err = eg.Wait()
+	close(stopOwner)
+	<-ownerDone
+	select {
+	case ownerErr := <-ownerErrCh:
+		err = errors.Join(err, ownerErr)
+	default:
+	}
+	assert.NilError(t, c.ReleaseSession(ownerCtx, ownerSessionID))
+	assert.NilError(t, c.ReleaseSession(seedCtx, "stress-load-by-id-seed-session"))
+	if msg := failure.Load(); msg != nil {
+		t.Fatalf("reproduced LoadResultByResultID call-frame race after %d attempts and %d loads: %s", attempts.Load(), loadCount.Load(), *msg)
+	}
+	assert.NilError(t, err)
+	t.Logf("completed %d attempts and %d successful loads without reproducing the LoadResultByResultID call-frame race", attempts.Load(), loadCount.Load())
 }
 
 func TestCacheObjectResultRoundTripAndRelease(t *testing.T) {
