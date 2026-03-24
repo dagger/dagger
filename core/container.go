@@ -805,12 +805,6 @@ func (container *Container) WithDirectory(
 	src dagql.ObjectResult[*Directory],
 	filter CopyFilter,
 	owner string,
-	permissions *int,
-	doNotCreateDestPath bool,
-	attemptUnpackDockerCompatibility bool,
-	requiredSourcePath string,
-	destPathHintIsDirectory bool,
-	copySourcePathContentsWhenDir bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -831,7 +825,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithDirectory(ctx, subdir, src, filter, owner, permissions, doNotCreateDestPath, attemptUnpackDockerCompatibility, requiredSourcePath, destPathHintIsDirectory, copySourcePathContentsWhenDir)
+		return container.WithDirectory(ctx, subdir, src, filter, owner)
 	}
 
 	args := []dagql.NamedInput{
@@ -855,24 +849,6 @@ func (container *Container) WithDirectory(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
-	}
-	if permissions != nil {
-		args = append(args, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*permissions))})
-	}
-	if doNotCreateDestPath {
-		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
-	}
-	if attemptUnpackDockerCompatibility {
-		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
-	}
-	if requiredSourcePath != "" {
-		args = append(args, dagql.NamedInput{Name: "requiredSourcePath", Value: dagql.String(requiredSourcePath)})
-	}
-	if destPathHintIsDirectory {
-		args = append(args, dagql.NamedInput{Name: "destPathHintIsDirectory", Value: dagql.Boolean(true)})
-	}
-	if copySourcePathContentsWhenDir {
-		args = append(args, dagql.NamedInput{Name: "copySourcePathContentsWhenDir", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
@@ -926,8 +902,6 @@ func (container *Container) WithFile(
 	src dagql.ObjectResult[*File],
 	permissions *int,
 	owner string,
-	doNotCreateDestPath bool,
-	attemptUnpackDockerCompatibility bool,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -943,7 +917,7 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
 		}
-		return container.WithFile(ctx, srv, destPath, src, permissions, owner, doNotCreateDestPath, attemptUnpackDockerCompatibility)
+		return container.WithFile(ctx, srv, destPath, src, permissions, owner)
 	}
 
 	args := []dagql.NamedInput{
@@ -961,12 +935,6 @@ func (container *Container) WithFile(
 		}
 		owner := strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
 		args = append(args, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
-	}
-	if doNotCreateDestPath {
-		args = append(args, dagql.NamedInput{Name: "doNotCreateDestPath", Value: dagql.Boolean(true)})
-	}
-	if attemptUnpackDockerCompatibility {
-		args = append(args, dagql.NamedInput{Name: "attemptUnpackDockerCompatibility", Value: dagql.Boolean(true)})
 	}
 
 	//nolint:dupl
@@ -1099,7 +1067,7 @@ func (container *Container) WithFiles(
 	for _, file := range src {
 		destPath := filepath.Join(destDir, filepath.Base(file.Self().File))
 		var err error
-		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner, false, false)
+		container, err = container.WithFile(ctx, srv, destPath, file, permissions, owner)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add file %s: %w", destPath, err)
 		}
@@ -1140,7 +1108,7 @@ func (container *Container) WithNewFile(
 		return nil, fmt.Errorf("failed to create new file %s: %w", dest, err)
 	}
 
-	return container.WithFile(ctx, srv, dest, newFile, nil, owner, false, false)
+	return container.WithFile(ctx, srv, dest, newFile, nil, owner)
 }
 
 func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkPath string) (*Container, error) {

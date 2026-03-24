@@ -382,6 +382,7 @@ func applyCopy(
 		return nil, nil, fmt.Errorf("alwaysReplaceExistingDestPaths is unsupported")
 	}
 
+	fmt.Printf("ACB applyCopy src=%s (%s) dst=%s (%s)\n", cp.Src, cleanPath(cp.Src), cp.Dest, cleanPath(cp.Dest))
 	args := []*call.Argument{
 		argString("srcPath", cleanPath(cp.Src)),
 		argString("path", cleanPath(cp.Dest)),

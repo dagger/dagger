@@ -452,7 +452,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
+				//dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -2119,7 +2119,6 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	fmt.Printf("ACB container.WithDirectory %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server: %w", err)
@@ -2135,25 +2134,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		return nil, err
 	}
 
-	var perms *int
-	if args.Permissions.Valid {
-		p := int(args.Permissions.Value)
-		perms = &p
-	}
-
-	return parent.WithDirectory(
-		ctx,
-		path,
-		dir,
-		args.CopyFilter,
-		args.Owner,
-		perms,
-		args.DoNotCreateDestPath,
-		args.AttemptUnpackDockerCompatibility,
-		args.RequiredSourcePath,
-		args.DestPathHintIsDirectory,
-		args.CopySourcePathContentsWhenDir,
-	)
+	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
 }
 
 type containerWithFileArgs struct {
@@ -2168,10 +2149,9 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	var perms *int
-	if args.Permissions.Valid {
-		p := int(args.Permissions.Value)
-		perms = &p
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return inst, err
 	}
 
 	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
@@ -2179,44 +2159,12 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 
-	file, err := args.Source.Load(ctx, srv)
-	if err != nil {
-		if args.AllowDirectorySourceFallback && shouldAttemptDirectorySourceFallback(err) {
-			if dirSourceID, ok := directorySourceIDFromFileSourceID(args.Source.ID()); ok {
-				dirSource, dirErr := dagql.NewID[*core.Directory](dirSourceID).Load(ctx, srv)
-				if dirErr == nil {
-					ctr, fallbackErr := parent.Self().WithDirectory(
-						ctx,
-						path,
-						dirSource,
-						core.CopyFilter{},
-						args.Owner,
-						perms,
-						args.DoNotCreateDestPath,
-						args.AttemptUnpackDockerCompatibility,
-						"",
-						false,
-						false,
-					)
-					if fallbackErr == nil {
-						return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
-					}
-				}
-			}
-		}
-		return inst, err
+	var perms *int
+	if args.Permissions.Valid {
+		p := int(args.Permissions.Value)
+		perms = &p
 	}
-
-	ctr, err := parent.Self().WithFile(
-		ctx,
-		srv,
-		path,
-		file,
-		perms,
-		args.Owner,
-		args.DoNotCreateDestPath,
-		args.AttemptUnpackDockerCompatibility,
-	)
+	ctr, err := parent.Self().WithFile(ctx, srv, path, file, perms, args.Owner)
 	if err != nil {
 		return inst, err
 	}
