@@ -7,7 +7,7 @@
 //! # Usage
 //!
 //! ```ignore
-//! use dagger_sdk::module::prelude::*;
+//! use dagger_sdk::*;
 //!
 //! #[derive(Default)]
 //! pub struct MyModule;
@@ -22,7 +22,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> eyre::Result<()> {
-//!     dagger_sdk::module::run(MyModule).await
+//!     dagger_sdk::run(MyModule).await
 //! }
 //! ```
 
@@ -41,9 +41,9 @@ static DAG_CLIENT: OnceLock<Query> = OnceLock::new();
 /// Returns a reference to the global Dagger client.
 /// Available inside `#[dagger_function]` methods.
 pub fn dag() -> &'static Query {
-    DAG_CLIENT
-        .get()
-        .expect("dagger client not initialized — this should only be called inside a dagger function")
+    DAG_CLIENT.get().expect(
+        "dagger client not initialized — this should only be called inside a dagger function",
+    )
 }
 
 /// Store the client for user code to access via `dag()`.
@@ -62,7 +62,9 @@ pub mod gen_deps {
 
 /// Convenient re-exports for module authors.
 pub mod prelude {
-    pub use super::{dag, dagger_function, dagger_module, DaggerModule, FunctionArg, ModuleFunction, TypeKind};
+    pub use super::{
+        dag, dagger_function, dagger_module, DaggerModule, FunctionArg, ModuleFunction, TypeKind,
+    };
     pub use crate::gen::*;
     pub use serde_json;
 }
@@ -189,9 +191,15 @@ pub async fn run(module: impl DaggerModule) -> eyre::Result<()> {
             let parent_value: serde_json::Value = serde_json::from_str(&parent_json_str.0)
                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-            let result =
-                invoke::invoke(&client, &module, &parent_name, &name, parent_value, args_map)
-                    .await?;
+            let result = invoke::invoke(
+                &client,
+                &module,
+                &parent_name,
+                &name,
+                parent_value,
+                args_map,
+            )
+            .await?;
 
             let result_json = serde_json::to_string(&result)?;
             let _ = fn_call.return_value(Json(result_json)).await;

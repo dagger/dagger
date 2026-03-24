@@ -26,7 +26,9 @@ pub mod module;
 // Re-export module essentials at the top level when the module feature is enabled,
 // so users can write `use dagger_sdk::*` like Python/TypeScript SDKs.
 #[cfg(feature = "module")]
-pub use module::{dag, dagger_function, dagger_module, run, DaggerModule, FunctionArg, ModuleFunction, TypeKind};
+pub use module::{
+    dag, dagger_function, dagger_module, run, DaggerModule, FunctionArg, ModuleFunction, TypeKind,
+};
 
 pub mod id {
     use std::pin::Pin;

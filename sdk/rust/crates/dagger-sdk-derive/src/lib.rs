@@ -9,6 +9,11 @@ use syn::{parse_macro_input, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type};
 ///
 /// # Example
 /// ```ignore
+/// use dagger_sdk::*;
+///
+/// #[derive(Default)]
+/// pub struct MyModule;
+///
 /// #[dagger_module]
 /// impl MyModule {
 ///     #[dagger_function]
@@ -17,8 +22,8 @@ use syn::{parse_macro_input, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type};
 ///     }
 ///
 ///     #[dagger_function]
-///     async fn build(&self, source: dagger_sdk::Directory) -> eyre::Result<dagger_sdk::Container> {
-///         Ok(dagger_sdk::module::dag().container().from("alpine"))
+///     async fn build(&self, source: Directory) -> eyre::Result<Container> {
+///         Ok(dag().container().from("alpine"))
 ///     }
 /// }
 /// ```
@@ -50,12 +55,7 @@ fn expand_module(input: ItemImpl) -> syn::Result<proc_macro2::TokenStream> {
             .last()
             .map(|s| s.ident.to_string())
             .unwrap_or_default(),
-        _ => {
-            return Err(syn::Error::new_spanned(
-                self_ty,
-                "expected a named type",
-            ))
-        }
+        _ => return Err(syn::Error::new_spanned(self_ty, "expected a named type")),
     };
 
     // Collect dagger_function methods
@@ -355,8 +355,7 @@ fn arg_extraction_expr(camel_name: &str, ty: &Type) -> proc_macro2::TokenStream 
                 "Option" => {
                     // For Option types, check if the arg exists
                     if let syn::PathArguments::AngleBracketed(args_generic) = &seg.arguments {
-                        if let Some(syn::GenericArgument::Type(inner)) = args_generic.args.first()
-                        {
+                        if let Some(syn::GenericArgument::Type(inner)) = args_generic.args.first() {
                             let inner_extract = arg_extraction_expr(camel_name, inner);
                             return quote! {
                                 if args.contains_key(#camel_name) {

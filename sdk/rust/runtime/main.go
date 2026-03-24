@@ -17,10 +17,10 @@ import (
 
 const (
 	ModSourceDirPath   = "/src"
-	DaggerSdkMountPath = "/sdk/dagger-sdk"
-	MacrosMountPath    = "/sdk/dagger-sdk-derive"
-	CodegenMountPath   = "/sdk/dagger-codegen"
-	BootstrapMountPath = "/sdk/dagger-bootstrap"
+	DaggerSdkMountPath = "/sdk/crates/dagger-sdk"
+	MacrosMountPath    = "/sdk/crates/dagger-sdk-derive"
+	CodegenMountPath   = "/sdk/crates/dagger-codegen"
+	BootstrapMountPath = "/sdk/crates/dagger-bootstrap"
 	SchemaPath         = "/schema.json"
 	GenPath            = "dagger_gen.rs"
 	CargoToml          = "Cargo.toml"
@@ -32,6 +32,7 @@ var tplCargoToml string
 
 //go:embed template/src/main.rs
 var tplMain string
+
 
 // Functions for building the runtime module for the Rust SDK.
 //
@@ -69,9 +70,15 @@ type RustSdk struct {
 
 	// +private
 	BootstrapSourceDir *dagger.Directory
+
+	// +private
+	WorkspaceCargoToml *dagger.File
 }
 
 func New(
+	// The workspace Cargo.toml that ties all SDK crates together.
+	// +defaultPath="../Cargo.toml"
+	workspaceCargoToml *dagger.File,
 	// Directory with the dagger-sdk source code.
 	// +defaultPath="../crates/dagger-sdk"
 	// +ignore=["target"]
@@ -91,6 +98,7 @@ func New(
 ) *RustSdk {
 	return &RustSdk{
 		Container:          dag.Container(),
+		WorkspaceCargoToml: workspaceCargoToml,
 		DaggerSdkSourceDir: daggerSdkSourceDir,
 		MacrosSourceDir:    macrosSourceDir,
 		CodegenSourceDir:   codegenSourceDir,
@@ -224,58 +232,6 @@ func (m *RustSdk) load(ctx context.Context, modSource *dagger.ModuleSource) erro
 	return nil
 }
 
-// sdkWorkspaceToml is a workspace Cargo.toml that ties together all the SDK crates
-// mounted at /sdk/. This is needed because the individual crates use workspace
-// references (version.workspace, edition.workspace, etc.).
-const sdkWorkspaceToml = `[workspace]
-members = ["dagger-sdk", "dagger-codegen", "dagger-bootstrap", "dagger-sdk-derive"]
-resolver = "2"
-
-[workspace.package]
-version = "0.20.3"
-edition = "2021"
-authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
-repository = "https://github.com/dagger/dagger"
-
-[workspace.dependencies]
-dagger-codegen = { path = "dagger-codegen" }
-dagger-bootstrap = { path = "dagger-bootstrap" }
-dagger-sdk = { path = "dagger-sdk", default-features = false }
-dagger-sdk-derive = { path = "dagger-sdk-derive" }
-
-eyre = "0.6.9"
-color-eyre = "0.6.2"
-serde = { version = "1.0.195", features = ["derive"] }
-serde_json = "1.0.111"
-serde_graphql_input = { version = "0.1.1" }
-tokio = { version = "1.35.1", features = ["full"] }
-tracing = { version = "0.1.40", features = ["log"] }
-tracing-subscriber = { version = "0.3.18", features = ["tracing-log", "tracing"] }
-thiserror = "1.0.56"
-futures = "0.3.30"
-derive_builder = "0.12.0"
-base64 = "0.21.6"
-dirs = "5.0.1"
-flate2 = { version = "1.0.28", features = ["rust_backend"] }
-graphql_client = { version = "0.13.0", features = ["reqwest-rustls", "graphql_query_derive"], default-features = false }
-hex = "0.4.3"
-hex-literal = "0.4.1"
-platform-info = "2.0.2"
-reqwest = { version = "0.11.23", features = ["stream", "rustls-tls"], default-features = false }
-sha2 = "0.10.8"
-tar = "0.4.40"
-tempfile = "3.9.0"
-async-trait = "0.1.77"
-genco = "0.17.8"
-convert_case = "0.6.0"
-itertools = "0.12.0"
-clap = "4.4.14"
-
-pretty_assertions = "1.4.0"
-rand = "0.8.5"
-tracing-test = "0.2.4"
-`
-
 // withBase sets up the base Rust container.
 func (m *RustSdk) withBase() {
 	m.Container = dag.Container().
@@ -291,8 +247,8 @@ func (m *RustSdk) withBase() {
 		// Mount codegen crates
 		WithMountedDirectory(CodegenMountPath, m.CodegenSourceDir).
 		WithMountedDirectory(BootstrapMountPath, m.BootstrapSourceDir).
-		// Create a workspace Cargo.toml so workspace references resolve
-		WithNewFile("/sdk/Cargo.toml", sdkWorkspaceToml).
+		// Mount the workspace Cargo.toml so workspace references resolve
+		WithMountedFile("/sdk/Cargo.toml", m.WorkspaceCargoToml).
 		// Cache the SDK workspace build target
 		WithMountedCache("/sdk/target", dag.CacheVolume("rust-sdk-target"))
 }

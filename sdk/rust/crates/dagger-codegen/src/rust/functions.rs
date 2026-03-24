@@ -284,7 +284,12 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     }
 
     // For nullable scalar fields, use execute_opt which handles null
-    if field.type_.as_ref().map(|t| t.type_ref.is_optional()).unwrap_or(false) {
+    if field
+        .type_
+        .as_ref()
+        .map(|t| t.type_ref.is_optional())
+        .unwrap_or(false)
+    {
         quote! {
             query.execute_opt(self.graphql_client.clone()).await
         }

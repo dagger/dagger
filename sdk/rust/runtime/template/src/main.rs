@@ -1,4 +1,4 @@
-use dagger_sdk::module::prelude::*;
+use dagger_sdk::*;
 
 #[derive(Default)]
 pub struct %s;
@@ -32,5 +32,5 @@ impl %s {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    dagger_sdk::module::run(%s).await
+    dagger_sdk::run(%s).await
 }

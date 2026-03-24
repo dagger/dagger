@@ -225,16 +225,11 @@ impl Selection {
             return self.unpack_resp_value(o.get(first).unwrap().clone());
         }
 
-        let field_name = self
-            .name
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
+        let field_name = self.name.clone().unwrap_or_else(|| "unknown".to_string());
         serde_json::from_value::<D>(r)
-            .map_err(|e| {
-                DaggerUnpackError::Deserialize {
-                    field: field_name,
-                    source: e,
-                }
+            .map_err(|e| DaggerUnpackError::Deserialize {
+                field: field_name,
+                source: e,
             })
             .map_err(DaggerError::Unpack)
     }
