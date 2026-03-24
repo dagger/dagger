@@ -497,24 +497,63 @@ sleep 5 # wait for gnome-keyring-daemon to be ready
 func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// Start LocalStack container for testing AWS services
-	localstack, err := c.Container().
-		From("localstack/localstack:latest").
-		WithEnvVariable("SERVICES", "secretsmanager,ssm").
-		WithEnvVariable("DEBUG", "1").
+	// Start floci container for testing AWS services
+	fakeAws, err := c.Container().
+		From("hectorvent/floci:1.0.4@sha256:70733770e91ea387a4812fa2e9526df02d934aeb5057a760296fc4fb05345a9a").
+		WithNewFile("src/main/resources/application.yml", `
+floci:
+  services:
+    ssm:
+      enabled: true
+    sqs:
+      enabled: false
+    s3:
+      enabled: false
+    dynamodb:
+      enabled: false
+    sns:
+      enabled: false
+    lambda:
+      enabled: false
+    apigateway:
+      enabled: false
+    iam:
+      enabled: false
+    elasticache:
+      enabled: false
+    rds:
+      enabled: false
+    eventbridge:
+      enabled: false
+    cloudwatchlogs:
+      enabled: false
+    cloudwatchmetrics:
+      enabled: false
+    secretsmanager:
+      enabled: true
+    kinesis:
+      enabled: false
+    kms:
+      enabled: false
+    cognito:
+      enabled: false
+    stepfunctions:
+      enabled: false
+    cloudformation:
+      enabled: false
+`).
 		WithExposedPort(4566).
 		AsService().Start(ctx)
 	require.NoError(t, err)
 
-	// Wait for LocalStack to be ready and set up AWS CLI base container
+	// Wait for the fake AWS to be ready and set up AWS CLI base container
 	awsCLI := c.Container().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "--no-cache", "aws-cli", "curl"}).
-		WithServiceBinding("localstack", localstack).
+		WithServiceBinding("fakeaws", fakeAws).
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
 		WithEnvVariable("AWS_REGION", "us-east-1").
-		WithExec([]string{"sh", "-c", "sleep 10 && curl -v http://localstack:4566/_localstack/health || true"}). // Wait and test LocalStack
 		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Create test secrets in Secrets Manager
@@ -522,7 +561,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "secretsmanager", "create-secret",
-			"--endpoint-url", "http://localstack:4566",
+			"--endpoint-url", "http://fakeaws:4566",
 			"--name", "test/string-secret",
 			"--secret-string", secretValue,
 		}).Sync(ctx)
@@ -533,7 +572,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "secretsmanager", "create-secret",
-			"--endpoint-url", "http://localstack:4566",
+			"--endpoint-url", "http://fakeaws:4566",
 			"--name", "test/json-secret",
 			"--secret-string", jsonSecret,
 		}).Sync(ctx)
@@ -544,7 +583,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	_, err = awsCLI.
 		WithExec([]string{
 			"aws", "ssm", "put-parameter",
-			"--endpoint-url", "http://localstack:4566",
+			"--endpoint-url", "http://fakeaws:4566",
 			"--name", "/test/parameter",
 			"--value", paramValue,
 			"--type", "SecureString",
@@ -555,11 +594,11 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithServiceBinding("localstack", localstack).
+		WithServiceBinding("fakeaws", fakeAws).
 		WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
 		WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
 		WithEnvVariable("AWS_REGION", "us-east-1").
-		WithEnvVariable("AWS_ENDPOINT_URL", "http://localstack:4566").
+		WithEnvVariable("AWS_ENDPOINT_URL", "http://fakeaws:4566").
 		WithEnvVariable("NOCACHE", time.Now().String())
 
 	// Test 1: Secrets Manager string secret
