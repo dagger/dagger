@@ -86,6 +86,24 @@ func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*cor
 	if err != nil {
 		return nil, err
 	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load engine cache for core typedef retention: %w", err)
+	}
+	retainedSessionID := "core_schema_base:" + string(view)
+	retainedTypeDefs := make(dagql.ObjectResultArray[*core.TypeDef], 0, len(typedefs))
+	for _, typedef := range typedefs {
+		attached, err := cache.AttachResult(ctx, retainedSessionID, srv, typedef)
+		if err != nil {
+			return nil, fmt.Errorf("retain core typedef: %w", err)
+		}
+		attachedTypeDef, ok := attached.(dagql.ObjectResult[*core.TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("retain core typedef: expected ObjectResult[*core.TypeDef], got %T", attached)
+		}
+		retainedTypeDefs = append(retainedTypeDefs, attachedTypeDef)
+	}
+	typedefs = retainedTypeDefs
 
 	state := &coreSchemaViewState{
 		server:           srv,
