@@ -97,10 +97,10 @@ Reason:
 - sibling workspace-module traversal/listing for `dagger functions`
 - `dagger workspace info`
 - initialized-workspace detection via `.dagger/config.toml`
+- `Workspace.init` plus `dagger workspace init`
 
 ### Pending Safe Pre-Lock Buckets
 
-- `Workspace.init` plus `dagger workspace init`
 - workspace config model
 - `dagger workspace config` read/write
 - top-level install split and workspace install base
@@ -228,3 +228,19 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/TestCurrentWorkspaceInit$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/1bea4dc0f532e20d49dfe0557caf36d1`
+  - replayed `Workspace.init` plus `dagger workspace init`
+  - rewrite note:
+    keep the bucket narrow: add the local-only workspace init mutation and the
+    thin CLI wrapper, but do not pull in the later config model or old
+    workspace-owned lock plumbing
+  - codegen note:
+    `go generate` wanted to refresh unrelated Go SDK surface, so keep the
+    bucket legible by patching only the minimal `Workspace.Init` client method
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./cmd/dagger -o /tmp/.tmp-cmd-dagger.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/schema -o /tmp/.tmp-core-schema.test`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/Test(CurrentWorkspaceInit|WorkspaceInitCommand)$' --test-verbose`
+  - trace:
+    `https://dagger.cloud/dagger/traces/ce6a8ec60e4250a5d944abed759f495e`

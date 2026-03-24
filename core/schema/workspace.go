@@ -55,6 +55,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
+		dagql.Func("init", s.workspaceInit).
+			DoNotCache("Mutates workspace on host").
+			Doc("Initialize a new workspace, creating .dagger/config.toml."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(

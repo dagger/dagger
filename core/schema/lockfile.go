@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -126,13 +125,7 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	if ws == nil {
-		return "", fmt.Errorf("workspace is required")
-	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
-	}
-	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+	return workspaceHostPath(ws, workspace.LockDirName, workspace.LockFileName)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {
@@ -180,22 +173,5 @@ func exportLockToHost(ctx context.Context, bk *buildkit.Client, ws *core.Workspa
 		return err
 	}
 
-	tmpFile, err := os.CreateTemp("", "workspace-lock-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(lockBytes); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-
-	if err := bk.LocalFileExport(ctx, tmpFile.Name(), workspace.LockFileName, lockPath, true); err != nil {
-		return fmt.Errorf("export lock: %w", err)
-	}
-	return nil
+	return exportWorkspaceFileToHost(ctx, bk, lockPath, lockBytes)
 }

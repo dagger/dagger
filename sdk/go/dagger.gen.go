@@ -14569,6 +14569,16 @@ func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// Initialize a new workspace, creating .dagger/config.toml.
+func (r *Workspace) Init(ctx context.Context) (string, error) {
+	q := r.query.Select("init")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Workspace directory path relative to the workspace boundary.
 func (r *Workspace) Path(ctx context.Context) (string, error) {
 	if r.path != nil {

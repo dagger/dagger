@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
@@ -49,6 +50,26 @@ var workspaceInfoCmd = &cobra.Command{
 	},
 }
 
+var workspaceInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Initialize a new workspace",
+	Long:  "Initialize a new workspace in the current directory, creating .dagger/config.toml.",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{
+			SkipWorkspaceModules: true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			configDir, err := initWorkspace(ctx, engineClient.Dagger())
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Initialized workspace in %s\n", configDir)
+			return err
+		})
+	},
+}
+
 type workspaceInfoView struct {
 	Address    string
 	Path       string
@@ -56,7 +77,12 @@ type workspaceInfoView struct {
 }
 
 func init() {
+	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
+}
+
+func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {
+	return dag.CurrentWorkspace().Init(ctx)
 }
 
 func writeWorkspaceInfo(w io.Writer, info workspaceInfoView) error {
