@@ -1584,7 +1584,7 @@ func (container *Container) WithExec(
 						rerr = fmt.Errorf("get dagql cache for terminal exec error: %w", err)
 						return
 					}
-					callID, err = dagqlCache.RecipeIDForCall(execMD.Call)
+					callID, err = dagqlCache.RecipeIDForCall(ctx, execMD.Call)
 					if err != nil {
 						rerr = fmt.Errorf("rebuild recipe ID for terminal exec error: %w", err)
 						return

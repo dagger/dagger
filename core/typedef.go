@@ -47,6 +47,7 @@ type Function struct {
 
 var _ dagql.PersistedObject = (*Function)(nil)
 var _ dagql.PersistedObjectDecoder = (*Function)(nil)
+var _ dagql.HasDependencyResults = (*Function)(nil)
 
 func NewFunction(name string, returnType dagql.ObjectResult[*TypeDef]) *Function {
 	return &Function{
@@ -88,6 +89,60 @@ func (*Function) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _
 		return nil, fmt.Errorf("decode persisted function payload: %w", err)
 	}
 	return decodePersistedFunction(ctx, dag, &persisted)
+}
+
+func (fn *Function) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if fn == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2+len(fn.Args))
+
+	if fn.ReturnType.Self() != nil {
+		attached, err := attach(fn.ReturnType)
+		if err != nil {
+			return nil, fmt.Errorf("attach function return type: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach function return type: unexpected result %T", attached)
+		}
+		fn.ReturnType = typed
+		owned = append(owned, typed)
+	}
+	if fn.SourceMap.Valid && fn.SourceMap.Value.Self() != nil {
+		attached, err := attach(fn.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach function source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach function source map: unexpected result %T", attached)
+		}
+		fn.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, arg := range fn.Args {
+		if arg.Self() == nil {
+			continue
+		}
+		attached, err := attach(arg)
+		if err != nil {
+			return nil, fmt.Errorf("attach function arg %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*FunctionArg])
+		if !ok {
+			return nil, fmt.Errorf("attach function arg %d: unexpected result %T", i, attached)
+		}
+		fn.Args[i] = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func (fn Function) Clone() *Function {
@@ -382,8 +437,8 @@ func (proto FunctionCachePolicy) ToLiteral() call.Literal {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name           string                     `field:"true" doc:"The name of the argument in lowerCamelCase format." doNotCache:"simple field selection"`
-	Description    string                     `field:"true" doc:"A doc string for the argument, if any." doNotCache:"simple field selection"`
+	Name           string                                         `field:"true" doc:"The name of the argument in lowerCamelCase format." doNotCache:"simple field selection"`
+	Description    string                                         `field:"true" doc:"A doc string for the argument, if any." doNotCache:"simple field selection"`
 	SourceMap      dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this arg declaration."`
 	TypeDef        dagql.ObjectResult[*TypeDef]
 	DefaultValue   JSON     `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any." doNotCache:"simple field selection"`
@@ -400,6 +455,46 @@ type FunctionArg struct {
 
 var _ dagql.PersistedObject = (*FunctionArg)(nil)
 var _ dagql.PersistedObjectDecoder = (*FunctionArg)(nil)
+var _ dagql.HasDependencyResults = (*FunctionArg)(nil)
+
+func (arg *FunctionArg) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if arg == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2)
+
+	if arg.TypeDef.Self() != nil {
+		attached, err := attach(arg.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("attach function arg type def: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach function arg type def: unexpected result %T", attached)
+		}
+		arg.TypeDef = typed
+		owned = append(owned, typed)
+	}
+	if arg.SourceMap.Valid && arg.SourceMap.Value.Self() != nil {
+		attached, err := attach(arg.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach function arg source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach function arg source map: unexpected result %T", attached)
+		}
+		arg.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
+}
 
 func (arg FunctionArg) Clone() *FunctionArg {
 	cp := arg
@@ -674,6 +769,7 @@ type TypeDef struct {
 
 var _ dagql.PersistedObject = (*TypeDef)(nil)
 var _ dagql.PersistedObjectDecoder = (*TypeDef)(nil)
+var _ dagql.HasDependencyResults = (*TypeDef)(nil)
 
 func (typeDef TypeDef) Clone() *TypeDef {
 	cp := typeDef
@@ -709,6 +805,93 @@ func (*TypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 		return nil, fmt.Errorf("decode persisted type def payload: %w", err)
 	}
 	return decodePersistedTypeDef(ctx, dag, &persisted)
+}
+
+func (typeDef *TypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 6)
+
+	if typeDef.AsList.Valid && typeDef.AsList.Value.Self() != nil {
+		attached, err := attach(typeDef.AsList.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef list: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ListTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef list: unexpected result %T", attached)
+		}
+		typeDef.AsList = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsObject.Valid && typeDef.AsObject.Value.Self() != nil {
+		attached, err := attach(typeDef.AsObject.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef object: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ObjectTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef object: unexpected result %T", attached)
+		}
+		typeDef.AsObject = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsInterface.Valid && typeDef.AsInterface.Value.Self() != nil {
+		attached, err := attach(typeDef.AsInterface.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef interface: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*InterfaceTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef interface: unexpected result %T", attached)
+		}
+		typeDef.AsInterface = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsInput.Valid && typeDef.AsInput.Value.Self() != nil {
+		attached, err := attach(typeDef.AsInput.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef input: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*InputTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef input: unexpected result %T", attached)
+		}
+		typeDef.AsInput = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsScalar.Valid && typeDef.AsScalar.Value.Self() != nil {
+		attached, err := attach(typeDef.AsScalar.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef scalar: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*ScalarTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef scalar: unexpected result %T", attached)
+		}
+		typeDef.AsScalar = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	if typeDef.AsEnum.Valid && typeDef.AsEnum.Value.Self() != nil {
+		attached, err := attach(typeDef.AsEnum.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach typedef enum: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*EnumTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach typedef enum: unexpected result %T", attached)
+		}
+		typeDef.AsEnum = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func (typeDef *TypeDef) ToTyped() dagql.Typed {
@@ -947,8 +1130,8 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 
 type ObjectTypeDef struct {
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the object." doNotCache:"simple field selection"`
-	Description string                     `field:"true" doc:"The doc string for the object, if any." doNotCache:"simple field selection"`
+	Name        string                                         `field:"true" doc:"The name of the object." doNotCache:"simple field selection"`
+	Description string                                         `field:"true" doc:"The doc string for the object, if any." doNotCache:"simple field selection"`
 	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this object declaration."`
 	Fields      dagql.ObjectResultArray[*FieldTypeDef]
 	Functions   dagql.ObjectResultArray[*Function]
@@ -991,6 +1174,8 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
+var _ dagql.HasDependencyResults = (*ObjectTypeDef)(nil)
+
 func (obj *ObjectTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
 	if obj == nil {
@@ -1009,6 +1194,75 @@ func (*ObjectTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 		return nil, fmt.Errorf("decode persisted object type def payload: %w", err)
 	}
 	return decodePersistedObjectTypeDef(ctx, dag, &persisted)
+}
+
+func (obj *ObjectTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if obj == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2+len(obj.Fields)+len(obj.Functions))
+
+	if obj.SourceMap.Valid && obj.SourceMap.Value.Self() != nil {
+		attached, err := attach(obj.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef source map: unexpected result %T", attached)
+		}
+		obj.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, field := range obj.Fields {
+		if field.Self() == nil {
+			continue
+		}
+		attached, err := attach(field)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef field %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*FieldTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef field %d: unexpected result %T", i, attached)
+		}
+		obj.Fields[i] = typed
+		owned = append(owned, typed)
+	}
+	for i, fn := range obj.Functions {
+		if fn.Self() == nil {
+			continue
+		}
+		attached, err := attach(fn)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef function %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Function])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef function %d: unexpected result %T", i, attached)
+		}
+		obj.Functions[i] = typed
+		owned = append(owned, typed)
+	}
+	if obj.Constructor.Valid && obj.Constructor.Value.Self() != nil {
+		attached, err := attach(obj.Constructor.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach object typedef constructor: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Function])
+		if !ok {
+			return nil, fmt.Errorf("attach object typedef constructor: unexpected result %T", attached)
+		}
+		obj.Constructor = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func NewObjectTypeDef(name, description string, deprecated *string) *ObjectTypeDef {
@@ -1201,6 +1455,8 @@ func (*FieldTypeDef) TypeDescription() string {
 		arguments).`)
 }
 
+var _ dagql.HasDependencyResults = (*FieldTypeDef)(nil)
+
 func (field *FieldTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
 	if field == nil {
@@ -1219,6 +1475,45 @@ func (*FieldTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		return nil, fmt.Errorf("decode persisted field type def payload: %w", err)
 	}
 	return decodePersistedFieldTypeDef(ctx, dag, &persisted)
+}
+
+func (field *FieldTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if field == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 2)
+
+	if field.TypeDef.Self() != nil {
+		attached, err := attach(field.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("attach field typedef type: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach field typedef type: unexpected result %T", attached)
+		}
+		field.TypeDef = typed
+		owned = append(owned, typed)
+	}
+	if field.SourceMap.Valid && field.SourceMap.Value.Self() != nil {
+		attached, err := attach(field.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach field typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach field typedef source map: unexpected result %T", attached)
+		}
+		field.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
@@ -1243,8 +1538,8 @@ func (field *FieldTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap
 
 type InterfaceTypeDef struct {
 	// Name is the standardized name of the interface (CamelCase), as used for the interface in the graphql schema
-	Name        string                     `field:"true" doc:"The name of the interface." doNotCache:"simple field selection"`
-	Description string                     `field:"true" doc:"The doc string for the interface, if any." doNotCache:"simple field selection"`
+	Name        string                                         `field:"true" doc:"The name of the interface." doNotCache:"simple field selection"`
+	Description string                                         `field:"true" doc:"The doc string for the interface, if any." doNotCache:"simple field selection"`
 	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this interface declaration."`
 	Functions   dagql.ObjectResultArray[*Function]
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
@@ -1276,6 +1571,8 @@ func (*InterfaceTypeDef) TypeDescription() string {
 	return "A definition of a custom interface defined in a Module."
 }
 
+var _ dagql.HasDependencyResults = (*InterfaceTypeDef)(nil)
+
 func (iface *InterfaceTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
 	if iface == nil {
@@ -1294,6 +1591,48 @@ func (*InterfaceTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.S
 		return nil, fmt.Errorf("decode persisted interface type def payload: %w", err)
 	}
 	return decodePersistedInterfaceTypeDef(ctx, dag, &persisted)
+}
+
+func (iface *InterfaceTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if iface == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 1+len(iface.Functions))
+
+	if iface.SourceMap.Valid && iface.SourceMap.Value.Self() != nil {
+		attached, err := attach(iface.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach interface typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach interface typedef source map: unexpected result %T", attached)
+		}
+		iface.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, fn := range iface.Functions {
+		if fn.Self() == nil {
+			continue
+		}
+		attached, err := attach(fn)
+		if err != nil {
+			return nil, fmt.Errorf("attach interface typedef function %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Function])
+		if !ok {
+			return nil, fmt.Errorf("attach interface typedef function %d: unexpected result %T", i, attached)
+		}
+		iface.Functions[i] = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
@@ -1436,6 +1775,8 @@ func (*ListTypeDef) TypeDescription() string {
 	return "A definition of a list type in a Module."
 }
 
+var _ dagql.HasDependencyResults = (*ListTypeDef)(nil)
+
 func (typeDef *ListTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
 	if typeDef == nil {
@@ -1454,6 +1795,27 @@ func (*ListTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		return nil, fmt.Errorf("decode persisted list type def payload: %w", err)
 	}
 	return decodePersistedListTypeDef(ctx, dag, &persisted)
+}
+
+func (typeDef *ListTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if typeDef == nil || typeDef.ElementTypeDef.Self() == nil {
+		return nil, nil
+	}
+
+	attached, err := attach(typeDef.ElementTypeDef)
+	if err != nil {
+		return nil, fmt.Errorf("attach list typedef element type: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+	if !ok {
+		return nil, fmt.Errorf("attach list typedef element type: unexpected result %T", attached)
+	}
+	typeDef.ElementTypeDef = typed
+	return []dagql.AnyResult{typed}, nil
 }
 
 func (typeDef ListTypeDef) Clone() *ListTypeDef {
@@ -1485,6 +1847,8 @@ in the core API. It is not used by user modules and shouldn't ever be as user
 module accept input objects via their id rather than graphql input types.`
 }
 
+var _ dagql.HasDependencyResults = (*InputTypeDef)(nil)
+
 func (typeDef *InputTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
 	if typeDef == nil {
@@ -1503,6 +1867,34 @@ func (*InputTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		return nil, fmt.Errorf("decode persisted input type def payload: %w", err)
 	}
 	return decodePersistedInputTypeDef(ctx, dag, &persisted)
+}
+
+func (typeDef *InputTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if typeDef == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, len(typeDef.Fields))
+	for i, field := range typeDef.Fields {
+		if field.Self() == nil {
+			continue
+		}
+		attached, err := attach(field)
+		if err != nil {
+			return nil, fmt.Errorf("attach input typedef field %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*FieldTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach input typedef field %d: unexpected result %T", i, attached)
+		}
+		typeDef.Fields[i] = typed
+		owned = append(owned, typed)
+	}
+	return owned, nil
 }
 
 func (typeDef InputTypeDef) Clone() *InputTypeDef {
@@ -1560,6 +1952,8 @@ func (*EnumTypeDef) TypeDescription() string {
 	return "A definition of a custom enum defined in a Module."
 }
 
+var _ dagql.HasDependencyResults = (*EnumTypeDef)(nil)
+
 func (enum *EnumTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
 	if enum == nil {
@@ -1578,6 +1972,48 @@ func (*EnumTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		return nil, fmt.Errorf("decode persisted enum type def payload: %w", err)
 	}
 	return decodePersistedEnumTypeDef(ctx, dag, &persisted)
+}
+
+func (enum *EnumTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if enum == nil {
+		return nil, nil
+	}
+
+	owned := make([]dagql.AnyResult, 0, 1+len(enum.Members))
+
+	if enum.SourceMap.Valid && enum.SourceMap.Value.Self() != nil {
+		attached, err := attach(enum.SourceMap.Value)
+		if err != nil {
+			return nil, fmt.Errorf("attach enum typedef source map: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+		if !ok {
+			return nil, fmt.Errorf("attach enum typedef source map: unexpected result %T", attached)
+		}
+		enum.SourceMap = dagql.NonNull(typed)
+		owned = append(owned, typed)
+	}
+	for i, member := range enum.Members {
+		if member.Self() == nil {
+			continue
+		}
+		attached, err := attach(member)
+		if err != nil {
+			return nil, fmt.Errorf("attach enum typedef member %d: %w", i, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*EnumMemberTypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach enum typedef member %d: unexpected result %T", i, attached)
+		}
+		enum.Members[i] = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }
 
 func NewEnumTypeDef(name, description string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumTypeDef {
@@ -1641,11 +2077,11 @@ func (enum *EnumTypeDef) WithMember(member dagql.ObjectResult[*EnumMemberTypeDef
 }
 
 type EnumMemberTypeDef struct {
-	Name        string                     `field:"true" doc:"The name of the enum member." doNotCache:"simple field selection"`
-	Value       string                     `field:"true" doc:"The value of the enum member" doNotCache:"simple field selection"`
-	Description string                     `field:"true" doc:"A doc string for the enum member, if any." doNotCache:"simple field selection"`
+	Name        string                                         `field:"true" doc:"The name of the enum member." doNotCache:"simple field selection"`
+	Value       string                                         `field:"true" doc:"The value of the enum member" doNotCache:"simple field selection"`
+	Description string                                         `field:"true" doc:"A doc string for the enum member, if any." doNotCache:"simple field selection"`
 	SourceMap   dagql.Nullable[dagql.ObjectResult[*SourceMap]] `field:"true" doc:"The location of this enum member declaration."`
-	Deprecated  *string                    `field:"true" doc:"The reason this enum member is deprecated, if any."`
+	Deprecated  *string                                        `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	OriginalName string
 }
@@ -1662,6 +2098,8 @@ func (*EnumMemberTypeDef) Type() *ast.Type {
 func (*EnumMemberTypeDef) TypeDescription() string {
 	return "A definition of a value in a custom enum defined in a Module."
 }
+
+var _ dagql.HasDependencyResults = (*EnumMemberTypeDef)(nil)
 
 func (member *EnumMemberTypeDef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
@@ -1681,6 +2119,27 @@ func (*EnumMemberTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.
 		return nil, fmt.Errorf("decode persisted enum member type def payload: %w", err)
 	}
 	return decodePersistedEnumMemberTypeDef(ctx, dag, &persisted)
+}
+
+func (member *EnumMemberTypeDef) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if member == nil || !member.SourceMap.Valid || member.SourceMap.Value.Self() == nil {
+		return nil, nil
+	}
+
+	attached, err := attach(member.SourceMap.Value)
+	if err != nil {
+		return nil, fmt.Errorf("attach enum member source map: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*SourceMap])
+	if !ok {
+		return nil, fmt.Errorf("attach enum member source map: unexpected result %T", attached)
+	}
+	member.SourceMap = dagql.NonNull(typed)
+	return []dagql.AnyResult{typed}, nil
 }
 
 func NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
@@ -2128,15 +2587,15 @@ type persistedTypeDef struct {
 }
 
 type persistedObjectTypeDef struct {
-	Name              string   `json:"name,omitempty"`
-	Description       string   `json:"description,omitempty"`
-	SourceMapResultID uint64   `json:"sourceMapResultID,omitempty"`
-	FieldResultIDs    []uint64 `json:"fieldResultIDs,omitempty"`
-	FunctionResultIDs []uint64 `json:"functionResultIDs,omitempty"`
-	ConstructorResultID uint64 `json:"constructorResultID,omitempty"`
-	Deprecated        *string  `json:"deprecated,omitempty"`
-	SourceModuleName  string   `json:"sourceModuleName,omitempty"`
-	OriginalName      string   `json:"originalName,omitempty"`
+	Name                string   `json:"name,omitempty"`
+	Description         string   `json:"description,omitempty"`
+	SourceMapResultID   uint64   `json:"sourceMapResultID,omitempty"`
+	FieldResultIDs      []uint64 `json:"fieldResultIDs,omitempty"`
+	FunctionResultIDs   []uint64 `json:"functionResultIDs,omitempty"`
+	ConstructorResultID uint64   `json:"constructorResultID,omitempty"`
+	Deprecated          *string  `json:"deprecated,omitempty"`
+	SourceModuleName    string   `json:"sourceModuleName,omitempty"`
+	OriginalName        string   `json:"originalName,omitempty"`
 }
 
 type persistedFieldTypeDef struct {
@@ -2245,8 +2704,6 @@ func encodePersistedFunctionArg(cache dagql.PersistedObjectCache, arg *FunctionA
 	}
 	return payload, nil
 }
-
-// fjkdlsajskl
 
 func decodePersistedFunctionArg(ctx context.Context, dag *dagql.Server, arg *persistedFunctionArg) (*FunctionArg, error) {
 	if arg == nil {
@@ -2469,13 +2926,13 @@ func encodePersistedObjectTypeDef(cache dagql.PersistedObjectCache, obj *ObjectT
 		return nil, nil
 	}
 	payload := &persistedObjectTypeDef{
-		Name:               obj.Name,
-		Description:        obj.Description,
-		Deprecated:         obj.Deprecated,
-		SourceModuleName:   obj.SourceModuleName,
-		OriginalName:       obj.OriginalName,
-		FieldResultIDs:     make([]uint64, 0, len(obj.Fields)),
-		FunctionResultIDs:  make([]uint64, 0, len(obj.Functions)),
+		Name:              obj.Name,
+		Description:       obj.Description,
+		Deprecated:        obj.Deprecated,
+		SourceModuleName:  obj.SourceModuleName,
+		OriginalName:      obj.OriginalName,
+		FieldResultIDs:    make([]uint64, 0, len(obj.Fields)),
+		FunctionResultIDs: make([]uint64, 0, len(obj.Functions)),
 	}
 	if obj.SourceMap.Valid && obj.SourceMap.Value.Self() != nil {
 		sourceMapID, err := encodePersistedObjectRef(cache, obj.SourceMap.Value, "object typedef source map")

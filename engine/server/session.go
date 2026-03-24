@@ -484,7 +484,7 @@ func (srv *Server) initializeDaggerClient(
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		callID, err := srv.engineCache.RecipeIDForCall(opts.Call)
+		callID, err := srv.engineCache.RecipeIDForCall(ctx, opts.Call)
 		if err != nil {
 			return fmt.Errorf("rebuild nested client recipe ID: %w", err)
 		}

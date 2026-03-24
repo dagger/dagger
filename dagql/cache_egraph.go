@@ -1047,6 +1047,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			return err
 		}
 		shared.storeResultCall(frame)
+		c.traceResultCallFrameUpdated(ctx, shared, "teach_content_digest", baseFrame, frame)
 		c.egraphMu.Unlock()
 		return nil
 	}
@@ -1454,6 +1455,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	c.resultsByID[res.id] = res
 	if res.loadResultCall() == nil && requestFrame != nil {
 		res.storeResultCall(requestFrame.clone())
+		c.traceResultCallFrameUpdated(ctx, res, "index_wait_result_request_frame", nil, res.loadResultCall())
 	}
 	setTypedPersistedResultID(res.loadPayloadState().self, res.id)
 	c.traceResultCreated(ctx, res)
@@ -1620,9 +1622,11 @@ func (c *Cache) removeResultFromEgraphLocked(ctx context.Context, res *sharedRes
 	delete(c.resultTerms, res.id)
 	c.removeResultDigestsLocked(res.id, affectedOutputEqClasses)
 	delete(c.resultOutputEqClasses, res.id)
+	oldFrame := res.loadResultCall()
+	depCount := len(res.deps)
 	res.storeResultCall(nil)
 	delete(c.resultsByID, res.id)
-	c.traceResultRemoved(ctx, res)
+	c.traceResultRemoved(ctx, res, oldFrame, depCount)
 
 	nowUnix := time.Now().Unix()
 	for outputEqID := range affectedOutputEqClasses {

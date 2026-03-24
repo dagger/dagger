@@ -37,7 +37,7 @@ func (m *ModuleEnumType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeD
 	return SelectTypeDef(ctx, dagql.Selector{
 		Field: "withEnum",
 		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(m.typeDef.OriginalName)},
+			{Name: "name", Value: dagql.String(m.typeDef.Name)},
 			{Name: "description", Value: dagql.String(m.typeDef.Description)},
 			{Name: "sourceMap", Value: sourceMap},
 			{Name: "sourceModuleName", Value: OptSourceModuleName(m.typeDef.SourceModuleName)},

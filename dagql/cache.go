@@ -210,7 +210,7 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	}
 
 	if c.traceEnabled() {
-		c.traceSessionResultTracked(ctx, sessionID, res, hitCache, trackedCount, 1)
+		c.traceSessionResultTracked(ctx, sessionID, res, hitCache, trackedCount)
 	}
 }
 
@@ -272,7 +272,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 		}
 		res := Result[Typed]{shared: shared}
 		if c.traceEnabled() {
-			c.traceSessionResultReleasing(ctx, sessionID, res, "release_session", 1, len(resultIDs), 1, 1)
+			c.traceSessionResultReleasing(ctx, sessionID, res, "release_session", 1, len(resultIDs))
 		}
 		var err error
 		queue, err = c.decrementIncomingOwnershipLocked(ctx, shared, queue)
@@ -445,19 +445,20 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		for depID := range res.deps {
 			depIDs = append(depIDs, depID)
 		}
-		res.deps = nil
 
 		if err := c.removeResultFromEgraphLocked(ctx, res); err != nil {
 			rerr = errors.Join(rerr, err)
 		} else if res.onRelease != nil {
 			onReleases = append(onReleases, res.onRelease)
 		}
+		res.deps = nil
 
 		for _, depID := range depIDs {
 			depRes := c.resultsByID[depID]
 			if depRes == nil {
 				continue
 			}
+			c.traceDependencyRemoved(ctx, res.id, depID, "parent_collected")
 			var err error
 			queue, err = c.decrementIncomingOwnershipLocked(ctx, depRes, queue)
 			rerr = errors.Join(rerr, err)
@@ -1033,6 +1034,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 	if shared.id != 0 {
 		c.registerLazyEvaluation(shared, res)
 		touchSharedResultLastUsed(shared, time.Now().UnixNano())
+		c.traceAttachResultReusedCacheBacked(ctx, sessionID, shared)
 		c.trackSessionResult(ctx, sessionID, res, true)
 		return res, nil
 	}
@@ -1047,6 +1049,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		return nil, fmt.Errorf("attach dependency result: normalize pending result call refs: %w", err)
 	}
 	shared.storeResultCall(req.ResultCall)
+	c.traceResultCallFrameUpdated(ctx, shared, "attach_result_normalized", frame, req.ResultCall)
 
 	callDigest, err := req.deriveRecipeDigest(c)
 	if err != nil {
@@ -2546,10 +2549,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			if shared := oc.val.cacheSharedResult(); shared != nil {
 				if frame := shared.loadResultCall(); frame != nil {
 					oc.res.storeResultCall(frame.clone())
+					c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_existing_value_frame", nil, oc.res.loadResultCall())
 				}
 			}
 			if oc.res.loadResultCall() == nil {
 				oc.res.storeResultCall(req.ResultCall.clone())
+				c.traceResultCallFrameUpdated(ctx, oc.res, "init_completed_result_request_frame", nil, oc.res.loadResultCall())
 			}
 			oc.res.hasValue = true
 			oc.res.postCall = oc.val.PostCall
@@ -2666,22 +2671,38 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			return fmt.Errorf("derive result digest: %w", err)
 		}
 	}
-	var resultCallDepIDs []sharedResultID
+	type resultCallDep struct {
+		resultID sharedResultID
+		path     string
+	}
+	var resultCallDeps []resultCallDep
 	if !resWasCacheBacked {
 		if resultCall := oc.res.loadResultCall(); resultCall != nil {
 			seenResults := map[sharedResultID]struct{}{}
 			seenCalls := map[*ResultCall]struct{}{}
 
-			var walkFrame func(*ResultCall) error
-			var walkRef func(*ResultCallRef) error
-			var walkLiteral func(*ResultCallLiteral) error
+			var joinPath func(string, string) string
+			var walkFrame func(string, *ResultCall) error
+			var walkRef func(string, *ResultCallRef) error
+			var walkLiteral func(string, *ResultCallLiteral) error
 
-			walkRef = func(ref *ResultCallRef) error {
+			joinPath = func(prefix string, segment string) string {
+				switch {
+				case prefix == "":
+					return segment
+				case segment == "":
+					return prefix
+				default:
+					return prefix + "." + segment
+				}
+			}
+
+			walkRef = func(path string, ref *ResultCallRef) error {
 				if ref == nil {
 					return nil
 				}
 				if ref.Call != nil {
-					return walkFrame(ref.Call)
+					return walkFrame(path, ref.Call)
 				}
 				if ref.ResultID == 0 {
 					return nil
@@ -2694,20 +2715,23 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 					return nil
 				}
 				seenResults[resultID] = struct{}{}
-				resultCallDepIDs = append(resultCallDepIDs, resultID)
+				resultCallDeps = append(resultCallDeps, resultCallDep{
+					resultID: resultID,
+					path:     path,
+				})
 				return nil
 			}
 
-			walkLiteral = func(lit *ResultCallLiteral) error {
+			walkLiteral = func(path string, lit *ResultCallLiteral) error {
 				if lit == nil {
 					return nil
 				}
 				switch lit.Kind {
 				case ResultCallLiteralKindResultRef:
-					return walkRef(lit.ResultRef)
+					return walkRef(path, lit.ResultRef)
 				case ResultCallLiteralKindList:
-					for _, item := range lit.ListItems {
-						if err := walkLiteral(item); err != nil {
+					for i, item := range lit.ListItems {
+						if err := walkLiteral(fmt.Sprintf("%s[%d]", path, i), item); err != nil {
 							return err
 						}
 					}
@@ -2716,7 +2740,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 						if field == nil {
 							continue
 						}
-						if err := walkLiteral(field.Value); err != nil {
+						if err := walkLiteral(joinPath(path, field.Name), field.Value); err != nil {
 							return err
 						}
 					}
@@ -2724,7 +2748,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				return nil
 			}
 
-			walkFrame = func(frame *ResultCall) error {
+			walkFrame = func(path string, frame *ResultCall) error {
 				if frame == nil {
 					return nil
 				}
@@ -2733,11 +2757,11 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				}
 				seenCalls[frame] = struct{}{}
 
-				if err := walkRef(frame.Receiver); err != nil {
+				if err := walkRef(joinPath(path, "receiver"), frame.Receiver); err != nil {
 					return fmt.Errorf("receiver: %w", err)
 				}
 				if frame.Module != nil {
-					if err := walkRef(frame.Module.ResultRef); err != nil {
+					if err := walkRef(joinPath(path, "module"), frame.Module.ResultRef); err != nil {
 						return fmt.Errorf("module: %w", err)
 					}
 				}
@@ -2745,7 +2769,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 					if arg == nil {
 						continue
 					}
-					if err := walkLiteral(arg.Value); err != nil {
+					if err := walkLiteral(joinPath(path, "arg:"+arg.Name), arg.Value); err != nil {
 						return fmt.Errorf("arg %q: %w", arg.Name, err)
 					}
 				}
@@ -2753,14 +2777,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 					if input == nil {
 						continue
 					}
-					if err := walkLiteral(input.Value); err != nil {
+					if err := walkLiteral(joinPath(path, "implicit_input:"+input.Name), input.Value); err != nil {
 						return fmt.Errorf("implicit input %q: %w", input.Name, err)
 					}
 				}
 				return nil
 			}
 
-			if err := walkFrame(resultCall); err != nil {
+			if err := walkFrame("", resultCall); err != nil {
 				return fmt.Errorf("collect result call dependencies: %w", err)
 			}
 		}
@@ -2787,7 +2811,8 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.egraphMu.Unlock()
 		return indexErr
 	}
-	for _, depID := range resultCallDepIDs {
+	for _, dep := range resultCallDeps {
+		depID := dep.resultID
 		depRes := c.resultsByID[depID]
 		if depRes == nil {
 			c.egraphMu.Unlock()
@@ -2801,6 +2826,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 		oc.res.deps[depID] = struct{}{}
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
+		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}
 	if oc.isPersistable {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds))

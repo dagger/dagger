@@ -169,6 +169,7 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 				persistedEnvelope:  &env,
 			}
 			res.storeResultCall(&frame)
+			c.traceResultCallFrameUpdated(ctx, res, "import_persisted_result", nil, &frame)
 
 			if env.Kind == persistedResultKindNull {
 				res.hasValue = true

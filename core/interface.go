@@ -73,7 +73,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		var err error
 		objTypeDef, err := SelectTypeDef(ctx, dagql.Selector{
 			Field: "withObject",
-			Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("resolve interface implementation object type def: %w", err)
@@ -85,7 +85,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		if loadedImpl.valType == nil {
 			ifaceTypeDef, err := SelectTypeDef(ctx, dagql.Selector{
 				Field: "withInterface",
-				Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
 			})
 			if err != nil {
 				return nil, fmt.Errorf("resolve interface implementation interface type def: %w", err)
@@ -162,7 +162,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	var found bool
 	objTypeDef, err := SelectTypeDef(ctx, dagql.Selector{
 		Field: "withObject",
-		Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build object type def for %q: %w", typeName, err)
@@ -173,7 +173,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if err != nil || !found {
 		ifaceTypeDef, ifaceErr := SelectTypeDef(ctx, dagql.Selector{
 			Field: "withInterface",
-			Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
 		})
 		if ifaceErr != nil {
 			return nil, fmt.Errorf("build interface type def for %q: %w", typeName, ifaceErr)
@@ -215,7 +215,7 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 		}
 
 		obj, err := dagql.NewResultForCall(&ModuleObject{
-			Module:  modInst,
+			Module: modInst,
 			TypeDef: func() *ObjectTypeDef {
 				typeDef, err := interfaceValue.UnderlyingType.TypeDef(ctx)
 				if err != nil || typeDef.Self().AsObject.Value.Self() == nil {
@@ -223,7 +223,7 @@ func (iface *InterfaceType) CollectContent(ctx context.Context, value dagql.AnyR
 				}
 				return typeDef.Self().AsObject.Value.Self()
 			}(),
-			Fields:  interfaceValue.Fields,
+			Fields: interfaceValue.Fields,
 		}, call)
 		if err != nil {
 			return fmt.Errorf("create module object from interface value: %w", err)
@@ -304,7 +304,7 @@ func (iface *InterfaceType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Ty
 	return SelectTypeDef(ctx, dagql.Selector{
 		Field: "withInterface",
 		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(iface.typeDef.OriginalName)},
+			{Name: "name", Value: dagql.String(iface.typeDef.Name)},
 			{Name: "description", Value: dagql.String(iface.typeDef.Description)},
 			{Name: "sourceMap", Value: sourceMap},
 			{Name: "sourceModuleName", Value: OptSourceModuleName(iface.typeDef.SourceModuleName)},

@@ -465,7 +465,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		return r, nil, fmt.Errorf("failed to resolve identity inputs for %s.%s: %w", typ.Name(), sel.Field, err)
 	}
 
-	receiverRef, err := resultCallRefFromResult(r)
+	receiverRef, err := resultCallRefFromResult(ctx, r)
 	if err != nil {
 		typ := r.Type()
 		if typ == nil {

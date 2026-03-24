@@ -30,7 +30,7 @@ func idInputDebugString(id *call.ID) string {
 	return string(id.Digest())
 }
 
-func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
+func resultCallRefFromResult(ctx context.Context, res AnyResult) (*ResultCallRef, error) {
 	if res == nil {
 		return nil, fmt.Errorf("nil result")
 	}
@@ -38,8 +38,18 @@ func resultCallRefFromResult(res AnyResult) (*ResultCallRef, error) {
 		return nil, nil
 	}
 	shared := res.cacheSharedResult()
-	frame := shared.loadResultCall()
+	var frame *ResultCall
+	if shared != nil {
+		frame = shared.loadResultCall()
+	}
 	if shared == nil || frame == nil {
+		if cache, err := EngineCache(ctx); err == nil {
+			reason := "missing_shared_result"
+			if shared != nil {
+				reason = "missing_result_call_frame"
+			}
+			cache.traceResultCallRefFromResultFailed(ctx, res, reason)
+		}
 		return nil, fmt.Errorf("result %T has no call frame", res)
 	}
 	if shared.id == 0 {
@@ -67,7 +77,7 @@ func resultCallRefFromIDInput(ctx context.Context, id *call.ID) (*ResultCallRef,
 	if err != nil {
 		return nil, fmt.Errorf("load ID input %q: %w", idInputDebugString(id), err)
 	}
-	return resultCallRefFromResult(val)
+	return resultCallRefFromResult(ctx, val)
 }
 
 func resultCallArgFromInput(ctx context.Context, name string, input Input, sensitive bool) (*ResultCallArg, error) {

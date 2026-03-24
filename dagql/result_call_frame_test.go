@@ -181,7 +181,7 @@ func TestResultCallRefRecipeIDUsesLatestSharedFrame(t *testing.T) {
 
 	ref := &ResultCallRef{ResultID: uint64(shared.id), shared: shared}
 	caller := &ResultCall{}
-	id, err := caller.resolveRefRecipeID(c, ref, map[sharedResultID]struct{}{})
+	id, err := caller.resolveRefRecipeID(ctx, c, ref, map[sharedResultID]struct{}{})
 	require.NoError(t, err)
 	require.Equal(t, contentDigest, id.ContentDigest())
 

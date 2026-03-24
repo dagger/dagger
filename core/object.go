@@ -385,7 +385,7 @@ func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Typ
 	return SelectTypeDef(ctx, dagql.Selector{
 		Field: "withObject",
 		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(t.typeDef.OriginalName)},
+			{Name: "name", Value: dagql.String(t.typeDef.Name)},
 			{Name: "description", Value: dagql.String(t.typeDef.Description)},
 			{Name: "sourceMap", Value: sourceMap},
 			{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
