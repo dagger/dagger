@@ -899,7 +899,11 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 		for _, src := range srcs {
 			//if err := fscopy.Copy(ctx, effectiveSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
 			fmt.Printf("ACB fscopy %s,%s to %s,%s\n", mntedSrcPath, src, copyDest, destDir)
-			if err := fscopy.Copy(ctx, mntedSrcPath, src, copyDest, path.Join(dir.Dir, destDir), opts...); err != nil {
+			joinedDest := path.Join(dir.Dir, destDir)
+			if strings.HasSuffix(destDir, "/") && !strings.HasSuffix(joinedDest, "/") {
+				joinedDest += "/"
+			}
+			if err := fscopy.Copy(ctx, mntedSrcPath, src, copyDest, joinedDest, opts...); err != nil {
 				return fmt.Errorf("failed to copy source directory: %w", err)
 			}
 		}

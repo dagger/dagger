@@ -89,6 +89,7 @@ func (Host) FindUpAll(
 				continue
 			}
 			if !errors.Is(err, os.ErrNotExist) {
+				//err = RestoreErrPath(err, soughtName)
 				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
 			}
 		}
