@@ -2570,7 +2570,6 @@ class Container(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
-        permissions: int | None = None,
         expand: bool | None = False,
     ) -> Self:
         """Return a new container snapshot, with a directory added to its
@@ -2595,9 +2594,6 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
-        permissions:
-            Permission given to the copied directory and contents (e.g.,
-            0755).
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -2610,7 +2606,6 @@ class Container(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
-            Arg("permissions", permissions, None),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withDirectory", _args)
@@ -4442,7 +4437,6 @@ class Directory(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
-        permissions: int | None = None,
     ) -> Self:
         """Return a snapshot with a directory added
 
@@ -4465,9 +4459,6 @@ class Directory(Type):
             The user and group must be an ID (1000:1000), not a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
-        permissions:
-            Permission given to the copied directory and contents (e.g.,
-            0755).
         """
         _args = [
             Arg("path", path),
@@ -4476,7 +4467,6 @@ class Directory(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
-            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)

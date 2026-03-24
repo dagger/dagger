@@ -926,9 +926,6 @@ type Container {
     """
     owner: String = ""
 
-    """Permission given to the copied directory and contents (e.g., 0755)."""
-    permissions: Int
-
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
@@ -2003,9 +2000,6 @@ type Directory {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
-
-    """Permission given to the copied directory and contents (e.g., 0755)."""
-    permissions: Int
   ): Directory!
 
   """Raise an error."""

@@ -2464,8 +2464,6 @@ type ContainerWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Permission given to the copied directory and contents (e.g., 0755).
-	Permissions int
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -2490,10 +2488,6 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-		}
-		// `permissions` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -4277,8 +4271,6 @@ type DirectoryWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Permission given to the copied directory and contents (e.g., 0755).
-	Permissions int
 }
 
 // Return a snapshot with a directory added
@@ -4301,10 +4293,6 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-		}
-		// `permissions` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)

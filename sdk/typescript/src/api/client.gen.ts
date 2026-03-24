@@ -544,11 +544,6 @@ export type ContainerWithDirectoryOpts = {
   owner?: string
 
   /**
-   * Permission given to the copied directory and contents (e.g., 0755).
-   */
-  permissions?: number
-
-  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
@@ -1165,11 +1160,6 @@ export type DirectoryWithDirectoryOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
-
-  /**
-   * Permission given to the copied directory and contents (e.g., 0755).
-   */
-  permissions?: number
 }
 
 export type DirectoryWithFileOpts = {
@@ -4444,7 +4434,6 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.permissions Permission given to the copied directory and contents (e.g., 0755).
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withDirectory = (
@@ -5561,7 +5550,6 @@ export class Directory extends BaseClient {
    * The user and group must be an ID (1000:1000), not a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.permissions Permission given to the copied directory and contents (e.g., 0755).
    */
   withDirectory = (
     path: string,

@@ -3028,9 +3028,6 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permission given to the copied directory and contents (e.g., 0755).
-    #[builder(setter(into, strip_option), default)]
-    pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDockerHealthcheckOpts<'a> {
@@ -4084,9 +4081,6 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
-        }
-        if let Some(permissions) = opts.permissions {
-            query = query.arg("permissions", permissions);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -5811,9 +5805,6 @@ pub struct DirectoryWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
-    /// Permission given to the copied directory and contents (e.g., 0755).
-    #[builder(setter(into, strip_option), default)]
-    pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithFileOpts<'a> {
@@ -6434,9 +6425,6 @@ impl Directory {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
-        }
-        if let Some(permissions) = opts.permissions {
-            query = query.arg("permissions", permissions);
         }
         Directory {
             proc: self.proc.clone(),
