@@ -28,8 +28,8 @@ class Host extends Client\AbstractObject implements Client\IdAble
      */
     public function directory(
         string $path,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $noCache = false,
         ?bool $gitignore = false,
     ): Directory {

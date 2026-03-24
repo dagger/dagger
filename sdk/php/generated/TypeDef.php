@@ -97,7 +97,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
      */
-    public function withConstructor(FunctionId|Function_ $function): TypeDef
+    public function withConstructor(Function_Id|Function_ $function): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConstructor');
         $innerQueryBuilder->setArgument('function', $function);
@@ -203,7 +203,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
      */
-    public function withFunction(FunctionId|Function_ $function): TypeDef
+    public function withFunction(Function_Id|Function_ $function): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFunction');
         $innerQueryBuilder->setArgument('function', $function);

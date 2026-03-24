@@ -273,10 +273,11 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Forces evaluation of the module source, including any loading into the engine and associated validation.
      */
-    public function sync(): ModuleSourceId
+    public function sync(): ModuleSource
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**

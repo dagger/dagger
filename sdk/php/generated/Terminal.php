@@ -27,9 +27,10 @@ class Terminal extends Client\AbstractObject implements Client\IdAble
      *
      * It doesn't run the default command if no exec has been set.
      */
-    public function sync(): TerminalId
+    public function sync(): Terminal
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\TerminalId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 }

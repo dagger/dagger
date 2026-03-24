@@ -606,7 +606,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Function from its ID.
      */
-    public function loadFunctionFromID(FunctionId|Function_ $id): Function_
+    public function loadFunctionFromID(Function_Id|Function_ $id): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -816,7 +816,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Query from its ID.
      */
-    public function loadQueryFromID(QueryId|Query $id): Client
+    public function loadQueryFromID(QueryId|Client $id): Client
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadQueryFromID');
         $innerQueryBuilder->setArgument('id', $id);

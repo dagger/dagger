@@ -117,8 +117,8 @@ class File extends Client\AbstractObject implements Client\IdAble
         ?bool $skipHidden = false,
         ?bool $filesOnly = false,
         ?int $limit = null,
-        ?array $paths = null,
-        ?array $globs = null,
+        ?array $paths = [],
+        ?array $globs = [],
     ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
         $leafQueryBuilder->setArgument('pattern', $pattern);
@@ -176,10 +176,11 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): FileId
+    public function sync(): File
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**

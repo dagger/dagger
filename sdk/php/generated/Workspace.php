@@ -59,8 +59,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
      */
     public function directory(
         string $path,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');

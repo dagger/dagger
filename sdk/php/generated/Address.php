@@ -26,8 +26,8 @@ class Address extends Client\AbstractObject implements Client\IdAble
      * Load a directory from the address.
      */
     public function directory(
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?bool $noCache = false,
     ): Directory {
@@ -51,8 +51,8 @@ class Address extends Client\AbstractObject implements Client\IdAble
      * Load a file from the address.
      */
     public function file(
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?bool $noCache = false,
     ): File {

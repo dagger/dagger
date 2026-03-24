@@ -189,7 +189,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a snapshot with some paths included or excluded
      */
-    public function filter(?array $exclude = null, ?array $include = null, ?bool $gitignore = false): Directory
+    public function filter(?array $exclude = [], ?array $include = [], ?bool $gitignore = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
         if (null !== $exclude) {
@@ -250,8 +250,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      */
     public function search(
         string $pattern,
-        ?array $paths = null,
-        ?array $globs = null,
+        ?array $paths = [],
+        ?array $globs = [],
         ?bool $literal = false,
         ?bool $multiline = false,
         ?bool $dotall = false,
@@ -312,10 +312,11 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): DirectoryId
+    public function sync(): Directory
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -323,7 +324,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      */
     public function terminal(
         ContainerId|Container|null $container = null,
-        ?array $cmd = null,
+        ?array $cmd = [],
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Directory {
@@ -359,8 +360,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     public function withDirectory(
         string $path,
         DirectoryId|Directory $source,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?string $owner = '',
     ): Directory {

@@ -728,6 +728,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Function_Id",
+			"p": "Dagger/Function_Id.html",
+			"d": "<p>The <code>FunctionID</code> scalar type represents an identifier for an object of type Function.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GeneratedCode",
 			"p": "Dagger/GeneratedCode.html",
 			"d": "<p>The result of running an SDK's codegen.</p>",

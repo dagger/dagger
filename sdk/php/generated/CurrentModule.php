@@ -75,8 +75,8 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
      */
     public function workdir(
         string $path,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workdir');

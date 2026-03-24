@@ -19,7 +19,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      * Be sure to set any exposed ports before this conversion.
      */
     public function asService(
-        ?array $args = null,
+        ?array $args = [],
         ?bool $useEntrypoint = false,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
@@ -425,17 +425,18 @@ class Container extends Client\AbstractObject implements Client\IdAble
      *
      * It doesn't run the default command if no exec has been set.
      */
-    public function sync(): ContainerId
+    public function sync(): Container
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
      * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
     public function terminal(
-        ?array $cmd = null,
+        ?array $cmd = [],
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Container {
@@ -460,7 +461,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function up(
         ?bool $random = false,
         ?array $ports = null,
-        ?array $args = null,
+        ?array $args = [],
         ?bool $useEntrypoint = false,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
@@ -550,8 +551,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function withDirectory(
         string $path,
         DirectoryId|Directory $source,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?string $owner = '',
         ?bool $expand = false,

@@ -107,10 +107,11 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): ChangesetId
+    public function sync(): Changeset
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**

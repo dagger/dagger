@@ -114,19 +114,21 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
      */
-    public function step(): LLMId
+    public function step(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('step');
-        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'step'));
+        $this->queryLeaf($leafQueryBuilder, 'step');
+        return $this;
     }
 
     /**
      * synchronize LLM state
      */
-    public function sync(): LLMId
+    public function sync(): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**

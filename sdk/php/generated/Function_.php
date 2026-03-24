@@ -45,10 +45,10 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Function.
      */
-    public function id(): FunctionId
+    public function id(): Function_Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Function_Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -96,7 +96,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?string $description = '',
         ?Json $defaultValue = null,
         ?string $defaultPath = '',
-        ?array $ignore = null,
+        ?array $ignore = [],
         SourceMapId|SourceMap|null $sourceMap = null,
         ?string $deprecated = null,
         ?string $defaultAddress = '',
