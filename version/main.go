@@ -222,6 +222,7 @@ func (v Version) tagsAtCommit(ctx context.Context, commit string) ([]string, err
 		From("alpine/git:latest").
 		WithWorkdir("/src").
 		WithMountedDirectory(".git", v.GitDir).
+		WithExec([]string{"git", "config", "url.https://github.com/.insteadOf", "git@github.com:"}).
 		WithExec([]string{"git", "fetch", "--tags"}).
 		WithExec([]string{"git", "tag", "-l", "--points-at=" + commit}).
 		Stdout(ctx)
