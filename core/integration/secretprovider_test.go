@@ -499,7 +499,7 @@ func (SecretProvider) TestAWS(ctx context.Context, t *testctx.T) {
 
 	// Start LocalStack container for testing AWS services
 	localstack, err := c.Container().
-		From("localstack/localstack:latest").
+		From("localstack/localstack:community-archive@sha256:6b6172cfceb04b4fbc35097a55f717c365a35fafa572be49f7341771cf9023ed").
 		WithEnvVariable("SERVICES", "secretsmanager,ssm").
 		WithEnvVariable("DEBUG", "1").
 		WithExposedPort(4566).
