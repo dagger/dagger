@@ -1,0 +1,17 @@
+[package]
+name = "dagger-sdk-derive"
+description = "Proc macros for defining Dagger modules in Rust"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+convert_case.workspace = true

@@ -12,6 +12,7 @@ repository = "https://github.com/dagger/dagger"
 dagger-codegen = { path = "crates/dagger-codegen" }
 dagger-bootstrap = { path = "crates/dagger-bootstrap" }
 dagger-sdk = { path = "crates/dagger-sdk", default-features = false }
+dagger-sdk-derive = { path = "crates/dagger-sdk-derive" }
 
 eyre = "0.6.9"
 color-eyre = "0.6.2"

@@ -34,6 +34,7 @@ sha2.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 async-trait.workspace = true
+dagger-sdk-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
@@ -43,3 +44,4 @@ tracing-test.workspace = true
 [features]
 default = ["gen"]
 gen = []
+module = ["gen", "dep:dagger-sdk-derive"]
