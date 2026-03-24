@@ -1168,6 +1168,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\QueryId",
+			"p": "Dagger/QueryId.html",
+			"d": "<p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\SDKConfig",
 			"p": "Dagger/SDKConfig.html",
 			"d": "<p>The SDK config of the module.</p>",
@@ -1903,6 +1913,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::codegen",
+			"p": "Dagger/Client.html#method_codegen",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::codegenBase",
+			"p": "Dagger/Client.html#method_codegenBase",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::container",
 			"p": "Dagger/Client.html#method_container",
 			"d": "<p>Creates a scratch container, with no image or metadata.</p>"
@@ -2008,6 +2030,12 @@
 			"n": "Dagger\\Client::http",
 			"p": "Dagger/Client.html#method_http",
 			"d": "<p>Returns a file containing an http remote url content.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::id",
+			"p": "Dagger/Client.html#method_id",
+			"d": "<p>A unique identifier for this Query.</p>"
 		},
 		{
 			"t": "M",
@@ -2305,6 +2333,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadQueryFromID",
+			"p": "Dagger/Client.html#method_loadQueryFromID",
+			"d": "<p>Load a Query from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadSDKConfigFromID",
 			"p": "Dagger/Client.html#method_loadSDKConfigFromID",
 			"d": "<p>Load a SDKConfig from its ID.</p>"
@@ -2383,15 +2417,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::moduleSource",
-			"p": "Dagger/Client.html#method_moduleSource",
-			"d": "<p>Create a new module source instance from a source ref string</p>"
+			"n": "Dagger\\Client::moduleRuntime",
+			"p": "Dagger/Client.html#method_moduleRuntime",
+			"d": null
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::phpSdk",
-			"p": "Dagger/Client.html#method_phpSdk",
-			"d": null
+			"n": "Dagger\\Client::moduleSource",
+			"p": "Dagger/Client.html#method_moduleSource",
+			"d": "<p>Create a new module source instance from a source ref string</p>"
 		},
 		{
 			"t": "M",
@@ -2404,6 +2438,12 @@
 			"n": "Dagger\\Client::setSecret",
 			"p": "Dagger/Client.html#method_setSecret",
 			"d": "<p>Sets a secret given a user defined name to its plaintext and returns the secret.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::sourceDir",
+			"p": "Dagger/Client.html#method_sourceDir",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -2422,6 +2462,12 @@
 			"n": "Dagger\\Client::version",
 			"p": "Dagger/Client.html#method_version",
 			"d": "<p>Get the current Dagger Engine version.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::with",
+			"p": "Dagger/Client.html#method_with",
+			"d": "<p>Configure the php-sdk constructor arguments.</p>"
 		},
 		{
 			"t": "M",
@@ -5197,6 +5243,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::blueprint",
+			"p": "Dagger/ModuleSource.html#method_blueprint",
+			"d": "<p>The blueprint referenced by the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::cloneRef",
 			"p": "Dagger/ModuleSource.html#method_cloneRef",
 			"d": "<p>The ref to clone the root of the git repo from. Only valid for git sources.</p>"
@@ -5353,6 +5405,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::toolchains",
+			"p": "Dagger/ModuleSource.html#method_toolchains",
+			"d": "<p>The toolchains referenced by the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::userDefaults",
 			"p": "Dagger/ModuleSource.html#method_userDefaults",
 			"d": "<p>User-defined defaults read from local .env files</p>"
@@ -5362,6 +5420,12 @@
 			"n": "Dagger\\ModuleSource::version",
 			"p": "Dagger/ModuleSource.html#method_version",
 			"d": "<p>The specified version of the git repo this source points to.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withBlueprint",
+			"d": "<p>Set a blueprint for the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -5413,15 +5477,39 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withToolchains",
+			"p": "Dagger/ModuleSource.html#method_withToolchains",
+			"d": "<p>Add toolchains to the module source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdateBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withUpdateBlueprint",
+			"d": "<p>Update the blueprint module to the latest version.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdateDependencies",
 			"p": "Dagger/ModuleSource.html#method_withUpdateDependencies",
 			"d": "<p>Update one or more module dependencies.</p>"
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdateToolchains",
+			"p": "Dagger/ModuleSource.html#method_withUpdateToolchains",
+			"d": "<p>Update one or more toolchains.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdatedClients",
 			"p": "Dagger/ModuleSource.html#method_withUpdatedClients",
 			"d": "<p>Update one or more clients.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withoutBlueprint",
+			"d": "<p>Remove the current blueprint from the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -5440,6 +5528,12 @@
 			"n": "Dagger\\ModuleSource::withoutExperimentalFeatures",
 			"p": "Dagger/ModuleSource.html#method_withoutExperimentalFeatures",
 			"d": "<p>Disable experimental features for the module source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutToolchains",
+			"p": "Dagger/ModuleSource.html#method_withoutToolchains",
+			"d": "<p>Remove the provided toolchains from the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -5965,6 +6059,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::address",
+			"p": "Dagger/Workspace.html#method_address",
+			"d": "<p>Canonical Dagger address of the workspace directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::checks",
 			"p": "Dagger/Workspace.html#method_checks",
 			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
@@ -5974,6 +6074,12 @@
 			"n": "Dagger\\Workspace::clientId",
 			"p": "Dagger/Workspace.html#method_clientId",
 			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::configPath",
+			"p": "Dagger/Workspace.html#method_configPath",
+			"d": "<p>Path to config.toml relative to the workspace boundary (empty if not initialized).</p>"
 		},
 		{
 			"t": "M",
@@ -6007,15 +6113,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::hasConfig",
+			"p": "Dagger/Workspace.html#method_hasConfig",
+			"d": "<p>Whether a config.toml file exists in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::id",
 			"p": "Dagger/Workspace.html#method_id",
 			"d": "<p>A unique identifier for this Workspace.</p>"
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::initialized",
+			"p": "Dagger/Workspace.html#method_initialized",
+			"d": "<p>Whether .dagger/config.toml exists.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::path",
 			"p": "Dagger/Workspace.html#method_path",
-			"d": "<p>Workspace path relative to root.</p>"
+			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"
 		},
 		{
 			"t": "M",

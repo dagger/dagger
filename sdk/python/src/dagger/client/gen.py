@@ -251,6 +251,11 @@ class PortID(Scalar):
     type Port."""
 
 
+class QueryID(Scalar):
+    """The `QueryID` scalar type represents an identifier for an object of
+    type Query."""
+
+
 class SDKConfigID(Scalar):
     """The `SDKConfigID` scalar type represents an identifier for an
     object of type SDKConfig."""
@@ -11793,7 +11798,7 @@ class Port(Type):
 
 
 @typecheck
-class Client(Root):
+class Query(Root):
     """The root of the DAG."""
 
     def address(self, value: str) -> Address:
@@ -12157,6 +12162,30 @@ class Client(Root):
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)
+
+    async def id(self) -> QueryID:
+        """A unique identifier for this Query.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        QueryID
+            The `QueryID` scalar type represents an identifier for an object
+            of type Query.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(QueryID)
 
     def json(self) -> JSONValue:
         """Initialize a JSON value"""
@@ -12571,6 +12600,14 @@ class Client(Root):
         _ctx = self._select("loadPortFromID", _args)
         return Port(_ctx)
 
+    def load_query_from_id(self, id: QueryID) -> Self:
+        """Load a Query from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadQueryFromID", _args)
+        return Query(_ctx)
+
     def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
         """Load a SDKConfig from its ID."""
         _args = [
@@ -12812,6 +12849,13 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
+
+    def with_(self, cb: Callable[["Query"], "Query"]) -> "Query":
+        """Call the provided callable with current Query.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -14489,6 +14533,13 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
 
+class Client(Query):
+    """The Dagger client.
+
+    Inherits all Query API methods and adds connection management.
+    """
+
+
 dag = Client()
 """The global client instance."""
 
@@ -14602,6 +14653,8 @@ __all__ = [
     "Port",
     "PortForward",
     "PortID",
+    "Query",
+    "QueryID",
     "ReturnType",
     "SDKConfig",
     "SDKConfigID",

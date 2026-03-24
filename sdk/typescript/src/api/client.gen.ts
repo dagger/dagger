@@ -2274,6 +2274,11 @@ export type ClientSecretOpts = {
 }
 
 /**
+ * The `QueryID` scalar type represents an identifier for an object of type Query.
+ */
+export type QueryID = string & { __QueryID: never }
+
+/**
  * Expected return type of an execution
  */
 export enum ReturnType {
@@ -11692,15 +11697,22 @@ export class Port extends BaseClient {
  * The root of the DAG.
  */
 export class Client extends BaseClient {
+  private readonly _id?: QueryID = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _defaultPlatform?: Platform, _version?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: QueryID,
+    _defaultPlatform?: Platform,
+    _version?: string,
+  ) {
     super(ctx)
 
+    this._id = _id
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -11710,6 +11722,17 @@ export class Client extends BaseClient {
    */
   public getGQLClient() {
     return this._ctx.getGQLClient()
+  }
+
+  /**
+   * A unique identifier for this Query.
+   */
+  id = async (): Promise<QueryID> => {
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<QueryID> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -12336,6 +12359,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Query from its ID.
+   */
+  loadQueryFromID = (id: QueryID): Client => {
+    const ctx = this._ctx.select("loadQueryFromID", { id })
+    return new Client(ctx)
+  }
+
+  /**
    * Load a SDKConfig from its ID.
    */
   loadSDKConfigFromID = (id: SDKConfigID): SDKConfig => {
@@ -12520,6 +12551,15 @@ export class Client extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Call the provided function with current Client.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Client) => Client) => {
+    return arg(this)
   }
 }
 

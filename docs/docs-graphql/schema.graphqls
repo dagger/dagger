@@ -4908,6 +4908,9 @@ type Query {
     experimentalServiceHost: ServiceID
   ): File!
 
+  """A unique identifier for this Query."""
+  id: QueryID!
+
   """Initialize a JSON value"""
   json: JSONValue!
 
@@ -5058,6 +5061,9 @@ type Query {
   """Load a Port from its ID."""
   loadPortFromID(id: PortID!): Port!
 
+  """Load a Query from its ID."""
+  loadQueryFromID(id: QueryID!): Query!
+
   """Load a SDKConfig from its ID."""
   loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
 
@@ -5176,6 +5182,11 @@ type Query {
   """Get the current Dagger Engine version."""
   version: String!
 }
+
+"""
+The `QueryID` scalar type represents an identifier for an object of type Query.
+"""
+scalar QueryID
 
 """Expected return type of an execution"""
 enum ReturnType {

@@ -50,6 +50,7 @@
               <li><a href="#query-git">git</a></li>
               <li><a href="#query-host">host</a></li>
               <li><a href="#query-http">http</a></li>
+              <li><a href="#query-id">id</a></li>
               <li><a href="#query-json">json</a></li>
               <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadAddressFromID">loadAddressFromID</a></li>
@@ -98,6 +99,7 @@
               <li><a href="#query-loadModuleSourceFromID">loadModuleSourceFromID</a></li>
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
               <li><a href="#query-loadPortFromID">loadPortFromID</a></li>
+              <li><a href="#query-loadQueryFromID">loadQueryFromID</a></li>
               <li><a href="#query-loadSDKConfigFromID">loadSDKConfigFromID</a></li>
               <li><a href="#query-loadScalarTypeDefFromID">loadScalarTypeDefFromID</a></li>
               <li><a href="#query-loadSearchResultFromID">loadSearchResultFromID</a></li>
@@ -232,6 +234,7 @@
               <li><a href="#definition-Port">Port</a></li>
               <li><a href="#definition-PortForward">PortForward</a></li>
               <li><a href="#definition-PortID">PortID</a></li>
+              <li><a href="#definition-QueryID">QueryID</a></li>
               <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-SDKConfig">SDKConfig</a></li>
               <li><a href="#definition-SDKConfigID">SDKConfigID</a></li>
@@ -1409,6 +1412,39 @@
   }</span></span>
 }</span></span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-id" class="operation operation-query" data-traverse-target="query-id">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>id</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A unique identifier for this Query.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-QueryID"><code>QueryID!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -3925,6 +3961,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-PortID"><code>PortID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadQueryFromID" class="operation operation-query" data-traverse-target="query-loadQueryFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadQueryFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Query from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Query"><code>Query!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-QueryID"><code>QueryID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -14408,6 +14497,20 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>PortID</code> scalar type represents an identifier for an object of type Port.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-QueryID" class="definition definition-scalar" data-traverse-target="definition-QueryID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">QueryID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>QueryID</code> scalar type represents an identifier for an object of type Query.</p>
                 </div>
               </div>
             </div>

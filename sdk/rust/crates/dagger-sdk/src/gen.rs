@@ -1622,6 +1622,39 @@ impl PortId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct QueryId(pub String);
+impl From<&str> for QueryId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for QueryId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<QueryId> for Query {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<QueryId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<QueryId> for QueryId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<QueryId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<QueryId, DaggerError>(self) })
+    }
+}
+impl QueryId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SdkConfigId(pub String);
 impl From<&str> for SdkConfigId {
     fn from(value: &str) -> Self {
@@ -12530,6 +12563,11 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// A unique identifier for this Query.
+    pub async fn id(&self) -> Result<QueryId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Initialize a JSON value
     pub fn json(&self) -> JsonValue {
         let query = self.selection.select("json");
@@ -13326,6 +13364,22 @@ impl Query {
             }),
         );
         Port {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Query from its ID.
+    pub fn load_query_from_id(&self, id: impl IntoID<QueryId>) -> Query {
+        let mut query = self.selection.select("loadQueryFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Query {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
