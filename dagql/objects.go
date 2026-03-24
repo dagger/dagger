@@ -25,7 +25,7 @@ type Class[T Typed] struct {
 	inner   T
 	idable  bool
 	fields  map[string][]*Field[T]
-	fieldsL *sync.Mutex
+	fieldsL *sync.RWMutex
 
 	invalidateSchemaCache func()
 
@@ -72,7 +72,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	class := Class[T]{
 		inner:     opts.Typed,
 		fields:    map[string][]*Field[T]{},
-		fieldsL:   new(sync.Mutex),
+		fieldsL:   new(sync.RWMutex),
 		sourceMap: opts.SourceMap,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
@@ -130,8 +130,8 @@ func (class Class[T]) IDType() (IDType, bool) {
 }
 
 func (class Class[T]) Field(name string, view call.View) (Field[T], bool) {
-	class.fieldsL.Lock()
-	defer class.fieldsL.Unlock()
+	class.fieldsL.RLock()
+	defer class.fieldsL.RUnlock()
 	return class.fieldLocked(name, view)
 }
 
@@ -242,8 +242,8 @@ func (class Class[T]) ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc) {
 //
 // Each currently defined field is installed on the returned definition.
 func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
-	class.fieldsL.Lock()
-	defer class.fieldsL.Unlock()
+	class.fieldsL.RLock()
+	defer class.fieldsL.RUnlock()
 	var val any = class.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
