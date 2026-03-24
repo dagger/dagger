@@ -81,6 +81,113 @@ Do not use it as:
 - a lockfile API source of truth
 - a reason to replay stale `strict|auto|update` semantics
 
+## Process Lessons From The Plumbing Replay
+
+These lessons were learned while replaying onto `workspace-plumbing`, but they
+still apply on top of `lockfile`.
+
+### Preserve Behavior, Not Commit Topology
+
+The most important practical lesson was that chronological replay is the wrong
+tool.
+
+- old merge-from-`main` commits were replay noise
+- early foundation commits were often stale by shape even when their intent was
+  still valid
+- replaying by semantic bucket was much faster than resolving history-shaped
+  conflicts
+
+Rule:
+
+- if a commit conflicts because the base evolved the same area differently, stop
+  and reslice by intent instead of forcing the old patch through
+
+### Keep The Ledger On Disk
+
+The replay only stayed tractable because progress was recorded after each bucket.
+
+For the new replay, keep an on-disk ledger that records:
+
+- current branch name and base commit
+- completed buckets
+- dropped buckets
+- rewritten buckets
+- exact verifier commands run
+- known verifier failures that are environmental rather than branch regressions
+
+Do not rely on chat history as the handoff medium.
+
+### Keep Commits Small And Reviewable
+
+The successful replay buckets were the ones that produced legible review units.
+
+Prefer:
+
+- one semantic code bucket per commit
+- a separate doc/ledger commit when the notes are substantial
+- generated output in late commits, after the underlying API is settled
+
+Avoid:
+
+- giant mixed commits that combine engine, CLI, tests, generated code, and docs
+  unless they are inseparable
+
+### Generate Late
+
+This held on plumbing and still holds on `lockfile`.
+
+- generated SDK/docs commits create noise during conflict resolution
+- they should come after the API shape is stable
+- they should not drive the replay order
+
+### Expect Hot Conflict Files
+
+Even with bucketed replay, some files are repeat conflict magnets:
+
+- `engine/server/session.go`
+- `core/schema/workspace.go`
+- `core/workspace/lock.go`
+- `cmd/dagger/main.go`
+- `cmd/dagger/module.go`
+
+Treat edits in those files as design work, not routine cherry-picks.
+
+### Verify Narrowly After Each Bucket
+
+Broad end-to-end verification is too expensive to use as the first signal.
+
+What worked during the plumbing replay:
+
+- run the smallest repo-native test that proves the bucket
+- use local package tests only where they are actually valid
+- defer broader sweeps until a group of related buckets is stable
+
+This is especially important on this Darwin host, where some local Go test
+paths are not meaningful because Linux-only engine/buildkit code is pulled in.
+
+### Treat Verifier Cache Problems As A Separate Class Of Failure
+
+One replay got derailed by local verifier contamination rather than a code
+regression. That can happen again.
+
+Rule:
+
+- if a broad verifier fails in a way that references the wrong worktree or a
+  stale engine-dev source path, record it as an environmental blocker until it
+  is reproduced cleanly
+
+Do not let a bad local cache force unnecessary code surgery.
+
+### Preserve Base Truth Before Replaying New Work
+
+The safest pattern was:
+
+1. understand what the base branch already proved
+2. replay only the missing intent
+3. revalidate the touched behavior
+
+That remains the right pattern on `lockfile`.
+
 ## What `lockfile` Already Owns
 
 The new base already contains the generic lockfile foundation:
