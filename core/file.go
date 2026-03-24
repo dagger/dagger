@@ -641,15 +641,15 @@ func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) 
 }
 
 func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
-	ownership, err := parseDirectoryOwner(owner)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-	}
-
 	file = file.Clone()
 	return execInMount(ctx, file, func(root string) error {
+		ownership, err := parseDirectoryOwner(root, owner)
+		if err != nil {
+			return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+
 		chownPath := file.File
-		chownPath, err := containerdfs.RootPath(root, chownPath)
+		chownPath, err = containerdfs.RootPath(root, chownPath)
 		if err != nil {
 			return err
 		}
