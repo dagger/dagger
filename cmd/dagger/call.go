@@ -96,12 +96,12 @@ available functions.
 			filterCore := len(functionPath) == 0 &&
 				mod.MainObject.AsObject != nil &&
 				mod.MainObject.AsObject.Name == "Query"
-			return functionListRun(o, cmd.OutOrStdout(), filterCore)
+			return functionListRun(o, cmd.OutOrStdout(), cmd.ErrOrStderr(), filterCore)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer, filterCore bool) error {
+func functionListRun(o functionProvider, writer io.Writer, errWriter io.Writer, filterCore bool) error {
 	fns, skipped := GetSupportedFunctions(o)
 
 	// At the Query root, filter out core API constructors — only show module
@@ -120,6 +120,11 @@ func functionListRun(o functionProvider, writer io.Writer, filterCore bool) erro
 		}
 		fns = filtered
 		skipped = nil // don't show core "skipped" noise either
+	}
+
+	if len(fns) == 0 {
+		fmt.Fprintln(errWriter, "No functions found.")
+		return nil
 	}
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)

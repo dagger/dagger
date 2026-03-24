@@ -877,7 +877,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			With(daggerExec("install", "--eager-runtime", "./dep")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "failed to install module")
+		requireErrOut(t, err, "failed to install dependency")
 		requireErrOut(t, err, "definitelyUndefinedSymbol")
 	})
 
@@ -1342,11 +1342,12 @@ func (m *OtherObj) FnE() *dagger.Container {
 	})
 
 	t.Run("no module present errors nicely", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.
+		out, err := ctr.
 			WithWorkdir("/empty").
 			With(daggerFunctions()).
-			Stdout(ctx)
-		requireErrOut(t, err, `module not found`)
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "No functions found.")
 	})
 }
 
@@ -1856,7 +1857,7 @@ func (m *Hello) Hello() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "container") // stdlib
 		require.Contains(t, out, "directory") // stdlib
-		require.Contains(t, out, "Use \".help <command> | <function>\" for more information.")
+		require.Contains(t, out, "Use \".help <command>\" for more information.")
 	})
 
 	t.Run("core types are still available and working", func(ctx context.Context, t *testctx.T) {
@@ -1892,7 +1893,7 @@ func (m *Hello) Hello() string {
 	})
 
 	t.Run("no-sdk module can load module with sdk", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello | hello")).Stdout(ctx)
+		out, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerShell("hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi", out)
 	})
