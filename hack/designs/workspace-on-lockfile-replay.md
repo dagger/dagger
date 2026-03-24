@@ -98,10 +98,10 @@ Reason:
 - `dagger workspace info`
 - initialized-workspace detection via `.dagger/config.toml`
 - `Workspace.init` plus `dagger workspace init`
+- workspace config model
 
 ### Pending Safe Pre-Lock Buckets
 
-- workspace config model
 - `dagger workspace config` read/write
 - top-level install split and workspace install base
 - `dagger workspace list`
@@ -244,3 +244,12 @@ Known host caveats:
     `env -u DAGGER_CLOUD_ENGINE dagger --progress=plain call engine-dev test --pkg=./core/integration --run='TestWorkspace/Test(CurrentWorkspaceInit|WorkspaceInitCommand)$' --test-verbose`
   - trace:
     `https://dagger.cloud/dagger/traces/ce6a8ec60e4250a5d944abed759f495e`
+  - replayed the pure workspace config model in `core/workspace`
+  - rewrite note:
+    keep this bucket schema-free and CLI-free; land only deterministic
+    parse/serialize/read/write utilities and tests so the later
+    `workspace config` UX can stay thin
+  - verifier passed:
+    `go test ./core/workspace -run 'Test(ParseConfig|SerializeConfig|ReadConfigValue|WriteConfigValue)$' -count=1`
+  - verifier passed:
+    `env -u DAGGER_CLOUD_ENGINE GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./core/workspace -o /tmp/.tmp-core-workspace.test`
