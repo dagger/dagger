@@ -138,6 +138,41 @@ Avoid:
 - giant mixed commits that combine engine, CLI, tests, generated code, and docs
   unless they are inseparable
 
+### Design The Git History, Not Just The Code
+
+The replay should be designed as a readable piece of engineering history, not
+just a pile of working diffs.
+
+Treat the following as design work:
+
+- the breakdown of commits
+- the sequencing of commits
+- the exact contents of each diff
+- the commit messages that explain why the change exists
+
+Goal:
+
+- maximize legibility
+- maximize signal-to-noise ratio
+- make the pull request easier to review than the raw branch history it came
+  from
+- elevate the work of both the engineer replaying the branch and the engineer
+  reviewing it
+
+Practical rule:
+
+- if a commit is technically correct but makes the review harder to understand,
+  it is not done yet
+
+That means:
+
+- split mixed-intent changes before committing
+- keep mechanical regeneration separate from semantic changes
+- write commit messages that describe the intent of the bucket, not just the
+  files touched
+- prefer a sequence whose review story is obvious even to someone who never saw
+  the original `workspace` branch history
+
 ### Generate Late
 
 This held on plumbing and still holds on `lockfile`.
