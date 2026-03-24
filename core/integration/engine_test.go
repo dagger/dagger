@@ -537,7 +537,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			clientCtr = clientCtr.
 				WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "`+tc.moduleVersion+`"}`).
-				WithNewFile("/query.graphql", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)
+				WithNewFile("/query.graphql", `{containerEcho(stringArg:"hello"){stdout}}`)
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
